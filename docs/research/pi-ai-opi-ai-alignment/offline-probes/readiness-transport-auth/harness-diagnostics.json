@@ -1,0 +1,26 @@
+{
+  "status": "EXCLUDED-FROM-FINAL-SUCCESS-COUNTS",
+  "raw_initial": "raw/initial-diagnostic.jsonl",
+  "transcript_summaries_not_complete_raw": [
+    {
+      "problem": "native reqwest no-provider builder panic, preconfigured TLS ALPN unset",
+      "fix": "always use explicit per-instance rustls config and explicit h2/http1.1 ALPN"
+    },
+    {
+      "problem": "main runner summary source=None caused AttributeError after experiment commands",
+      "fix": "source or empty-string in registry count"
+    },
+    {
+      "problem": "OS selected ephemeral port5061, blocked by fetch standard; global-fetch made zero sends",
+      "fix": "fixture allocation in service-port-free range20000..59999 with collision retry; only experiment choice"
+    },
+    {
+      "problem": "first Hyper research compile BytesMut.split selected inherent split rather than slice",
+      "fix": "explicit &[u8] view; rebuilt successfully"
+    },
+    {
+      "problem": "patched lock overwritten during local preparation; --locked refused update",
+      "fix": "regenerated isolated patched lock with Cargo --offline then locked build0"
+    }
+  ]
+}

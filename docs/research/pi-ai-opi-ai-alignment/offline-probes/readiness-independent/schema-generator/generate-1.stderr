@@ -1,0 +1,15 @@
+   Compiling regex-lite v0.1.8 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\schema-generator\vendor\regex-lite-0.1.8)
+   Compiling codegen v0.3.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\schema-generator\vendor\codegen-0.3.0)
+warning: use of deprecated constant `core::usize::MAX`: replaced by the `MAX` associated constant on this type
+  --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\schema-generator\vendor\regex-lite-0.1.8\src\pikevm.rs:92:43
+   |
+92 |             haystack.len() < core::usize::MAX,
+   |                                           ^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+   Compiling ucd-parse v0.1.13 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\schema-generator\vendor\ucd-parse-0.1.13)
+warning: `regex-lite` (lib) generated 1 warning
+   Compiling gen-unicode v0.3.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\schema-generator\vendor\regress-0.12.0\gen-unicode)
+    Finished `release` profile [optimized] target(s) in 3.90s
+     Running `E:\opi\cargo-targets\windows-direct\release\gen-unicode.exe`

@@ -1,0 +1,13 @@
+{
+  "node_sha256": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11",
+  "pi_sources": {
+    "packages/ai/scripts/model-data.ts": "f2605a61ad57d8a3edb93e5c36c0f543d051796b8353452a1fd584eec33f02f4",
+    "packages/ai/scripts/hydrate-model-catalog.ts": "153433c81547149bf04b7a913c6c72a45666035b53233cd6b6e985248e5a9492",
+    "packages/ai/src/model-catalog.ts": "567b559600439eac5e6c341658bb45b149c5e8a22e34624a54ad5a06f5a92885",
+    "packages/ai/src/models.generated.ts": "8cd91fa7eae8e9b219b8f50ed7581d7c31fe6df29b5a07a0a672589bb7323c21",
+    "packages/ai/package.json": "4e9ed07b06a91d844485874c251f312b610d015a4a4fd32c78cde58a7862a3f1"
+  },
+  "lock_sha256": "dea0098ebdb840991cf96c52b544b7c15f51a8b7f79ee1034772eb6630c59657",
+  "rustc_stdout_sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8",
+  "cargo_stdout_sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a"
+}

@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "scope": "offline experiment inputs; no product runtime parity claim",
+  "node": {
+    "version": "v24.13.0",
+    "sha256": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11"
+  },
+  "pi": {
+    "version": "1.3.0",
+    "validation_ts_sha256": "e4b8029c184bd6df830e0ee2cb7034a39d49b5ecb8c068c26af9564c20246594",
+    "package_json_sha256": "4e9ed07b06a91d844485874c251f312b610d015a4a4fd32c78cde58a7862a3f1"
+  },
+  "typebox": {
+    "version": "1.3.27",
+    "archive_sha256": "5a288bcd3d68f44567de84b185e04d205ef7d5b53602846bc3db30fdd219dda3",
+    "archive_members_verified": 1385,
+    "package_tree": {
+      "algorithm": "sha256(sorted relative UTF-8 path + NUL + raw SHA256(file) + LF)",
+      "files": 1385,
+      "sha256": "ebf39b1441f59a084233243d5e49ec9d4fdcaa4521417a883dfe51a2118e271d"
+    }
+  },
+  "rust_source_trees": [
+    {
+      "package": "jsonschema-0.28.3",
+      "source_tree": {
+        "algorithm": "sha256(sorted relative UTF-8 path + NUL + raw SHA256(file) + LF)",
+        "files": 70,
+        "sha256": "bba62873d943d8c43596fbf51d3c3284dc078c9f6e860dcdc4e8d768ba24dc63"
+      },
+      "archive_sha256": "4b8f66fe41fa46a5c83ed1c717b7e0b4635988f427083108c8cf0a882cc13441"
+    },
+    {
+      "package": "referencing-0.28.3",
+      "source_tree": {
+        "algorithm": "sha256(sorted relative UTF-8 path + NUL + raw SHA256(file) + LF)",
+        "files": 48,
+        "sha256": "5654cfadd18a6f9edb527f78a62680dd160b00a44b2fdec2ed859a46f6b50776"
+      },
+      "archive_sha256": "d0dcb5ab28989ad7c91eb1b9531a37a1a137cc69a0499aee4117cae4a107c464"
+    },
+    {
+      "package": "fancy-regex-0.14.0",
+      "source_tree": {
+        "algorithm": "sha256(sorted relative UTF-8 path + NUL + raw SHA256(file) + LF)",
+        "files": 34,
+        "sha256": "f4b7d82e97cb6cf540eaeb5a3bce417521b0c5c642b2261a7f51eb77806a42e4"
+      },
+      "archive_sha256": "6e24cb5a94bcae1e5408b0effca5cd7172ea3c5755049c5f3af4cd283a165298"
+    }
+  ],
+  "cargo_lock_sha256": "eb20a03f072f3285dba88397583cca8a4a710c72b613dbfc9240ea56832a742f",
+  "cargo_graph_sha256": "eb47c097242b28682920bc7b767c5e936bb7c0287ed22999e270c0e66543f825",
+  "fixture_sha256": "3e6a34add198120c736b80fc999cf74ee93b493e9b31f3b2819e814dadbd159c",
+  "root_lock_sha256": "fdb4fb24ce180da7bafa8ef885f6f5f18a3426d4070d1df0c9e319ba0510e240",
+  "rustc_version_stdout_sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8",
+  "cargo_version_stdout_sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a"
+}

@@ -1,0 +1,31 @@
+[
+  {
+    "kind": "positive",
+    "command": [
+      "python",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\ws\\prepare-ws-source.py",
+      "--archive-dir",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-ws-backend-source",
+      "--output",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-offline-independent-review\\ws-prepared-positive"
+    ],
+    "exit": 0,
+    "stdout": "{\"prepared\": \"C:\\\\Users\\\\Luiz\\\\AppData\\\\Local\\\\Temp\\\\opi-pi130-offline-independent-review\\\\ws-prepared-positive\", \"network\": false, \"source_pins\": {\"tungstenite-0.28.0\": \"8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442\", \"tokio-tungstenite-0.28.0\": \"d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857\"}}\r\n",
+    "archive_members_equal": 60
+  },
+  {
+    "kind": "negative-sha",
+    "command": [
+      "python",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\ws\\prepare-ws-source.py",
+      "--archive-dir",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-offline-independent-review\\bad-ws-archives",
+      "--output",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-offline-independent-review\\ws-prepared-negative"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "archive SHA256 mismatch: C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-offline-independent-review\\bad-ws-archives\\tungstenite-0.28.0.crate\r\n",
+    "source_extracted": false
+  }
+]

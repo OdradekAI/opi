@@ -1,0 +1,1052 @@
+[
+  {
+    "name": "rustc-version",
+    "command": [
+      "rustc",
+      "-Vv"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.032,
+    "containment_seconds": 60,
+    "stdout_sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "cargo-version",
+    "command": [
+      "cargo",
+      "-Vv"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.027,
+    "containment_seconds": 60,
+    "stdout_sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "cargo-build",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\rust\\Cargo.toml"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 5.642,
+    "containment_seconds": 300,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "91bd5797faf8ada6d1e691fea9bcdc65a1bab5056269169ffc0721dd2e2cd5c0"
+  },
+  {
+    "name": "cargo-metadata",
+    "command": [
+      "cargo",
+      "metadata",
+      "--offline",
+      "--locked",
+      "--format-version",
+      "1",
+      "--filter-platform",
+      "x86_64-pc-windows-msvc",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\rust\\Cargo.toml"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.05,
+    "containment_seconds": 60,
+    "stdout_sha256": "126c3c4e5b3d097afcdc4e5df5de504b45d4732137cc0f6cd7e60cf63e771d47",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "cargo-features",
+    "command": [
+      "cargo",
+      "tree",
+      "--offline",
+      "--locked",
+      "-e",
+      "features",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\rust\\Cargo.toml"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.05,
+    "containment_seconds": 60,
+    "stdout_sha256": "effd9c1d95c190ee585e92c55efc8e3f793b61c227e667ec34c3aa04ccb489d5",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "pi-normal",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness-schema-final-original/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\cases.jsonl"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.544,
+    "containment_seconds": 60,
+    "stdout_sha256": "fac3dbb428d98a671c7b759f7f740f4dab1a18388d3dc31474034fa558fb1b05",
+    "stderr_sha256": "7024033272e823055188de5d577ad9b162887658812b69121a864f712b453fbd"
+  },
+  {
+    "name": "pi-regex-backtrack-bare",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness-schema-final-original/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\cases.jsonl",
+      "regex-backtrack-bare"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.592,
+    "containment_seconds": 10,
+    "stdout_sha256": "ab7d95fb3154932689c10e46d5633759812224e71ca7ce86c6616dd5539eb7c4",
+    "stderr_sha256": "97e9e6e1c05a9bafec878b9a3cba213c5829cc15315a73e9b4a2b753ca198436"
+  },
+  {
+    "name": "pi-regex-backtrack-not",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness-schema-final-original/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\cases.jsonl",
+      "regex-backtrack-not"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.64,
+    "containment_seconds": 10,
+    "stdout_sha256": "521cb73fe90cf3dcec8f9c86fd947db358fe4ad8463524434a72ace3263a5daf",
+    "stderr_sha256": "404cfd7b372f974216f3abc9694bfb3d97b2e68244524dc2d6d938cbfa8b553c"
+  },
+  {
+    "name": "pi-regex-backtrack-anyof",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness-schema-final-original/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\cases.jsonl",
+      "regex-backtrack-anyof"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.593,
+    "containment_seconds": 10,
+    "stdout_sha256": "cb021d937356373d3e3789f915c7caa52c48867e7c94774dac13976e092d42b6",
+    "stderr_sha256": "fcc735d28bcf06d3d56329d2de0a246e921cb13fa1a23cbf4cc57cdc9cdc46dd"
+  },
+  {
+    "name": "pi-regex-backtrack-if",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness-schema-final-original/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\cases.jsonl",
+      "regex-backtrack-if"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.609,
+    "containment_seconds": 10,
+    "stdout_sha256": "18371c2185a8f52e00c4a4fd7999b5824b0093a6d268a93e0543d8c253c09a7b",
+    "stderr_sha256": "b88d4e535ed5352c8acd5642b01b88e403d7c2e320815ed1b7e8b24de41f15f3"
+  },
+  {
+    "name": "pi-regex-backtrack-contains",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness-schema-final-original/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\cases.jsonl",
+      "regex-backtrack-contains"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.592,
+    "containment_seconds": 10,
+    "stdout_sha256": "11f67c6746366931ed72dd4e3015a502234ab93d98c21696e3ea0c2bd1a38d2d",
+    "stderr_sha256": "b6be7c70a7468ec01911a879f52228b9c9b4aae185526edb285ff228e00fc170"
+  },
+  {
+    "name": "pi-regex-backtrack-patternproperties",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness-schema-final-original/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\cases.jsonl",
+      "regex-backtrack-patternproperties"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.618,
+    "containment_seconds": 10,
+    "stdout_sha256": "5204e9c8ed9193e2abf4f87fb73d4e6fbcdc9bd488a5b618c964f590c6607b97",
+    "stderr_sha256": "80022c7c323b43641e021ad77063eeeb3862f336093fb7c7094f7c0fcf96ac21"
+  },
+  {
+    "name": "pi-regex-backtrack-additionalproperties",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness-schema-final-original/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\cases.jsonl",
+      "regex-backtrack-additionalproperties"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.69,
+    "containment_seconds": 10,
+    "stdout_sha256": "bc9c68a87ffb87758133aacc6d727cc9c9c1766cb5668aec409e33987a7d7977",
+    "stderr_sha256": "0a5825b9b600687d60d111437867780562c0db471463514d4ff67c8e39e61158"
+  },
+  {
+    "name": "pi-regex-backtrack-propertynames",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness-schema-final-original/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\cases.jsonl",
+      "regex-backtrack-propertynames"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.587,
+    "containment_seconds": 10,
+    "stdout_sha256": "b4705bc296bf7c2afbf02b09cacad4a61d07c840b78edf80ba139e01ec0b7c08",
+    "stderr_sha256": "d82d00f085c8c9cbcbeb3e9bf5516a6539a98b666011241f6c1cfb7f91e29058"
+  },
+  {
+    "name": "pi-regex-backtrack-unselected-anyof",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness-schema-final-original/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\cases.jsonl",
+      "regex-backtrack-unselected-anyof"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.473,
+    "containment_seconds": 10,
+    "stdout_sha256": "9676197c7b6ddcf3ae598b5babfd424433db41716719bb5746e47e9c7fea1161",
+    "stderr_sha256": "f98817ee6c45dbed18f6ffc1a1d43aefc49906e738f7de5c7b35bde5e5ff08d0"
+  },
+  {
+    "name": "pi-regex-backtrack-allof",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness-schema-final-original/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-final-original\\cases.jsonl",
+      "regex-backtrack-allof"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.584,
+    "containment_seconds": 10,
+    "stdout_sha256": "5d98efd5425033f5ad5b6f911004b50f3d424aca6a1786e8c166512264111ab0",
+    "stderr_sha256": "5c9e690c563c2b4d69382fd187e16363b3b9a18b2a8cc08e87f892fb7304cfd4"
+  },
+  {
+    "name": "native-normal-valid",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.11,
+    "containment_seconds": 30,
+    "stdout_sha256": "e9b91f27d249a42c83ab178294eb622a2615dff5adec1e15ed116f0f88633778",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-normal-invalid",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.007,
+    "containment_seconds": 30,
+    "stdout_sha256": "b9bc2dd68976be753fcb04d7cede0c66a0bdd90f7b291cec275d47097ea6ad8c",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-mixed-pass",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "c00343c6d83e381fc4def3f35fef2e9092f9163a0bafa0f20acab69c670051c3",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-mixed-fail",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "6a742a5b9a095a6e8b3a592b31ac67b4999b76dbe798093dafb99b72c992d3c8",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-malformed-minlength",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "2ababcc821f2740cd8716b22dff2ba56212ee6f133e8a72551b0810d49ca0cfa",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-grapheme-max-combining",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.007,
+    "containment_seconds": 30,
+    "stdout_sha256": "a038459c45228a5af9d057e218b482ad329927b4005bbcd2e266a0041909b9ad",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-grapheme-min-combining",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "a7c9212a15f281659a2a70b4083a090066b65fa3e5800ff31b89eb57561a3ec6",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-grapheme-max-zwj",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "1dbf2808dbf498f1757865f1c934db3d9054a3bd9ac406359f649f5e6c91927f",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-grapheme-max-flag",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "b824418907c81a83a8d66bfa4a8318a4f2d1202b586d4b98ccb017f018442038",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-content-base64",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "bb6c93973f6002ca3d2513572e9b24c279694d91399b6c5e467771c20fc9a531",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-content-json",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "750b99e6564951e9d3d11d7e6040bbd9d552f77692a3f4da6f2d278b23e163ce",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-local-ref-valid",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "890d9ad412807f8607d84192059ab00ac51ef9949d4a2b113a2c02acea57aa4e",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-sibling-ref-valid",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "32e2c0c4540d4b338c9e46c0f02803a28d7b755603908914ad59e091e07c450d",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-local-ref-invalid",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.007,
+    "containment_seconds": 30,
+    "stdout_sha256": "e4feefad01a0ecc0ba3a6753b9d6871fd4b22c033e1ca0036e461eda9835fdc3",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-sibling-ref-invalid",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "287a10ce127eeee68a1b6414399410d726882516956fd7b3843389b58691d815",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-unresolved-ref",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "5f756c60353cca66aee7b0548c8d4f007a021a13d6a292904d313ad16f29d1c3",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-metadata-id-ref",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "6929e162eedfb8c9a8cb5d22db0db35e88c0771a5bb0e9768b27e195224f48ec",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-metadata-id-ref-invalid",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "d5e9d257df0f0f8fc770bd00fdf861b2892a4ce49f1caa21957c7b0503a559e3",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-u1680",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "a4cbeb97ae7a2218b26d5f21f107d605658301937f756924cd6cff0bb75f9855",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-normalize-integer-hex",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "741fb9277fdb24610b30f4036b66484a510face422f80a03fb1aa18e86255079",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-normalize-integer-null",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "363631d275f49fb637d2e16bbdc81f5b01c0e5afe41786745bbce20334857edb",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-normalize-optional-null",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "8bda3f09bd11670ba002065141fd1be063d129cc33e6a89027432ac7737eb261",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-normalize-string-union",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "22f3bcf42a59bb1f80cb56f5899b018d2ed5678006cdcb249e2c9663532fdb1f",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-normalize-anyof-string",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "9e93d531af461c1a01cfaf7d14747db3bb66e9d61de23915c63f6ef2adb56a86",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-normalize-number-string",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "1288d2478031e08e34d3ae310531cce2a6f17694e61c89ade2924d6721451fb5",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-normalize-large-integer",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "415163b65d5dfb68dc906ee4f3eab82e1b8e1876f509b20931bd902f58aeb170",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-root-correctness",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "154562be3e80a1e463893c9d896996aac8a3d36665ad67e9a1b5bf9e47c87f82",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-root-valid-coercion",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.007,
+    "containment_seconds": 30,
+    "stdout_sha256": "c2758e1ae664a4ccfff43991b426140c7f2fd2910860e68959672cb4d4965d6d",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-multipleof-decimal",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "7a5f3fcab81d86e43f8b5de7b686af476e77a061d405a196c107649d76e19cd6",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-bare",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.174,
+    "containment_seconds": 30,
+    "stdout_sha256": "09364265351a7ab936d8fedde99514bb8ee240b4eb653fa66736d5a55dfa6c02",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-not",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.176,
+    "containment_seconds": 30,
+    "stdout_sha256": "ef914f28a80a0c91499a1178535e9d737602ac6fcf5b3aade095d877bfb00644",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-anyof",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.179,
+    "containment_seconds": 30,
+    "stdout_sha256": "cb7cf8a9d3107fcfa76e784d88e8c0dd80a02da30e52313437e3a4f110492a01",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-if",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.176,
+    "containment_seconds": 30,
+    "stdout_sha256": "591b811b9bdb743c2d12b99c7d7e319dd9f145b92c32a85cf236796f6761ece4",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-contains",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.183,
+    "containment_seconds": 30,
+    "stdout_sha256": "42bf10130301d5db62457bd37d727db7e3652c9d60c143997f407636c85ac916",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-patternproperties",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.345,
+    "containment_seconds": 30,
+    "stdout_sha256": "daa3ed678ac78c1139774013f1ab80b0a481049cae4684113c03085f51240e65",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-additionalproperties",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.351,
+    "containment_seconds": 30,
+    "stdout_sha256": "4417093036a12d80c9a5e9d31b9b7de582ef61ddc85cc77800980b1ddf89cd74",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-propertynames",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.177,
+    "containment_seconds": 30,
+    "stdout_sha256": "e209eb92ed98cf057fa8843e6d86ca82432a28d40286ad8194636150065bf2c7",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-unselected-anyof",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.007,
+    "containment_seconds": 30,
+    "stdout_sha256": "4b8d4b38d5980f007afe30a41fc4e7cdaa7000699c242bfda133e8766e5531dd",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-allof",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.174,
+    "containment_seconds": 30,
+    "stdout_sha256": "5a657283874ee6485d5cd352eeaa5472b7b550cde2d5e7b16a941a0ca1645feb",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-whitespace-positive",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "de523fff33d47e117c125142e73487f7174c4e4fd01f3719582a2faa7d23b159",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-whitespace-negative",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "342388327fb1725795508ae428f327b3f31e486a073c0dbb6d4d006bb472b8d4",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-letter",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "495ce39c8c52f7c633bfe850538e77bfcf5605706ee096d52f81161fe00fc516",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-letter-negative",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "3340b1fe2543bab98d05bbb7b739e2c6de9bad0ba12e97979b7a2f959882da00",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-kawi",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "1ba91dfbf7ddd0a9100de8980ad08669a4f98f0eeee9bde956d59cdba92fb1f3",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-nag-mundari",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "6633f6ffb0fc9c31ac9ea67287106e03a7e982a306f24db14b8b70956fe18ac9",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-unicode17-script",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "4a4080f18ee043722ea17497bac4fba0edce0438ffa7aac75e6f032eb59a4d46",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-unicode16-todhri",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "20c45ea6083a2f9f0803f0ac9a5cabab1b7a53b05da3c68c8e6fd6da05e08886",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-unicode16-gurung",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.004,
+    "containment_seconds": 30,
+    "stdout_sha256": "59ecd01c41bff3f63f682f1b414f5ef8d0b613f8b8ba1f3e8bfb7cfd6438190e",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-unicode16-ol-onal",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "ede0b805c59f71ba2cb8bd49e5281db3a5e4ba9d1314497b98ec76ccb902a04b",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-unicode17-new-letter",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.004,
+    "containment_seconds": 30,
+    "stdout_sha256": "3a2030801a792068aee8204d64217f98b50194c3a024d86b8f7bc04ed7ee4e2c",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-astral-dot",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "434ea4da60fd5971e0a5f09c1468446c6a5a5c2c612b0c1f3a4f700e7b840291",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-backref",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.007,
+    "containment_seconds": 30,
+    "stdout_sha256": "0ca8fe322d4290540e0b859a9055cfaf2655c61a177b35655862bd5b4efba317",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-lookbehind",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.007,
+    "containment_seconds": 30,
+    "stdout_sha256": "1303b7e056a132ac9293f13e75ce1c4cf749233ddc81920cea4fd464ded425cd",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-invalid-unicode-escape",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.004,
+    "containment_seconds": 30,
+    "stdout_sha256": "cf95614a751116632ccdf24207c1b8b4524c93e46a88e67868eaa5837c4a105a",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-invalid-range",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.004,
+    "containment_seconds": 30,
+    "stdout_sha256": "5d404b92e3e1f2fdc3c697f5bae81f5ace156637f87ec0926eb33d5da1381d73",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-identity-escape",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "0a456b443674596d0abeaa3a525a47a5fb7783d4ffb8b8c1cc23cd617ea86963",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-ecma-named-backref",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "e0754bb233ca95f090164f241f47153ff8604ec601bb519d3426c996dbd194ec",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-guard-malformed-minimum",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "fb0dd93fcf3d534876e75be57e50402157307c9a6d6194e658bf5f906206926c",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-guard-malformed-pattern",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.006,
+    "containment_seconds": 30,
+    "stdout_sha256": "faa816dbe87c51bf84e38ed1f9e382b7fe01837d56efd3ee949cdb67e64c3ebe",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-guard-schema-label",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "098414d0326966872cd2389d61bbf13e2dd96700cff91459513123fbe0126209",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-guard-mixed-ref-prefix",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.008,
+    "containment_seconds": 30,
+    "stdout_sha256": "14b6b40811ace35a854185495866e2b3ae75281ac133d278d793150f33aa7ea3",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-guard-mixed-ref-prefix-negative",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "dbd9e9da418719d26917e96da51c7067c22124936a43533370f8dd2ea4a86f14",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-grapheme-hangul-source-not-UAX29",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.004,
+    "containment_seconds": 30,
+    "stdout_sha256": "c4c8d764915eda12e8e46245d17f25c6c6e77f9a0f1673ffbe4440d69a976ab6",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-grapheme-emoji-modifier-source-not-UAX29",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.005,
+    "containment_seconds": 30,
+    "stdout_sha256": "d17dacd8447b83304cc6717e894c8c943f4b9d9c83318f749952a39dcb5ddacb",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-fault-controls",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\release\\opi-pi130-readiness-schema-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.007,
+    "containment_seconds": 60,
+    "stdout_sha256": "5a29b4fbcf1bd365541c7b4cca3beefce6f95afef58470770022e822aec42e07",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

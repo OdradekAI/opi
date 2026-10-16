@@ -1,0 +1,41 @@
+{
+  "executable_sha256": "750ef4b16633bf80306e6c0366a09563a9cf8a779b7fa273fe73522905dbe994",
+  "results": [
+    {
+      "case": "length-high-bit",
+      "frame_hex": "817f8000000000000000",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\ws-extra-client.exe",
+        "ws://127.0.0.1:12638/extra/length-high-bit",
+        "owned"
+      ],
+      "exit": 101,
+      "stdout": "",
+      "stderr": "\nthread 'main' (111496) panicked at /rustc/58cf8f9c35b355199727627d07ae34a4e2846d67/library\\alloc\\src\\raw_vec\\mod.rs:28:5:\ncapacity overflow\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+    },
+    {
+      "case": "length-u64-overflow",
+      "frame_hex": "817fffffffffffffffff",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\ws-extra-client.exe",
+        "ws://127.0.0.1:12640/extra/length-u64-overflow",
+        "owned"
+      ],
+      "exit": 101,
+      "stdout": "",
+      "stderr": "\nthread 'main' (100724) panicked at C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\ws\\source\\ratchet_core-1.2.1\\src\\framed\\mod.rs:96:37:\nattempt to add with overflow\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+    },
+    {
+      "case": "non-minimal-126",
+      "frame_hex": "817e000178880203e8",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\ws-extra-client.exe",
+        "ws://127.0.0.1:12642/extra/non-minimal-126",
+        "owned"
+      ],
+      "exit": 0,
+      "stdout": "{\"controls\":[],\"error\":null,\"messages\":[\"x\"],\"opened\":true}\n",
+      "stderr": ""
+    }
+  ]
+}

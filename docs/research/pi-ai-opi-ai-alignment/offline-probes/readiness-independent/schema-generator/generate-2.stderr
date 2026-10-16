@@ -1,0 +1,12 @@
+warning: use of deprecated constant `core::usize::MAX`: replaced by the `MAX` associated constant on this type
+  --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\schema-generator\vendor\regex-lite-0.1.8\src\pikevm.rs:92:43
+   |
+92 |             haystack.len() < core::usize::MAX,
+   |                                           ^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: `regex-lite` (lib) generated 1 warning
+   Compiling gen-unicode v0.3.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\schema-generator\vendor\regress-0.12.0\gen-unicode)
+    Finished `release` profile [optimized] target(s) in 1.61s
+     Running `E:\opi\cargo-targets\windows-direct\release\gen-unicode.exe`

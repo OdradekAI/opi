@@ -1,0 +1,50 @@
+[
+  {
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--input-type=module",
+      "-e",
+      "import {createHash} from 'node:crypto';console.log(JSON.stringify({execPath:process.execPath,version:process.version,versions:process.versions,websocketName:globalThis.WebSocket.name,websocketConstructorSha256:createHash('sha256').update(String(globalThis.WebSocket)).digest('hex')}))"
+    ],
+    "exit": 134,
+    "stdout": "",
+    "stderr": "\n  #  C:\\Users\\Luiz\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell\\pwsh.exe[62136]: std::shared_ptr<InitializationResultImpl> __cdecl node::InitializeOncePerProcessInternal(const std::vector<std::string> &, ProcessInitializationFlags::Flags) at src\\node.cc:1225\n  #  Assertion failed: ncrypto::CSPRNG(nullptr, 0)\n\n----- Native stack trace -----\n\n 1: 00007FF7B588A45A DSA_meth_get_flags+197562\n 2: 00007FF7B58E4116 node::InitializeOncePerProcess+2790\n 3: 00007FF7B58E511C node::Start+156\n 4: 00007FF7B6902042 AES_cbc_encrypt+2546\n 5: 00007FF7B77582F4 v8::base::UnsignedDivisionByConstant<unsigned __int64>+2829972\n 6: 00007FFBF878259D BaseThreadInitThunk+29\n 7: 00007FFBF998AF78 RtlUserThreadStart+40\n",
+    "executableSha256": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11"
+  },
+  {
+    "scope": "actual-Pi-public-provider-module-unmodified-import-only",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--input-type=module",
+      "-e",
+      "try{const m=await import('file:///D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/api/openai-codex-responses.ts');console.log(JSON.stringify({imported:true,exports:Object.keys(m)}))}catch(e){console.log(JSON.stringify({imported:false,error:e.message,code:e.code,stack:e.stack}));process.exitCode=1}"
+    ],
+    "exit": 134,
+    "stdout": "",
+    "stderr": "\n  #  C:\\Users\\Luiz\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell\\pwsh.exe[95220]: std::shared_ptr<InitializationResultImpl> __cdecl node::InitializeOncePerProcessInternal(const std::vector<std::string> &, ProcessInitializationFlags::Flags) at src\\node.cc:1225\n  #  Assertion failed: ncrypto::CSPRNG(nullptr, 0)\n\n----- Native stack trace -----\n\n 1: 00007FF7B588A45A DSA_meth_get_flags+197562\n 2: 00007FF7B58E4116 node::InitializeOncePerProcess+2790\n 3: 00007FF7B58E511C node::Start+156\n 4: 00007FF7B6902042 AES_cbc_encrypt+2546\n 5: 00007FF7B77582F4 v8::base::UnsignedDivisionByConstant<unsigned __int64>+2829972\n 6: 00007FFBF878259D BaseThreadInitThunk+29\n 7: 00007FFBF998AF78 RtlUserThreadStart+40\n"
+  },
+  {
+    "command": [
+      "D:/nvm/node_global/node_modules/bun/bin/bun.exe",
+      "--input-type=module",
+      "-e",
+      "import {createHash} from 'node:crypto';console.log(JSON.stringify({execPath:process.execPath,version:process.version,versions:process.versions,websocketName:globalThis.WebSocket.name,websocketConstructorSha256:createHash('sha256').update(String(globalThis.WebSocket)).digest('hex')}))"
+    ],
+    "exit": 3221226505,
+    "stdout": "",
+    "stderr": "",
+    "executableSha256": "0025a8bc31f136745d102212ddb192a1876c721b71deeb43123d18375fcf030c"
+  },
+  {
+    "scope": "actual-Pi-public-provider-module-unmodified-import-only",
+    "command": [
+      "D:/nvm/node_global/node_modules/bun/bin/bun.exe",
+      "--input-type=module",
+      "-e",
+      "try{const m=await import('file:///D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/api/openai-codex-responses.ts');console.log(JSON.stringify({imported:true,exports:Object.keys(m)}))}catch(e){console.log(JSON.stringify({imported:false,error:e.message,code:e.code,stack:e.stack}));process.exitCode=1}"
+    ],
+    "exit": 3221226505,
+    "stdout": "",
+    "stderr": ""
+  }
+]

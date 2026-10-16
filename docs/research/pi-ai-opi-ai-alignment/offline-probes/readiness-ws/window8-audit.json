@@ -1,0 +1,119 @@
+{
+  "method": "independent RFC1951 distance parse plus raw -8 zlib decoder; first compressed client message",
+  "results": [
+    {
+      "runtime": "node",
+      "inbound": [
+        {
+          "maxDistance": 21,
+          "decodedBytes": 2101,
+          "blocks": [
+            1,
+            0
+          ]
+        },
+        {
+          "maxDistance": 148,
+          "decodedBytes": 2101,
+          "blocks": [
+            1,
+            0
+          ]
+        }
+      ],
+      "clientDataFrame": true,
+      "compressedOutbound": false,
+      "uncompressedMatches": true
+    },
+    {
+      "runtime": "bun",
+      "inbound": [
+        {
+          "maxDistance": 21,
+          "decodedBytes": 2101,
+          "blocks": [
+            1,
+            0
+          ]
+        },
+        {
+          "maxDistance": 148,
+          "decodedBytes": 2101,
+          "blocks": [
+            1,
+            0
+          ]
+        }
+      ],
+      "clientDataFrame": true,
+      "compressedOutbound": false,
+      "uncompressedMatches": true
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "inbound": [
+        {
+          "maxDistance": 21,
+          "decodedBytes": 2101,
+          "blocks": [
+            1,
+            0
+          ]
+        },
+        {
+          "maxDistance": 148,
+          "decodedBytes": 2101,
+          "blocks": [
+            1,
+            0
+          ]
+        }
+      ],
+      "clientDataFrame": true,
+      "compressedOutbound": true,
+      "outbound": {
+        "maxDistance": 0,
+        "decodedBytes": 24023,
+        "blocks": [
+          2,
+          2,
+          0
+        ]
+      },
+      "strict8DecoderMatches": true
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "inbound": [
+        {
+          "maxDistance": 21,
+          "decodedBytes": 2101,
+          "blocks": [
+            1,
+            0
+          ]
+        },
+        {
+          "maxDistance": 148,
+          "decodedBytes": 2101,
+          "blocks": [
+            1,
+            0
+          ]
+        }
+      ],
+      "clientDataFrame": true,
+      "compressedOutbound": true,
+      "outbound": {
+        "maxDistance": 0,
+        "decodedBytes": 24023,
+        "blocks": [
+          2,
+          2,
+          0
+        ]
+      },
+      "strict8DecoderMatches": true
+    }
+  ]
+}

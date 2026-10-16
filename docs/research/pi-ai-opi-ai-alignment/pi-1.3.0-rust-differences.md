@@ -1,6 +1,6 @@
 # Pi 1.3.0：Rust 差异注册表
 
-> 本页现行基线为本地 Pi 1.3.0；[逐项升级复核](pi-1.3.0-upgrade-review.md)与[固定来源](pi-1.3.0-source-evidence.json)区分本次重读和同摘要继承。旧 1.2.0 审计仅保留原证据日期；未执行运行验收。
+> 本页现行基线为本地 Pi 1.3.0；[逐项升级复核](pi-1.3.0-upgrade-review.md)与[固定来源](pi-1.3.0-source-evidence.json)区分本次重读和同摘要继承。旧 1.2.0 审计仅保留原证据日期；本页原源码轮未执行运行验收。最新[Schema／WS离线实验](pi-1.3.0-schema-ws-offline-validation.md)另列实际执行与候选判定，不代表产品验收。
 
 > 非规范性候选附件，2026-10-16。目标仅限 `opi-ai`：对齐固定 Pi 1.3.0 的公开能力与可观察语义，采用 Rust 惯用接口，逐项说明差异。目标要求以[双语候选 spec](spec-draft.zh.md)（[English](spec-draft.md)）为唯一正文，机械验收以[acceptance matrix](acceptance-matrix.md)为唯一索引；本页不新增 AIR/V、实施准入或进度账本。此前 D/Q 保留其时间和版本限定，不是本次对每项差异的重新批准。
 >
@@ -19,7 +19,7 @@
 | 范围／平台 | SDK 与宿主责任、Cargo/module 与 npm/Bun、native runtime 支持面 | 可以不复制非目标符号或平台桥，但 SDK 对应功能不能随之消失 |
 | 真正能力缺口 | 尚无公开可达实现、协议接线或机械证明 | 保持未完成；不能以“Rust 惯用”“deferred”或历史子集选择关闭 |
 
-以下 RDF-01–20 是固定的差异定位符，不是新要求或验收编号。一个条目可能含两类因素，但必须分别解释。每项的“机械验证”描述未来证据；本次没有执行 Cargo/Node 测试、构建、live/OAuth 请求、依赖安装或生成数据。
+以下 RDF-01–20 是固定的差异定位符，不是新要求或验收编号。一个条目可能含两类因素，但必须分别解释。每项的“机械验证”描述未来产品证据；前置源码轮没有执行 Cargo/Node 测试、构建、live/OAuth 请求、依赖安装或生成数据。最新离线harness另列实际执行，不冒充未来opi-ai公开consumer。
 
 | ID | 差异 | 主分类 | 主验收导航 |
 |---|---|---|---|
@@ -119,8 +119,8 @@
 ### RDF-09 · JSON Schema normalization，不复制 TypeBox 私有路径
 
 - **Pi 事实：** [`validateToolArguments`](../../../.repo/pi-1.3.0/packages/ai/src/utils/validation.ts)clone 参数，normalize optional-null，经过 TypeBox Value.Convert；无 `Symbol.for("TypeBox.Kind")` 时还运行 plain JSON Schema coercion，再 validation。两条路径并非完全相同算法。
-- **Rust 目标：** 公开JSON schema、clone-before-normalize、JS numeric/String/plain-JSON规则与raw/effective区分保留，不复制TypeBox private symbols。jsonschema0.28.3降为有条件候选；撤回强制Draft7/三dialect/unknown-format-keyword/cycle拒绝、任意shape/work/cache/jobs/error配额和所有pattern×subject guard/canonical重写。按Pi已知format执行、未知format通过、in-memory ref/keyword语义差分；没有隐式schema I/O。engine format/ECMA regex/吞错缺口仍须补救/重选，不得伪成功或 blanket拒绝掩盖。原schema最终全验证修正root-conversion漏洞为单列正确性差异。
-- **理由与分类：** JSON-only schema 是语言／包边界差异；保留 raw 与拒绝坏关联是安全选择。并不意味着不做 normalization，也不承诺任意 TypeBox runtime 值在 Rust 可重建。
+- **Rust 目标：** 选定私有JSON-only TypeBox方言IR/evaluator＋regress0.12.0算法与可重建Unicode16数据；jsonschema0.28.3退出本默认路径。结构guard、mixed applicator/ref/evaluated状态、已知format/近似长度/数值与分支Result由方言owner表达，不先套metaschema、不全pattern guard或伪成功。ordered JSON采用preserve_order＋JS整数键枚举；ryu-js1.0.2与受控Unicode16 URL/IDNA/ICU profile保留JS叶语义。10个namespace后端包有registry分发维护合同，不依赖caller rootpatch。clone-before-normalize与raw/effective分离、原schema最终check及root漏洞修正继续保留，零schema I/O。
+- **理由与分类：** JSON-only schema 是语言／包边界差异；UTF8公共String不表示孤立UTF16 surrogate，非JSON运行时值不隐式转换为有效JSON：保留raw text/bytes与parse状态并typed失败，不替换后假称同值。保留 raw 与拒绝坏关联是安全选择。并不意味着不做 normalization，也不承诺任意 TypeBox runtime 值在 Rust 可重建。
 - **外部 caller 影响：** caller 可在独立 SDK 手动验证工具，不必有 hook/authorizer；拿到 raw 与 normalized 的区别。执行和授权属于宿主，库不会因为验证成功就执行；host-only hook 顺序不作为 SDK 调用前提。
 - **机械验证：** V-11/35/39/41 用 plain JSON 的 optional null、union 保留优先、数组／additionalProperties、numeric string/boolean、非法根值及 precision corpus；TypeBox-only cases 作为显式差异，不通过删除失败或统一 coercion 输出掩盖。
 - **历史 D 依赖：** D-12/20/22/29/30 与 RA-08/13；D-22 的产品 hook 选择不扩大为本包执行权限。
@@ -193,7 +193,7 @@
 
 - **Pi 事实：** [`retryProviderRequest`](../../../.repo/pi-1.3.0/packages/ai/src/utils/provider-retry.ts)与 adapter 自身路径／锁定 AWS SDK 共同决定真实重试；公共 options 的注释不能当请求次数。Anthropic [`prefer strict` 降级](../../../.repo/pi-1.3.0/packages/ai/src/api/anthropic-messages.ts)对特定 pre-stream 400 至多一次去掉 prefer、保留 require、重建 payload 并再次调用 onPayload。SDK 另公开 [`retryAssistantCall`](../../../.repo/pi-1.3.0/packages/ai/src/utils/retry.ts)，不是 Models 默认高层恢复。
 - **Rust 目标：** 一个 logical call 一个 acquisition-retry owner；显式 max_retries=N 为每语义变体额外最多 N 次，0 关闭 transport retry。strict fallback 是单独有界语义 transition，至多两变体，最多 `2*(1+N)` 个 HTTP acquisition sends；N=0 仍允许一次满足精确 predicate 的降级。相同变体 retry 复用 payload，第二变体重建且再调用 transform；冻结 auth/model/account/telemetry，保留 require、诊断及取消。advanced start_attempt 不重置计数／quota／降级状态；handoff 后不重放。显式 whole-call helper 可用同一 typed contracts，调用方选择启用，不要求 session。 reqwest显式retry(never)即使Cargo feature合并开启H2/H3也保持单owner；当前独立H1不能被误报已隐式重试。AWS owned auth/source sends与generation分账，不运行vendor runtime/默认resolver或其隐藏日志；无I/O codec调用路径升级需重验。
-- **理由与分类：** 修复 Bedrock 忽略公共 override、Codex 省略 auto 与显式 auto 的分歧、以及统一 owner，属于行为修正；不能称 Pi 所有路径本来一致。AWS standard＋typed overrides 不读取 ambient retry-mode knobs；未支持的 adaptive/experimental 明确失败，不静默采用 standard。不能以“payload只变一次”抹去 1.2.0 的 strict callback 行为。
+- **理由与分类：** 修复 Bedrock 忽略公共 override、Codex 省略 auto 与显式 auto 的分歧、以及统一 owner，属于行为修正；不能称 Pi 所有路径本来一致。AWS按选定source实现standard/adaptive/Smithy2026及typed overrides，scoped mode/attempt/shared-config读取与auth发现分开，构造不采ambient。源已支持模式不以Unsupported收面；未知mode/坏配置按源typed失败，不静默采用standard。不能以“payload只变一次”抹去 1.2.0 的 strict callback 行为。
 - **外部 caller 影响：** callbacks 可能对两个语义变体各执行一次，但不会为同一 transport retry 重跑。只有显式 whole-call helper 才可能新建 logical calls；产品的恢复次数／compaction 是另一层。既有 caller 需看见适用默认、次数和取消边界。
 - **机械验证：** V-05/34/36/57 分别计 variant、send、callback、auth、quota；覆盖 N=0/1/2、特定／非特定400、require 保留、取消／deadline、handoff 后 failure、advanced入口、Busy/transient/Bedrock stalled分类和 helper终态/partial。不能只测最终成功或以 nested SDK 重试充数。
 - **历史 D 依赖：** D-09/24/27/36 支持分层与冻结；旧 transform“一次”只适用于同一 payload 变体，旧 D 不批准忽略新降级或上游显式 helper。
@@ -201,7 +201,7 @@
 ### RDF-18 · Cargo/native 平台与 npm/Bun/browser/CLI 边界
 
 - **Pi 事实：** [`package.json`](../../../.repo/pi-1.3.0/packages/ai/package.json)公开 root/subpaths、`pi-ai` CLI 和 bun-oauth；[root export](../../../.repo/pi-1.3.0/packages/ai/src/index.ts)强调 core side-effect-free，provider/catalog 分开；[Bun bridge](../../../.repo/pi-1.3.0/packages/ai/src/bun-oauth.ts#L12)为静态打包加载 OAuth。[AuthContext](../../../.repo/pi-1.3.0/packages/ai/src/auth/context.ts#L19)存在 browser fallback，Node-only flow 仍需对应平台能力。
-- **Rust 目标：** Cargo/module/resources/host Tokio表达独立SDK，npm/Bun/browser/CLI符号和任意executor/WASM不承诺ABI。HTTP/WS/rustls、AWS owned协议/纯codecs、ADC owned来源/成熟crypto保持有条件机制选择；H1-only、webpki-only、ring key范围、WS handshake/no compression等属于backend/platform覆盖缺口，不是Pi安全要求。撤回虚构ADC预算/零retry/双独立executable gate；保留真实GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES及host授权。portable well-known/无自动gcloud为明确平台/来源差异；不得以override可用冒称默认等价。closure/MSRV/native仍需Cargo/平台证明。
+- **Rust 目标：** Cargo/module/resources/host Tokio表达独立SDK，npm/Bun/browser/CLI符号和任意executor/WASM不承诺ABI。确定受控Hyper动态head/trailer存储、ownedUpgrade＋受控Ratchet PMD/长度/checked存储、实例rustls/commonring＋私有OpenSSL EVP signer/verification/KX，以及full-source AWS/ADC owner；不以ring范围/标准only/noPMD收面。native默认trust选固定Node参考bundle，scoped extra/explicit roots按source消费，host roots显式选择；不宣称Bun/OS/webpki同默认。原生C、有限unsafe及fork/数据/registry包维护成本明示；产品MSRV/锁图/三平台/consumer仍OPEN。保留真实executable env gate/host授权、portable well-known与无自动gcloud差异，无虚构预算/零retry/双独立gate。
 - **理由与分类：** packaging/runtime 桥属于平台差异；不是删除 OAuth/helper/catalog/独立 SDK 动作的理由。当前 [manifest](../../../crates/opi-ai/Cargo.toml)与[CI](../../../.github/workflows/ci.yml#L40)支持 native 依赖与 Linux/macOS/Windows 验证路线；本候选**不承诺 WASM/browser 或任意 executor 支持**，也不从源码无显式 wasm forbid 推断可用。
 - **外部 caller 影响：** Rust caller 自行装配 runtime、Stream/Serde 和 UI；无 Agent/产品 crate 前提。SDK 文档需列 native 支持面、平台相关 OAuth presenter/callback限制和正常依赖。未证明编译大小、lazy link、启动或性能收益，不为 tree-shaking 猜测加 feature。
 - **机械验证：** V-26/42/49/58 用离线 package 与 workspace 外 consumer、native 多平台组装／假传输、资源定位、无环境读取构造、公开工具能力映射。不能以 monorepo 内编译证明可发布，也不能用未缓存依赖的自动下载补缺。
@@ -245,11 +245,27 @@ RDF-14（telemetry）：Pi保持options引用，不冻结跨await的parent字段
 
 本轮[专项核查](pi-1.3.0-backend-gap-audit.md)以a37ed70为输入，细化现有RDF而不新增编号。七组仍OPEN，不能把未证明的补救变成已接受的Rust差异：
 
-- RDF-09：metaschema前置拒绝、grapheme/format/keyword/ref/regex接受集属于engine缺口。公开leaf hook只能证明局部机制；不调用私有bypass，不以完整自研evaluator代替可行性证明。Pi guard仍检查旧TypeBox.Kind symbol，而该TypeBox factory另有~kind；Rust JSON-only边界不冒充复制全部factory/codec路径。root非法转换最终拒绝仍是单列正确性差异。
-- RDF-13/18：WS累计read检查、124-header槽、Connection token-list/extension验证与无压缩分别核。Pi真实global constructor/runtime尚未固定；显式websocket也会eligible fallback，最终SSE成功不关闭WS。provided-stream、自有完整Upgrade→from_partially_read、patch/重选都仅为有条件路径。
+- RDF-09：前置源码轮的metaschema／grapheme／format／ref／regex差异未由leaf hook关闭。后续实测后，当前设计明确改选source-defined JSON IR、Unicode16 regex与URL数据profile；不是原标准engine已等价。Kind symbol/factory-only边界与root修正仍保留，完整实现V仍OPEN。
+- RDF-13/18：WS累计read检查、124-header槽、Connection token-list/extension验证与无压缩分别核。前置源码轮未固定Pi真实global runtime；后续已固定Node24.13.0／Bun1.3.5，实测两者headers调用和PMD可达。显式websocket也会eligible fallback，最终SSE成功不关闭WS；实测from_partially_read不能补PMD，当前无压缩codec须补救／重选。完整provided-stream／自有Upgrade／patch方案仍未交付。
 - RDF-06/08/17/18：按source区分proxy/redirect/retry、H2、trust、RS256与mTLS。撤回JWT typ/kid默认；ring signing与verification范围不可混用，也不把RSA签名限制推成所有非RSA mTLS不支持。真实source不支持的key不凭想象增加义务。
 - RDF-10/11/12/18：full-chain、standard/adaptive/2026、ADC五家族和metadata timeout分别待证。executable默认保留源侧stdout+stderr合并解析；scoped frozen child env和kill/reap后代是明确安全/生命周期增强，非Node保证。无新的总时限、进程stdio默认cap或第二deny gate。
 - RDF-14：owned pinned Future/Stream可在matching Dispatch的短scope内poll/drop，producer也须接线；safe机制草案不等于实际tracing conformance，host语义结束与Span clone寿命分离。
 - RDF-18/20：有效Cargo feature union、native/transitive/MSRV、外部package consumer、三平台和hydrated catalog仍须真实证据。source档案不能关闭这些交付面。
 
 每个未来case保留Pi原始观察、Rust公开动作结果、允许差异和对应V；未知参考runtime、实际backend拒绝和未运行三者分开，不能统一归一化为已等价。
+
+## 最小离线实验后的差异判定
+
+[本轮实际结果](pi-1.3.0-schema-ws-offline-validation.md)替代上述源码轮中已被实验覆盖的未知；旧报告／hash仍固定旧输入。RDF身份不增，七组仍OPEN。
+
+- RDF-09：metaschema-before-hook、grapheme双向差异、formats／multipleOf／metadata refs、regex not／if／patternProperties假成功现已复现。raw fixture／JS parse后输入／Pi normalized分层；native消费Pi normalized不是Rustnormalizer。self-ref在固定Node抛RangeError，Rust不复制栈溢出；root-correctness仍按既有原schema最终验证修正。jsonschema仅研究比较候选，需重开选型或先证明受控适配。
+- RDF-13/18：固定Node／Bun均实际可用headers overload与PMD；TW没有对应压缩能力，完整组合须补救／重选。125header的稳定差分取Bunexit0与nativeTooManyHeaders，不取Node交付后进程崩溃。参考Connection token-list本轮也拒绝，不能说native此行为已证明不对齐。Bun非法Accept／extension宽松、Node subprotocol异常不是应复制合同；native自身extension校验缺口仍须fail-closed。
+- RDF-18/20：独立研究图与Windows编译不是产品图／外部consumer／三平台证明；WS仅构造器调用形状，不是Pi完整provider。已废弃且隔离的Bun默认自动解析诊断不计离线证据，正式Bun使用--no-install。研究执行为add，产品测试／代码为none，没有关闭覆盖缺口。
+
+## 设计就绪与运行覆盖的独立状态
+
+[本轮设计决定](pi-1.3.0-design-readiness.md)取代旧轮“尚待重新选型”的状态；Schema、HTTP、TLS、Auth、telemetry与交付输入已有确定机制和维护合同。WS独立复审的长度／溢出／声明分配问题由最新纯内存探针及受控patch另证，旧80观察不能自动覆盖它。没有新增RDF身份，也没有将真实能力缺口改名为语言差异。
+
+RDF-18的依赖分发必须对普通外部consumer有效：受控源码／数据包采用独立registry身份与精确source/version/checksum；library lock、rootpatch或TEMP path不是发布方案。URL的10包隔离已实测，其他最终产物与发布、全部native/unsafe安全审查仍由既有V验收。原API/Context/telemetry责任不扩成新公共框架。
+
+RDF-09除原root验证修正外明确UTF8表示边界；RDF-18的EC key拒绝错误RS256标签是算法正确性选择，不能用其拒绝源支持的RSA。原生库保留chain/host/time、显式签名与协商约束，无bypass或全局provider/config禁用。所有七组产品coverage保持OPEN，研究实测通过不等于V通过。

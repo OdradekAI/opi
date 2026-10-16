@@ -1,0 +1,35 @@
+{
+  "evidence_kind": "parent tool console observation; no raw stream hash",
+  "scope": "this research crate only, no native link or execution",
+  "toolchain": "rustc1.99.1 Windows host",
+  "commands": [
+    {
+      "command": [
+        "cargo",
+        "check",
+        "--manifest-path",
+        "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness/runtime-author/crate/Cargo.toml",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "observed": "Finished dev profile"
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "--manifest-path",
+        "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-readiness/runtime-author/crate/Cargo.toml",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-apple-darwin"
+      ],
+      "exit": 0,
+      "observed": "Finished dev profile"
+    }
+  ]
+}

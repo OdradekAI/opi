@@ -1,0 +1,60 @@
+[
+  {
+    "stage": "dependency-preflight",
+    "command": "CARGO_TARGET_DIR=E:/opi/cargo-targets/opi-8abcf38f9871653e cargo build --offline --manifest-path <scratch>/rust/Cargo.toml",
+    "exit": 101,
+    "log": "cargo-preflight.txt",
+    "meaning": "missing cached data-encoding2.11.0; not backend behavior"
+  },
+  {
+    "stage": "partial-source-diagnostic",
+    "command": "cargo build --locked --offline --manifest-path <scratch>/rust/Cargo.toml (old partial extraction paths)",
+    "exit": 101,
+    "log": "cargo-build.txt",
+    "meaning": "missing archive members compat/handshake; re-extracted full archives, not backend behavior"
+  },
+  {
+    "stage": "final-build",
+    "command": "CARGO_TARGET_DIR=E:/opi/cargo-targets/opi-8abcf38f9871653e cargo build --locked --offline --manifest-path <scratch>/rust/Cargo.toml",
+    "exit": 0,
+    "log": "cargo-build-final.txt"
+  },
+  {
+    "stage": "node-bun-controlled-wire",
+    "command": "D:/nvm/v24.13.0/node.exe <scratch>/run-ws-probe.mjs D:/nvm/v24.13.0/node.exe D:/nvm/node_global/node_modules/bun/bin/bun.exe",
+    "exit": 0,
+    "log": "node-bun-run.txt",
+    "child_exit_counts": {
+      "0": 52,
+      "1": 2,
+      "3221226505": 6
+    },
+    "child_bun_no_install": true
+  },
+  {
+    "stage": "native-loopback",
+    "command": "D:/nvm/v24.13.0/node.exe <scratch>/run-ws-probe.mjs --rust E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+    "exit": 0,
+    "log": "rust-loopback-run.txt",
+    "all_15_children_exit_zero": true
+  },
+  {
+    "stage": "native-supplied-and-public-partial",
+    "command": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe --synthetic <scratch>/synthetic-cases.json",
+    "exit": 0,
+    "log": "rust-supplied-reader-results.jsonl"
+  },
+  {
+    "stage": "feature-graph",
+    "command": "cargo tree --locked --offline --manifest-path <scratch>/rust/Cargo.toml -e features",
+    "exit": 0,
+    "log": "cargo-features.txt"
+  },
+  {
+    "stage": "metadata",
+    "command": "cargo metadata --locked --offline --manifest-path <scratch>/rust/Cargo.toml --format-version 1",
+    "exit": 0,
+    "log": "cargo-metadata.json",
+    "meaning": "actual TW/TTW manifest paths checked against full extracted archives"
+  }
+]

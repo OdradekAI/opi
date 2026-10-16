@@ -1,0 +1,115 @@
+   Compiling serde_json v1.0.149
+   Compiling ratchet_deflate v1.2.1
+   Compiling ratchet_core v1.2.1 (C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws-memory\source\ratchet_core-1.2.1)
+error: unused import: `BufMut`
+  --> source\ratchet_core-1.2.1\src\framed\mod.rs:27:13
+   |
+27 | use bytes::{BufMut, Bytes, BytesMut};
+   |             ^^^^^^
+   |
+note: the lint level is defined here
+  --> source\ratchet_core-1.2.1\src\lib.rs:25:5
+   |
+25 |     unused_imports,
+   |     ^^^^^^^^^^^^^^
+
+error[E0599]: no method named `poll` found for struct `Pin<&mut impl Future<Output = Result<(FrameHeader, BytesMut), Error>>>` in the current scope
+   --> source\ratchet_core-1.2.1\src\framed\readiness_memory.rs:17:421
+    |
+ 17 | ...:from_waker(std::task::Waker::noop());assert!(future.as_mut().poll(&mut cx).is_pending());drop(future);assert_eq!(&framed.read_b...
+    |                                                                  ^^^^
+    |
+   ::: C:\Users\Luiz\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\future\future.rs:113:8
+    |
+113 |     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>;
+    |        ---- the method is available for `Pin<&mut impl futures::Future<Output = Result<(frame::FrameHeader, bytes::BytesMut), errors::Error>>>` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+    = note: the full name for the type has been written to 'E:/opi/cargo-targets/windows-direct\debug\deps\ratchet_core-bf9a0b525046780a.long-type-13752362843936498696.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+help: trait `Future` which provides `poll` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use futures::Future;
+    |
+help: there is a method `try_poll` with a similar name
+    |
+ 17 | #[test] fn readiness_memory_huge_declaration_pending_does_not_reserve_payload(){let mut bytes=vec![0x81,127];bytes.extend((1u64<<40).to_be_bytes());let mut io=PendingAfterHead{head:Cursor::new(bytes.clone()),calls:0};let mut framed=FramedRead::new(BytesMut::new());let mut future=Box::pin(framed.read_frame(&mut io,false,0x40,usize::MAX));let mut cx=Context::from_waker(std::task::Waker::noop());assert!(future.as_mut().try_poll(&mut cx).is_pending());drop(future);assert_eq!(&framed.read_buffer[..],&bytes);assert!(framed.read_buffer.capacity()<1usize<<40);assert_eq!(io.calls,2);}
+    |                                                                                                                                                                                                                                                                                                                                                                                                                                     ++++
+
+warning: field `0` is never read
+   --> source\ratchet_core-1.2.1\src\framed\mod.rs:102:16
+    |
+102 |     Incomplete(usize),
+    |     ---------- ^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+102 -     Incomplete(usize),
+102 +     Incomplete(()),
+    |
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> source\ratchet_core-1.2.1\src\ws.rs:477:26
+    |
+477 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<Result<(), Error>>;
+    |                          ^^^^^^^^^                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+477 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<'_, Result<(), Error>>;
+    |                                                                   +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> source\ratchet_core-1.2.1\src\ws.rs:480:17
+    |
+480 |     fn shutdown(&mut self) -> BoxFuture<Result<(), Error>>;
+    |                 ^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                 |
+    |                 the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+480 |     fn shutdown(&mut self) -> BoxFuture<'_, Result<(), Error>>;
+    |                                         +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> source\ratchet_core-1.2.1\src\ws.rs:487:26
+    |
+487 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<Result<(), Error>> {
+    |                          ^^^^^^^^^                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+487 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<'_, Result<(), Error>> {
+    |                                                                   +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> source\ratchet_core-1.2.1\src\ws.rs:499:17
+    |
+499 |     fn shutdown(&mut self) -> BoxFuture<Result<(), Error>> {
+    |                 ^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                 |
+    |                 the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+499 |     fn shutdown(&mut self) -> BoxFuture<'_, Result<(), Error>> {
+    |                                         +++
+
+warning: `ratchet_core` (lib) generated 5 warnings
+error: could not compile `ratchet_core` (lib) due to 1 previous error; 5 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `ratchet_core` (lib test) due to 2 previous errors

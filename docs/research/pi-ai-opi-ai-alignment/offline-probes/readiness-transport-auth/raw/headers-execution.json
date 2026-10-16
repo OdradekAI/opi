@@ -1,0 +1,40 @@
+[
+  {
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "D:/Luiz/Odradek/opi/docs/research/pi-ai-opi-ai-alignment/offline-probes/readiness-transport-auth/header-probe.mjs",
+      "E:/opi/cargo-targets/windows-direct/debug/opi-research-transport-auth.exe"
+    ],
+    "exit": 0,
+    "output": "headers-node-baseline.jsonl"
+  },
+  {
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "D:/Luiz/Odradek/opi/docs/research/pi-ai-opi-ai-alignment/offline-probes/readiness-transport-auth/header-probe.mjs",
+      "E:/opi/cargo-targets/windows-direct/debug/opi-research-transport-auth-patched.exe"
+    ],
+    "exit": 0,
+    "output": "headers-node-patched.jsonl"
+  },
+  {
+    "command": [
+      "D:/nvm/node_global/node_modules/bun/bin/bun.exe",
+      "--no-install",
+      "D:/Luiz/Odradek/opi/docs/research/pi-ai-opi-ai-alignment/offline-probes/readiness-transport-auth/header-probe.mjs",
+      "E:/opi/cargo-targets/windows-direct/debug/opi-research-transport-auth.exe"
+    ],
+    "exit": 0,
+    "output": "headers-bun-baseline.jsonl"
+  },
+  {
+    "command": [
+      "D:/nvm/node_global/node_modules/bun/bin/bun.exe",
+      "--no-install",
+      "D:/Luiz/Odradek/opi/docs/research/pi-ai-opi-ai-alignment/offline-probes/readiness-transport-auth/header-probe.mjs",
+      "E:/opi/cargo-targets/windows-direct/debug/opi-research-transport-auth-patched.exe"
+    ],
+    "exit": 0,
+    "output": "headers-bun-patched.jsonl"
+  }
+]

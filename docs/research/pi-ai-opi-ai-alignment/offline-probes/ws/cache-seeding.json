@@ -1,0 +1,17 @@
+[
+  {
+    "source": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-offline-dependency-inputs\\data-encoding-2.11.0.crate",
+    "destination": "C:\\Users\\Luiz\\.cargo\\registry\\cache\\index.crates.io-1949cf8c6b5b557f\\data-encoding-2.11.0.crate",
+    "sha256": "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
+  },
+  {
+    "source": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-offline-dependency-inputs\\utf-8-0.7.6.crate",
+    "destination": "C:\\Users\\Luiz\\.cargo\\registry\\cache\\index.crates.io-1949cf8c6b5b557f\\utf-8-0.7.6.crate",
+    "sha256": "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
+  },
+  {
+    "source": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-aws-backend-selection\\sha1-0.10.6.crate",
+    "destination": "C:\\Users\\Luiz\\.cargo\\registry\\cache\\index.crates.io-1949cf8c6b5b557f\\sha1-0.10.6.crate",
+    "sha256": "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
+  }
+]

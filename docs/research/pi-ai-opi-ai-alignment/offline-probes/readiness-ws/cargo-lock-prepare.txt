@@ -1,0 +1,7 @@
+    Updating crates.io index
+     Locking 94 packages to highest Rust 1.99.1 compatible versions
+      Adding bytes v1.11.1 (available: v1.12.1)
+      Adding generic-array v0.14.7 (available: v0.14.9)
+      Adding http v1.4.0 (available: v1.5.0)
+      Adding serde_json v1.0.149 (available: v1.0.154)
+      Adding tokio v1.52.3 (available: v1.53.3)

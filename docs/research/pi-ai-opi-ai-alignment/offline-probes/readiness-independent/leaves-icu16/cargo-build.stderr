@@ -1,0 +1,69 @@
+   Compiling icu_normalizer_data v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\icu_normalizer_data-2.0.0)
+   Compiling icu_properties_data v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\icu_properties_data-2.0.0)
+   Compiling ryu-js v1.0.2 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\ryu-js-1.0.2)
+   Compiling icu_locale_core v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\icu_locale_core-2.0.0)
+   Compiling icu_collections v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\icu_collections-2.0.0)
+warning: value assigned to `vp` is never read
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\ryu-js-1.0.2\src\f2s.rs:146:17
+    |
+146 |                 vp /= 10;
+    |                 ^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\icu_collections-2.0.0\src\char16trie\trie.rs:96:17
+   |
+96 |     pub fn iter(&self) -> Char16TrieIterator {
+   |                 ^^^^^     ^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |                 |
+   |                 the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+96 |     pub fn iter(&self) -> Char16TrieIterator<'_> {
+   |                                             ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\icu_collections-2.0.0\src\codepointtrie\cptrie.rs:933:24
+    |
+933 |     pub fn iter_ranges(&self) -> CodePointMapRangeIterator<T> {
+    |                        ^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                        |
+    |                        the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+933 |     pub fn iter_ranges(&self) -> CodePointMapRangeIterator<'_, T> {
+    |                                                            +++
+
+warning: `ryu-js` (lib) generated 1 warning
+warning: `icu_collections` (lib) generated 2 warnings (run `cargo fix --lib -p icu_collections` to apply 2 suggestions)
+   Compiling icu_provider v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\icu_provider-2.0.0)
+   Compiling icu_normalizer v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\icu_normalizer-2.0.0)
+warning: hiding a lifetime that's elided elsewhere is confusing
+    --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\icu_normalizer-2.0.0\src\lib.rs:2055:24
+     |
+2055 |     pub fn as_borrowed(&self) -> DecomposingNormalizerBorrowed {
+     |                        ^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+     |                        |
+     |                        the lifetime is elided here
+     |
+     = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+     = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+     |
+2055 |     pub fn as_borrowed(&self) -> DecomposingNormalizerBorrowed<'_> {
+     |                                                               ++++
+
+warning: `icu_normalizer` (lib) generated 1 warning (run `cargo fix --lib -p icu_normalizer` to apply 1 suggestion)
+   Compiling icu_properties v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\icu_properties-2.0.0)
+   Compiling idna_adapter v1.2.1 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\vendor\idna_adapter-1.2.1)
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling opi-pi130-schema-leaf16-probe v0.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-readiness-independent\leaves-icu16\leaves)
+    Finished `release` profile [optimized] target(s) in 5.26s

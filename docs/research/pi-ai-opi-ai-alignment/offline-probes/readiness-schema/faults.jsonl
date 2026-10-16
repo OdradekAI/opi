@@ -1,0 +1,11 @@
+{"id": "fault-bare", "schema": {"pattern": "__probe_runtime_failure__", "type": "string"}, "arguments": "a", "topic": "injected-fallible-control"}
+{"id": "fault-not", "schema": {"not": {"pattern": "__probe_runtime_failure__", "type": "string"}}, "arguments": "a", "topic": "injected-fallible-control"}
+{"id": "fault-if", "schema": {"if": {"pattern": "__probe_runtime_failure__", "type": "string"}, "then": false, "else": true}, "arguments": "a", "topic": "injected-fallible-control"}
+{"id": "fault-anyof", "schema": {"anyOf": [{"pattern": "__probe_runtime_failure__", "type": "string"}, true]}, "arguments": "a", "topic": "injected-fallible-control"}
+{"id": "fault-contains", "schema": {"contains": {"pattern": "__probe_runtime_failure__", "type": "string"}}, "arguments": ["a"], "topic": "injected-fallible-control"}
+{"id": "fault-patternproperties", "schema": {"patternProperties": {"__probe_runtime_failure__": true}}, "arguments": {"a": 1}, "topic": "injected-fallible-control"}
+{"id": "fault-additionalproperties", "schema": {"patternProperties": {"__probe_runtime_failure__": true}, "additionalProperties": false}, "arguments": {"a": 1}, "topic": "injected-fallible-control"}
+{"id": "fault-propertynames", "schema": {"propertyNames": {"pattern": "__probe_runtime_failure__", "type": "string"}}, "arguments": {"a": 1}, "topic": "injected-fallible-control"}
+{"id": "fault-allof", "schema": {"allOf": [{"pattern": "__probe_runtime_failure__", "type": "string"}, true]}, "arguments": "a", "topic": "injected-fallible-control"}
+{"id": "fault-unselected-anyof", "schema": {"anyOf": [true, {"pattern": "__probe_runtime_failure__", "type": "string"}]}, "arguments": "a", "topic": "injected-fallible-control"}
+{"id": "fault-unselected-if", "schema": {"if": false, "then": {"pattern": "__probe_runtime_failure__", "type": "string"}, "else": true}, "arguments": "a", "topic": "injected-fallible-control"}

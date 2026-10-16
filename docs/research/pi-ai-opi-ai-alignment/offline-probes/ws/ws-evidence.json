@@ -1,0 +1,1076 @@
+{
+  "status": "PARTIAL-EXECUTED-OPEN",
+  "counts": {
+    "global_constructor_rows": 60,
+    "native_loopback_rows": 15,
+    "native_deterministic_rows": 16,
+    "public_partial_codec_rows": 15
+  },
+  "candidate_decision": "Do not retain TW0.28 as the complete final WS backend unchanged. Handshake patch/reselection required; compression-capable maintained codec or justified upstream work needs review. No replacement selected.",
+  "controlled_behavior_network": "loopback127.0.0.1 only; Bun children --no-install; fake canaries; scrubbed child env",
+  "preparation_network": "Parent retrieved exact two static.crates.io archives before offline build. A separate initial Bun provider-import diagnostic lacked --no-install and created real workspace node_modules/.bun-cache containing partial-json0.1.7. Network origin for that auto-resolution was not instrumented; do not claim fully offline task. Cache quarantined by parent.",
+  "uncontrolled_bun_cache_inventory": "uncontrolled-cache-inventory.json",
+  "uncontrolled_bun_result_file": "runtime-and-provider-imports.json",
+  "controlled_public_provider_imports": "public-provider-no-install-imports.json",
+  "public_provider_end_to_end": "NOT RUN; controlled no-install module import fails missing partial-json0.1.7. Constructor tests do not prove public provider or SSE fallback.",
+  "future_open": [
+    "Pi complete public provider and fallback/WS wire integration",
+    "PMD parameter/fragment/control/context takeover corpus",
+    "owned handshake complete protocol validation and tail/cancel tests",
+    "exact read boundary sensitivity including >512 and coalesced-tail attack threshold",
+    "WS cache/recovery/cancellation and driver lifetime",
+    "effective product Cargo/platform/TLS/proxy boundaries"
+  ],
+  "rows": [
+    {
+      "case": "baseline-101-tail",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "connection-token-list",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-124",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "message-delivered-then-process-failed",
+      "exit": {
+        "code": 3221226505,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-125",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "message-delivered-then-process-failed",
+      "exit": {
+        "code": 3221226505,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-140",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "message-delivered-then-process-failed",
+      "exit": {
+        "code": 3221226505,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-16000",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-20000",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-66000",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "tail-text-70000",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "invalid-accept",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "unsolicited-extension",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "unsolicited-subprotocol",
+      "runtime": "node.exe",
+      "mode": "pi-headers",
+      "classification": "process-failed-no-result",
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "opened": null,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "pmd-response-plain-frame",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "pmd-response-compressed-frame",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "rsv1-without-extension",
+      "runtime": "node",
+      "mode": "pi-headers",
+      "classification": "closed-after-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "baseline-101-tail",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "connection-token-list",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-124",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "message-delivered-then-process-failed",
+      "exit": {
+        "code": 3221226505,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-125",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "message-delivered-then-process-failed",
+      "exit": {
+        "code": 3221226505,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-140",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "message-delivered-then-process-failed",
+      "exit": {
+        "code": 3221226505,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-16000",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-20000",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-66000",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "tail-text-70000",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "invalid-accept",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "unsolicited-extension",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "unsolicited-subprotocol",
+      "runtime": "node.exe",
+      "mode": "standard",
+      "classification": "process-failed-no-result",
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "opened": null,
+      "message_received": false,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "pmd-response-plain-frame",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "pmd-response-compressed-frame",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "rsv1-without-extension",
+      "runtime": "node",
+      "mode": "standard",
+      "classification": "closed-after-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": false,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "baseline-101-tail",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "connection-token-list",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-124",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-125",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-140",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-16000",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-20000",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-66000",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "tail-text-70000",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "invalid-accept",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "unsolicited-extension",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "unsolicited-subprotocol",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "pmd-response-plain-frame",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "pmd-response-compressed-frame",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "rsv1-without-extension",
+      "runtime": "bun",
+      "mode": "pi-headers",
+      "classification": "closed-after-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "baseline-101-tail",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "connection-token-list",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-124",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-125",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "headers-total-140",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-16000",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-20000",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "header-value-66000",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "tail-text-70000",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "invalid-accept",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "unsolicited-extension",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "unsolicited-subprotocol",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "rejected-before-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "pmd-response-plain-frame",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "pmd-response-compressed-frame",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "rsv1-without-extension",
+      "runtime": "bun",
+      "mode": "standard",
+      "classification": "closed-after-open",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": false,
+      "canary": null,
+      "pmd_offer": "permessage-deflate; client_max_window_bits"
+    },
+    {
+      "case": "baseline-101-tail",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "connection-token-list",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "headers-total-124",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "headers-total-125",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "headers-total-140",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "header-value-16000",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "header-value-20000",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "header-value-66000",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "tail-text-70000",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "invalid-accept",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "unsolicited-extension",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "unsolicited-subprotocol",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": false,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "pmd-response-plain-frame",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "message",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": true,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "pmd-response-compressed-frame",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "frame-error",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    },
+    {
+      "case": "rsv1-without-extension",
+      "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+      "mode": "rust-native",
+      "classification": "frame-error",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "opened": true,
+      "message_received": false,
+      "canary": "pi130-canary",
+      "pmd_offer": null
+    }
+  ]
+}

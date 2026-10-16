@@ -1,0 +1,85 @@
+{"id":"normal-valid","schema":{"type":"object","properties":{"n":{"type":"integer","minimum":1}},"required":["n"],"additionalProperties":false},"arguments":{"n":2},"topic":"control"}
+{"id":"normal-invalid","schema":{"type":"object","properties":{"n":{"type":"integer","minimum":1}},"required":["n"],"additionalProperties":false},"arguments":{"n":0},"topic":"control"}
+{"id":"mixed-pass","schema":{"type":"array","items":[{"const":1}],"prefixItems":[{"const":1},{"const":2}]},"arguments":[1,2],"topic":"keyword-mixing"}
+{"id":"mixed-fail","schema":{"type":"array","items":[{"const":1}],"prefixItems":[{"const":1},{"const":2}]},"arguments":[1,3],"topic":"keyword-mixing"}
+{"id":"malformed-minlength","schema":{"type":"string","minLength":"2"},"arguments":"","topic":"metaschema-admission"}
+{"id":"grapheme-max-combining","schema":{"type":"string","maxLength":1},"arguments":"é","topic":"length"}
+{"id":"grapheme-min-combining","schema":{"type":"string","minLength":2},"arguments":"é","topic":"length"}
+{"id":"grapheme-max-zwj","schema":{"type":"string","maxLength":1},"arguments":"👩‍💻","topic":"length"}
+{"id":"grapheme-max-flag","schema":{"type":"string","maxLength":1},"arguments":"🇨🇳","topic":"length"}
+{"id":"format-unknown","schema":{"type":"string","format":"pi-no-such-format"},"arguments":"bad","topic":"formats"}
+{"id":"format-date-time-positive","schema":{"type":"string","format":"date-time"},"arguments":"2026-10-16T10:20:30Z","topic":"formats"}
+{"id":"format-date-time-negative","schema":{"type":"string","format":"date-time"},"arguments":"not-date","topic":"formats"}
+{"id":"format-date-positive","schema":{"type":"string","format":"date"},"arguments":"2026-10-16","topic":"formats"}
+{"id":"format-date-negative","schema":{"type":"string","format":"date"},"arguments":"2026-99-99","topic":"formats"}
+{"id":"format-duration-positive","schema":{"type":"string","format":"duration"},"arguments":"P1D","topic":"formats"}
+{"id":"format-duration-negative","schema":{"type":"string","format":"duration"},"arguments":"bad","topic":"formats"}
+{"id":"format-email-positive","schema":{"type":"string","format":"email"},"arguments":"a@example.test","topic":"formats"}
+{"id":"format-email-negative","schema":{"type":"string","format":"email"},"arguments":"bad","topic":"formats"}
+{"id":"format-hostname-positive","schema":{"type":"string","format":"hostname"},"arguments":"example.test","topic":"formats"}
+{"id":"format-hostname-negative","schema":{"type":"string","format":"hostname"},"arguments":"bad name","topic":"formats"}
+{"id":"format-idn-email-positive","schema":{"type":"string","format":"idn-email"},"arguments":"a@example.test","topic":"formats"}
+{"id":"format-idn-email-negative","schema":{"type":"string","format":"idn-email"},"arguments":"bad","topic":"formats"}
+{"id":"format-idn-hostname-positive","schema":{"type":"string","format":"idn-hostname"},"arguments":"example.test","topic":"formats"}
+{"id":"format-idn-hostname-negative","schema":{"type":"string","format":"idn-hostname"},"arguments":"bad name","topic":"formats"}
+{"id":"format-ipv4-positive","schema":{"type":"string","format":"ipv4"},"arguments":"127.0.0.1","topic":"formats"}
+{"id":"format-ipv4-negative","schema":{"type":"string","format":"ipv4"},"arguments":"999.1.1.1","topic":"formats"}
+{"id":"format-ipv6-positive","schema":{"type":"string","format":"ipv6"},"arguments":"::1","topic":"formats"}
+{"id":"format-ipv6-negative","schema":{"type":"string","format":"ipv6"},"arguments":"bad","topic":"formats"}
+{"id":"format-iri-reference-positive","schema":{"type":"string","format":"iri-reference"},"arguments":"/a","topic":"formats"}
+{"id":"format-iri-reference-negative","schema":{"type":"string","format":"iri-reference"},"arguments":"a b","topic":"formats"}
+{"id":"format-iri-positive","schema":{"type":"string","format":"iri"},"arguments":"https://example.test/a","topic":"formats"}
+{"id":"format-iri-negative","schema":{"type":"string","format":"iri"},"arguments":"a b","topic":"formats"}
+{"id":"format-json-pointer-uri-fragment-positive","schema":{"type":"string","format":"json-pointer-uri-fragment"},"arguments":"#/a","topic":"formats"}
+{"id":"format-json-pointer-uri-fragment-negative","schema":{"type":"string","format":"json-pointer-uri-fragment"},"arguments":"bad","topic":"formats"}
+{"id":"format-json-pointer-positive","schema":{"type":"string","format":"json-pointer"},"arguments":"/a","topic":"formats"}
+{"id":"format-json-pointer-negative","schema":{"type":"string","format":"json-pointer"},"arguments":"bad","topic":"formats"}
+{"id":"format-regex-positive","schema":{"type":"string","format":"regex"},"arguments":"^a$","topic":"formats"}
+{"id":"format-regex-negative","schema":{"type":"string","format":"regex"},"arguments":"[","topic":"formats"}
+{"id":"format-relative-json-pointer-positive","schema":{"type":"string","format":"relative-json-pointer"},"arguments":"0/a","topic":"formats"}
+{"id":"format-relative-json-pointer-negative","schema":{"type":"string","format":"relative-json-pointer"},"arguments":"bad","topic":"formats"}
+{"id":"format-time-positive","schema":{"type":"string","format":"time"},"arguments":"10:20:30Z","topic":"formats"}
+{"id":"format-time-negative","schema":{"type":"string","format":"time"},"arguments":"99:99:99Z","topic":"formats"}
+{"id":"format-uri-reference-positive","schema":{"type":"string","format":"uri-reference"},"arguments":"/a","topic":"formats"}
+{"id":"format-uri-reference-negative","schema":{"type":"string","format":"uri-reference"},"arguments":"a b","topic":"formats"}
+{"id":"format-uri-template-positive","schema":{"type":"string","format":"uri-template"},"arguments":"https://example.test/{id}","topic":"formats"}
+{"id":"format-uri-template-negative","schema":{"type":"string","format":"uri-template"},"arguments":"http://example.test/{","topic":"formats"}
+{"id":"format-uri-positive","schema":{"type":"string","format":"uri"},"arguments":"https://example.test/a","topic":"formats"}
+{"id":"format-uri-negative","schema":{"type":"string","format":"uri"},"arguments":"a b","topic":"formats"}
+{"id":"format-url-positive","schema":{"type":"string","format":"url"},"arguments":"https://example.test/a","topic":"formats"}
+{"id":"format-url-negative","schema":{"type":"string","format":"url"},"arguments":"bad","topic":"formats"}
+{"id":"format-uuid-positive","schema":{"type":"string","format":"uuid"},"arguments":"123e4567-e89b-12d3-a456-426614174000","topic":"formats"}
+{"id":"format-uuid-negative","schema":{"type":"string","format":"uuid"},"arguments":"bad","topic":"formats"}
+{"id":"content-base64","schema":{"type":"string","contentEncoding":"base64"},"arguments":"%","topic":"content"}
+{"id":"content-json","schema":{"type":"string","contentMediaType":"application/json"},"arguments":"not-json","topic":"content"}
+{"id":"local-ref-valid","schema":{"$defs":{"n":{"type":"integer","minimum":1}},"$ref":"#/$defs/n"},"arguments":2,"topic":"refs"}
+{"id":"sibling-ref-valid","schema":{"$defs":{"n":{"type":"integer"}},"$ref":"#/$defs/n","minimum":1},"arguments":2,"topic":"refs"}
+{"id":"local-ref-invalid","schema":{"$defs":{"n":{"type":"integer","minimum":1}},"$ref":"#/$defs/n"},"arguments":0,"topic":"refs"}
+{"id":"sibling-ref-invalid","schema":{"$defs":{"n":{"type":"integer"}},"$ref":"#/$defs/n","minimum":1},"arguments":0,"topic":"refs"}
+{"id":"unresolved-ref","schema":{"$ref":"urn:probe:absent"},"arguments":1,"topic":"refs"}
+{"id":"metadata-id-ref","schema":{"$id":"https://offline.invalid/root","x-meta":{"$id":"https://offline.invalid/target","type":"integer","minimum":2},"$ref":"https://offline.invalid/target"},"arguments":3,"topic":"refs"}
+{"id":"metadata-id-ref-invalid","schema":{"$id":"https://offline.invalid/root","x-meta":{"$id":"https://offline.invalid/target","type":"integer","minimum":2},"$ref":"https://offline.invalid/target"},"arguments":0,"topic":"refs"}
+{"id":"regex-u1680","schema":{"type":"string","pattern":"^\\s$"},"arguments":" ","topic":"regex"}
+{"id":"normalize-integer-hex","schema":{"type":"object","properties":{"n":{"type":"integer"}},"required":["n"]},"arguments":{"n":"0x10"},"topic":"normalization"}
+{"id":"normalize-integer-null","schema":{"type":"object","properties":{"n":{"type":"integer"}},"required":["n"]},"arguments":{"n":null},"topic":"normalization"}
+{"id":"normalize-optional-null","schema":{"type":"object","properties":{"s":{"type":"string"}}},"arguments":{"s":null},"topic":"normalization"}
+{"id":"normalize-string-union","schema":{"type":"object","properties":{"n":{"type":["integer","string"]}}},"arguments":{"n":"12"},"topic":"normalization"}
+{"id":"normalize-anyof-string","schema":{"type":"object","properties":{"n":{"anyOf":[{"type":"integer"},{"type":"string"}]}}},"arguments":{"n":"12"},"topic":"normalization"}
+{"id":"normalize-number-string","schema":{"type":"object","properties":{"s":{"type":"string"}},"required":["s"]},"arguments":{"s":1e+21},"topic":"normalization"}
+{"id":"normalize-large-integer","schema":{"type":"object","properties":{"n":{"type":"integer"}},"required":["n"]},"arguments":{"n":9007199254740993},"topic":"normalization"}
+{"id":"arguments-error","schema":{"type":"object"},"arguments":{},"topic":"argumentsError","argumentsError":"probe parse failed"}
+{"id":"arguments-error-empty","schema":{"type":"object"},"arguments":{},"topic":"argumentsError","argumentsError":""}
+{"id":"root-correctness","schema":{"type":"integer","minimum":10},"arguments":"2","topic":"RDF09"}
+{"id":"root-valid-coercion","schema":{"type":"integer","minimum":10},"arguments":"12","topic":"normalization"}
+{"id":"multipleof-decimal","schema":{"type":"number","multipleOf":0.1},"arguments":0.3,"topic":"numbers"}
+{"id":"self-ref","schema":{"$ref":"#"},"arguments":1,"topic":"recursion","containment":true}
+{"id":"regex-backtrack-bare","schema":{"type":"string","pattern":"(?:(a|b|ab)*(?=c)|.*)"},"arguments":"abababababababababababababababababababab","topic":"regex-runtime-error","containment":true}
+{"id":"regex-backtrack-not","schema":{"not":{"type":"string","pattern":"(?:(a|b|ab)*(?=c)|.*)"}},"arguments":"abababababababababababababababababababab","topic":"regex-runtime-error","containment":true}
+{"id":"regex-backtrack-anyof","schema":{"anyOf":[{"type":"string","pattern":"(?:(a|b|ab)*(?=c)|.*)"},{"const":"sentinel"}]},"arguments":"abababababababababababababababababababab","topic":"regex-runtime-error","containment":true}
+{"id":"regex-backtrack-if","schema":{"if":{"type":"string","pattern":"(?:(a|b|ab)*(?=c)|.*)"},"then":false,"else":true},"arguments":"abababababababababababababababababababab","topic":"regex-runtime-error","containment":true}
+{"id":"regex-backtrack-contains","schema":{"type":"array","contains":{"type":"string","pattern":"(?:(a|b|ab)*(?=c)|.*)"}},"arguments":["abababababababababababababababababababab"],"topic":"regex-runtime-error","containment":true}
+{"id":"regex-backtrack-patternproperties","schema":{"type":"object","patternProperties":{"(?:(a|b|ab)*(?=c)|.*)":{"type":"integer"}}},"arguments":{"abababababababababababababababababababab":"bad"},"topic":"regex-runtime-error","containment":true}
+{"id":"regex-backtrack-additionalproperties","schema":{"type":"object","patternProperties":{"(?:(a|b|ab)*(?=c)|.*)":true},"additionalProperties":false},"arguments":{"abababababababababababababababababababab":1},"topic":"regex-runtime-error","containment":true}
+{"id":"regex-backtrack-propertynames","schema":{"type":"object","propertyNames":{"type":"string","pattern":"(?:(a|b|ab)*(?=c)|.*)"}},"arguments":{"abababababababababababababababababababab":1},"topic":"regex-runtime-error","containment":true}
+{"id":"regex-backtrack-unselected-anyof","schema":{"anyOf":[{"const":"abababababababababababababababababababab"},{"type":"string","pattern":"(?:(a|b|ab)*(?=c)|.*)"}]},"arguments":"abababababababababababababababababababab","topic":"regex-runtime-error","containment":true}
+{"id":"regex-backtrack-allof","schema":{"allOf":[{"type":"string","pattern":"(?:(a|b|ab)*(?=c)|.*)"},{}]},"arguments":"abababababababababababababababababababab","topic":"regex-runtime-error","containment":true}

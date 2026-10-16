@@ -1,0 +1,35 @@
+[
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-readiness-ws-memory-final-replay\\Cargo.toml",
+      "--workspace",
+      "--lib",
+      "readiness_memory",
+      "--",
+      "--nocapture"
+    ],
+    "exit": 0,
+    "expectedExit": 0
+  },
+  {
+    "command": [
+      "D:\\Users\\Luiz\\anaconda3\\python.exe",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-readiness-ws-memory-final-replay\\summary-fixture\\summarize.py"
+    ],
+    "exit": 0,
+    "expectedExit": 0
+  },
+  {
+    "command": [
+      "D:\\Users\\Luiz\\anaconda3\\python.exe",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-readiness-ws-memory-final-replay\\summary-fixture\\summarize.py"
+    ],
+    "exit": 1,
+    "expectedExit": 1
+  }
+]

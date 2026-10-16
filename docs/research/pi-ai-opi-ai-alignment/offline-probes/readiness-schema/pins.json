@@ -1,0 +1,18 @@
+{
+  "node_sha256": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11",
+  "pi_validation_sha256": "e4b8029c184bd6df830e0ee2cb7034a39d49b5ecb8c068c26af9564c20246594",
+  "typebox_tree_sha256": "ebf39b1441f59a084233243d5e49ec9d4fdcaa4521417a883dfe51a2118e271d",
+  "regress_archive_sha256": "32eef8b209c3c1c15dbad02c1f30f9539f00dc7253e0cbcdaae442a50a09d7c1",
+  "assets": {
+    "rust/Cargo.lock": "0de0c0786cfcd00d5beb632af6844e70bc1410e79dc73725363d2d6f9df093a0",
+    "rust/src/main.rs": "4c82667aeb44a887057a7c99654ecefcce968d2b263e9fec0290df266ef99325",
+    "cases.jsonl": "05129e390e1cd2491d23a9604fca7e02eb7aa0c289cb940b68277c30281b4f01",
+    "faults.jsonl": "fda3017ca6deea2aa536f7bd7a9586cd440340c386cad7a1f0a2467fbd6fe2e9",
+    "loader.mjs": "6f191edda4d91fce9abf7597522b5154d069d00d324e5b4e5a26aaa2c5d92b29",
+    "pi-runner.mjs": "cd73bee1eb0653bf9c43fff11cbbd5a9db9b2aab4fff2dcb84e2619831884c43",
+    "rust/Cargo.toml.template": "03d65cb7701e955b8e5d363834cbca8be7678f4bfaeda447bbc846c155d48055"
+  },
+  "unicode16_table_sha256": "475cb03589f0deb859b9a2ccfb34e3f33026a1e89500524024ce575a135e5daf",
+  "rustc_vv_sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8",
+  "cargo_vv_sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a"
+}

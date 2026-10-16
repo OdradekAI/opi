@@ -1,0 +1,434 @@
+{
+  "source_files": [
+    {
+      "path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/utils/node-http-proxy.ts",
+      "bytes": 4175,
+      "sha256": "a13ab6556d127e6fb097147b209c68e47aed8e724e2774e7dd7df21ff91d9d5b",
+      "lines": 161
+    },
+    {
+      "path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/utils/provider-env.ts",
+      "bytes": 1718,
+      "sha256": "3829251ae0674cef7ca09800cee9f46d4e305770129b72b822ea2f6f85efe675",
+      "lines": 52
+    },
+    {
+      "path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/api/bedrock-converse-stream.ts",
+      "bytes": 51545,
+      "sha256": "476ed6f426f50532c922d1dcaa4b01f8aeca43b618483c061e764f3330c2b672",
+      "lines": 1416
+    },
+    {
+      "path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/api/google-vertex.ts",
+      "bytes": 17225,
+      "sha256": "774b28c7c6c38d07bdbbdb8aceecdca1dfe8a1df79915eeee96c48694d08ce63",
+      "lines": 554
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/gcp-metadata/build/src/index.js",
+      "bytes": 14718,
+      "sha256": "d804f162e0bcdffc926e7365af3445a0d483317c128ca7ea7044aced86ab9e27",
+      "lines": 402
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/gcp-metadata/build/src/gcp-residency.js",
+      "bytes": 4422,
+      "sha256": "dccad6df8c5eda83d1e6d4db2a2b9affc07e0d3ef68fa45818cf4b8823f359fe",
+      "lines": 114
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/gaxios/build/cjs/src/retry.js",
+      "bytes": 6259,
+      "sha256": "6f9a99189913f2856531b11ff40ca627d1021d21fc79a5d3f0a48e348d529034",
+      "lines": 165
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/gaxios/build/cjs/src/gaxios.js",
+      "bytes": 22374,
+      "sha256": "4065e85b1f0217d95b6fc030961bc225a40ec983505af08c06f21867846eaf2e",
+      "lines": 564
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/node-fetch/src/index.js",
+      "bytes": 12908,
+      "sha256": "e0a76062a308610126191bb288925470a2fb84fbbe5c913b444165d64fd9c4b5",
+      "lines": 417
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/node-fetch/src/request.js",
+      "bytes": 8619,
+      "sha256": "4a57dfc72f98d37646d7d0b464ad6157700fc875116618cb7af40238d0cbae4c",
+      "lines": 313
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/google-auth-library/build/src/gtoken/jwsSign.js",
+      "bytes": 1854,
+      "sha256": "5f09dea29ba730e55c0e1f2f3ddb698449aee342bbaacd76b483debb8277499a",
+      "lines": 54
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/google-auth-library/build/src/auth/googleauth.js",
+      "bytes": 36374,
+      "sha256": "206721dbc822433cf069bba86aa3b60702f4ca9d74b628666d7eab3dba1a3016",
+      "lines": 899
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/google-auth-library/build/src/auth/pluggable-auth-client.js",
+      "bytes": 10002,
+      "sha256": "9f0e1b93d7bd9a9d7989a2ef8c1a8ae75b82ad04e54da86d40bf88144e9d3f86",
+      "lines": 220
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/google-auth-library/build/src/auth/pluggable-auth-handler.js",
+      "bytes": 7260,
+      "sha256": "aafa525c53e918d155a6abbb57e90524c0e2579903f28396cbd99931ac64f34e",
+      "lines": 174
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/google-auth-library/build/src/auth/certificatesubjecttokensupplier.js",
+      "bytes": 10619,
+      "sha256": "e29f8fb8464dc88f91eff319df7661f215b50be955c9e50588c0605b5f261553",
+      "lines": 223
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/google-auth-library/build/src/auth/identitypoolclient.js",
+      "bytes": 6775,
+      "sha256": "4a0f123357c45e1b5186afc432b7f2128ffe49cebefca9434b00f9d502d282b0",
+      "lines": 131
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/google-auth-library/build/src/auth/computeclient.js",
+      "bytes": 4497,
+      "sha256": "daf665758158bbb211056070f194536441a717310bac858edd0d1847bb195c95",
+      "lines": 118
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/jws/lib/sign-stream.js",
+      "bytes": 2416,
+      "sha256": "75bb778ed57146e9ee1b3cb0235bbbf78c17bfc1e85d34903a9067b41207b7e5",
+      "lines": 83
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm/node_modules/jwa/index.js",
+      "bytes": 6800,
+      "sha256": "44700c7211635c48bafc0048c080d5c3d44eb3186a57db987e5f00370b3f68b4",
+      "lines": 266
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/crypto/context.c",
+      "bytes": 13816,
+      "sha256": "8bd9ec7427b3a1c258b21e7e3ff33ea283b263d4c1375f2df18e2a719855fdec",
+      "lines": 510
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/crypto/init.c",
+      "bytes": 21718,
+      "sha256": "2d503b165ebc52ca740393bd8599afa35cee18733c01bb580d924e0bd3272a0d",
+      "lines": 722
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/crypto/provider_conf.c",
+      "bytes": 12023,
+      "sha256": "0082883f07f499493883ed3f431dd4f460f896cc10d726cdd61f3eb918e42c62",
+      "lines": 382
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/crypto/provider_core.c",
+      "bytes": 70050,
+      "sha256": "50ba81a4c769d83150114b7b73e54bd5e9604b72c29533fbe47f45ac237b2a13",
+      "lines": 2180
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/crypto/provider_predefined.c",
+      "bytes": 1120,
+      "sha256": "f2da5d6fdc754abfe0525d4978183fa98943786185b573c33fd0b694e8d4233e",
+      "lines": 32
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/providers/defltprov.c",
+      "bytes": 25556,
+      "sha256": "c836579a0ed1feade407da78852bab1eb0f4730d5c34ab84afcfdb23ff900569",
+      "lines": 596
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/crypto/encode_decode/decoder_lib.c",
+      "bytes": 34691,
+      "sha256": "b59a582c3f8c68732ab8e2d450ca5d895568ba6bd2cdb23b092979e769fb6e09",
+      "lines": 1000
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/crypto/encode_decode/decoder_pkey.c",
+      "bytes": 16294,
+      "sha256": "6feb0e274a69a16929ad2c54568a938914f522cfcd1aab853d77d255383fda31",
+      "lines": 466
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/crypto/evp/digest.c",
+      "bytes": 33124,
+      "sha256": "fd162ac74d73d6df305f516367eb91750884ea962fdec9f4c1dfd6ad2428c534",
+      "lines": 1108
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/crypto/evp/m_sigver.c",
+      "bytes": 23386,
+      "sha256": "339d88397e67433dfece7a9293d814e4162df80ccaae1c63eaff56735b2886cb",
+      "lines": 683
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/crypto/pem/pem_pkey.c",
+      "bytes": 14282,
+      "sha256": "874f00b5d1bfa9ad9c336ffd6cc84625f5850832477f2719ef62f0b9dcac7015",
+      "lines": 449
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/crypto/rsa/rsa_ossl.c",
+      "bytes": 30127,
+      "sha256": "b23a00514bdff9dd26f7e5f759f21ca2b8245f78941e542abcbf0aea21b4c6b8",
+      "lines": 1000
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.0.15/providers/implementations/signature/rsa_sig.c",
+      "bytes": 50023,
+      "sha256": "f978d7502f365d6ce1f64fc452712c2162c5f941fe041319331a9c1f1e242274",
+      "lines": 1478
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/crypto/context.c",
+      "bytes": 17369,
+      "sha256": "1282e64546599154f698de6e7f7f8ed41383ec892aa8cb2cf730b6d6640307fb",
+      "lines": 681
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/crypto/init.c",
+      "bytes": 23010,
+      "sha256": "1aad873292c7f41a1e944e7d4ccab89a632f5a03aa0c04cb8f98d0f2c324c62e",
+      "lines": 764
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/crypto/provider_conf.c",
+      "bytes": 13485,
+      "sha256": "d879604ec3843f1f8e24d5f9271f2cccf34eadd0c86344c4b8d785ffe424af9b",
+      "lines": 430
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/crypto/provider_core.c",
+      "bytes": 88637,
+      "sha256": "fe706e9a784b4cacfe6848d9691904926956c1d8875ec6451abe4f02ae672fc3",
+      "lines": 2667
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/crypto/provider_predefined.c",
+      "bytes": 1120,
+      "sha256": "f2da5d6fdc754abfe0525d4978183fa98943786185b573c33fd0b694e8d4233e",
+      "lines": 32
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/providers/defltprov.c",
+      "bytes": 36491,
+      "sha256": "19bae7a8aa4a9352f5fe29bcd9a317c7dbbe4155d06a71e77de8b25e3eadf025",
+      "lines": 778
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/crypto/encode_decode/decoder_lib.c",
+      "bytes": 39726,
+      "sha256": "4b45911a422eae693c2aeae81d4af26fe781db2ff3800b511ccc9dac73a3d26a",
+      "lines": 1139
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/crypto/encode_decode/decoder_pkey.c",
+      "bytes": 32101,
+      "sha256": "158da4f4080f1a8ac72827072a6c32650576540087be689ce4f87e4d1f62053d",
+      "lines": 954
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/crypto/evp/digest.c",
+      "bytes": 37471,
+      "sha256": "bb966d21a82a18be939d4eb445a66be88389bdf9d400dd1ad78defc15bcf0594",
+      "lines": 1265
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/crypto/evp/m_sigver.c",
+      "bytes": 27403,
+      "sha256": "e57bba82c20bfb3f905716f232ecf9b5f1304ff90b4492bfa61c930fc2d935bc",
+      "lines": 794
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/crypto/pem/pem_pkey.c",
+      "bytes": 14281,
+      "sha256": "2145d71559c6c0fe9b0850a1cffbd7f749059bd853c6d530b393859f16bab53e",
+      "lines": 449
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/crypto/rsa/rsa_ossl.c",
+      "bytes": 36410,
+      "sha256": "1457ff2dbcef1f555625c86c809b99f7ec5cdf41d8b03e503b02fa2e44d5fba0",
+      "lines": 1211
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-native-source/openssl-3.5.4/providers/implementations/signature/rsa_sig.c",
+      "bytes": 77480,
+      "sha256": "175caa0d85ff65c52a8ddcff3acc50b5e01fd8763b6079fd3b6ddc64c50708fd",
+      "lines": 2144
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/reqwest-0.12.28/src/async_impl/client.rs",
+      "bytes": 113662,
+      "sha256": "8c30b009838be2126b90344ef97fb6141ac8bdf695f4e7bb00a3052a707d9b5c",
+      "lines": 3144
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/reqwest-0.12.28/src/redirect.rs",
+      "bytes": 13191,
+      "sha256": "b8a618396c45884e5557314a0fb99ec01c1868b77132e2cc81aa0a4ac4831c06",
+      "lines": 433
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.9.0/src/proto/h1/role.rs",
+      "bytes": 110002,
+      "sha256": "c13307092a033ae9696893c83f27f75f3dbe5da50d17a2c58cd8e98ebfbf1917",
+      "lines": 3173
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.9.0/src/proto/h1/decode.rs",
+      "bytes": 42170,
+      "sha256": "7339f38e4fc2fc4dec82692e6495bf655d4e6a0d3e50c58cf0e7511a9b3749a9",
+      "lines": 1254
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.9.0/src/proto/h1/io.rs",
+      "bytes": 30995,
+      "sha256": "d83c99b59dc2c672b45eecc83174948ce412589bad63efeff97b4e8972ccb2cd",
+      "lines": 967
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hyper-1.9.0/src/client/conn/http1.rs",
+      "bytes": 21966,
+      "sha256": "7f5b1ebf50dd77fef03579f0327c2f12074eeaa688334d6eae6b3267862ab6d4",
+      "lines": 611
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/rsa/keypair.rs",
+      "bytes": 25991,
+      "sha256": "b241467ef86cb3b050ea5b7f86f8fd3ac65cafcadeac09b021b8dd213636dfd5",
+      "lines": 685
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-source/openssl-sys-0.9.117/src/handwritten/crypto.rs",
+      "bytes": 2110,
+      "sha256": "170f6989554ee17d6c76839e2d521967045b34e9cc5c9bb376bff8015d6f7aef",
+      "lines": 76
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-source/openssl-sys-0.9.117/src/handwritten/decoder.rs",
+      "bytes": 1759,
+      "sha256": "1ee2e45f1c7c8e6231a4d12ad472a9f8c81af4e3d0aa303714caa2db1408f36e",
+      "lines": 53
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-source/openssl-sys-0.9.117/src/handwritten/evp.rs",
+      "bytes": 32825,
+      "sha256": "3466d21543d4db40db640f18b4e6109328330974091d858bfdc61dc2c06e8df4",
+      "lines": 883
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-source/openssl-sys-0.9.117/src/handwritten/provider.rs",
+      "bytes": 599,
+      "sha256": "8f648bbb43708cb8a77910c568ad3cc758021c311cdd046bf79da2cdf3b520fd",
+      "lines": 20
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-source/openssl-sys-0.9.117/Cargo.toml",
+      "bytes": 1841,
+      "sha256": "0398fda9f72001a6d7f9dad48cf7c04a8e84161aa8a2342fc183247f90190085",
+      "lines": 87
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/openssl-source/openssl-sys-0.9.117/src/lib.rs",
+      "bytes": 5358,
+      "sha256": "4f863e7c8506ecfd412333d50bbed037ada503ab93cdaf84da9ecac512f64967",
+      "lines": 204
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@aws-sdk__credential-provider-node-3.972.82/package/dist-cjs/index.js",
+      "bytes": 7182,
+      "sha256": "afd158eca6193ed8d8a469013790b9ffa3bdcdea7f6116efda93705f67c6335c",
+      "lines": 166
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@aws-sdk__credential-provider-ini-3.973.15/package/dist-cjs/index.js",
+      "bytes": 11576,
+      "sha256": "2d975f8114b17e1e96eea2735c7271f735f08bab35dc922384cd15735bbdd085",
+      "lines": 229
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@aws-sdk__credential-provider-process-3.972.70/package/dist-cjs/index.js",
+      "bytes": 3257,
+      "sha256": "459dccd69ac50b0cf33d00398dd6b18dec18521d8ed6bc359121e1a96115ea4d",
+      "lines": 76
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@smithy__core-3.33.3/package/dist-cjs/submodules/retry/index.js",
+      "bytes": 33469,
+      "sha256": "e00b49dad152a3ff9b3b59ab990341adaf7a1213d1801fdc191982e76610feb3",
+      "lines": 847
+    },
+    {
+      "path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@smithy__credential-provider-imds-4.5.2/package/dist-cjs/index.js",
+      "bytes": 15218,
+      "sha256": "b26d7faec162460d7416db210743260b3bd1a6a3f3c565216feb75e9123d5cb7",
+      "lines": 370
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/src/crypto/mod.rs",
+      "bytes": 30074,
+      "sha256": "46cb1c195e52824c98ea11129c93cbab03d06fb0c3a6daed81a3bab6f9f79e12",
+      "lines": 760
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/src/crypto/signer.rs",
+      "bytes": 8958,
+      "sha256": "b097775c0b30d507255824a8ac65d8d7440e723b16a9e91036e0d096a3d7b071",
+      "lines": 233
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/src/crypto/ring/sign.rs",
+      "bytes": 26736,
+      "sha256": "6bb88454d5751ce1262d68c670ba41a52f88cd152b75d0740743ef603a43f650",
+      "lines": 822
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/src/webpki/verify.rs",
+      "bytes": 10670,
+      "sha256": "fcbc90dc30793cbe7f15f363fda793d6e08a132a82d003c1f9e88019a6e1f2b4",
+      "lines": 289
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.14.1/src/lib.rs",
+      "bytes": 38438,
+      "sha256": "6eb21656ce495593f1e108a112bced740ad895bfc39c66542caca8ca0293d248",
+      "lines": 1156
+    },
+    {
+      "path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.14.1/src/alg_id.rs",
+      "bytes": 10410,
+      "sha256": "16ad8158a1d9ac992262ba0dd6c63dcefa64930de4d1c0ce229d7e78ce7ad8b3",
+      "lines": 395
+    }
+  ],
+  "hyper_archive": {
+    "sha256": "6299f016b246a94207e63da54dbe807655bf9e00044f73ded42c3ac5305fbcca",
+    "file_members_byte_equal": 69
+  },
+  "node_executable": {
+    "path": "D:/nvm/v24.13.0/node.exe",
+    "sha256": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11"
+  },
+  "bun_executable": {
+    "path": "D:/nvm/node_global/node_modules/bun/bin/bun.exe",
+    "sha256": "0025a8bc31f136745d102212ddb192a1876c721b71deeb43123d18375fcf030c"
+  },
+  "crypto_dll": {
+    "path": "D:/Users/Luiz/anaconda3/Library/bin/libcrypto-3-x64.dll",
+    "sha256": "630b0735e0a3ec5824084698a78d2043326bc133a5d579aa0f41cf0b5a92ddb6"
+  }
+}

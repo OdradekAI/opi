@@ -1,0 +1,10 @@
+{
+  "encodingBuildFailure": "cargo-build-failed-encoding.txt",
+  "discardedStaleBinaryRun": {
+    "fileName": "results-discarded-stale-binary-after-encoding-failure.json",
+    "sha256": "258d57b91bb06a4f9e12058efbf8ff19fdd1b0bb9b0828ccd173e1b1309d77c9",
+    "bytes": 2589835,
+    "reason": "Earlier PowerShell command did not fail-closed after source encoding build error; all its observations excluded and full final 80 rerun after successful UTF-8 source build."
+  },
+  "initialCallerError": "Cleared partial accumulated message read-buffer on Ping; corrected before final runs; original mixed-state library error separately reproduced with correct caller."
+}

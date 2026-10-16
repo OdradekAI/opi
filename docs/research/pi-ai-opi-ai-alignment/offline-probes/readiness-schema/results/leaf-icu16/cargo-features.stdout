@@ -1,0 +1,207 @@
+opi-pi130-schema-leaf16-probe v0.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\leaves)
+├── icu_collections v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_collections-2.0.0)
+│   ├── displaydoc v0.2.5 (proc-macro)
+│   │   ├── proc-macro2 feature "default"
+│   │   │   ├── proc-macro2 v1.0.106
+│   │   │   │   └── unicode-ident feature "default"
+│   │   │   │       └── unicode-ident v1.0.24
+│   │   │   └── proc-macro2 feature "proc-macro"
+│   │   │       └── proc-macro2 v1.0.106 (*)
+│   │   ├── quote feature "default"
+│   │   │   ├── quote v1.0.45
+│   │   │   │   └── proc-macro2 v1.0.106 (*)
+│   │   │   └── quote feature "proc-macro"
+│   │   │       ├── quote v1.0.45 (*)
+│   │   │       └── proc-macro2 feature "proc-macro" (*)
+│   │   └── syn feature "default"
+│   │       ├── syn v2.0.117
+│   │       │   ├── proc-macro2 v1.0.106 (*)
+│   │       │   ├── quote v1.0.45 (*)
+│   │       │   └── unicode-ident feature "default" (*)
+│   │       ├── syn feature "clone-impls"
+│   │       │   └── syn v2.0.117 (*)
+│   │       ├── syn feature "derive"
+│   │       │   └── syn v2.0.117 (*)
+│   │       ├── syn feature "parsing"
+│   │       │   └── syn v2.0.117 (*)
+│   │       ├── syn feature "printing"
+│   │       │   └── syn v2.0.117 (*)
+│   │       └── syn feature "proc-macro"
+│   │           ├── syn v2.0.117 (*)
+│   │           ├── proc-macro2 feature "proc-macro" (*)
+│   │           └── quote feature "proc-macro" (*)
+│   ├── potential_utf feature "zerovec"
+│   │   └── potential_utf v0.1.5
+│   │       └── zerovec v0.11.6
+│   │           ├── yoke v0.8.2
+│   │           │   ├── stable_deref_trait v1.2.1
+│   │           │   ├── yoke-derive v0.8.2 (proc-macro)
+│   │           │   │   ├── proc-macro2 feature "default" (*)
+│   │           │   │   ├── quote feature "default" (*)
+│   │           │   │   ├── syn feature "default" (*)
+│   │           │   │   ├── syn feature "fold"
+│   │           │   │   │   └── syn v2.0.117 (*)
+│   │           │   │   └── synstructure feature "default"
+│   │           │   │       ├── synstructure v0.13.2
+│   │           │   │       │   ├── proc-macro2 v1.0.106 (*)
+│   │           │   │       │   ├── quote v1.0.45 (*)
+│   │           │   │       │   ├── syn feature "clone-impls" (*)
+│   │           │   │       │   ├── syn feature "derive" (*)
+│   │           │   │       │   ├── syn feature "extra-traits"
+│   │           │   │       │   │   └── syn v2.0.117 (*)
+│   │           │   │       │   ├── syn feature "parsing" (*)
+│   │           │   │       │   ├── syn feature "printing" (*)
+│   │           │   │       │   └── syn feature "visit"
+│   │           │   │       │       └── syn v2.0.117 (*)
+│   │           │   │       └── synstructure feature "proc-macro"
+│   │           │   │           ├── synstructure v0.13.2 (*)
+│   │           │   │           ├── proc-macro2 feature "proc-macro" (*)
+│   │           │   │           ├── quote feature "proc-macro" (*)
+│   │           │   │           └── syn feature "proc-macro" (*)
+│   │           │   └── zerofrom v0.1.8
+│   │           │       └── zerofrom-derive v0.1.7 (proc-macro)
+│   │           │           ├── proc-macro2 feature "default" (*)
+│   │           │           ├── quote feature "default" (*)
+│   │           │           ├── syn feature "default" (*)
+│   │           │           ├── syn feature "fold" (*)
+│   │           │           └── synstructure feature "default" (*)
+│   │           ├── zerofrom v0.1.8 (*)
+│   │           └── zerovec-derive v0.11.3 (proc-macro)
+│   │               ├── proc-macro2 feature "default" (*)
+│   │               ├── quote feature "default" (*)
+│   │               ├── syn feature "default" (*)
+│   │               └── syn feature "extra-traits" (*)
+│   ├── zerovec feature "derive"
+│   │   └── zerovec v0.11.6 (*)
+│   ├── zerovec feature "yoke"
+│   │   └── zerovec v0.11.6 (*)
+│   ├── yoke feature "derive"
+│   │   ├── yoke v0.8.2 (*)
+│   │   ├── yoke feature "zerofrom"
+│   │   │   └── yoke v0.8.2 (*)
+│   │   └── zerofrom feature "derive"
+│   │       └── zerofrom v0.1.8 (*)
+│   └── zerofrom feature "derive" (*)
+├── icu_locale_core v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_locale_core-2.0.0)
+│   ├── displaydoc v0.2.5 (proc-macro) (*)
+│   ├── writeable v0.6.3
+│   ├── zerovec v0.11.6 (*)
+│   ├── litemap feature "alloc"
+│   │   └── litemap v0.8.2
+│   └── tinystr feature "alloc"
+│       ├── tinystr v0.8.3
+│       │   ├── displaydoc v0.2.5 (proc-macro) (*)
+│       │   └── zerovec v0.11.6 (*)
+│       └── zerovec feature "alloc"
+│           └── zerovec v0.11.6 (*)
+├── icu_normalizer v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_normalizer-2.0.0)
+│   ├── displaydoc v0.2.5 (proc-macro) (*)
+│   ├── icu_collections v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_collections-2.0.0) (*)
+│   ├── icu_normalizer_data v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_normalizer_data-2.0.0)
+│   ├── icu_provider v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_provider-2.0.0)
+│   │   ├── displaydoc v0.2.5 (proc-macro) (*)
+│   │   ├── icu_locale_core v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_locale_core-2.0.0) (*)
+│   │   ├── stable_deref_trait v1.2.1
+│   │   ├── tinystr v0.8.3 (*)
+│   │   ├── writeable v0.6.3
+│   │   ├── zerotrie v0.2.4
+│   │   │   ├── displaydoc v0.2.5 (proc-macro) (*)
+│   │   │   ├── zerofrom v0.1.8 (*)
+│   │   │   └── yoke feature "derive" (*)
+│   │   ├── zerovec feature "derive" (*)
+│   │   ├── yoke feature "alloc"
+│   │   │   ├── yoke v0.8.2 (*)
+│   │   │   ├── yoke feature "zerofrom" (*)
+│   │   │   ├── stable_deref_trait feature "alloc"
+│   │   │   │   └── stable_deref_trait v1.2.1
+│   │   │   └── zerofrom feature "alloc"
+│   │   │       └── zerofrom v0.1.8 (*)
+│   │   ├── yoke feature "derive" (*)
+│   │   ├── zerofrom feature "alloc" (*)
+│   │   └── zerofrom feature "derive" (*)
+│   ├── smallvec v1.15.1
+│   └── zerovec v0.11.6 (*)
+├── icu_normalizer_data v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_normalizer_data-2.0.0)
+├── icu_properties v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_properties-2.0.0)
+│   ├── displaydoc v0.2.5 (proc-macro) (*)
+│   ├── icu_collections v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_collections-2.0.0) (*)
+│   ├── icu_properties_data v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_properties_data-2.0.0)
+│   ├── icu_provider v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_provider-2.0.0) (*)
+│   ├── potential_utf feature "zerovec" (*)
+│   ├── zerovec feature "derive" (*)
+│   ├── zerovec feature "yoke" (*)
+│   ├── icu_locale_core feature "zerovec"
+│   │   ├── icu_locale_core v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_locale_core-2.0.0) (*)
+│   │   └── tinystr feature "zerovec"
+│   │       └── tinystr v0.8.3 (*)
+│   ├── zerotrie feature "yoke"
+│   │   └── zerotrie v0.2.4 (*)
+│   └── zerotrie feature "zerofrom"
+│       └── zerotrie v0.2.4 (*)
+├── icu_properties_data v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_properties_data-2.0.0)
+├── icu_provider v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_provider-2.0.0) (*)
+├── idna_adapter v1.2.1 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\idna_adapter-1.2.1)
+│   ├── icu_normalizer v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_normalizer-2.0.0) (*)
+│   └── icu_properties v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_properties-2.0.0) (*)
+├── ryu-js v1.0.2 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\ryu-js-1.0.2)
+├── writeable feature "alloc"
+│   └── writeable v0.6.3
+├── serde_json feature "default"
+│   ├── serde_json v1.0.149
+│   │   ├── memchr v2.8.0
+│   │   ├── serde_core v1.0.228
+│   │   ├── itoa feature "default"
+│   │   │   └── itoa v1.0.18
+│   │   └── zmij feature "default"
+│   │       └── zmij v1.0.21
+│   └── serde_json feature "std"
+│       ├── serde_json v1.0.149 (*)
+│       ├── memchr feature "std"
+│       │   ├── memchr v2.8.0
+│       │   └── memchr feature "alloc"
+│       │       └── memchr v2.8.0
+│       └── serde_core feature "std"
+│           └── serde_core v1.0.228
+└── url feature "default"
+    ├── url v2.5.8
+    │   ├── form_urlencoded feature "alloc"
+    │   │   ├── form_urlencoded v1.2.2
+    │   │   │   └── percent-encoding v2.3.2
+    │   │   └── percent-encoding feature "alloc"
+    │   │       └── percent-encoding v2.3.2
+    │   ├── percent-encoding feature "alloc" (*)
+    │   ├── idna feature "alloc"
+    │   │   └── idna v1.1.0
+    │   │       ├── smallvec feature "const_generics"
+    │   │       │   └── smallvec v1.15.1
+    │   │       ├── smallvec feature "default"
+    │   │       │   └── smallvec v1.15.1
+    │   │       ├── idna_adapter feature "default"
+    │   │       │   └── idna_adapter v1.2.1 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\idna_adapter-1.2.1) (*)
+    │   │       └── utf8_iter feature "default"
+    │   │           └── utf8_iter v1.0.4
+    │   └── idna feature "compiled_data"
+    │       ├── idna v1.1.0 (*)
+    │       └── idna_adapter feature "compiled_data"
+    │           ├── idna_adapter v1.2.1 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\idna_adapter-1.2.1) (*)
+    │           ├── icu_normalizer feature "compiled_data"
+    │           │   ├── icu_normalizer v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_normalizer-2.0.0) (*)
+    │           │   └── icu_provider feature "baked"
+    │           │       ├── icu_provider v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_provider-2.0.0) (*)
+    │           │       └── icu_provider feature "zerotrie"
+    │           │           └── icu_provider v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_provider-2.0.0) (*)
+    │           └── icu_properties feature "compiled_data"
+    │               ├── icu_properties v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-icu16\vendor\icu_properties-2.0.0) (*)
+    │               └── icu_provider feature "baked" (*)
+    └── url feature "std"
+        ├── url v2.5.8 (*)
+        ├── form_urlencoded feature "std"
+        │   ├── form_urlencoded v1.2.2 (*)
+        │   ├── form_urlencoded feature "alloc" (*)
+        │   └── percent-encoding feature "std"
+        │       ├── percent-encoding v2.3.2
+        │       └── percent-encoding feature "alloc" (*)
+        ├── percent-encoding feature "std" (*)
+        └── idna feature "std"
+            ├── idna v1.1.0 (*)
+            └── idna feature "alloc" (*)

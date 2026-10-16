@@ -1,0 +1,21 @@
+{
+  "finalObservations": 80,
+  "ownedPositive12": true,
+  "negativeUpgrade5": true,
+  "negativeRsv3": true,
+  "productTests": "none",
+  "researchTests": "add",
+  "runtimeVersions": {
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+    "python": "Python 3.12.7"
+  },
+  "sourcePatch": {
+    "scope": "PMD-only selected private codec; not arbitrary extensions",
+    "upstreamVersion": "1.2.1",
+    "path": "src/protocol/frame.rs",
+    "before": "048dc77a51710c67556e33e9bd9c8cd933cf2ca3ca7a6945995808b9b58f2536",
+    "after": "f370208b5470d259b808c1151a3d979dfa8b26c51abb91791be38ef0d5208209",
+    "addedLines": 6
+  }
+}

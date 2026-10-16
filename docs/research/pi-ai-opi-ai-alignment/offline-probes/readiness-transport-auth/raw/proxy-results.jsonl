@@ -1,0 +1,16 @@
+{"id":"scoped-lower","env":{"https_proxy":"http://scoped-lower:80","HTTPS_PROXY":"http://scoped-upper:80"},"ambient":{"https_proxy":"http://ambient-lower:80"},"url":"https://target.example","result":{"ok":true,"proxy":"http://scoped-lower/"}}
+{"id":"scoped-upper-empty-lower","env":{"https_proxy":"","HTTPS_PROXY":"http://scoped-upper:80"},"ambient":{"https_proxy":"http://ambient-lower:80"},"url":"https://target.example","result":{"ok":true,"proxy":"http://scoped-upper/"}}
+{"id":"ambient-lower","env":{},"ambient":{"https_proxy":"http://ambient-lower:80","HTTPS_PROXY":"http://ambient-upper:80"},"url":"https://target.example","result":{"ok":true,"proxy":"http://ambient-upper/"}}
+{"id":"protocol-over-all","env":{"https_proxy":"http://protocol:80","all_proxy":"http://all:80"},"url":"https://target.example","result":{"ok":true,"proxy":"http://protocol/"}}
+{"id":"all-fallback","env":{"all_proxy":"http://all:80"},"url":"https://target.example","result":{"ok":true,"proxy":"http://all/"}}
+{"id":"no-proxy-domain","env":{"https_proxy":"http://proxy:80","no_proxy":".example"},"url":"https://a.example","result":{"ok":true,"proxy":null}}
+{"id":"no-proxy-port-match","env":{"https_proxy":"http://proxy:80","no_proxy":"target.example:443"},"url":"https://target.example","result":{"ok":true,"proxy":null}}
+{"id":"no-proxy-port-miss","env":{"https_proxy":"http://proxy:80","no_proxy":"target.example:444"},"url":"https://target.example","result":{"ok":true,"proxy":"http://proxy/"}}
+{"id":"no-proxy-ipv6","env":{"http_proxy":"http://proxy:80","no_proxy":"[::1]:8080"},"url":"http://[::1]:8080","result":{"ok":true,"proxy":null}}
+{"id":"no-proxy-wildcard","env":{"https_proxy":"http://proxy:80","no_proxy":"*"},"url":"https://target.example","result":{"ok":true,"proxy":null}}
+{"id":"domain-boundary","env":{"https_proxy":"http://proxy:80","no_proxy":".example"},"url":"https://notexample","result":{"ok":true,"proxy":"http://proxy/"}}
+{"id":"unsupported-socks","env":{"https_proxy":"socks5://proxy:1080"},"url":"https://target.example","result":{"ok":false,"name":"Error","message":"Unsupported proxy protocol. SOCKS and PAC proxy URLs are not supported; use an HTTP or HTTPS proxy URL. Got socks5:"}}
+{"id":"invalid-proxy","env":{"https_proxy":"http://["},"url":"https://target.example","result":{"ok":false,"name":"Error","message":"Invalid proxy URL \"http://[\": Invalid URL"}}
+{"id":"bypass-invalid-before-parse","env":{"https_proxy":"http://[","no_proxy":"*"},"url":"https://target.example","result":{"ok":true,"proxy":null}}
+{"id":"ws-explicit-http","env":{"ws_proxy":"http://proxy:80"},"url":"ws://target.example","result":{"ok":true,"proxy":"http://proxy/"}}
+{"id":"ws-bare-prefix","env":{"ws_proxy":"proxy:80"},"url":"ws://target.example","result":{"ok":false,"name":"Error","message":"Unsupported proxy protocol. SOCKS and PAC proxy URLs are not supported; use an HTTP or HTTPS proxy URL. Got ws:"}}

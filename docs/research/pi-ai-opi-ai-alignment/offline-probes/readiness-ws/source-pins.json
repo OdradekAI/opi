@@ -1,0 +1,92 @@
+[
+  {
+    "crate": "ratchet_core-1.2.1",
+    "path": "Cargo.toml",
+    "sha256": "ec0423d5bd740fb42668f1950a1411175ddf8a42d8629e9f37b8b7ea5ec713fa",
+    "lines": 117
+  },
+  {
+    "crate": "ratchet_core-1.2.1",
+    "path": "src/ws.rs",
+    "sha256": "3dd8b12fcd0434d92dc428a6f0d1a33b2ec0b6754ecb581d77ebc628c2b26d7a",
+    "lines": 904
+  },
+  {
+    "crate": "ratchet_core-1.2.1",
+    "path": "src/protocol/frame.rs",
+    "sha256": "048dc77a51710c67556e33e9bd9c8cd933cf2ca3ca7a6945995808b9b58f2536",
+    "lines": 225
+  },
+  {
+    "crate": "ratchet_core-1.2.1",
+    "path": "src/handshake/client/mod.rs",
+    "sha256": "e530fa4ffe1b44bad46b6e3bad0ebf4225e551260112524df6bda99186f35b25",
+    "lines": 415
+  },
+  {
+    "crate": "ratchet_core-1.2.1",
+    "path": "src/framed/mod.rs",
+    "sha256": "0840f2e1006d0d44c71aa3f9ed25133bf14f5d53ad74e534cd955e248967e505",
+    "lines": 756
+  },
+  {
+    "crate": "ratchet_deflate-1.2.1",
+    "path": "Cargo.toml",
+    "sha256": "817599996aac60b33f140a94275dcf683cfc8fdbd66a9a3639d627d6bb94aabc",
+    "lines": 45
+  },
+  {
+    "crate": "ratchet_deflate-1.2.1",
+    "path": "src/lib.rs",
+    "sha256": "f9d32fe49dc6b7faa263adaa5792fd7ce7f2039712f36d1cc3d45f2e57fe9581",
+    "lines": 470
+  },
+  {
+    "crate": "ratchet_deflate-1.2.1",
+    "path": "src/handshake.rs",
+    "sha256": "8bfef79d1acee31c050fbe0f2df9ec3b1e63e38dc95ef7fd03c8a02fad850345",
+    "lines": 452
+  },
+  {
+    "crate": "ratchet_ext-1.2.1",
+    "path": "src/lib.rs",
+    "sha256": "88062dde4316d56efd72b3ea19bedc9599d2df49adb128b9e4b115e97fcf523d",
+    "lines": 389
+  },
+  {
+    "crate": "soketto-0.8.1",
+    "path": "Cargo.toml",
+    "sha256": "a62fde3bea9ee60ef0d3f707f8b8cddc20ae8128c95a0b324edf716e9d63c1a0",
+    "lines": 143
+  },
+  {
+    "crate": "soketto-0.8.1",
+    "path": "src/handshake.rs",
+    "sha256": "7739c9d1c08ac3c78f62fbc694ede603cef67cfb7c04aa3a4f03e8548e5bbda4",
+    "lines": 287
+  },
+  {
+    "crate": "soketto-0.8.1",
+    "path": "src/extension/deflate.rs",
+    "sha256": "d7bcde5aaaee92832eb0770801fead1be284bb0bec48fdad5124ae6b2ac7e22d",
+    "lines": 323
+  },
+  {
+    "crate": "libz-sys-1.1.30",
+    "path": "src/zlib/deflate.h",
+    "sha256": "21f4ea0973dab272fb26e93305ccf8628c8dc07e6c5df09a9861825b1920ba5d",
+    "lines": 383
+  },
+  {
+    "crate": "libz-sys-1.1.30",
+    "path": "src/zlib/deflate.c",
+    "sha256": "ea9ca4eb51b1a71aaf214b99f4a9fab177253d6268cae8e4c26d44d1812e52c2",
+    "lines": 2185
+  },
+  {
+    "crate": "libz-sys-1.1.30",
+    "path": "build.rs",
+    "sha256": "bc80c28b49dddf8ed8840810e8dc747703e504152d928d8c747e8de31c67cc72",
+    "lines": 273
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--offline",
+    "--manifest-path",
+    "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-readiness-ws-memory\\Cargo.toml",
+    "--workspace",
+    "--lib",
+    "readiness_memory",
+    "--",
+    "--nocapture"
+  ],
+  "exit": 0
+}

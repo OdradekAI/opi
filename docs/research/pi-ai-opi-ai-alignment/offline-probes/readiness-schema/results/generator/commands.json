@@ -1,0 +1,36 @@
+[
+  {
+    "command": [
+      "cargo",
+      "run",
+      "--release",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-generator-replay\\vendor\\regress-0.12.0\\gen-unicode\\Cargo.toml"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 5.98,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "1b9b140dab2e3033c221616e0dd3ec014e875a3774af11cb046382d2e394f817",
+    "table_sha256": "475cb03589f0deb859b9a2ccfb34e3f33026a1e89500524024ce575a135e5daf",
+    "tests_sha256": "ae24799bc5c8ef417b72de6cbc2808fb581c28e6412284fa00c8f034cd21497c"
+  },
+  {
+    "command": [
+      "cargo",
+      "run",
+      "--release",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema-generator-replay\\vendor\\regress-0.12.0\\gen-unicode\\Cargo.toml"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 2.964,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "bf5d3070eee3f7fe38c0048fba0139fd03f1a0760c6b843003e9dd685ba8b47c",
+    "table_sha256": "475cb03589f0deb859b9a2ccfb34e3f33026a1e89500524024ce575a135e5daf",
+    "tests_sha256": "ae24799bc5c8ef417b72de6cbc2808fb581c28e6412284fa00c8f034cd21497c"
+  }
+]

@@ -1,0 +1,17 @@
+warning: use of deprecated associated function `core::num::<impl usize>::max_value`: replaced by the `MAX` associated constant on this type
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-ws-offline-probe\source\tungstenite-0.28.0\src\protocol\frame\mod.rs:168:55
+    |
+168 |         let max_size = max_size.unwrap_or_else(usize::max_value);
+    |                                                       ^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `core::num::<impl usize>::max_value`: replaced by the `MAX` associated constant on this type
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-ws-offline-probe\source\tungstenite-0.28.0\src\protocol\message.rs:117:57
+    |
+117 |         let max_size = size_limit.unwrap_or_else(usize::max_value);
+    |                                                         ^^^^^^^^^
+
+warning: `tungstenite` (lib) generated 2 warnings
+   Compiling opi-research-ws-probe v0.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-ws-offline-probe\rust)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.04s

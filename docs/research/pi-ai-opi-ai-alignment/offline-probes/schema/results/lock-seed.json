@@ -1,0 +1,15 @@
+{
+  "command": [
+    "cargo",
+    "build",
+    "--offline",
+    "--manifest-path",
+    "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-probe\\rust\\Cargo.toml",
+    "--target-dir",
+    "E:/opi/cargo-targets/windows-direct"
+  ],
+  "exit": 0,
+  "source_lock_sha256": "fdb4fb24ce180da7bafa8ef885f6f5f18a3426d4070d1df0c9e319ba0510e240",
+  "pruned_lock_sha256": "eb20a03f072f3285dba88397583cca8a4a710c72b613dbfc9240ea56832a742f",
+  "note": "Existing root lock copied then offline Cargo pruned unused packages; later reproductions use frozen --locked."
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "name": "runtime-four-negative-cli",
+    "command": [
+      "python",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-runtime\\test_run.py"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": "....\r\n----------------------------------------------------------------------\r\nRan 4 tests in 0.572s\r\n\r\nOK\r\n",
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "8623a3e99e58c0e0e52a90afb8d7d1d621ae94c6ccfe8055c3a3171e7984f42d"
+  },
+  {
+    "name": "ws-wrong-source-pin",
+    "command": [
+      "python",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-ws\\prepare-replay.py",
+      "--workspace",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\ws-negative-again",
+      "--expected-before",
+      "wrong"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "source pin mismatch before workspace creation\r\n",
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "10adf4c0e2f30ac6d8d16b6db5722b62dd1e5117966947705f3f86708a36be7f"
+  }
+]

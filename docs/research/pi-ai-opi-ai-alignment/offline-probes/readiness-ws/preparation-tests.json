@@ -1,0 +1,26 @@
+{
+  "positive": {
+    "command": [
+      "python",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-ws\\prepare-replay.py",
+      "--workspace",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-readiness-ws-self-replay",
+      "--build"
+    ],
+    "exit": 0,
+    "patchApplied": true,
+    "buildLogSha256": "d9b768744e4bb9ab05bf8cbd6e27a1e9d6d30d8f2c064cc0316d5b8b455cdae2"
+  },
+  "negative": {
+    "command": [
+      "python",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-ws\\prepare-replay.py",
+      "--workspace",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-readiness-ws-negative-should-not-exist",
+      "--expected-before",
+      "wrong"
+    ],
+    "exit": 1,
+    "workspaceAbsent": true
+  }
+}

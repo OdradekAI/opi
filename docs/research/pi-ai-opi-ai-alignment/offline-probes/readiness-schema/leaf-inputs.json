@@ -1,0 +1,75 @@
+{
+  "ryu_js": {
+    "name": "ryu-js",
+    "version": "1.0.2",
+    "sha256": "dd29631678d6fb0903b69223673e122c32e9ae559d0960a38d574695ebc0ea15",
+    "url": "https://static.crates.io/crates/ryu-js/ryu-js-1.0.2.crate"
+  },
+  "icu16_archives": [
+    {
+      "name": "idna_adapter",
+      "version": "1.2.1",
+      "sha256": "3acae9609540aa318d1bc588455225fb2085b9ed0c4f6bd0d9d5bcd86f1a0344",
+      "bytes": 10389,
+      "url": "https://static.crates.io/crates/idna_adapter/idna_adapter-1.2.1.crate"
+    },
+    {
+      "name": "icu_collections",
+      "version": "2.0.0",
+      "sha256": "200072f5d0e3614556f94a9930d5dc3e0662a652823904c3a75dc3b0af7fee47",
+      "bytes": 83033,
+      "url": "https://static.crates.io/crates/icu_collections/icu_collections-2.0.0.crate"
+    },
+    {
+      "name": "icu_locale_core",
+      "version": "2.0.0",
+      "sha256": "0cde2700ccaed3872079a65fb1a78f6c0a36c91570f28755dda67bc8f7d9f00a",
+      "bytes": 74430,
+      "url": "https://static.crates.io/crates/icu_locale_core/icu_locale_core-2.0.0.crate"
+    },
+    {
+      "name": "icu_normalizer",
+      "version": "2.0.0",
+      "sha256": "436880e8e18df4d7bbc06d58432329d6458cc84531f7ac5f024e93deadb37979",
+      "bytes": 61543,
+      "url": "https://static.crates.io/crates/icu_normalizer/icu_normalizer-2.0.0.crate"
+    },
+    {
+      "name": "icu_normalizer_data",
+      "version": "2.0.0",
+      "sha256": "00210d6893afc98edb752b664b8890f0ef174c8adbb8d0be9710fa66fbbf72d3",
+      "bytes": 68101,
+      "url": "https://static.crates.io/crates/icu_normalizer_data/icu_normalizer_data-2.0.0.crate"
+    },
+    {
+      "name": "icu_properties",
+      "version": "2.0.0",
+      "sha256": "2549ca8c7241c82f59c80ba2a6f415d931c5b58d24fb8412caa1a1f02c49139a",
+      "bytes": 58065,
+      "url": "https://static.crates.io/crates/icu_properties/icu_properties-2.0.0.crate"
+    },
+    {
+      "name": "icu_properties_data",
+      "version": "2.0.0",
+      "sha256": "8197e866e47b68f8f7d95249e172903bec06004b18b2937f1095d40a0c57de04",
+      "bytes": 159069,
+      "url": "https://static.crates.io/crates/icu_properties_data/icu_properties_data-2.0.0.crate"
+    },
+    {
+      "name": "icu_provider",
+      "version": "2.0.0",
+      "sha256": "03c80da27b5f4187909049ee2d72f276f0d9f99a42c306bd0131ecfe04d8e5af",
+      "bytes": 50966,
+      "url": "https://static.crates.io/crates/icu_provider/icu_provider-2.0.0.crate"
+    }
+  ],
+  "assets": {
+    "leaves/src/main.rs": "a24ea24a9e8f6dffac82ca741267b3a729461dfee0eb7ffafa970de5ea95eea8",
+    "leaves/cases.json": "9fdae0c56883c43d8ef593993a8facb82da60e0170791622d8d0593b30b32566",
+    "leaves/node.mjs": "97b45cd86de60d0ab9cd7730f454fe3e39163d4f1e0b0ef6a8c57d29ed9d0ad6",
+    "leaves/baseline/Cargo.toml.template": "949207ff8ddce9a341563190c19e8f4f88f7925337b55669c553c56cbf522b12",
+    "leaves/baseline/Cargo.lock": "46b928164174ab15dbc7378987f13f489e095e1328abd316863c4800a5ecd7dc",
+    "leaves/icu16/Cargo.toml.template": "a93a9df310c64b24cccee1f7b901171c044fefb19d60e758f2b454ecf94a858a",
+    "leaves/icu16/Cargo.lock": "d2891afefe39cc50482be6130122da76c4d6860a0cc8d1f0c640d5e70a7a31d1"
+  }
+}

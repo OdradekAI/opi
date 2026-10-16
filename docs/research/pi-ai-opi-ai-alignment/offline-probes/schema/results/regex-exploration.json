@@ -1,0 +1,30 @@
+[
+  {
+    "pairs": 8,
+    "status": "exited",
+    "exit": 0,
+    "elapsed_seconds": 0.03666043281555176,
+    "input_sha256": "a4bf14692cf8a700ad60a00ccaeeb105724cb4ff009e2923a357034e383f3a8c"
+  },
+  {
+    "pairs": 12,
+    "status": "exited",
+    "exit": 0,
+    "elapsed_seconds": 0.043682098388671875,
+    "input_sha256": "b4625792dae1efad3b62b6f0dd5aee9fb3750f9ff772861a1e44eb25351c86d9"
+  },
+  {
+    "pairs": 16,
+    "status": "exited",
+    "exit": 0,
+    "elapsed_seconds": 0.3689887523651123,
+    "input_sha256": "14756b8cb739b4b530cef46d16590174b16fd02ee231af36d1c79ab49edb8ba9"
+  },
+  {
+    "pairs": 20,
+    "status": "exited",
+    "exit": 0,
+    "elapsed_seconds": 0.5729227066040039,
+    "input_sha256": "0561967321bf36f8b88d95e21c7cd72f7d2d179cc290241a3d21220c1481eb4c"
+  }
+]

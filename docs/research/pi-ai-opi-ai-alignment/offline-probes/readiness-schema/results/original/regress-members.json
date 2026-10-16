@@ -1,0 +1,186 @@
+[
+  {
+    "path": "regress-0.12.0/.cargo_vcs_info.json",
+    "sha256": "ed0d0421a9d899c07642f5a05844341a8ceb3bdcc5a634ce8655695d18ef4542"
+  },
+  {
+    "path": "regress-0.12.0/.github/dependabot.yml",
+    "sha256": "b6062d6c5ee7e7ba5af4a484d12ddf85f447639ef8b25bf90458b4c603621f7e"
+  },
+  {
+    "path": "regress-0.12.0/.github/workflows/rust.yml",
+    "sha256": "bec4ed433cbd107ccddf7faeaf9877817f5763d640a7fa2c2f9449f4341fbd63"
+  },
+  {
+    "path": "regress-0.12.0/.gitignore",
+    "sha256": "61a6d5d11706db568fe03c88d2a923da9f5ff653dd3bc7d1fee547d88217ec38"
+  },
+  {
+    "path": "regress-0.12.0/Cargo.lock",
+    "sha256": "7a87097e8999e1f0077324ce7a536f9371b421e490a89ba5dbf9205efd08d4fd"
+  },
+  {
+    "path": "regress-0.12.0/Cargo.toml",
+    "sha256": "f06441afb2bec691c9f3ca5dd4f2372a70f8fa0cd229da13d371bc40abf57dce"
+  },
+  {
+    "path": "regress-0.12.0/Cargo.toml.orig",
+    "sha256": "24e83bc7186e3d0a015d131a3da35b7c6ceae79682d65c7a21f1256c592d6a71"
+  },
+  {
+    "path": "regress-0.12.0/LICENSE-APACHE",
+    "sha256": "e36d55837170195cdf934aa6a48c0ad6efba1bde3f5b4a1b9259c171d5aeb647"
+  },
+  {
+    "path": "regress-0.12.0/LICENSE-MIT",
+    "sha256": "3f8a05fc8617c5ce569fa5a4f2301cd847fe00fa011bdaa8f353fd55a2691a54"
+  },
+  {
+    "path": "regress-0.12.0/README.md",
+    "sha256": "b3f7fa34002b8dfa23d826b56b7afbeb726b09c7fa374da33ec350d0a629266d"
+  },
+  {
+    "path": "regress-0.12.0/perf.md",
+    "sha256": "df12868134f01684777ecd493397bf4ac0dc697b726c713a7506d8d9ca823fd3"
+  },
+  {
+    "path": "regress-0.12.0/rustfmt.toml",
+    "sha256": "5295ffd33c7946dccabb333e3e8303a7e530214a01fd024768264267b556b2d8"
+  },
+  {
+    "path": "regress-0.12.0/src/api.rs",
+    "sha256": "e26610bf16284cea4c70c291bc14db360a8980388d18794a8aca25bd861671cf"
+  },
+  {
+    "path": "regress-0.12.0/src/bytesearch.rs",
+    "sha256": "a01c112dfa1a9f1955dc987835b7941d0626d6062991a74dfe5d59cb56ced3c9"
+  },
+  {
+    "path": "regress-0.12.0/src/charclasses.rs",
+    "sha256": "d24c34f6e61339110b197701ebc453df86f327628838c5c8a30436da0e7cafa4"
+  },
+  {
+    "path": "regress-0.12.0/src/classicalbacktrack.rs",
+    "sha256": "4ac072254f9c6eef7e9d6b40d13b5d12eec508cb35a91e49fbd31f0e8e70972a"
+  },
+  {
+    "path": "regress-0.12.0/src/codepointset.rs",
+    "sha256": "9eb50732e6e28672829649fafa97bde8aa1ceef18b11e7804f2ca8b9f2f8be95"
+  },
+  {
+    "path": "regress-0.12.0/src/cursor.rs",
+    "sha256": "9d2a62814f2d8c6c5f0b68f5d1175dea2678f8259bf87c185c83b963bac1f0fd"
+  },
+  {
+    "path": "regress-0.12.0/src/emit.rs",
+    "sha256": "2a1ebdff1234596259d9bc1917d107f8aed256fe95adbbaf25a6674ded8c87b9"
+  },
+  {
+    "path": "regress-0.12.0/src/exec.rs",
+    "sha256": "b75773db31eb8cdeda8e1bd030cc58a803ed592253d706e4e999a6cd1e7353d5"
+  },
+  {
+    "path": "regress-0.12.0/src/indexing.rs",
+    "sha256": "89b491a535b850c293091c52f29ea5221640122b5f6f9bb1cdd5bb5723a12f2c"
+  },
+  {
+    "path": "regress-0.12.0/src/insn.rs",
+    "sha256": "80d3ac58f8d162c7801d262e6bc76c5f4ee6594a9a6cf7882a524bba84506f3d"
+  },
+  {
+    "path": "regress-0.12.0/src/ir.rs",
+    "sha256": "817a981b0ee3dcfaff369de11a66e1dae656a3356da7f6140b9d3b56781cccbe"
+  },
+  {
+    "path": "regress-0.12.0/src/lib.rs",
+    "sha256": "7adef6554dc12c22cf9cabc8691fc76b5db8170e98c2fb6352872566ac11174f"
+  },
+  {
+    "path": "regress-0.12.0/src/literal.rs",
+    "sha256": "541dbcc545d4cd96acb52bf05649f7c0384bc8c7bbe013a282fb94e6f079ec5b"
+  },
+  {
+    "path": "regress-0.12.0/src/matchers.rs",
+    "sha256": "f96a4c83a34e81da4c928ec1f7b78d71e1a16fb0bde83e33cdaf677f5f70d278"
+  },
+  {
+    "path": "regress-0.12.0/src/optimizer.rs",
+    "sha256": "23f18b7ea8af1e5bcd9e03c8ad947e659cb319d8f21595dec880a3c0ed975e0a"
+  },
+  {
+    "path": "regress-0.12.0/src/parse.rs",
+    "sha256": "90e38cdeeb7f597d027f14eb45c35a9d0baa8aeba1c68368ee108c8831faf548"
+  },
+  {
+    "path": "regress-0.12.0/src/pikevm.rs",
+    "sha256": "c7d0b5f063805ca26c61bc4a6f208e1b6096a5cc4b5868758f422763eaa6d313"
+  },
+  {
+    "path": "regress-0.12.0/src/position.rs",
+    "sha256": "725f869a8de2ec1d6162afc720647f779dfcd996da1c85882521269af819fe16"
+  },
+  {
+    "path": "regress-0.12.0/src/scm.rs",
+    "sha256": "7f214ac019fe71ebd824ec02014da31139f4b64610059cfcce642cfd9db6c507"
+  },
+  {
+    "path": "regress-0.12.0/src/startpredicate.rs",
+    "sha256": "86e1fb08a20426d82a539aa7b3089f885fe6ddf45044af28d7ce9fba97f39e9d"
+  },
+  {
+    "path": "regress-0.12.0/src/types.rs",
+    "sha256": "c8f4b70a2762fcf55843ce441f4c21b3f9691d9a5308a673c1139303966746bb"
+  },
+  {
+    "path": "regress-0.12.0/src/unicode.rs",
+    "sha256": "61cd57b07ef5823bfaea7b3f52a81d045173007fad71b8336a69ab2adacb215a"
+  },
+  {
+    "path": "regress-0.12.0/src/unicodetables.rs",
+    "sha256": "e4703653bdf6bbb725e3f2d3c53bae3f22780368c8cbfcad38d384dd0f17bc6e"
+  },
+  {
+    "path": "regress-0.12.0/src/util.rs",
+    "sha256": "925367315fc52634e3affa815bc561c82fa5c3c83a15aa0e3042ad937a464e74"
+  },
+  {
+    "path": "regress-0.12.0/tests/anchored_optimization.rs",
+    "sha256": "8d9778dd61e5b3b3d5e1afc12c35d01801c6cd3ffeef5e2e4be8d7332947fd08"
+  },
+  {
+    "path": "regress-0.12.0/tests/common/mod.rs",
+    "sha256": "60313f000cf883c0121e23ecfe0ec337ac658739133942b3da085e2019f9106f"
+  },
+  {
+    "path": "regress-0.12.0/tests/escape_tests.rs",
+    "sha256": "f32c1dad22dcf31055e427f873684c910ddab0c063ff9b7334534b00839db3de"
+  },
+  {
+    "path": "regress-0.12.0/tests/pattern_tests.rs",
+    "sha256": "ec3c8908c45f88e863f3cef48127f3868c27ea9fe8488ae65263d13d32ff0d30"
+  },
+  {
+    "path": "regress-0.12.0/tests/pcre_tests.rs",
+    "sha256": "39a42cb8318d083b1a2594fcbc52f923be55c918e223eda82bcbd1e402add998"
+  },
+  {
+    "path": "regress-0.12.0/tests/replacement_tests.rs",
+    "sha256": "e6ca395828542bdb1634e1cb70291572e11a4e42951d2478d797a734cde5488c"
+  },
+  {
+    "path": "regress-0.12.0/tests/syntax_error_tests.rs",
+    "sha256": "fabc4547f68fcded182870b98fa819291d8b64cc1537f285caedb786a9f959b7"
+  },
+  {
+    "path": "regress-0.12.0/tests/tests.rs",
+    "sha256": "0fe768817a5f39b9e2e437244ba3e81c696f53b74a584f345cf0caf7beaadcf8"
+  },
+  {
+    "path": "regress-0.12.0/tests/unicode_property_escapes.rs",
+    "sha256": "b07c73fc9209c3c43c2265b55a2a5a865fbd71fed303c78581ae5c849692f2ac"
+  },
+  {
+    "path": "regress-0.12.0/tests/unicodesets.rs",
+    "sha256": "e8672367ff270d7896ed58d2b93ebcbc99c3b9a2476b27f56f384db36c96b492"
+  }
+]

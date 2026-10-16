@@ -1,0 +1,21 @@
+{
+  "command": [
+    "python",
+    "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-probe\\run.py",
+    "--node",
+    "C:/Windows/System32/cmd.exe",
+    "--pi",
+    "D:/Luiz/Odradek/opi/.repo/pi-1.3.0",
+    "--typebox",
+    "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package",
+    "--target",
+    "E:/opi/cargo-targets/windows-direct",
+    "--scratch",
+    "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-offline-independent-review\\pin-negative"
+  ],
+  "exit": 1,
+  "stdout": "",
+  "stderr": "Node executable pin mismatch\r\n",
+  "command_log_exists": false,
+  "harness_sha256": "c3a10a7597a9e94fb35724b5ec3fa6b8ac85d70e6d9d1600f1d86d77ccd3533f"
+}

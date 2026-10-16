@@ -1,0 +1,655 @@
+{
+  "kind": "Pi1.3.0-Schema-WS-offline-differential-research",
+  "date": "2026-10-16",
+  "status": "RESEARCH-VERIFIED-GAPS-OPEN",
+  "mode": "worktree-only",
+  "input_head": "8cb0fd68db528ae3d3c61874458d45e46bffa29c",
+  "observed_head": "8cb0fd68db528ae3d3c61874458d45e46bffa29c",
+  "committed": "none-for-this-task",
+  "execution": "Research executed; mismatches confirmed, not parity PASS",
+  "coverage": {
+    "Schema": "OPEN",
+    "WS": "OPEN",
+    "HTTP/proxy/H2/redirect": "OPEN",
+    "TLS/trust/crypto": "OPEN",
+    "Auth/ADC/AWS/retry": "OPEN",
+    "Native telemetry": "OPEN",
+    "Cargo/platform/catalog": "OPEN"
+  },
+  "input_document_sha256": {
+    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "bfec9e7de9b276a4ed97605e82204e3200f5115911003c9b35ac7535c83ece55",
+    "docs/research/pi-ai-opi-ai-alignment/ai-telemetry-report-crosscheck.md": "792c41a27f29711d1b4001b74734255e7da72f9b6df1869a18718ccb54233e69",
+    "docs/research/pi-ai-opi-ai-alignment/baseline.json": "f6db4d01bedbe5c0eebca675dce95f4fe18993c89aff63396aa8861a12b81a61",
+    "docs/research/pi-ai-opi-ai-alignment/decision-reassessment.md": "7df787e770f9b17f2fc51dfe1b90fe9782d44fc4c8545e84a03cc7003b3d4d78",
+    "docs/research/pi-ai-opi-ai-alignment/decisions.md": "307d37887a75e2d04ef1a200c4cb487170e5757ba3ba7733818db132384f233f",
+    "docs/research/pi-ai-opi-ai-alignment/design-audit.md": "dfd0be6ad05a3712578428a0c8cd8521e660911d4f2347c14ea3b7b5902b55ae",
+    "docs/research/pi-ai-opi-ai-alignment/design-evolution.md": "9f7a3b8ea69432063eca22059faa81e2e92ffdd4043a446b1ac2bbe73c0fc0ed",
+    "docs/research/pi-ai-opi-ai-alignment/evidence-matrix.md": "d9fb034b588fd9883c18468d1247d9f3b0712eb37a23e2d5b3a1c6943d8e0cb0",
+    "docs/research/pi-ai-opi-ai-alignment/evolution-target-proposal.md": "4d3092138a8a97546ee1198cdb6e61dad4f9793df86c2746ef3eb940295f8a98",
+    "docs/research/pi-ai-opi-ai-alignment/offline-probe-result.json": "38b3d01dc85c58e8eafa1a68cc48abf210cc9eaa5b5e9454937ebfea790c8599",
+    "docs/research/pi-ai-opi-ai-alignment/offline-probes.md": "5b386f4892f5d925ade21c782787e8d6238d9cc0dc151cf7d3e40f2117c2bf7d",
+    "docs/research/pi-ai-opi-ai-alignment/operations-design.md": "9fa815d65f1885db2f488e7ff9297e3c0669c050bb50b942b3cea882be09a8f0",
+    "docs/research/pi-ai-opi-ai-alignment/opi-audit-notes.md": "972dcbc8cb2e7bd30e8f0abc2d38bd7c1a9e67bc90ff3fb13b5c5629ed878a3a",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-baseline.json": "ec58309392c4fd5f6fc160210cb5601f8810ae374f37112ae46ff42bc622f545",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-review.md": "a4046bdad3caa57018133ed2ffc61476df7b525f080f4845c521f7e958d6daf1",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-verification.json": "32caa79c71d59abae4602d00350c3069713890fe48d7049def4b9e3d7e9ebba0",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-source-evidence.json": "43d9bec02c7466d7ecfbf3c46093db382fee389ef37ddedff538d6ac50dcbeee",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-followup-evidence.json": "e675c68609b54cf5b42498db4d0453e8beceaab8b6b375098eec6c60596c8d5a",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-followup.md": "a9aef181c6c1e1b09c80c0ee5758fab0a90ab88322acd7e73a10b439c426dd05",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-audit.md": "1984a94d692f4f8830ef85a5c91e818fb6e906d221258fa8e7d00567d60e0832",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-revision-baseline.json": "7c644af51f3b392b93dc32b87e92309adf25072f6eb745831b67d976b97d38cb",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-revision-review.md": "090e26c569c0afa5620e18bd0a26857775c9cedeb548c074c1e49f3206bc7a69",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-revision-verification.json": "72b1e4f2df95722662363f45e67717022caf2b1a6afcaf66b8e0c8ca8160be33",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-source-evidence.json": "943b7766b8d753459a606ebdb4acd3d641d5156401884f17be00969a74068648",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-review-baseline.json": "255c2080f1450180b89d4d0c89522a4273cd0ec70bd262eeb055ab1e365dfc7f",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-review.md": "bef13d28a13693a3b5ad32455bd5598209cf2f8010645597fd58a9233ab67aeb",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-baseline.json": "56639f4de9515ec9e2ab97b92080136d3eb2f8ecbff947db5d13fef6d81800c8",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-review.md": "0f81bdf63f8c416d188488f5a81a42f61afbf8cd13aba9d5d1340d8790ec0985",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-verification.json": "346ec7961eee8c050a51f72d68cb9f73183bd9d7a02527272e8be04a21237b1c",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-architecture-review.md": "a8b3ffcdaa00a3c2e3d170a721473c0209b55d64e300bb3ca92a9fa2e2f0f164",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-backends.md": "5bd9958f61b014a1b785e34b133db11df2bf9821cec81e6f3e50305f376937bf",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-differences.md": "60b340f107f576cefade9517e68e314d3dd791919d841f317eed0fe58daf81d3",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-sdk-contracts.md": "f64e8ce67603632adc1a68d2605786d0e3bbbfc9e3fca67a5b5639c4c9e06e09",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-backend-gap-audit.md": "0da139806682831aaedb1b263154a0c6fb37569528ed928f3eaed5647480ed2c",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-backend-gap-evidence.json": "770c0a99cfe05dd55fc8034d9c543d72eceae3cfdf0fc1ed5a91848d9b7094c8",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-backend-gap-review.md": "1cdef2724f5d178583c853d2c52527c62b2ecc86b662abdf0fafc63ef6517fac",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-revision-review.md": "c0af981a31b47616865ee363fca57e912fd690b0207c3df91fdf66ff2831c6e3",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-revision-verification.json": "e7c6fdaf2814e1c4c2b2a694e46b0f444c4f9ffcae70d71199d782079bea3b53",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "192079697ec338ce6802e4c0aff3ec933c50b651757bfb758a73ef98be927534",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "69843f6fa73ec55221b0bd4b5f7247d339e916859ca0364821da49a779094609",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "89d64080bc105c0c6950dd8bc3ba2dba81ab1eeb556baab1df2e32f8061a5bdf",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-source-evidence.json": "750a80ae5b37b6d8f87963cee14866a762918375f2a0dda78fe7fa14d4450540",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-upgrade-review.md": "0d16c0fec3a72b706d342e1eb1a6777f50da1ee01be835e7c24c14b5993b0696",
+    "docs/research/pi-ai-opi-ai-alignment/pi-contracts-notes.md": "d1c91f15216c852ec30604334d67960a6c83e8006099c07b2bde82b82bfd5767",
+    "docs/research/pi-ai-opi-ai-alignment/placement-options.md": "bf354fdcaf4202afb04fbda32f3cc23d2ddc836bccd127ac7fc69bfd6ed418d3",
+    "docs/research/pi-ai-opi-ai-alignment/provider-contract-addendum.md": "7bbe406b41d94d9c5fa648c0e0d2996cdc8d6225c0165791a8c21f134f78f4c3",
+    "docs/research/pi-ai-opi-ai-alignment/README.md": "3d08a9910595a9d86b099a30e88826de0a89b87888275b2e39b0c657906adac2",
+    "docs/research/pi-ai-opi-ai-alignment/reassessment-evolution-notes.md": "be8da757e5cb4c748cceb6ecc8dc2b8773791ab3ae36fde7e81c57aa4fb80864",
+    "docs/research/pi-ai-opi-ai-alignment/reassessment-sdk-notes.md": "d3b3006e9a3629abfeb571c60c87844caa7ef8d0626fc3f740464969f0d8a819",
+    "docs/research/pi-ai-opi-ai-alignment/reassessment-transcript-notes.md": "15143d4c1cf94fb097afefdfa97ec8aa2de153a2e68361996d9ad0728243e121",
+    "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
+    "docs/research/pi-ai-opi-ai-alignment/review-notes.md": "994fcbfd1417dec930d0c973acb37873d2713d0ba5d077e7307cfc260e5c5921",
+    "docs/research/pi-ai-opi-ai-alignment/route-probe-result.json": "2433d1a5b8210246b43d9fdb34416d30a66390d01eb3aee48ce19598a26e5d03",
+    "docs/research/pi-ai-opi-ai-alignment/route-probe.md": "e203397c6cd4be556fea8f324ef058b82f84ac1f1b259effaac0c688e872479d",
+    "docs/research/pi-ai-opi-ai-alignment/sdk-auth-provider-migration.md": "06811904ceb6d8029317dfc47df34b3a2108d5e549a4b094b189ba23d563f818",
+    "docs/research/pi-ai-opi-ai-alignment/sdk-consumer-contract.md": "31de654cfd0f2aec9b61b4e11a1bbde0caedd8f3dadb0bca74494ed1bfd0bb74",
+    "docs/research/pi-ai-opi-ai-alignment/sdk-opi-caller-review.md": "1b10011870d32a7d7d4f296bd1cad97286ddc9dcfce9e3d9f981da9d719cf91a",
+    "docs/research/pi-ai-opi-ai-alignment/sdk-pi-caller-review.md": "cb0b218dc64dbd4577c5c23b7e1cc7a6877c69ea0dba8557319cff8c09d5ac6e",
+    "docs/research/pi-ai-opi-ai-alignment/sdk-spec-review.md": "31e45a1b18ef36d9eccf72d9517338e69d3ccea0bb38df4165d49f942760ff37",
+    "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "07c41dc0f85a467909c901d5858ab5767ff8c7c33f90b56faba3e867f56edccc",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "a2104c79374d79015b4b42a9eb9d6c0141ee5facf506e8c3cedcb7f7d9914ebe",
+    "docs/research/pi-ai-opi-ai-alignment/spec-evidence-review.md": "941cb117236c9bda631a74559aff7c0b75acc01e2c087c4e8b14658b71ec52d7",
+    "docs/research/pi-ai-opi-ai-alignment/spec-review-round-2.md": "e2e18c29fa2358671b246debac2bb49afbc6072c20c870b516d45e8d494b9cb0",
+    "docs/research/pi-ai-opi-ai-alignment/spec-review.md": "b7d658b7ba55fdbb789a98e5a84e173c316882d14a1d013cbdbf950743fc3692",
+    "docs/research/pi-ai-opi-ai-alignment/telemetry-design.md": "dacb74435e6cf3c731372ee562f4cc88372497bbe5d037cb85154151d8e23a71",
+    "docs/research/pi-ai-opi-ai-alignment/telemetry-evolution.md": "4c7805d8c269d6fd23c7faa3174ff945c8a0a6589b5a42a7e67557f1eb124073",
+    "docs/research/pi-ai-opi-ai-alignment/telemetry-opi-audit.md": "c6d11e255b305d71a62d192c206fec96c940b656d67e1462ad238e11fc369202",
+    "docs/research/pi-ai-opi-ai-alignment/telemetry-pi-contracts.md": "bc49f5cfd10b0ff7620e399d62e7169ac7ffe40afc15fdf887d81fc36b685388",
+    "docs/research/pi-ai-opi-ai-alignment/telemetry-spec-review.md": "2e2f6234e8d397c45fd17c441c81c3203823f0f9cf098843edd824b382f6ce4f",
+    "docs/research/pi-ai-opi-ai-alignment/transcript-migration.md": "c4a99752434e73d2472450bcbc3241058d40dc069212f42d6ab37ac41932b9ec",
+    "docs/research/pi-ai-opi-ai-alignment/transcript-target-proposal.md": "25a4234507ab1c4c12d483c56bb4083172bf4d5c35dfec1dc92bc98c77a5d94e",
+    "docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md": "66c27ffadf4e6ebda9b9f1148714e595e9c4d79348532b4a205ad2f779a6e4ff"
+  },
+  "fixed_runtime": {
+    "node_executable": "D:\\nvm\\v24.13.0\\node.exe",
+    "node_sha256": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11",
+    "node_versions": {
+      "node": "24.13.0",
+      "acorn": "8.15.0",
+      "ada": "3.3.0",
+      "amaro": "1.1.5",
+      "ares": "1.34.6",
+      "brotli": "1.1.0",
+      "cjs_module_lexer": "2.1.0",
+      "cldr": "47.0",
+      "icu": "77.1",
+      "llhttp": "9.3.0",
+      "modules": "137",
+      "napi": "10",
+      "nbytes": "0.1.1",
+      "ncrypto": "0.0.1",
+      "nghttp2": "1.67.1",
+      "openssl": "3.5.4",
+      "simdjson": "4.1.0",
+      "simdutf": "6.4.0",
+      "sqlite": "3.50.4",
+      "tz": "2025b",
+      "undici": "7.18.2",
+      "unicode": "16.0",
+      "uv": "1.51.0",
+      "uvwasi": "0.0.23",
+      "v8": "13.6.233.17-node.37",
+      "zlib": "1.3.1-470d3a2",
+      "zstd": "1.5.7"
+    },
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.1\nLLVM version: 23.1.1",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)"
+  },
+  "experiment_summaries": {
+    "schema": "offline-probes/schema/summary.json",
+    "schema_source_pins": "offline-probes/schema/source-pins.json",
+    "schema_graph": "offline-probes/schema/results/cargo-graph.json",
+    "ws": "offline-probes/ws/ws-evidence.json",
+    "ws_source_pins": "offline-probes/ws/ws-source-pins.json",
+    "dependency_retrieval": "offline-probes/dependency-retrieval.json"
+  },
+  "candidate_decisions": {
+    "Schema": "Reopen engine/mechanism comparison; unadapted engine and draft-switch-only rejected; comparison candidate only",
+    "WS": "Current TW/TTW0.28 combination cannot remain unchanged as complete backend; PMD and handshake remedy/reselection needed; no replacement selected"
+  },
+  "controlled_runtime_network": "offline Schema; WS 127.0.0.1 only, fake canaries, Bun --no-install",
+  "preparation_network": "Two official crate retrievals with lock checksum; separate uncontrolled initial Bun auto-resolution actually created partial-json cache. Network/origin unknown; quarantined; not counted as controlled proof.",
+  "side_effects": {
+    "uncontrolled_cache_inventory": "offline-probes/ws/uncontrolled-cache-inventory.json",
+    "quarantine": "TEMP/opi-pi130-ws-offline-probe/uncontrolled-bun-node_modules-quarantine",
+    "root_node_modules_absent": true
+  },
+  "checks": {
+    "spec-draft.md_canonical_rows": 67,
+    "spec-draft.zh.md_canonical_rows": 67,
+    "acceptance-matrix.md_canonical_rows": 59,
+    "bilingual_lines": 492,
+    "schema_manifest_members": 24,
+    "ws_manifest_members": 28,
+    "schema": {
+      "fixtures": 85,
+      "pi_records": 85,
+      "native_records": 276,
+      "ordinary_cases": 74,
+      "contained_cases": 11,
+      "commands_exit0": 29,
+      "scratch_replay_commands_exit0": 29,
+      "target_graph_packages": 74,
+      "registry_packages": 73
+    },
+    "ws": {
+      "constructor_observations": 60,
+      "constructor_exit_counts": {
+        "0": 52,
+        "3221226505": 6,
+        "1": 2
+      },
+      "rust_loopback": 15,
+      "supplied_reader": 16,
+      "partial_codec": 15
+    },
+    "Pi_snapshot": {
+      "source": ".repo/pi-1.3.0",
+      "files": 1925,
+      "tree_sha256": "08a98ac282590eeb8255dd326e566b8b456212b4018a6d59cce44caf7f62e9d2",
+      "hash_algorithm": "SHA256 of sorted POSIX relative path + NUL + file SHA256 + LF",
+      "excluded_directory_names": [
+        ".git",
+        "node_modules",
+        "dist"
+      ],
+      "verified_tree_sha256": "08a98ac282590eeb8255dd326e566b8b456212b4018a6d59cce44caf7f62e9d2"
+    },
+    "checked_markdown_files": 13,
+    "local_file_links": 336,
+    "independent": {
+      "schema_replay_commands_exit0": 29,
+      "pi_records_identical": 85,
+      "native_records_identical": 276,
+      "ws_selected_reference_children": 12,
+      "ws_selected_native_loopbacks": 3,
+      "script_negative_paths": "expected exit1 before running/extracting untrusted inputs",
+      "report_sha256": "a3474a7a8b8f96360975d10add0a398d29bccacf8255d0658225e531e56f3555"
+    },
+    "blob_byte_preservation": "repository * -text; checked case/results attributes unset, no line-ending normalization"
+  },
+  "commands": [
+    {
+      "command": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exit": 0,
+      "stdout": "8cb0fd68db528ae3d3c61874458d45e46bffa29c",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "python",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit": 0,
+      "stdout": "opi documentation contracts: PASS",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--cached",
+        "--name-status"
+      ],
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--name-status"
+      ],
+      "exit": 0,
+      "stdout": "M\tdocs/research/pi-ai-opi-ai-alignment/README.md\nM\tdocs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md\nM\tdocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md\nM\tdocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md\nM\tdocs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "ls-files",
+        "--others",
+        "--exclude-standard"
+      ],
+      "exit": 0,
+      "stdout": "docs/research/pi-ai-opi-ai-alignment/offline-probes/README.md\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/dependency-retrieval.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/independent-review.md\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/independent/schema-negative-pin.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/independent/schema-replay-comparison.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/independent/ws-prepare-tests.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/README.md\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/artifact-list.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/cases.jsonl\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/loader.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/pi-runner.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-build.stderr\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-features.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-graph.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-version.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/commands.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/lock-seed.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/native.jsonl\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/node-runtime.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/pi.jsonl\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/portable-replay-commands.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/portable-replay-runtime.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/regex-exploration.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/runtime-inputs.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/rustc-version.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/run.py\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/rust/Cargo.lock\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/rust/Cargo.toml.template\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/rust/src/main.rs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/source-pins.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/summary.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cache-seeding.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-build-final.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-build.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-features.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-preflight.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-version.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/prepare-ws-source.py\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/provider-import-initial-diagnostic.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/provider-import.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/public-provider-no-install-imports.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/run-ws-probe.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/runtime-and-provider-imports-bad-env.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/runtime-and-provider-imports.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/runtime-info.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust-supplied-reader-results.jsonl\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust/Cargo.lock\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust/Cargo.toml\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust/src/main.rs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rustc-version.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/source-archives.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/uncontrolled-cache-inventory.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-client.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-commands.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-durable-assets.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-evidence.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-node-bun-results.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-rust-loopback-results.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-source-pins.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-summary.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-schema-ws-offline-evidence.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-schema-ws-offline-review.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-schema-ws-offline-validation.md",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "check-attr",
+        "text",
+        "--",
+        "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\schema\\cases.jsonl",
+        "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\ws\\ws-node-bun-results.json"
+      ],
+      "exit": 0,
+      "stdout": "\"D:\\\\Luiz\\\\Odradek\\\\opi\\\\docs\\\\research\\\\pi-ai-opi-ai-alignment\\\\offline-probes\\\\schema\\\\cases.jsonl\": text: unset\n\"D:\\\\Luiz\\\\Odradek\\\\opi\\\\docs\\\\research\\\\pi-ai-opi-ai-alignment\\\\offline-probes\\\\ws\\\\ws-node-bun-results.json\": text: unset",
+      "stderr": ""
+    }
+  ],
+  "independent_reviews": [
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/independent-review.md",
+      "sha256": "a3474a7a8b8f96360975d10add0a398d29bccacf8255d0658225e531e56f3555"
+    }
+  ],
+  "test_impact": {
+    "product": "none",
+    "research": "add",
+    "product_add": 0,
+    "product_update": 0,
+    "product_delete": 0
+  },
+  "not_executed": [
+    "Full Pi/opi WS public provider and complete V acceptance",
+    "Rust normalizer/opi public schema utility, full semantics/adaptation",
+    "Full PMD parameters/fragment/control/context takeover, owned Upgrade/proxy/TLS/cancel/pool",
+    "Other five backend group runtime proofs; product Cargo feature closure/external consumer/MSRV/three platforms/catalog hydrate",
+    "Live supplier/OAuth/metadata calls, product implementation/admission, commit/push"
+  ],
+  "shared_worktree": {
+    "input_staged": "",
+    "input_unstaged": "",
+    "input_untracked": "",
+    "final_staged": "",
+    "final_unstaged": "M\tdocs/research/pi-ai-opi-ai-alignment/README.md\nM\tdocs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md\nM\tdocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md\nM\tdocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md\nM\tdocs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+    "final_untracked": "docs/research/pi-ai-opi-ai-alignment/offline-probes/README.md\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/dependency-retrieval.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/independent-review.md\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/independent/schema-negative-pin.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/independent/schema-replay-comparison.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/independent/ws-prepare-tests.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/README.md\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/artifact-list.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/cases.jsonl\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/loader.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/pi-runner.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-build.stderr\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-features.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-graph.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-version.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/commands.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/lock-seed.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/native.jsonl\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/node-runtime.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/pi.jsonl\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/portable-replay-commands.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/portable-replay-runtime.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/regex-exploration.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/runtime-inputs.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/rustc-version.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/run.py\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/rust/Cargo.lock\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/rust/Cargo.toml.template\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/rust/src/main.rs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/source-pins.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/schema/summary.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cache-seeding.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-build-final.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-build.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-features.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-preflight.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-version.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/prepare-ws-source.py\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/provider-import-initial-diagnostic.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/provider-import.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/public-provider-no-install-imports.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/run-ws-probe.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/runtime-and-provider-imports-bad-env.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/runtime-and-provider-imports.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/runtime-info.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust-supplied-reader-results.jsonl\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust/Cargo.lock\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust/Cargo.toml\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust/src/main.rs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rustc-version.txt\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/source-archives.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/uncontrolled-cache-inventory.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-client.mjs\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-commands.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-durable-assets.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-evidence.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-node-bun-results.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-rust-loopback-results.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-source-pins.json\ndocs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-summary.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-schema-ws-offline-evidence.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-schema-ws-offline-review.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-schema-ws-offline-validation.md"
+  },
+  "errors": [],
+  "file_sha256": [
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md",
+      "bytes": 135083,
+      "sha256": "1f5fdca561b790259c4d3a46a50b8126c372203b0ceb0bc0b5fd1286d27f0873"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/dependency-retrieval.json",
+      "bytes": 1271,
+      "sha256": "9a2d82db08f64f9a63365faa0699a2a975c573444c3376d62ddc3914aba0efb1"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/independent/schema-negative-pin.json",
+      "bytes": 711,
+      "sha256": "49b7e932831cde42775e492a9858f12e79bf6cfaa7c514f7dbb5e22dfc2239e9"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/independent/schema-replay-comparison.json",
+      "bytes": 1602,
+      "sha256": "b3e791d972132b66ed64ef425510d8ea576aa9b3f7bd64eed35d737a85211728"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/independent/ws-prepare-tests.json",
+      "bytes": 1539,
+      "sha256": "36e391408c5c433219bd3504d7b24791e588495b6f2121f210ea9ab44b6cbc16"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/independent-review.md",
+      "bytes": 9654,
+      "sha256": "a3474a7a8b8f96360975d10add0a398d29bccacf8255d0658225e531e56f3555"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/README.md",
+      "bytes": 3154,
+      "sha256": "ec812317586bcbbabaef4d909b58fe7b20f04f74918af80c3a6851542d79aa3a"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/artifact-list.json",
+      "bytes": 3940,
+      "sha256": "564b3adb6056737092f0126495e1bc774809143ac683de84f1ce4d8e00b56062"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/cases.jsonl",
+      "bytes": 12130,
+      "sha256": "3e6a34add198120c736b80fc999cf74ee93b493e9b31f3b2819e814dadbd159c"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/loader.mjs",
+      "bytes": 640,
+      "sha256": "6f191edda4d91fce9abf7597522b5154d069d00d324e5b4e5a26aaa2c5d92b29"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/pi-runner.mjs",
+      "bytes": 2187,
+      "sha256": "cd73bee1eb0653bf9c43fff11cbbd5a9db9b2aab4fff2dcb84e2619831884c43"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/README.md",
+      "bytes": 8960,
+      "sha256": "801cc935a0ac6e6ce37453738755970c14a82372cdda7257497d5b3308e31dea"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-build.stderr",
+      "bytes": 186,
+      "sha256": "368d3642608038d3c2fb75d24f19cd7c27234d67f993881008abeba76729106a"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-features.txt",
+      "bytes": 31022,
+      "sha256": "395c09837589333fb255430d6df5f6a72346b111c07c996d68dbd74d733ee70e"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-graph.json",
+      "bytes": 111079,
+      "sha256": "eb47c097242b28682920bc7b767c5e936bb7c0287ed22999e270c0e66543f825"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/cargo-version.txt",
+      "bytes": 313,
+      "sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/commands.json",
+      "bytes": 16575,
+      "sha256": "fa07c4d32be15df6817107fede92c686de7f14ff4b9d00201476eeb6262e0d5c"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/lock-seed.json",
+      "bytes": 573,
+      "sha256": "c452c56f0a66790c83e7977eca4087a46c6af164caff3b90da8ffba62e0c6c9a"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/native.jsonl",
+      "bytes": 98753,
+      "sha256": "b0473bcb8c4e8a8ca7fc9aa3f346810d7f1753f2db2710b7f53380a585499a6e"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/node-runtime.json",
+      "bytes": 1035,
+      "sha256": "6db9c8359b163c8c9690d96e02f062de7361acf91e3c5350369c7dfc370d14ac"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/pi.jsonl",
+      "bytes": 28967,
+      "sha256": "093eb953ab8000ab53474cd5ebadda0bb843f17c803be827338c20d5f05eca24"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/portable-replay-commands.json",
+      "bytes": 16967,
+      "sha256": "cfc4515a35bc009f187fa8ddd3ef2db079a9f2c206995602345a193b2464d361"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/portable-replay-runtime.json",
+      "bytes": 1280,
+      "sha256": "f8a01618e7733d8dad78113312106f62f8cdf10cc37cac51c5c68c2561378baa"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/regex-exploration.json",
+      "bytes": 815,
+      "sha256": "119a5c51afc473ecd7caeb32f3cf030b4ac2ab8a24774a196c2be4fa82bbfe8f"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/runtime-inputs.json",
+      "bytes": 1280,
+      "sha256": "6a4137ba3feffbe237f4440dd8fcccdeecec98c1411cd0638b68809ff474f230"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/results/rustc-version.txt",
+      "bytes": 194,
+      "sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/run.py",
+      "bytes": 9155,
+      "sha256": "c3a10a7597a9e94fb35724b5ec3fa6b8ac85d70e6d9d1600f1d86d77ccd3533f"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/rust/Cargo.lock",
+      "bytes": 21348,
+      "sha256": "eb20a03f072f3285dba88397583cca8a4a710c72b613dbfc9240ea56832a742f"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/rust/Cargo.toml.template",
+      "bytes": 217,
+      "sha256": "ff88d64f5713f85a008299de0d7d7518e862668ed517b7374e01d429c67f67e1"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/rust/src/main.rs",
+      "bytes": 5232,
+      "sha256": "5edc86dedb3e6a2a50bcaf05248a72d8b67a1a2d6e32c2c4c8cf1c4860c33b5e"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/source-pins.json",
+      "bytes": 2596,
+      "sha256": "7e26085bebc02dbb7d12b8f688ca62c9238545001bc6a6e60cf4628e9b9020f3"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/schema/summary.json",
+      "bytes": 1478,
+      "sha256": "1dc401071163512d0d6d5b1cc5037435a9014f67781e9bb4712252d1b8b451f7"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cache-seeding.json",
+      "bytes": 979,
+      "sha256": "604dfd20df5dbc17a75bef610f50579acecb56f46515185577e527d15ea2709d"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-build-final.txt",
+      "bytes": 1134,
+      "sha256": "8ff01fb54f9c3d3dfeef3b09ec908ff8073f246b75961275e932955c413b4dec"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-build.txt",
+      "bytes": 3905,
+      "sha256": "e99ed2e55b9983ab88eca53a39cb9248948ab31286315a64b7d3618446ab2b57"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-features.txt",
+      "bytes": 18161,
+      "sha256": "db6f09d2810b80fb9ac3ba30b3c09f4641ee6e2376dd0b949cb08634bba214a5"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-preflight.txt",
+      "bytes": 201,
+      "sha256": "bab269fb098d6cb4e0d075d7f3f3e78ab72470aba3ffaf171937c479b1e209cd"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/cargo-version.txt",
+      "bytes": 313,
+      "sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/prepare-ws-source.py",
+      "bytes": 1962,
+      "sha256": "c6872cdcf87266534b94bc52a9a35b705ed76e53db257a0054043541b2876466"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/provider-import-initial-diagnostic.mjs",
+      "bytes": 498,
+      "sha256": "5f3c49bd8523262bc67c1e2b99d1e15d9cbb806dff6c6b4ddc2dbd3a973b61f5"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/provider-import.mjs",
+      "bytes": 448,
+      "sha256": "9c6fddd5911392d8b541fe362331f34af74038ebf739787a28253199396cef35"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/public-provider-no-install-imports.json",
+      "bytes": 2195,
+      "sha256": "21d890ede47e059cc1d8ccd1630a6bd1d8005bcc49573d972ca8b69d7eb6a0bf"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/run-ws-probe.mjs",
+      "bytes": 7644,
+      "sha256": "10fa649635ec0e8437d90e766e96cc00744be00a474e949e0febd4fb3cb3e765"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/runtime-and-provider-imports-bad-env.json",
+      "bytes": 3789,
+      "sha256": "2ef4f1f054e7303033a1e3e7e7d2390c53c37d6604877e6e72b772180af32226"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/runtime-and-provider-imports.json",
+      "bytes": 5468,
+      "sha256": "a588162c5b9804e382bd13d849cab8730f6130ebd401f58ed831e960832e88fc"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/runtime-info.mjs",
+      "bytes": 300,
+      "sha256": "66e8468b09da3636eea465e4757dfe1bf431db0e5e1a1e947e4aff6fe89161ff"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust/Cargo.lock",
+      "bytes": 12118,
+      "sha256": "7df3c0fb518d1ecd8b3165a1845655ef713c291f94b6fc2426ed8c24845e12b9"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust/Cargo.toml",
+      "bytes": 607,
+      "sha256": "5acbd9b118ceccca7ab90e07fbc01000dcdf8a13395d8fbcff9b7271710abde4"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust/src/main.rs",
+      "bytes": 5744,
+      "sha256": "106adce0abdcea2c35f71528cbc3a23d79fe921c3512b64435782aa88f86b51e"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rust-supplied-reader-results.jsonl",
+      "bytes": 15289,
+      "sha256": "ed9442c5fe4721991d346e2565ccda8b869a2e9b49841493f8fa7d2cc747c06f"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/rustc-version.txt",
+      "bytes": 194,
+      "sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/source-archives.json",
+      "bytes": 799,
+      "sha256": "7d4f8e01265b4f056d9d1c889a120320b39398cc8820b6e4a03d7b085b0b347e"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/uncontrolled-cache-inventory.json",
+      "bytes": 2271,
+      "sha256": "82b046261affb5a14b852ac8ea327da280c136747e5e643cba5f41b200df78aa"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-client.mjs",
+      "bytes": 1964,
+      "sha256": "401c2d02bbd8b037b24a658614ac62cab685465966b3a897b6b2e9456c096094"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-commands.json",
+      "bytes": 2306,
+      "sha256": "4f6f523fdaa8eea76337035a6f57937c3f614280565bd247eb8c3fe0b1a59197"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-durable-assets.json",
+      "bytes": 5079,
+      "sha256": "9cac3b74b22bee9caa447e77ac4de1983b112f1d87c8c3aa18bd53a5f258f2cb"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-evidence.json",
+      "bytes": 29732,
+      "sha256": "381226dbd5a71ac2b05a0f8a561e90b12dc08cc2e1b053242c666402c93f4526"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-node-bun-results.json",
+      "bytes": 414294,
+      "sha256": "b0d661752c33bd2800409e69192aafd1c56de0e7faea3513904a798cf2dd2a04"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-rust-loopback-results.json",
+      "bytes": 28705,
+      "sha256": "f6ed263f136afc3f56c6b87cbebb35f249429ff6b8f9871fbfccb9704af70b0e"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-source-pins.json",
+      "bytes": 35025,
+      "sha256": "cd801df9bab34faa9c291f11dd5b95e2515809e5ac7409e6fa253598d2e1121d"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes/ws/ws-summary.md",
+      "bytes": 8200,
+      "sha256": "ac0e8c821b60d5efca6c51f1a1015fb3777b67a51f0e4d47fa7748191ea66b05"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md",
+      "bytes": 42467,
+      "sha256": "3dde78e5f3f568c7894195a84bcbe6027c159023ae073a98d624d683cd868cbf"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md",
+      "bytes": 53548,
+      "sha256": "93df9a3819b6a284e31056c094bad22532232f9b0250f89b9cd2c16b6c873e20"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-schema-ws-offline-review.md",
+      "bytes": 5508,
+      "sha256": "ce4ab318880139728e9620e0275486b40a505d9f73709268062d37e7a01b064c"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-schema-ws-offline-validation.md",
+      "bytes": 16274,
+      "sha256": "2c2fd814c9dde3cac2ddc688d9db5f3f88e230397e8462c936b9d2d79c0867c0"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/README.md",
+      "bytes": 5541,
+      "sha256": "e25a5894d9fa9ec3a6ab71cd4513aba403752a8b04c78e2be6bf5021be297288"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md",
+      "bytes": 124040,
+      "sha256": "3ff0e0eb3690889001a9d509b4ff7b65a967612324254339880315cc6222aa71"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md",
+      "bytes": 114393,
+      "sha256": "2f3deb10bfacbc06c96eafeba8e61f4697573799f414453293b0d78786f417a8"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+      "bytes": 12094,
+      "sha256": "056b241bed8b090196e040a0e133c2962d929d849e62d5cdb116d78300913073"
+    }
+  ],
+  "self_hash": "excluded to avoid recursive digest"
+}

@@ -1,0 +1,2 @@
+     Locking 94 packages to highest Rust 1.99.1 compatible versions
+      Adding rand v0.8.8 (available: v0.9.4)

@@ -1,0 +1,26 @@
+{
+  "observations": 80,
+  "registryPackages": 93,
+  "ownedValid12": true,
+  "contextActuallyRequiresDictionary": true
+}
+node fragment-ping messages=1 exit=0 compressedOut=False outValid=True
+node context-takeover messages=2 exit=0 compressedOut=False outValid=True
+node window9 messages=2 exit=0 compressedOut=False outValid=True
+node headers125 messages=1 exit=0 compressedOut=False outValid=True
+node header66000 messages=0 exit=0 compressedOut=False outValid=False
+bun fragment-ping messages=1 exit=0 compressedOut=True outValid=True
+bun context-takeover messages=2 exit=0 compressedOut=True outValid=True
+bun window9 messages=2 exit=0 compressedOut=True outValid=True
+bun headers125 messages=1 exit=0 compressedOut=False outValid=True
+bun header66000 messages=1 exit=0 compressedOut=False outValid=True
+ratchet-native-patched fragment-ping messages=1 exit=0 compressedOut=True outValid=True
+ratchet-native-patched context-takeover messages=2 exit=0 compressedOut=True outValid=True
+ratchet-native-patched window9 messages=2 exit=0 compressedOut=True outValid=True
+ratchet-native-patched headers125 messages=0 exit=0 compressedOut=False outValid=False
+ratchet-native-patched header66000 messages=1 exit=0 compressedOut=False outValid=True
+ratchet-owned-patched fragment-ping messages=1 exit=0 compressedOut=True outValid=True
+ratchet-owned-patched context-takeover messages=2 exit=0 compressedOut=True outValid=True
+ratchet-owned-patched window9 messages=2 exit=0 compressedOut=True outValid=True
+ratchet-owned-patched headers125 messages=1 exit=0 compressedOut=False outValid=True
+ratchet-owned-patched header66000 messages=1 exit=0 compressedOut=False outValid=True

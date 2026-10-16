@@ -1,0 +1,19 @@
+[package]
+name = "opi-research-transport-auth"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "opi-research-transport-auth"
+path = "main.rs"
+
+[dependencies]
+reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls-manual-roots-no-provider", "http2"] }
+tokio = { version = "=1.52.3", features = ["rt", "macros"] }
+serde_json = "=1.0.149"
+ring = { version = "=0.17.14", default-features = false, features = ["std"] }
+rustls = { version = "=0.23.40", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pki-types = { version = "=1.14.1", default-features = false, features = ["std"] }

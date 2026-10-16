@@ -1,0 +1,84 @@
+[
+  {
+    "command": [
+      "cargo",
+      "build",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ready-transport-auth\\replay\\crate\\Cargo.toml"
+    ],
+    "exit": 0,
+    "stdout": "cargo-build.txt",
+    "stderr": "cargo-build.txt.stderr",
+    "containment_seconds": 120
+  },
+  {
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--format-version",
+      "1",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ready-transport-auth\\replay\\crate\\Cargo.toml"
+    ],
+    "exit": 0,
+    "stdout": "cargo-metadata.json",
+    "stderr": "cargo-metadata.json.stderr",
+    "containment_seconds": 30
+  },
+  {
+    "command": [
+      "cargo",
+      "tree",
+      "--locked",
+      "--offline",
+      "-e",
+      "features",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ready-transport-auth\\replay\\crate\\Cargo.toml"
+    ],
+    "exit": 0,
+    "stdout": "cargo-features.txt",
+    "stderr": "cargo-features.txt.stderr",
+    "containment_seconds": 30
+  },
+  {
+    "command": [
+      "D:\\Users\\Luiz\\anaconda3\\python.exe",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-transport-auth\\fixtures.py",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ready-transport-auth\\replay\\fixtures"
+    ],
+    "exit": 0,
+    "stdout": "fixtures.txt",
+    "stderr": "fixtures.txt.stderr",
+    "containment_seconds": 90
+  },
+  {
+    "command": [
+      "D:\\nvm\\v24.13.0\\node.exe",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-transport-auth\\probe.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ready-transport-auth\\npm",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ready-transport-auth\\replay\\fixtures",
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-research-transport-auth.exe"
+    ],
+    "exit": 0,
+    "stdout": "results.jsonl",
+    "stderr": "results.jsonl.stderr",
+    "containment_seconds": 90
+  },
+  {
+    "command": [
+      "D:\\nvm\\v24.13.0\\node.exe",
+      "--experimental-strip-types",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-transport-auth\\proxy-probe.mjs",
+      "D:\\Luiz\\Odradek\\opi\\.repo\\pi-1.3.0"
+    ],
+    "exit": 0,
+    "stdout": "proxy-results.jsonl",
+    "stderr": "proxy-results.jsonl.stderr",
+    "containment_seconds": 15
+  }
+]

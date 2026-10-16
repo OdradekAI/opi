@@ -1,0 +1,88 @@
+
+running 1 test
+test tests::readiness_memory_public_codec_pmd_and_prior_regressions ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 13 tests
+test framed::readiness_memory::readiness_memory_checked_message_total ... ok
+test framed::readiness_memory::readiness_memory_checked_frame_total ... ok
+test framed::readiness_memory::readiness_memory_bulk_growth_and_shared_tail ... ok
+test framed::readiness_memory::readiness_memory_actual_reservation_failure ... ok
+test framed::readiness_memory::readiness_memory_representation_limit ... ok
+test framed::readiness_memory::readiness_memory_retains_pmd_rsv_patch ... ok
+test framed::readiness_memory::readiness_memory_rejects_rfc_high_bit ... ok
+test framed::readiness_memory::readiness_memory_accepts_shortest_boundaries ... ok
+test framed::readiness_memory::readiness_memory_tail_once_and_order ... ok
+test framed::readiness_memory::readiness_memory_rejects_nonminimal_127 ... ok
+test framed::readiness_memory::readiness_memory_rejects_nonminimal_126 ... ok
+test framed::readiness_memory::readiness_memory_valid_huge_declaration_eof_is_io ... ok
+test framed::readiness_memory::readiness_memory_huge_declaration_pending_does_not_reserve_payload ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 59 filtered out; finished in 0.00s
+
+   Compiling ratchet_core v1.2.1 (C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws-memory\source\ratchet_core-1.2.1)
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> source\ratchet_core-1.2.1\src\ws.rs:477:26
+    |
+477 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<Result<(), Error>>;
+    |                          ^^^^^^^^^                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+477 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<'_, Result<(), Error>>;
+    |                                                                   +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> source\ratchet_core-1.2.1\src\ws.rs:480:17
+    |
+480 |     fn shutdown(&mut self) -> BoxFuture<Result<(), Error>>;
+    |                 ^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                 |
+    |                 the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+480 |     fn shutdown(&mut self) -> BoxFuture<'_, Result<(), Error>>;
+    |                                         +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> source\ratchet_core-1.2.1\src\ws.rs:487:26
+    |
+487 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<Result<(), Error>> {
+    |                          ^^^^^^^^^                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+487 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<'_, Result<(), Error>> {
+    |                                                                   +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> source\ratchet_core-1.2.1\src\ws.rs:499:17
+    |
+499 |     fn shutdown(&mut self) -> BoxFuture<Result<(), Error>> {
+    |                 ^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                 |
+    |                 the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+499 |     fn shutdown(&mut self) -> BoxFuture<'_, Result<(), Error>> {
+    |                                         +++
+
+warning: `ratchet_core` (lib) generated 4 warnings (run `cargo fix --lib -p ratchet_core` to apply 4 suggestions)
+   Compiling opi-readiness-ws-memory v0.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws-memory)
+warning: `ratchet_core` (lib test) generated 4 warnings (4 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.92s
+     Running unittests src\lib.rs (E:/opi/cargo-targets/windows-direct\debug\deps\opi_readiness_ws_memory-1127575f54c768eb.exe)
+     Running unittests src\lib.rs (E:/opi/cargo-targets/windows-direct\debug\deps\ratchet_core-bf9a0b525046780a.exe)

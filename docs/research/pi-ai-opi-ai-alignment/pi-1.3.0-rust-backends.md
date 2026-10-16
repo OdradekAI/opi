@@ -1,10 +1,10 @@
 # Pi 1.3.0：Rust 后端与五项工程合同
 
-> 本页现行基线为本地 Pi 1.3.0；[逐项升级复核](pi-1.3.0-upgrade-review.md)与[固定来源](pi-1.3.0-source-evidence.json)区分本次重读和同摘要继承。旧 1.2.0 审计仅保留原证据日期；未执行运行验收。
+> 本页现行基线为本地 Pi 1.3.0；[逐项升级复核](pi-1.3.0-upgrade-review.md)与[固定来源](pi-1.3.0-source-evidence.json)区分本次重读和同摘要继承。旧 1.2.0 审计仅保留原证据日期；本页原源码轮未执行运行验收。最新[Schema／WS离线实验](pi-1.3.0-schema-ws-offline-validation.md)另列实际执行与候选判定，不代表产品验收。
 
 > 2026-10-16，非规范性候选附件。双语 [spec](spec-draft.md)／[中文](spec-draft.zh.md)明确采纳本页；[验收矩阵](acceptance-matrix.md)仍是唯一 V 索引。本页记录有条件机制选择，不表示依赖已加入 Cargo、已编译、已实施或已经获得正式准入。中文技术附件没有既有英文 counterpart；双语正文包含对应义务并共同引用本页。
 >
-> 输入见 [backend revision baseline](pi-1.2.0-backend-revision-baseline.json)；本页处理[架构审查](pi-1.2.0-rust-architecture-review.md)的 R-01–08。选型采用精确发布源码；参数/新增拒绝按[来源审计](pi-1.2.0-parameter-audit.md)修正，旧固定值不能作为默认实现依据；新增依赖的 Cargo 解析、完整传递闭包、平台和运行 conformance 都留给未来准入后的实施。没有安装、编译或执行下载的第三方代码。
+> 输入见 [backend revision baseline](pi-1.2.0-backend-revision-baseline.json)；本页处理[架构审查](pi-1.2.0-rust-architecture-review.md)的 R-01–08。选型采用精确发布源码；参数/新增拒绝按[来源审计](pi-1.2.0-parameter-audit.md)修正，旧固定值不能作为默认实现依据；新增依赖的 Cargo 解析、完整传递闭包、平台和运行 conformance 都留给未来准入后的实施。该前置源码轮没有安装、编译或执行下载的第三方代码；后续离线实验的第三方执行、归档准备与隔离锁图以最新报告为准。
 
 > 后续专项核查以 Opi `a37ed70` 为输入，见[逐项源码／验证／可行方案](pi-1.3.0-backend-gap-audit.md)和[独立复审](pi-1.3.0-backend-gap-review.md)。本页五项合同继续适用，但 Schema/WS 等选型必须先过专项接受集和机制可达性检查；七组覆盖缺口全部 OPEN。旧轮验证只证明当时文档。
 
@@ -47,22 +47,21 @@
 
 来源身份/权限/TLS保护不撤回：不能redirect后重选账户、把target credential添加到subject source请求、绕验证或向未授权目的地发秘密/model data。若必要保护与Pi某运行时不同，必须列为RDF差异并以同意/拒绝正反例验证，不能称默认等价。custom transport不二次包，opaque client有显式conformance责任，不保证任意外部代码。
 
-### 2.4 Schema：撤回未证明的引擎等价
+### 2.4 Schema：确定 source-defined JSON 方言与数据 profile
 
-jsonschema0.28.3(default-features=false)保留为有条件native引擎候选；选型尚不能关闭Pi TypeBox1.3.27验证义务。Pi普通JSON路径不按$schema切换dialect，未知format默认通过，已知format仍校验，unknown keyword不一概拒绝；contentEncoding/contentMediaType在其dispatch中未执行。原root/metadata/refs/normalization保持。strict wire副本与本地validation分开。
+选定私有、JSON-only TypeBox 方言 IR/evaluator＋regress0.12.0 算法的 Unicode16 数据维护分叉；jsonschema0.28.3 退出工具参数默认验证路径，不授权删除其其他产品用途。依据与成本在[Schema设计](pi-1.3.0-readiness-schema.md)：原版62/64、固定数据64/64，11个合成 fallible 分支控制、官方生成器重复一致；不把有限研究当完整 SDK 验收。
 
-| 方面 | 修正后要求 |
+| 方面 | 确定合同／保留义务 |
 |---|---|
-| 数量/容量/工作 | 撤回schema/resource/instance bytes、nodes、targets、depth、pattern长度、全局work、validator cache容量、job/queue/error数量等无来源默认值。具体旧值逐项列在来源审计；不换另一组猜测 |
-| backend默认 | jsonschema默认2020-12，支持Draft4/6/7/2019/2020；unknown formats默认ignore，format assertion随draft。fancy-regex每match默认1000000 backtracks、regex cache10均是backend事实，不是Pi预算。TypeBox默认maxErrors8是诊断设置，不是schema接受上限 |
-| dialect/keyword/format | 撤回强制Draft7/仅三dialect及unknown/混合dialect、keyword、format blanket拒绝。补齐Pi实际有意义的约束/format；不能通过全部AnnotationsOnly掩盖差异，也不能把jsonschema Draft7额外content assertions加给Pi |
-| ref/recursion | Pi仅在内存解析，无隐式schema HTTP/file I/O；可用explicit static retriever保持该性质，即使feature union变化。URI只是identity；不按scheme拒绝。撤回non-descending cycle blanket拒绝；实际ref/cycle终止与匹配结果必须语料验证，不假称任意cycle安全 |
-| regex/error | 撤回所有pattern×所有string/key guard、复制private ECMA canonicalizer及allOf碰撞重写。它们可能拒绝无关分支且新增未证算法。锁定engine吞掉某些嵌套regex错误的事实仍是blocker；必须按实际求值分支正确处理或重选机制，不得伪成功/全局拒绝替代等价 |
-| 调度/cache | 内部有界并发、等待可取消、cache可淘汰/不缓存，而不因缓存/worker tuning拒绝合法schema。实际同步计算不能被async timeout强杀；caller离开不提前释放仍运行worker的permit；不承诺CPU毫秒上限 |
+| admission／keywords | 以固定 TypeBox 结构 guard 识别，inert 的坏形状字段不先遭标准 metaschema 拒绝；mixed items/prefixItems、ref siblings、各 applicator/evaluated 状态按原路径。非法被识别 regex 的 compile 错误不被延期忽略 |
+| formats／数值／长度 | 移植21个默认format；unknown同源inert、近似grapheme与binary64规则保留；不以标准draft、UAX29、通用正则或同名validator替代。严格wire副本与local validation分离 |
+| regex／错误 | 固定Unicode16生成数据和ECMA算法；Result在实际访问的分支传播，不以全pattern guard拒绝未访问分支，不把执行错误变成not/if等的成功。无默认fuel／work／shape／depth配额 |
+| ordered JSON／refs | serde_json preserve_order＋JS integer-index枚举；内存URI identity／dynamic/ref frame按源，零schema网络或文件检索。显式work stack，无进展循环typed非成功，不泛拒生产性递归 |
+| JS leaves／发布 | ryu-js1.0.2 safe Buffer；url2.5.8/idna1.1.0/adapter1.2.1/ICU4X2.0.0数据profile。10个受控namespace后端包按registry可解析分发；不能靠library lock或consumer root patch。43/43叶及普通ICU2.2共图隔离已测，产品发布未验收 |
+| normalizer／语言差异 | clone-before-normalize、原值优先union、JS Number/String、optional-null、原schema最终check；保留raw、精确整数及root漏洞修正。UTF8 String不表示孤立UTF16 surrogate，typed失败且保留raw，不替换后伪成功 |
+| ownership／调度 | IR/regex按声明generation owned共享，cache可淘汰不拒合法输入；耗CPU工作在owned执行单元，取消不假称硬杀同步引擎。生成期工具不进入产品build.rs；固定补丁／数据／许可和升级回归 |
 
-专项补充：jsonschema的metaschema验证早于公开keyword hook，关闭开关为pub(crate)，不能作为候选实现步骤。TypeBox已知keyword形状guard、mixed applicators/$ref siblings、近似grapheme长度、metadata ref target与$schema legacy frame、regex bool父节点吞错都须先证明公开机制可表达；详见[Schema专项](pi-1.3.0-backend-gap-audit.md#2-schema公开机制可表达性先于选型)。本轮不批准固定draft/全量lowering、自研validator或fork。
-
-验证语料至少包含unknown format、uuid/url/json-pointer-uri-fragment、unknown $schema、混用旧items/prefixItems、inert contentEncoding、ECMA whitespace U+1680、metadata及irrelevant regex branch；期望来自固定TypeBox/Pi源码，不是候选engine自证。八项源码导出正例在来源审计；尚未运行。保留clone-before-normalize、JS numeric/String语义、原schema完整验证与typed脱敏错误；修正Pi root-conversion验证漏洞须单独标记正确性差异，不借此添加全局资源拒绝。
+维护范围明确是完整JSON方言、resolver、formats与Pi normalizer，不能再称几个leaf hook。64case只验证关键可表达子集，完整42个JSON机制、所有formats/refs/normalizer、公开consumer、cache/cancel/MSRV/平台仍 V-11/34/35/39/41/58 **OPEN**。原metaschema／fancy-regex失败证据在历史报告保留；本设计不调用其private bypass。
 
 ### 2.5 Custom API：类型安全不等于实例准入门槛
 
@@ -76,25 +75,23 @@ call创建时冻结完整record/adapter/options；后来替换/删除不改旧ca
 
 ### 3.1 HTTP、TLS、proxy
 
-保留reqwest0.12.28、现Tokio1.52.3/futures0.3.32，以及rustls0.23.40/tokio-rustls0.26.4/ring0.17.14、webpki-roots1.0.7/httparse1.10.1的机制意图；本轮不改Cargo/features。后续root workspace声明、完整锁图/feature/native/MSRV/平台审查仍必需。原仅H1与webpki-only配置不能被称为完成Pi默认对齐。
+保留reqwest0.12.28、Hyper1.9.0、现Tokio1.52.3/futures0.3.32及实例rustls0.23.40/tokio-rustls0.26.4。Hyper response-head/trailer动态存储与无来源buffer cap采用受控窄patch；ring0.17.14仅common crypto，来源需要的signer/verification/KX由私有OpenSSL3 EVP补充，保持WebPKI chain/host/time检查。本轮不改产品Cargo/features。后续root workspace声明、完整锁图/feature/native/MSRV/平台审查仍必需。原仅H1与webpki-only配置不能被称为完成Pi默认对齐。
 
-WS classic Upgrade及明确ProxyPlaceholderSigning需要H1；Pi普通Bedrock默认H2，proxy/FORCE_HTTP1才改H1，须保留该能力或公开未关闭差异，不能因当前features不启H2就默认剥夺。TLS1.2/1.3、SNI/hostname/server验证、禁止bypass及实例显式crypto provider保留；不安装global provider。webpki与host DER roots不能冒称Node/OS/runtime根证书默认等价；企业CA/系统trust覆盖须证明或保持backend差异，不自动读取越权ambient目录。
+WS classic Upgrade及明确ProxyPlaceholderSigning需要H1；Pi普通Bedrock默认H2，proxy/FORCE_HTTP1才改H1，须保留该能力或公开未关闭差异，不能因当前features不启H2就默认剥夺。TLS1.2/1.3、SNI/hostname/server验证、禁止bypass及实例显式crypto provider保留；不安装global provider。默认选固定Node参考bundle，scoped extra/explicit roots按source消费，host roots显式选择。webpki与任意OS roots不冒称Node/Bun同默认；参考bundle打包及企业CA/系统trust各平台覆盖仍需验收，不自动读取越权ambient目录。
 
 构造/静态读取保持零source I/O，首次需要时冻结route/TLS并按有效配置共享pool。scoped>ambient/lowercase>uppercase/protocol>ALL_PROXY、NO_PROXY host/domain/port/IPv6按Pi纯函数语料，空值沿非空fallback；Direct显式表达。Pi helper确实只HTTP(S)proxy，SOCKS/PAC拒绝有来源。custom transport不重复包。proxy/root/identity/cache不会随每次credential无界新建；由配置/owner释放而不是虚构cache容量拒绝请求。
 
 ### 3.2 Codex WS
 
-tokio-tungstenite/tungstenite0.28.0 provided-stream API保留为条件候选；default-features=false，handshake/rustls-tls-webpki-roots，不启自动connect/native-tls/url。已有route stream→client_async_tls_with_config＋instance rustls；不让后端隐式proxy、重选auth、reconnect或fallback。
+选定 owned 严格 Upgrade＋ratchet_core/ext/deflate1.2.1＋公共 PMD message-state 适配及受控 frame/length/storage 修正，详见[WS设计](pi-1.3.0-readiness-ws.md)。TW/TTW0.28.0 不再承担完整目标；不采用 Ratchet 固定32headers握手，也不让新后端隐式proxy、重选auth、重连或fallback。动态head与tail分离、验证Accept／Connection／Upgrade／subprotocol／extension后，使用public from_upgraded接codec。每消息压缩状态、控制／continuation RSV 与RFC长度边界均有明确owner。
 
-HTTP proxy CONNECT；HTTPS proxy先outer TLS验证proxy，再CONNECT/inner TLS验证target；不把target key/body发给proxy，保留CONNECT后overread tunnel bytes。Pi connect15s保留其连接作用域；不另猜own CONNECT64KiB/124-header cap。clear ws也CONNECT的既有候选机制可能不同于运行时proxy，保持待证明覆盖差异，不以proxy失败自动旁路。
+HTTP proxy CONNECT；HTTPS proxy先outer TLS验证proxy，再CONNECT/inner TLS验证target；保留overread tunnel bytes。Pi connect15s保留连接作用域，不另猜CONNECT字节/header上限。具体来源的clear-ws proxy/redirect动作仍按同一路径验，不以proxy失败自动直连旁路。构造零source I/O、一个owned driver／背压、Text RFC／Binary replacement、Ping/Pong/Close不伪装内容；没有新增frame/message/outgoing大小拒绝。
 
-后端默认read/write各128KiB、max write usize::MAX、接收frame16MiB/message64MiB是backend默认，不是Pi限制或SDK推荐。撤回研究者64KiB/32MiB/8MiB/16MiB设置。receive frame/message可通过WebSocketConfig选择不加backend size cap，以免引入额外接受上限；这不等于无限RSS或无限排队。Sink readiness/一个owned driver提供背压；配置关系max_write>write_buffer由checked验证，不能触发assertion。不要用新的写缓冲cap拒绝合法outgoing message。
+来源Node/Bun及受控组合的PMD/window/context/fragment正例和原库反例见原始80观察；它们固定当时六行PMD补丁。独立复审后来发现的长度编码／溢出／声明长度提前分配，必须由最新纯内存修正和结果另证，不能继承旧80为新补丁运行成功。用户限定后续不建立socket或发网络请求；网络层回归明确未重跑，完整provider/proxy/TLS/cancel组装仍OPEN。
 
-不可配置的Upgrade限制仍存在：累计成功read返回的bytes>65536、reads>512、reads>64且平均<128bytes的启发式在解析前执行，可能计入coalesced首帧tail；另有124个headers解析槽。它们不是TCP分包数或单纯header长度。所选版本没有permessage-deflate。这些不是RFC/Pi上限，可能拒绝合法握手或缺协商能力；须适配/重选或保持未关闭coverage，不能称调整WebSocketConfig即可完全消除。Text按RFC、Binary按Pi replacement，Ping/Pong/Close不伪装内容。3xx/Upgrade跟随取决于目标运行时，不能一概套none。
+长度先验RFC最高位与最短编码、checked转换/相加；接收存储按实际到达字节增长，不能按未收到的声明总长预分配，也不恢复固定MiB cap。真实表示／可恢复bulk分配失败typed；常规Rust allocator全进程OOM/abort不被假称完全隔离。修正范围与source identity是所选组合的一部分，遇超出有限边界的新协议需求须重开设计，不能静默另造帧解析器。
 
-专项补充：Pi实际选global WebSocket，Node最低版本不是具体构造器/headers overload/压缩/握手上限证明；lock中的ws不提供该证据。Pi显式websocket也有eligible pre-start SSE fallback，验收必须观察Upgrade/frames。完整自有握手后接public from_partially_read是待验证可行路径，须保留tail并完整验证Accept/token/subprotocol/extensions；不能把它当压缩补救或已选定实现。
-
-取消/cleanup禁止新内容及continuation发布，drop socket并取消/await owned本地driver/timer；撤回2s flush/peer-close默认deadline。可显式采用host shutdown deadline并诚实报告pending，不把close发起当远端ACK/退款。Pi idle5min/max-age55min保留来源：Pi有idle timer且busy跳过；候选next-idle-acquire eviction机制是明确Rust生命周期差异，不是原timer完全等价。源级未运行local proxy/TLS/fragment/cleanup conformance。
+取消或半帧read后销毁整个连接；不复用状态未知codec，不发布新内容/continuation。cleanup取消并await owned本地driver/timer，失败仍继续清理其他。没有2s默认close deadline，host可显式给shutdown deadline并报告pending；不把close发起当peer ACK或退款。Pi idle5min/max-age55min有来源，next-idle-acquire eviction仍为明确Rust生命周期差异。完整pool/continuation/公开调用路径和平台验收保持 V-02/30/49/58 **OPEN**。
 
 ### 3.3 AWS：owned认证协议adapter＋无I/O codec
 
@@ -146,11 +143,11 @@ V-05/09/20/39/49/51/55/58涵盖所有来源、MFA/SSO/login/DPoP/cache、多key 
 
 ### 3.4 Vertex ADC：owned有界协议adapter＋成熟签名
 
-选opi-ai私有ADC adapter，复用reqwest0.12.28/rustls0.23.40和现有serde_json/base64/time，直接使用已经锁定的ring **0.17.14**、rustls-pki-types **1.14.1**（两者default-features=false，std）。不引Google auth/service SDK、JWT聚合依赖树或JS runtime，不fork/vendoring官方源码，不自写密码学原语。
+选opi-ai私有ADC adapter，复用受控reqwest0.12.28/rustls0.23.40和现有serde_json/base64/time。ring-only RS256被真实key语料排除；签名选OpenSSL3私有libctx＋内建default provider＋memory-only decoder/EVP，以openssl-sys0.9.117 raw ABI及最窄缺失extern声明包裹safe Rust。PKI类型仍为rustls-pki-types1.14.1。不引Google auth/service SDK、JWT聚合树或JS runtime，不自写密码学原语；有限受控依赖维护成本明确见[transport/auth设计](pi-1.3.0-readiness-transport-auth.md)。
 
 排除官方google-cloud-auth **1.17.0**：其MSRV1.91不是问题，实际user/external-account/STS交换内部Client::new/builder无公开通用transport注入，reqwest0.13.4/default aws-lc还会引第二套配置路径；仅包装default constructor不能修复内部proxy/env/redirect。gcp_auth0.12.7覆盖不全且有gcloud路径，也不采用。代价是SDK维护下面各条Google标准HTTP exchange与source状态；以固定google-auth-library10.6.2/@google/genai2.21.0源码与官方协议语料跟进，不能称选一个库已自动得到完整ADC。
 
-RSA采用RsaKeyPair::from_pkcs8或from_der(PKCS#1)、RSA_PKCS1_SHA256和SystemRandom；PEM用PemObject/PrivateKeyDer解析。Node gtoken显式传入的JWT header只有alg=RS256；撤回未经jws精确源码证明的typ=JWT/可选kid默认。iss=client_email、scope=cloud-platform、aud=canonical token endpoint、iat/exp=clock/clock+3600，以base64url无padding签名精确header.payload；不默加用户delegation。ring实际key构造范围/非RSA/encrypted-key不支持是backend能力边界，不是Pi通用拒绝规则；typed报告并保持覆盖缺口，不能猜另一算法或称caller增预算可修复。JSON服务账户的PKCS#1/PKCS#8 PEM和mTLS cert/key分别作为待证明目标；ring的RSA签名限制不能推广为rustls全部mTLS算法限制；bare私钥文件缺client_email不能冒称有效ADC。锁定Node的P12/PFX本已拒绝，不为虚构的“Pi旧p12能力”新增OpenSSL或转换命令。
+RSA采用所选private LibCtx的成熟PKCS1/SHA256 EVP签名，不调用默认PKey/Signer／legacy PEM路径、全局NO_LOAD_CONFIG或passphrase UI。原10项加三素数key的11项签名与Node精确JWS一致，poison默认context仍不影响private；这只是C API机制，Rust wrapper／FFI safety／所有key与TLS算法及平台未验收。JWT header只有alg=RS256，iss/scope/aud/iat/exp保留原来源，不加typ/kid/delegation。PKCS1/8 PEM与mTLS分开；原Node拒绝的encrypted-no-passphrase/P12不虚增支持。EC key误挂RS256 header在Rust按RSA算法拒绝，为单列正确性差异。
 
 | Pi实际ADC家族／source | 选定Rust机制与边界 |
 |---|---|
@@ -168,36 +165,46 @@ Pi Models factory要求ADC文件存在且project/location才报告configured；�
 
 model project优先options→stored/scoped GOOGLE_CLOUD_PROJECT→GCLOUD_PROJECT；location优先options→stored/scoped GOOGLE_CLOUD_LOCATION。ADC JSON的project_id/quota_project不替代缺失的模型target，API key与bearer互斥；quota header与target项目分开。Rust直接使用已解析target，不做gcloud config config-helper或CloudResourceManager项目探测。Node的default/well-known分支在auth自身缺项目时可能触发gcloud；显式keyFilename分支绕开该helper，不能把所有Pi ADC都说成会shell。
 
-ADC auth-source retry按锁定Google/Gaxios具体exchange：STS/refresh/service-account显式允许POST，enabled默认额外3、no-response2，各状态/方法/backoff准确对应，不套generation counter。撤回统一0、总60s、16sends、config/subject/token1MiB、chain4和same-origin5跳；metadata1s未直接读到gcp-metadata对应来源时保持证据缺口，不从AWS推导。Google source GET使用其Gaxios/node-fetch默认follow20与method/header规则；其他source/protocol分别核实。配置source身份/endpoint不重选，caller可取消或显式给policy，不代表省略policy就自动变成无限服务容量。
+ADC auth-source retry按锁定Google/Gaxios具体exchange：STS/refresh/service-account显式允许POST，enabled默认额外3、no-response2，各状态/方法/backoff准确对应，不套generation counter。撤回统一0、总60s、16sends、config/subject/token1MiB、chain4和same-origin5跳；gcp-metadata8.1.2源码与getter/loopback已证：选定residency为true时0、false时3000ms，仅metadata单请求；不再猜1s。residency只在该source实际选中后由scoped环境／host观察取得，Models缺file检查不得探测。Google source GET使用其Gaxios/node-fetch默认follow20与method/header规则；其他source/protocol分别核实。配置source身份/endpoint不重选，caller可取消或显式给policy，不代表省略policy就自动变成无限服务容量。
 
 同source的access cache按config/resource digest、principal/target/delegates/audience/scopes/project/quota/endpoint/TLS/mTLS identity分key，单flight、真实expiry加一次5min提前窗口；短TTL有效token可服务当前call，不循环刷新至“超过5min”。source替换/失效时晚refresh不发布；输入subject path相同不能证明实际principal相同，automatic whole-call recovery仍要求source提供稳定账号证据，否则identity-unverified。provider普通retry复用冻结token。
 
 普通可取消token acquisition不获得rotation完整性例外；可能旋转refresh_token或写cache的工作才通过既有source/store mutation owner登记，并由§2.2屏障观察，网络refresh保持其source timeout，store成功须ACK，未设置虚构ownership-to-ACK总时限，不随原caller消失丢唯一token。background cache refresh有selected source owner、来源限定网络timeout及generation，Models最终owner释放时取消普通refresh；已开始的唯一token rotation则按屏障合同。若source store只在内存确认，报告只称内存ACK，不冒充文件/跨进程持久化。
 
-V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、native harmless executable fixture、mTLS隔离、project/quota、expiry/shortTTL、hop/retry/cancel、跨Models与source替换、无ambient/gcloud/额外AWS身份。下载与本轮选型不运行任何进程、ADC探测、真实token或metadata请求。
+V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、native harmless executable fixture、mTLS隔离、project/quota、expiry/shortTTL、hop/retry/cancel、跨Models与source替换、无ambient/gcloud/额外AWS身份。前置源码窗口没有运行这些实验；后续研究已运行synthetic进程／本机loopback metadata／crypto probe，见当前报告。没有真实账户或非本机metadata/token调用；用户最新限制后的WS修复只做无socket纯内存验证。
 
 依据：[官方Rust auth源码](https://docs.rs/crate/google-cloud-auth/1.17.0/source/)、[锁定Node auth archive](https://registry.npmjs.org/google-auth-library/-/google-auth-library-10.6.2.tgz)、[Google ADC规范](https://cloud.google.com/docs/authentication/application-default-credentials)、[外部credential验证](https://cloud.google.com/docs/authentication/external/externally-sourced-credentials)、[ring RSA](https://docs.rs/ring/0.17.14/ring/signature/struct.RsaKeyPair.html)、[PEM解析](https://docs.rs/rustls-pki-types/1.14.1/rustls_pki_types/pem/trait.PemObject.html)。
 
 ## 4. 供应链、平台与验证边界
 
-所有新增依赖仅为有条件文档意图；旧source-evidence的selected清单固定于上一轮，不自动授予本轮Schema guard/其他已撤回配置有效地位，未来从root workspace声明并用Cargo生成锁图，不手改Cargo.lock。所选Query/XML codec manifest MSRV为1.94.1、p256为1.65、WS为1.63；xmlparser/sha1精确manifest未声明MSRV，不将缺失当0，已声明的上述MSRV低于workspace1.97；未声明项及完整closure/三个平台都待未来解析/编译证明。
+所有新增依赖仅为有条件文档意图；旧source-evidence的selected清单固定于上一轮，不自动授予本轮Schema guard/其他已撤回配置有效地位，未来从root workspace声明并用Cargo生成锁图，不手改Cargo.lock。所选Query/XML codec manifest MSRV为1.94.1、p256为1.65；当前Ratchet core/ext/deflate1.2.1的精确manifest均未声明rust-version，不能继承旧TW的1.63。xmlparser/sha1也未声明MSRV，不将缺失当0；已声明下界不替代完整closure与workspace1.97实编译，三个平台仍OPEN。
 
 禁AWS默认HTTPS避免额外aws-lc C/CMake栈；现ring 0.17.14仍含native C/assembly/build.rs，rustls也有build script。最终方案不引入aws-types/service runtime的直接build路径，也不为签名升级hmac/sha2；codecs传递schema/runtime-api仍可能引proc macro，最终build脚本/原生闭包数量须实际审锁图。必须审manifest/features/build/native/proc-macro/transitive与来源，而非声称“全是Rust所以无供应链代价”。不为42个profile预建42个feature/crate，不以feature flag豁免正式准入。
 
-本轮只验证源码、公开签名和文档一致性。future Cargo解析、外部consumer编译、Windows/macOS/Linux构建、真实本地adapter conformance、内存/性能实验、OAuth/vendor接受性都未执行。下载source不是安装/执行，source-only审查也不是compile proof；测试影响none。
+前置源码轮只验证源码、公开签名和文档一致性。后续仅对隔离研究harness做Windows离线Cargo解析／编译／有效features与行为验证，不能代替产品root graph、外部opi consumer、三平台、真实adapter、内存／性能或vendor接受性。产品测试影响none，实验资产新增；原源码证据不追认为compile proof。
 
-## 5. Pi 1.3.0 后端覆盖缺口：全部 OPEN
+<a id="5-pi-130-后端覆盖缺口全部-open"></a>
 
-此表细化已有 AIR/V/RDF 的证明义务，非实施任务或第二账本。[后端专项核查](pi-1.3.0-backend-gap-audit.md)给出各组细项、精确源码定位、未来验证方法与有条件补救路径；本表不替代该证据，也不把源码可行性记为运行通过。新快照未改变WS代码、TypeBox版本或主要外部SDK依赖；新增argumentsError前置拒绝不修复Schema引擎。静态定位只让缺口更具体，不是关闭。保持原有secret/authority与显式caller policy，拒绝无来源默认cap；新增可配置override或typed Unsupported均不能代替接受集证明。
+## 5. 七组设计已确定，产品覆盖全部 OPEN
 
-| 缺口／当前机制 | 1.3.0影响与明确未覆盖项 | 关闭所需证据／既有验收 |
+[设计就绪判定](pi-1.3.0-design-readiness.md)按用户确认的design-only READY口径分开选型和交付，不改原覆盖关闭标准。原[源码专项](pi-1.3.0-backend-gap-audit.md)及[首轮离线报告](pi-1.3.0-schema-ws-offline-validation.md)固定各自原始窗口，不回写为本轮PASS。
+
+| 组 | 当前设计／实际机制证据 | 仍OPEN的产品验收 |
 |---|---|---|
-| Schema：jsonschema0.28.3有条件候选 | TypeBox1.3.27未变；新最终参数错误只在validation前拒绝。dialect/混合keyword、已知/未知format、content assertions、in-memory refs/cycles、ECMA whitespace与branch相关regex error差异仍OPEN | 固定Pi/TypeBox输入→expected→native结果，含unknown format/$schema、uuid/url/json-pointer-uri-fragment、items/prefixItems、inert contentEncoding、U+1680、irrelevant branch与实际错误分支；没有隐式I/O、无全pattern guard/blanket拒绝，root-conversion修正单列。真实公开utility和external consumer；V-35/58，RDF-09 |
-| WS：tungstenite0.28.0 Upgrade与compression | Pi Codex WS路径同摘要；不可配置的累计read bytes/次数/平均长度检查与124-header槽、Connection token-list验证和extension校验风险，以及缺permessage-deflate仍OPEN；精确作用域见专项源码核查。移除receive可配置cap不能解除这两项 | 同运行时Pi与Rust接同一loopback服务：合法大header/多header/小碎片握手、extension协商/压缩消息、无压缩fallback与explicitWS/auto分支，source accept与失败均保留；必须断言真实WS握手/frames；Pi显式websocket的eligible pre-start失败也可fallback，不能用最终SSE成功掩盖任何WS缺口。机制补救/重选与特征闭包证据；V-02/30/49/58，RDF-13/18 |
-| HTTP/proxy/H2与redirect | 仅WS Upgrade和显式placeholder/proxy H1有来源；普通Bedrock默认H2、source-specific retry/redirect仍须对应。runtime global fetch/WebSocket默认未知，不用npm其他库推断 | 目标协议/H1/H2协商、代理CONNECT/NO_PROXY/scopedenv、redirect方法/body/敏感header stripping与禁跨身份canary，SDK成功/负例/取消及custom零二次包；实际feature/lock＋双端local conformance。V-01/05/09/29/30/51/55/58 |
-| TLS/trust与RSA能力 | webpki/host DER roots与Node/Bun/OS trust不等价；ring可构造的RSA key范围、mTLS/非RSA/encrypted-key等能力不是Pi通用拒绝，仍OPEN | 固定真实来源支持矩阵、企业/系统CA、无bypass的信任与hostname负例、service-account PKCS#1/PKCS#8及mTLS、来源支持而backend拒绝的key语料与补救/差异；不自动扩大ambient读取。V-09/49/55/58 |
-| Auth/ADC/AWS source与retry模式 | 新依赖精确pin不提供新的Rust实现。默认source-chain/MFA/SSO/login/DPoP/cache、source retry/redirect、metadata timeout未证值，以及选定standard-only对ambient/adaptive模式缺口仍OPEN | 来源优先级/无账号fallback、每source协议与副作用、实际attempt/redirect/timeout scope、rotation ACK/unknown receipt/process-tree cleanup；精确锁图与isolated fake endpoints。显式mode失败仅标能力缺口，不算parity；V-05/09/12/43/55/58 |
-| Telemetry native carrier与poll/drop | Pi实现/测试不变；RustSpan＋sourceDispatch冻结、producer/poll/drop/noop是明确语言选择，尚无实现证明 | A创建/Bpoll、capturedDispatch、Stream/Future/Drop/producer、noop不采ambient、不跨await留guard、业务/functional callback结果不变、序列化与secret canary；任意host subscriber不在隔离保证内。V-46–48/58，RDF-14 |
-| Cargo/platform与目录产物 | 本轮不解析/改变Cargo；native/proc-macro/MSRV/feature闭包、三平台及缺hydrated model JSON仍OPEN | admission后按精确root声明/locked图审查并编译外部consumer、对应平台；目录静态model record与revision/schema完整性、wire fixture，而非仅generator/test文本。V-20/42/49/56/58/59 |
+| Schema | 私有source dialect＋固定Unicode16 regress数据；64/64、11合成错误控制、43/43叶与10包namespace同图，维护／registry分发明确 | 全normalizer/formats/refs/evaluated/UTF16边界、publicutility/consumer/cache/cancel；V-11/34/35/39/41/58 |
+| WS | ownedUpgrade＋受控Ratchet PMD/message/RSV/length/storage；旧80观察与后续纯内存修正分开；具体修复证明见WS报告，不靠SSE关闭 | fullprovider/continuation/pool/proxy/TLS/cleanup/multiplatform及新patch网络组装；V-02/30/49/58 |
+| HTTP/proxy/H2/redirect | sourceowner＋受控Hyper动态storage，20headers对照、redirect逐leg及16proxy source观察；显式ALPN有实测 | 完整head/trailer patch、CL/TE/EOF/取消、所有source/proxy组合与publicdriver；V-01/05/09/29/30/51/55/58 |
+| TLS/trust/crypto | 实例rustls/commonring＋privateEVP补齐signer/verification/KX，reference bundle/scopedroots；11RSA/privatepoison、TLS正常负例、P521/e3差异有实际来源 | 全算法/chain/source与协商优先级、Rust FFI安全、构建供应链/平台/真实服务；V-09/49/55/58 |
+| Auth/ADC/AWS | ownedfullsource与standard/adaptive/Smithy2026 owner；metadata0/3000ms来源已定，不将局部机制算fullchain | 所有source/9OAuth/SSO/MFA/DPoP/adaptive/retry/process-tree/rotation与ACK；V-05/09/12/43/55/58 |
+| Telemetry | safe pinned poll/drop wrappers与源Dispatch；七场景跨线程/producer/noop真实运行 | 全SDK入口传播/serde/wire/secret/consumer；V-46–48/58 |
+| Cargo/platform/catalog | root锁图/namespace及patch来源/native审计、staging校验原子发布；人工42×3目录helper七项验证 | 产品graph/MSRV1.97/三平台native/packageconsumer/真实hydratedartifact；V-20/42/49/56/58/59 |
 
-依赖与feature升级也必须重新跑这些接受集；没有新固定预算、默认压缩策略或通用backend trait。user未选择额外能力，不据未交付项发起实施。此表状态只能由对应实际证据改变，版本号变化本身不能关闭。
+设计就绪不授予任何产品依赖或实现准入，不豁免native/unsafe/真实seam门禁。当前scope不变：只研究文档与隔离探针；产品test none，研究add，历史证据retain。没有无来源新默认预算、公共backend框架或standard-only能力删减。
+
+## 6. 维护与发布身份
+
+修改过的regress数据、Ratchet、Hyper以及Unicode16 URL/IDNA/ICU family都必须使用受控、可被普通consumer解析的独立后端package身份与精确版本/source/checksum；不把产品lock或consumer root patch当发布方案，不标成未经修改upstream crate。URL的10包namespace机制已实际与普通ICU2.2共图；其他最终registry产物/packaging仍由V-58验，不在本轮publish。它们是私有第三方后端依赖，不新增Opi领域API、公共trait或根workspace拓扑。
+
+后端namespace必须覆盖真正消费修正的最小类型依赖闭包：HTTP为reqwest→hyper-util/Hyper及仍引用这些类型的hyper-rustls/TLS glue等实际路径；WS为相互交换extension/frame类型的Ratchet core/ext/deflate。逐边固定package别名/版本/source/checksum，证明SDK driver实际链接修正版，不只增加一个未被使用的私有Hyper或混合两套类型。未改的通用http/bytes/rustls等类型能共享时不无端复制；完整闭包由实际metadata/反向feature树和externalconsumer验收，不能预先用猜测包数当完成。公共SDK／custom transport边界不泄漏私有backend类型，正常caller显式提供的标准client/transport按其已有合同接入一次，不加第二router/driver/retry；本机默认路径不靠caller rootpatch修补。
+
+regress数据重生工具只在维护期；ryu-js safe API内部有unsafe；Ratchet deflate强制zlib带C/build.rs；privateOpenSSL EVP扩大到source-required签名/verification/KX，包含受限unsafe/native构建责任。保留许可/NOTICE、最小diff、补丁前后源SHA、生成数据及source版本；上游升级先重放语料并审算法diff。不得在实现时静默扩大为另一个通用引擎，或换更窄后端后仍声称同目标。产品root graph、MSRV、三平台以及供应链/FFI审查继续OPEN。

@@ -1,0 +1,755 @@
+{
+  "status": "MECHANISM-RESEARCH-NOT-PRODUCT",
+  "profile": "regress0.12.0+UCD16",
+  "unicode16_table_sha256": "475cb03589f0deb859b9a2ccfb34e3f33026a1e89500524024ce575a135e5daf",
+  "cases": 64,
+  "matched_observations": 64,
+  "mismatches": [],
+  "fault_controls": 11,
+  "fault_controls_expected": true,
+  "comparisons": [
+    {
+      "id": "normal-valid",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "normal-valid",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "normal-invalid",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "normal-invalid",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "mixed-pass",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "mixed-pass",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "mixed-fail",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "mixed-fail",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "malformed-minlength",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "malformed-minlength",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "grapheme-max-combining",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "grapheme-max-combining",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "grapheme-min-combining",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "grapheme-min-combining",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "grapheme-max-zwj",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "grapheme-max-zwj",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "grapheme-max-flag",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "grapheme-max-flag",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "content-base64",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "content-base64",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "content-json",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "content-json",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "local-ref-valid",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "local-ref-valid",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "sibling-ref-valid",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "sibling-ref-valid",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "local-ref-invalid",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "local-ref-invalid",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "sibling-ref-invalid",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "sibling-ref-invalid",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "unresolved-ref",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "unresolved-ref",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "metadata-id-ref",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "metadata-id-ref",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "metadata-id-ref-invalid",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "metadata-id-ref-invalid",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "regex-u1680",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "regex-u1680",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "normalize-integer-hex",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "normalize-integer-hex",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "normalize-integer-null",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "normalize-integer-null",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "normalize-optional-null",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "normalize-optional-null",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "normalize-string-union",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "normalize-string-union",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "normalize-anyof-string",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "normalize-anyof-string",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "normalize-number-string",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "normalize-number-string",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "normalize-large-integer",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "normalize-large-integer",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "root-correctness",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "root-correctness",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "root-valid-coercion",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "root-valid-coercion",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "multipleof-decimal",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "multipleof-decimal",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "regex-backtrack-bare",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "regex-backtrack-bare",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "regex-backtrack-not",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "regex-backtrack-not",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "regex-backtrack-anyof",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "regex-backtrack-anyof",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "regex-backtrack-if",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "regex-backtrack-if",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "regex-backtrack-contains",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "regex-backtrack-contains",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "regex-backtrack-patternproperties",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "regex-backtrack-patternproperties",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "regex-backtrack-additionalproperties",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "regex-backtrack-additionalproperties",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "regex-backtrack-propertynames",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "regex-backtrack-propertynames",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "regex-backtrack-unselected-anyof",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "regex-backtrack-unselected-anyof",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "regex-backtrack-allof",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "regex-backtrack-allof",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "ecma-whitespace-positive",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-whitespace-positive",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "ecma-whitespace-negative",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-whitespace-negative",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "ecma-letter",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-letter",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "ecma-letter-negative",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-letter-negative",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "ecma-kawi",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-kawi",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "ecma-nag-mundari",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-nag-mundari",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "ecma-unicode17-script",
+      "same_observation": true,
+      "pi_check": null,
+      "pi_compile_error": {
+        "name": "SyntaxError",
+        "message": "Invalid regular expression: /^\\p{Script=Beria_Erfe}$/u: Invalid property name"
+      },
+      "native": {
+        "error": "Invalid property name",
+        "id": "ecma-unicode17-script",
+        "outcome": "mechanism-error"
+      }
+    },
+    {
+      "id": "ecma-unicode16-todhri",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-unicode16-todhri",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "ecma-unicode16-gurung",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-unicode16-gurung",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "ecma-unicode16-ol-onal",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-unicode16-ol-onal",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "ecma-unicode17-new-letter",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-unicode17-new-letter",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "ecma-astral-dot",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-astral-dot",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "ecma-backref",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-backref",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "ecma-lookbehind",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-lookbehind",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "ecma-invalid-unicode-escape",
+      "same_observation": true,
+      "pi_check": null,
+      "pi_compile_error": {
+        "name": "SyntaxError",
+        "message": "Invalid regular expression: /\\u{110000}/u: Invalid Unicode escape"
+      },
+      "native": {
+        "error": "Invalid unicode escape",
+        "id": "ecma-invalid-unicode-escape",
+        "outcome": "mechanism-error"
+      }
+    },
+    {
+      "id": "ecma-invalid-range",
+      "same_observation": true,
+      "pi_check": null,
+      "pi_compile_error": {
+        "name": "SyntaxError",
+        "message": "Invalid regular expression: /[z-a]/u: Range out of order in character class"
+      },
+      "native": {
+        "error": "Range values reversed, start char code is greater than end char code.",
+        "id": "ecma-invalid-range",
+        "outcome": "mechanism-error"
+      }
+    },
+    {
+      "id": "ecma-identity-escape",
+      "same_observation": true,
+      "pi_check": null,
+      "pi_compile_error": {
+        "name": "SyntaxError",
+        "message": "Invalid regular expression: /\\a/u: Invalid escape"
+      },
+      "native": {
+        "error": "Invalid character escape",
+        "id": "ecma-identity-escape",
+        "outcome": "mechanism-error"
+      }
+    },
+    {
+      "id": "ecma-named-backref",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "ecma-named-backref",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "guard-malformed-minimum",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "guard-malformed-minimum",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "guard-malformed-pattern",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "guard-malformed-pattern",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "guard-schema-label",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "guard-schema-label",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "guard-mixed-ref-prefix",
+      "same_observation": true,
+      "pi_check": true,
+      "pi_compile_error": null,
+      "native": {
+        "id": "guard-mixed-ref-prefix",
+        "outcome": "evaluated",
+        "valid": true
+      }
+    },
+    {
+      "id": "guard-mixed-ref-prefix-negative",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "guard-mixed-ref-prefix-negative",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "grapheme-hangul-source-not-UAX29",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "grapheme-hangul-source-not-UAX29",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    },
+    {
+      "id": "grapheme-emoji-modifier-source-not-UAX29",
+      "same_observation": true,
+      "pi_check": false,
+      "pi_compile_error": null,
+      "native": {
+        "id": "grapheme-emoji-modifier-source-not-UAX29",
+        "outcome": "evaluated",
+        "valid": false
+      }
+    }
+  ],
+  "native_executable_sha256": "d43532782ed1cfe9690fa7f2971051b9df680eadfdc4d0f834d0bc28ab61bfb0",
+  "environment_names": [
+    "APPDATA",
+    "CARGO_INCREMENTAL",
+    "CARGO_NET_OFFLINE",
+    "CARGO_TARGET_DIR",
+    "COMSPEC",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "LOCALAPPDATA",
+    "NUMBER_OF_PROCESSORS",
+    "PATH",
+    "PATHEXT",
+    "PROBE_PI_ROOT",
+    "PROBE_TYPEBOX_ROOT",
+    "PROCESSOR_ARCHITECTURE",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "WINDIR"
+  ],
+  "runtime_regex_errors_from_regress": false,
+  "note": "Regress runtime find returns Option, not Result; fault controls are explicitly synthetic Result-propagation tests; TypeBox direct validation on JS parsed inputs, no native normalizer or SDK/public consumer"
+}

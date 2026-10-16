@@ -1,0 +1,658 @@
+{
+  "executable_sha256": "d43532782ed1cfe9690fa7f2971051b9df680eadfdc4d0f834d0bc28ab61bfb0",
+  "commands": [
+    {
+      "case": "normal-valid",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "107ee212dff5228ce494b38fbac4b40ba2111c3ede1d57118572a81dee6d29f7",
+      "exit": 0,
+      "stdout": "{\"id\":\"normal-valid\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "normal-invalid",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "5b5788bb00896587c9abda700d043c9040324f4b66e13dc8458dfe50c31d91ba",
+      "exit": 0,
+      "stdout": "{\"id\":\"normal-invalid\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "mixed-pass",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "63c9962f3d80d9b268ed05369818b2abd3ffeac3db2796201d61a2eaa555521e",
+      "exit": 0,
+      "stdout": "{\"id\":\"mixed-pass\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "mixed-fail",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "cd5981c02aaae1440e0330504db8dd42441c00407f5cd598be4c16ba82896502",
+      "exit": 0,
+      "stdout": "{\"id\":\"mixed-fail\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "malformed-minlength",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "4ed74828176bff00a63a72c32ec1c2eed5451a1e5dd57344b809f2a25b914393",
+      "exit": 0,
+      "stdout": "{\"id\":\"malformed-minlength\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "grapheme-max-combining",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "3ebb547e5c88b235c33d4816d1fb91921ed80b2f22bc696ea22aba1bcb808255",
+      "exit": 0,
+      "stdout": "{\"id\":\"grapheme-max-combining\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "grapheme-min-combining",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "2ae672b103560206af45eb4912aff178462693ac89e688b11d25d36af743451c",
+      "exit": 0,
+      "stdout": "{\"id\":\"grapheme-min-combining\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "grapheme-max-zwj",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "dc2a247e3c13fbc1e8a6a6d8eeafa103069de39fd257a21bc37e6f02114d62aa",
+      "exit": 0,
+      "stdout": "{\"id\":\"grapheme-max-zwj\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "grapheme-max-flag",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "d5964de8b7b117a4202c19fdb7e47a897b345f26733d4b4949b570067ecbc50e",
+      "exit": 0,
+      "stdout": "{\"id\":\"grapheme-max-flag\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "content-base64",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "ccef56224abfbf76dbd85703ffed065a1b3c028a6dd649f7bd36162ce6dae8a4",
+      "exit": 0,
+      "stdout": "{\"id\":\"content-base64\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "content-json",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "452840c3bff77b6b8f2355667ca4bdd5f4e4f129a0de454c1dcde79efa71e575",
+      "exit": 0,
+      "stdout": "{\"id\":\"content-json\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "local-ref-valid",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "0cf2a8fe18806268713d22ffda945e312bf5f1564cef244dcc45a7da3543e236",
+      "exit": 0,
+      "stdout": "{\"id\":\"local-ref-valid\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "sibling-ref-valid",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "b81987141d9b50fead9ee2b55995fbf990e5b0a19250ff1b5ce906038b2a00f2",
+      "exit": 0,
+      "stdout": "{\"id\":\"sibling-ref-valid\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "local-ref-invalid",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "74389cea20ea32ce71d682d1a1ee8c4a07ff2d95e82de80a9d3525d2f73f4fd3",
+      "exit": 0,
+      "stdout": "{\"id\":\"local-ref-invalid\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "sibling-ref-invalid",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "047804d8c9bad114cfb6ac91e2c275ef7cfae1fe27554f272f1b7e5d670a3dbe",
+      "exit": 0,
+      "stdout": "{\"id\":\"sibling-ref-invalid\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "unresolved-ref",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "200f944695a66e883a82d901d524a3ae6abd96ae7b625e987e7df281de1b4cbc",
+      "exit": 0,
+      "stdout": "{\"id\":\"unresolved-ref\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "metadata-id-ref",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "4b9ae4abbf23b45800a0143cf50781e3ebc148068023318bf7e0bec7f857af08",
+      "exit": 0,
+      "stdout": "{\"id\":\"metadata-id-ref\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "metadata-id-ref-invalid",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "0b581960d151f38ffa0640324d7cdf3cfa67b60740c76e209fb8836578851331",
+      "exit": 0,
+      "stdout": "{\"id\":\"metadata-id-ref-invalid\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "regex-u1680",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "7185df29f4b45f21b531cc7d0941625d48bac34b828963136d36a2bea4fcb14b",
+      "exit": 0,
+      "stdout": "{\"id\":\"regex-u1680\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "normalize-integer-hex",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "2ee4a3f0839c73dc04a6a4dbb82fb25c17218bc02a02643dba995f52c428a938",
+      "exit": 0,
+      "stdout": "{\"id\":\"normalize-integer-hex\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "normalize-integer-null",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "cc926899809d8b28ff447b92e6561ed3a3c910a791d4700df360dea0001cd3a3",
+      "exit": 0,
+      "stdout": "{\"id\":\"normalize-integer-null\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "normalize-optional-null",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "c3fa22378f6234ec7791b8bbf3633627b46ebdf8470d35e6bf10a8d46934e587",
+      "exit": 0,
+      "stdout": "{\"id\":\"normalize-optional-null\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "normalize-string-union",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "408a08f6e2af950acea927c8f70c83eb806fa16f9f8ac88c122392eca7cf23e4",
+      "exit": 0,
+      "stdout": "{\"id\":\"normalize-string-union\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "normalize-anyof-string",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "f6a5261ea05802993e4a29d789cb84ec7676356701d2dc105e5a5e2dd3fcc595",
+      "exit": 0,
+      "stdout": "{\"id\":\"normalize-anyof-string\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "normalize-number-string",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "c74ed937394fdbd73b7e1cb61634e05afa68c622c38d162d13b8b8c8f64214b3",
+      "exit": 0,
+      "stdout": "{\"id\":\"normalize-number-string\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "normalize-large-integer",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "35bdd8918a4beed8658d892c26e811ecc3a3f9f99e6a02617b510aa8802644cd",
+      "exit": 0,
+      "stdout": "{\"id\":\"normalize-large-integer\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "root-correctness",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "29b45b0ada16a7d41f1dab1fc0634d43d945728e73097b1932e5211a2fb91ed9",
+      "exit": 0,
+      "stdout": "{\"id\":\"root-correctness\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "root-valid-coercion",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "1e81e8041908c0b834d780d1fbd12c48594e24c7ceade267b04c8eec835a45b0",
+      "exit": 0,
+      "stdout": "{\"id\":\"root-valid-coercion\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "multipleof-decimal",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "2729620d279155b16769c7e4fda48086fa0ede4453c3965051211c1a67d7ddb2",
+      "exit": 0,
+      "stdout": "{\"id\":\"multipleof-decimal\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "regex-backtrack-bare",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "da7200824a5ade0f885778fad9c340e6bf695e85dfd96b1f037f9fa27dd96d1d",
+      "exit": 0,
+      "stdout": "{\"id\":\"regex-backtrack-bare\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "regex-backtrack-not",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "338b03a7480ae45f9df062983563c5679c9d71cd4db57b979d4def8df0944a44",
+      "exit": 0,
+      "stdout": "{\"id\":\"regex-backtrack-not\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "regex-backtrack-anyof",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "fbdcb41d5d27a3052e4e57dc144bcd13a93e508b2b5ea1928a98acbc8be46b41",
+      "exit": 0,
+      "stdout": "{\"id\":\"regex-backtrack-anyof\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "regex-backtrack-if",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "45c2c9a0301674c7d66d403c02793dbc90b1d68d81ee8e05957ce9c9e72942d2",
+      "exit": 0,
+      "stdout": "{\"id\":\"regex-backtrack-if\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "regex-backtrack-contains",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "1ff39d177a8a15931e36051a508a438a3d8051a9e5882ed71693a621efd4fca6",
+      "exit": 0,
+      "stdout": "{\"id\":\"regex-backtrack-contains\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "regex-backtrack-patternproperties",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "df47038fdc38c8dd5d2ae0baa18fc9de5edd2acda4f193094452d0bc4351707c",
+      "exit": 0,
+      "stdout": "{\"id\":\"regex-backtrack-patternproperties\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "regex-backtrack-additionalproperties",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "4cf219f8d5ae2ae7928b80a84adfc5ac789a7e2c09d512e4dff66171479f414b",
+      "exit": 0,
+      "stdout": "{\"id\":\"regex-backtrack-additionalproperties\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "regex-backtrack-propertynames",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "b4e4054e6b1f8e8357faf90b6f4b75c48adfefac11a5699050d2d1090cf46a38",
+      "exit": 0,
+      "stdout": "{\"id\":\"regex-backtrack-propertynames\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "regex-backtrack-unselected-anyof",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "955716217b2e6e632369a12cfdd49cc09330bde2cbf2b8eb0b95f1593bbd5d33",
+      "exit": 0,
+      "stdout": "{\"id\":\"regex-backtrack-unselected-anyof\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "regex-backtrack-allof",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "9e6f0f40261c69d761736e7fa51813c42696cb5bf2879bdc59cd233194e1b3ca",
+      "exit": 0,
+      "stdout": "{\"id\":\"regex-backtrack-allof\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-whitespace-positive",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "2dbb432630f6f1836469cba2691cb0709a5fb214b7e0e7de1c05253a05d805a5",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-whitespace-positive\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-whitespace-negative",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "53f49cca4061d4d3cbdfa5dc03f85c0a7ccbc28f4921636ea240ae542f998bf5",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-whitespace-negative\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-letter",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "bcc1e3ae3300b287e04b7bef6474547adaee246b871d6a43965cd092d8e0421a",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-letter\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-letter-negative",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "d48308fffc59020f21e666e201a872c7f3f25aeb14d11813ceba389b28b53957",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-letter-negative\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-kawi",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "8fbc26442f4750caa78321ffdbf7ad359b6e4c853b98d5ec396db193ce23f97b",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-kawi\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-nag-mundari",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "9a7edf767f7b177402d2212a7c3b7a166e9b81bf5d0f6193bda4d57d469c1b4d",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-nag-mundari\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-unicode17-script",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "f60a1902ca2f6d55f7d0c3a3508c83bc6a1c39e894190d3469c51dce2eca47ae",
+      "exit": 0,
+      "stdout": "{\"error\":\"Invalid property name\",\"id\":\"ecma-unicode17-script\",\"outcome\":\"mechanism-error\"}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-unicode16-todhri",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "98bb007ff203bb1533f434b4d004f570ed1595cefbe5087fb6fd00d504c88a5e",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-unicode16-todhri\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-unicode16-gurung",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "6085b976b69e2702e4def228932c1a6e0edec6a4aedcdeed84a19be8c522ae54",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-unicode16-gurung\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-unicode16-ol-onal",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "3338e02d7f47c5d193617c2dd4e2500f2a72c6ed96d6dfc1b6becc5b751b9651",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-unicode16-ol-onal\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-unicode17-new-letter",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "1cbe691a902028b0acb7a58a5d02ef8cdb19bdedd78ac85ff34e1d7f2572eb49",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-unicode17-new-letter\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-astral-dot",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "16ca730132501c15e5b7f5a3735c22d95b25a0a837ac49396043d24e3fc741c0",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-astral-dot\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-backref",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "c19d2d7dd7451b6a1cc787952c19bf38972df58c9852923b4d5ec8f0bb5167bb",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-backref\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-lookbehind",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "62b0637d036d93e87bc40bad3d71ca0992e9d77ff50079f78e744b973d5d65c2",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-lookbehind\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-invalid-unicode-escape",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "c8ab0f9db8d05cfb34c90e146795a3e19c747d7dc2c1f463acf72acf5b253141",
+      "exit": 0,
+      "stdout": "{\"error\":\"Invalid unicode escape\",\"id\":\"ecma-invalid-unicode-escape\",\"outcome\":\"mechanism-error\"}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-invalid-range",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "03a70ee0ecbc192953f77e423afda95d29e303f3a3fb99e97e45f1b9dea6585e",
+      "exit": 0,
+      "stdout": "{\"error\":\"Range values reversed, start char code is greater than end char code.\",\"id\":\"ecma-invalid-range\",\"outcome\":\"mechanism-error\"}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-identity-escape",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "013c948493144bd8419f28631e8b9f85179178a518e73eb07e66f878e77b7d8c",
+      "exit": 0,
+      "stdout": "{\"error\":\"Invalid character escape\",\"id\":\"ecma-identity-escape\",\"outcome\":\"mechanism-error\"}\n",
+      "stderr": ""
+    },
+    {
+      "case": "ecma-named-backref",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "603fa4b1e04e7e2d6788bb5d76d1f365ecb5c7501069e410593cb4befd387249",
+      "exit": 0,
+      "stdout": "{\"id\":\"ecma-named-backref\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "guard-malformed-minimum",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "7a918aa349bf95c902eb999943cfb45ca55809553bdd7ab88531956f7caa8ed4",
+      "exit": 0,
+      "stdout": "{\"id\":\"guard-malformed-minimum\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "guard-malformed-pattern",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "abe8bcccf19a6a1628edb319099947ee574d4b94fd455adcd133ec8b85930b37",
+      "exit": 0,
+      "stdout": "{\"id\":\"guard-malformed-pattern\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "guard-schema-label",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "15bd44121caa042a784c5676e774c128b4465c09f8d09b66d3e542e2fc99c883",
+      "exit": 0,
+      "stdout": "{\"id\":\"guard-schema-label\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "guard-mixed-ref-prefix",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "869bc60e7659cdcf54969dec974490ec4dd490228ab3d07fc52bfd710fabefab",
+      "exit": 0,
+      "stdout": "{\"id\":\"guard-mixed-ref-prefix\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    },
+    {
+      "case": "guard-mixed-ref-prefix-negative",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "e0de400eee32dc176c51db625013c35ca918082fe9d11c4091561c0ccd6e8ff4",
+      "exit": 0,
+      "stdout": "{\"id\":\"guard-mixed-ref-prefix-negative\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "grapheme-hangul-source-not-UAX29",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "a0202ee1650f113bdb9475240f3a47a0fbe6a87f3c2a3c46faf3344604178fb1",
+      "exit": 0,
+      "stdout": "{\"id\":\"grapheme-hangul-source-not-UAX29\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "grapheme-emoji-modifier-source-not-UAX29",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "881c78b5c0311db6fcc9d4418105fec23fc48ca5b65cc34c9f92dcc6126eca58",
+      "exit": 0,
+      "stdout": "{\"id\":\"grapheme-emoji-modifier-source-not-UAX29\",\"outcome\":\"evaluated\",\"valid\":false}\n",
+      "stderr": ""
+    },
+    {
+      "case": "fault-controls",
+      "command": [
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-fixed-client.exe"
+      ],
+      "input_sha256": "fda3017ca6deea2aa536f7bd7a9586cd440340c386cad7a1f0a2467fbd6fe2e9",
+      "exit": 0,
+      "stdout": "{\"error\":\"injected fallible leaf failure; research control only\",\"id\":\"fault-bare\",\"outcome\":\"mechanism-error\"}\n{\"error\":\"injected fallible leaf failure; research control only\",\"id\":\"fault-not\",\"outcome\":\"mechanism-error\"}\n{\"error\":\"injected fallible leaf failure; research control only\",\"id\":\"fault-if\",\"outcome\":\"mechanism-error\"}\n{\"error\":\"injected fallible leaf failure; research control only\",\"id\":\"fault-anyof\",\"outcome\":\"mechanism-error\"}\n{\"error\":\"injected fallible leaf failure; research control only\",\"id\":\"fault-contains\",\"outcome\":\"mechanism-error\"}\n{\"error\":\"injected fallible leaf failure; research control only\",\"id\":\"fault-patternproperties\",\"outcome\":\"mechanism-error\"}\n{\"error\":\"injected fallible leaf failure; research control only\",\"id\":\"fault-additionalproperties\",\"outcome\":\"mechanism-error\"}\n{\"error\":\"injected fallible leaf failure; research control only\",\"id\":\"fault-propertynames\",\"outcome\":\"mechanism-error\"}\n{\"error\":\"injected fallible leaf failure; research control only\",\"id\":\"fault-allof\",\"outcome\":\"mechanism-error\"}\n{\"id\":\"fault-unselected-anyof\",\"outcome\":\"evaluated\",\"valid\":true}\n{\"id\":\"fault-unselected-if\",\"outcome\":\"evaluated\",\"valid\":true}\n",
+      "stderr": ""
+    }
+  ],
+  "cases": 64,
+  "fault_controls": 11,
+  "result": "all-identical"
+}

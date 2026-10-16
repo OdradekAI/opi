@@ -1,0 +1,60 @@
+{
+  "status": "AUTHOR-INPUT-AND-RAW-CHECKS-PASS",
+  "negative_pin_controls": [
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-schema\\run.py",
+        "--node",
+        "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-schema\\pins.json",
+        "--pi",
+        "D:/Luiz/Odradek/opi/.repo/pi-1.3.0",
+        "--typebox",
+        "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package",
+        "--target",
+        "E:/opi/cargo-targets/windows-direct",
+        "--regress-archive",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema\\regress-0.12.0.crate",
+        "--scratch",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-readiness-negative-node"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Node pin mismatch\r\n"
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-schema\\generate_unicode16.py",
+        "--regress-archive",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema\\regress-0.12.0.crate",
+        "--codegen-archive",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema\\codegen-0.3.0.crate",
+        "--ucd-parse-archive",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema\\ucd-parse-0.1.13.crate",
+        "--regex-lite-archive",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema\\regex-lite-0.1.8.crate",
+        "--ucd-zip",
+        "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-schema\\pins.json",
+        "--emoji-sequences",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema\\ucd-16.0.0\\emoji-sequences.txt",
+        "--emoji-zwj-sequences",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-schema\\ucd-16.0.0\\emoji-zwj-sequences.txt",
+        "--scratch",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-readiness-negative-ucd",
+        "--target",
+        "E:/opi/cargo-targets/windows-direct"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Generator input pin mismatch: ucd_zip\r\n"
+    }
+  ],
+  "raw_stream_hash_checks": 352,
+  "main_original": 62,
+  "main_unicode16": 64,
+  "leaf_baseline": 41,
+  "leaf_icu16": 43,
+  "product_test_impact": "none",
+  "research_test_impact": "add"
+}

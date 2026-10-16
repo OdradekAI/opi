@@ -1,0 +1,27 @@
+[
+  {
+    "file": "soketto-0.8.1.crate",
+    "action": "copy-verified-official-archive",
+    "sha256": "2e859df029d160cb88608f5d7df7fb4753fd20fdfb4de5644f3d8b8440841721"
+  },
+  {
+    "file": "ratchet_rs-1.2.1.crate",
+    "action": "copy-verified-official-archive",
+    "sha256": "21fdd57241fbecef9493f6c015bb90579baba4c160944a91865fd778656683f5"
+  },
+  {
+    "file": "ratchet_core-1.2.1.crate",
+    "action": "existing-check",
+    "sha256": "c6e76679899ff8b3104d045c6589167b5bc1ddc2460555803c105db2cdfd0ab1"
+  },
+  {
+    "file": "ratchet_ext-1.2.1.crate",
+    "action": "existing-check",
+    "sha256": "7628c68ab3103dce804e4a772d67c1d3ce114cfc153f415eb44489d48c4fb55f"
+  },
+  {
+    "file": "ratchet_deflate-1.2.1.crate",
+    "action": "existing-check",
+    "sha256": "6082990b64158337d345a365facaeb86d20648bafbfa881d9daa88ac704e5f17"
+  }
+]

@@ -1,0 +1,11 @@
+{"error": "injected fallible leaf failure; research control only", "id": "fault-bare", "outcome": "mechanism-error"}
+{"error": "injected fallible leaf failure; research control only", "id": "fault-not", "outcome": "mechanism-error"}
+{"error": "injected fallible leaf failure; research control only", "id": "fault-if", "outcome": "mechanism-error"}
+{"error": "injected fallible leaf failure; research control only", "id": "fault-anyof", "outcome": "mechanism-error"}
+{"error": "injected fallible leaf failure; research control only", "id": "fault-contains", "outcome": "mechanism-error"}
+{"error": "injected fallible leaf failure; research control only", "id": "fault-patternproperties", "outcome": "mechanism-error"}
+{"error": "injected fallible leaf failure; research control only", "id": "fault-additionalproperties", "outcome": "mechanism-error"}
+{"error": "injected fallible leaf failure; research control only", "id": "fault-propertynames", "outcome": "mechanism-error"}
+{"error": "injected fallible leaf failure; research control only", "id": "fault-allof", "outcome": "mechanism-error"}
+{"id": "fault-unselected-anyof", "outcome": "evaluated", "valid": true}
+{"id": "fault-unselected-if", "outcome": "evaluated", "valid": true}

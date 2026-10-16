@@ -1,0 +1,6 @@
+# Preserve digest-pinned CRLF captures; recognize CR as part of the line ending.
+* whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+# Unified diffs require a space on empty context lines, including at EOF.
+offline-probes/**/*.patch whitespace=-blank-at-eol,-blank-at-eof,space-before-tab,cr-at-eol
+# Preserve this historical runner's pinned blank line containing four spaces.
+offline-probes/readiness-ws/run.py whitespace=-blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

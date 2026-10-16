@@ -1,0 +1,18 @@
+{
+  "status": "MECHANISM-RESULTS-RECORDED-NOT-PRODUCT-PASS",
+  "rows": 112,
+  "proxy_rows": 16,
+  "node_sha256": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11",
+  "binary_sha256": "c9c40c046caae744280311aaa06be908660eaa30ff7715de0dbfd1298c010318",
+  "lock_sha256": "563a6181f6a498864bb7cd9393189b6c98e723870a4a465ebfeeae8feaa4a76e",
+  "command_count": 6,
+  "commands_all_exit_zero": true,
+  "registry_packages": 119,
+  "package_count": 120,
+  "environment_keys": [
+    "PATH",
+    "SystemRoot",
+    "TEMP",
+    "TMP"
+  ]
+}

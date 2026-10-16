@@ -1,0 +1,14 @@
+{
+  "command": [
+    "D:\\Users\\Luiz\\anaconda3\\python.exe",
+    "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-transport-auth\\openssl-libctx-probe.py",
+    "D:\\Users\\Luiz\\anaconda3\\Library\\bin\\libcrypto-3-x64.dll",
+    "C:/Users/Luiz/AppData/Local/Temp/opi-pi130-ready-transport-auth/npm",
+    "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\transport\\fixtures",
+    "D:/nvm/v24.13.0/node.exe"
+  ],
+  "exit": 0,
+  "stdout_sha256": "ccfadb26d895f302e85f45518dbb847645475af4393bf35929c7164b7e403146",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "fixture_scope": "10 newly generated RSA; 3 synthetic negative; optional named author synthetic multiprime file"
+}

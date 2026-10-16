@@ -1,0 +1,69 @@
+[
+  {
+    "name": "rustc",
+    "command": [
+      "rustc",
+      "-Vv"
+    ],
+    "exit": 0,
+    "stdout_sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "cargo",
+    "command": [
+      "cargo",
+      "-Vv"
+    ],
+    "exit": 0,
+    "stdout_sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "build",
+    "command": [
+      "cargo",
+      "build",
+      "--locked",
+      "--offline"
+    ],
+    "exit": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "8b87d19627e611cebc25ef78ee0ff90381a7299e20791f908e2cad66ca73b243"
+  },
+  {
+    "name": "telemetry",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-readiness-runtime-probe.exe"
+    ],
+    "exit": 0,
+    "stdout_sha256": "89522b8ba1a97ca06bb8fe32510505adc48c72633cc19f740a620ef1410ebcf5",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "catalog",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-runtime\\catalog.mjs",
+      "D:\\Luiz\\Odradek\\opi\\.repo\\pi-1.3.0",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\runtime"
+    ],
+    "exit": 0,
+    "stdout_sha256": "3a14e48313bcfda6578741e314ea9d66adce968490d56479216f4ab8cda16360",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "metadata",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--format-version",
+      "1"
+    ],
+    "exit": 0,
+    "stdout_sha256": "44548824feb0f938d2d1b84f09ca21d243fee39bd20107575fbbb7b5066816d0",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

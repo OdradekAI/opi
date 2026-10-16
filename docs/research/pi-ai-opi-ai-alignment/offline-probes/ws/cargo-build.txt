@@ -1,0 +1,82 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling version_check v0.9.5
+   Compiling unicode-ident v1.0.24
+   Compiling typenum v1.20.0
+   Compiling getrandom v0.3.4
+   Compiling cfg-if v1.0.4
+   Compiling zerocopy v0.8.48
+   Compiling windows-link v0.2.1
+   Compiling bytes v1.11.1
+   Compiling itoa v1.0.18
+   Compiling thiserror v2.0.18
+   Compiling httparse v1.10.1
+   Compiling cpufeatures v0.2.17
+   Compiling pin-project-lite v0.2.17
+   Compiling zmij v1.0.21
+   Compiling serde_core v1.0.228
+   Compiling futures-core v0.3.32
+   Compiling data-encoding v2.11.0
+   Compiling log v0.4.29
+   Compiling serde_json v1.0.149
+   Compiling futures-task v0.3.32
+   Compiling futures-sink v0.3.32
+   Compiling utf-8 v0.7.6
+   Compiling slab v0.4.12
+   Compiling memchr v2.8.0
+   Compiling windows-sys v0.61.2
+   Compiling futures-util v0.3.32
+   Compiling generic-array v0.14.7
+   Compiling http v1.4.0
+   Compiling socket2 v0.6.3
+   Compiling mio v1.2.0
+   Compiling rand_core v0.9.5
+   Compiling syn v2.0.117
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha1 v0.10.6
+   Compiling ppv-lite86 v0.2.21
+   Compiling thiserror-impl v2.0.18
+   Compiling tokio-macros v2.7.0
+   Compiling rand_chacha v0.9.0
+   Compiling rand v0.9.4
+   Compiling tokio v1.52.3
+   Compiling tungstenite v0.28.0 (C:\Users\Luiz\AppData\Local\Temp\opi-ws-backend-source\tungstenite-0.28.0)
+warning: use of deprecated associated function `core::num::<impl usize>::max_value`: replaced by the `MAX` associated constant on this type
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-ws-backend-source\tungstenite-0.28.0\src\protocol\frame\mod.rs:168:55
+    |
+168 |         let max_size = max_size.unwrap_or_else(usize::max_value);
+    |                                                       ^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated associated function `core::num::<impl usize>::max_value`: replaced by the `MAX` associated constant on this type
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-ws-backend-source\tungstenite-0.28.0\src\protocol\message.rs:117:57
+    |
+117 |         let max_size = size_limit.unwrap_or_else(usize::max_value);
+    |                                                         ^^^^^^^^^
+
+warning: `tungstenite` (lib) generated 2 warnings
+   Compiling tokio-tungstenite v0.28.0 (C:\Users\Luiz\AppData\Local\Temp\opi-ws-backend-source\tokio-tungstenite-0.28.0)
+error[E0583]: file not found for module `compat`
+  --> C:\Users\Luiz\AppData\Local\Temp\opi-ws-backend-source\tokio-tungstenite-0.28.0\src\lib.rs:15:1
+   |
+15 | mod compat;
+   | ^^^^^^^^^^^
+   |
+   = help: to create the module `compat`, create file "C:\Users\Luiz\AppData\Local\Temp\opi-ws-backend-source\tokio-tungstenite-0.28.0\src\compat.rs" or "C:\Users\Luiz\AppData\Local\Temp\opi-ws-backend-source\tokio-tungstenite-0.28.0\src\compat\mod.rs"
+   = note: if there is a `mod compat` elsewhere in the crate already, import it with `use crate::...` instead
+
+error[E0583]: file not found for module `handshake`
+  --> C:\Users\Luiz\AppData\Local\Temp\opi-ws-backend-source\tokio-tungstenite-0.28.0\src\lib.rs:18:1
+   |
+18 | mod handshake;
+   | ^^^^^^^^^^^^^^
+   |
+   = help: to create the module `handshake`, create file "C:\Users\Luiz\AppData\Local\Temp\opi-ws-backend-source\tokio-tungstenite-0.28.0\src\handshake.rs" or "C:\Users\Luiz\AppData\Local\Temp\opi-ws-backend-source\tokio-tungstenite-0.28.0\src\handshake\mod.rs"
+   = note: if there is a `mod handshake` elsewhere in the crate already, import it with `use crate::...` instead
+
+For more information about this error, try `rustc --explain E0583`.
+error: could not compile `tokio-tungstenite` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

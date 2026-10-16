@@ -1,0 +1,143 @@
+{
+  "scope": "LATEST-AUTHORIZATION-PURE-MEMORY-ONLY",
+  "memory_tests_passed": 14,
+  "public_codec_fixtures": 12,
+  "verification_exit": 0,
+  "negative_command": [
+    "python",
+    "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-ws\\memory-only\\verify.py",
+    "--workspace",
+    "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\ws-memory-negative-final",
+    "--expected-before",
+    "wrong"
+  ],
+  "negative_exit": 1,
+  "negative_output": "source pin mismatch before workspace creation\r\n",
+  "negative_workspace_absent": true,
+  "source_files": [
+    {
+      "path": "offline-probes/readiness-ws/memory-only/assets.json",
+      "bytes": 3793,
+      "sha256": "e050c0e678bb5edc1ae8053392569180d9a66539a1798a3fe5078b0b7741f269"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/Cargo.lock",
+      "bytes": 23021,
+      "sha256": "a73872bd28002ce258bd1d5e374e630fb245a044b5e0e52c10dc596f6655106c"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/Cargo.toml",
+      "bytes": 507,
+      "sha256": "04498b08062a3254b919fea51a2a94fa9913a0c969397b7df2a77e6bf65dcd8a"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/command.json",
+      "bytes": 299,
+      "sha256": "b46215c9b0645b50e2749091107eb0478ea398089e2f15f89bf5704fbe0fa663"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/commands.json",
+      "bytes": 856,
+      "sha256": "4344dd6d3ff43cc2f15a51e7557fb0cfaa3eecd14d23c593159f99fa145e3cd1"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/dependency-checks.json",
+      "bytes": 15015,
+      "sha256": "89b6bd1459920168964a3e99b28888415f8e018eaf53adef6e34aebeaa6f3ff9"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/entrypoint-tests.json",
+      "bytes": 2187,
+      "sha256": "7c445cf1fb73c19b612a1689d9335f2a9cfb994c560286045daa3ac1ab3fa07d"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/memory-codec-cases.json",
+      "bytes": 45851,
+      "sha256": "93e6c9d160d40d5b8a7f6754fc961e25f418276b4745a83c21572e4965bdfa62"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/memory-test-initial-compile-failure.txt",
+      "bytes": 6607,
+      "sha256": "90e461be5acf978fbcf9029a747bf6215d843a1e299c7c0b775879234a47dcb4"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/memory-test.txt",
+      "bytes": 4958,
+      "sha256": "f530087c00d74ea1119fad64854fff93469e833310b2959c56dfe90cdaf8eeca"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/ratchet-core-memory.patch",
+      "bytes": 12605,
+      "sha256": "96c4d9f16f75a90cee66518301ea9cf8bdc202ceeed373775954f20b7af3da41"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/README.md",
+      "bytes": 3113,
+      "sha256": "953ec7314a567dc4f3638a7539c33daca8c3b737e7eabd534a9f1610800e5183"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/replacements/src/errors.rs",
+      "bytes": 10731,
+      "sha256": "cfd2851c61e80adaead97d3dc77b5fc64c54801bef6954d8510da8f1e18cd76d"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/replacements/src/framed/mod.rs",
+      "bytes": 24461,
+      "sha256": "ca6fda1fac387afe228d85703ef3a7fcf9da7bfd483d1ca9d81e659a32b2ebd4"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/replacements/src/framed/readiness_memory.rs",
+      "bytes": 4342,
+      "sha256": "76b71ba18318c08aa4f178b8cb59a08bfbd3a428d218ba21c20b88c273aa23fd"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/replacements/src/protocol/frame.rs",
+      "bytes": 7182,
+      "sha256": "a8afeabc23d65bbb95fe59d6012d3d31ffa83c86d0d71cdeffe319db9e47adf4"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/replacements/src/ws.rs",
+      "bytes": 31013,
+      "sha256": "602def8b420653ba04002c2a0fc786c00fa9d054bc6b7bea8f44907e276371c9"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/review-r01-historical-results.json",
+      "bytes": 1778,
+      "sha256": "3458cc6a0c66d9dedac8ded640248c3ddac1d3db96ace9bd69ef3e0051b07b33"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/source-files.json",
+      "bytes": 1457,
+      "sha256": "a108bcc685e39d47fc67dd6bd400026cb3dd103bb4b96c3808c354563c0bf88c"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/src/lib.rs",
+      "bytes": 3416,
+      "sha256": "4cb9f9666e8a0dcfc13e8012a620c1e959b976fc12201426b72552ad61e81b11"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/summary-fixture-negative.txt",
+      "bytes": 235,
+      "sha256": "3db4001de97369130cd71f11a25ae3d2eb82d337472a81a02b75c424da945ac2"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/summary-fixture-positive.txt",
+      "bytes": 1697,
+      "sha256": "31656470322dd4213d3181682646b127c398a91b6fb9c3b510c61688066c5a82"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/verification.json",
+      "bytes": 2493,
+      "sha256": "5b547bb100bc49c0f2dbdfb8043e16d42b5d5141f91a242508a67af7b1e9c7d5"
+    },
+    {
+      "path": "offline-probes/readiness-ws/memory-only/verify.py",
+      "bytes": 5665,
+      "sha256": "31527137d391be33a390b7c4dfc20e1fb7661e0f37ccb502b94a88347736aa6a"
+    }
+  ],
+  "summarize_sha256": "99fcd24dc658ec5b47c2ab77de1dd226e9d20ba92df087a80cf48a28208c4c8b",
+  "network_socket_request_or_download": false,
+  "historical_80_rerun": false,
+  "previous_memory_run": "pre-final; not substituted for final source hashes"
+}

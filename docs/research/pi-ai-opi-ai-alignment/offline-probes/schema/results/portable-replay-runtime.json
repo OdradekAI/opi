@@ -1,0 +1,42 @@
+{
+  "status": "PASS",
+  "environment_names": [
+    "APPDATA",
+    "CARGO_INCREMENTAL",
+    "CARGO_NET_OFFLINE",
+    "CARGO_TARGET_DIR",
+    "COMSPEC",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "LOCALAPPDATA",
+    "NUMBER_OF_PROCESSORS",
+    "PATH",
+    "PATHEXT",
+    "PROBE_PI_ROOT",
+    "PROBE_TYPEBOX_ROOT",
+    "PROCESSOR_ARCHITECTURE",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "WINDIR"
+  ],
+  "fixed_environment": {
+    "CARGO_NET_OFFLINE": "true",
+    "CARGO_INCREMENTAL": "1"
+  },
+  "node": "D:\\nvm\\v24.13.0\\node.exe",
+  "node_sha256": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11",
+  "native_executable": "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe",
+  "native_executable_sha256": "2aa27513768ef1f4ab9e363fd48a7f1beb52d49419460d1fb65fd6781aec7bc0",
+  "pi_root": "D:\\Luiz\\Odradek\\opi\\.repo\\pi-1.3.0",
+  "typebox_root": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-parameter-npm-source\\typebox-1.3.27\\package",
+  "shared_target": "E:\\opi\\cargo-targets\\windows-direct",
+  "case_count": 85,
+  "normal_case_count": 74,
+  "contained_case_count": 11,
+  "native_record_count": 276
+}

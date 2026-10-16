@@ -1,0 +1,61 @@
+   Compiling ratchet_core v1.2.1 (C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws\source\ratchet_core-1.2.1)
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws\source\ratchet_core-1.2.1\src\ws.rs:477:26
+    |
+477 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<Result<(), Error>>;
+    |                          ^^^^^^^^^                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+477 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<'_, Result<(), Error>>;
+    |                                                                   +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws\source\ratchet_core-1.2.1\src\ws.rs:480:17
+    |
+480 |     fn shutdown(&mut self) -> BoxFuture<Result<(), Error>>;
+    |                 ^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                 |
+    |                 the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+480 |     fn shutdown(&mut self) -> BoxFuture<'_, Result<(), Error>>;
+    |                                         +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws\source\ratchet_core-1.2.1\src\ws.rs:487:26
+    |
+487 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<Result<(), Error>> {
+    |                          ^^^^^^^^^                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+487 |     fn write_close_frame(&mut self, code: CloseCode) -> BoxFuture<'_, Result<(), Error>> {
+    |                                                                   +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws\source\ratchet_core-1.2.1\src\ws.rs:499:17
+    |
+499 |     fn shutdown(&mut self) -> BoxFuture<Result<(), Error>> {
+    |                 ^^^^^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                 |
+    |                 the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+499 |     fn shutdown(&mut self) -> BoxFuture<'_, Result<(), Error>> {
+    |                                         +++
+
+warning: `ratchet_core` (lib) generated 4 warnings (run `cargo fix --lib -p ratchet_core` to apply 4 suggestions)
+   Compiling opi-readiness-ws-probe v0.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws\rust)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.92s

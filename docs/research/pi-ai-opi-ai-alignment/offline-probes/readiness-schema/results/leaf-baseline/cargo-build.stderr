@@ -1,0 +1,13 @@
+   Compiling ryu-js v1.0.2 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-baseline\vendor\ryu-js-1.0.2)
+warning: value assigned to `vp` is never read
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-baseline\vendor\ryu-js-1.0.2\src\f2s.rs:146:17
+    |
+146 |                 vp /= 10;
+    |                 ^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ryu-js` (lib) generated 1 warning
+   Compiling opi-pi130-schema-leaf-probe v0.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-leaf-final-baseline\leaves)
+    Finished `release` profile [optimized] target(s) in 1.30s

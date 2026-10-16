@@ -1,0 +1,15 @@
+--- ratchet_core-1.2.1/src/protocol/frame.rs
++++ ratchet_core-1.2.1/src/protocol/frame.rs
+@@ -162,6 +162,12 @@
+             return Err(ProtocolError::UnknownExtension);
+         }
+ 
++        // This private research patch is scoped to the selected PMD-only codec.
++        // RFC 7692 section 6.1: RSV1 is only on a message's first data frame.
++        if (opcode.is_control() || (first & 0x0f) == 0) && (first & 0x40) != 0 {
++            return Err(ProtocolError::UnknownExtension);
++        }
++
+         let second = source[1];
+         let masked = second & 0x80 != 0;
+ 

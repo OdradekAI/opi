@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "execution_status": "PASS",
+  "alignment_coverage": "OPEN",
+  "decision": "Reject unadapted jsonschema0.28.3 or draft-switch-only selection; reopen mechanism/engine comparison; keep candidate only as unproven baseline.",
+  "cases": 85,
+  "ordinary_cases": 74,
+  "contained_cases": 11,
+  "pi_records": 85,
+  "native_records": 276,
+  "commands": 29,
+  "all_commands_exit_zero": true,
+  "raw_arguments_unchanged_pi": true,
+  "portable_scratch_replay": {
+    "all_commands_exit_zero": true,
+    "pi_results_byte_identical": true,
+    "native_results_byte_identical": true,
+    "commands": 29
+  },
+  "cargo_packages": 74,
+  "registry_packages": 73,
+  "all_registry_archives_match_lock_checksum": true,
+  "all_registry_versions_present_in_root_lock": true,
+  "configuration_note": "Draft7 / Draft202012 profiles explicitly assert known formats and ignore unknown formats; they are configured profiles, not all backend defaults.",
+  "input_stage_note": "raw fixture JSON, pi_input_js after JSON.parse and actual pi_normalized are separately tagged; large integer JS parse rounding is not utility normalization.",
+  "product_test_impact": "none",
+  "research_test_impact": "add",
+  "not_executed": [
+    "real opi-ai public consumer",
+    "alternative engine",
+    "complete schema/ref/format conformance",
+    "other platforms/runtimes",
+    "provider calls",
+    "runtime implementation",
+    "Cargo/product test changes"
+  ]
+}

@@ -1,0 +1,894 @@
+{
+  "pi_snapshot": "1.3.0",
+  "pi_tree_sha256": "08a98ac282590eeb8255dd326e566b8b456212b4018a6d59cce44caf7f62e9d2",
+  "pi_sources": [
+    {
+      "path": "packages/ai/package.json",
+      "sha256": "4e9ed07b06a91d844485874c251f312b610d015a4a4fd32c78cde58a7862a3f1"
+    },
+    {
+      "path": "packages/ai/src/api/openai-codex-responses.ts",
+      "sha256": "41a0095ce395f6ddf50ce3adbe7d03960bf183fb0f2f94412c88923adaa013b0"
+    },
+    {
+      "path": "packages/ai/src/api/openai-responses-shared.ts",
+      "sha256": "f940a1539a3ca03fbee79b2c848999e0b51c74f7cceb45484d3d52bc2303de3c"
+    },
+    {
+      "path": "packages/ai/src/utils/json-parse.ts",
+      "sha256": "b101d288394a45498a50e06966c753ffb55a2b4900bec24ecbecafb7c17591bd"
+    }
+  ],
+  "runtime_records": [
+    {
+      "command": [
+        "D:/nvm/v24.13.0/node.exe",
+        "--version"
+      ],
+      "exit": 0,
+      "stdout": "v24.13.0\n",
+      "stderr": ""
+    },
+    {
+      "scope": "global-runtime-identity",
+      "command": [
+        "D:/nvm/v24.13.0/node.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ws-offline-probe\\runtime-info.mjs"
+      ],
+      "exit": 0,
+      "stdout": "{\"execPath\":\"D:\\\\nvm\\\\v24.13.0\\\\node.exe\",\"version\":\"v24.13.0\",\"versions\":{\"node\":\"24.13.0\",\"acorn\":\"8.15.0\",\"ada\":\"3.3.0\",\"amaro\":\"1.1.5\",\"ares\":\"1.34.6\",\"brotli\":\"1.1.0\",\"cjs_module_lexer\":\"2.1.0\",\"cldr\":\"47.0\",\"icu\":\"77.1\",\"llhttp\":\"9.3.0\",\"modules\":\"137\",\"napi\":\"10\",\"nbytes\":\"0.1.1\",\"ncrypto\":\"0.0.1\",\"nghttp2\":\"1.67.1\",\"openssl\":\"3.5.4\",\"simdjson\":\"4.1.0\",\"simdutf\":\"6.4.0\",\"sqlite\":\"3.50.4\",\"tz\":\"2025b\",\"undici\":\"7.18.2\",\"unicode\":\"16.0\",\"uv\":\"1.51.0\",\"uvwasi\":\"0.0.23\",\"v8\":\"13.6.233.17-node.37\",\"zlib\":\"1.3.1-470d3a2\",\"zstd\":\"1.5.7\"},\"websocketName\":\"WebSocket\",\"websocketConstructorSha256\":\"4d779f94f3edd6807bb1cc3b0aa77ae263f5dbe0997c18f76ccaf86625e98adc\"}\n",
+      "stderr": "",
+      "executableSha256": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11"
+    },
+    {
+      "scope": "actual-Pi-public-provider-module-unmodified-import-only",
+      "command": [
+        "D:/nvm/v24.13.0/node.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ws-offline-probe\\provider-import.mjs"
+      ],
+      "exit": 1,
+      "stdout": "{\"imported\":false,\"error\":\"Cannot find package 'partial-json' imported from D:\\\\Luiz\\\\Odradek\\\\opi\\\\.repo\\\\pi-1.3.0\\\\packages\\\\ai\\\\src\\\\utils\\\\json-parse.ts\",\"code\":\"ERR_MODULE_NOT_FOUND\",\"stack\":\"Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'partial-json' imported from D:\\\\Luiz\\\\Odradek\\\\opi\\\\.repo\\\\pi-1.3.0\\\\packages\\\\ai\\\\src\\\\utils\\\\json-parse.ts\\n    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:316:9)\\n    at packageResolve (node:internal/modules/esm/resolve:768:81)\\n    at moduleResolve (node:internal/modules/esm/resolve:858:18)\\n    at defaultResolve (node:internal/modules/esm/resolve:990:11)\\n    at #cachedDefaultResolve (node:internal/modules/esm/loader:718:20)\\n    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:735:38)\\n    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:764:52)\\n    at #resolve (node:internal/modules/esm/loader:700:17)\\n    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:620:35)\\n    at ModuleJob.syncLink (node:internal/modules/esm/module_job:143:33)\"}\n",
+      "stderr": "",
+      "executableSha256": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11"
+    },
+    {
+      "command": [
+        "D:/nvm/node_global/node_modules/bun/bin/bun.exe",
+        "--version"
+      ],
+      "exit": 0,
+      "stdout": "1.3.5\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "D:/nvm/node_global/node_modules/bun/bin/bun.exe",
+        "--revision"
+      ],
+      "exit": 0,
+      "stdout": "1.3.5+1e86cebd7\n",
+      "stderr": ""
+    },
+    {
+      "scope": "global-runtime-identity",
+      "command": [
+        "D:/nvm/node_global/node_modules/bun/bin/bun.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ws-offline-probe\\runtime-info.mjs"
+      ],
+      "exit": 0,
+      "stdout": "{\"execPath\":\"D:\\\\nvm\\\\node_global\\\\node_modules\\\\bun\\\\bin\\\\bun.exe\",\"version\":\"v24.3.0\",\"versions\":{\"node\":\"24.3.0\",\"bun\":\"1.3.5\",\"boringssl\":\"29a2cd359458c9384694b75456026e4b57e3e567\",\"openssl\":\"1.1.0\",\"llhttp\":\"9.3.0\",\"libarchive\":\"898dc8319355b7e985f68a9819f182aaed61b53a\",\"mimalloc\":\"4c283af60cdae205df5a872530c77e2a6a307d43\",\"picohttpparser\":\"066d2b1e9ab820703db0837a7255d92d30f0c9f5\",\"uwebsockets\":\"1e86cebd74a5723e818b5c0555276b646bcf0e4c\",\"webkit\":\"0ddf6f47af0a9782a354f61e06d7f83d097d9f84\",\"zig\":\"0.14.1\",\"zlib\":\"886098f3f339617b4243b286f5ed364b9989e245\",\"tinycc\":\"ab631362d839333660a265d3084d8ff060b96753\",\"lolhtml\":\"8d4c273ded322193d017042d1f48df2766b0f88b\",\"ares\":\"d1722e6e8acaf10eb73fa995798a9cd421d9f85e\",\"libdeflate\":\"dc76454a39e7e83b68c3704b6e3784654f8d5ac5\",\"usockets\":\"1e86cebd74a5723e818b5c0555276b646bcf0e4c\",\"lshpack\":\"3d0f1fc1d6e66a642e7a98c55deb38aa986eb4b0\",\"zstd\":\"794ea1b0afca0f020f4e57b6732332231fb23c70\",\"v8\":\"13.6.233.10-node.18\",\"uv\":\"1.51.1-dev\",\"napi\":\"10\",\"icu\":\"73.2\",\"unicode\":\"15.0\",\"modules\":\"137\"},\"websocketName\":\"WebSocket\",\"websocketConstructorSha256\":\"1db596241da198b6566a4a5bf8e338c5b653be72b611a8b5e7e93105baa48e6b\"}\n",
+      "stderr": "",
+      "executableSha256": "0025a8bc31f136745d102212ddb192a1876c721b71deeb43123d18375fcf030c"
+    },
+    {
+      "scope": "actual-Pi-public-provider-module-unmodified-import-only",
+      "command": [
+        "D:/nvm/node_global/node_modules/bun/bin/bun.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ws-offline-probe\\provider-import.mjs"
+      ],
+      "exit": 0,
+      "stdout": "{\"imported\":true,\"exports\":[\"closeOpenAICodexWebSocketSessions\",\"getOpenAICodexWebSocketDebugStats\",\"resetOpenAICodexWebSocketDebugStats\",\"stream\",\"streamSimple\"]}\n",
+      "stderr": "",
+      "executableSha256": "0025a8bc31f136745d102212ddb192a1876c721b71deeb43123d18375fcf030c"
+    }
+  ],
+  "third_party_archives": [
+    {
+      "archive": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-ws-backend-source\\tokio-tungstenite-0.28.0.crate",
+      "sha256": "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857",
+      "extraction": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ws-offline-probe\\source\\tokio-tungstenite-0.28.0",
+      "files": 24,
+      "fileMembersByteCompared": 22,
+      "matched": true
+    },
+    {
+      "archive": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-ws-backend-source\\tungstenite-0.28.0.crate",
+      "sha256": "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442",
+      "extraction": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ws-offline-probe\\source\\tungstenite-0.28.0",
+      "files": 44,
+      "fileMembersByteCompared": 38,
+      "matched": true
+    }
+  ],
+  "extracted_source_members": [
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/.cargo_vcs_info.json",
+      "sha256": "637be7e8df5814aa81ceba42d8b42f97ef70091f014108ae5deb3e8822bc1e8f"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/Cargo.lock",
+      "sha256": "3927dd6da0c3d8505e33d864746653d916c1b239d59ce07662981f7c1eeeeaa8"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/Cargo.toml",
+      "sha256": "b036bd47f26858c86134b52646652110aa5417673f22572a02af5649bb549288"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/Cargo.toml.orig",
+      "sha256": "e95a318cc337820d9252e528ae4d17691afe2d1fa8f1bfe27d2900d04ad23373"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/CHANGELOG.md",
+      "sha256": "cf9b1b528e3ae32c66b4f4920d62b29ac60f3bafda4d15d697523521a2bb3900"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/examples/autobahn-client.rs",
+      "sha256": "b60afbb9979fcfd7a38348ea1571f9d23935692eafdc4117d9b24c98de66c732"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/examples/autobahn-server.rs",
+      "sha256": "3d59e3c2d27fb2ec1439e1c429cdfe9b641387a251e23cf62e6808011941530f"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/examples/client.rs",
+      "sha256": "a4e5f1e82c4b352b99aea71f47eb2e5f0289d6e8eb67c8d719341115f506c3b7"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/examples/echo-server.rs",
+      "sha256": "5bb6b5d84a10086edd28d3d5b6d402e851b7558b90e2a9327bba8d1034a49b52"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/examples/interval-server.rs",
+      "sha256": "8775e9dec5ccb26473944fd4879a27de3bcb0a0a7a813329d40a15d3e78a092e"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/examples/README.md",
+      "sha256": "067ceaf7b70949f087fd582d71bb114e88ef0313560dbd33b345158ffa33eff3"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/examples/server-custom-accept.rs",
+      "sha256": "66a2811054c188e74dcf393b776ca2040107f5a813bbbdc9960c89dd74f0c535"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/examples/server-headers.rs",
+      "sha256": "f04770383986cf020b895ece939931c1a6b4ecd722f7df307e25bd577bf8d483"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/examples/server.rs",
+      "sha256": "b3f8369b474af3e73ae544dae200e5634c45f84a62788c7d6ce50d2eefc8dd1e"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/LICENSE",
+      "sha256": "fdd55e2b2da854b0fbdc1e607df7c2ba1e1ebf91ecb77c515511ebeef972bc8f"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/README.md",
+      "sha256": "378fc3056cca11eeea5d1cb0095f2585ac2caa90c39d046f0c4ca2ed61231ee3"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/src/compat.rs",
+      "sha256": "58e610b11d36e969ecb311d6e8f048db2f19049c8b3787752c53a511f86e39d9"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/src/connect.rs",
+      "sha256": "2e73c599a8de04240c543a24b2b564319c75ebef73fb434d116ede5d389ead30"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/src/handshake.rs",
+      "sha256": "2030d6e704a97606cd88c3cf16404e9fded9beef9b9f661c9ddb988528e1873d"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/src/lib.rs",
+      "sha256": "33ad167c6de78cc76f010bffe33f4f8bd254ce843136763be959384031cfb33f"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/src/stream.rs",
+      "sha256": "1a3c9595145c913a4b29a7ff3fc8caaea171b1946e96243edb280986b6eb6172"
+    },
+    {
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "member": "tokio-tungstenite-0.28.0/src/tls.rs",
+      "sha256": "ede833940750523f43aecad570e38d9b21de8e4128c8efc3f5e8900116d7c211"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/.cargo_vcs_info.json",
+      "sha256": "4e7342376cfb962f82cda87ee6dbff0b5f51c0825f83c953f8bf16fb09620e49"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/benches/buffer.rs",
+      "sha256": "0227e5c8e2936957343e77975d25adbb2ba666cbae04306fcf7eb99d869d758e"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/benches/e2e.rs",
+      "sha256": "2b51899e4e36c9a8a755a84bcaebfe88b43a5e95b620697a4a035ed2459472ce"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/benches/read.rs",
+      "sha256": "390a9e8713c3b44c54f2114c2992672f0e4fc6664bc2b953a1666688d2209e42"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/benches/write.rs",
+      "sha256": "1900f4e0fa5102467aa7edfd22f7826be7bcc3f97aa5172b091bd9957ee130c8"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/Cargo.lock",
+      "sha256": "003fbd81a940512bc5ef4c3d71c1bf9f331a947cfd27f6997216e6cd4b1aeeb5"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/Cargo.toml",
+      "sha256": "2340cc29f213b135f5696532c75677926d1db8a911d784ac87d208758493aed7"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/Cargo.toml.orig",
+      "sha256": "e9633cc55069601bc208fa5fd5bbb1c06f70ae31c1be5ad4f45cbc47361e717e"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/CHANGELOG.md",
+      "sha256": "2bb0b35164037c4ce32c641c355bfde7fb53307139f5ee310121d9bb8c918f8f"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/examples/autobahn-client.rs",
+      "sha256": "b90d16b05a770464f1a570bb06e3f7c61a5ffd5dcfe5646634693049b9ba55c4"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/examples/autobahn-server.rs",
+      "sha256": "73bddfc63244fdf047a58f92e6c2cd610a1cc884b1f3175ab30e6b34a547b776"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/examples/callback-error.rs",
+      "sha256": "fe732374176dfe4e5d1f36a3fa09d6d6e3cc95885e920480ef5bcd94206835e0"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/examples/client.rs",
+      "sha256": "0bc678b780ac35dd85c58dad3dc1509d9e5d24f3a5363646e4c15baca4321040"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/examples/server.rs",
+      "sha256": "3196389707aea1346e458f47d7ba227cc6d371ac1d46cd408cfb24123d866157"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/examples/srv_accept_unmasked_frames.rs",
+      "sha256": "77a9fcbf8f7e97d45407c10848772e7aeca86430ade6458485977adda4ca127c"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/LICENSE-MIT",
+      "sha256": "7fea0ee51a4ca5d5cea7464135fd55e8b09caf3a61da3d451ac8a22af95c033f"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/README.md",
+      "sha256": "39e59dbbfd67127ad101be692fb5f04babdd80eeffeb2ea97b6327fec5ace9b4"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/buffer.rs",
+      "sha256": "0b3b99d4c041fbeca72d1cf41706cd07ca9f7bd4caa37acf524f2cd6ba156c30"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/client.rs",
+      "sha256": "b8623d8132368d49b6f0ea0cfaf27f6141bb5c6c70132ab5928c8c56e7113637"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/error.rs",
+      "sha256": "f735a45a876d30212274cb92ee8239ccd8dda644737e0c026464f31c2150dda4"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/handshake/client.rs",
+      "sha256": "81d70f0bfce18bbbd126d716600efaeece3467d740b06a23b113f1b5f2cb0c8e"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/handshake/headers.rs",
+      "sha256": "0e6d3e15faa8b82bd2a239f5094335368e578acef2f17ee74825de606f529b75"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/handshake/machine.rs",
+      "sha256": "54a82a2643682e2ae17a98e69dcfa8ad10761919ea42f696551970057a428420"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/handshake/mod.rs",
+      "sha256": "fe625e5455a1dfd2f8f83fb67cc791094c59969331655cab01633c204fd94eb0"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/handshake/server.rs",
+      "sha256": "9aaefadf79e13cb960b83f75f906e9922656ed50d3efa86c9d9df6222c38bb86"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/lib.rs",
+      "sha256": "c4af97333620eadcc3e4375711c3db8bde12697a8367e49d2a85392a584ecddc"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/protocol/frame/coding.rs",
+      "sha256": "88b62c0bbce91edc9aea625889cfcb15b7e7c9b3fae00a31cbdae5b6aae1dde6"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/protocol/frame/frame.rs",
+      "sha256": "36897ee772b3bf527614751c43d19ee94e95b32fb644cf4e1409587c021ee15a"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/protocol/frame/mask.rs",
+      "sha256": "60347b95fd65e369d8376c98d62f1e80232e83be1341e2d30c1fad0ead0278f6"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/protocol/frame/mod.rs",
+      "sha256": "7f1c37d4626d2fbffe0adcc0da85fe515612be9395d3aaaa93dc82edf0ded986"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/protocol/frame/utf8.rs",
+      "sha256": "99f032fefcbf8a823bcef910cf66bcb7288bf7e7844b1610127c1f32ea35a886"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/protocol/message.rs",
+      "sha256": "de3313e228225b99c0747b6742e5356551874afe9f930704d60b3f9c1f8a74f7"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/protocol/mod.rs",
+      "sha256": "e7c0904c5ba7df3a3ecc13370e1e3e21a73d12d6dcbea7faafafb779e7f46076"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/server.rs",
+      "sha256": "f01a418588a7d924dcfc0cdc632aec7f483a4ab5409c1b5563b2205d97cf8a49"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/stream.rs",
+      "sha256": "dae1230f9ed257797c4874eccfa06ab6bc2ce8557a4292acc3a9ab734f3e4c0d"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/tls.rs",
+      "sha256": "e0698e952a6b11b2411e7784175c9943d8f321e2c8753fe7f49141b9f3f9c6b9"
+    },
+    {
+      "archive": "tungstenite-0.28.0.crate",
+      "member": "tungstenite-0.28.0/src/util.rs",
+      "sha256": "48d0da233482cfa7e5d880632711ca6b0e45d8d7a2ff84f83d6ee70a38fd879a"
+    }
+  ],
+  "cargo_packages": [
+    {
+      "name": "block-buffer",
+      "version": "0.10.4",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71",
+      "dependencies": [
+        "generic-array"
+      ]
+    },
+    {
+      "name": "bytes",
+      "version": "1.11.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
+    },
+    {
+      "name": "cfg-if",
+      "version": "1.0.4",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+    },
+    {
+      "name": "cpufeatures",
+      "version": "0.2.17",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280",
+      "dependencies": [
+        "libc"
+      ]
+    },
+    {
+      "name": "crypto-common",
+      "version": "0.1.7",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a",
+      "dependencies": [
+        "generic-array",
+        "typenum"
+      ]
+    },
+    {
+      "name": "data-encoding",
+      "version": "2.11.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
+    },
+    {
+      "name": "digest",
+      "version": "0.10.7",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292",
+      "dependencies": [
+        "block-buffer",
+        "crypto-common"
+      ]
+    },
+    {
+      "name": "futures-core",
+      "version": "0.3.32",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "7e3450815272ef58cec6d564423f6e755e25379b217b0bc688e295ba24df6b1d"
+    },
+    {
+      "name": "futures-sink",
+      "version": "0.3.32",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "c39754e157331b013978ec91992bde1ac089843443c49cbc7f46150b0fad0893"
+    },
+    {
+      "name": "futures-task",
+      "version": "0.3.32",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "037711b3d59c33004d3856fbdc83b99d4ff37a24768fa1be9ce3538a1cde4393"
+    },
+    {
+      "name": "futures-util",
+      "version": "0.3.32",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "389ca41296e6190b48053de0321d02a77f32f8a5d2461dd38762c0593805c6d6",
+      "dependencies": [
+        "futures-core",
+        "futures-sink",
+        "futures-task",
+        "pin-project-lite",
+        "slab"
+      ]
+    },
+    {
+      "name": "generic-array",
+      "version": "0.14.7",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a",
+      "dependencies": [
+        "typenum",
+        "version_check"
+      ]
+    },
+    {
+      "name": "getrandom",
+      "version": "0.3.4",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd",
+      "dependencies": [
+        "cfg-if",
+        "libc",
+        "r-efi",
+        "wasip2"
+      ]
+    },
+    {
+      "name": "http",
+      "version": "1.4.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "e3ba2a386d7f85a81f119ad7498ebe444d2e22c2af0b86b069416ace48b3311a",
+      "dependencies": [
+        "bytes",
+        "itoa"
+      ]
+    },
+    {
+      "name": "httparse",
+      "version": "1.10.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
+    },
+    {
+      "name": "itoa",
+      "version": "1.0.18",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+    },
+    {
+      "name": "libc",
+      "version": "0.2.186",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
+    },
+    {
+      "name": "log",
+      "version": "0.4.29",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
+    },
+    {
+      "name": "memchr",
+      "version": "2.8.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
+    },
+    {
+      "name": "mio",
+      "version": "1.2.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "50b7e5b27aa02a74bac8c3f23f448f8d87ff11f92d3aac1a6ed369ee08cc56c1",
+      "dependencies": [
+        "libc",
+        "wasi",
+        "windows-sys"
+      ]
+    },
+    {
+      "name": "opi-research-ws-probe",
+      "version": "0.0.0",
+      "dependencies": [
+        "futures-util",
+        "serde_json",
+        "tokio",
+        "tokio-tungstenite"
+      ]
+    },
+    {
+      "name": "pin-project-lite",
+      "version": "0.2.17",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+    },
+    {
+      "name": "ppv-lite86",
+      "version": "0.2.21",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9",
+      "dependencies": [
+        "zerocopy"
+      ]
+    },
+    {
+      "name": "proc-macro2",
+      "version": "1.0.106",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934",
+      "dependencies": [
+        "unicode-ident"
+      ]
+    },
+    {
+      "name": "quote",
+      "version": "1.0.45",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924",
+      "dependencies": [
+        "proc-macro2"
+      ]
+    },
+    {
+      "name": "r-efi",
+      "version": "5.3.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
+    },
+    {
+      "name": "rand",
+      "version": "0.9.4",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "44c5af06bb1b7d3216d91932aed5265164bf384dc89cd6ba05cf59a35f5f76ea",
+      "dependencies": [
+        "rand_chacha",
+        "rand_core"
+      ]
+    },
+    {
+      "name": "rand_chacha",
+      "version": "0.9.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb",
+      "dependencies": [
+        "ppv-lite86",
+        "rand_core"
+      ]
+    },
+    {
+      "name": "rand_core",
+      "version": "0.9.5",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c",
+      "dependencies": [
+        "getrandom"
+      ]
+    },
+    {
+      "name": "serde",
+      "version": "1.0.228",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e",
+      "dependencies": [
+        "serde_core"
+      ]
+    },
+    {
+      "name": "serde_core",
+      "version": "1.0.228",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "41d385c7d4ca58e59fc732af25c3983b67ac852c1a25000afe1175de458b67ad",
+      "dependencies": [
+        "serde_derive"
+      ]
+    },
+    {
+      "name": "serde_derive",
+      "version": "1.0.228",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79",
+      "dependencies": [
+        "proc-macro2",
+        "quote",
+        "syn"
+      ]
+    },
+    {
+      "name": "serde_json",
+      "version": "1.0.149",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86",
+      "dependencies": [
+        "itoa",
+        "memchr",
+        "serde",
+        "serde_core",
+        "zmij"
+      ]
+    },
+    {
+      "name": "sha1",
+      "version": "0.10.6",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba",
+      "dependencies": [
+        "cfg-if",
+        "cpufeatures",
+        "digest"
+      ]
+    },
+    {
+      "name": "slab",
+      "version": "0.4.12",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+    },
+    {
+      "name": "socket2",
+      "version": "0.6.3",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e",
+      "dependencies": [
+        "libc",
+        "windows-sys"
+      ]
+    },
+    {
+      "name": "syn",
+      "version": "2.0.117",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "e665b8803e7b1d2a727f4023456bbbbe74da67099c585258af0ad9c5013b9b99",
+      "dependencies": [
+        "proc-macro2",
+        "quote",
+        "unicode-ident"
+      ]
+    },
+    {
+      "name": "thiserror",
+      "version": "2.0.18",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4",
+      "dependencies": [
+        "thiserror-impl"
+      ]
+    },
+    {
+      "name": "thiserror-impl",
+      "version": "2.0.18",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5",
+      "dependencies": [
+        "proc-macro2",
+        "quote",
+        "syn"
+      ]
+    },
+    {
+      "name": "tokio",
+      "version": "1.52.3",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe",
+      "dependencies": [
+        "bytes",
+        "libc",
+        "mio",
+        "pin-project-lite",
+        "socket2",
+        "tokio-macros",
+        "windows-sys"
+      ]
+    },
+    {
+      "name": "tokio-macros",
+      "version": "2.7.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "385a6cb71ab9ab790c5fe8d67f1645e6c450a7ce006a33de03daa956cf70a496",
+      "dependencies": [
+        "proc-macro2",
+        "quote",
+        "syn"
+      ]
+    },
+    {
+      "name": "tokio-tungstenite",
+      "version": "0.28.0",
+      "dependencies": [
+        "futures-util",
+        "log",
+        "tokio",
+        "tungstenite"
+      ]
+    },
+    {
+      "name": "tungstenite",
+      "version": "0.28.0",
+      "dependencies": [
+        "bytes",
+        "data-encoding",
+        "http",
+        "httparse",
+        "log",
+        "rand",
+        "sha1",
+        "thiserror",
+        "utf-8"
+      ]
+    },
+    {
+      "name": "typenum",
+      "version": "1.20.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
+    },
+    {
+      "name": "unicode-ident",
+      "version": "1.0.24",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+    },
+    {
+      "name": "utf-8",
+      "version": "0.7.6",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
+    },
+    {
+      "name": "version_check",
+      "version": "0.9.5",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+    },
+    {
+      "name": "wasi",
+      "version": "0.11.1+wasi-snapshot-preview1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
+    },
+    {
+      "name": "wasip2",
+      "version": "1.0.3+wasi-0.2.9",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "20064672db26d7cdc89c7798c48a0fdfac8213434a1186e5ef29fd560ae223d6",
+      "dependencies": [
+        "wit-bindgen"
+      ]
+    },
+    {
+      "name": "windows-link",
+      "version": "0.2.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
+    },
+    {
+      "name": "windows-sys",
+      "version": "0.61.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc",
+      "dependencies": [
+        "windows-link"
+      ]
+    },
+    {
+      "name": "wit-bindgen",
+      "version": "0.57.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+    },
+    {
+      "name": "zerocopy",
+      "version": "0.8.48",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "eed437bf9d6692032087e337407a86f04cd8d6a16a37199ed57949d415bd68e9",
+      "dependencies": [
+        "zerocopy-derive"
+      ]
+    },
+    {
+      "name": "zerocopy-derive",
+      "version": "0.8.48",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "70e3cd084b1788766f53af483dd21f93881ff30d7320490ec3ef7526d203bad4",
+      "dependencies": [
+        "proc-macro2",
+        "quote",
+        "syn"
+      ]
+    },
+    {
+      "name": "zmij",
+      "version": "1.0.21",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+    }
+  ],
+  "patches_are_unmodified_published_source": true,
+  "product_cargo_unchanged": true
+}

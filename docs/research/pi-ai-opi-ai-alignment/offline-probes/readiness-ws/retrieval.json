@@ -1,0 +1,57 @@
+[
+  {
+    "name": "soketto",
+    "version": "0.8.1",
+    "sha256": "2e859df029d160cb88608f5d7df7fb4753fd20fdfb4de5644f3d8b8440841721",
+    "bytes": 45210,
+    "source": "https://static.crates.io/crates/soketto/soketto-0.8.1.crate",
+    "metadata": "https://crates.io/api/v1/crates/soketto/0.8.1",
+    "created_at": "2024-12-02T11:17:40.439226Z",
+    "license": "Apache-2.0 OR MIT",
+    "rust_version": "1.71.1"
+  },
+  {
+    "name": "ratchet_rs",
+    "version": "1.2.1",
+    "sha256": "21fdd57241fbecef9493f6c015bb90579baba4c160944a91865fd778656683f5",
+    "bytes": 15530,
+    "source": "https://static.crates.io/crates/ratchet_rs/ratchet_rs-1.2.1.crate",
+    "metadata": "https://crates.io/api/v1/crates/ratchet_rs/1.2.1",
+    "created_at": "2024-09-30T15:31:47.324672Z",
+    "license": "Apache-2.0",
+    "rust_version": null
+  },
+  {
+    "name": "ratchet_core",
+    "version": "1.2.1",
+    "sha256": "c6e76679899ff8b3104d045c6589167b5bc1ddc2460555803c105db2cdfd0ab1",
+    "bytes": 53917,
+    "source": "https://static.crates.io/crates/ratchet_core/ratchet_core-1.2.1.crate",
+    "metadata": "https://crates.io/api/v1/crates/ratchet_core/1.2.1",
+    "created_at": "2024-09-30T15:31:26.696178Z",
+    "license": "Apache-2.0",
+    "rust_version": null
+  },
+  {
+    "name": "ratchet_ext",
+    "version": "1.2.1",
+    "sha256": "7628c68ab3103dce804e4a772d67c1d3ce114cfc153f415eb44489d48c4fb55f",
+    "bytes": 7402,
+    "source": "https://static.crates.io/crates/ratchet_ext/ratchet_ext-1.2.1.crate",
+    "metadata": "https://crates.io/api/v1/crates/ratchet_ext/1.2.1",
+    "created_at": "2024-09-30T15:31:14.308443Z",
+    "license": "Apache-2.0",
+    "rust_version": null
+  },
+  {
+    "name": "ratchet_deflate",
+    "version": "1.2.1",
+    "sha256": "6082990b64158337d345a365facaeb86d20648bafbfa881d9daa88ac704e5f17",
+    "bytes": 12728,
+    "source": "https://static.crates.io/crates/ratchet_deflate/ratchet_deflate-1.2.1.crate",
+    "metadata": "https://crates.io/api/v1/crates/ratchet_deflate/1.2.1",
+    "created_at": "2024-09-30T15:31:34.858612Z",
+    "license": "Apache-2.0",
+    "rust_version": null
+  }
+]

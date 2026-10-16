@@ -1,0 +1,432 @@
+[
+  {
+    "name": "rustc-version",
+    "command": [
+      "rustc",
+      "-Vv"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.045,
+    "containment_seconds": 60,
+    "stdout_sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "cargo-version",
+    "command": [
+      "cargo",
+      "-Vv"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.035,
+    "containment_seconds": 60,
+    "stdout_sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "pi-normal",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.597,
+    "containment_seconds": 30,
+    "stdout_sha256": "fd85f52a004733cbf807e0b4c961d109dff3f59043d51eb256aa5d48497eba34",
+    "stderr_sha256": "b07dad6924713a96e69f5b16167fea402ff06ba7932cf34a1d62621f6e86dfb4"
+  },
+  {
+    "name": "pi-self-ref",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl",
+      "self-ref"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.508,
+    "containment_seconds": 5,
+    "stdout_sha256": "316fcb8dd20301ff58cfad2a394de543dac8b8730fa4dcfc51e9317a0243609f",
+    "stderr_sha256": "e65375b3a38662ad9a237a27a23814ef471f2540417b4aa6ac4eaccec239e9af"
+  },
+  {
+    "name": "pi-regex-backtrack-bare",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl",
+      "regex-backtrack-bare"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.605,
+    "containment_seconds": 5,
+    "stdout_sha256": "caa22b80151ea92c643113592bb77e345a11546797116122f51d1a81cf0e914d",
+    "stderr_sha256": "49667455cbafe725a74aec2f753f84325737fe58ea319ed560bcd758b2d128e8"
+  },
+  {
+    "name": "pi-regex-backtrack-not",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl",
+      "regex-backtrack-not"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.692,
+    "containment_seconds": 5,
+    "stdout_sha256": "71a3c278fd2a239cac9b132735af62be5a114d267163bf3a124821242945c44c",
+    "stderr_sha256": "3942ff8de7fc3817bd6cfbfc5b96185e673d561cb3d34b139c29d5c00870b5bd"
+  },
+  {
+    "name": "pi-regex-backtrack-anyof",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl",
+      "regex-backtrack-anyof"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.616,
+    "containment_seconds": 5,
+    "stdout_sha256": "a11df3b4c35a3a40196e40ba571bdcfd024b6866f04ba054c74cb024980dd74f",
+    "stderr_sha256": "8c5751f4e346b272661f0eba406d623b2751561f9db92e72da87077890f1d5e4"
+  },
+  {
+    "name": "pi-regex-backtrack-if",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl",
+      "regex-backtrack-if"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.639,
+    "containment_seconds": 5,
+    "stdout_sha256": "7e78172e6e7b5c96ac5bb8eeaf6b589a66eedd6dab24412ab11f29781bd869e5",
+    "stderr_sha256": "b363e5d80c2d87db1c1413b1c1167e2fc241fb5447794a0ae9e4102cd5611a25"
+  },
+  {
+    "name": "pi-regex-backtrack-contains",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl",
+      "regex-backtrack-contains"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.623,
+    "containment_seconds": 5,
+    "stdout_sha256": "97d1bca5862230309a1f9f31ebfb7c61fe141c5db058de2289bc4d0e30a8a24a",
+    "stderr_sha256": "a05b4539e497021187e9a553ba7288657d84b774505252d76530355c17d0a3a0"
+  },
+  {
+    "name": "pi-regex-backtrack-patternproperties",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl",
+      "regex-backtrack-patternproperties"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.653,
+    "containment_seconds": 5,
+    "stdout_sha256": "5a76a410e30ff02e93a441cf6c7b1706391a9d50e84141f644502d79f55de676",
+    "stderr_sha256": "3546e280e77bf1ddd8925e8a5b1b00e4e426a26f53dada903740c578ad9912f2"
+  },
+  {
+    "name": "pi-regex-backtrack-additionalproperties",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl",
+      "regex-backtrack-additionalproperties"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.789,
+    "containment_seconds": 5,
+    "stdout_sha256": "c345bda7fc569162c4ef20a09d5f76c39d8cbd66ba7c39b3e022184c3d2054f3",
+    "stderr_sha256": "31c9dd1afbc7b9155de932ade9c9c4bfc101d8b774540dd34bf4edd7bd48c22f"
+  },
+  {
+    "name": "pi-regex-backtrack-propertynames",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl",
+      "regex-backtrack-propertynames"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.626,
+    "containment_seconds": 5,
+    "stdout_sha256": "bb49c11963aad54a181e901ef9a0e03615118e087c7dff41ecd3bbe364d857a3",
+    "stderr_sha256": "3113bdb17abc4a0130a243ccdb6db750dcc20f4249da021c8356056fac490867"
+  },
+  {
+    "name": "pi-regex-backtrack-unselected-anyof",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl",
+      "regex-backtrack-unselected-anyof"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.513,
+    "containment_seconds": 5,
+    "stdout_sha256": "41ac4c346b9c8b004ffa770c72bcca6a440fdf72196448f1ad61f62dd6965875",
+    "stderr_sha256": "68c319f0f5a3d480b6afe04c4fc76a4e0af0c9b5a19a5b731323dd0366b8519a"
+  },
+  {
+    "name": "pi-regex-backtrack-allof",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "--experimental-loader",
+      "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-portable-replay/loader.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\pi-runner.mjs",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\cases.jsonl",
+      "regex-backtrack-allof"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.615,
+    "containment_seconds": 5,
+    "stdout_sha256": "1726e3790c433c8f8b15c3ca486cf9e78cdf5e60aad39f9b8b5ee48fdc6a601f",
+    "stderr_sha256": "d110a854b2b6cebd83fbf9871597434f23ec72d48b8739ccb348324cdf7b952b"
+  },
+  {
+    "name": "cargo-build",
+    "command": [
+      "cargo",
+      "build",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\rust\\Cargo.toml"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 1.668,
+    "containment_seconds": 300,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "99841b2cdd3ed7cdaf0d9fa23cc4f86f69187740af2fc48b867419e721064562"
+  },
+  {
+    "name": "cargo-metadata",
+    "command": [
+      "cargo",
+      "metadata",
+      "--offline",
+      "--locked",
+      "--filter-platform",
+      "x86_64-pc-windows-msvc",
+      "--format-version",
+      "1",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\rust\\Cargo.toml"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.09,
+    "containment_seconds": 60,
+    "stdout_sha256": "1a483a632be111e66d91cd1c53d7846cbb2fc2873e920856bc9d121ca561cc6a",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "cargo-tree-features",
+    "command": [
+      "cargo",
+      "tree",
+      "--offline",
+      "--locked",
+      "-e",
+      "features",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-schema-portable-replay\\rust\\Cargo.toml"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.08,
+    "containment_seconds": 60,
+    "stdout_sha256": "59231f0f29292787aef4fe7c82e0a0e2b20a787b769282763e510f329d090133",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-normal",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.681,
+    "containment_seconds": 60,
+    "stdout_sha256": "5144438d10a7c4943a6bb60d3d578b907c728842baa325062756638d472f8c51",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-self-ref",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.02,
+    "containment_seconds": 5,
+    "stdout_sha256": "77fda4bbf77f00f24eef6087557372da659a39424bb85a70235479da4c71bfec",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-bare",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.582,
+    "containment_seconds": 5,
+    "stdout_sha256": "d3f15491f9258a81fea115e1c78f3e906b5564a265f7d65049d5559f8a93d597",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-not",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.61,
+    "containment_seconds": 5,
+    "stdout_sha256": "7ea4c213c265d412b53c242c51fac858aeee9add33d0d1ec8cd5b35c71b3d077",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-anyof",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.605,
+    "containment_seconds": 5,
+    "stdout_sha256": "8af7bb98092ec273a98fc837e34ab0e5d16bff8211b199a9444f81c1133634bd",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-if",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.637,
+    "containment_seconds": 5,
+    "stdout_sha256": "2f921495ffa242487b754f02adedda43e2bebaf5ab618f57e798756427e4740e",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-contains",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.596,
+    "containment_seconds": 5,
+    "stdout_sha256": "868ba7efefcde78b5e525911778e43cdeeb06b9d7fc01f5565c1397145cd56be",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-patternproperties",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.585,
+    "containment_seconds": 5,
+    "stdout_sha256": "0968582f4ff28b7419d75aedf9f21027163ce86e5d3dc3aa86bf14b76a2a48a8",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-additionalproperties",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.594,
+    "containment_seconds": 5,
+    "stdout_sha256": "727a0a28e8119502a3ee176749bc0588df02ed800cd94238ae81b5bc7420de66",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-propertynames",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.594,
+    "containment_seconds": 5,
+    "stdout_sha256": "b57e3c8aaa8184e76e9d279fe4442e7ba9fc7a7ef6efb44ca37f44824b8980e3",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-unselected-anyof",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.024,
+    "containment_seconds": 5,
+    "stdout_sha256": "5818ea62d731c607f16a5ff5cd1fa8ea21026b258e59a4d256f043f47ac67920",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native-regex-backtrack-allof",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-schema-offline-probe.exe"
+    ],
+    "exit": 0,
+    "status": "exited",
+    "elapsed_seconds": 0.592,
+    "containment_seconds": 5,
+    "stdout_sha256": "f1d37c02be24bb652548786aadf850c181da637c026c6a11b476bbedb16850b9",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

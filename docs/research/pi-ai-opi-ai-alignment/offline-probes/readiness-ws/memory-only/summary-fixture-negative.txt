@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws-memory-final-replay\summary-fixture\summarize.py", line 23, in <module>
+    assert len(rows)==80
+           ^^^^^^^^^^^^^
+AssertionError

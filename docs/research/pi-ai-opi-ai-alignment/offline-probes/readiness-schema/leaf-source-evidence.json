@@ -1,0 +1,22 @@
+{
+  "ryu_js": {
+    "archive_sha256": "dd29631678d6fb0903b69223673e122c32e9ae559d0960a38d574695ebc0ea15",
+    "readme_sha256": "a2c062ee55a04b672d7bba8b87ac18f6a43426e621f43d655b1f5d5e48b8613b",
+    "safe_api": "ryu_js::Buffer::format; pure Rust internal unsafe, not C; no runtime/build.rs dependencies"
+  },
+  "idna_adapter": {
+    "version": "1.2.1",
+    "source_sha256": "c78c1c3bdfae97fb13ec121f4460eaf8f6a0466c54a5ab629724cfc4bac2d5f1",
+    "construction": "public Adapter::new; Uts46::new has no injectable provider in idna1.1.0"
+  },
+  "icu_properties_data": {
+    "version": "2.0.0",
+    "readme_sha256": "233fdc81b9903d581e35c8a7bde46690f90b79ca2919eba1bb2bbc6786c32db4",
+    "upstream_data_origin": "CLDR47.0.0, ICU icu4x/2025-05-01/77.x"
+  },
+  "preliminary_build_failure": {
+    "exit": 101,
+    "cause": "writeable0.6.3 alloc disabled macro incompatible with older ICU locale code; fixed explicit alloc, no source patch"
+  },
+  "profile_scope": "43 leaf cases; no normalizer, external consumer, platform or full format acceptance proof"
+}

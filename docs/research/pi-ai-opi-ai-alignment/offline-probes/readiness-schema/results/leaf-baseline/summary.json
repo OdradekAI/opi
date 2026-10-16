@@ -1,0 +1,63 @@
+{
+  "profile": "baseline",
+  "cases": 43,
+  "number_cases": 14,
+  "url_cases": 29,
+  "matched": 41,
+  "mismatches": [
+    {
+      "case": {
+        "id": "url-23",
+        "kind": "url-canparse",
+        "value": "http://𖺠.example"
+      },
+      "node": {
+        "id": "url-23",
+        "result": false
+      },
+      "native": {
+        "id": "url-23",
+        "result": true
+      }
+    },
+    {
+      "case": {
+        "id": "url-28",
+        "kind": "url-canparse",
+        "value": "http://%F0%96%BA%A0.example"
+      },
+      "node": {
+        "id": "url-28",
+        "result": false
+      },
+      "native": {
+        "id": "url-28",
+        "result": true
+      }
+    }
+  ],
+  "native_sha256": "edd9a1d352058ef98eaa4775e288b1529be03a96c3701de0993552df4ab0f8d5",
+  "status": "LEAF-MECHANISMS-NOT-NORMALIZER-OR-PRODUCT",
+  "environment_names": [
+    "APPDATA",
+    "CARGO_INCREMENTAL",
+    "CARGO_NET_OFFLINE",
+    "CARGO_TARGET_DIR",
+    "COMSPEC",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "LOCALAPPDATA",
+    "NUMBER_OF_PROCESSORS",
+    "PATH",
+    "PATHEXT",
+    "PROCESSOR_ARCHITECTURE",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "WINDIR"
+  ]
+}

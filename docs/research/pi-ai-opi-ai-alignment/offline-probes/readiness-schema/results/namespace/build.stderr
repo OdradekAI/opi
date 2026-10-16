@@ -1,0 +1,69 @@
+   Compiling pi-schema-private-icu-properties-data v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\icu_properties_data-2.0.0)
+   Compiling pi-schema-private-icu-normalizer-data v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\icu_normalizer_data-2.0.0)
+   Compiling ryu-js v1.0.2 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\vendor\ryu-js-1.0.2)
+   Compiling pi-schema-private-icu-locale-core v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\icu_locale_core-2.0.0)
+   Compiling pi-schema-private-icu-collections v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\icu_collections-2.0.0)
+warning: value assigned to `vp` is never read
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\vendor\ryu-js-1.0.2\src\f2s.rs:146:17
+    |
+146 |                 vp /= 10;
+    |                 ^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\icu_collections-2.0.0\src\char16trie\trie.rs:96:17
+   |
+96 |     pub fn iter(&self) -> Char16TrieIterator {
+   |                 ^^^^^     ^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |                 |
+   |                 the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+96 |     pub fn iter(&self) -> Char16TrieIterator<'_> {
+   |                                             ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\icu_collections-2.0.0\src\codepointtrie\cptrie.rs:933:24
+    |
+933 |     pub fn iter_ranges(&self) -> CodePointMapRangeIterator<T> {
+    |                        ^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                        |
+    |                        the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+933 |     pub fn iter_ranges(&self) -> CodePointMapRangeIterator<'_, T> {
+    |                                                            +++
+
+warning: `ryu-js` (lib) generated 1 warning
+warning: `pi-schema-private-icu-collections` (lib) generated 2 warnings (run `cargo fix --lib -p pi-schema-private-icu-collections` to apply 2 suggestions)
+   Compiling pi-schema-private-icu-provider v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\icu_provider-2.0.0)
+   Compiling pi-schema-private-icu-normalizer v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\icu_normalizer-2.0.0)
+warning: hiding a lifetime that's elided elsewhere is confusing
+    --> C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\icu_normalizer-2.0.0\src\lib.rs:2055:24
+     |
+2055 |     pub fn as_borrowed(&self) -> DecomposingNormalizerBorrowed {
+     |                        ^^^^^     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+     |                        |
+     |                        the lifetime is elided here
+     |
+     = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+     = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+     |
+2055 |     pub fn as_borrowed(&self) -> DecomposingNormalizerBorrowed<'_> {
+     |                                                               ++++
+
+warning: `pi-schema-private-icu-normalizer` (lib) generated 1 warning (run `cargo fix --lib -p pi-schema-private-icu-normalizer` to apply 1 suggestion)
+   Compiling pi-schema-private-icu-properties v2.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\icu_properties-2.0.0)
+   Compiling pi-schema-private-idna-adapter v1.2.1 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\idna_adapter-1.2.1)
+   Compiling pi-schema-private-idna v1.1.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\idna-1.1.0)
+   Compiling pi-schema-private-url v2.5.8 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\family\url-2.5.8)
+   Compiling opi-pi130-schema-namespace-probe v0.0.0 (C:\Users\Luiz\AppData\Local\Temp\opi-pi130-namespace-final-integrity\probe)
+    Finished `release` profile [optimized] target(s) in 5.41s

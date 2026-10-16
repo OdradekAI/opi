@@ -1,0 +1,756 @@
+{
+  "scope": "direct-TTW-client_async-not-opi-provider",
+  "isolation": "Only 127.0.0.1; scrubbed child env; fake credential; no npm packages",
+  "note": "1500ms client / 4000ms process timeouts are experiment containment, not SDK limits. A server write does not determine client read boundaries.",
+  "results": [
+    {
+      "case": {
+        "id": "baseline-101-tail",
+        "note": "101 and first text frame written together"
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7374/offline/baseline-101-tail"
+      ],
+      "mode": "rust-native",
+      "classification": "message",
+      "client": {
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": true,
+        "outcome": "message",
+        "result": {
+          "messageLength": 19,
+          "messagePreview": "offline-wire-canary",
+          "messageType": "text",
+          "outcome": "message"
+        },
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+        "status": 101
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/baseline-101-tail HTTP/1.1\r\nHost: 127.0.0.1:7374\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "8b13f60ef399bb026af69dbd65cfea898356d749dc42a60e833c31ade5707ea2",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 129,
+            "headerCount": 3,
+            "bytes": 150,
+            "sha256": "67790954a5e95e181746656bd93038aac8049bff99642a8cd3d6c8160675a51d"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "connection-token-list",
+        "connection": "keep-alive, Upgrade"
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7376/offline/connection-token-list"
+      ],
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "client": {
+        "debug": "Protocol(MissingConnectionUpgradeHeader)",
+        "error": "WebSocket protocol error: No \"Connection: upgrade\" header",
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": false,
+        "outcome": "handshake-error",
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0"
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/connection-token-list HTTP/1.1\r\nHost: 127.0.0.1:7376\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "76f21976b1dd7b8886642e26455d679dc975b400270301515ff0d8387591f105",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 141,
+            "headerCount": 3,
+            "bytes": 162,
+            "sha256": "5ca0a805efa36eeb03c01de9cfa084b234fcda53419c46142afeac16776fc38a"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "headers-total-124",
+        "extraCount": 121
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7378/offline/headers-total-124"
+      ],
+      "mode": "rust-native",
+      "classification": "message",
+      "client": {
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": true,
+        "outcome": "message",
+        "result": {
+          "messageLength": 19,
+          "messagePreview": "offline-wire-canary",
+          "messageType": "text",
+          "outcome": "message"
+        },
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+        "status": 101
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/headers-total-124 HTTP/1.1\r\nHost: 127.0.0.1:7378\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "d7b61e0e40eeb4fd49d84dfb133f8fac5f08c2f4712aba1b19928f0e61033509",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 1955,
+            "headerCount": 124,
+            "bytes": 1976,
+            "sha256": "fd1f2624749a54d8615f3d92ef7320e7b1406c0f8314273d25b687b7b0f5ee72"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "headers-total-125",
+        "extraCount": 122
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7380/offline/headers-total-125"
+      ],
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "client": {
+        "debug": "Capacity(TooManyHeaders)",
+        "error": "Space limit exceeded: Too many headers",
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": false,
+        "outcome": "handshake-error",
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0"
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/headers-total-125 HTTP/1.1\r\nHost: 127.0.0.1:7380\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "4bcb8cf22edafd7c8e25fdc72bbe3e8f016038f9ddae437851d729b438b11a88",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 1971,
+            "headerCount": 125,
+            "bytes": 1992,
+            "sha256": "7e08b06c3221cd137c17c457bd336861b2d9e5254d0b24b18799c01f6dbefbe2"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "headers-total-140",
+        "extraCount": 137
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7382/offline/headers-total-140"
+      ],
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "client": {
+        "debug": "Capacity(TooManyHeaders)",
+        "error": "Space limit exceeded: Too many headers",
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": false,
+        "outcome": "handshake-error",
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0"
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/headers-total-140 HTTP/1.1\r\nHost: 127.0.0.1:7382\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "2475f1010ee6a36a138b493d2f443cea641232e00d5c96405d990168df2f9147",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 2211,
+            "headerCount": 140,
+            "bytes": 2232,
+            "sha256": "26d725da40b2bff1b6fed488b2b337ae52b2306bece5ec0869e7f99f06941009"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "header-value-16000",
+        "padding": 16000
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7384/offline/header-value-16000"
+      ],
+      "mode": "rust-native",
+      "classification": "message",
+      "client": {
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": true,
+        "outcome": "message",
+        "result": {
+          "messageLength": 19,
+          "messagePreview": "offline-wire-canary",
+          "messageType": "text",
+          "outcome": "message"
+        },
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+        "status": 101
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/header-value-16000 HTTP/1.1\r\nHost: 127.0.0.1:7384\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "9c6e97f9b9a30254ac7c27dd971e517edd77f3ea1020b67f9fe70f6fed07fce8",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 16142,
+            "headerCount": 4,
+            "bytes": 16163,
+            "sha256": "2370233b6ee316dbaa785fd175ed620c9c642b206a0b8935bd274e689a202261"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "header-value-20000",
+        "padding": 20000
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7388/offline/header-value-20000"
+      ],
+      "mode": "rust-native",
+      "classification": "message",
+      "client": {
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": true,
+        "outcome": "message",
+        "result": {
+          "messageLength": 19,
+          "messagePreview": "offline-wire-canary",
+          "messageType": "text",
+          "outcome": "message"
+        },
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+        "status": 101
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/header-value-20000 HTTP/1.1\r\nHost: 127.0.0.1:7388\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "cb9695a088366a4bca8a974263ae09ef87bcb294ec54ef65907cf1f9620ce903",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 20142,
+            "headerCount": 4,
+            "bytes": 20163,
+            "sha256": "ec983f4587fd1cb5b8e626ed6c08ccdaf76f9b147eda4c13dde4a71f0a981ecf"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "header-value-66000",
+        "padding": 66000
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7390/offline/header-value-66000"
+      ],
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "client": {
+        "debug": "AttackAttempt",
+        "error": "Attack attempt detected",
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": false,
+        "outcome": "handshake-error",
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0"
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/header-value-66000 HTTP/1.1\r\nHost: 127.0.0.1:7390\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "81af4dac1b570d353f7f2936daf9145af495eecb40f8d919689e1650d631b8f1",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 66142,
+            "headerCount": 4,
+            "bytes": 66163,
+            "sha256": "be028a6244419397fe6e6f684bb97e1bde93d3e463e20051ffb7199860fa5788"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "tail-text-70000",
+        "textLength": 70000
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7392/offline/tail-text-70000"
+      ],
+      "mode": "rust-native",
+      "classification": "message",
+      "client": {
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": true,
+        "outcome": "message",
+        "result": {
+          "messageLength": 70000,
+          "messagePreview": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "messageType": "text",
+          "outcome": "message"
+        },
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+        "status": 101
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/tail-text-70000 HTTP/1.1\r\nHost: 127.0.0.1:7392\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "201d89a9667b59f7bca26a558b1d057381555d233dcc8b4cbf981ea53fbcb31d",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 129,
+            "headerCount": 3,
+            "bytes": 70139,
+            "sha256": "0561e505228ec69037aa0aaaa5eabec8ef59c83006377778fd4e370d7b68f688"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "invalid-accept",
+        "invalidAccept": true
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7394/offline/invalid-accept"
+      ],
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "client": {
+        "debug": "Protocol(SecWebSocketAcceptKeyMismatch)",
+        "error": "WebSocket protocol error: Key mismatch in \"Sec-WebSocket-Accept\" header",
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": false,
+        "outcome": "handshake-error",
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0"
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/invalid-accept HTTP/1.1\r\nHost: 127.0.0.1:7394\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "925b17b8ead94d258c1d0c1de30a3ed3660f9e51dbc5648e4b510174cfa3eb07",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 115,
+            "headerCount": 3,
+            "bytes": 136,
+            "sha256": "ea8d6dbb0103f9e42089144d6ecc129a3a0ae16eac736bdfe388eab9ed63388e"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "unsolicited-extension",
+        "extension": "x-unrequested"
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7396/offline/unsolicited-extension"
+      ],
+      "mode": "rust-native",
+      "classification": "message",
+      "client": {
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": true,
+        "outcome": "message",
+        "result": {
+          "messageLength": 19,
+          "messagePreview": "offline-wire-canary",
+          "messageType": "text",
+          "outcome": "message"
+        },
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+        "status": 101
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/unsolicited-extension HTTP/1.1\r\nHost: 127.0.0.1:7396\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "5feedf229a8aafede48539943fbe3e1644615f87cef233c7537c29892e9eeb3c",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 170,
+            "headerCount": 4,
+            "bytes": 191,
+            "sha256": "31c296247808483ee915831bb2179a143e221004e278520b18d123303f74283e"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "unsolicited-subprotocol",
+        "subprotocol": "unrequested"
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7398/offline/unsolicited-subprotocol"
+      ],
+      "mode": "rust-native",
+      "classification": "handshake-error",
+      "client": {
+        "debug": "Protocol(SecWebSocketSubProtocolError(ServerSentSubProtocolNoneRequested))",
+        "error": "WebSocket protocol error: SubProtocol error: Server sent a subprotocol but none was requested",
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": false,
+        "outcome": "handshake-error",
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0"
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/unsolicited-subprotocol HTTP/1.1\r\nHost: 127.0.0.1:7398\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "70ded4e6119abb6a433877d0b2758dfea84f2bb0dfda8929235770c89f7e9608",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 166,
+            "headerCount": 4,
+            "bytes": 187,
+            "sha256": "aa747776f3b765638d7901b8bf14a1d1c8237f9941822d8644554c6004ad5b67"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "pmd-response-plain-frame",
+        "extension": "permessage-deflate"
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7400/offline/pmd-response-plain-frame"
+      ],
+      "mode": "rust-native",
+      "classification": "message",
+      "client": {
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": true,
+        "outcome": "message",
+        "result": {
+          "messageLength": 19,
+          "messagePreview": "offline-wire-canary",
+          "messageType": "text",
+          "outcome": "message"
+        },
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+        "status": 101
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/pmd-response-plain-frame HTTP/1.1\r\nHost: 127.0.0.1:7400\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "d650fde19ea7f7b65ef34f7840e7537d3d80f8454585f0fbdd7e46cf7a15f049",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 175,
+            "headerCount": 4,
+            "bytes": 196,
+            "sha256": "baa2e242db6157e25a4094b54f43145f6adf83f115418db0112fd9f82de7ebc8"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "pmd-response-compressed-frame",
+        "extension": "permessage-deflate",
+        "compressed": true
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7403/offline/pmd-response-compressed-frame"
+      ],
+      "mode": "rust-native",
+      "classification": "frame-error",
+      "client": {
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": true,
+        "outcome": "frame-error",
+        "result": {
+          "debug": "Protocol(NonZeroReservedBits)",
+          "error": "WebSocket protocol error: Reserved bits are non-zero",
+          "outcome": "frame-error"
+        },
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+        "status": 101
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/pmd-response-compressed-frame HTTP/1.1\r\nHost: 127.0.0.1:7403\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "b47425218c8ffe7ce76c9ee4c230312e5b2ff57117c3d67d1bd61f315eded0a9",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 175,
+            "headerCount": 4,
+            "bytes": 198,
+            "sha256": "50b220c738063f3e966e02664d0372680a1a07af36044f7aed17a58ac826a373"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    },
+    {
+      "case": {
+        "id": "rsv1-without-extension",
+        "compressed": true
+      },
+      "executable": "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+      "executableSha256": "e0268e867978d3d1956ded46d90bb3c67ec29d587a49b72a4456c76943ea28d2",
+      "command": [
+        "E:/opi/cargo-targets/opi-8abcf38f9871653e/debug/opi-research-ws-probe.exe",
+        "ws://127.0.0.1:7405/offline/rsv1-without-extension"
+      ],
+      "mode": "rust-native",
+      "classification": "frame-error",
+      "client": {
+        "layer": "direct-TTW-client_async-loopback-not-opi-provider",
+        "opened": true,
+        "outcome": "frame-error",
+        "result": {
+          "debug": "Protocol(NonZeroReservedBits)",
+          "error": "WebSocket protocol error: Reserved bits are non-zero",
+          "outcome": "frame-error"
+        },
+        "runtime": "tokio-tungstenite0.28.0/tungstenite0.28.0",
+        "status": 101
+      },
+      "wire": {
+        "requests": [
+          {
+            "text": "GET /offline/rsv1-without-extension HTTP/1.1\r\nHost: 127.0.0.1:7405\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nx-opi-offline-canary: pi130-canary\r\nauthorization: Bearer offline-fake-token\r\n\r\n",
+            "sha256": "2639f913bf4d2399681d51c1f114a62fc037f64f08240e1799d67487f1cca792",
+            "headerCanary": "pi130-canary",
+            "authorization": "Bearer offline-fake-token",
+            "pmdOffer": null
+          }
+        ],
+        "responses": [
+          {
+            "headerBytes": 129,
+            "headerCount": 3,
+            "bytes": 152,
+            "sha256": "39d5b0ea5442ae2bb5ed5221462105b9582f4f0e6d06e70f7b39017824fda58b"
+          }
+        ],
+        "tcpWriteCalls": 1
+      },
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "stderr": ""
+    }
+  ]
+}

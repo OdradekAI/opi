@@ -1,0 +1,79 @@
+{
+  "scope": "pure-memory only; no sockets, connections, requests or downloads",
+  "memoryTestsPassed": 14,
+  "publicCodecFixtures": 12,
+  "cachedRegistryPackagesVerified": 96,
+  "sourceFiles": [
+    {
+      "path": "src/errors.rs",
+      "before": "42f126d4c7469b4aa0920448a671125f24aab7c3f02f47c6ee60f005d98f4867",
+      "after": "cfd2851c61e80adaead97d3dc77b5fc64c54801bef6954d8510da8f1e18cd76d",
+      "bytes": 10731,
+      "role": "runtime"
+    },
+    {
+      "path": "src/protocol/frame.rs",
+      "before": "048dc77a51710c67556e33e9bd9c8cd933cf2ca3ca7a6945995808b9b58f2536",
+      "after": "a8afeabc23d65bbb95fe59d6012d3d31ffa83c86d0d71cdeffe319db9e47adf4",
+      "bytes": 7182,
+      "role": "runtime"
+    },
+    {
+      "path": "src/framed/mod.rs",
+      "before": "0840f2e1006d0d44c71aa3f9ed25133bf14f5d53ad74e534cd955e248967e505",
+      "after": "ca6fda1fac387afe228d85703ef3a7fcf9da7bfd483d1ca9d81e659a32b2ebd4",
+      "bytes": 24461,
+      "role": "runtime-and-unit-test-hook"
+    },
+    {
+      "path": "src/ws.rs",
+      "before": "3dd8b12fcd0434d92dc428a6f0d1a33b2ec0b6754ecb581d77ebc628c2b26d7a",
+      "after": "602def8b420653ba04002c2a0fc786c00fa9d054bc6b7bea8f44907e276371c9",
+      "bytes": 31013,
+      "role": "test-only-docs"
+    },
+    {
+      "path": "src/framed/readiness_memory.rs",
+      "before": null,
+      "after": "76b71ba18318c08aa4f178b8cb59a08bfbd3a428d218ba21c20b88c273aa23fd",
+      "bytes": 4342,
+      "role": "new-unit-tests"
+    }
+  ],
+  "commands": [
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\ws-memory-final-review\\Cargo.toml",
+        "--workspace",
+        "--lib",
+        "readiness_memory",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "expectedExit": 0
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\ws-memory-final-review\\summary-fixture\\summarize.py"
+      ],
+      "exit": 0,
+      "expectedExit": 0
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\ws-memory-final-review\\summary-fixture\\summarize.py"
+      ],
+      "exit": 1,
+      "expectedExit": 1
+    }
+  ],
+  "historical80Rerun": false
+}

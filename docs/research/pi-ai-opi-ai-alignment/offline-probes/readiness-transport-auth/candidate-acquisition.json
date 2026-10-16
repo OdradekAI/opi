@@ -1,0 +1,33 @@
+[
+  {
+    "url": "https://static.crates.io/crates/openssl/openssl-0.10.81.crate",
+    "sha256": "77823a27f0babb03091cb9ed9ef80af3b39dbc82f97e8fa530374b7dafd87a45",
+    "bytes": 311187
+  },
+  {
+    "url": "https://static.crates.io/crates/openssl-sys/openssl-sys-0.9.117.crate",
+    "sha256": "b47e7e6bb2c38cd930d25a23b40fa52e068c10e85f3e03a7f5ba5aaca5713695",
+    "bytes": 76045
+  },
+  {
+    "url": "https://static.crates.io/crates/aws-lc-rs/aws-lc-rs-1.18.1.crate",
+    "sha256": "b281d307588d634de920874890732659e2e7672f72b5e10e81badc1a8a83621e",
+    "bytes": 249534
+  },
+  {
+    "name": "boring",
+    "version": "5.2.0",
+    "url": "https://static.crates.io/crates/boring/boring-5.2.0.crate",
+    "sha256": "47bf58283ad1560da95ab8dcbb6c71e18a89df30e6011e3582ddf755abe55c4a",
+    "bytes": 227435,
+    "members": 113
+  },
+  {
+    "name": "boring-sys",
+    "version": "5.2.0",
+    "url": "https://static.crates.io/crates/boring-sys/boring-sys-5.2.0.crate",
+    "sha256": "6993efa9d9f0ebf3b0c02c8e868cfe37d0854cd021d51204480a91ce23d6e444",
+    "bytes": 5576914,
+    "members": 1618
+  }
+]

@@ -1,0 +1,10 @@
+[package]
+name = "opi-pi130-schema-leaf-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[dependencies]
+ryu-js = { path = "../vendor/ryu-js-1.0.2", default-features = false }
+url = "=2.5.8"
+serde_json = "=1.0.149"
+[workspace]

@@ -1,0 +1,126 @@
+{
+  "files": [
+    {
+      "path": "cases.jsonl",
+      "bytes": 12130,
+      "sha256": "3e6a34add198120c736b80fc999cf74ee93b493e9b31f3b2819e814dadbd159c"
+    },
+    {
+      "path": "loader.mjs",
+      "bytes": 640,
+      "sha256": "6f191edda4d91fce9abf7597522b5154d069d00d324e5b4e5a26aaa2c5d92b29"
+    },
+    {
+      "path": "pi-runner.mjs",
+      "bytes": 2187,
+      "sha256": "cd73bee1eb0653bf9c43fff11cbbd5a9db9b2aab4fff2dcb84e2619831884c43"
+    },
+    {
+      "path": "README.md",
+      "bytes": 8960,
+      "sha256": "801cc935a0ac6e6ce37453738755970c14a82372cdda7257497d5b3308e31dea"
+    },
+    {
+      "path": "results/cargo-build.stderr",
+      "bytes": 186,
+      "sha256": "368d3642608038d3c2fb75d24f19cd7c27234d67f993881008abeba76729106a"
+    },
+    {
+      "path": "results/cargo-features.txt",
+      "bytes": 31022,
+      "sha256": "395c09837589333fb255430d6df5f6a72346b111c07c996d68dbd74d733ee70e"
+    },
+    {
+      "path": "results/cargo-graph.json",
+      "bytes": 111079,
+      "sha256": "eb47c097242b28682920bc7b767c5e936bb7c0287ed22999e270c0e66543f825"
+    },
+    {
+      "path": "results/cargo-version.txt",
+      "bytes": 313,
+      "sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a"
+    },
+    {
+      "path": "results/commands.json",
+      "bytes": 16575,
+      "sha256": "fa07c4d32be15df6817107fede92c686de7f14ff4b9d00201476eeb6262e0d5c"
+    },
+    {
+      "path": "results/lock-seed.json",
+      "bytes": 573,
+      "sha256": "c452c56f0a66790c83e7977eca4087a46c6af164caff3b90da8ffba62e0c6c9a"
+    },
+    {
+      "path": "results/native.jsonl",
+      "bytes": 98753,
+      "sha256": "b0473bcb8c4e8a8ca7fc9aa3f346810d7f1753f2db2710b7f53380a585499a6e"
+    },
+    {
+      "path": "results/node-runtime.json",
+      "bytes": 1035,
+      "sha256": "6db9c8359b163c8c9690d96e02f062de7361acf91e3c5350369c7dfc370d14ac"
+    },
+    {
+      "path": "results/pi.jsonl",
+      "bytes": 28967,
+      "sha256": "093eb953ab8000ab53474cd5ebadda0bb843f17c803be827338c20d5f05eca24"
+    },
+    {
+      "path": "results/portable-replay-commands.json",
+      "bytes": 16967,
+      "sha256": "cfc4515a35bc009f187fa8ddd3ef2db079a9f2c206995602345a193b2464d361"
+    },
+    {
+      "path": "results/portable-replay-runtime.json",
+      "bytes": 1280,
+      "sha256": "f8a01618e7733d8dad78113312106f62f8cdf10cc37cac51c5c68c2561378baa"
+    },
+    {
+      "path": "results/regex-exploration.json",
+      "bytes": 815,
+      "sha256": "119a5c51afc473ecd7caeb32f3cf030b4ac2ab8a24774a196c2be4fa82bbfe8f"
+    },
+    {
+      "path": "results/runtime-inputs.json",
+      "bytes": 1280,
+      "sha256": "6a4137ba3feffbe237f4440dd8fcccdeecec98c1411cd0638b68809ff474f230"
+    },
+    {
+      "path": "results/rustc-version.txt",
+      "bytes": 194,
+      "sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8"
+    },
+    {
+      "path": "run.py",
+      "bytes": 9155,
+      "sha256": "c3a10a7597a9e94fb35724b5ec3fa6b8ac85d70e6d9d1600f1d86d77ccd3533f"
+    },
+    {
+      "path": "rust/Cargo.lock",
+      "bytes": 21348,
+      "sha256": "eb20a03f072f3285dba88397583cca8a4a710c72b613dbfc9240ea56832a742f"
+    },
+    {
+      "path": "rust/Cargo.toml.template",
+      "bytes": 217,
+      "sha256": "ff88d64f5713f85a008299de0d7d7518e862668ed517b7374e01d429c67f67e1"
+    },
+    {
+      "path": "rust/src/main.rs",
+      "bytes": 5232,
+      "sha256": "5edc86dedb3e6a2a50bcaf05248a72d8b67a1a2d6e32c2c4c8cf1c4860c33b5e"
+    },
+    {
+      "path": "source-pins.json",
+      "bytes": 2596,
+      "sha256": "7e26085bebc02dbb7d12b8f688ca62c9238545001bc6a6e60cf4628e9b9020f3"
+    },
+    {
+      "path": "summary.json",
+      "bytes": 1478,
+      "sha256": "1dc401071163512d0d6d5b1cc5037435a9014f67781e9bb4712252d1b8b451f7"
+    }
+  ],
+  "count": 24,
+  "total_bytes_excluding_this_list": 372982
+}

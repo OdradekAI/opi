@@ -1,0 +1,82 @@
+{
+  "phase": "explicit official dependency/data preparation; behavioral commands afterward offline",
+  "inputs": {
+    "regress_archive": {
+      "url": "https://static.crates.io/crates/regress/regress-0.12.0.crate",
+      "sha256": "32eef8b209c3c1c15dbad02c1f30f9539f00dc7253e0cbcdaae442a50a09d7c1",
+      "bytes": 376723
+    },
+    "codegen_archive": {
+      "url": "https://static.crates.io/crates/codegen/codegen-0.3.0.crate",
+      "sha256": "573800db6c3319bc125ddbf9b9cb001ad1602957f53642ba8d09ff3ddd4da7f1",
+      "bytes": 17892
+    },
+    "ucd_parse_archive": {
+      "url": "https://static.crates.io/crates/ucd-parse/ucd-parse-0.1.13.crate",
+      "sha256": "c06ff81122fcbf4df4c1660b15f7e3336058e7aec14437c9f85c6b31a0f279b9",
+      "bytes": 29550
+    },
+    "regex_lite_archive": {
+      "url": "https://static.crates.io/crates/regex-lite/regex-lite-0.1.8.crate",
+      "sha256": "8d942b98df5e658f56f20d592c7f868833fe38115e65c33003d8cd224b0155da",
+      "bytes": 96884
+    },
+    "ucd_zip": {
+      "url": "https://www.unicode.org/Public/zipped/16.0.0/UCD.zip",
+      "sha256": "c86dd81f2b14a43b0cc064aa5f89aa7241386801e35c59c7984e579832634eb2",
+      "bytes": 9020779
+    },
+    "emoji_sequences": {
+      "url": "https://www.unicode.org/Public/emoji/16.0/emoji-sequences.txt",
+      "sha256": "3fe3c77e72e8f26df302dc7d99b106c5d08fd808ef7246fb5d4502d659fe659c",
+      "bytes": 192618
+    },
+    "emoji_zwj_sequences": {
+      "url": "https://www.unicode.org/Public/emoji/16.0/emoji-zwj-sequences.txt",
+      "sha256": "9423ec235474356f970a696506737e2d5d65453a67f45df66b8bbe920c3fab83",
+      "bytes": 251607
+    },
+    "upstream_generator_commit": "aae35dee1596cc9a9caaad2425b088081c09e5d5",
+    "expected_table_sha256": "475cb03589f0deb859b9a2ccfb34e3f33026a1e89500524024ce575a135e5daf",
+    "source_files": {
+      "upstream-generator/binary_properties.rs": "e30d56f1f0f9f24c24a0b2302fd16da6faa6dd8f2d5a7d285255ef3c67d8e2ab",
+      "upstream-generator/Cargo.lock": "27ffa2455d9828c6378a5d3a42e5669d30bd2c2ef4be98c47a9397899a8ca5a5",
+      "upstream-generator/Cargo.toml.template": "1f15be0bcf5c7fbe66836b3b090576d7ca6a7a5e457c03bc282f7ae9daaa66cf",
+      "upstream-generator/case_folding.rs": "a215ba178add4073aa3cbbd34f524f4cd12054240f18353d8f87dd97da35b916",
+      "upstream-generator/general_category_values.rs": "1d7cb1934264ef21f3a7fe0971942c75126082d0df3698dff4845d1d8e8ad244",
+      "upstream-generator/main.rs": "0857b4bfed9ba50eae4ec5f9b419c2d03da52fd4a5e160f98c1eafad9fa566a7",
+      "upstream-generator/scripts.rs": "4116e79943da603cdb090483bf80fa868b32fb388d9f6cc23426f4f968738552",
+      "upstream-generator/string_properties.rs": "158676297d36b79e4e6458ed16105f1c70d8ae280bbf9f390f1e9e562b202fb1",
+      "upstream-generator/uppercase.rs": "8bf974d0ed6d9f9c3b15f0e33c39a9a99e64d4c0e872138d37a642d81a5f13ca"
+    }
+  },
+  "additional_compared_archives": [
+    {
+      "crate": "regress-0.10.4",
+      "url": "https://static.crates.io/crates/regress/regress-0.10.4.crate",
+      "sha256": "145bb27393fe455dd64d6cbc8d059adfa392590a45eadf079c01b11857e7b010",
+      "created_at": "2025-07-13T06:15:12.146049Z",
+      "source_only": true,
+      "unicode_table_sha256": "42b9f988568b655360440f38df15589aae6c454c45d5366287a4a823f783be5a"
+    },
+    {
+      "crate": "regress-0.11.0",
+      "url": "https://static.crates.io/crates/regress/regress-0.11.0.crate",
+      "sha256": "07948de9abc2e83adbeb7543c061a5ddaf7d944afcafbdd6e6b39aeacd40504b",
+      "created_at": "2026-03-10T05:54:10.077989Z",
+      "source_only": true,
+      "unicode_table_sha256": "c3ec026fcfb6bc607f0002915c824d1792a368ecb5bf489abc0f94aea586d963"
+    }
+  ],
+  "setup_failures": [
+    {
+      "action": "Invoke-WebRequest UCD16 zip",
+      "result": "transport closed; command exit1; no resulting archive; curl retry obtained pinned archive"
+    },
+    {
+      "action": "first upstream generator run before emoji files prepared",
+      "exit": 101,
+      "result": "missing emoji-sequences.txt; excluded from behavior proof; prepared official emoji files, then locked generator replay succeeded twice"
+    }
+  ]
+}

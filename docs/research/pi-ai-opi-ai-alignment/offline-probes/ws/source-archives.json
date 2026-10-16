@@ -1,0 +1,18 @@
+[
+  {
+    "archive": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-ws-backend-source\\tokio-tungstenite-0.28.0.crate",
+    "sha256": "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857",
+    "extraction": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ws-offline-probe\\source\\tokio-tungstenite-0.28.0",
+    "files": 24,
+    "fileMembersByteCompared": 22,
+    "matched": true
+  },
+  {
+    "archive": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-ws-backend-source\\tungstenite-0.28.0.crate",
+    "sha256": "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442",
+    "extraction": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-ws-offline-probe\\source\\tungstenite-0.28.0",
+    "files": 44,
+    "fileMembersByteCompared": 38,
+    "matched": true
+  }
+]

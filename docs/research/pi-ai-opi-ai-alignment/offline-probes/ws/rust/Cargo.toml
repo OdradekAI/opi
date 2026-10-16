@@ -1,0 +1,17 @@
+[package]
+name = "opi-research-ws-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+tokio = { version = "=1.52.3", default-features = false, features = ["rt", "macros", "net", "io-util", "time"] }
+tokio-tungstenite = { version = "=0.28.0", default-features = false, features = ["handshake"] }
+futures-util = { version = "=0.3.32", default-features = false, features = ["std", "sink"] }
+serde_json = "=1.0.149"
+
+[patch.crates-io]
+tokio-tungstenite = { path = "../source/tokio-tungstenite-0.28.0" }
+tungstenite = { path = "../source/tungstenite-0.28.0" }

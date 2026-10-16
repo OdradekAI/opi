@@ -1,0 +1,41 @@
+{
+  "kind": "runtime",
+  "execPath": "D:\\nvm\\v24.13.0\\node.exe",
+  "realExecPath": "D:\\nvm\\v24.13.0\\node.exe",
+  "version": "v24.13.0",
+  "versions": {
+    "node": "24.13.0",
+    "acorn": "8.15.0",
+    "ada": "3.3.0",
+    "amaro": "1.1.5",
+    "ares": "1.34.6",
+    "brotli": "1.1.0",
+    "cjs_module_lexer": "2.1.0",
+    "cldr": "47.0",
+    "icu": "77.1",
+    "llhttp": "9.3.0",
+    "modules": "137",
+    "napi": "10",
+    "nbytes": "0.1.1",
+    "ncrypto": "0.0.1",
+    "nghttp2": "1.67.1",
+    "openssl": "3.5.4",
+    "simdjson": "4.1.0",
+    "simdutf": "6.4.0",
+    "sqlite": "3.50.4",
+    "tz": "2025b",
+    "undici": "7.18.2",
+    "unicode": "16.0",
+    "uv": "1.51.0",
+    "uvwasi": "0.0.23",
+    "v8": "13.6.233.17-node.37",
+    "zlib": "1.3.1-470d3a2",
+    "zstd": "1.5.7"
+  },
+  "execArgv": [
+    "--experimental-loader",
+    "file:///C:/Users/Luiz/AppData/Local/Temp/opi-pi130-schema-probe/loader.mjs"
+  ],
+  "importedPi": "packages/ai/src/utils/validation.ts",
+  "cases": 74
+}

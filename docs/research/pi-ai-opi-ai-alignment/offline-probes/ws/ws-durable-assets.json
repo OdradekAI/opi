@@ -1,0 +1,155 @@
+{
+  "assets": [
+    {
+      "path": "ws-summary.md",
+      "bytes": 8200,
+      "sha256": "ac0e8c821b60d5efca6c51f1a1015fb3777b67a51f0e4d47fa7748191ea66b05"
+    },
+    {
+      "path": "ws-evidence.json",
+      "bytes": 29732,
+      "sha256": "381226dbd5a71ac2b05a0f8a561e90b12dc08cc2e1b053242c666402c93f4526"
+    },
+    {
+      "path": "ws-source-pins.json",
+      "bytes": 35025,
+      "sha256": "cd801df9bab34faa9c291f11dd5b95e2515809e5ac7409e6fa253598d2e1121d"
+    },
+    {
+      "path": "ws-commands.json",
+      "bytes": 2306,
+      "sha256": "4f6f523fdaa8eea76337035a6f57937c3f614280565bd247eb8c3fe0b1a59197"
+    },
+    {
+      "path": "prepare-ws-source.py",
+      "bytes": 1962,
+      "sha256": "c6872cdcf87266534b94bc52a9a35b705ed76e53db257a0054043541b2876466"
+    },
+    {
+      "path": "ws-client.mjs",
+      "bytes": 1964,
+      "sha256": "401c2d02bbd8b037b24a658614ac62cab685465966b3a897b6b2e9456c096094"
+    },
+    {
+      "path": "run-ws-probe.mjs",
+      "bytes": 7644,
+      "sha256": "10fa649635ec0e8437d90e766e96cc00744be00a474e949e0febd4fb3cb3e765"
+    },
+    {
+      "path": "runtime-info.mjs",
+      "bytes": 300,
+      "sha256": "66e8468b09da3636eea465e4757dfe1bf431db0e5e1a1e947e4aff6fe89161ff"
+    },
+    {
+      "path": "provider-import.mjs",
+      "bytes": 448,
+      "sha256": "9c6fddd5911392d8b541fe362331f34af74038ebf739787a28253199396cef35"
+    },
+    {
+      "path": "provider-import-initial-diagnostic.mjs",
+      "bytes": 498,
+      "sha256": "5f3c49bd8523262bc67c1e2b99d1e15d9cbb806dff6c6b4ddc2dbd3a973b61f5"
+    },
+    {
+      "path": "rust/Cargo.toml",
+      "bytes": 607,
+      "sha256": "5acbd9b118ceccca7ab90e07fbc01000dcdf8a13395d8fbcff9b7271710abde4"
+    },
+    {
+      "path": "rust/Cargo.lock",
+      "bytes": 12118,
+      "sha256": "7df3c0fb518d1ecd8b3165a1845655ef713c291f94b6fc2426ed8c24845e12b9"
+    },
+    {
+      "path": "rust/src/main.rs",
+      "bytes": 5744,
+      "sha256": "106adce0abdcea2c35f71528cbc3a23d79fe921c3512b64435782aa88f86b51e"
+    },
+    {
+      "path": "ws-node-bun-results.json",
+      "bytes": 414294,
+      "sha256": "b0d661752c33bd2800409e69192aafd1c56de0e7faea3513904a798cf2dd2a04"
+    },
+    {
+      "path": "ws-rust-loopback-results.json",
+      "bytes": 28705,
+      "sha256": "f6ed263f136afc3f56c6b87cbebb35f249429ff6b8f9871fbfccb9704af70b0e"
+    },
+    {
+      "path": "rust-supplied-reader-results.jsonl",
+      "bytes": 15289,
+      "sha256": "ed9442c5fe4721991d346e2565ccda8b869a2e9b49841493f8fa7d2cc747c06f"
+    },
+    {
+      "path": "cargo-features.txt",
+      "bytes": 18161,
+      "sha256": "db6f09d2810b80fb9ac3ba30b3c09f4641ee6e2376dd0b949cb08634bba214a5"
+    },
+    {
+      "path": "cargo-build-final.txt",
+      "bytes": 1134,
+      "sha256": "8ff01fb54f9c3d3dfeef3b09ec908ff8073f246b75961275e932955c413b4dec"
+    },
+    {
+      "path": "cargo-preflight.txt",
+      "bytes": 201,
+      "sha256": "bab269fb098d6cb4e0d075d7f3f3e78ab72470aba3ffaf171937c479b1e209cd"
+    },
+    {
+      "path": "cargo-build.txt",
+      "bytes": 3905,
+      "sha256": "e99ed2e55b9983ab88eca53a39cb9248948ab31286315a64b7d3618446ab2b57"
+    },
+    {
+      "path": "source-archives.json",
+      "bytes": 799,
+      "sha256": "7d4f8e01265b4f056d9d1c889a120320b39398cc8820b6e4a03d7b085b0b347e"
+    },
+    {
+      "path": "cache-seeding.json",
+      "bytes": 979,
+      "sha256": "604dfd20df5dbc17a75bef610f50579acecb56f46515185577e527d15ea2709d"
+    },
+    {
+      "path": "public-provider-no-install-imports.json",
+      "bytes": 2195,
+      "sha256": "21d890ede47e059cc1d8ccd1630a6bd1d8005bcc49573d972ca8b69d7eb6a0bf"
+    },
+    {
+      "path": "runtime-and-provider-imports.json",
+      "bytes": 5468,
+      "sha256": "a588162c5b9804e382bd13d849cab8730f6130ebd401f58ed831e960832e88fc"
+    },
+    {
+      "path": "runtime-and-provider-imports-bad-env.json",
+      "bytes": 3789,
+      "sha256": "2ef4f1f054e7303033a1e3e7e7d2390c53c37d6604877e6e72b772180af32226"
+    },
+    {
+      "path": "uncontrolled-cache-inventory.json",
+      "bytes": 2271,
+      "sha256": "82b046261affb5a14b852ac8ea327da280c136747e5e643cba5f41b200df78aa"
+    },
+    {
+      "path": "rustc-version.txt",
+      "bytes": 194,
+      "sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8"
+    },
+    {
+      "path": "cargo-version.txt",
+      "bytes": 313,
+      "sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a"
+    }
+  ],
+  "totalBytes": 604245,
+  "excludes": [
+    "third party extracted source/binaries",
+    "Cargo target",
+    "quarantined Bun uncontrolled cache",
+    "regenerated large synthetic-cases.json",
+    "full cargo-metadata.json; feature graph and Cargo.lock retained",
+    "first-run duplicate raw WS results"
+  ],
+  "sourcePreparation": "prepare script checks fixed published-archive hashes before extraction; registry checksum pins in Cargo.lock",
+  "note": "This manifest excludes itself to avoid digest recursion"
+}

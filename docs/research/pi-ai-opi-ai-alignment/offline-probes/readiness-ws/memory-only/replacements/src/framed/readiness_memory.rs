@@ -1,0 +1,21 @@
+use super::*;
+use std::future::Future;
+use std::{pin::Pin,task::{Context,Poll},io::Cursor};
+use tokio::io::ReadBuf;
+fn header(bytes:&[u8])->Result<Either<(FrameHeader,usize,usize),usize>,ProtocolError>{FrameHeader::read_from(bytes,false,0x40,usize::MAX)}
+fn valid_header()->FrameHeader{match header(&[0x81,0]).unwrap(){Either::Left((h,_,_))=>h,_=>panic!()}}
+#[test] fn readiness_memory_rejects_rfc_high_bit(){for n in [1u64<<63,u64::MAX]{let mut b=vec![0x81,127];b.extend(n.to_be_bytes());assert_eq!(header(&b).unwrap_err(),ProtocolError::InvalidFrameLength);}}
+#[test] fn readiness_memory_rejects_nonminimal_126(){for n in [0u16,1,125]{let mut b=vec![0x81,126];b.extend(n.to_be_bytes());assert_eq!(header(&b).unwrap_err(),ProtocolError::InvalidFrameLength);}}
+#[test] fn readiness_memory_rejects_nonminimal_127(){for n in [0u64,125,126,65535]{let mut b=vec![0x81,127];b.extend(n.to_be_bytes());assert_eq!(header(&b).unwrap_err(),ProtocolError::InvalidFrameLength);}}
+#[test] fn readiness_memory_accepts_shortest_boundaries(){for (tag,n) in [(126u8,126u64),(126,65535),(127,65536),(127,1u64<<40)]{let mut b=vec![0x81,tag];if tag==126{b.extend((n as u16).to_be_bytes())}else{b.extend(n.to_be_bytes())};assert!(matches!(header(&b).unwrap(),Either::Left((_,_,size)) if size==n as usize));}}
+#[test] fn readiness_memory_checked_frame_total(){let mut decoder=FrameDecoder::DecodingPayload(valid_header(),2,usize::MAX);let error=decoder.decode(&mut BytesMut::new(),false,0x40,usize::MAX).err().unwrap();assert!(error.is_storage());assert!(matches!(error.downcast_ref::<StorageError>(),Some(StorageError::Capacity)));}
+#[test] fn readiness_memory_checked_message_total(){let error=storage_length(usize::MAX,1).unwrap_err();assert!(error.is_storage());assert!(matches!(error.downcast_ref::<StorageError>(),Some(StorageError::Capacity)));}
+#[test] fn readiness_memory_representation_limit(){let error=reserve_storage(&mut Vec::new(),usize::MAX).unwrap_err();assert!(error.is_storage());}
+#[test] fn readiness_memory_actual_reservation_failure(){let error=reserve_storage(&mut Vec::new(),isize::MAX as usize).unwrap_err();assert!(matches!(error.downcast_ref::<StorageError>(),Some(StorageError::Allocation(_))));}
+#[test] fn readiness_memory_bulk_growth_and_shared_tail(){let mut b=BytesMut::from(&b"prefix"[..]);let previous=b.split_to(3);append_storage(&mut b,b"-suffix").unwrap();assert_eq!(&b[..],b"fix-suffix");assert_eq!(&previous[..],b"pre");append_storage(&mut b,b"").unwrap();}
+struct PendingAfterHead{head:Cursor<Vec<u8>>,calls:usize}
+impl AsyncRead for PendingAfterHead{fn poll_read(mut self:Pin<&mut Self>,cx:&mut Context<'_>,out:&mut ReadBuf<'_>)->Poll<std::io::Result<()>>{self.calls+=1;if self.head.position() as usize==self.head.get_ref().len(){return Poll::Pending}Pin::new(&mut self.head).poll_read(cx,out)}}
+#[test] fn readiness_memory_huge_declaration_pending_does_not_reserve_payload(){let mut bytes=vec![0x81,127];bytes.extend((1u64<<40).to_be_bytes());let mut io=PendingAfterHead{head:Cursor::new(bytes.clone()),calls:0};let mut framed=FramedRead::new(BytesMut::new());let mut future=Box::pin(framed.read_frame(&mut io,false,0x40,usize::MAX));let mut cx=Context::from_waker(std::task::Waker::noop());assert!(future.as_mut().poll(&mut cx).is_pending());drop(future);assert_eq!(&framed.read_buffer[..],&bytes);assert!(framed.read_buffer.capacity()<1usize<<40);assert_eq!(io.calls,3);}
+#[tokio::test] async fn readiness_memory_valid_huge_declaration_eof_is_io(){let mut bytes=vec![0x81,127];bytes.extend((1u64<<40).to_be_bytes());let mut framed=FramedRead::new(BytesMut::new());let error=framed.read_frame(&mut Cursor::new(bytes),false,0x40,usize::MAX).await.unwrap_err();assert!(error.is_io());assert_eq!(framed.read_buffer.len(),10);}
+#[tokio::test] async fn readiness_memory_tail_once_and_order(){let mut framed=FramedRead::new(BytesMut::new());let mut io=Cursor::new(vec![0x81,1,b'a',0x81,1,b'b']);let a=framed.read_frame(&mut io,false,0,usize::MAX).await.unwrap();let b=framed.read_frame(&mut io,false,0,usize::MAX).await.unwrap();assert_eq!(&a.1[..],b"a");assert_eq!(&b.1[..],b"b");assert!(framed.read_frame(&mut io,false,0,usize::MAX).await.unwrap_err().is_io());}
+#[test] fn readiness_memory_retains_pmd_rsv_patch(){for bytes in [[0xc9,0],[0xc0,0]]{assert_eq!(header(&bytes).unwrap_err(),ProtocolError::UnknownExtension);}}

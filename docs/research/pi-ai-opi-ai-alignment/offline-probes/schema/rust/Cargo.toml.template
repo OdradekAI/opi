@@ -1,0 +1,11 @@
+[package]
+name = "opi-pi130-schema-offline-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+jsonschema = { version = "=0.28.3", default-features = false }
+serde_json = "=1.0.149"
+
+[workspace]

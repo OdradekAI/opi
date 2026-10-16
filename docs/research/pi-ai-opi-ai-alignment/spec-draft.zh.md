@@ -1,6 +1,6 @@
 # pi-ai / opi-ai 对齐候选 spec
 
-> **修订草案 — 非规范性，2026-10-16。** 目标：在 `opi-ai` 中采用 Rust 惯用设计，实现固定 Pi AI 1.3.0 快照的公开能力与可观察运行时语义。这是供独立评审的文档候选，不是实施准入、ready-for-agent 批准，也不证明任何目标行为已经存在。对应英文版为 [spec-draft.md](spec-draft.md)。
+> **READY — 设计就绪，非规范性，2026-10-16。** 目标：在 `opi-ai` 中采用 Rust 惯用设计，实现固定 Pi AI 1.3.0 快照的公开能力与可观察运行时语义。这是供独立评审的文档候选，不是实施准入、ready-for-agent 批准，也不证明任何目标行为已经存在。对应英文版为 [spec-draft.md](spec-draft.md)。
 >
 > 本修订仅在本候选范围内取代早先的 Pi 1.0.0 子集和整项目表述。历史 D/Q 回答与执行证据继续作为历史保留。本修订不改变 Opi 的全局使命、正式规范、运行时、依赖、测试、CI 或可写会话格式。输入与评审来源记录于[revision baseline](pi-1.2.0-revision-baseline.json)；两次调查分别为[版本审查](pi-1.2.0-review.md)和[五问补核](pi-1.2.0-followup.md)。
 
@@ -9,6 +9,12 @@
 > 参数与新增限制修订见[逐项来源审计](pi-1.2.0-parameter-audit.md)及[本轮输入](pi-1.2.0-parameter-revision-baseline.json)。该审计优先于旧附件中的固定容量与拒绝规则；旧“复审关闭”不证明参数已标定或与 Pi 等价。
 
 > Pi 1.3.0 升级：[来源／差异复核](pi-1.3.0-upgrade-review.md)固定新输入并替代已变化的 1.2.0 语义。AIR-060 / V-52 为退役身份，不是已通过门禁。Schema/WS 等 backend 缺口在当前后端附件中仍为 OPEN。
+
+> 后续[Schema／WS离线实验](pi-1.3.0-schema-ws-offline-validation.md)固定实际运行时与隔离依赖图。结果排除了未经适配的Schema引擎和当前无PMD的WS组合直接承担完整对齐；没有交付opi-ai适配器，也没有关闭七组中的任何缺口。研究脚本／结果与产品代码分开留存；AIR/V身份及准入规则保持不变。
+
+## 设计就绪边界
+
+READY 表示设计已确定且有依据：七组后端有选定机制、明确的所有权／失败／维护合同和可证伪验证。不表示已经实施、完整 V 验收、平台交付或正式准入。当前[设计决定与证据](pi-1.3.0-design-readiness.md)取代旧轮未决的*选型*问题；七组产品覆盖仍全部 OPEN。Unsupported、静默收窄输入、backend 默认或 SSE fallback 均不能关闭它们。
 
 ## 阅读与解释
 
@@ -92,7 +98,7 @@ SDK 无会话前提。它不要求 Agent authorizer、durable 事务、子会话
 
 | ID | 责任方 / 触发条件 | 目标契约与失败行为 | 证据 / 决策 / 验证 |
 |---|---|---|---|
-| AIR-008 | Transcript；初始/变更指令或声明 | MUST 保留有序内容追加、命名 section 插入/替换/删除，以及工具添加/移除/重新定义。同名 section 替换保持位置；删除后重加则追加到末尾。Body 与 section 保持可区分。工具定义变更表示为移除+添加；执行实现 revision 归 AIR-009 宿主所有，不增加 SDK execution registry。无效/歧义名称或 schema 在安装前失败。等价状态不追加冗余变更。 | TP-01–03/P04; D-19; V-06/16 |
+| AIR-008 | Transcript；初始/变更指令或声明 | MUST 保留有序内容追加、命名 section 插入/替换/删除，以及工具添加/移除/重新定义。同名 section 替换保持位置；删除后重加则追加到末尾。Body 与 section 保持可区分。工具定义变更表示为移除+添加；执行实现 revision 归 AIR-009 宿主所有，不增加 SDK execution registry。无效/歧义名称或 source dialect 的真实 compile/preflight 错误在安装前失败；固定结构 guard 下 inert 的 keyword 不构成 metaschema 准入错误。等价状态不追加冗余变更。 | TP-01–03/P04; D-19; V-06/16 |
 | AIR-009 | 仅宿主影响；Agent 执行修订 | 不属于 SDK 完成条件。SDK 按 AIR-045/049 冻结 owned 模型输入；execution registry/loadout 修订、当前政策撤销和工具批次授权仍归既有 Agent/宿主权威。本候选不选择新的 run/会话政策。 | Historical D-19/22; V-06/15/16 host portions only |
 | AIR-010 | Producers/history/replay；路由相同或改变 | MUST 分别保留 provider、精确 wire、请求模型、报告模型、历史 ApiKind 和块绑定 opaque。Pi 1.3.0 在 provider/API/model 身份任一不同时丢弃全部 thinking，包括可读、signed 和 redacted 块，不把旧 reasoning 转为可见文本。同身份的 signed/redacted 空块保留，普通空白 thinking 省略。canonical 原件不变并记录投影事实；AIR-038 补充各家族 replay。 | Pi 1.3.0 transformMessages; V-07/32 |
 | AIR-011 | Transcript 编译器；adapter 能力 | 默认 MUST 采用 native-or-collapse：对支持的变更类别保持时间位置，否则将当前有效 system/tools 放在请求消息序列首部。记录投影模式/受影响范围/来源前缀；不能将 collapse 称为无损，也不能改写规范历史。显式 Strict 在鉴权/网络前拒绝不支持的所请求时间保真度。单个未变更初始状态是无损的。不能用统一 native-transcript 布尔值代替 adapter fixture。 | TP-05, PR9548; D-19 Q22; V-07/16 |
@@ -118,7 +124,7 @@ SDK 无会话前提。它不要求 Agent authorizer、durable 事务、子会话
 | AIR-021 | SDK/调用方；范围明确的 0.x 迁移 | MUST 以可执行模型/鉴权/错误契约替代并淘汰 Config/ProviderConfig/config::Error/Result 和 Model/ProviderKind 外壳；SDK 构造不得依赖产品配置。保留 ApiKind/持久化消费者。迁移导出/文档/示例；删除仅测试构造器的测试，保留行为。不默认提供永久 shim。 | O-003/SP-16; D-02/08/21; V-10/20 |
 | AIR-022 | Compat normalizer/config/parser；准备/迁移 | MUST 实现实际 Chat store 省略/false、依赖 reasoning 的 developer role、effort 格式/门控/off，以及 tool→user assistant bridge。使用最终 endpoint 推断，以唯一字段优先级解析，显式 false 与未设置不同。仅淘汰重复的静态 reasoning_effort；supports/bridge 名称只有在等价替代行为和调用方迁移完成后才能退出。已淘汰键在鉴权/HTTP 前报错，不能被 serde 忽略。 | SP-01–04/17/18; D-21/26; V-11/20 |
 | AIR-023 | SDK Bedrock/source resolvers；选择 auth | MUST 独立于 coding-agent 提供可复用 SigV4/Bearer/profile/default-chain 和显式 custom-endpoint proxy-placeholder 来源，注入 source/HTTP/process/clock。保留来源限定的优先级、完整来源失败关闭、秘密安全和进程清理。现 opi process10s/64KiB 不是 Pi 默认，本次撤回其 SDK parity 默认地位；按固定来源机制对应，或明确 caller policy/backend 缺口。实现 full-chain/expiry fixtures；选定服务401/403后不重找身份。TUI/keychain 归宿主 adapter。 | SP-05–08 and verified AWS annex; V-09/20/55 |
-| AIR-024 | SDK 参数 validator/error/usage producers；规范化或报告 | MUST 公开先 clone 再 normalize 与原 schema 全量验证，保留 raw 和 typed 脱敏失败。jsonschema0.28.3 是有条件引擎候选，不是已证明的 TypeBox 等价实现。dialect/keyword/format/ref/regex 行为须来自固定 Pi 路径及差分语料；不增加虚构 schema 容量/work/branch 拒绝、全 pattern guard 或隐式 schema HTTP/file I/O。backend 不支持的语义保持覆盖缺口，不得伪成功。Strict wire 不是本地验证或权限；usage knownness/cost 保持区分。 | TP-12–16/O-011/P17; V-12–15/35 |
+| AIR-024 | SDK 参数 validator/error/usage producers；规范化或报告 | MUST 公开先 clone 再 normalize 与原 schema 全量验证，保留 raw 和 typed 脱敏失败。采用已采纳设计中的私有 JSON-only TypeBox 方言 evaluator 与固定 Unicode16 regex 数据；jsonschema0.28.3 退出本默认路径。这是已选设计，不是已证明 SDK 等价。dialect/keyword/format/ref/regex 行为须来自固定 Pi 路径及差分语料；不增加虚构 schema 容量/work/branch 拒绝、全 pattern guard 或隐式 schema HTTP/file I/O。backend 不支持的语义保持覆盖缺口，不得伪成功。Strict wire 不是本地验证或权限；usage knownness/cost 保持区分。 | TP-12–16/O-011/P17; V-12–15/35 |
 | AIR-025 | Catalog/collection；操作查找 | 身份 MUST 使用封闭的 Chat/Image/Classifier 加 Provider+模型，并具有类型化操作元数据。Chat 查找只返回 chat；image/classifier 不虚构 chat 限制。共享现有 catalog/auth/preparation，不另建平行 ImagesModels/单例/通用 JSON 执行。显式 SDK 注册、内置记录和经验证的动态记录都是合法来源。错误类型/路由在鉴权/HTTP 前失败。 | SP-09/EVO-009; D-13/23; V-21 |
 | AIR-026 | Typed operation runtime；generate/classify | MUST 冻结 request/model/auth 和按协议限定的 payload/options。Image 默认额外 HTTP retry0；共享 classifier helper2，保留协议排除/算法。callback/已解析结果无效不获得隐藏 retry。取消及显式或有来源的 deadline 保留唯一结果/已知计量。保持来源 timeout 范围，包括 headers 与 response body 区别；可选 caller 资源政策不变成包级默认限制。 | Current SDK contracts; V-22/50/51 |
 | AIR-027 | OpenRouter image adapter；生成 | MUST 复现固定 OpenRouter 非流式 Chat image adapter 的输入、第一个 choice 解析、text/images 顺序、data URL 识别及坏 entry 处置。返回 owned 原始 encoded media/MIME 及可选 decoded bytes/status，不 URL fetch、像素解码、写文件或切换独立 API。默认不要求至少一图、container signature 匹配、四 MIME allowlist 或比 Pi 更严格的 base64。text-only/空 images 与非匹配 entry 的跳过按真实源码；更严格媒体校验仅为显式 caller policy，不称 parity。 | SP-10/SE-08; D-13/25; V-23 |
@@ -279,7 +285,7 @@ Anthropic 特定 1.2.0 strict-prefer 拒绝可在成功 response handoff 前产�
 
 max_retry_delay_ms 只保持 helper/Codex 来源范围：默认60000ms，非正cap只关闭server-hint上限检查（显式0仍保留hint）；坏 hint 忽略，有效过去/负 hint 为0；不是统一指数 delay clamp。撤回将其增为 Bedrock 默认拒绝：Pi未转发该 option，Smithy已有有界 hint 调整。按固定 Smithy header-selection 行为/语料，不另强制 Retry-After 胜过 x-amz。更强 caller policy 须显式，不是 Pi 默认。退避可取消/单调，测试注入 clock/RNG，不断言精确 wall-clock。
 
-首批 AWS retry 目标为 standard 加显式 typed overrides；不在选定策略背后读取 ambient AWS_MAX_ATTEMPTS/AWS_RETRY_MODE/SMITHY_NEW_RETRIES_2026 或 shared-file retry knobs。Pi 锁定 Node SDK 会读取，且与 options.env 分离：如实记录覆盖差异，不把 scoped auth env 称为 retry-mode parity。显式不支持的 adaptive/experimental retry 请求在 preflight typed 失败，不静默用 standard。重新评估须有真实 SDK 调用方需要这些模式，及经核验 Rust 算法/权能契约；本批不增加推测性 adaptive framework/flag。
+AWS retry 实施固定来源的 standard、adaptive rate/quota 行为与 Smithy2026 分支，支持显式 typed overrides 及 scoped retry_mode/max_attempts/shared-config 输入。这些来源配置与 auth discovery 分开；构造和静态读不采 ambient 进程状态。在 logical-call owner 冻结所选 mode/configuration，保持源 client/quota 生命周期，source exchange sends 与 generation 分账。未知 mode 或坏配置按来源合同失败；已发布的已知模式不得 Unsupported 或静默替换为 standard。不新增公共 retry framework、flag 或虚构预算。
 
 
 V-05 固定 per-variant override0/1/2 和总次数；strict max0 最多 2 次 sends/onPayload2，max1 最多 4 次，第三次 adaptation 为零 sends。保留固定 header/jitter/Bedrock quota 和 transient-name fixtures、retry-delay admission、冻结 auth/identity、新 SigV4 timestamps、cancellation/drop/deadline 及 handoff 后零 sends。V-34/36/51 分别验证 rebuild/callback 顺序和失败。任何 fixture 都不承诺服务端幂等或未知失败 attempt 的消费量。
@@ -383,14 +389,17 @@ AWS 选定来源表和精确依赖证据见 [SDK 附录 A–D](sdk-target-propos
 
 采纳[后端附件](pi-1.3.0-rust-backends.md)，但以[来源审计](pi-1.2.0-parameter-audit.md)为条件。保留有用的源级机制选择；撤回无依据容量/拒绝及 blanket equivalence 结论。backend 默认只证明该 backend，不能授权缩小 Pi 接受集。
 
-| 模块 | Backend／未完成义务 |
+| 模块 | 已选设计／实施义务 |
 |---|---|
-| HTTP/TLS/WS | 有条件保留 reqwest0.12.28/rustls0.23.40/ring0.17.14、tokio-rustls0.26.4 与 tokio-tungstenite/tungstenite0.28.0 provided-stream 机制。来源限定 redirect/proxy/TLS/protocol 及 handshake/compression 缺口须 conformance；H1-only/none 政策不是通用 Pi 默认 |
-| AWS | 保留 owned sources 和 STS/SSO/OIDC/SignIn、aws-smithy-query/xml0.62.1、xmlparser0.13.5、p2560.13.2/sha1 0.10.6 与现 hmac/sha2。撤回虚构 XML/Query/source 大小/总 send 预算；保留合法协议数据、来源 retry、完整 credential 和秘密安全 |
-| ADC | 私有五家族 adapter 与受控 reqwest/ring/pki-types1.14.1 以完整来源语义为条件。撤回60s/16sends/depth4/1MiB、zero-retry、same-origin5-hop 默认；来源 retry/redirect/process/config 必须可达 |
-| Schema | jsonschema0.28.3 是需 Pi TypeBox corpus/adapter 的有条件候选，不再称已完成 parity 选型。撤回强制 Draft7/unknown-format-keyword 拒绝、虚构 work/shape 配额和全 pattern guard；不引 JS runtime 或隐式 schema I/O |
+| HTTP | reqwest0.12.28＋受控 Hyper1.9.0 H1 parser 存储修正；明确来源的 protocol/proxy/redirect/retry owner。无隐藏 header-count/buffer cap，不设第二 retry driver |
+| TLS／ADC签名 | rustls0.23.40/ring0.17.14，实例 trust/mTLS 与显式 ALPN；native默认取固定Node参考CA bundle，scoped extra/explicit roots归source，host roots显式选择；ADC RS256 与来源要求的 TLS signing/verification/KX 通过私有 OpenSSL3 LibCtx、内建 default provider 和仅内存 EVP C API，由窄 safe Rust owner 包裹，并接 rustls 的公共 signer/WebPKI/KX seam。ring-only 签名退出；无全局 config/provider 修改或 passphrase UI |
+| WS | owned 严格 Upgrade、动态 headers/tail＋ratchet_core/ext/deflate1.2.1、公共 PMD message-state 适配与固定有限的 frame RSV/length/checked-storage 修正。TW/TTW0.28.0 退出完整目标，不靠 fallback 或 backend cap 关闭覆盖 |
+| AWS／ADC来源协议 | owned sources、source-specific retry/redirect 与完整 modes；保留 Smithy Query/XML0.62.1、xmlparser0.13.5、p2560.13.2/sha1 0.10.6 和现 hmac/sha2。无虚构总 send/depth/body 配额，不以 standard-only 替代 |
+| Schema | 私有 TypeBox JSON 方言 IR/evaluator＋regress0.12.0 算法及可重建 Unicode16 数据、serde_json preserve_order 与显式 JS key 枚举；采用私有 Unicode16 URL/IDNA/ICU family 身份与 ryu-js1.0.2，Pi normalizer 和 strict wire projection 分离。无 JS runtime、metaschema 收面、隐式 schema I/O 或猜测 work/fuel cap |
+| Telemetry | tracing0.1.44/tracing-core0.1.36；owned Span＋源 Dispatch、安全私有 pinned poll/drop wrapper，含 producer。不采 ambient、不拆新 crate/domain schema 或 exporter |
+| Cargo／catalog | root 管理精确产品 graph 与 native/patch 来源；版本化真实 catalog 输入，经 schema/身份/hash 验证后原子发布。研究 lock／人工记录不替代产品／平台／artifact 验收 |
 
-[后端专项核查](pi-1.3.0-backend-gap-audit.md)细化七组 OPEN：逐项精确源码、可证伪的公开边界语料及有条件补救。采纳机制前先证明其公开扩展点能表达所需语义；私有 API、假想转换、可配置上限、typed Unsupported 或成功的 SSE fallback 均非证明。Pi 中依赖运行时的行为须固定实际 runtime/build。本轮仅改文档，未关闭任何组。
+[后端专项核查](pi-1.3.0-backend-gap-audit.md)与首轮离线报告保留原始反例。当前[设计就绪决定](pi-1.3.0-design-readiness.md)及新机制报告选定上述有限修正；精确版本、patch、源码及数据身份是设计的一部分，不能替换为未经修改的上游 crate。七组实施／覆盖仍全部 OPEN。正式准入、产品 graph、完整公开 conformance 与 native 平台交付分别保留门禁。
 
 #### 流调度与可接受数据
 
@@ -408,7 +417,7 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 
 只有一个显式 transport/retry owner；关闭嵌套 retry，不改来源限定的实际 sends。撤回 blanket redirect:none/仅 same-origin ADC GET<=5/16-total-send 的 parity 默认。复现固定各路径 redirect status/method/body/header stripping 和 retry；不向未授权目标泄漏 credential 或切换 auth identity。更强宿主 routing policy 须显式且记录接受差异。来源/backend 证明缺失是缺口，不是统一3xx失败。
 
-保留 scoped proxy/NO_PROXY、TLS 验证及实例所有权，不改全局 env/provider/subscriber 或绕过。WS Upgrade 与显式 proxy-placeholder 的 H1 不表示所有 Bedrock 流量 H1。撤回 CONNECT64KiB/124-header 和 close2s SDK 政策；tungstenite handshake/feature 限制为需补救或未解覆盖的 backend 约束，不证明选型完成。cross-origin/redirect/proxy fixtures 计合法 sends 并验 credential stripping/source binding。
+保留 scoped proxy/NO_PROXY、TLS 验证及实例所有权，不改全局 env/provider/subscriber 或绕过。WS Upgrade 与显式 proxy-placeholder 的 H1 不表示所有 Bedrock 流量 H1。撤回 CONNECT64KiB/124-header 和 close2s SDK 政策；选定的 owned Upgrade 与受控 Ratchet 组合替代这些 handshake/compression 约束；完整集成仍需覆盖证明。cross-origin/redirect/proxy fixtures 计合法 sends 并验 credential stripping/source binding。
 
 #### Schema 语义与执行
 
@@ -416,7 +425,7 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 
 撤回 schema256KiB/16384 nodes/256 targets、instance8MiB/262144 nodes/depth64/pattern4KiB、work1000000、cache128/32MiB、jobs4/queue16/errors32。fancy-regex1000000 backtracks 是 backend 默认，不是 Pi fuel 或已证安全默认。撤回 cross-product regex 预检/canonical-key 重写：可能拒绝无关分支或改变约束。候选引擎 format、ECMA regex、keyword/ref/recursion 及吞 regex error 的缺口须 branch-correct 差分证明或重选 backend；不得伪成功或 blanket fail-closed parity。内部有界调度/淘汰不能仅为 tuning 数字拒绝合法 schema；同步取消不是 hard-kill。
 
-保留jsonschema0.28.3前须证明mixed applicators/ref siblings、早于public keyword hook的强制metaschema准入、TypeBox近似grapheme长度、metadata ref发现和fallible regex组合。其绕过schema验证的方法是私有的，不能作为实现选项。小型leaf adapter可补子集；任意lowering或完整替代evaluator均未获采纳。详细语料与选型条件以专项核查为准。
+选定的私有 evaluator 拥有 TypeBox 结构 guard、mixed applicator、ref/dynamic/evaluated 状态、来源 string/number/format 规则与 fallible 分支结果；不绕过引擎私有 admission，也不降低为标准 draft。ordered JSON 视图保留 JS integer-index 枚举。固定 regress 算法＋生成的 Unicode16 数据消除已测的新属性差分。完整 normalization 和所有 formats/refs 仍需实施测试，不是未定选型。Rust UTF-8 公共字符串不表示孤立 UTF-16 surrogate／非 JSON runtime 值；保留 raw，返回 typed conversion failure，不替换或伪成功（RDF-09）。root-conversion 正确性修正继续明示。
 
 #### Custom API 类型与所有权 seam
 
@@ -462,7 +471,7 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 
 差分输入为固定人工 fixtures，记录两方 source versions、实际 test entry/filters 及 executed/skip/missing counts。只归一化无关 clock/request IDs 和保留引用的双射 ID 重命名。保留字节、顺序、事件时点 partials、terminal/cancel/error、accounting knownness、callback/variant/send 次数、关联、签名和投影事实。明确 RDF cases 是差异，不是被归一化消失的失败。离线 fixtures 不证明确定性模型输出、真实服务接受、性能、账单或远端停止／退款。
 
-本次文档工作不实现测试，也不运行 runtime suite。旧 70 个 Rust tests/probes 保留历史基线；它们不使新验收组通过。未来执行遵循实际 change-scope verification union 和唯一 matrix，包括经审查的 Pi mock-only 选择、隔离 HOME/env、禁止 credentials 触发 live，以及不静默安装／hydrate。
+本轮不实施／运行产品测试或runtime suites；另行记录的离线研究harness已执行。旧 70 个 Rust tests/probes 保留历史基线；它们不使新验收组通过。未来执行遵循实际 change-scope verification union 和唯一 matrix，包括经审查的 Pi mock-only 选择、隔离 HOME/env、禁止 credentials 触发 live，以及不静默安装／hydrate。
 
 ## 证据导航与剩余边界
 
@@ -479,6 +488,12 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 | 历史跨 package／会话／产品提案 | [TM migration](transcript-migration.md)、[EP/EPT](evolution-target-proposal.md)、旧 SDK/OAuth/telemetry reviews；作为支持历史，不增加 SDK 交付范围 |
 | 规划与后续上游修订 | [upstream tracking](upstream-tracking.md)；固定版本证据，区分 accepted 与 discussion/experimental/shipped/unknown，记录测试处置和明确再评估触发条件 |
 
-文档评审后，候选仍为非规范性且尚未实施。源码映射、连贯契约和 reviewer findings 可以形成可评审提案；只有实际 runtime/consumer/conformance 证据才能证明交付。既有 D/Q 选择支持保留语义，但不能制造对每项新技术推导的批准。当前后端附件只定位机制版本；Schema/transport接受约束仍有条件，按本轮参数来源审计保留未关闭证明；未来仍须完成Cargo解析、锁定传递闭包、platform/supply-chain审查和可执行conformance。源码选型不能产生runtime证明。
+设计评审后候选仍非规范、未实施。来源映射、可执行机制证据和独立复审可以证明设计就绪；只有实际产品／consumer／conformance 证据证明交付。旧 D/Q 不批准每项技术推导。受控依赖／数据变更及 native unsafe 边界有明确来源和维护合同；产品锁图解析、平台／供应链／unsafe 审查与正式准入继续必需。READY 不能把缺少的产品证据变成已通过门禁。
 
 获得真实 submit/fetch/cancel/expiry/account 协议时重新评估 remote deferred；核实已接受／已发布契约变化时重评 Lite；存在真实消费者及选定 schema/lifecycle/data policy 时重评 telemetry 提取／instrumentation；已发布源码／adapters 支持时重评新 operations。不因此引入推测性框架或自动采纳上游。未来范围变更和实际规范冲突需要人类权威；普通、有源码支持的实施选择不重开已定 package 意图。
+
+### 已执行研究与后端选型边界
+
+首轮[离线报告](pi-1.3.0-schema-ws-offline-validation.md)排除了未经适配的 Schema 与无 PMD WS 组合。后续[设计决定](pi-1.3.0-design-readiness.md)选定私有 source-defined JSON evaluator／生成 Unicode16 regex 数据，以及 owned Upgrade／明确适配及 patch 的 Ratchet PMD。正反例、原始失败与维护边界均保留；有限用例不证明完整等价。 后续WS长度/storage修正通过十四项纯内存测试（含十二个旧codec fixture）；不执行socket/请求，旧八十项网络观察仍固定旧patch。
+
+Transport/auth 实验区分 runtime redirect、ALPN、TLS 负例、metadata 作用域及参考更广的 RSA 输入集。选定的 OpenSSL 私有 context 不收窄为 ring key，也不修改全局配置。安全 tracing wrapper 和原目录 helper 已有隔离执行证据。产品代码／测试／依赖未变；七组实施／验收仍全部 OPEN。旧报告／复审／hash 保留原输入。

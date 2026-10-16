@@ -1,0 +1,98 @@
+[
+  {
+    "name": "rustc-version",
+    "command": [
+      "rustc",
+      "-Vv"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 0.04,
+    "stdout_sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "cargo-version",
+    "command": [
+      "cargo",
+      "-Vv"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 0.034,
+    "stdout_sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "cargo-build",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-leaf-final-icu16\\leaves\\Cargo.toml"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 5.306,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "1cd8e932f52e6eee3275a4da0989224850ab45b0a028c0bf866932197794ce51"
+  },
+  {
+    "name": "cargo-metadata",
+    "command": [
+      "cargo",
+      "metadata",
+      "--offline",
+      "--locked",
+      "--format-version",
+      "1",
+      "--filter-platform",
+      "x86_64-pc-windows-msvc",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-leaf-final-icu16\\leaves\\Cargo.toml"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 0.067,
+    "stdout_sha256": "848f6b56d48d5e5bef1d8854f3f0f7a98aaefa2bf91742ee03e4c936b10d39c6",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "cargo-features",
+    "command": [
+      "cargo",
+      "tree",
+      "--offline",
+      "--locked",
+      "-e",
+      "features",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-leaf-final-icu16\\leaves\\Cargo.toml"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 0.059,
+    "stdout_sha256": "a9a16ab4197e6992a62a2965ba75a42e62021e9fddc326ea1bfe7c0b580e51cf",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "node",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-schema\\leaves\\node.mjs",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-schema\\leaves\\cases.json"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 0.037,
+    "stdout_sha256": "47280f7e01a8c9325404e962506d61990d883cdbb5b84ead6673880059364204",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "native",
+    "command": [
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-leaf-final-icu16\\leaf-probe.exe"
+    ],
+    "exit": 0,
+    "elapsed_seconds": 0.242,
+    "stdout_sha256": "47280f7e01a8c9325404e962506d61990d883cdbb5b84ead6673880059364204",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

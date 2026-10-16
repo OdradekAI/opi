@@ -1,0 +1,47 @@
+[
+  {
+    "name": "build",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-namespaced\\probe\\Cargo.toml"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "metadata",
+    "command": [
+      "cargo",
+      "metadata",
+      "--offline",
+      "--locked",
+      "--filter-platform",
+      "x86_64-pc-windows-msvc",
+      "--format-version",
+      "1",
+      "--manifest-path",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-namespaced\\probe\\Cargo.toml"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "native",
+    "command": [
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\schema-namespaced\\namespace-probe.exe"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "node",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-schema\\leaves\\node.mjs",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-schema\\leaves\\cases.json"
+    ],
+    "exit": 0
+  }
+]

@@ -1,0 +1,5 @@
+     Locking 54 packages to highest Rust 1.99.1 compatible versions
+error: failed to download `data-encoding v2.11.0`
+
+Caused by:
+  attempting to make an HTTP request, but --offline was specified

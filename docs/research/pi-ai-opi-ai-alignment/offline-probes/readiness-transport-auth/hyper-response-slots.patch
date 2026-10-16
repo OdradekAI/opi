@@ -1,0 +1,31 @@
+--- hyper-1.9.0/src/proto/h1/role.rs
++++ hyper-1.9.0-research/src/proto/h1/role.rs
+@@ -1014,9 +1014,19 @@
+ 
+         // Loop to skip information status code headers (100 Continue, etc).
+         loop {
++            // Research: count only already-buffered head lines, stopping at
++            // the first empty line; coalesced body bytes do not buy slots.
++            let header_bytes: &[u8] = buf.as_ref();
++            let dynamic_header_slots = header_bytes
++                .split(|byte| *byte == b'\n')
++                .take_while(|line| !line.is_empty() && *line != b"\r")
++                .count()
++                .max(DEFAULT_MAX_HEADERS);
+             let mut headers_indices: SmallVec<[MaybeUninit<HeaderIndices>; DEFAULT_MAX_HEADERS]> =
+                 match ctx.h1_max_headers {
+                     Some(cap) => smallvec![MaybeUninit::uninit(); cap],
++                    None if dynamic_header_slots > DEFAULT_MAX_HEADERS =>
++                        smallvec![MaybeUninit::uninit(); dynamic_header_slots],
+                     None => smallvec_inline![MaybeUninit::uninit(); DEFAULT_MAX_HEADERS],
+                 };
+             let (len, status, reason, version, headers_len) = {
+@@ -1024,6 +1034,8 @@
+                     [MaybeUninit<httparse::Header<'_>>; DEFAULT_MAX_HEADERS],
+                 > = match ctx.h1_max_headers {
+                     Some(cap) => smallvec![MaybeUninit::uninit(); cap],
++                    None if dynamic_header_slots > DEFAULT_MAX_HEADERS =>
++                        smallvec![MaybeUninit::uninit(); dynamic_header_slots],
+                     None => smallvec_inline![MaybeUninit::uninit(); DEFAULT_MAX_HEADERS],
+                 };
+                 trace!(bytes = buf.len(), "Response.parse");

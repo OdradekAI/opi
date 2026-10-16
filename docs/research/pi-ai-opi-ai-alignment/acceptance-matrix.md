@@ -1,10 +1,12 @@
 # 候选验收设计与追踪
 
-> **2026-10-16 修订候选：仅 `opi-ai`，对照固定 Pi 1.3.0 公开能力及可观察语义。** 本页落实[版本审查](pi-1.2.0-review.md)和[五问补核](pi-1.2.0-followup.md)，保留 AIR-001–056 / V-01–48 的追踪身份，追加 AIR-057–067 / V-49–59，不复用旧编号。共 **67 个 AIR 追踪项＝57 个 active SDK 义务＋9 个下游影响＋1 个退役项；59 个 V＝54 个 active SDK 验收设计＋4 个仅下游影响＋1 个退役项**。这是修订后待评审的设计，不是实施准入或执行通过。
+> **2026-10-16 修订候选：仅 `opi-ai`，对照固定 Pi 1.3.0 公开能力及可观察语义。** 本页落实[版本审查](pi-1.2.0-review.md)和[五问补核](pi-1.2.0-followup.md)，保留 AIR-001–056 / V-01–48 的追踪身份，追加 AIR-057–067 / V-49–59，不复用旧编号。共 **67 个 AIR 追踪项＝57 个 active SDK 义务＋9 个下游影响＋1 个退役项；59 个 V＝54 个 active SDK 验收设计＋4 个仅下游影响＋1 个退役项**。这是设计就绪的非规范候选，不是实施准入或执行通过。
 
 > 非规范性候选验收设计；2026-10-03 原稿、2026-10-04 SDK 复审及本次 2026-10-16 修订均保留其证据窗口。[正式规范](../../opi-spec.md)继续决定范围、归属与实施准入，本研究不能取代它。Q22–37（含修订 Q31）与 [D-19–37](decisions.md)是历史确认；本轮用户确认的包内目标限定其适用范围。SDK 机制和必要破坏性变更调用方适配属于本轮验收；独立产品政策仅记录影响，不能作为 SDK 完成门槛。
 >
-> 本页是本目录唯一综合验收矩阵。AIR 为双语候选要求，V 为验收设计；[SDK 契约附件](pi-1.3.0-sdk-contracts.md)、[Rust 差异附件](pi-1.3.0-rust-differences.md)、TP/SP/EP 及旧 TM-V/OV 只细化合同或提供证据，不建立第二验收权威或进度账本。**54个active SDK与4个host-impact均未实施、未执行；V-52退役，不是通过**；历史 70 个离线测试与研究探针单列，不能证明新目标通过。本页为无既有英文 counterpart 的中文研究材料；双语候选共同引用此表。
+> 本页是本目录唯一综合验收矩阵。AIR 为双语候选要求，V 为验收设计；[SDK 契约附件](pi-1.3.0-sdk-contracts.md)、[Rust 差异附件](pi-1.3.0-rust-differences.md)、TP/SP/EP 及旧 TM-V/OV 只细化合同或提供证据，不建立第二验收权威或进度账本。**54个active SDK与4个host-impact均未完成实施／完整执行验收；V-52退役，不是通过**；历史 70 个离线测试与研究探针单列，不能证明新目标通过。本页为无既有英文 counterpart 的中文研究材料；双语候选共同引用此表。
+
+> 前置最小窗口的[Schema／WS离线差分](pi-1.3.0-schema-ws-offline-validation.md)执行的是独立研究harness：Schema越过真实Pi公开utility，WS仅固定global构造调用形状与直接Rust机制；没有执行opi-ai新公开utility／真实provider组装。保留原V行，实测观察在本页末节映射，不能将研究case数量换算为V通过。
 
 ## 验证边界及证据分层
 
@@ -197,7 +199,7 @@ AIR-009/015–019/037/039/041 共 9 个 host-only；其编号不回收。除AIR-
 | V-55／AIR-063；OAuth loaders/AuthContext/store、R3 | 九 flow 的 SDK login/get_auth/refresh/logout，fake presenter/endpoints/ports/clock；两个 Models 共享 store、refresh 后取消 waiter、logout/replace race | 九flow由公开login/get_auth/refresh/logout→fake endpoints/presenter→同store ACK→adapter可达。已开始refresh仅网络受来源15s signal，store lock/ACK不包该timer；caller停等不丢新token、不恢复generation。无默认barrier wait/key-count/ADC总预算；显式等待deadline返回pending不abort。按key保留unknown、跨Models/crossprocess/fence/denial/expiry/Runtime与已知效果分别证明；check/available不refresh。R-02包含10s+6s正例和真实网络超时负例。 | 本轮为源码/合同修订；新的公开consumer/本地conformance未实施或执行，历史测试不证明本目标。 | add 九 flow/SDK-only/store-owned transaction/ack/rotation/logout/replace；update 旧三flow-only、固定 callback、cancel network 预期；retain PKCE/state/denial/keychain 安全 |
 | V-56／AIR-064；catalog helpers/protocol、R8/followup | ModelsStore read/write/delete、refresh baseURL、显式 personalize_openrouter_catalog、Radius dynamic 空列表、schema/version fixtures、stale publish | configured endpoint 下 /models/user 仅 chat 按 key 更新限制/价格，image/classifier 不变；无 key/401/403/404 保原 catalog，取消不晚 publish。裸 OpenRouter factory 不隐式个性化；宿主默认 wrapper 是下游政策。Radius 首次已知 dynamic（含空）替代 baseline，不让被禁模型复活；通用 overlay 不强套。store snapshots owned、operation/type 过滤、provider generation commit/reopen 不陈旧；显式 source invalidation 可持久撤下无效 cache，即使没有 bundled generation，也不能重开后复活旧值。此机制不默认启用产品 HTTP404/501 触发政策。distribution schema v1、AI hydration v6、revision index/minimumPiVersion 及 UA 显式兼容版本分开；Rust crate version 不冒充 Pi version，unsupported/malformed/unknown-required fail closed、可兼容 revision 选择由固定本地语料证明 | model-data 目录缺失阻止全 bundled records proof；本地协议代码不证明 pi.dev 部署/字节一致。复用远端服务与具体兼容声明需独立证据；不默认联网。全部新 tests 未运行 | add configured endpoint/chat-only/key isolation/empty authority/store reopen/version negative corpus；update 把版本协商全写未来或 factory 自动 helper 的预期；retain 旧有效 snapshot |
 | V-57／AIR-065；retryAssistantCall/retry classifier | 公开显式 retry_assistant_call(owned produce, optional policy, cancel, callbacks)；transient/busy/upstream/stalled、quota/billing/overflow/abort、partial usage | 无 policy/disabled/0 只调用 produce 一次；enabled 至多1+max_retries 个**新 logical calls**，单一指数 delay/base/cap，不串接旧流、不执行工具、不主动切换 provider/model/account、不隐式 session；任意 produce 闭包的目标由 caller 负责，若使用 Models 受控 call factory 则执行冻结目标/来源身份检查。配额/billing/overflow/abort/auth 与配置错误不重试；typed 新分类覆盖 Pi1.3 transient/stalled及gateway/temporarily-unavailable，不靠泄漏原 body 匹配。scheduled 在 sleep 前、attempt-start 在 sleep 后且新 call 前；finished 有重试时只一次，有效 Ok 的 Stop/Length/ToolUse/Deferred 对应 true，Error/Aborted 为 false；这不授予工具执行或 remote ready 许可。取消 delay 为 Err/Aborted 保留最近 partial/usage，零后续 produce/timer。callback 失败 typed 结束，不重跑 callback/业务、不吞；与低层 acquisition/strict variant/WS budget 独立可计数，返回 failure 不虚构完整重试账单 新增Unable to forward upstream stream与The service is temporarily unavailable匹配，保留quota/overflow/auth/abort排除和默认次数不变。 | 显式 SDK helper 与 V-33 产品默认恢复不同；source 仅读。fake-clock/producer 不证明真实网络；同源重新解析的受控 factory 按 V-12，凭据实变无法确认身份须 typed fail-closed；新实现未运行 | add SDK standalone helper/classifier/delay/callback/cancel/partial/auth corpus；update 旧“SDK完全不提供whole-call retry”排除；retain 默认不自动恢复 |
-| V-58／AIR-066；root/subpath exports/package、三 Context、custom API | workspace 外 consumer；下方 public动作索引、三 Context、custom chat/image/classifier/deferred APIs、direct/lazy adapters、faux/test support、utility/CLI/platform 替代 | 每公开动作有Rust动作或明确差异/gap；workspace外consumer证明三Context、四调用入口、custom兼容options跨Models/upsert/oldcall、native typed failures、callbacks/telemetry/platform替代。R-01–08受来源审计约束，不能靠新增cap/unknownformat/stale拒绝或“Unsupported”关覆盖；backend配置不可解除的限制单列。包资源离线、构造零I/O、Tokio/Send条件明确；尚无编译/运行证明。 当前后端OPEN表各gap须有source expected/native结果与真实public-boundary proof；Schema argumentsError前置拒绝、去WS可配置cap均不能关闭engine/handshake/compression差异。 | 本轮为源码/合同修订；新的公开consumer/本地conformance未实施或执行，历史测试不证明本目标。 | add external consumer/package/custom API/三Context/utilities/platform negative smoke；update exports/examples/必要 callers；delete 仅旧壳存在测试；retain 真行为 |
+| V-58／AIR-066；root/subpath exports/package、三 Context、custom API | workspace 外 consumer；下方 public动作索引、三 Context、custom chat/image/classifier/deferred APIs、direct/lazy adapters、faux/test support、utility/CLI/platform 替代 | 每公开动作有Rust动作或明确差异/gap；workspace外consumer证明三Context、四调用入口、custom兼容options跨Models/upsert/oldcall、native typed failures、callbacks/telemetry/platform替代。R-01–08受来源审计约束，不能靠新增cap/unknownformat/stale拒绝或“Unsupported”关覆盖；backend配置不可解除的限制单列。包资源离线、构造零I/O、Tokio/Send条件明确；尚无新SDK公开consumer的编译/运行证明，独立研究机制不替代它。 当前后端OPEN表各gap须有source expected/native结果与真实public-boundary proof；Schema argumentsError前置拒绝、去WS可配置cap均不能关闭engine/handshake/compression差异。 | 本轮为源码/合同修订；新的公开consumer/本地conformance未实施或执行，历史测试不证明本目标。 | add external consumer/package/custom API/三Context/utilities/platform negative smoke；update exports/examples/必要 callers；delete 仅旧壳存在测试；retain 真行为 |
 | V-59／AIR-067；version tracking/followup evidence | 新固定 Pi 版本/来源摘要、Opi HEAD/变更、public capability delta、test inventory/实际运行证据；缺 generated data/live 授权 | 后续每次对照在 existing upstream-tracking 和本矩阵更新 source/version/tree、前驱、公开动作/Context/telemetry/RFC accepted-vs-delivered、Rust差异、test add/update/delete/retain 与实际命令/case数/skip/gap；不修改旧70/probe基线，不将静态文件数当pass。Pi参考只运行审过的纯fixture范围，隔离HOME/env/defaultauth/非本机网络；不因有key启live、不自动hydrate/安装。测试证据逐 Pi路径/语义输入→Rust binary/filter→差异→actual outcome，缺runner/job明确未交付；无第二ledger/脚本或自动监控 本地1.2→1.3 fixedtree/pathdelta与test处置；catalog最低Pi1.2.1、发布hydrate/build:offline和内部exactpin检查仅作source工作流事实。 | 本轮只修订文档，无差分 runner/CI job。历史70只证原输入；171为1.2.0来源文件数（1.3.0为174）、41+7为Rust文件数，均非新目标执行数。版本跟踪不保证未来提案落地 | retain 全历史输入/41+7迁移；未来 add 受控fixtures/runner/CI由实施准入决定；本轮 none |
 
 ### 十个 chat API 的公共行为覆盖
@@ -473,7 +475,7 @@ cargo test --offline --locked -p opi-ai --test gemini_lifecycle --test provider_
 
 ## 后端覆盖缺口专项验证细化（既有V，无新增编号）
 
-[逐项源码／验证方法／可行路径](pi-1.3.0-backend-gap-audit.md)绑定下表的既有验收。本表只补充应观察的结果，不建立第二验收索引或运行状态；七组全部OPEN。源码推导case须先运行固定Pi参考取得真实expected，再跑真实Rust公开consumer，不把文档写成通过。
+[逐项源码／验证方法／可行路径](pi-1.3.0-backend-gap-audit.md)绑定下表的既有验收。本表保留前置源码轮的未来判据与当时未执行状态，不覆盖下节的实际研究观察，也不建立第二验收索引或运行状态；七组全部OPEN。源码推导case须先运行固定Pi参考取得真实expected，再跑真实Rust公开consumer，不把文档写成通过。Schema／WS的产品未实施、完整V未验收，与已执行研究harness分开。
 
 | 既有验收 | 专项补充判据与关闭边界 | 未来测试处置／本轮结果 |
 |---|---|---|
@@ -486,3 +488,29 @@ cargo test --offline --locked -p opi-ai --test gemini_lifecycle --test provider_
 | Graph/platform/catalog · V-20/42/49/56/58/59 | exact Cargo graph/features/build/native/proc-macro/MSRV＋外部package consumer＋三native平台；匹配revision的hydrated数据/schema/hash/版本选择与offline资源真实存在。generator/test文本不补产物，CI路线不等于执行 | add允许目标的package/平台/数据fixtures；retain现有wire/目录隔离；未实施未执行 |
 
 后端/差分harness观察deadline仅用于隔离实验，不变SDK拒绝政策。缺runtime/源码/产物、未实施、未执行及实际失败分开；不能以修改backend默认、typed Unsupported、source数量或caller override记完成。本轮test impact **none**，产品测试add/update/delete均0；表内处置均为未来建议。
+
+## Schema／WS 最小离线实验观察（不是V通过）
+
+[固定输入／全部结果／候选判定](pi-1.3.0-schema-ws-offline-validation.md)及[独立复审](pi-1.3.0-schema-ws-offline-review.md)对应本节。原59条V要求行、67条AIR映射和41＋7原测试处置保留；下面只记录证据层次与下一步，不构成第二验收表或实施账本。
+
+| 既有V | 已运行观察与候选判定 | 尚缺证明／后续测试处置 |
+|---|---|---|
+| Schema／RDF-09 · V-11/34/35/39/41/58 | 85 Pi公开utility cases、276 native observations；meta-before-hook、grapheme／format／numeric／ref／regex双向错误实际复现。content knobs和prefix hook只修局部，选型重新比较；原始／JS parse／normalized分层，root修正与RangeError不作错误oracle | 完整Rust normalizer／公开utility／外部consumer、refs／formats全域、branch-correct regex补救、worker/cache/cancel未证；add复用固定反例／正例，update引擎假设，retain raw／安全／union。OPEN |
+| WS／RDF-13/18 · V-02/30/49/58 | 60参考constructor＋15native loopback＋16reader＋15partial-codec观察；Node／Bun实际PMD与headercanary、Bun125header与native差分；当前TW完整组合不能原样保留。Node异常退出／Bun非法响应宽松单列；partial接入不补PMD | 完整Pi／opi provider、fallback／continuation／pool／cancel／cleanup、完整Upgrade与多帧tail、PMD参数／fragment／context takeover、proxy／TLS／平台未证；add共同wire／机制fixtures，update选型假设，retain资源／partial。OPEN |
+
+所有正式实验已记录命令／exit／pins，仍不能把native对错误输入的假成功算通过。该最小差分窗口的未关闭组七组不变；其余五组在该窗口未增运行证据，后续新增见下节。harness timers与采样大小不是SDK预算。实际产品test impact **none**；研究脚本／fixtures／结果 **add**。废弃Bun自动解析诊断只作副作用记录，正式Bun --no-install已重跑；没有产品测试迁移／CI实施。
+
+## 设计 READY 的机制证据与产品 OPEN（同一 V）
+
+用户明确选择design-only READY；[设计决定](pi-1.3.0-design-readiness.md)与[独立复审](pi-1.3.0-design-readiness-review.md)只判断关键选择/合同/可表达性。所有54 active SDK组、4host-impact仍未完整产品验收；V-52退役不计通过。本节映射新增研究证据，不新增V/AIR、不把研究case当覆盖率，不改41＋7产品测试的add/update/delete/retain迁移义务。
+
+| 既有入口 | 本轮机制证据与确定选择 | 实施验收仍OPEN |
+|---|---|---|
+| Schema · V-11/34/35/39/41/58 · RDF-09 | 私有TypeBox JSON方言IR、regress0.12.0算法/Unicode16数据；64/64固定实例与11合成错误控制、生成两次一致；ryu-js14点和URL29点，43/43叶，10包namespace与普通ICU2.2共图不串数据；source guard inert边界明确 | 全normalizer/42机制/21formats/ref/dynamic/evaluated/错误诊断/UTF8边界、publicutility/consumer/cache/cancel；保留原raw和root正确性修正，不复制JS parse损失 |
+| WS · V-02/30/49/58 · RDF-13/18 | ownedUpgrade＋受控Ratchet PMD状态/帧修正；旧80观察及原缺陷保留。后续独立发现的长度/算术/分配边界，按最新WS纯内存探针另证；不自动继承旧网络运行记录到新patch | 全provider/continuation/pool/fallback/proxy/TLS/cleanup/platform，新增patch的网络组装未重跑；不得cap或SSE掩盖 |
+| HTTP/Auth · V-01/05/09/29/30/51/55/58 | sourceowner＋Hyper动态存储；112主记录/16Pi proxy、20headers对照，ALPN/H2和TLS负例，metadata0/3000ms有来源。prepared身份/redirect腿/retry副作用不合并成最终字符串 | 全head/trailer/buffercap补救、framing/所有source/代理/取消/回调/公开driver、adaptive/SSO/MFA/DPoP/9OAuth/rotation/store/process树 |
+| Crypto · V-09/49/55/58 · RDF-18 | OpenSSL3私有libctx成熟EVP，11RSA/三输入负例/poison共15观察，P521/e3mTLS差异3记录；rustls公开signer/WebPKI/verification/KX扩展明确机制，commonring不冒称完整 | 全源算法/优先级/协商/链/构建/平台、Rust FFI安全/包消费者；已测C API不当完整Rust TLS adapter |
+| Telemetry · V-46–48/58 · RDF-14 | pinned safe poll/drop载体七场景，sourceDispatch/跨线程/Stream/producer/noop实际一致；不加domain/exporter | 全SDKnative/simple/direct/advanced/image/classifier/deferred入口、serde/wire/secretcanary、hostconsumer |
+| Delivery · V-20/42/49/56/58/59 | 原Pi catalog helper人工42×3记录七观察；固定schema/身份/hash/staging/原子publication合同，隔离研究Cargo图和少量cross-targetcheck不冒充产品 | 真hydratedartifact与source关联、产品graph/namespace registry产物/packaging、MSRV1.97/三平台native build/run/consumer |
+
+原始资产分别在[Schema](offline-probes/readiness-schema/README.md)、[WS](offline-probes/readiness-ws/README.md)、[transport/auth](offline-probes/readiness-transport-auth/README.md)、[runtime/catalog](offline-probes/readiness-runtime/README.md)。依赖/Unicode数据准备联网与运行时离线/loopback分开；用户最新限定后的WS修复只做纯内存无socket验证，若平台仍阻止便按指示跳过并保留OPEN，不尝试绕过。研究test **add**，产品test **none**，历史证据 **retain**，产品测试 **delete=0**。所有fixture timers/bytecount都是实验输入，未成为SDK预算。

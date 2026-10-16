@@ -1,0 +1,80 @@
+[
+  {
+    "name": "rustc",
+    "command": [
+      "rustc",
+      "-Vv"
+    ],
+    "exit": 0,
+    "stdout_sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "cargo",
+    "command": [
+      "cargo",
+      "-Vv"
+    ],
+    "exit": 0,
+    "stdout_sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "generate-lock",
+    "command": [
+      "cargo",
+      "generate-lockfile",
+      "--offline"
+    ],
+    "exit": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "5f829caec06718332599ec01883c342026e60abeb479973fd9486281656d1707"
+  },
+  {
+    "name": "build",
+    "command": [
+      "cargo",
+      "build",
+      "--locked",
+      "--offline"
+    ],
+    "exit": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "ed048161fc3bd48332ffc1dc2cae9b571150b8c070b960362bc150d00827de2f"
+  },
+  {
+    "name": "telemetry",
+    "command": [
+      "E:\\opi\\cargo-targets\\windows-direct\\debug\\opi-pi130-readiness-runtime-probe.exe"
+    ],
+    "exit": 0,
+    "stdout_sha256": "89522b8ba1a97ca06bb8fe32510505adc48c72633cc19f740a620ef1410ebcf5",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "catalog",
+    "command": [
+      "D:/nvm/v24.13.0/node.exe",
+      "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-runtime\\catalog.mjs",
+      "D:\\Luiz\\Odradek\\opi\\.repo\\pi-1.3.0",
+      "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness\\runtime-author"
+    ],
+    "exit": 0,
+    "stdout_sha256": "3a14e48313bcfda6578741e314ea9d66adce968490d56479216f4ab8cda16360",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "metadata",
+    "command": [
+      "cargo",
+      "metadata",
+      "--locked",
+      "--offline",
+      "--format-version",
+      "1"
+    ],
+    "exit": 0,
+    "stdout_sha256": "e5ae5a435f5ffeb490d7cdf793d25dc7a00e145c296d55b9133d29de3a5c96b0",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

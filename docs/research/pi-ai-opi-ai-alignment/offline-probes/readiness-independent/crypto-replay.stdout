@@ -1,0 +1,270 @@
+{
+  "library": "D:\\Users\\Luiz\\anaconda3\\Library\\bin\\libcrypto-3-x64.dll",
+  "version": "OpenSSL 3.0.15 3 Sep 2024",
+  "library_sha256": "630b0735e0a3ec5824084698a78d2043326bc133a5d579aa0f41cf0b5a92ddb6",
+  "observations": [
+    {
+      "kind": "rsa-private-libctx",
+      "id": "rsa-1024-e65537-pkcs8",
+      "bits": 1024,
+      "exponent": 65537,
+      "format": "pkcs8",
+      "reference": {
+        "accepted": true,
+        "secured_input": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJzeW50aGV0aWNAZXhhbXBsZS5pbnZhbGlkIiwic2NvcGUiOiJzeW50aGV0aWMtc2NvcGUiLCJhdWQiOiJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsImV4cCI6MzYwMSwiaWF0IjoxfQ",
+        "signature_sha256": "fd9d8f5b5f3eac4032bcb6134249180782f9964a3653c7af46c96daa3b6efd06",
+        "signature_bytes": 128,
+        "verified": true
+      },
+      "native": {
+        "accepted": true,
+        "signature_bytes": 128,
+        "signature_sha256": "fd9d8f5b5f3eac4032bcb6134249180782f9964a3653c7af46c96daa3b6efd06",
+        "error_queue_after": 0
+      },
+      "reference_exit": 0
+    },
+    {
+      "kind": "rsa-private-libctx",
+      "id": "rsa-1024-e65537-pkcs1",
+      "bits": 1024,
+      "exponent": 65537,
+      "format": "pkcs1",
+      "reference": {
+        "accepted": true,
+        "secured_input": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJzeW50aGV0aWNAZXhhbXBsZS5pbnZhbGlkIiwic2NvcGUiOiJzeW50aGV0aWMtc2NvcGUiLCJhdWQiOiJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsImV4cCI6MzYwMSwiaWF0IjoxfQ",
+        "signature_sha256": "fd9d8f5b5f3eac4032bcb6134249180782f9964a3653c7af46c96daa3b6efd06",
+        "signature_bytes": 128,
+        "verified": true
+      },
+      "native": {
+        "accepted": true,
+        "signature_bytes": 128,
+        "signature_sha256": "fd9d8f5b5f3eac4032bcb6134249180782f9964a3653c7af46c96daa3b6efd06",
+        "error_queue_after": 0
+      },
+      "reference_exit": 0
+    },
+    {
+      "kind": "rsa-private-libctx",
+      "id": "rsa-2048-e65537-pkcs8",
+      "bits": 2048,
+      "exponent": 65537,
+      "format": "pkcs8",
+      "reference": {
+        "accepted": true,
+        "secured_input": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJzeW50aGV0aWNAZXhhbXBsZS5pbnZhbGlkIiwic2NvcGUiOiJzeW50aGV0aWMtc2NvcGUiLCJhdWQiOiJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsImV4cCI6MzYwMSwiaWF0IjoxfQ",
+        "signature_sha256": "d71619b8083397d5a77a31ba62213640d5114bd8eb48395b071639e0306ce5cf",
+        "signature_bytes": 256,
+        "verified": true
+      },
+      "native": {
+        "accepted": true,
+        "signature_bytes": 256,
+        "signature_sha256": "d71619b8083397d5a77a31ba62213640d5114bd8eb48395b071639e0306ce5cf",
+        "error_queue_after": 0
+      },
+      "reference_exit": 0
+    },
+    {
+      "kind": "rsa-private-libctx",
+      "id": "rsa-2048-e65537-pkcs1",
+      "bits": 2048,
+      "exponent": 65537,
+      "format": "pkcs1",
+      "reference": {
+        "accepted": true,
+        "secured_input": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJzeW50aGV0aWNAZXhhbXBsZS5pbnZhbGlkIiwic2NvcGUiOiJzeW50aGV0aWMtc2NvcGUiLCJhdWQiOiJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsImV4cCI6MzYwMSwiaWF0IjoxfQ",
+        "signature_sha256": "d71619b8083397d5a77a31ba62213640d5114bd8eb48395b071639e0306ce5cf",
+        "signature_bytes": 256,
+        "verified": true
+      },
+      "native": {
+        "accepted": true,
+        "signature_bytes": 256,
+        "signature_sha256": "d71619b8083397d5a77a31ba62213640d5114bd8eb48395b071639e0306ce5cf",
+        "error_queue_after": 0
+      },
+      "reference_exit": 0
+    },
+    {
+      "kind": "rsa-private-libctx",
+      "id": "rsa-2048-e3-pkcs8",
+      "bits": 2048,
+      "exponent": 3,
+      "format": "pkcs8",
+      "reference": {
+        "accepted": true,
+        "secured_input": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJzeW50aGV0aWNAZXhhbXBsZS5pbnZhbGlkIiwic2NvcGUiOiJzeW50aGV0aWMtc2NvcGUiLCJhdWQiOiJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsImV4cCI6MzYwMSwiaWF0IjoxfQ",
+        "signature_sha256": "0edd18929ee176123dc046d4b3a3038b3b820c1adeb37f6c482d0209eb9a0f90",
+        "signature_bytes": 256,
+        "verified": true
+      },
+      "native": {
+        "accepted": true,
+        "signature_bytes": 256,
+        "signature_sha256": "0edd18929ee176123dc046d4b3a3038b3b820c1adeb37f6c482d0209eb9a0f90",
+        "error_queue_after": 0
+      },
+      "reference_exit": 0
+    },
+    {
+      "kind": "rsa-private-libctx",
+      "id": "rsa-2048-e3-pkcs1",
+      "bits": 2048,
+      "exponent": 3,
+      "format": "pkcs1",
+      "reference": {
+        "accepted": true,
+        "secured_input": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJzeW50aGV0aWNAZXhhbXBsZS5pbnZhbGlkIiwic2NvcGUiOiJzeW50aGV0aWMtc2NvcGUiLCJhdWQiOiJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsImV4cCI6MzYwMSwiaWF0IjoxfQ",
+        "signature_sha256": "0edd18929ee176123dc046d4b3a3038b3b820c1adeb37f6c482d0209eb9a0f90",
+        "signature_bytes": 256,
+        "verified": true
+      },
+      "native": {
+        "accepted": true,
+        "signature_bytes": 256,
+        "signature_sha256": "0edd18929ee176123dc046d4b3a3038b3b820c1adeb37f6c482d0209eb9a0f90",
+        "error_queue_after": 0
+      },
+      "reference_exit": 0
+    },
+    {
+      "kind": "rsa-private-libctx",
+      "id": "rsa-4096-e65537-pkcs8",
+      "bits": 4096,
+      "exponent": 65537,
+      "format": "pkcs8",
+      "reference": {
+        "accepted": true,
+        "secured_input": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJzeW50aGV0aWNAZXhhbXBsZS5pbnZhbGlkIiwic2NvcGUiOiJzeW50aGV0aWMtc2NvcGUiLCJhdWQiOiJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsImV4cCI6MzYwMSwiaWF0IjoxfQ",
+        "signature_sha256": "b8eb3eb4ca59db21dcf2af5f47ca9a42dd560c6853d36b8b7d9722ced2136ebb",
+        "signature_bytes": 512,
+        "verified": true
+      },
+      "native": {
+        "accepted": true,
+        "signature_bytes": 512,
+        "signature_sha256": "b8eb3eb4ca59db21dcf2af5f47ca9a42dd560c6853d36b8b7d9722ced2136ebb",
+        "error_queue_after": 0
+      },
+      "reference_exit": 0
+    },
+    {
+      "kind": "rsa-private-libctx",
+      "id": "rsa-4096-e65537-pkcs1",
+      "bits": 4096,
+      "exponent": 65537,
+      "format": "pkcs1",
+      "reference": {
+        "accepted": true,
+        "secured_input": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJzeW50aGV0aWNAZXhhbXBsZS5pbnZhbGlkIiwic2NvcGUiOiJzeW50aGV0aWMtc2NvcGUiLCJhdWQiOiJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsImV4cCI6MzYwMSwiaWF0IjoxfQ",
+        "signature_sha256": "b8eb3eb4ca59db21dcf2af5f47ca9a42dd560c6853d36b8b7d9722ced2136ebb",
+        "signature_bytes": 512,
+        "verified": true
+      },
+      "native": {
+        "accepted": true,
+        "signature_bytes": 512,
+        "signature_sha256": "b8eb3eb4ca59db21dcf2af5f47ca9a42dd560c6853d36b8b7d9722ced2136ebb",
+        "error_queue_after": 0
+      },
+      "reference_exit": 0
+    },
+    {
+      "kind": "rsa-private-libctx",
+      "id": "rsa-8192-e65537-pkcs8",
+      "bits": 8192,
+      "exponent": 65537,
+      "format": "pkcs8",
+      "reference": {
+        "accepted": true,
+        "secured_input": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJzeW50aGV0aWNAZXhhbXBsZS5pbnZhbGlkIiwic2NvcGUiOiJzeW50aGV0aWMtc2NvcGUiLCJhdWQiOiJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsImV4cCI6MzYwMSwiaWF0IjoxfQ",
+        "signature_sha256": "67754ba7e6af2f652992817d253983fe952e4bd795ef3fe894dceb5e047025e7",
+        "signature_bytes": 1024,
+        "verified": true
+      },
+      "native": {
+        "accepted": true,
+        "signature_bytes": 1024,
+        "signature_sha256": "67754ba7e6af2f652992817d253983fe952e4bd795ef3fe894dceb5e047025e7",
+        "error_queue_after": 0
+      },
+      "reference_exit": 0
+    },
+    {
+      "kind": "rsa-private-libctx",
+      "id": "rsa-8192-e65537-pkcs1",
+      "bits": 8192,
+      "exponent": 65537,
+      "format": "pkcs1",
+      "reference": {
+        "accepted": true,
+        "secured_input": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJzeW50aGV0aWNAZXhhbXBsZS5pbnZhbGlkIiwic2NvcGUiOiJzeW50aGV0aWMtc2NvcGUiLCJhdWQiOiJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsImV4cCI6MzYwMSwiaWF0IjoxfQ",
+        "signature_sha256": "67754ba7e6af2f652992817d253983fe952e4bd795ef3fe894dceb5e047025e7",
+        "signature_bytes": 1024,
+        "verified": true
+      },
+      "native": {
+        "accepted": true,
+        "signature_bytes": 1024,
+        "signature_sha256": "67754ba7e6af2f652992817d253983fe952e4bd795ef3fe894dceb5e047025e7",
+        "error_queue_after": 0
+      },
+      "reference_exit": 0
+    },
+    {
+      "kind": "rsa-private-libctx-negative",
+      "id": "malformed",
+      "reference": {
+        "accepted": false,
+        "name": "Error",
+        "message": "error:1E08010C:DECODER routines::unsupported"
+      },
+      "native": {
+        "accepted": false,
+        "stage": "decode"
+      }
+    },
+    {
+      "kind": "rsa-private-libctx-negative",
+      "id": "encrypted-no-passphrase",
+      "reference": {
+        "accepted": false,
+        "name": "Error",
+        "message": "error:07880109:common libcrypto routines::interrupted or cancelled"
+      },
+      "native": {
+        "accepted": false,
+        "stage": "decode"
+      }
+    },
+    {
+      "kind": "rsa-private-libctx-negative",
+      "id": "non-rsa",
+      "reference": {
+        "accepted": true,
+        "secured_input": "eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJzeW50aGV0aWNAZXhhbXBsZS5pbnZhbGlkIiwic2NvcGUiOiJzeW50aGV0aWMtc2NvcGUiLCJhdWQiOiJodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiIsImV4cCI6MzYwMSwiaWF0IjoxfQ",
+        "signature_sha256": "16234c617039848377429fc4706de8b94e185d8ddaffd4c4c2f66fe8a95857c8",
+        "signature_bytes": 72,
+        "verified": true
+      },
+      "native": {
+        "accepted": false,
+        "stage": "decode"
+      }
+    },
+    {
+      "kind": "isolation-negative-control",
+      "ambient_default_sha256_fetch": false,
+      "private_sign_after_ambient_failure": {
+        "accepted": true,
+        "signature_bytes": 128,
+        "signature_sha256": "fd9d8f5b5f3eac4032bcb6134249180782f9964a3653c7af46c96daa3b6efd06",
+        "error_queue_after": 0
+      },
+      "global_no_load_config_called": false,
+      "global_context_replaced": false
+    }
+  ]
+}

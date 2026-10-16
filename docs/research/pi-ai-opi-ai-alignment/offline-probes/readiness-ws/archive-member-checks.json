@@ -1,0 +1,29 @@
+[
+  {
+    "crate": "soketto-0.8.1",
+    "unchangedMembers": 27,
+    "deliberateChangedMembers": []
+  },
+  {
+    "crate": "ratchet_core-1.2.1",
+    "unchangedMembers": 30,
+    "deliberateChangedMembers": [
+      "ratchet_core-1.2.1/src/protocol/frame.rs"
+    ]
+  },
+  {
+    "crate": "ratchet_ext-1.2.1",
+    "unchangedMembers": 6,
+    "deliberateChangedMembers": []
+  },
+  {
+    "crate": "ratchet_deflate-1.2.1",
+    "unchangedMembers": 10,
+    "deliberateChangedMembers": []
+  },
+  {
+    "crate": "ratchet_rs-1.2.1",
+    "unchangedMembers": 13,
+    "deliberateChangedMembers": []
+  }
+]

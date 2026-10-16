@@ -1,0 +1,14 @@
+   Compiling ratchet_core v1.2.1 (C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws\source\ratchet_core-1.2.1)
+error: couldn't read `C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws\source\ratchet_core-1.2.1\src\protocol\frame.rs`: stream did not contain valid UTF-8
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws\source\ratchet_core-1.2.1\src\protocol\mod.rs:18:1
+    |
+ 18 | mod frame;
+    | ^^^^^^^^^^
+    |
+note: byte `161` is not valid utf-8
+   --> C:\Users\Luiz\AppData\Local\Temp\opi-readiness-ws\source\ratchet_core-1.2.1\src\protocol\frame.rs:156:24
+    |
+156 |             // rfc6455 �� 5.4: Control frames themselves MUST NOT be fragmented
+    |                        ^
+
+error: could not compile `ratchet_core` (lib) due to 1 previous error

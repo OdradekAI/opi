@@ -1,0 +1,807 @@
+{
+  "observations": 80,
+  "scope": "loopback-public-codec-not-opi-provider",
+  "secondContextPayloadRequiresDictionary": true,
+  "rows": [
+    {
+      "runtime": "node",
+      "case": "plain",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "pmd",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "fragment-ping",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "context-takeover",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "mixed-compression-fragment",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "no-context",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "window8",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "window9",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "window15",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "window16-invalid",
+      "exit": 1,
+      "opened": null,
+      "messages": 0,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "duplicate-param",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "headers125",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "header66000",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": null,
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "invalid-accept",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": null,
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "unknown-ext",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": null,
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "unknown-subprotocol",
+      "exit": 1,
+      "opened": null,
+      "messages": 0,
+      "error": null,
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "rsv1-no-negotiation",
+      "exit": 0,
+      "opened": true,
+      "messages": 0,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "control-rsv1",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "continuation-rsv1",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "node",
+      "case": "connection-tokens",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": null,
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "bun",
+      "case": "plain",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "bun",
+      "case": "pmd",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "bun",
+      "case": "fragment-ping",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "bun",
+      "case": "context-takeover",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "bun",
+      "case": "mixed-compression-fragment",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "bun",
+      "case": "no-context",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "bun",
+      "case": "window8",
+      "exit": 0,
+      "opened": true,
+      "messages": 0,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "bun",
+      "case": "window9",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "bun",
+      "case": "window15",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "bun",
+      "case": "window16-invalid",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "bun",
+      "case": "duplicate-param",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "bun",
+      "case": "headers125",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "bun",
+      "case": "header66000",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "bun",
+      "case": "invalid-accept",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "bun",
+      "case": "unknown-ext",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "bun",
+      "case": "unknown-subprotocol",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": null,
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "bun",
+      "case": "rsv1-no-negotiation",
+      "exit": 0,
+      "opened": true,
+      "messages": 0,
+      "error": null,
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "bun",
+      "case": "control-rsv1",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "bun",
+      "case": "continuation-rsv1",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "bun",
+      "case": "connection-tokens",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": null,
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "plain",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "pmd",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "fragment-ping",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "context-takeover",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "mixed-compression-fragment",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": "Error { inner: Inner { kind: Extension, source: Some(InflateError(DecompressError(General { msg: Some(\"invalid code lengths set\") }))) } }",
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "no-context",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "window8",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "window9",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "window15",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "window16-invalid",
+      "exit": 0,
+      "opened": true,
+      "messages": 0,
+      "error": "Error { inner: Inner { kind: Protocol, source: Some(UnknownExtension) } }",
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "duplicate-param",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": "Error { inner: Inner { kind: Extension, source: Some(NegotiationError(\"Duplicate permessage-deflate parameter: server_max_window_bits\")) } }",
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "headers125",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": "Error { inner: Inner { kind: Http, source: Some(TooManyHeaders) } }",
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "header66000",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "invalid-accept",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": "Error { inner: Inner { kind: Http, source: Some(KeyMismatch) } }",
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "unknown-ext",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "unknown-subprotocol",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": "Error { inner: Inner { kind: Protocol, source: Some(InvalidSubprotocolHeader(\"unrequested\")) } }",
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "rsv1-no-negotiation",
+      "exit": 0,
+      "opened": true,
+      "messages": 0,
+      "error": "Error { inner: Inner { kind: Protocol, source: Some(UnknownExtension) } }",
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "control-rsv1",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": "Error { inner: Inner { kind: Protocol, source: Some(UnknownExtension) } }",
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "continuation-rsv1",
+      "exit": 0,
+      "opened": true,
+      "messages": 0,
+      "error": "Error { inner: Inner { kind: Protocol, source: Some(UnknownExtension) } }",
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-native-patched",
+      "case": "connection-tokens",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": "Error { inner: Inner { kind: Http, source: Some(InvalidHeader(\"connection\")) } }",
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "plain",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "pmd",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "fragment-ping",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "context-takeover",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "mixed-compression-fragment",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "no-context",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "window8",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "window9",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "window15",
+      "exit": 0,
+      "opened": true,
+      "messages": 2,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "window16-invalid",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": "invalid-pmd-negotiation",
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "duplicate-param",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": "pmd:NegotiationError(\"Duplicate permessage-deflate parameter: server_max_window_bits\")",
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "headers125",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "header66000",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "invalid-accept",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": "accept",
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "unknown-ext",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": "unsolicited-extension",
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "unknown-subprotocol",
+      "exit": 0,
+      "opened": false,
+      "messages": 0,
+      "error": "unsolicited-subprotocol",
+      "outboundValid": false,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "rsv1-no-negotiation",
+      "exit": 0,
+      "opened": true,
+      "messages": 0,
+      "error": "Error { inner: Inner { kind: Protocol, source: Some(UnknownExtension) } }",
+      "outboundValid": true,
+      "outboundCompressed": false
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "control-rsv1",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": "Error { inner: Inner { kind: Protocol, source: Some(UnknownExtension) } }",
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "continuation-rsv1",
+      "exit": 0,
+      "opened": true,
+      "messages": 0,
+      "error": "Error { inner: Inner { kind: Protocol, source: Some(UnknownExtension) } }",
+      "outboundValid": true,
+      "outboundCompressed": true
+    },
+    {
+      "runtime": "ratchet-owned-patched",
+      "case": "connection-tokens",
+      "exit": 0,
+      "opened": true,
+      "messages": 1,
+      "error": null,
+      "outboundValid": true,
+      "outboundCompressed": false
+    }
+  ]
+}

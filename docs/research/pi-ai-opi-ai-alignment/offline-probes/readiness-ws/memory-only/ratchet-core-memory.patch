@@ -1,0 +1,244 @@
+--- ratchet_core-1.2.1/src/errors.rs
++++ ratchet_core-1.2.1/src/errors.rs
+@@ -63,6 +63,11 @@
+                 source: Some(source.into()),
+             },
+         }
++    }
++
++    /// Whether this error is related to local storage.
++    pub fn is_storage(&self) -> bool {
++        matches!(self.inner.kind, ErrorKind::Storage)
+     }
+ 
+     /// Returns some reference to the boxed value if it is of type T, or None if it isn’t.
+@@ -125,6 +130,8 @@
+     Encoding,
+     /// A close error.
+     Close,
++    /// Local storage could not represent or reserve the received data.
++    Storage,
+ }
+ 
+ impl From<io::Error> for Error {
+@@ -273,6 +280,26 @@
+     Error,
+ }
+ 
++/// Local buffer representation or bulk-allocation failure.
++#[derive(Debug, Error)]
++pub enum StorageError {
++    /// A length cannot be represented by this buffer implementation.
++    #[error("buffer representation overflow")]
++    Capacity,
++    /// A fallible bulk reservation failed.
++    #[error("buffer reservation failed: {0}")]
++    Allocation(#[source] std::collections::TryReserveError),
++    /// A uniquely owned buffer could not be converted without copying.
++    #[error("buffer ownership conversion failed")]
++    Ownership,
++}
++
++impl From<StorageError> for Error {
++    fn from(e: StorageError) -> Self {
++        Error::with_cause(ErrorKind::Storage, e)
++    }
++}
++
+ /// WebSocket protocol errors.
+ #[derive(Clone, Debug, Eq, PartialEq, Error)]
+ pub enum ProtocolError {
+@@ -291,6 +318,9 @@
+     /// Received a fragmented control frame
+     #[error("Received a fragmented control frame")]
+     FragmentedControl,
++    /// The payload-length field was not a valid shortest RFC encoding.
++    #[error("invalid frame payload length encoding")]
++    InvalidFrameLength,
+     /// A received frame exceeded the maximum permitted size
+     #[error("A frame exceeded the maximum permitted size")]
+     FrameOverflow,
+--- ratchet_core-1.2.1/src/protocol/frame.rs
++++ ratchet_core-1.2.1/src/protocol/frame.rs
+@@ -162,6 +162,11 @@
+             return Err(ProtocolError::UnknownExtension);
+         }
+ 
++        // Selected private codec is PMD-only: RFC 7692 section 6.1.
++        if (opcode.is_control() || (first & 0x0f) == 0) && (first & 0x40) != 0 {
++            return Err(ProtocolError::UnknownExtension);
++        }
++
+         let second = source[1];
+         let masked = second & 0x80 != 0;
+ 
+@@ -177,9 +182,17 @@
+         let mut offset = 2;
+ 
+         let length: usize = if payload_length == 126 {
+-            try_parse_int!(source, offset, source_length, u16, from_be_bytes) as usize
++            let length = try_parse_int!(source, offset, source_length, u16, from_be_bytes);
++            if length < 126 {
++                return Err(ProtocolError::InvalidFrameLength);
++            }
++            usize::from(length)
+         } else if payload_length == 127 {
+-            try_parse_int!(source, offset, source_length, u64, from_be_bytes) as usize
++            let length = try_parse_int!(source, offset, source_length, u64, from_be_bytes);
++            if length & (1u64 << 63) != 0 || length < 65536 {
++                return Err(ProtocolError::InvalidFrameLength);
++            }
++            usize::try_from(length).map_err(|_| ProtocolError::FrameOverflow)?
+         } else {
+             usize::from(payload_length)
+         };
+--- ratchet_core-1.2.1/src/framed/mod.rs
++++ ratchet_core-1.2.1/src/framed/mod.rs
+@@ -15,7 +15,7 @@
+ #[cfg(test)]
+ mod tests;
+ 
+-use crate::errors::{Error, ErrorKind, ProtocolError};
++use crate::errors::{Error, ErrorKind, ProtocolError, StorageError};
+ use crate::protocol::{
+     apply_mask, CloseCode, CloseReason, ControlCode, DataCode, FrameHeader, HeaderFlags,
+     MessageType, OpCode, Role,
+@@ -24,7 +24,7 @@
+ use crate::ws::CONTROL_MAX_SIZE;
+ use crate::WebSocketStream;
+ use bytes::Buf;
+-use bytes::{BufMut, BytesMut};
++use bytes::{Bytes, BytesMut};
+ use either::Either;
+ use log::trace;
+ use rand::rngs::SmallRng;
+@@ -67,6 +67,38 @@
+     #[default]
+     DecodingHeader,
+     DecodingPayload(FrameHeader, usize, usize),
++}
++
++fn storage_length(current: usize, additional: usize) -> Result<usize, Error> {
++    current.checked_add(additional)
++        .filter(|length| *length <= isize::MAX as usize)
++        .ok_or_else(|| StorageError::Capacity.into())
++}
++
++fn reserve_storage(buffer: &mut Vec<u8>, capacity: usize) -> Result<(), Error> {
++    storage_length(0, capacity)?;
++    buffer.try_reserve_exact(capacity).map_err(|error| StorageError::Allocation(error).into())
++}
++
++fn append_storage(buffer: &mut BytesMut, bytes: &[u8]) -> Result<(), Error> {
++    if bytes.is_empty() { return Ok(()); }
++    let required = storage_length(buffer.len(), bytes.len())?;
++    if buffer.try_reclaim(bytes.len()) {
++        buffer.extend_from_slice(bytes);
++        return Ok(());
++    }
++    let capacity = buffer.capacity().checked_mul(2)
++        .filter(|capacity| *capacity <= isize::MAX as usize)
++        .unwrap_or(required).max(required);
++    let mut replacement = Vec::new();
++    if let Err(error) = reserve_storage(&mut replacement, capacity) {
++        if capacity == required { return Err(error); }
++        reserve_storage(&mut replacement, required)?;
++    }
++    replacement.extend_from_slice(buffer);
++    replacement.extend_from_slice(bytes);
++    *buffer = Bytes::from(replacement).try_into_mut().map_err(|_| StorageError::Ownership)?;
++    Ok(())
+ }
+ 
+ pub enum DecodeResult {
+@@ -93,7 +125,7 @@
+                     }
+                 }
+                 FrameDecoder::DecodingPayload(header, header_len, payload_len) => {
+-                    let frame_len = *header_len + *payload_len;
++                    let frame_len = storage_length(*header_len, *payload_len)?;
+                     let buf_len = buf.len();
+ 
+                     if buf_len < frame_len {
+@@ -157,9 +189,15 @@
+         loop {
+             match decoder.decode(read_buffer, is_server, rsv_bits, max_message_size)? {
+                 DecodeResult::Incomplete(count) => {
+-                    let len = read_buffer.len();
+-                    read_buffer.resize(len + count, 0u8);
+-                    io.read_exact(&mut read_buffer[len..]).await?;
++                    // Read granularity is not a message budget. Never reserve the
++                    // declared payload length before those bytes actually arrive.
++                    let mut chunk = [0u8; 8192];
++                    let take = count.min(chunk.len());
++                    let read = io.read(&mut chunk[..take]).await?;
++                    if read == 0 {
++                        return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
++                    }
++                    append_storage(read_buffer, &chunk[..read])?;
+                 }
+                 DecodeResult::Finished(header, payload) => return Ok((header, payload)),
+             }
+@@ -192,11 +230,11 @@
+ 
+             match header.opcode {
+                 OpCode::DataCode(data_code) => {
+-                    if read_into.len() + payload.len() > max_message_size {
++                    if storage_length(read_into.len(), payload.len())? > max_message_size {
+                         return Err(ProtocolError::FrameOverflow.into());
+                     }
+ 
+-                    read_into.put(payload);
++                    append_storage(read_into, &payload)?;
+ 
+                     match data_code {
+                         DataCode::Continuation => {
+@@ -754,3 +792,6 @@
+ 
+     Ok(())
+ }
++
++#[cfg(test)]
++mod readiness_memory;
+--- ratchet_core-1.2.1/src/ws.rs
++++ ratchet_core-1.2.1/src/ws.rs
+@@ -570,6 +570,7 @@
+         S: WebSocketStream,
+         E: Extension,
+     {
++        /// Writes a raw frame for the pre-existing in-memory test fixtures.
+         pub async fn write_frame<A>(
+             &mut self,
+             buf: A,
+@@ -596,6 +597,7 @@
+                 .await
+         }
+ 
++        /// Reads a raw frame for the pre-existing in-memory test fixtures.
+         pub async fn read_frame(&mut self, read_buffer: &mut BytesMut) -> Result<Item, Error> {
+             let WebSocket {
+                 framed, extension, ..
+--- ratchet_core-1.2.1/src/framed/readiness_memory.rs
++++ ratchet_core-1.2.1/src/framed/readiness_memory.rs
+@@ -0,0 +1,21 @@
++use super::*;
++use std::future::Future;
++use std::{pin::Pin,task::{Context,Poll},io::Cursor};
++use tokio::io::ReadBuf;
++fn header(bytes:&[u8])->Result<Either<(FrameHeader,usize,usize),usize>,ProtocolError>{FrameHeader::read_from(bytes,false,0x40,usize::MAX)}
++fn valid_header()->FrameHeader{match header(&[0x81,0]).unwrap(){Either::Left((h,_,_))=>h,_=>panic!()}}
++#[test] fn readiness_memory_rejects_rfc_high_bit(){for n in [1u64<<63,u64::MAX]{let mut b=vec![0x81,127];b.extend(n.to_be_bytes());assert_eq!(header(&b).unwrap_err(),ProtocolError::InvalidFrameLength);}}
++#[test] fn readiness_memory_rejects_nonminimal_126(){for n in [0u16,1,125]{let mut b=vec![0x81,126];b.extend(n.to_be_bytes());assert_eq!(header(&b).unwrap_err(),ProtocolError::InvalidFrameLength);}}
++#[test] fn readiness_memory_rejects_nonminimal_127(){for n in [0u64,125,126,65535]{let mut b=vec![0x81,127];b.extend(n.to_be_bytes());assert_eq!(header(&b).unwrap_err(),ProtocolError::InvalidFrameLength);}}
++#[test] fn readiness_memory_accepts_shortest_boundaries(){for (tag,n) in [(126u8,126u64),(126,65535),(127,65536),(127,1u64<<40)]{let mut b=vec![0x81,tag];if tag==126{b.extend((n as u16).to_be_bytes())}else{b.extend(n.to_be_bytes())};assert!(matches!(header(&b).unwrap(),Either::Left((_,_,size)) if size==n as usize));}}
++#[test] fn readiness_memory_checked_frame_total(){let mut decoder=FrameDecoder::DecodingPayload(valid_header(),2,usize::MAX);let error=decoder.decode(&mut BytesMut::new(),false,0x40,usize::MAX).err().unwrap();assert!(error.is_storage());assert!(matches!(error.downcast_ref::<StorageError>(),Some(StorageError::Capacity)));}
++#[test] fn readiness_memory_checked_message_total(){let error=storage_length(usize::MAX,1).unwrap_err();assert!(error.is_storage());assert!(matches!(error.downcast_ref::<StorageError>(),Some(StorageError::Capacity)));}
++#[test] fn readiness_memory_representation_limit(){let error=reserve_storage(&mut Vec::new(),usize::MAX).unwrap_err();assert!(error.is_storage());}
++#[test] fn readiness_memory_actual_reservation_failure(){let error=reserve_storage(&mut Vec::new(),isize::MAX as usize).unwrap_err();assert!(matches!(error.downcast_ref::<StorageError>(),Some(StorageError::Allocation(_))));}
++#[test] fn readiness_memory_bulk_growth_and_shared_tail(){let mut b=BytesMut::from(&b"prefix"[..]);let previous=b.split_to(3);append_storage(&mut b,b"-suffix").unwrap();assert_eq!(&b[..],b"fix-suffix");assert_eq!(&previous[..],b"pre");append_storage(&mut b,b"").unwrap();}
++struct PendingAfterHead{head:Cursor<Vec<u8>>,calls:usize}
++impl AsyncRead for PendingAfterHead{fn poll_read(mut self:Pin<&mut Self>,cx:&mut Context<'_>,out:&mut ReadBuf<'_>)->Poll<std::io::Result<()>>{self.calls+=1;if self.head.position() as usize==self.head.get_ref().len(){return Poll::Pending}Pin::new(&mut self.head).poll_read(cx,out)}}
++#[test] fn readiness_memory_huge_declaration_pending_does_not_reserve_payload(){let mut bytes=vec![0x81,127];bytes.extend((1u64<<40).to_be_bytes());let mut io=PendingAfterHead{head:Cursor::new(bytes.clone()),calls:0};let mut framed=FramedRead::new(BytesMut::new());let mut future=Box::pin(framed.read_frame(&mut io,false,0x40,usize::MAX));let mut cx=Context::from_waker(std::task::Waker::noop());assert!(future.as_mut().poll(&mut cx).is_pending());drop(future);assert_eq!(&framed.read_buffer[..],&bytes);assert!(framed.read_buffer.capacity()<1usize<<40);assert_eq!(io.calls,3);}
++#[tokio::test] async fn readiness_memory_valid_huge_declaration_eof_is_io(){let mut bytes=vec![0x81,127];bytes.extend((1u64<<40).to_be_bytes());let mut framed=FramedRead::new(BytesMut::new());let error=framed.read_frame(&mut Cursor::new(bytes),false,0x40,usize::MAX).await.unwrap_err();assert!(error.is_io());assert_eq!(framed.read_buffer.len(),10);}
++#[tokio::test] async fn readiness_memory_tail_once_and_order(){let mut framed=FramedRead::new(BytesMut::new());let mut io=Cursor::new(vec![0x81,1,b'a',0x81,1,b'b']);let a=framed.read_frame(&mut io,false,0,usize::MAX).await.unwrap();let b=framed.read_frame(&mut io,false,0,usize::MAX).await.unwrap();assert_eq!(&a.1[..],b"a");assert_eq!(&b.1[..],b"b");assert!(framed.read_frame(&mut io,false,0,usize::MAX).await.unwrap_err().is_io());}
++#[test] fn readiness_memory_retains_pmd_rsv_patch(){for bytes in [[0xc9,0],[0xc0,0]]{assert_eq!(header(&bytes).unwrap_err(),ProtocolError::UnknownExtension);}}

@@ -1,0 +1,217 @@
+[
+  {
+    "id": "number-0",
+    "kind": "number-string",
+    "value": "0"
+  },
+  {
+    "id": "number-1",
+    "kind": "number-string",
+    "value": "-0"
+  },
+  {
+    "id": "number-2",
+    "kind": "number-string",
+    "value": "1e-7"
+  },
+  {
+    "id": "number-3",
+    "kind": "number-string",
+    "value": "1e-6"
+  },
+  {
+    "id": "number-4",
+    "kind": "number-string",
+    "value": "1e20"
+  },
+  {
+    "id": "number-5",
+    "kind": "number-string",
+    "value": "1e21"
+  },
+  {
+    "id": "number-6",
+    "kind": "number-string",
+    "value": "1e23"
+  },
+  {
+    "id": "number-7",
+    "kind": "number-string",
+    "value": "1000000000000000100"
+  },
+  {
+    "id": "number-8",
+    "kind": "number-string",
+    "value": "5e-324"
+  },
+  {
+    "id": "number-9",
+    "kind": "number-string",
+    "value": "1.7976931348623157e308"
+  },
+  {
+    "id": "number-10",
+    "kind": "number-string",
+    "value": "0.1"
+  },
+  {
+    "id": "number-11",
+    "kind": "number-string",
+    "value": "-1e-6"
+  },
+  {
+    "id": "number-12",
+    "kind": "number-string",
+    "value": "1.2345678901234567"
+  },
+  {
+    "id": "number-13",
+    "kind": "number-string",
+    "value": "9007199254740993"
+  },
+  {
+    "id": "url-0",
+    "kind": "url-canparse",
+    "value": "http://example.com"
+  },
+  {
+    "id": "url-1",
+    "kind": "url-canparse",
+    "value": "https://user:pass@example.com:443/a"
+  },
+  {
+    "id": "url-2",
+    "kind": "url-canparse",
+    "value": "/relative"
+  },
+  {
+    "id": "url-3",
+    "kind": "url-canparse",
+    "value": "not a url"
+  },
+  {
+    "id": "url-4",
+    "kind": "url-canparse",
+    "value": "https://"
+  },
+  {
+    "id": "url-5",
+    "kind": "url-canparse",
+    "value": "http://[::1]/"
+  },
+  {
+    "id": "url-6",
+    "kind": "url-canparse",
+    "value": "http://[::1"
+  },
+  {
+    "id": "url-7",
+    "kind": "url-canparse",
+    "value": "http:\\example.com"
+  },
+  {
+    "id": "url-8",
+    "kind": "url-canparse",
+    "value": "\t https://example.com\n"
+  },
+  {
+    "id": "url-9",
+    "kind": "url-canparse",
+    "value": "http://%41.com"
+  },
+  {
+    "id": "url-10",
+    "kind": "url-canparse",
+    "value": "http://%zz.com"
+  },
+  {
+    "id": "url-11",
+    "kind": "url-canparse",
+    "value": "http://xn--"
+  },
+  {
+    "id": "url-12",
+    "kind": "url-canparse",
+    "value": "http://💩.com"
+  },
+  {
+    "id": "url-13",
+    "kind": "url-canparse",
+    "value": "file:///C:/a"
+  },
+  {
+    "id": "url-14",
+    "kind": "url-canparse",
+    "value": "mailto:a@b"
+  },
+  {
+    "id": "url-15",
+    "kind": "url-canparse",
+    "value": "javascript:alert(1)"
+  },
+  {
+    "id": "url-16",
+    "kind": "url-canparse",
+    "value": "foo:bar"
+  },
+  {
+    "id": "url-17",
+    "kind": "url-canparse",
+    "value": "foo://bar"
+  },
+  {
+    "id": "url-18",
+    "kind": "url-canparse",
+    "value": "http://0x7f000001"
+  },
+  {
+    "id": "url-19",
+    "kind": "url-canparse",
+    "value": "http://256.0.0.1"
+  },
+  {
+    "id": "url-20",
+    "kind": "url-canparse",
+    "value": "http://example.com:65536"
+  },
+  {
+    "id": "url-21",
+    "kind": "url-canparse",
+    "value": "http://a b"
+  },
+  {
+    "id": "url-22",
+    "kind": "url-canparse",
+    "value": "http://例え.テスト"
+  },
+  {
+    "id": "url-23",
+    "kind": "url-canparse",
+    "value": "http://𖺠.example"
+  },
+  {
+    "id": "url-24",
+    "kind": "url-canparse",
+    "value": "http://𐗀.example"
+  },
+  {
+    "id": "url-25",
+    "kind": "url-canparse",
+    "value": "https://example.com/𖺠"
+  },
+  {
+    "id": "url-26",
+    "kind": "url-canparse",
+    "value": "https://example.com/\u0000"
+  },
+  {
+    "id": "url-27",
+    "kind": "url-canparse",
+    "value": "\u0000http://example.com"
+  },
+  {
+    "id": "url-28",
+    "kind": "url-canparse",
+    "value": "http://%F0%96%BA%A0.example"
+  }
+]

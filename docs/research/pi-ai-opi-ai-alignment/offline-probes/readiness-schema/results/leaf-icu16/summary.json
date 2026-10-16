@@ -1,0 +1,32 @@
+{
+  "profile": "icu16",
+  "cases": 43,
+  "number_cases": 14,
+  "url_cases": 29,
+  "matched": 43,
+  "mismatches": [],
+  "native_sha256": "db57b54d2f043394c68e6ccb3b859d929b81024786a85d95a2534d317c62a25f",
+  "status": "LEAF-MECHANISMS-NOT-NORMALIZER-OR-PRODUCT",
+  "environment_names": [
+    "APPDATA",
+    "CARGO_INCREMENTAL",
+    "CARGO_NET_OFFLINE",
+    "CARGO_TARGET_DIR",
+    "COMSPEC",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "LOCALAPPDATA",
+    "NUMBER_OF_PROCESSORS",
+    "PATH",
+    "PATHEXT",
+    "PROCESSOR_ARCHITECTURE",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "WINDIR"
+  ]
+}

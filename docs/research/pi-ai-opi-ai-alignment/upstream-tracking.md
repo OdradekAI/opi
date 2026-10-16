@@ -72,3 +72,21 @@ Rust backend版本/features/API/source hash、默认环境/代理/TLS/retry/redi
 Responses effort markers、final arguments_error、thinking-off与投影修复已在所选源码实现，不能继续作为纯未来提案；frames则已移除，不恢复旧experimental消费者。Telemetry README的旧Agent schemas示例仍过时，源代码没有恢复，exporter／Lite／realremote-deferred未在本轮入口交付；在线RFC/PR状态待下一次明确联网核验再刷新。目录最低Pi1.2.1与distributionv1/datav6分开，pin/hydrate/build:offline是发布流程事实，缺本地catalog数据仍需补证。
 
 后端跟进仍使用[现有附件OPEN表](pi-1.3.0-rust-backends.md#5-pi-130-后端覆盖缺口全部-open)和V-35/30/49/55/58等既有验收定位；下次同时比较真实runtime、exact依赖entry、接受集与可配置／不可配置约束。不得因版本更新、选型文档或typed拒绝便记关闭；不额外建立任务状态表或进度百分比。
+
+## 同版 Schema／WS 最小离线差分跟进
+
+2026-10-16，Opi输入`8cb0fd68db528ae3d3c61874458d45e46bffa29c`，Pi tree仍08a98ac282590eeb8255dd326e566b8b456212b4018a6d59cce44caf7f62e9d2。[执行报告](pi-1.3.0-schema-ws-offline-validation.md)、[冻结证据](pi-1.3.0-schema-ws-offline-evidence.json)、[研究资产](offline-probes/README.md)、[独立复审](pi-1.3.0-schema-ws-offline-review.md)固定这次增量，不重写前置source-only报告／执行结果。
+
+参考运行时Node24.13.0（内置Undici7.18.2）与Bun1.3.5+1e86cebd7按exe SHA／完整versions固定，Schema TypeBox1.3.27、native jsonschema0.28.3与WS TW／TTW0.28.0各有独立锁图。Schema85／native276观察证明原生配置不足；WS60constructor／15loopback／16reader／15partial观察证明参考PMD可达、当前codec不支持。Schema需重开引擎比较或先证受控适配，WS完整组合需补救／重选，未选择新库。两组和其他五组全部OPEN。
+
+后续版本／依赖／运行时／features变更先复用同一fixtures并另存新结果：runtime SHA／constructor／source／archive／lock／平台 → 原始输入／JS值／normalized／wire／错误／退出码 → candidate机制与已声明RDF → 原V完整验收。研究runner成功不代表等价；providerimport缺依赖、源码预期、实际错误、未执行分别报告。WSBun统一--no-install；默认自动解析诊断曾产生10文件缓存，已记录并隔离，来源／联网未知，永久排除该轮offline proof。依赖准备两个官方归档与这项副作用分别记，不宣称全轮无联网。
+
+产品代码／Cargo／测试／CI／正式spec／ledger未改；研究harness与证据add、产品testnone。候选重新比较不授予实施或新依赖准入，不创建自动监控、任务状态表或第二实施账本。
+
+## 同版设计就绪收敛窗口
+
+2026-10-16，Opi输入仍8cb0fd6，七组按用户明确确认的“设计READY／实施验收OPEN”分层判断。[当前决定](pi-1.3.0-design-readiness.md)及[独立复审](pi-1.3.0-design-readiness-review.md)取代上节当时“尚未选择新库”的状态，不改写旧source/experimental输入、hash或测试结果。
+
+Schema选source-defined JSON evaluator、regress算法＋Unicode16生成数据、ryu-js与独立身份U16 URL/IDNA/ICU profile；WS选ownedUpgrade＋受控Ratchet，HTTP选受控Hyper存储，TLS/source crypto选实例rustls/commonring＋private OpenSSL EVP，Auth完整source/mode owner、telemetry safe pinned carrier、catalog版本化产物合同。每次跟进同时固定runtime/Unicode/CA数据、archive/source/namespace manifest变换、算法/patch前后SHA、features/lock/构建/native/unsafe/许可；后端分发必须registry可解析，不能仅依赖consumer rootpatch或library lock。产品V全部OPEN。
+
+独立WS复审新增的长度/算术/分配反例与纯内存补救另存新窗口；原80网络观察不移植为新patch结果。用户最新要求后只运行无socket/无请求的内存验证，若仍被平台阻止则跳过并保留未证项。正式实施、平台/包发布、真实目录身份和外部consumer仍需原准入/验收；本记录不是进度账本或自动监控。

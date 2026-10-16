@@ -1,0 +1,41 @@
+{
+  "scope": "LOCAL-FILES-ONLY-NO-SOCKET-NO-REQUEST",
+  "observations": 80,
+  "positive_exit": 0,
+  "negative_exit": 1,
+  "historical_files_unchanged": true,
+  "historical_sha256": {
+    "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-ws\\results.json": "fc917f7af64d87d543e22b288b4b9a98288ffaf5f73a1e0984eb140da7dffdf7",
+    "D:\\Luiz\\Odradek\\opi\\docs\\research\\pi-ai-opi-ai-alignment\\offline-probes\\readiness-ws\\summary.json": "5c0e2ddab91c9f0d5bbe1100c3f752ef3b3e2ee811d69c40a98c972a6868730f",
+    "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-readiness-ws\\results.json": "fc917f7af64d87d543e22b288b4b9a98288ffaf5f73a1e0984eb140da7dffdf7",
+    "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-readiness-ws\\summary.json": "5c0e2ddab91c9f0d5bbe1100c3f752ef3b3e2ee811d69c40a98c972a6868730f"
+  },
+  "input_ws_results_sha256": "6cce167c8e105fc0491682838818fd1865112ddfd63d819869fdac1fdb989138",
+  "script_sha256": "99fcd24dc658ec5b47c2ab77de1dd226e9d20ba92df087a80cf48a28208c4c8b",
+  "commands": [
+    {
+      "name": "positive",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\summary-r02\\positive\\summarize.py"
+      ],
+      "cwd": "D:\\Luiz\\Odradek\\opi",
+      "exit": 0,
+      "stdout": "{\r\n  \"observations\": 80,\r\n  \"registryPackages\": 93,\r\n  \"ownedValid12\": true,\r\n  \"contextActuallyRequiresDictionary\": true\r\n}\r\nnode fragment-ping messages=1 exit=0 compressedOut=False outValid=True\r\nnode context-takeover messages=2 exit=0 compressedOut=False outValid=True\r\nnode window9 messages=2 exit=0 compressedOut=False outValid=True\r\nnode headers125 messages=1 exit=0 compressedOut=False outValid=True\r\nnode header66000 messages=0 exit=0 compressedOut=False outValid=False\r\nbun fragment-ping messages=1 exit=0 compressedOut=True outValid=True\r\nbun context-takeover messages=2 exit=0 compressedOut=True outValid=True\r\nbun window9 messages=2 exit=0 compressedOut=True outValid=True\r\nbun headers125 messages=1 exit=0 compressedOut=False outValid=True\r\nbun header66000 messages=1 exit=0 compressedOut=False outValid=True\r\nratchet-native-patched fragment-ping messages=1 exit=0 compressedOut=True outValid=True\r\nratchet-native-patched context-takeover messages=2 exit=0 compressedOut=True outValid=True\r\nratchet-native-patched window9 messages=2 exit=0 compressedOut=True outValid=True\r\nratchet-native-patched headers125 messages=0 exit=0 compressedOut=False outValid=False\r\nratchet-native-patched header66000 messages=1 exit=0 compressedOut=False outValid=True\r\nratchet-owned-patched fragment-ping messages=1 exit=0 compressedOut=True outValid=True\r\nratchet-owned-patched context-takeover messages=2 exit=0 compressedOut=True outValid=True\r\nratchet-owned-patched window9 messages=2 exit=0 compressedOut=True outValid=True\r\nratchet-owned-patched headers125 messages=1 exit=0 compressedOut=False outValid=True\r\nratchet-owned-patched header66000 messages=1 exit=0 compressedOut=False outValid=True\r\n",
+      "stderr": "",
+      "script_sha256": "99fcd24dc658ec5b47c2ab77de1dd226e9d20ba92df087a80cf48a28208c4c8b"
+    },
+    {
+      "name": "missing-local-results",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\summary-r02\\negative\\summarize.py"
+      ],
+      "cwd": "D:\\Luiz\\Odradek\\opi",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\r\n  File \"C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-pi130-readiness-independent\\summary-r02\\negative\\summarize.py\", line 2, in <module>\r\n    p=pathlib.Path(__file__).resolve().parent;data=json.loads((p/'results.json').read_text());rows=data['results'];s=[]\r\n                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"D:\\Users\\Luiz\\anaconda3\\Lib\\pathlib.py\", line 1027, in read_text\r\n    with self.open(mode='r', encoding=encoding, errors=errors) as f:\r\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n  File \"D:\\Users\\Luiz\\anaconda3\\Lib\\pathlib.py\", line 1013, in open\r\n    return io.open(self, mode, buffering, encoding, errors, newline)\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\nFileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\Luiz\\\\AppData\\\\Local\\\\Temp\\\\opi-pi130-readiness-independent\\\\summary-r02\\\\negative\\\\results.json'\r\n",
+      "script_sha256": "99fcd24dc658ec5b47c2ab77de1dd226e9d20ba92df087a80cf48a28208c4c8b"
+    }
+  ]
+}
