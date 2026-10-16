@@ -2,7 +2,7 @@
 
 > 本页现行基线为本地 Pi 1.3.0；[逐项升级复核](pi-1.3.0-upgrade-review.md)与[固定来源](pi-1.3.0-source-evidence.json)区分本次重读和同摘要继承。旧 1.2.0 审计仅保留原证据日期；本页原源码轮未执行运行验收。最新[Schema／WS离线实验](pi-1.3.0-schema-ws-offline-validation.md)另列实际执行与候选判定，不代表产品验收。
 
-> 2026-10-16，非规范性候选附件。双语 [spec](spec-draft.md)／[中文](spec-draft.zh.md)明确采纳本页；[验收矩阵](acceptance-matrix.md)仍是唯一 V 索引。本页记录有条件机制选择，不表示依赖已加入 Cargo、已编译、已实施或已经获得正式准入。中文技术附件没有既有英文 counterpart；双语正文包含对应义务并共同引用本页。
+> Phase 20 当前后端合同附件，采纳范围与证据边界以双语 [spec](spec-draft.md)／[中文](spec-draft.zh.md)为准；[验收矩阵](acceptance-matrix.md)仍是唯一 V 索引。本页记录有条件机制选择，不表示依赖已加入 Cargo、已编译、已实施或已经获得正式准入。中文技术附件没有既有英文 counterpart；双语正文包含对应义务并共同引用本页。旧研究结果保留原输入。
 >
 > 输入见 [backend revision baseline](pi-1.2.0-backend-revision-baseline.json)；本页处理[架构审查](pi-1.2.0-rust-architecture-review.md)的 R-01–08。选型采用精确发布源码；参数/新增拒绝按[来源审计](pi-1.2.0-parameter-audit.md)修正，旧固定值不能作为默认实现依据；新增依赖的 Cargo 解析、完整传递闭包、平台和运行 conformance 都留给未来准入后的实施。该前置源码轮没有安装、编译或执行下载的第三方代码；后续离线实验的第三方执行、归档准备与隔离锁图以最新报告为准。
 

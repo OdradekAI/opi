@@ -2,7 +2,7 @@
 
 > 本页现行基线为本地 Pi 1.3.0；[逐项升级复核](pi-1.3.0-upgrade-review.md)与[固定来源](pi-1.3.0-source-evidence.json)区分本次重读和同摘要继承。旧 1.2.0 审计仅保留原证据日期；未执行运行验收。
 
-> 2026-10-16，非规范性技术附件。供双语 [候选 spec](spec-draft.md) / [中文](spec-draft.zh.md)解释公开能力覆盖；不授予实施权限，不替代 [唯一验收矩阵](acceptance-matrix.md)或正式 [opi-spec](../../opi-spec.md)。本页是中文研究附件，没有既有英文 counterpart。以下“目标”均待实施、待验证，不表示当前 Rust 已支持。
+> Phase 20 当前合同附件，采纳范围与证据边界以双语 [交付来源](spec-draft.md) / [中文](spec-draft.zh.md)为准。注册不授予实施权限，不替代 [唯一验收矩阵](acceptance-matrix.md)或正式 [opi-spec](../../opi-spec.md)。本页没有既有英文 counterpart，双语正文共同采纳；以下“目标”均待实施、待验证，不表示当前 Rust 已支持。旧研究结果保留其原证据窗口。
 
 当前基线为本地 `.repo/pi-1.3.0`，AI/telemetry 均声明 1.3.0，树摘要 `08a98ac282590eeb8255dd326e566b8b456212b4018a6d59cce44caf7f62e9d2`。前驱 1.2.0 审查仅按[升级复核](pi-1.3.0-upgrade-review.md)的同摘要路径与已说明作用域继承；本轮重读变更实现、文档和测试。未 import/hydrate、安装、构建、运行 Rust/TS tests 或请求 provider/OAuth；不证明远端部署。
 

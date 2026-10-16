@@ -1,12 +1,12 @@
-# pi-ai / opi-ai alignment candidate
+# Phase 20 — pi-ai / opi-ai SDK alignment
 
-> **READY — DESIGN ONLY, NON-NORMATIVE, 2026-10-16.** Target: the public capabilities and observable runtime semantics of the pinned Pi AI 1.3.0 snapshot, implemented through idiomatic Rust in `opi-ai`. This is a documentation candidate for independent review, not implementation admission, ready-for-agent approval or evidence that any target behavior exists. The counterpart is [spec-draft.zh.md](spec-draft.zh.md).
+> **REGISTERED PHASE DELIVERY SOURCE — DESIGN READY, 2026-10-16.** Target: the public capabilities and observable runtime semantics of the pinned Pi AI 1.3.0 snapshot, implemented through idiomatic Rust in `opi-ai`. Registration makes this a planning source subordinate to `opi-spec`; source admission, task-graph approval and implementation remain separate. It is not ready-for-agent approval or evidence that any target behavior exists. The counterpart is [spec-draft.zh.md](spec-draft.zh.md).
 >
-> This revision supersedes the earlier Pi 1.0.0 subset and whole-project wording for this candidate only. It preserves historical D/Q answers and execution evidence as history. It does not change Opi's global mission, formal specification, runtime, dependencies, tests, CI or writable session formats. Inputs and review provenance are recorded in [revision baseline](pi-1.2.0-revision-baseline.json); the two investigations are [version review](pi-1.2.0-review.md) and [five-question follow-up](pi-1.2.0-followup.md).
+> This delivery source supersedes the earlier Pi 1.0.0 subset and whole-project wording only for the selected package scope. Historical D/Q answers and executed evidence keep their original inputs. The parent specification owns the durable direction; this registration changes no runtime, dependencies, tests, CI or writable session formats. Earlier inputs and review provenance are recorded in [revision baseline](pi-1.2.0-revision-baseline.json); the two investigations are [version review](pi-1.2.0-review.md) and [five-question follow-up](pi-1.2.0-followup.md).
 
 > Rust-engineering revision inputs are fixed in the [backend revision baseline](pi-1.2.0-backend-revision-baseline.json), with exact source identities in [source evidence](pi-1.2.0-backend-source-evidence.json); earlier review/verification does not automatically cover this revision.
 
-> Parameter/restriction correction: the [itemized provenance audit](pi-1.2.0-parameter-audit.md) and [revision inputs](pi-1.2.0-parameter-revision-baseline.json) govern over older fixed capacities/rejection rules. Earlier closed reviews did not calibrate defaults or prove Pi equivalence.
+> Parameter/restriction evidence: the [itemized provenance audit](pi-1.2.0-parameter-audit.md) and [revision inputs](pi-1.2.0-parameter-revision-baseline.json) explain the corrections materialized in this body and the current backend contract. They supply evidence, not another source of requirements. Earlier closed reviews did not calibrate defaults or prove Pi equivalence.
 
 > Pi 1.3.0 update: [source/delta review](pi-1.3.0-upgrade-review.md) fixes the new input and supersedes changed 1.2.0 semantics. AIR-060 / V-52 are retired identities, not passed gates. Schema/WS and other backend gaps remain OPEN in the current backend annex.
 
@@ -16,6 +16,56 @@
 
 READY means the design is settled and evidenced: the seven backend groups have a selected mechanism, explicit ownership/failure/maintenance contracts and falsifiable verification. It does not mean implementation, full V acceptance, platform delivery or formal admission. The current [design decisions and evidence](pi-1.3.0-design-readiness.md) supersede the earlier open *selection* questions; all seven product coverage groups remain OPEN. Unsupported, silent input narrowing, backend defaults and SSE fallback cannot close them.
 
+## Phase delivery contract
+
+| Field | Phase-owned contract |
+|---|---|
+| Phase / strategic goal | Phase 20; STRAT-001, the independently usable model-runtime foundation. Registration neither reopens completed Phase 19 nor changes later strategic goals. |
+| Parent clauses | AUTH-003/004; GOAL-001/003; PRIN-001–005; PLACE-001/004/005; CAP-001/006; CTRL-001/003; INV-001/002/006; GATE-001/002; PHASE-001–006. The parent and CONTEXT prevail over this source. |
+| Priority reason | Existing route, context, outcome and lifecycle defects undermine SDK use and downstream Agent integration. Establish these public contracts before extending their consumers. Independent Eval retains its own minimum evidence-seam route; full package parity is not its unconditional prerequisite. |
+| Placement case | Product-neutral provider, model-input, operation, authentication, validation and resource mechanisms stay in existing opi-ai, with no internal Opi runtime dependency. Existing adapters and SDK/Agent consumers provide conformance candidates; each proposed public seam still proves intrinsic necessity or two real consumers/adapters at plan admission. Tool execution, durable sessions, UI/keychain policy and domain exporters stay with their present owners. No new Opi crate or generic framework is implied. |
+| Provenance | Inward: pinned .repo/pi-1.3.0, public exports/behavior/plans/tests. Backend evidence: exact official dependency sources, generated data and recorded mechanism experiments. The fixed identities and original raw results remain evidence, not task completion. Unhydrated provider data is not invented. |
+| Platform scope | Native Linux, macOS and Windows; edition/MSRV and advertised target coverage follow the workspace manifests and current CI/release matrix. Admission fixes those inputs and the actual product feature/lock/native-build closure. Each supported claim needs its owning build, package and behavioral evidence; cross-checks or Windows research runs do not prove other native runtimes. TS/Bun/browser/CLI substitutions follow RDF, not a new runtime target. |
+| Success / exit | All 57 active SDK AIR requirements and 54 active SDK V groups have actual public-entry/adapter/consumer evidence; all seven product coverage groups meet their existing closing criteria. Necessary workspace callers compile, replacement and test dispositions close, external package/resources and claimed platforms/MSRV are verified, and upstream evidence is current. Host-only and retired rows stay outside SDK exit. Independent phase-exit review, ledger and frozen snapshot record delivery. |
+| Risk / stop conditions | Stop the affected admission or task for unexplained capability narrowing, identity/secret leakage, silent fallback, unsupported source/data/package provenance, a patch beyond its declared maintenance boundary, unavailable required platform evidence, or a parent/placement conflict. Keep the gap OPEN and return evidence or product decisions to their owner. No new numeric cap, acceptance budget or waived gate is introduced. |
+| Rollback | Keep changes in reviewed, reversible task slices; callers and current serialized producers migrate coherently. Never overwrite a conflicting credential identity or delete its source before acknowledgement. Retain required historical readers and immutable evidence. A failed cutover stops before activation; a shipped rollback requires explicit revert/release authority and preserves unknown remote effects. No permanent second SDK facade, root consumer patch or silent backend downgrade is a rollback strategy. |
+| Admission boundary | The skill registry owns the exact live source-file set. opi-implement plan performs P.0 source admission, derives the detailed graph and acceptance ownership, runs adversarial review and asks for whole-graph confirmation before installing the canonical ledger. This source decomposition is not a confirmed graph or execution/commit/publish permission. |
+
+### Delivery decomposition
+
+These are source slices in dependency-oriented reading order, not ledger task IDs. Plan splits independently demonstrable work, searches current reuse/consumers, names owned paths and verification, and proves every substrate belongs to a later public scenario owner's transitive dependencies. No slice passes merely by adding types, fixtures or research probes.
+
+| Source row | Delivery outcome and public verification seam |
+|---|---|
+| DEL-01 | Fix source/capability/difference/test baselines and the scope/placement contract → verify: AIR/V disposition, exact inputs and source admission; no runtime support claimed. |
+| DEL-02 | One Models/binding/driver and owned Result/stream lifecycle → verify: native/simple/advanced/direct public calls, immutable event-time data, cancel/drop, terminal collection and real downstream caller cutover. |
+| DEL-03 | Serializable Context/Transcript, ordered declarations and replay/projection → verify: public manual tool loop/model change, raw/opaque preservation, tool-association and malformed/final-argument behavior; no execution or session writer. |
+| DEL-04 | Source-dialect Schema/normalizer/strict/grammar mechanisms → verify: public validation plus adapter compilation, branch-correct differential corpus, original-schema final check and explicit RDF cases. |
+| DEL-05 | Source-qualified HTTP/H2/proxy/redirect/retry transport → verify: actual public adapters and controlled fake transport, lawful sends, protected headers, cancellation and no hidden backend acceptance caps. |
+| DEL-06 | TLS/trust/signing/verification/KX and controlled backend dependency closure → verify: actual SDK crypto/transport path, positive/negative fixtures, private ownership, reproducible packages and native/unsafe review. |
+| DEL-07 | Codex WS/PMD/length-storage/continuation/pool cleanup → verify: actual provider public path including final corrected codec, real frame/upgrade corpus and resource lifetime; SSE fallback cannot substitute. |
+| DEL-08 | Auth/ADC/AWS sources and all pinned retry modes → verify: public SDK through injected sources and real adapter, selected identity, source exchanges, process/metadata lifecycle and no discovery during construction. |
+| DEL-09 | Nine OAuth families and store-owned ACK/mutation barrier → verify: public login/refresh/store/request paths, same-store concurrency, cancellation, late writes and honest pending/unknown outcomes. |
+| DEL-10 | Catalog/profile/model selection, metadata and estimators → verify: authentic versioned hydration input, atomic restore/refresh/personalization, all factory-specific behavior and exact source-qualified calculations. |
+| DEL-11 | All published chat/image/classifier/deferred/custom API paths and callbacks → verify: operation-qualified public SDK/direct adapters, exact protocol options/results/failure/timing and explicit retry orchestration. |
+| DEL-12 | Explicit telemetry carrier through actual operations/producers → verify: frozen parent plus Dispatch, poll/drop/noop and serialization/wire/secret negatives without domain exporters. |
+| DEL-13 | Necessary consumer migration and replacement closure → verify: affected Rust callers compile, new behavioral proof precedes old symbol/assertion removal, original valid behavior and historical readers retained. |
+| DEL-14 | Assembled external SDK/package/platform acceptance and upstream follow-up → verify: the unique matrix, real package/native/MSRV evidence, complete test dispositions and independent phase exit; no substrate-only completion. |
+
+### Adopted contract sections and evidence boundary
+
+All files below that supply adopted contracts are enumerated once in the skill's registry and enter the future live spec_files set with CRLF-normalized hashes. Whole-file hashing detects drift; it does not adopt every historical paragraph. Arbitrary links do not extend that set. Current body and explicit RDF decisions govern older excerpts; an unresolved conflict between current sources returns to source review.
+
+| Source layer | Adopted meaning / exclusions |
+|---|---|
+| Bilingual body; current SDK contracts, Rust differences, backend contracts and sole acceptance matrix | Current package requirements, exact capability/default/protocol coverage, explicit differences, mechanisms and future verification. Evidence/result passages are not delivered capabilities. |
+| Design-readiness decision | Seven-group selected mechanisms and maintenance/reopen contracts; its execution history, dates and non-normative research verdict remain evidence. |
+| Four readiness mechanism reports | Schema §§1/3/4; WS §§1/5/6 and §7 correction contract; transport/auth §§1/3/4/5/6; runtime §§2/3/4: selected algorithms/ownership/failure/distribution/platform and still-required acceptance. Raw observations and finite counts remain evidence. |
+| transcript-target-proposal | Only TP-02/03 ordering/rendering/declaration identity, TP-13 plain-JSON algorithm and TP-14 strict conversion. No executor, hook, session or old subset scope is adopted. |
+| replay-contracts | RP-01/02/04/06/07/08/09 and SDK projection/serialization portions of RP-05/10/11 in the target matrix. RP-03's old cross-route thinking-to-text rule is excluded in favor of current Pi 1.3.0 drop behavior; Agent execution, authorization, compaction and durable migration remain excluded. |
+| sdk-target-proposal | Only “单一归一化规则” compat/role/store/bridge detail and appendices A–D's source-chain selection/error/cache/signing/image-timeout detail, as qualified by current contracts/RDF. No old SP scope, guessed budget, unresolved U wording or product policy is adopted. |
+| Evidence only | Other proposals, D/Q history, parameter/source audits, tracking records/templates, reviews, baselines, raw probes, fixtures and dependency archives. AIR-067 and current source contracts own required follow-up; tracker updates do not themselves revise the admitted contract. |
+
 ## Reading and interpretation
 
 Read scope, ownership and call states first. Follow AIR → decision/evidence → V in [acceptance-matrix](acceptance-matrix.md). Consult the retirement table before deleting a surface. [README](README.md) records checks actually run; acceptance cases below are future designs.
@@ -24,7 +74,7 @@ MUST is an obligation in a future admitted implementation of this selected candi
 
 The formal `opi-spec`, AGENTS and CONTEXT retain authority. Package-level semantic alignment is not a whole-project port/compatibility mandate and does not waive real-consumer, state-machine, inward-dependency or fail-closed gates. No contradiction with a normative clause is silently authorized by this research. User Policy, Package Trust, Capability Permission and Runtime Input Binding keep their current meanings; this candidate makes no run-wide/session authority revision.
 
-The current contract is this bilingual body plus the explicitly referenced [Pi 1.3.0 SDK contracts](pi-1.3.0-sdk-contracts.md) and [Rust differences](pi-1.3.0-rust-differences.md), together with the adopted [Rust backends/contracts](pi-1.3.0-rust-backends.md); the sole acceptance matrix is [acceptance-matrix.md](acceptance-matrix.md). Historical TP/SP/EP/OA/D/Q material supplies preserved evidence and detailed algorithms only where adopted without conflict. Current text prevails over an older selected subset, outdated defaults or an old statement that all target decisions were closed.
+The current contract is this bilingual body plus the explicitly referenced [Pi 1.3.0 SDK contracts](pi-1.3.0-sdk-contracts.md) and [Rust differences](pi-1.3.0-rust-differences.md), together with the adopted [Rust backends/contracts](pi-1.3.0-rust-backends.md); the sole acceptance matrix is [acceptance-matrix.md](acceptance-matrix.md). The Phase adoption table fixes exactly which additional sections supply algorithms and maintenance obligations; other historical TP/SP/EP/OA/D/Q text remains evidence. Current text prevails over an older selected subset, outdated defaults or an old statement that all target decisions were closed.
 
 There are 67 stable AIR trace IDs: 57 active SDK requirements, 9 **host-only impacts** (AIR-009, AIR-015–019, AIR-037, AIR-039, AIR-041), and 1 retired identity (AIR-060). There are 59 V trace groups: 54 active SDK groups, 4 host-only groups (V-17–19, V-33), and 1 retired identity (V-52). Retirement is neither a passed test nor a new implementation obligation. Mixed groups cover only their SDK mechanism and necessary caller migration; no acceptance was executed here.
 
@@ -387,7 +437,7 @@ Only source-backed defaults keep their exact scope. The provenance audit separat
 
 ### Backend candidates and five engineering contracts
 
-The [backend annex](pi-1.3.0-rust-backends.md) is adopted subject to the [provenance audit](pi-1.2.0-parameter-audit.md). Existing source-level mechanism choices remain useful; unsupported capacities/rejections and blanket equivalence conclusions are withdrawn. A backend default is evidence of that backend, not authorization to narrow Pi's acceptance set.
+The [backend annex](pi-1.3.0-rust-backends.md) is adopted within the Phase contract boundary; the [provenance audit](pi-1.2.0-parameter-audit.md) explains corrections already materialized here. Existing source-level mechanism choices remain useful; unsupported capacities/rejections and blanket equivalence conclusions are withdrawn. A backend default is evidence of that backend, not authorization to narrow Pi's acceptance set.
 
 | Module | Selected design / implementation obligation |
 |---|---|
@@ -484,11 +534,11 @@ No product tests or runtime suites are implemented/run here; the separately reco
 | Current input/revision and independent review | [parameter baseline](pi-1.2.0-parameter-revision-baseline.json), [parameter review](pi-1.2.0-parameter-revision-review.md), [README](README.md) |
 | Audit findings and follow-up scope | [version review](pi-1.2.0-review.md), [five-question follow-up](pi-1.2.0-followup.md); findings apply to their fixed pre-revision inputs |
 | Human directions and historical choices | [decisions](decisions.md); current package direction/scope supersedes the old selected subset here, without rewriting historical answers |
-| Detailed preserved transcript/JSON/strict/AWS algorithms | [TP](transcript-target-proposal.md), [R replay](replay-contracts.md), [SDK annexes A–D](sdk-target-proposal.md); adopted only where current contract/RDF has no conflict |
+| Detailed preserved transcript/JSON/strict/AWS algorithms | [TP](transcript-target-proposal.md), [R replay](replay-contracts.md), [SDK annexes A–D](sdk-target-proposal.md); only the exact sections named in the Phase adoption table, qualified by current contract/RDF |
 | Historical cross-package/session/product proposals | [TM migration](transcript-migration.md), [EP/EPT](evolution-target-proposal.md), old SDK/OAuth/telemetry reviews; supporting history, not additional SDK delivery scope |
 | Plans and later upstream revisions | [upstream tracking](upstream-tracking.md); fixed version evidence, accepted versus discussion/experimental/shipped/unknown, test dispositions and explicit reassessment triggers |
 
-The candidate remains non-normative and unimplemented after design review. Source mapping, executable mechanism evidence and independent review can establish design readiness; only actual product/consumer/conformance evidence establishes delivery. Existing D/Q choices do not approve every technical derivation. Controlled dependency/data changes and native unsafe boundaries are selected with explicit provenance and maintenance contracts; product lock resolution, platform/supply-chain/unsafe review and formal admission remain required. Missing product evidence is not converted to a passed gate by READY.
+This registered Phase delivery source defines the selected target under the parent specification; its task graph remains unadmitted and its runtime unimplemented. Source mapping, executable mechanism evidence and independent review can establish design readiness; only actual product/consumer/conformance evidence establishes delivery. Existing D/Q choices do not approve every technical derivation. Controlled dependency/data changes and native unsafe boundaries are selected with explicit provenance and maintenance contracts; product lock resolution, platform/supply-chain/unsafe review and formal admission remain required. Missing product evidence is not converted to a passed gate by READY.
 
 Reopen remote deferred for a real submit/fetch/cancel/expiry/account protocol, Lite for verified accepted/published contract changes, telemetry extraction/instrumentation for real consumers and selected schema/lifecycle/data policy, and new operations when published source/adapters warrant them. No speculative framework or automatic upstream adoption follows. Future scope changes and actual normative conflicts require human authority; ordinary source-backed implementation choices do not reopen already-set package intent.
 

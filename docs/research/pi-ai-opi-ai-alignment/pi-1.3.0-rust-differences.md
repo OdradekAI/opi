@@ -2,7 +2,7 @@
 
 > 本页现行基线为本地 Pi 1.3.0；[逐项升级复核](pi-1.3.0-upgrade-review.md)与[固定来源](pi-1.3.0-source-evidence.json)区分本次重读和同摘要继承。旧 1.2.0 审计仅保留原证据日期；本页原源码轮未执行运行验收。最新[Schema／WS离线实验](pi-1.3.0-schema-ws-offline-validation.md)另列实际执行与候选判定，不代表产品验收。
 
-> 非规范性候选附件，2026-10-16。目标仅限 `opi-ai`：对齐固定 Pi 1.3.0 的公开能力与可观察语义，采用 Rust 惯用接口，逐项说明差异。目标要求以[双语候选 spec](spec-draft.zh.md)（[English](spec-draft.md)）为唯一正文，机械验收以[acceptance matrix](acceptance-matrix.md)为唯一索引；本页不新增 AIR/V、实施准入或进度账本。此前 D/Q 保留其时间和版本限定，不是本次对每项差异的重新批准。
+> Phase 20 当前差异合同附件。目标仅限 `opi-ai`：对齐固定 Pi 1.3.0 的公开能力与可观察语义，采用 Rust 惯用接口，逐项说明差异。目标要求与采纳边界以[双语交付来源](spec-draft.zh.md)（[English](spec-draft.md)）为唯一正文，机械验收以[acceptance matrix](acceptance-matrix.md)为唯一索引；本页不新增 AIR/V、实施准入或进度账本。此前 D/Q 保留其时间和版本限定，旧研究结果不成为当前产品验收。
 >
 > 本页依据[首轮审查](pi-1.2.0-review.md)、[五问补核](pi-1.2.0-followup.md)、本地 Pi 1.3.0 与当前 Rust 源码静态核对。本轮Opi输入为 `c5ab42ab8888b93f9969652323caee87b7550392`；Rust运行事实沿用旧审查并按未变代码继承，Pi新来源身份见[source evidence](pi-1.3.0-source-evidence.json)。本文的 Rust 契约均为**待实施和证明的目标**，不是当前 API 可编译、测试通过或远端可用的声明。中文附件没有既有英文 counterpart，由主双语 spec 共同引用。
 

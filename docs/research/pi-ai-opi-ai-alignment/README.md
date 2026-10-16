@@ -1,13 +1,13 @@
 # pi-ai / opi-ai 对齐研究
 
-> 当前候选：本地 **Pi 1.3.0**，2026-10-16。目标仅限opi-ai的公开能力和可观察语义，接口采用Rust惯用设计，逐项声明语言／平台／安全差异。研究不改变Opi全局定位、正式规范或实施准入。
+> 当前交付来源：**Phase 20，本地 Pi 1.3.0**。目标仅限 opi-ai 的公开能力和可观察语义，接口采用 Rust 惯用设计，逐项声明语言／平台／安全差异。[技能注册表](../../../.agents/skills/opi-implement/SKILL.md#reviewed-supplemental-sources)固定精确来源集；[上位规范](../../opi-spec.md)拥有持久方向。注册不等于来源准入、任务图确认或产品实施；七组产品覆盖仍 OPEN。
 
 ## 当前阅读入口
 
 | 目的 | 入口与当前状态 |
 |---|---|
 | 设计就绪判定 | [设计决定与证据](pi-1.3.0-design-readiness.md)、[独立复审](pi-1.3.0-design-readiness-review.md)：READY仅指设计，七组产品实施／平台验收仍OPEN |
-| 双语目标／责任／完成条件 | [English spec](spec-draft.md)、[中文spec](spec-draft.zh.md)：67 AIR身份＝57 active SDK＋9 host-impact＋1 retired；没有实施证明 |
+| 双语 Phase 来源／责任／完成条件 | [English spec](spec-draft.md)、[中文spec](spec-draft.zh.md)：Phase 20 条款映射、分解、风险／回滚／平台及精确章节采纳；67 AIR身份＝57 active SDK＋9 host-impact＋1 retired；没有实施证明 |
 | 本次逐项升级 | [1.2.0→1.3.0复核](pi-1.3.0-upgrade-review.md)、[固定来源与全路径摘要](pi-1.3.0-source-evidence.json)：AI47与telemetry2变化路径全部处置；本地身份不等于已验证上游tag |
 | 当前全部公开能力 | [Pi1.3.0 SDK合同](pi-1.3.0-sdk-contracts.md)：10 chat、1 image、4 classifier、42 factories、9 OAuth；profile复用wire仍须独立证明 |
 | Rust调用体验与差异 | [RDF-01–20](pi-1.3.0-rust-differences.md)：owned/lazy/Result/knownness/tracing/platform与真实能力缺口分别说明 |
@@ -24,7 +24,7 @@
 
 ## 维护与历史证据
 
-`固定输入 → verify: manifest/hash与Git归属`；`逐项更新 → verify: source事实／Rust差异／AIR/V一致`；`测试处置 → verify: add/update/delete/retain与实际运行分开`；`复审 → verify: 独立发现闭环、文档检查、原始证据完整`。本轮只改研究文档，不授予后续实施、安装、live、提交或推送权限。
+`固定输入 → verify: manifest/hash与Git归属`；`逐项更新 → verify: source事实／Rust差异／AIR/V一致`；`测试处置 → verify: add/update/delete/retain与实际运行分开`；`复审 → verify: 独立发现闭环、文档检查、原始证据完整`。来源注册与上位路线修订限文档／技能维护，不授予后续实施、安装、live、提交或推送权限。后续 plan 重新审查精确来源集并经整图确认安装台账；本次不刷新旧账本 hash 以掩盖规范漂移。
 
 旧文档只作为其固定日期／输入的证据。三份1.2.0现行附件已清成恢复入口：[SDK](pi-1.2.0-sdk-contracts.md)、[RDF](pi-1.2.0-rust-differences.md)、[backend](pi-1.2.0-rust-backends.md)；原正文和本README旧历史长正文可用`git show c5ab42a:docs/research/pi-ai-opi-ai-alignment/<file>`恢复。该提交对象已核存在，旧源快照1.2.0本轮仍可读；不把历史正文重贴成当前要求。
 
@@ -36,7 +36,7 @@
 
 只移除被替代的现行要求／叙述，不改历史hash、旧测试执行结果或人类回答。只有已验证替代与保全关系后才可进一步删除历史证据；产品交付进度由既有流程拥有。产品测试影响 **none**；本轮新增离线研究harness与证据，所有V的完整实施／运行验收仍未交付。
 
-## 当前设计收敛窗口
+## 设计收敛研究窗口（注册前）
 
 用户已明确选定设计READY口径，未授予产品实施。Schema改选私有方言IR／Unicode16 regex与URL数据profile；HTTP受控Hyper动态存储、WS受控Ratchet组合、private OpenSSL EVP配rustls公共扩展、full-source auth、safe tracing载体及版本化目录交付合同均在新报告确定。维护代价包括10个URL/IDNA/ICU后端namespace包、有限其他source/data补丁、zlib/OpenSSL native与unsafe审查；它们不新增Opi领域API或rootworkspace拓扑，也未获得依赖准入。
 

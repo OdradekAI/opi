@@ -33,9 +33,47 @@ their absence does not block shaping. Adapter tracker artifacts never enter
 or a registered supplemental source may be admitted by plan. Frozen copies
 under `docs/snapshots/phaseN/` are never edited.
 
-**Reviewed supplemental sources:** Supplemental tasks come only from this
-registry. Do not auto-parse arbitrary files from `docs/superpowers/specs/`.
-No supplemental Phase source is currently registered.
+## Reviewed supplemental sources
+
+Supplemental tasks come only from this registry. Do not auto-parse arbitrary
+files from `docs/superpowers/specs/` or infer authority from a directory name.
+
+**Phase 20 — opi-ai public capability and observable runtime alignment.**
+The reviewed delivery source is
+`docs/research/pi-ai-opi-ai-alignment/spec-draft.md`, with its Chinese
+counterpart `spec-draft.zh.md`. It derives from `STRAT-001`; its Phase delivery
+contract defines scope, placement, decomposition, exit, rollback and platform
+boundaries. Registration selects a planning source, not P.0 admission, a
+confirmed graph, dependency approval or permission to run/commit/publish.
+
+For Phase 20, include both parent specifications `docs/opi-spec.md` and
+`docs/opi-spec.zh.md`, plus exactly these files under
+`docs/research/pi-ai-opi-ai-alignment/`, in `spec_files` and
+`spec_files_sha256`:
+
+- `spec-draft.md`
+- `spec-draft.zh.md`
+- `pi-1.3.0-sdk-contracts.md`
+- `pi-1.3.0-rust-differences.md`
+- `pi-1.3.0-rust-backends.md`
+- `acceptance-matrix.md`
+- `pi-1.3.0-design-readiness.md`
+- `pi-1.3.0-readiness-schema.md`
+- `pi-1.3.0-readiness-ws.md`
+- `pi-1.3.0-readiness-transport-auth.md`
+- `pi-1.3.0-readiness-runtime.md`
+- `transcript-target-proposal.md`
+- `replay-contracts.md`
+- `sdk-target-proposal.md`
+
+Read the bilingual source's **Adopted contract sections and evidence boundary**
+table before extraction. The last three files contribute only its named
+algorithm sections, not their old host scope, defaults or candidate decisions.
+Whole-file hashes detect drift without adopting historical/result passages.
+The current body and explicit Rust differences qualify older excerpts; an
+unresolved current-source conflict returns to source review. Other linked
+audits, trackers, reviews, baselines and raw probes are evidence only and do not
+enter `spec_files`. Never recursively admit linked files.
 
 Completed Phase 17, Phase 18, and Phase 19 delivery specifications are frozen
 under `docs/snapshots/phase17/`, `docs/snapshots/phase18/`, and

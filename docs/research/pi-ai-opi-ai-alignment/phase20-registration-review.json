@@ -1,0 +1,159 @@
+{
+  "artifact_kind": "documentation-registration-review-evidence",
+  "verdict": "REGISTRATION-REVIEW-PASS",
+  "review_date": "2026-10-16",
+  "independence": "fresh-context same-family; not cross-model",
+  "baseline_head": "5e5282e020f4d746576a593627ff7cac93417b52",
+  "comparison_mode": "worktree-only; full changed diff against baseline HEAD",
+  "limits": [
+    "Registration and parent-route documentation only",
+    "Not P.0 source admission",
+    "No draft graph and not P.2 graph review",
+    "Not P.4 human graph confirmation",
+    "No dependency, runtime, package, platform, or delivery approval",
+    "No recursive source admission",
+    "No network requests, sockets, connections, downloads, or historical probe reruns",
+    "No product, Cargo, CI, test, ledger, stage, commit, push, or snapshot changes"
+  ],
+  "author_task_contract": {
+    "kind": "reviewed documentation/alignment",
+    "owned_surfaces": [
+      "docs/opi-spec.md",
+      "docs/opi-spec.zh.md",
+      ".agents/skills/opi-implement/SKILL.md",
+      "bilingual Phase source",
+      "current annex/matrix source-identity headers",
+      "alignment README"
+    ],
+    "exception_authority": ".agents/skills/opi-implement/SKILL.md:282",
+    "observable_completion": "registered source set and synchronized parent/Phase meaning; doc checker and diff checker pass"
+  },
+  "future_live_spec_files": [
+    "docs/opi-spec.md",
+    "docs/opi-spec.zh.md",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md",
+    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-transport-auth.md",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-runtime.md",
+    "docs/research/pi-ai-opi-ai-alignment/transcript-target-proposal.md",
+    "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md",
+    "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md"
+  ],
+  "future_live_spec_files_count": 16,
+  "reviewed_lf_sha256": {
+    "docs/opi-spec.md": "7979f349811d5e8da8ed4b60adb0fa41175c76462a78e449fd326dd4c19cf9e1",
+    "docs/opi-spec.zh.md": "6a199822c5f4233ab7c13942db87f7986ac8b0e74a68075402371476f431c005",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "d0bf73ecc1713792f924c3417b8225460ef3cb19c16e7744b0ddaaae7c3461fc",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "29fc6a2093d0976e43ce817ad98145d9f720fb4bebd714aa6439bda38b970f1b",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "b62068ddc7aabf8bc0782d26df3db380b8c769eea28756c6887e858ecbd10d3f",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "f1a0e790308cd330d03f1c706d4808d2940514354cf05c0276e1ea9f79706b58",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "0fff63289564e815c0d6836bd52e8494e25774821d5227c6e9f7e6d756da5a3a",
+    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "06be7904d3d9527ab07105cef49f0c5a39ba17691e632123a7942314bd5a5ff6",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "efe6b5948205fddda61be8902f2c49def299dccd64ab9c64b6c59831e3a197c5",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md": "eb5db22f85cfba481d5ed6466b08ae54e8ea4c3ca581144a771727b5bbbdb19f",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md": "fd97dcfbe5fa485d83ecc569398c4cf39ae1d475fa4ee624609d65715989a888",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-transport-auth.md": "e2897af04a10a56c069eac959d71fae723dd1a8c7fc6afc3e68bd847a84f3bf9",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-runtime.md": "0f7098ad7754ee4d0919362aaba622708b80a643f7f4db74e982f0d3468d17ea",
+    "docs/research/pi-ai-opi-ai-alignment/transcript-target-proposal.md": "25a4234507ab1c4c12d483c56bb4083172bf4d5c35dfec1dc92bc98c77a5d94e",
+    "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
+    "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c",
+    ".agents/skills/opi-implement/SKILL.md": "90af220c2263cd8e9aabd8225db22b45c31e2f306a272f79e76b6b723ead7788",
+    "docs/research/pi-ai-opi-ai-alignment/README.md": "825b2c0718f5f50596572220dad26451f1ea4364ca78065cc6eae877ab61736c"
+  },
+  "reviewed_file_count": 18,
+  "ledger": {
+    "raw_sha256": "dd914532dfaaefb4ec340801fc88e1aba784afb71ffbf1e9925dd8c7cdc7e96f",
+    "unchanged": true,
+    "current_phase": 19,
+    "tasks_count": 0,
+    "archived_phase_exit_keys": [
+      "16",
+      "17",
+      "18",
+      "19"
+    ],
+    "hashes_refreshed": false
+  },
+  "parent_identifiers": {
+    "per_language_unique_count": 61,
+    "baseline_order_preserved": true,
+    "changed_table_rows": [
+      "CAP-001",
+      "INV-001",
+      "INV-002"
+    ],
+    "normative_gate_rows_unchanged_except_strengthened": [
+      "INV-001",
+      "INV-002"
+    ]
+  },
+  "AIR": {
+    "per_language_count": 67,
+    "baseline_requirement_rows_identical": true,
+    "active_sdk_count": 57,
+    "host_only": [
+      "AIR-009",
+      "AIR-015",
+      "AIR-016",
+      "AIR-017",
+      "AIR-018",
+      "AIR-019",
+      "AIR-037",
+      "AIR-039",
+      "AIR-041"
+    ],
+    "retired": [
+      "AIR-060"
+    ]
+  },
+  "V": {
+    "count": 59,
+    "baseline_rows_identical": true,
+    "active_sdk_count": 54,
+    "host_only": [
+      "V-17",
+      "V-18",
+      "V-19",
+      "V-33"
+    ],
+    "retired": [
+      "V-52"
+    ],
+    "pass_promotions": 0
+  },
+  "seven_product_coverage_groups": "all OPEN; design READY is distinct",
+  "checks": [
+    {
+      "command": "python scripts/opi-doc-check.py",
+      "exit_code": 0,
+      "output": "opi documentation contracts: PASS"
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0,
+      "output": ""
+    }
+  ],
+  "test_impact": {
+    "product": "none",
+    "existing_product_tests": "retain",
+    "audit_files": "add"
+  },
+  "git": {
+    "committed": "none-for-this-task",
+    "staged": "none",
+    "author_unstaged": "10 carried-in documentation/skill files, reviewer untouched",
+    "reviewer_untracked": [
+      "docs/research/pi-ai-opi-ai-alignment/phase20-registration-review.md",
+      "docs/research/pi-ai-opi-ai-alignment/phase20-registration-review.json"
+    ]
+  },
+  "blocking_findings": []
+}

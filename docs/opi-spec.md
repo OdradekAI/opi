@@ -41,8 +41,11 @@ experiments.
 
 - An ADR explains a hard-to-reverse trade-off; it does not create roadmap
   authority by itself.
-- `docs/realign/` and `.repo/pi-0.84.1` provide inward alignment evidence.
-- `docs/research/` provides outward evidence and design candidates.
+- Pinned pi snapshots and their realign/research indexes provide inward
+  alignment evidence; each delivery source fixes its own upstream identity.
+- `docs/research/` provides research evidence and design candidates. An
+  explicitly registered Phase source has only the authority stated in its
+  registration, even when stored under that directory.
 - `docs/snapshots/` and the implementation ledger preserve completed delivery
   history.
 - Git history and `CHANGELOG.md` preserve document and release history.
@@ -88,8 +91,9 @@ The project succeeds when:
 
 Opi does not aim to:
 
-- match every pi package, TypeScript type, npm boundary, session file, or
-  provider catalogue;
+- reproduce pi's whole package graph, TypeScript types, npm boundaries, session
+  files, or every provider catalogue; a reviewed package delivery may fix a
+  narrower public-capability and observable-semantics conformance target;
 - adopt another runtime's internal plugin ABI, package lifecycle, or in-process
   composition model as a compatibility target; compatibility begins at
   independently versioned boundary protocols and portable artifacts;
@@ -133,6 +137,16 @@ New pi packages do not establish priority. Source evidence can trigger a
 Placement Review or route revision, but human shaping decides whether it changes
 this specification.
 
+For `opi-ai`, the selected direction is an independently usable model-runtime
+SDK with equivalent caller workflows and observable semantics through idiomatic
+Rust interfaces. Its reviewed delivery source fixes the Pi revision, public
+capability inventory, explicit language/platform/correctness differences and
+executable acceptance. Backend defaults, silent input narrowing, metadata-only
+coverage and fallback to another transport do not prove equivalence. Upstream
+updates require a recorded capability, planning-state, difference and test-impact
+review before adoption. This package target preserves the whole-project mission
+and all public-seam, placement and dependency gates.
+
 ### 3.3 Rust-native choices
 
 Rust designs should prefer:
@@ -147,6 +161,13 @@ Rust designs should prefer:
 
 Rust is not a reason to split a shallow crate, create a trait with one
 hypothetical adapter, or move ecosystem policy into a library.
+
+Internal scheduling bounds and backpressure are distinct from accepted input or
+output size. A delivery distinguishes source behavior, protocol requirements,
+backend limits and explicit caller resource policy. A backend default does not
+authorize a new SDK rejection threshold; unresolved constraints remain visible
+coverage gaps. Controlled dependency/data changes and native or unsafe boundaries
+carry reproducible provenance, maintenance ownership and platform evidence.
 
 ## 4. System Placement and Dependency Direction
 
@@ -220,7 +241,7 @@ Eval / Observability governs Agent Execution and every later rung.
 
 | ID | Capability | Durable outcome | Entry evidence for the next rung |
 |---|---|---|---|
-| CAP-001 | Model Runtime | Provider-neutral messages and streaming, real runtime provider/wire dispatch, capability negotiation, usage accounting, and bounded failure. | Provider conformance and multi-provider routing evidence. |
+| CAP-001 | Model Runtime | Independently usable provider-neutral SDK calls, messages and streaming, real runtime provider/wire dispatch, typed operations, capability negotiation, usage accounting, and observable failure/resource ownership. | Public SDK/adapter conformance, external-consumer and multi-provider routing evidence. |
 | CAP-002 | Reasoning and Context Management | Observable context construction, thinking budget, planning, reflection, retry, compaction, model switching, and tool decisions without requiring private raw reasoning. | Reproducible context/compaction behavior and measured task outcomes. |
 | CAP-003 | Agent Execution | Deterministic turns, tools, queues, steering, sessions, cancellation, failure semantics, and finalized artifacts. | Cross-Agent Eval can observe and reproduce outcome and efficiency. |
 | CAP-004 | Continual Learning | C1 episodic-memory and reusable-skill candidates derived from finalized experience, independently evaluated and reversibly activated. | Multiple frozen seasons demonstrate gain, retention, safety, efficiency, and withdrawal. |
@@ -367,14 +388,22 @@ requires a new identity and a new authorization decision.
 
 ### 7.1 Provider runtime
 
-Model selection is runtime routing, not metadata lookup. The provider collection
-owns available models, credentials, and routing to the correct provider and wire
-implementation.
+Model selection is runtime routing, not metadata lookup. One SDK owner holds
+provider/model revisions, selected authentication and routing to the correct
+operation and wire implementation. Ordinary calls and advanced preparation use
+the same mechanism; an owned call retains its selected state across retries.
+
+Model input, authentication sources and process-local telemetry context have
+separate ownership and serialization contracts. Construction and static reads
+perform no implicit discovery or external I/O. Explicit operations own their
+effects, failures, cancellation and cleanup. The SDK remains usable without an
+Agent runtime, session store, terminal, exporter or product credential UI; callers
+own tool execution and product recovery policy.
 
 | ID | Requirement | Owner | Verification |
 |---|---|---|---|
-| INV-001 | Selecting a model **MUST** resolve and retain the corresponding provider/wire implementation at runtime; cross-provider selection **MUST NOT** be rejected solely because startup chose another provider. | `opi-ai` | Provider collection conformance and cross-provider routing tests. |
-| INV-002 | Provider-specific wire code **MUST** remain behind provider-neutral request, stream, usage, and capability interfaces. | `opi-ai` | Provider wire-format fixtures and interface tests. |
+| INV-001 | Selecting a model **MUST** resolve and retain the corresponding provider/operation/wire implementation and selected authentication at runtime; cross-provider selection **MUST NOT** be rejected solely because startup chose another provider. | `opi-ai` | Public SDK and direct-adapter conformance, frozen-call and cross-provider routing tests. |
+| INV-002 | Provider-specific wire code **MUST** remain behind provider-neutral request, stream, outcome, usage, and capability interfaces. Claimed package-level equivalence **MUST** be demonstrated through actual public callers and adapters, including failure, cancellation and resource ownership; metadata listings or substrate-only tests **MUST NOT** substitute for runtime coverage. | `opi-ai` | Public behavioral fixtures, wire conformance, external-consumer tests and explicit difference/coverage records. |
 
 ### 7.2 Agent turn transition
 
@@ -625,11 +654,19 @@ statement.
 
 ### STRAT-001 — Close deep Agent Core semantic gaps
 
-Give runtime provider dispatch real ownership; make next-turn state replacement
-atomic and correctly ordered; establish the minimum product-neutral evidence
-and observability seam for resolved-execution provenance; and validate authority
-before side effects. Adding more catalogue entries is lower priority than making
-the existing abstraction true at runtime.
+Prioritize the independently usable `opi-ai` foundation: real provider/operation
+dispatch, coherent public call/context/outcome contracts, source-bound auth,
+stream/resource ownership and the reviewed package-level pi target. Complete
+behavior and necessary existing-consumer adaptation before building further
+Agent features on those contracts. Catalogue counts alone do not establish a
+working foundation.
+
+Make next-turn state replacement atomic and correctly ordered; establish the
+minimum product-neutral evidence and observability seam for resolved-execution
+provenance; and validate authority before side effects. Independent Eval may
+proceed with its demonstrated minimum evidence seam; full SDK parity is not an
+unconditional prerequisite for its separate route. Exact Phase scope, sequence
+and acceptance remain in registered delivery sources and the confirmed ledger.
 
 ### STRAT-002 — Establish independent cross-Agent Eval
 
@@ -727,7 +764,8 @@ inventories.
 | Workspace topology and release state | [`Cargo.toml`](../Cargo.toml), crate manifests, and [CHANGELOG.md](../CHANGELOG.md) | Current version, dependencies, and release history. |
 | Wire and schema contracts | Source constants, schemas, fixtures, and `opi-protocol` documentation | Exact current versions and payloads. |
 | Completed delivery history | [`docs/snapshots/`](snapshots/) and the implementation ledger | Historical completion and acceptance evidence. |
-| pi alignment | [`.repo/pi-0.84.1`](../.repo/pi-0.84.1) primary source and [`docs/realign/`](realign/) indexes | Non-normative inward evidence. |
+| pi alignment | Pinned source identities in [`docs/realign/`](realign/) and [the SDK alignment index](research/pi-ai-opi-ai-alignment/README.md) | Inward evidence; historical inputs retain their original scope. |
+| Phase delivery sources | [The `opi-implement` source registry](../.agents/skills/opi-implement/SKILL.md#reviewed-supplemental-sources) | Explicit source sets for planning; registration is not task-graph approval or delivery evidence. |
 | External capability research | [`docs/research/`](research/) | Non-normative outward evidence. |
 | Independent Eval direction | Official benchmark/trajectory references | Evidence for Chapter 6 and strategic priority. |
 | Continual Learning direction | `docs/research/opi-knowledge-sdk-learning-worker-spec.zh.md` and cited primary research | Directional evidence only. |

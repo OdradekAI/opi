@@ -1,12 +1,12 @@
-# pi-ai / opi-ai 对齐候选 spec
+# Phase 20 — pi-ai / opi-ai SDK 对齐
 
-> **READY — 设计就绪，非规范性，2026-10-16。** 目标：在 `opi-ai` 中采用 Rust 惯用设计，实现固定 Pi AI 1.3.0 快照的公开能力与可观察运行时语义。这是供独立评审的文档候选，不是实施准入、ready-for-agent 批准，也不证明任何目标行为已经存在。对应英文版为 [spec-draft.md](spec-draft.md)。
+> **已注册的 PHASE 交付来源 — 设计 READY，2026-10-16。** 目标：在 `opi-ai` 中采用 Rust 惯用设计，实现固定 Pi AI 1.3.0 快照的公开能力与可观察运行时语义。注册使其成为从属于 `opi-spec` 的规划来源；来源准入、任务图批准和实施仍是独立步骤。这不是 ready-for-agent 批准，也不证明任何目标行为已经存在。对应英文版为 [spec-draft.md](spec-draft.md)。
 >
-> 本修订仅在本候选范围内取代早先的 Pi 1.0.0 子集和整项目表述。历史 D/Q 回答与执行证据继续作为历史保留。本修订不改变 Opi 的全局使命、正式规范、运行时、依赖、测试、CI 或可写会话格式。输入与评审来源记录于[revision baseline](pi-1.2.0-revision-baseline.json)；两次调查分别为[版本审查](pi-1.2.0-review.md)和[五问补核](pi-1.2.0-followup.md)。
+> 本交付来源仅在选定包级范围内取代早先的 Pi 1.0.0 子集和整项目表述。历史 D/Q 回答与已执行证据保留原输入。上位规范拥有持久方向；本次注册不改变运行时、依赖、测试、CI 或可写会话格式。早期输入与评审来源记录于[revision baseline](pi-1.2.0-revision-baseline.json)；两次调查分别为[版本审查](pi-1.2.0-review.md)和[五问补核](pi-1.2.0-followup.md)。
 
 > 本轮Rust工程修订的输入见[backend revision baseline](pi-1.2.0-backend-revision-baseline.json)，来源与精确crate identity见[source evidence](pi-1.2.0-backend-source-evidence.json)；前轮评审/verification不自动覆盖本轮改稿。
 
-> 参数与新增限制修订见[逐项来源审计](pi-1.2.0-parameter-audit.md)及[本轮输入](pi-1.2.0-parameter-revision-baseline.json)。该审计优先于旧附件中的固定容量与拒绝规则；旧“复审关闭”不证明参数已标定或与 Pi 等价。
+> 参数与新增限制证据见[逐项来源审计](pi-1.2.0-parameter-audit.md)及[本轮输入](pi-1.2.0-parameter-revision-baseline.json)，用于解释已落实于本正文与当前后端合同的修正。它们提供证据，不构成另一要求来源；旧“复审关闭”不证明参数已标定或与 Pi 等价。
 
 > Pi 1.3.0 升级：[来源／差异复核](pi-1.3.0-upgrade-review.md)固定新输入并替代已变化的 1.2.0 语义。AIR-060 / V-52 为退役身份，不是已通过门禁。Schema/WS 等 backend 缺口在当前后端附件中仍为 OPEN。
 
@@ -16,6 +16,56 @@
 
 READY 表示设计已确定且有依据：七组后端有选定机制、明确的所有权／失败／维护合同和可证伪验证。不表示已经实施、完整 V 验收、平台交付或正式准入。当前[设计决定与证据](pi-1.3.0-design-readiness.md)取代旧轮未决的*选型*问题；七组产品覆盖仍全部 OPEN。Unsupported、静默收窄输入、backend 默认或 SSE fallback 均不能关闭它们。
 
+## Phase 交付合同
+
+| 字段 | Phase 拥有的合同 |
+|---|---|
+| Phase／战略目标 | Phase 20；STRAT-001，可独立使用的模型运行时基础。注册不重开已完成的 Phase 19，也不改变后续战略目标。 |
+| 上位条款 | AUTH-003/004；GOAL-001/003；PRIN-001–005；PLACE-001/004/005；CAP-001/006；CTRL-001/003；INV-001/002/006；GATE-001/002；PHASE-001–006。上位规范与 CONTEXT 优先于本来源。 |
+| 优先级理由 | 既有路由、context、outcome 与生命周期缺陷影响 SDK 使用和下游 Agent 集成。先确立这些公开合同，再扩展其消费者。独立 Eval 保留自己的最小 evidence-seam 路线；完整包级对齐不是其无条件前置条件。 |
+| 归属案例 | 产品中立的 Provider、模型输入、operation、鉴权、校验及资源机制保留在现有 opi-ai，无内部 Opi runtime 依赖。既有 adapter 和 SDK/Agent 消费者提供 conformance 候选；每个拟新增公开 seam 仍在 plan 准入时证明内在必要性或两个真实消费者／adapter。工具执行、持久会话、UI/keychain 策略及领域 exporter 保留当前 owner。不隐含新增 Opi crate 或通用框架。 |
+| 来源 | 向内：固定的 .repo/pi-1.3.0、公开 exports／行为／规划／测试。后端证据：精确官方依赖源码、生成数据及已记录机制实验。固定身份与原始结果仍是证据，不是任务完成。不得补造缺少的 hydrated Provider 数据。 |
+| 平台范围 | Native Linux、macOS、Windows；edition/MSRV 和对外声明的 target 覆盖以 workspace manifest 及当前 CI/release 矩阵为准。准入固定这些输入及真实产品 feature／lock／native-build 闭包。每项支持声明都需要相应 build、package 与行为证据；cross-check 或 Windows 研究运行不证明其他 native runtime。TS/Bun/browser/CLI 替代遵循 RDF，不成为新 runtime target。 |
+| 成功／退出 | 全部 57 项 active SDK AIR 要求与 54 组 active SDK V 均有真实公开入口／adapter／consumer 证据；七组产品覆盖均满足既有关闭条件。必要 workspace 调用方编译通过，替换与测试处置闭合，外部 package／资源及所声明平台／MSRV 经验证，上游证据保持当前。Host-only 与退役项不进入 SDK 退出。独立 Phase-exit 复审、台账及冻结快照记录交付。 |
+| 风险／停止条件 | 出现无法解释的能力收窄、身份／秘密泄漏、静默 fallback、来源／数据／package provenance 无依据、patch 超出声明维护边界、缺少所需平台证据或上位／归属冲突时，停止受影响准入或任务。缺口保持 OPEN，并将证据或产品决定返回 owner。不新增数值 cap、验收预算或门禁豁免。 |
+| 回滚 | 变更保持为经审查、可逆的任务切片；调用方与当前序列化 producer 一致迁移。不覆盖冲突凭据身份，不在 ACK 前删除其来源。保留必需历史 reader 与不可变证据。Cutover 失败在激活前停止；已交付版本回滚需要显式 revert/release 权威，并保留未知远端效果。永久第二 SDK facade、consumer root patch 或静默后端降级不构成回滚方案。 |
+| 准入边界 | 技能注册表拥有精确 live 来源文件集。opi-implement plan 执行 P.0 来源准入、推导详细任务图与验收归属、进行对抗复审，并在安装 canonical ledger 前请求整图确认。本来源分解不是已确认任务图，也不授予执行／提交／发布权限。 |
+
+### 交付分解
+
+以下是按依赖方向阅读的来源切片，不是 ledger task ID。Plan 拆分可独立演示的工作、检索当前复用／消费者、明确 owned path 与验证，并证明每个 substrate 都属于后续公开场景 owner 的传递依赖闭包。任何切片都不能仅靠增加类型、fixture 或研究探针通过。
+
+| 来源行 | 交付结果与公开验证边界 |
+|---|---|
+| DEL-01 | 固定来源／能力／差异／测试基线及范围／归属合同 → verify: AIR/V 处置、精确输入和来源准入；不声称 runtime 支持。 |
+| DEL-02 | 单一 Models／binding／driver 与 owned Result／stream 生命周期 → verify: native/simple/advanced/direct 公开调用、不可变 event-time 数据、cancel/drop、终态收集与真实下游调用方 cutover。 |
+| DEL-03 | 可序列化 Context/Transcript、有序声明与 replay/projection → verify: 公开手动工具循环／换模型、raw/opaque 保留、工具关联及 malformed/final-argument 行为；不新增执行器或 session writer。 |
+| DEL-04 | Source-dialect Schema/normalizer/strict/grammar 机制 → verify: 公开校验及 adapter 编译、逐分支差分 corpus、原 schema 最终检查和明确 RDF 用例。 |
+| DEL-05 | Source-qualified HTTP/H2/proxy/redirect/retry transport → verify: 真实公开 adapter 与受控 fake transport、合法 send、受保护 header、取消与不含隐藏后端接受 cap。 |
+| DEL-06 | TLS/trust/signing/verification/KX 与受控后端依赖闭包 → verify: 真实 SDK crypto/transport 路径、正反 fixture、私有所有权、可复现 package 与 native/unsafe 复审。 |
+| DEL-07 | Codex WS/PMD/length-storage/continuation/pool cleanup → verify: 包含最终修正 codec 的真实 Provider 公开路径、真实 frame/upgrade corpus 与资源生命周期；不能由 SSE fallback 代替。 |
+| DEL-08 | Auth/ADC/AWS sources 及所有固定 retry mode → verify: 公开 SDK 经注入来源与真实 adapter、选定身份、source exchange、process/metadata 生命周期及构造不做来源发现。 |
+| DEL-09 | 九 OAuth 家族及 store-owned ACK/mutation barrier → verify: 公开 login/refresh/store/request 路径、same-store 并发、取消、late write 与诚实的 pending/unknown outcome。 |
+| DEL-10 | Catalog/profile/model selection、metadata 与 estimator → verify: 真实版本化 hydration 输入、原子 restore/refresh/personalization、全部 factory 独有行为及精确 source-qualified 计算。 |
+| DEL-11 | 全部已发布 chat/image/classifier/deferred/custom API 路径与 callback → verify: operation-qualified 公开 SDK/direct adapter、精确协议 options/results/failure/timing 及显式 retry orchestration。 |
+| DEL-12 | 显式 telemetry carrier 穿过真实 operation／producer → verify: frozen parent 加 Dispatch、poll/drop/noop 及 serialization/wire/secret 负例，不引入领域 exporter。 |
+| DEL-13 | 必要调用方迁移与替换闭合 → verify: 受影响 Rust 调用方编译通过，新行为证明先于旧 symbol/assertion 删除，保留原有效行为与历史 reader。 |
+| DEL-14 | 组装外部 SDK/package/platform 验收与上游跟进 → verify: 唯一矩阵、真实 package/native/MSRV 证据、完整测试处置及独立 Phase exit；不以 substrate-only 完成。 |
+
+### 采纳合同章节与证据边界
+
+下列提供采纳合同的全部文件在技能注册表唯一枚举，并在未来 live spec_files 集合中记录 CRLF-normalized hash。整文件 hash 用于检测漂移，不表示采纳每段历史文字。任意链接不扩展该集合。当前正文与明确 RDF 决定优先于旧摘录；当前来源间尚未解决的冲突返回来源复审。
+
+| 来源层 | 采纳含义／排除项 |
+|---|---|
+| 双语正文；当前 SDK contracts、Rust differences、backend contracts 及唯一验收矩阵 | 当前包级要求、精确 capability/default/protocol 覆盖、明确差异、机制及未来验证。证据／结果段落不代表已交付能力。 |
+| Design-readiness 决定 | 七组机制选择与维护／重开合同；执行历史、日期和非规范性研究判定仍是证据。 |
+| 四份 readiness 机制报告 | Schema §§1/3/4；WS §§1/5/6 及 §7 修正合同；transport/auth §§1/3/4/5/6；runtime §§2/3/4：选定算法／所有权／失败／分发／平台与仍需完成的验收。原始观察及有限计数仍是证据。 |
+| transcript-target-proposal | 仅 TP-02/03 顺序／渲染／声明身份、TP-13 plain-JSON 算法与 TP-14 strict 转换。不采纳 executor、hook、session 或旧子集范围。 |
+| replay-contracts | 目标矩阵中的 RP-01/02/04/06/07/08/09 以及 RP-05/10/11 的 SDK 投影／序列化部分。RP-03 的旧跨 route thinking 转 text 规则排除，采用当前 Pi 1.3.0 全丢弃行为；Agent 执行、授权、compaction 和持久迁移继续排除。 |
+| sdk-target-proposal | 仅“单一归一化规则”的 compat/role/store/bridge 细节及附录 A–D 的 source-chain selection/error/cache/signing/image-timeout 细节，并受当前合同／RDF 限定。不采纳旧 SP 范围、猜测预算、未决 U 表述或产品策略。 |
+| 仅证据 | 其他 proposal、D/Q 历史、参数／来源审计、tracking 记录／模板、复审、baseline、原始 probe、fixture 和依赖 archive。AIR-067 及当前来源合同拥有必需跟进要求；tracker 更新本身不修订已准入合同。 |
+
 ## 阅读与解释
 
 先阅读范围、所有权和调用状态，再沿 AIR → 决策/证据 → [验收矩阵](acceptance-matrix.md)中的 V 导航。删除接口前查阅淘汰表。[README](README.md) 记录实际执行的检查；下文验收用例均为未来验证设计。
@@ -24,7 +74,7 @@ MUST 表示未来获得准入、实施本候选目标时必须履行的义务。
 
 正式 `opi-spec`、AGENTS 和 CONTEXT 继续保有权威。package 级语义对齐不构成整项目移植／兼容要求，也不豁免真实消费者、状态机、依赖向内或 fail-closed 门槛。本研究不默许任何抵触规范条款的行为。User Policy、Package Trust、Capability Permission 和 Runtime Input Binding 保持当前含义；本候选不修订整个 run／会话的权威。
 
-当前契约由本双语正文及明确引用的 [Pi 1.3.0 SDK contracts](pi-1.3.0-sdk-contracts.md)和 [Rust differences](pi-1.3.0-rust-differences.md)组成，并明确采纳[Rust后端与五项合同](pi-1.3.0-rust-backends.md)；唯一验收矩阵为 [acceptance-matrix.md](acceptance-matrix.md)。历史 TP/SP/EP/OA/D/Q 材料只在采纳且不存在冲突时提供保留的证据与详细算法。当前文本优先于旧选定子集、过时默认值，或旧稿关于全部目标决策均已闭合的说法。
+当前契约由本双语正文及明确引用的 [Pi 1.3.0 SDK contracts](pi-1.3.0-sdk-contracts.md)和 [Rust differences](pi-1.3.0-rust-differences.md)组成，并明确采纳[Rust后端与五项合同](pi-1.3.0-rust-backends.md)；唯一验收矩阵为 [acceptance-matrix.md](acceptance-matrix.md)。Phase 采纳表精确固定其他哪些章节提供算法和维护义务；其余历史 TP/SP/EP/OA/D/Q 仍为证据。当前文本优先于旧选定子集、过时默认值，或旧稿关于全部目标决策均已闭合的说法。
 
 共保留 67 个稳定 AIR 追踪 ID：57 项 active SDK 要求、9 项**仅宿主影响**（AIR-009、AIR-015–019、AIR-037、AIR-039、AIR-041），以及 1 项退役身份（AIR-060）。共保留 59 组 V：54 组 active SDK、4 组仅宿主项（V-17–19、V-33），以及 1 组退役身份（V-52）。退役既不是测试通过，也不产生新实施义务。混合组只含 SDK 机制和必要调用方迁移；本轮没有执行验收。
 
@@ -387,7 +437,7 @@ AWS 选定来源表和精确依赖证据见 [SDK 附录 A–D](sdk-target-propos
 
 ### Backend 候选与五项工程合同
 
-采纳[后端附件](pi-1.3.0-rust-backends.md)，但以[来源审计](pi-1.2.0-parameter-audit.md)为条件。保留有用的源级机制选择；撤回无依据容量/拒绝及 blanket equivalence 结论。backend 默认只证明该 backend，不能授权缩小 Pi 接受集。
+采纳[后端附件](pi-1.3.0-rust-backends.md)，边界由 Phase 合同限定；[来源审计](pi-1.2.0-parameter-audit.md)解释已经落实于此的修正。保留有用的源级机制选择；撤回无依据容量/拒绝及 blanket equivalence 结论。backend 默认只证明该 backend，不能授权缩小 Pi 接受集。
 
 | 模块 | 已选设计／实施义务 |
 |---|---|
@@ -484,11 +534,11 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 | 当前输入／修订和独立评审 | [参数baseline](pi-1.2.0-parameter-revision-baseline.json)、[参数复审](pi-1.2.0-parameter-revision-review.md)、[README](README.md) |
 | 审查发现与补核范围 | [版本审查](pi-1.2.0-review.md)、[五问补核](pi-1.2.0-followup.md)；发现仅适用于各自固定的修订前输入 |
 | 人类指示与历史选择 | [decisions](decisions.md)；当前 package 方向／范围在本候选中取代旧选定子集，不重写历史回答 |
-| 保留的详细 transcript/JSON/strict/AWS 算法 | [TP](transcript-target-proposal.md)、[R replay](replay-contracts.md)、[SDK annexes A–D](sdk-target-proposal.md)；仅在不抵触当前契约／RDF 时采纳 |
+| 保留的详细 transcript/JSON/strict/AWS 算法 | [TP](transcript-target-proposal.md)、[R replay](replay-contracts.md)、[SDK annexes A–D](sdk-target-proposal.md)；仅采纳 Phase 采纳表精确列明的章节，并受当前契约／RDF 限定 |
 | 历史跨 package／会话／产品提案 | [TM migration](transcript-migration.md)、[EP/EPT](evolution-target-proposal.md)、旧 SDK/OAuth/telemetry reviews；作为支持历史，不增加 SDK 交付范围 |
 | 规划与后续上游修订 | [upstream tracking](upstream-tracking.md)；固定版本证据，区分 accepted 与 discussion/experimental/shipped/unknown，记录测试处置和明确再评估触发条件 |
 
-设计评审后候选仍非规范、未实施。来源映射、可执行机制证据和独立复审可以证明设计就绪；只有实际产品／consumer／conformance 证据证明交付。旧 D/Q 不批准每项技术推导。受控依赖／数据变更及 native unsafe 边界有明确来源和维护合同；产品锁图解析、平台／供应链／unsafe 审查与正式准入继续必需。READY 不能把缺少的产品证据变成已通过门禁。
+本注册 Phase 交付来源在上位规范下定义选定目标；其任务图仍未准入，runtime 仍未实施。来源映射、可执行机制证据和独立复审可以证明设计就绪；只有实际产品／consumer／conformance 证据证明交付。旧 D/Q 不批准每项技术推导。受控依赖／数据变更及 native unsafe 边界有明确来源和维护合同；产品锁图解析、平台／供应链／unsafe 审查与正式准入继续必需。READY 不能把缺少的产品证据变成已通过门禁。
 
 获得真实 submit/fetch/cancel/expiry/account 协议时重新评估 remote deferred；核实已接受／已发布契约变化时重评 Lite；存在真实消费者及选定 schema/lifecycle/data policy 时重评 telemetry 提取／instrumentation；已发布源码／adapters 支持时重评新 operations。不因此引入推测性框架或自动采纳上游。未来范围变更和实际规范冲突需要人类权威；普通、有源码支持的实施选择不重开已定 package 意图。
 

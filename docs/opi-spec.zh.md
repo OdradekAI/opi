@@ -31,8 +31,8 @@
 ### 1.3 支撑制品
 
 - ADR 用于说明难以逆转的权衡；它本身不产生路线图权威。
-- `docs/realign/` 和 `.repo/pi-0.84.1` 提供向内对齐证据。
-- `docs/research/` 提供向外证据和设计候选。
+- 固定的 pi 快照及其 realign/research 索引提供向内对齐证据；每份交付来源固定自己的上游身份。
+- `docs/research/` 提供研究证据和设计候选。即使存于该目录，显式登记的 Phase 来源也仅具有注册中声明的权威。
 - `docs/snapshots/` 和实现台账保存已完成的交付历史。
 - Git 历史和 `CHANGELOG.md` 保存文档与发布历史。
 
@@ -67,7 +67,7 @@ Opi 并非逐行 Rust 移植。它保留有价值的语义，同时在能够构�
 
 Opi 不以实现以下事项为目标：
 
-- 对应 pi 的每一个 package、TypeScript 类型、npm 边界、会话文件或 Provider 目录；
+- 复刻 pi 的完整 package 图、TypeScript 类型、npm 边界、会话文件或所有 Provider 目录；经审查的包级交付可以固定范围更小的公开能力与可观察语义合规目标；
 - 将另一个运行时的内部插件 ABI、package 生命周期或进程内组合模型作为兼容目标；兼容从独立版本化的边界协议和可移植制品开始；
 - 将 MCP、子 Agent、计划、任务列表、权限弹窗或远程会话工作流设为 Agent 核心的强制功能；
 - 暴露、持久化或评估模型私有的原始思维链；
@@ -100,6 +100,8 @@ pi 是持续演进的设计参考，而不是 Opi 的发布管理者。对齐工
 
 新的 pi package 不会确立优先级。源码证据可以触发归属复审或路线修订，但是否修改本规范由人工塑形决定。
 
+对于 `opi-ai`，选定方向是可独立使用的模型运行时 SDK，通过 Rust 惯用接口提供等价的调用工作流与可观察语义。经审查的交付来源固定 Pi 修订、公开能力清单、明确的语言／平台／正确性差异及可执行验收。后端默认值、静默收窄输入、只有 metadata 的覆盖和回退到另一传输不能证明等价。上游更新在采纳前须记录能力、规划状态、差异及测试影响复核。此包级目标保留全项目使命，以及全部公开 seam、归属与依赖门禁。
+
 ### 3.3 Rust 原生选择
 
 Rust 设计应优先采用：
@@ -112,6 +114,8 @@ Rust 设计应优先采用：
 - 当跨语言复用比进程内耦合更有价值时，使用独立二进制文件或进程协议。
 
 Rust 不能成为拆分浅层 crate、为一个假想 adapter 创建 trait，或将生态策略移入 library 的理由。
+
+内部调度边界和背压不同于可接受的输入或输出大小。交付应区分来源行为、协议要求、后端限制和显式调用方资源策略。后端默认值不授予新增 SDK 拒绝阈值的权威；未解决约束仍明确保留为覆盖缺口。受控依赖／数据变更以及 native 或 unsafe 边界应具有可复现来源、维护责任和平台证据。
 
 ## 4. 系统归属与依赖方向
 
@@ -168,7 +172,7 @@ Agent 执行
 
 | ID | 能力 | 长期成果 | 进入下一层阶梯所需的证据 |
 |---|---|---|---|
-| CAP-001 | 模型运行时 | Provider 中立的消息与流式处理、真实的运行时 Provider/wire 分派、能力协商、用量核算和有界失败。 | Provider 合规证据和多 Provider 路由证据。 |
+| CAP-001 | 模型运行时 | 可独立使用的 Provider 中立 SDK 调用、消息与流、真实运行时 Provider/wire 分发、typed operation、能力协商、用量核算及可观察的失败／资源所有权。 | 公开 SDK/adapter 合规、外部 consumer 和多 Provider 路由证据。 |
 | CAP-002 | 推理与上下文管理 | 可观测的上下文构建、思考预算、规划、反思、重试、压缩、模型切换和工具决策，且不要求私有原始推理。 | 可复现的上下文/压缩行为和实测任务结果。 |
 | CAP-003 | Agent 执行 | 确定性的轮次、工具、队列、引导、会话、取消、失败语义和最终制品。 | 跨 Agent 评测可以观察并复现结果与效率。 |
 | CAP-004 | 持续学习 | 从最终经验中派生的 C1 情景记忆和可复用技能候选，经过独立评测并可逆激活。 | 多个冻结评测周期证明收益、保持性、安全性、效率和撤回能力。 |
@@ -259,12 +263,14 @@ shadow → opt-in canary → active / rollback
 
 ### 7.1 Provider 运行时
 
-模型选择是运行时路由，而不是 metadata 查询。Provider 集合负责可用模型、凭据以及路由到正确的 Provider 和 wire 实现。
+模型选择是运行时路由，而不是 metadata 查询。单一 SDK owner 持有 Provider／模型修订、选定鉴权及到正确 operation 和 wire 实现的路由。普通调用和高级 preparation 使用相同机制；owned call 在重试间保留选定状态。
+
+模型输入、鉴权来源和进程内 telemetry context 各有独立的所有权与序列化合同。构造和静态读取不隐式发现来源或执行外部 I/O。显式操作拥有自己的效果、失败、取消与清理。SDK 无需 Agent runtime、session store、terminal、exporter 或产品凭据 UI 即可使用；调用方负责工具执行和产品恢复策略。
 
 | ID | 要求 | 责任方 | 验证方式 |
 |---|---|---|---|
-| INV-001 | 选择模型时**必须（MUST）**在运行时解析并保留对应的 Provider/wire 实现；不得（MUST NOT）仅仅因为启动时选择了另一个 Provider 而拒绝跨 Provider 选择。 | `opi-ai` | Provider 集合合规测试和跨 Provider 路由测试。 |
-| INV-002 | Provider 特有的 wire 代码**必须（MUST）**保留在 Provider 中立的请求、stream、用量和能力 interface 之后。 | `opi-ai` | Provider wire 格式 fixture 和 interface 测试。 |
+| INV-001 | 选择模型时**必须（MUST）**在运行时解析并保留对应的 Provider/operation/wire 实现及选定鉴权；不得（MUST NOT）仅仅因为启动时选择了另一个 Provider 而拒绝跨 Provider 选择。 | `opi-ai` | 公开 SDK 和直接 adapter 合规、frozen-call 和跨 Provider 路由测试。 |
+| INV-002 | Provider 特有的 wire 代码**必须（MUST）**保留在 Provider 中立的请求、stream、outcome、用量和能力 interface 之后。包级等价声明**必须（MUST）**通过真实公开调用方与 adapter 证明，包括失败、取消及资源所有权；metadata 列表或仅 substrate 测试**不得（MUST NOT）**代替运行时覆盖。 | `opi-ai` | 公开行为 fixture、wire conformance、外部 consumer 测试和明确的差异／覆盖记录。 |
 
 ### 7.2 Agent 轮次转换
 
@@ -416,7 +422,9 @@ shadow 输出不影响工具、用户可见输出或持久状态。canary 的作
 
 ### STRAT-001 — 填补深层 Agent 核心语义缺口
 
-赋予运行时 Provider 分派真正的所有权；使下一轮状态替换具有原子性并保持正确顺序；为已解析执行的来源追溯建立产品中立的最小证据与可观测性 seam；并在副作用前验证权威。让现有抽象在运行时名副其实，优先级高于增加更多目录条目。
+优先完善可独立使用的 `opi-ai` 基础：真实的 Provider/operation 分发、一致的公开调用／context／outcome 合同、source-bound auth、stream／资源所有权，以及经审查的包级 pi 目标。先完成这些合同的行为和必要既有调用方适配，再在其上构建进一步的 Agent 功能。目录数量本身不能证明基础可用。
+
+使下一轮状态替换具有原子性并保持正确顺序；为已解析执行的来源追溯建立产品中立的最小证据与可观测性 seam；并在副作用前验证权威。独立 Eval 可以依靠已证明的最小证据 seam 推进；完整 SDK 对齐不是其独立路线的无条件前置条件。确切 Phase 范围、次序与验收仍由注册交付来源和已确认台账负责。
 
 ### STRAT-002 — 建立独立的跨 Agent Eval
 
@@ -477,7 +485,8 @@ Phase 是由本规范派生出的有限交付单元。它不是阶梯、路线�
 | Workspace 拓扑与发布状态 | [`Cargo.toml`](../Cargo.toml)、crate manifest 和 [CHANGELOG.md](../CHANGELOG.md) | 当前版本、依赖和发布历史。 |
 | wire 与 schema 契约 | 源代码常量、schema、fixture 和 `opi-protocol` 文档 | 当前精确版本和 payload。 |
 | 已完成的交付历史 | [`docs/snapshots/`](snapshots/) 和实现台账 | 历史完成情况与验收证据。 |
-| pi 对齐 | [`.repo/pi-0.84.1`](../.repo/pi-0.84.1) 一手资料和 [`docs/realign/`](realign/) 索引 | 非规范性内部证据。 |
+| pi 对齐 | [`docs/realign/`](realign/) 和 [SDK 对齐索引](research/pi-ai-opi-ai-alignment/README.md) 中固定的来源身份 | 向内证据；历史输入保留原有范围。 |
+| Phase 交付来源 | [`opi-implement` 来源注册表](../.agents/skills/opi-implement/SKILL.md#reviewed-supplemental-sources) | 显式的规划来源集合；注册不等于任务图批准或交付证明。 |
 | 外部能力研究 | [`docs/research/`](research/) | 非规范性外部证据。 |
 | 独立 Eval 方向 | 官方基准测试/轨迹参考资料 | 第 6 章和战略优先级的 Evidence。 |
 | 持续学习方向 | `docs/research/opi-knowledge-sdk-learning-worker-spec.zh.md` 和引用的一手研究资料 | 仅作为方向性证据。 |
