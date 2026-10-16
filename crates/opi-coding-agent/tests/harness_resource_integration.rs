@@ -1111,8 +1111,8 @@ async fn harness_metadata_includes_adapter_extensions() {
 // save-point / pending-write semantics live in opi_agent::harness. These two
 // contract tests pin (a) that the wrapper composes product inputs over the
 // generic seams at runtime, and (b) that product/CLI/package policy never leaks
-// into opi-agent. See docs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md
-// Workstream 10.2 + Phase 10 Success Criterion 4.
+// into opi-agent. Pinned by the retired Phase 10 core-architecture
+// deepening design (Workstream 10.2, Phase 10 Success Criterion 4).
 // ---------------------------------------------------------------------------
 
 /// Strip Rust line and (nested) block comments while preserving string/char
