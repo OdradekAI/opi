@@ -2,6 +2,8 @@
 
 > 非规范性证据索引。目标：仅 `opi-ai` 对照选定 Pi 版本的公开能力和可观察语义，使用 Rust 惯用设计并明确差异。记录来源、变化、审查和证明边界；不承担实施准入、任务/阶段进度或测试完成账本。目标要求仍在双语候选，综合验收仍在 [acceptance matrix](acceptance-matrix.md)。
 
+> 当前候选推进到本地Pi1.3.0，完整变化见[升级复核](pi-1.3.0-upgrade-review.md)。旧行保持原输入；本轮RFC/PR线上状态未刷新，不能将旧观察表当成截至1.3.0的上游最新状态。
+
 ## 版本审查记录
 
 | 研究日期 / 比较 | 固定输入与结论 | 可复用入口 |
@@ -11,10 +13,12 @@
 | 2026-10-16；同一 1.2.0 的五问补核 | 分清三类 Context；telemetry 主要设计仍有效、未实施。刷新官方规划状态；目录版本选择已有本地代码。当前调用体验未等价、没有差分 runner。补测试处置和持续记录；无 runtime tests/live | [五问补核](pi-1.2.0-followup.md)、[输入/清单/网页摘要](pi-1.2.0-followup-evidence.json)、[测试处置](acceptance-matrix.md#2026-10-16-测试迁移补核) |
 | 2026-10-16；两轮核查后的候选修订 | 文档扩展为 67 AIR（58 SDK＋9 宿主）、59 V（55 SDK＋4 宿主）；完整公开能力及 RDF-01–20、测试迁移和版本跟进；不改变运行时。独立复审结论以链接报告为准 | [当前双语稿](spec-draft.zh.md)、[能力附件](pi-1.2.0-sdk-contracts.md)、[Rust 差异](pi-1.2.0-rust-differences.md)、[修订输入](pi-1.2.0-revision-baseline.json)、[复审](pi-1.2.0-revision-review.md) |
 | 2026-10-16；同一1.2.0的Rust工程修订 | Opi输入6b81658，五项合同补齐与精确HTTP/WS/AWS/ADC/Schema后端选择；没有升级Pi/Cargo或实施，不豁免正式准入。审查/结果按本轮报告，旧核准仅针对原输入 | [工程合同](pi-1.2.0-rust-backends.md)、[本轮输入](pi-1.2.0-backend-revision-baseline.json)、[source evidence](pi-1.2.0-backend-source-evidence.json)、[本轮复审](pi-1.2.0-backend-revision-review.md) |
+| 2026-10-16；同一1.2.0参数／新增拒绝复核 | 已提交c5ab42a；撤回无来源固定预算、总deadline与blanket拒绝，Schema/WS等仍OPEN；此前通过仅对冻结输入 | [参数审计](pi-1.2.0-parameter-audit.md)、[独立复审](pi-1.2.0-parameter-revision-review.md) |
+| 2026-10-16；Pi1.2.0→1.3.0 | Opi输入c5ab42a；新Pi tree08a98ac282590eeb8255dd326e566b8b456212b4018a6d59cce44caf7f62e9d2。AI新增4/修改41/删除2、telemetry仅2 metadata；67 AIR/59 V身份中各退役1项，57/54 active SDK；所有backend gaps继续OPEN | [逐项升级与清理](pi-1.3.0-upgrade-review.md)、[来源](pi-1.3.0-source-evidence.json)、[复审](pi-1.3.0-revision-review.md)、[唯一矩阵](acceptance-matrix.md) |
 
 本表的“暂不核准”是研究候选结论，不是线上故障或产品实施进度。旧 Pi 1.0.0 源码当前不在工作区；[历史报告恢复关系](../pi-1.2.0/evidence/pi-1.0.0/README.md)不能替代源码恢复。上游网页按访问日记录；本地快照按 manifest/hash 固定，两种身份不混用。
 
-## 规划观察表
+## 规划观察表（原证据窗口保留）
 
 每次版本跟进更新“观察证据/状态/触发”，不把提案直接加入实施范围。来源详述在 [本次补核](pi-1.2.0-followup.md#2-未来规划已有研究需刷新状态与实施证据)，这里仅作索引。
 
@@ -58,3 +62,9 @@ Rust backend版本/features/API/source hash、默认环境/代理/TLS/retry/redi
 ### 参数与新增限制的复核规则
 
 2026-10-16：[参数审计](pi-1.2.0-parameter-audit.md)/[本轮复审](pi-1.2.0-parameter-revision-review.md)取代前轮关于固定预算和后端完全定型的结论。后续每项新增/改动默认值、zero/omission/sentinel、timeout作用域、retry/redirect、format/field拒绝、backend硬上限，都记录Pi消费路径/精确依赖/default、Rust差异及接受集正反例；无依据不得直接继承。不能以可覆盖、typed Unsupported、历史D/Q或后端默认关闭parity。运行时相关常量与metadata/注释/fixture输入分开；复杂阈值需真实语料与分配/兼容性证据。只修改版本号不完成跟进。
+
+### 1.3.0本地规划与后端跟进增量
+
+Responses effort markers、final arguments_error、thinking-off与投影修复已在所选源码实现，不能继续作为纯未来提案；frames则已移除，不恢复旧experimental消费者。Telemetry README的旧Agent schemas示例仍过时，源代码没有恢复，exporter／Lite／realremote-deferred未在本轮入口交付；在线RFC/PR状态待下一次明确联网核验再刷新。目录最低Pi1.2.1与distributionv1/datav6分开，pin/hydrate/build:offline是发布流程事实，缺本地catalog数据仍需补证。
+
+后端跟进仍使用[现有附件OPEN表](pi-1.3.0-rust-backends.md#5-pi-130-后端覆盖缺口全部-open)和V-35/30/49/55/58等既有验收定位；下次同时比较真实runtime、exact依赖entry、接受集与可配置／不可配置约束。不得因版本更新、选型文档或typed拒绝便记关闭；不额外建立任务状态表或进度百分比。

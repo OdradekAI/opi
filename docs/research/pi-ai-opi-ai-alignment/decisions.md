@@ -380,3 +380,11 @@ pi 的公开 cleanupSessionResources 是 SDK 真需求，0.73.0 已引入；其�
 用户要求全面复核所有参数/预算/新拒绝，区分Pi1.2.0/后端默认/Rust差异并撤回无依据固定值。本条记录该指令下的文档修订，不编造新增Q或逐项人类批准。D-16/Q21、D-25/Q28及后续工程细化保留历史日期和原回答；其中无Pi依据的统一容量、媒体/分类器强拒绝、Schema/transport预算不再作为当前parity默认。当前[来源审计](pi-1.2.0-parameter-audit.md)、双语spec/RDF/backend/唯一矩阵取代冲突值，不追改历史测试结果。
 
 保留source-backed协议/算法常量和准确作用域、现opi有界背压及明确Rust所有权/信息/权限差异；省略caller policy不能暗中选择撤回的内容上限。后端默认只证明backend，缺语义/不可配置限制保持coverage gap。Schema/transport“完整定型”和前轮“无必须修正项”相应收窄。只改研究docs，正式规范/准入/runtime/Cargo/tests/CI/ledger不变；本次没有需要立即改变正式规范或授权执行的取舍。
+
+## 2026-10-16 Pi1.3.0源码跟进与过时内容退出
+
+根据用户本轮明确要求审查本地新快照、优化本目录并移除过时内容，将1.2.0→1.3.0的来源变化反映到现行候选；实际manifest确认比较版本，未新造人类Q或把技术审查写成逐项批准。具体[升级复核](pi-1.3.0-upgrade-review.md)固定完整变化清单与继承边界。
+
+AIR-060/V-52随上游compact公开接口移除而退役，ID不复用且不算通过；57 active SDK AIR与54 active SDK V，9/4 host-impact不变。普通events/immutablepartial/Result保留。跨模型thinking不再转text；finalarguments_error、effort/off、toolimage投影及provider路由按实际source分支采纳；无依据默认限制继续撤回，不改任意custom来源／旧历史API。
+
+当前三份技术附件为1.3.0版本，旧文件只留Git恢复入口；README清理旧现行叙述，旧审计/verification/humananswer保留冻结输入语义。Schema/WS/H2/trust/crypto/source-retry/tracing/Cargo/platform/catalog缺口仍OPEN，下一步关闭证据归现有AIR/V，不立新实施账本。不涉及正式规范准入或需要当前新增人类取舍；本轮仅文档，无实施/commit/push。

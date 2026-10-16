@@ -1,0 +1,255 @@
+{
+  "kind": "Pi1.3.0-document-revision-verification",
+  "date": "2026-10-16",
+  "status": "PASS",
+  "mode": "worktree-only",
+  "input_head": "c5ab42ab8888b93f9969652323caee87b7550392",
+  "observed_head": "c6521927afff57b5425939df54dbe246d75aae85",
+  "committed": "none-for-this-task",
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit_code": 0,
+      "stdout": "opi documentation contracts: PASS",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exit_code": 0,
+      "stdout": "c6521927afff57b5425939df54dbe246d75aae85",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--short"
+      ],
+      "exit_code": 0,
+      "stdout": "M crates/opi-coding-agent/tests/harness_resource_integration.rs\n M docs/research/pi-ai-opi-ai-alignment/README.md\n M docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md\n M docs/research/pi-ai-opi-ai-alignment/decisions.md\n M docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-backends.md\n M docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-differences.md\n M docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-sdk-contracts.md\n M docs/research/pi-ai-opi-ai-alignment/spec-draft.md\n M docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md\n M docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md\nD  docs/snapshots/phase1/opi-impl-state.json\nD  docs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md\nD  docs/snapshots/phase10/opi-impl-state.json\nD  docs/snapshots/phase2/opi-impl-state.json\nD  docs/snapshots/phase3/opi-impl-state.json\nD  docs/snapshots/phase4/opi-impl-state.json\nD  docs/snapshots/phase5/opi-impl-state.json\nD  docs/snapshots/phase6/2026-06-15-phase6-alignment-hardening-design.md\nD  docs/snapshots/phase6/opi-impl-state.json\nD  docs/snapshots/phase7/2026-06-15-phase7-reliability-observability-design.md\nD  docs/snapshots/phase7/opi-impl-state.json\nD  docs/snapshots/phase8/2026-06-15-phase8-agent-runtime-stabilization-design.md\nD  docs/snapshots/phase8/opi-impl-state.json\nD  docs/snapshots/phase9/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md\nD  docs/snapshots/phase9/opi-impl-state.json\n?? docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-revision-review.md\n?? docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-revision-verification.json\n?? docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md\n?? docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md\n?? docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md\n?? docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-source-evidence.json\n?? docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-upgrade-review.md",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--cached",
+        "--name-status"
+      ],
+      "exit_code": 0,
+      "stdout": "D\tdocs/snapshots/phase1/opi-impl-state.json\nD\tdocs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md\nD\tdocs/snapshots/phase10/opi-impl-state.json\nD\tdocs/snapshots/phase2/opi-impl-state.json\nD\tdocs/snapshots/phase3/opi-impl-state.json\nD\tdocs/snapshots/phase4/opi-impl-state.json\nD\tdocs/snapshots/phase5/opi-impl-state.json\nD\tdocs/snapshots/phase6/2026-06-15-phase6-alignment-hardening-design.md\nD\tdocs/snapshots/phase6/opi-impl-state.json\nD\tdocs/snapshots/phase7/2026-06-15-phase7-reliability-observability-design.md\nD\tdocs/snapshots/phase7/opi-impl-state.json\nD\tdocs/snapshots/phase8/2026-06-15-phase8-agent-runtime-stabilization-design.md\nD\tdocs/snapshots/phase8/opi-impl-state.json\nD\tdocs/snapshots/phase9/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md\nD\tdocs/snapshots/phase9/opi-impl-state.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--name-status"
+      ],
+      "exit_code": 0,
+      "stdout": "M\tcrates/opi-coding-agent/tests/harness_resource_integration.rs\nM\tdocs/research/pi-ai-opi-ai-alignment/README.md\nM\tdocs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md\nM\tdocs/research/pi-ai-opi-ai-alignment/decisions.md\nM\tdocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-backends.md\nM\tdocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-differences.md\nM\tdocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-sdk-contracts.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md\nM\tdocs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "ls-files",
+        "--others",
+        "--exclude-standard"
+      ],
+      "exit_code": 0,
+      "stdout": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-revision-review.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-revision-verification.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-source-evidence.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-upgrade-review.md",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--name-status",
+        "c5ab42ab8888b93f9969652323caee87b7550392..c6521927afff57b5425939df54dbe246d75aae85"
+      ],
+      "exit_code": 0,
+      "stdout": "M\tdocs/opi-spec.md\nM\tdocs/opi-spec.zh.md\nD\tdocs/research/2026-07-08-agent-benchmark-candidates.md\nD\tdocs/research/2026-07-08-agent-benchmark-candidates.zh.md\nD\tdocs/research/2026-07-10-opi-agent-benchmark-plan.zh.md\nD\tdocs/research/2026-08-11-openclaw-agent-practices-opi-spec.md\nM\tdocs/research/2026-08-13-edge-agent-local-cloud-hierarchical-compute.md\nD\tdocs/research/2026-08-13-pi-0.84.1-package-architecture-realignment.md\nD\tdocs/research/2026-08-26-phase18-external-execution-locks.md\nD\tdocs/research/2026-09-05-local-agent-benchmark-windows-feasibility.zh.md\nD\tdocs/research/2026-09-05-opi-eval-phase18-execution-gap.zh.md\nD\tdocs/research/2026-09-05-zhipu-eval-provider-endpoints.zh.md\nM\tdocs/superpowers/specs/2026-08-11-opi-local-eval-foundation-design.md\nM\tdocs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md\nM\tdocs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md",
+      "stderr": ""
+    }
+  ],
+  "static_checks": {
+    "task_documents": 16,
+    "traceability": {
+      "AIR_ids": 67,
+      "active_SDK_AIR": 57,
+      "host_AIR": 9,
+      "retired_AIR": [
+        "AIR-060"
+      ],
+      "V_ids": 59,
+      "active_SDK_V": 54,
+      "host_V": [
+        "V-17",
+        "V-18",
+        "V-19",
+        "V-33"
+      ],
+      "retired_V": [
+        "V-52"
+      ],
+      "RDF": 20,
+      "EN_ZH_lines_each": 480,
+      "every_line_numeric_tokens_equal": true
+    },
+    "tests": {
+      "Rust_integration_files": 41,
+      "Rust_source_test_files": 7,
+      "Pi_AI_test_files": 174,
+      "Pi_AI_test_delta": {
+        "added": 4,
+        "modified": 21,
+        "removed": 1,
+        "unchanged": 149
+      },
+      "Pi_telemetry_test_files": 2,
+      "runtime_tests_executed": false,
+      "test_impact": "none"
+    },
+    "markdown": {
+      "tables": 90,
+      "rows": 1085,
+      "local_links": 638,
+      "line_anchors": 247,
+      "heading_anchors": 9
+    },
+    "history_recovery": {
+      "commit": "c5ab42ab8888b93f9969652323caee87b7550392",
+      "original_annex_hashes_match": 3,
+      "old_reviews_not_rewritten": true
+    },
+    "snapshots_rehashed": {
+      "1.2.0": {
+        "files": 1902,
+        "tree_sha256": "a2c03e7c77aa5e6837ed69055a29d724eff9e65a18c1534221ef58e299cc0c10"
+      },
+      "1.3.0": {
+        "files": 1925,
+        "tree_sha256": "08a98ac282590eeb8255dd326e566b8b456212b4018a6d59cce44caf7f62e9d2"
+      }
+    },
+    "lock": {
+      "total_changed_entries": 16,
+      "external_node_modules_changed_entries": 0,
+      "complete_object_comparison": true
+    },
+    "source_delta": {
+      "changed_target_package_paths": 49,
+      "unchanged_target_package_paths": 361
+    }
+  },
+  "errors": [],
+  "independent_review_reports": [
+    {
+      "scope": "ai",
+      "sha256": "0f53190f864da3c1d6fff5907cacf79e26c7e38e69360f56ee339036ba282e13"
+    },
+    {
+      "scope": "backend",
+      "sha256": "89aa3ef50e13663e2cacc59e8b9ba4f9c514330d8e17c9692fe7cdbaa7111e59"
+    },
+    {
+      "scope": "docs",
+      "sha256": "672b5219b4718c937bb0e6d2f40b2eb1ec5a3c71ef07b92f2b12fa81cdaf4379"
+    }
+  ],
+  "not_executed": [
+    "Pi/Rust runtime/build/tests/differential runner",
+    "install/import/hydration",
+    "live/OAuth/metadata/process fixtures",
+    "Cargo resolution/MSRV/features/native/platform execution",
+    "formal implementation admission/commit/push"
+  ],
+  "shared_worktree": {
+    "input_head_to_observed_head_changes": "M\tdocs/opi-spec.md\nM\tdocs/opi-spec.zh.md\nD\tdocs/research/2026-07-08-agent-benchmark-candidates.md\nD\tdocs/research/2026-07-08-agent-benchmark-candidates.zh.md\nD\tdocs/research/2026-07-10-opi-agent-benchmark-plan.zh.md\nD\tdocs/research/2026-08-11-openclaw-agent-practices-opi-spec.md\nM\tdocs/research/2026-08-13-edge-agent-local-cloud-hierarchical-compute.md\nD\tdocs/research/2026-08-13-pi-0.84.1-package-architecture-realignment.md\nD\tdocs/research/2026-08-26-phase18-external-execution-locks.md\nD\tdocs/research/2026-09-05-local-agent-benchmark-windows-feasibility.zh.md\nD\tdocs/research/2026-09-05-opi-eval-phase18-execution-gap.zh.md\nD\tdocs/research/2026-09-05-zhipu-eval-provider-endpoints.zh.md\nM\tdocs/superpowers/specs/2026-08-11-opi-local-eval-foundation-design.md\nM\tdocs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.md\nM\tdocs/superpowers/specs/2026-09-05-phase19-local-native-agent-evaluation-design.zh.md",
+    "committed_change_excludes_task_paths": true,
+    "observed_other_work": "Separate research/navigation commit, staged snapshot deletions and runtime test edit; preserved, not owned by this task",
+    "task_ownership": "Only changed alignment docs; no task staging/commit/push"
+  },
+  "test_impact": "none",
+  "file_sha256": [
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md",
+      "sha256": "721d36c87ee82b6b097883b83757de1da2300c276a0003dd74619502c3568b45"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/decisions.md",
+      "sha256": "307d37887a75e2d04ef1a200c4cb487170e5757ba3ba7733818db132384f233f"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-backends.md",
+      "sha256": "5bd9958f61b014a1b785e34b133db11df2bf9821cec81e6f3e50305f376937bf"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-differences.md",
+      "sha256": "60b340f107f576cefade9517e68e314d3dd791919d841f317eed0fe58daf81d3"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-sdk-contracts.md",
+      "sha256": "f64e8ce67603632adc1a68d2605786d0e3bbbfc9e3fca67a5b5639c4c9e06e09"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-revision-review.md",
+      "sha256": "c0af981a31b47616865ee363fca57e912fd690b0207c3df91fdf66ff2831c6e3"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md",
+      "sha256": "0a1a82c0126a893ff1e6a93b2055f2058b9c32368b326165eb1e7b390ff05715"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md",
+      "sha256": "3733668d61288a220a825cdd8939b70c16a89c6db00c00aa2175463e2ee24268"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md",
+      "sha256": "89d64080bc105c0c6950dd8bc3ba2dba81ab1eeb556baab1df2e32f8061a5bdf"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-source-evidence.json",
+      "sha256": "750a80ae5b37b6d8f87963cee14866a762918375f2a0dda78fe7fa14d4450540"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-upgrade-review.md",
+      "sha256": "0d16c0fec3a72b706d342e1eb1a6777f50da1ee01be835e7c24c14b5993b0696"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/README.md",
+      "sha256": "da099cd5a4515ad0adb3f6fe2daabbd5794aeed4394a8cf3e6a6c8a8fd0a2569"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md",
+      "sha256": "66df6d27d7037b128bae2d49d04f3b8295de5908da4a295d96831119bc7cbec0"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md",
+      "sha256": "76c74e81440495e14c05cc5fe390b5e5c6a06684df381a4eef89e09ad4017aff"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+      "sha256": "91f91a3c2545b8141dfec7b0216ca8db8562613ddcd57650a7cb01a9a18ab425"
+    }
+  ],
+  "self_hash": "excluded to avoid recursive digest"
+}
