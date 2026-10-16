@@ -36,7 +36,7 @@
     "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
     "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c"
   },
-  "task_graph_confirmed_at": "2026-10-17T01:33:56+08:00",
+  "task_graph_confirmed_at": "2026-10-17T01:59:31+08:00",
   "current_phase": 20,
   "tasks": [
     {
@@ -1341,6 +1341,11 @@
           "field": "acceptance_partition",
           "reason": "Local scope: canonical chronology, declarations, sections, Serde and current migrated-adapter native/collapse projection. Sampling/onPayload interactions with native-effort stamps and complete V-16 close at 20.34 after 20.35/20.51 and the protocol adapters.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Include the four existing Request.system/tools test consumers in the same canonical-input cutover: rpc.rs GatedCompactionProvider summary detection, interactive_startup_diagnostics.rs tool listing, phase17_product_evidence.rs trusted write advertisement and phase17_tool_authority.rs tool projection. Update their reads through the canonical interface while retaining their current summary, authority and advertisement assertions; the workspace gate also executes rpc.rs source tests.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Host impacts: durable facts and migration"
         }
       ],
       "tier": "workspace",
@@ -1352,7 +1357,10 @@
           ".agents/skills/opi-implement/scripts/opi-impl-smoke.ps1 full"
         ],
         "behavioral_tests": [
-          "crates/opi-ai/tests/transcript_contract.rs"
+          "crates/opi-ai/tests/transcript_contract.rs",
+          "crates/opi-coding-agent/tests/interactive_startup_diagnostics.rs",
+          "crates/opi-coding-agent/tests/phase17_product_evidence.rs",
+          "crates/opi-coding-agent/tests/phase17_tool_authority.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -1546,6 +1554,7 @@
         "crates/opi-coding-agent/src/oauth.rs",
         "crates/opi-coding-agent/src/picker.rs",
         "crates/opi-coding-agent/src/provider_factory.rs",
+        "crates/opi-coding-agent/src/rpc.rs",
         "crates/opi-coding-agent/tests/*compaction*",
         "crates/opi-coding-agent/tests/*config*",
         "crates/opi-coding-agent/tests/*credential*",
@@ -1559,10 +1568,13 @@
         "crates/opi-coding-agent/tests/custom_provider_registration.rs",
         "crates/opi-coding-agent/tests/extension_mapped_catalog.rs",
         "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+        "crates/opi-coding-agent/tests/interactive_startup_diagnostics.rs",
         "crates/opi-coding-agent/tests/list_models.rs",
         "crates/opi-coding-agent/tests/oauth_auth.rs",
         "crates/opi-coding-agent/tests/phase17_failure_rollback.rs",
+        "crates/opi-coding-agent/tests/phase17_product_evidence.rs",
         "crates/opi-coding-agent/tests/phase17_provider_runtime.rs",
+        "crates/opi-coding-agent/tests/phase17_tool_authority.rs",
         "crates/opi-coding-agent/tests/provider_factory.rs"
       ],
       "verified_at_commit": null,
@@ -1576,7 +1588,7 @@
       "title": "工具关联、跨模型 replay、opaque 与 projection",
       "crate": "workspace",
       "parent_spec_row": "DEL-03",
-      "definition_of_done": "Public manual tool loop/model change preserves originals and block-bound opaque metadata through serialization. Batch-position/source-ID pairing rejects ambiguity/orphans, closes missing results request-locally as ResultUnavailable/UnknownEffect, never executes tools. Error/Aborted/Length projections retain actual effects and distinguish native/collapse/Strict. Cross provider/API/model drops all thinking per Pi1.3, signed-empty/terminal-only data and Responses dual IDs roundtrip for same identity.",
+      "definition_of_done": "Public manual tool loop/model change preserves originals and block-bound opaque metadata through serialization. Batch-position/source-ID pairing rejects ambiguity/orphans, closes missing results request-locally as ResultUnavailable/UnknownEffect, never executes tools. Error/Aborted/Length projections retain actual effects and distinguish native/collapse/Strict. Cross provider/API/model drops all thinking per Pi1.3, signed-empty/terminal-only data and Responses dual IDs roundtrip for same identity. Local scope: canonical replay and opaque preservation through current migrated adapters. Complete V-32, including actual effort-stamp capture through terminal/Serde and the next same-identity request, closes at 20.34 after 20.37 and the other completed protocol adapters.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -1589,7 +1601,7 @@
       "inference_notes": [
         {
           "field": "definition_of_done",
-          "reason": "Reviewed DEL-03 split, inferred target paths/names and commands require whole-graph confirmation. Public manual tool loop/model change preserves originals and block-bound opaque metadata through serialization. Batch-position/source-ID pairing rejects ambiguity/orphans, closes missing results request-locally as ResultUnavailable/UnknownEffect, never executes tools. Error/Aborted/Length projections retain actual effects and distinguish native/collapse/Strict. Cross provider/API/model drops all thinking per Pi1.3, signed-empty/terminal-only data and Responses dual IDs roundtrip for same identity.",
+          "reason": "Reviewed DEL-03 split, inferred target paths/names and commands require whole-graph confirmation. Public manual tool loop/model change preserves originals and block-bound opaque metadata through serialization. Batch-position/source-ID pairing rejects ambiguity/orphans, closes missing results request-locally as ResultUnavailable/UnknownEffect, never executes tools. Error/Aborted/Length projections retain actual effects and distinguish native/collapse/Strict. Cross provider/API/model drops all thinking per Pi1.3, signed-empty/terminal-only data and Responses dual IDs roundtrip for same identity. Local scope: canonical replay and opaque preservation through current migrated adapters. Complete V-32, including actual effort-stamp capture through terminal/Serde and the next same-identity request, closes at 20.34 after 20.37 and the other completed protocol adapters.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
         },
         {
@@ -1641,6 +1653,11 @@
           "field": "acceptance_partition",
           "reason": "V-15 full source closure moves from 20.10 to 20.7; the earlier task proves only its named P20 production slice. Reuse predecessor behavioral proof and add only distinct assembled cases.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#已有要求的修订验收（V-01–26） / V-15"
+        },
+        {
+          "field": "acceptance_partition",
+          "reason": "V-32 full source closure moves from 20.7 to 20.34 after the real protocol adapters and effort metadata exist. 20.7 proves its current-adapter canonical replay and opaque-preservation slice only; a hand-constructed historical stamp is not producer-to-next-request proof. Reuse predecessor assertions and add only distinct assembled cases; do not add a reverse dependency from 20.7 to 20.37.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#新增已确认能力的验收（V-27–38） / V-32"
         }
       ],
       "tier": "workspace",
@@ -1676,19 +1693,6 @@
           "id": "V-08",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#已有要求的修订验收（V-01–26） / V-08",
           "scenario": "SDK-only public input: tool-result图像preflight/serializer；bytes/base64/URL×user/tool×model/wire. Observable result and failure: 支持的wire收到实际图像并保留tool关联、顺序及失败标志，否则在适当preflight边界typed拒绝；不以MIME占位冒充图；private details不进wire，URL不自动下载. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
-          "verification": [
-            "cargo test -p opi-ai --test replay_contract --test schema_public"
-          ],
-          "production_call_sites": [
-            "opi_ai transcript projection/real adapter preparation (target)",
-            "opi_ai serialized Message roundtrip"
-          ],
-          "status": "open"
-        },
-        {
-          "id": "V-32",
-          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#新增已确认能力的验收（V-27–38） / V-32",
-          "scenario": "SDK-only public input: 各adapter＋canonical persistence＋target replay；Responses/Codex/Azure、Google/Vertex、Chat reasoning_details、Bedrock与Anthropic. Observable result and failure: capture→terminal→serialize/reload→下一request保留opaque bytes/顺序/块绑定/来源；signed-empty和terminal-only回填不丢。跨provider/API/model剥离不能重用的签名/opaque，保可见内容与raw；能力变化不盲回stale thinking。invalid metadata有typed失败/明确投影，不伪造unknown来源 跨身份所有thinking含可读部分drop；新effort stamp按同身份重放，不能把旧模型reasoning暴露成answer。. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
           "verification": [
             "cargo test -p opi-ai --test replay_contract --test schema_public"
           ],
@@ -1766,7 +1770,7 @@
         {
           "id": "P20-S07",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-03",
-          "scenario": "Public manual tool loop/model change preserves originals and block-bound opaque metadata through serialization. Batch-position/source-ID pairing rejects ambiguity/orphans, closes missing results request-locally as ResultUnavailable/UnknownEffect, never executes tools. Error/Aborted/Length projections retain actual effects and distinguish native/collapse/Strict. Cross provider/API/model drops all thinking per Pi1.3, signed-empty/terminal-only data and Responses dual IDs roundtrip for same identity.",
+          "scenario": "Public manual tool loop/model change preserves originals and block-bound opaque metadata through serialization. Batch-position/source-ID pairing rejects ambiguity/orphans, closes missing results request-locally as ResultUnavailable/UnknownEffect, never executes tools. Error/Aborted/Length projections retain actual effects and distinguish native/collapse/Strict. Cross provider/API/model drops all thinking per Pi1.3, signed-empty/terminal-only data and Responses dual IDs roundtrip for same identity. Local scope: canonical replay and opaque preservation through current migrated adapters. Complete V-32, including actual effort-stamp capture through terminal/Serde and the next same-identity request, closes at 20.34 after 20.37 and the other completed protocol adapters.",
           "verification": [
             "cargo test -p opi-ai --test replay_contract --test schema_public"
           ],
@@ -6178,7 +6182,7 @@
       "title": "42 profiles、目录／预算集成与 canonical 引用迁移",
       "crate": "workspace",
       "parent_spec_row": "DEL-10",
-      "definition_of_done": "Every one of42 factories produces exact source-qualified registered wires/defaults/auth/filter/endpoint metadata, real public calls and full custom record behavior, including OpenAI Responses default plus Chat and Azure dual wires. Reentrant gemini/google, vertex/google-vertex, bedrock/amazon-bedrock config/store reference migration detects conflicts before copy/ACK/switch and never overwrites accounts, rewrites historical ApiKind or retains permanent builtin aliases. Test profile-specific wire fixtures not factory count alone. Own the assembled full source closures for frozen route/effort (AIR-001/V-01), acquisition defaults and source send accounting (AIR-007/V-05/DEL-05/DEL-06), built-in catalog behavior (AIR-034/064/V-28/56), adapter-specific sampling/pricing (AIR-062/V-54), and transcript/native-effort stamps unaffected by sampling/onPayload overrides (V-16). All corresponding mechanisms are supplied by predecessor tasks. Reuse their named fixtures/results at the final relevant state and add only missing cross-path conformance; no second driver, catalog owner, retry coordinator or full implementation pass.",
+      "definition_of_done": "Every one of42 factories produces exact source-qualified registered wires/defaults/auth/filter/endpoint metadata, real public calls and full custom record behavior, including OpenAI Responses default plus Chat and Azure dual wires. Reentrant gemini/google, vertex/google-vertex, bedrock/amazon-bedrock config/store reference migration detects conflicts before copy/ACK/switch and never overwrites accounts, rewrites historical ApiKind or retains permanent builtin aliases. Test profile-specific wire fixtures not factory count alone. Own the assembled full source closures for frozen route/effort (AIR-001/V-01), acquisition defaults and source send accounting (AIR-007/V-05/DEL-05/DEL-06), built-in catalog behavior (AIR-034/064/V-28/56), adapter-specific sampling/pricing (AIR-062/V-54), and transcript/native-effort stamps unaffected by sampling/onPayload overrides (V-16). All corresponding mechanisms are supplied by predecessor tasks. Reuse their named fixtures/results at the final relevant state and add only missing cross-path conformance; no second driver, catalog owner, retry coordinator or full implementation pass. Own complete V-32 through actual adapter capture -> terminal -> serialize/reload -> next request, including same-identity effort stamps and cross-identity projection; use the completed 20.7 replay mechanism and 20.37/protocol producers, never hand-constructed metadata alone.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -6329,13 +6333,18 @@
         },
         {
           "field": "definition_of_done",
-          "reason": "Every one of42 factories produces exact source-qualified registered wires/defaults/auth/filter/endpoint metadata, real public calls and full custom record behavior, including OpenAI Responses default plus Chat and Azure dual wires. Reentrant gemini/google, vertex/google-vertex, bedrock/amazon-bedrock config/store reference migration detects conflicts before copy/ACK/switch and never overwrites accounts, rewrites historical ApiKind or retains permanent builtin aliases. Test profile-specific wire fixtures not factory count alone. Own the assembled full source closures for frozen route/effort (AIR-001/V-01), acquisition defaults and source send accounting (AIR-007/V-05/DEL-05/DEL-06), built-in catalog behavior (AIR-034/064/V-28/56), adapter-specific sampling/pricing (AIR-062/V-54), and transcript/native-effort stamps unaffected by sampling/onPayload overrides (V-16). All corresponding mechanisms are supplied by predecessor tasks. Reuse their named fixtures/results at the final relevant state and add only missing cross-path conformance; no second driver, catalog owner, retry coordinator or full implementation pass.",
+          "reason": "Every one of42 factories produces exact source-qualified registered wires/defaults/auth/filter/endpoint metadata, real public calls and full custom record behavior, including OpenAI Responses default plus Chat and Azure dual wires. Reentrant gemini/google, vertex/google-vertex, bedrock/amazon-bedrock config/store reference migration detects conflicts before copy/ACK/switch and never overwrites accounts, rewrites historical ApiKind or retains permanent builtin aliases. Test profile-specific wire fixtures not factory count alone. Own the assembled full source closures for frozen route/effort (AIR-001/V-01), acquisition defaults and source send accounting (AIR-007/V-05/DEL-05/DEL-06), built-in catalog behavior (AIR-034/064/V-28/56), adapter-specific sampling/pricing (AIR-062/V-54), and transcript/native-effort stamps unaffected by sampling/onPayload overrides (V-16). All corresponding mechanisms are supplied by predecessor tasks. Reuse their named fixtures/results at the final relevant state and add only missing cross-path conformance; no second driver, catalog owner, retry coordinator or full implementation pass. Own complete V-32 through actual adapter capture -> terminal -> serialize/reload -> next request, including same-identity effort stamps and cross-identity projection; use the completed 20.7 replay mechanism and 20.37/protocol producers, never hand-constructed metadata alone.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
         },
         {
           "field": "shared_decision",
           "reason": "decision_id=P20-ACQUISITION; role=consumer; owner_task=20.4; module=opi_ai::retry; interface=PreparedCall::start_attempt; representation=state machine; consumer_tasks=20.11,20.16,20.20,20.34,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.51; criterion_ids=AIR-007,V-05; legacy_paths=Agent main-loop duplicate acquisition scheduling, product summary new-call recovery is retained; closure_test=crates/opi-ai/tests/retry_backoff.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "acceptance_partition",
+          "reason": "V-32 full source closure moves from 20.7 to 20.34 after the real protocol adapters and effort metadata exist. 20.7 proves its current-adapter canonical replay and opaque-preservation slice only; a hand-constructed historical stamp is not producer-to-next-request proof. Reuse predecessor assertions and add only distinct assembled cases; do not add a reverse dependency from 20.7 to 20.37.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#新增已确认能力的验收（V-27–38） / V-32"
         }
       ],
       "tier": "workspace",
@@ -6358,7 +6367,15 @@
           "crates/opi-ai/tests/request_enrichment.rs",
           "crates/opi-ai/tests/retry_backoff.rs",
           "crates/opi-ai/tests/transcript_contract.rs",
-          "crates/opi-ai/tests/usage_cost.rs"
+          "crates/opi-ai/tests/usage_cost.rs",
+          "crates/opi-ai/tests/replay_contract.rs",
+          "crates/opi-ai/tests/schema_public.rs",
+          "crates/opi-ai/tests/openai_responses_fixtures.rs",
+          "crates/opi-ai/tests/azure_openai_fixtures.rs",
+          "crates/opi-ai/tests/gemini_fixtures.rs",
+          "crates/opi-ai/tests/vertex_fixtures.rs",
+          "crates/opi-ai/tests/openai_chat_fixtures.rs",
+          "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -6399,7 +6416,7 @@
         {
           "id": "P20-S34",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-10",
-          "scenario": "Every one of42 factories produces exact source-qualified registered wires/defaults/auth/filter/endpoint metadata, real public calls and full custom record behavior, including OpenAI Responses default plus Chat and Azure dual wires. Reentrant gemini/google, vertex/google-vertex, bedrock/amazon-bedrock config/store reference migration detects conflicts before copy/ACK/switch and never overwrites accounts, rewrites historical ApiKind or retains permanent builtin aliases. Test profile-specific wire fixtures not factory count alone. Own the assembled full source closures for frozen route/effort (AIR-001/V-01), acquisition defaults and source send accounting (AIR-007/V-05/DEL-05/DEL-06), built-in catalog behavior (AIR-034/064/V-28/56), adapter-specific sampling/pricing (AIR-062/V-54), and transcript/native-effort stamps unaffected by sampling/onPayload overrides (V-16). All corresponding mechanisms are supplied by predecessor tasks. Reuse their named fixtures/results at the final relevant state and add only missing cross-path conformance; no second driver, catalog owner, retry coordinator or full implementation pass.",
+          "scenario": "Every one of42 factories produces exact source-qualified registered wires/defaults/auth/filter/endpoint metadata, real public calls and full custom record behavior, including OpenAI Responses default plus Chat and Azure dual wires. Reentrant gemini/google, vertex/google-vertex, bedrock/amazon-bedrock config/store reference migration detects conflicts before copy/ACK/switch and never overwrites accounts, rewrites historical ApiKind or retains permanent builtin aliases. Test profile-specific wire fixtures not factory count alone. Own the assembled full source closures for frozen route/effort (AIR-001/V-01), acquisition defaults and source send accounting (AIR-007/V-05/DEL-05/DEL-06), built-in catalog behavior (AIR-034/064/V-28/56), adapter-specific sampling/pricing (AIR-062/V-54), and transcript/native-effort stamps unaffected by sampling/onPayload overrides (V-16). All corresponding mechanisms are supplied by predecessor tasks. Reuse their named fixtures/results at the final relevant state and add only missing cross-path conformance; no second driver, catalog owner, retry coordinator or full implementation pass. Own complete V-32 through actual adapter capture -> terminal -> serialize/reload -> next request, including same-identity effort stamps and cross-identity projection; use the completed 20.7 replay mechanism and 20.37/protocol producers, never hand-constructed metadata alone.",
           "verification": [
             "cargo test -p opi-ai --test api_mapped_provider --test bedrock_fixtures --test context_budget --test model_wire_metadata --test openai_codex_responses --test openrouter_fixtures --test provider_collection --test registry --test request_enrichment --test retry_backoff --test transcript_contract --test usage_cost"
           ],
@@ -6635,6 +6652,20 @@
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
           "status": "open"
+        },
+        {
+          "id": "V-32",
+          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#新增已确认能力的验收（V-27–38） / V-32",
+          "scenario": "SDK-only public input: 各adapter＋canonical persistence＋target replay；Responses/Codex/Azure、Google/Vertex、Chat reasoning_details、Bedrock与Anthropic. Observable result and failure: capture→terminal→serialize/reload→下一request保留opaque bytes/顺序/块绑定/来源；signed-empty和terminal-only回填不丢。跨provider/API/model剥离不能重用的签名/opaque，保可见内容与raw；能力变化不盲回stale thinking。invalid metadata有typed失败/明确投影，不伪造unknown来源 跨身份所有thinking含可读部分drop；新effort stamp按同身份重放，不能把旧模型reasoning暴露成answer。. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
+          "verification": [
+            "cargo test -p opi-ai --test replay_contract --test schema_public --test openai_responses_fixtures --test openai_codex_responses --test azure_openai_fixtures --test gemini_fixtures --test vertex_fixtures --test openai_chat_fixtures --test bedrock_fixtures --test anthropic_thinking_roundtrip"
+          ],
+          "production_call_sites": [
+            "opi_ai transcript projection/real adapter preparation (target)",
+            "opi_ai serialized Message roundtrip",
+            "opi_ai completed real adapter producers and next-request replay through Models (target)"
+          ],
+          "status": "open"
         }
       ],
       "production_call_sites": [
@@ -6642,7 +6673,10 @@
         "opi_coding_agent::provider_factory",
         "opi_coding_agent config/credential-reference migration",
         "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
-        "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
+        "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)",
+        "opi_ai transcript projection/real adapter preparation (target)",
+        "opi_ai serialized Message roundtrip",
+        "opi_ai completed real adapter producers and next-request replay through Models (target)"
       ],
       "substrate_only": false,
       "iteration_count": 0,
@@ -6693,18 +6727,26 @@
         "crates/opi-ai/src/test_support.rs",
         "crates/opi-ai/src/vertex.rs",
         "crates/opi-ai/tests/**",
+        "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs",
         "crates/opi-ai/tests/api_mapped_provider.rs",
+        "crates/opi-ai/tests/azure_openai_fixtures.rs",
         "crates/opi-ai/tests/bedrock_fixtures.rs",
         "crates/opi-ai/tests/context_budget.rs",
+        "crates/opi-ai/tests/gemini_fixtures.rs",
         "crates/opi-ai/tests/model_wire_metadata.rs",
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
         "crates/opi-ai/tests/openai_codex_responses.rs",
+        "crates/opi-ai/tests/openai_responses_fixtures.rs",
         "crates/opi-ai/tests/openrouter_fixtures.rs",
         "crates/opi-ai/tests/provider_collection.rs",
         "crates/opi-ai/tests/registry.rs",
+        "crates/opi-ai/tests/replay_contract.rs",
         "crates/opi-ai/tests/request_enrichment.rs",
         "crates/opi-ai/tests/retry_backoff.rs",
+        "crates/opi-ai/tests/schema_public.rs",
         "crates/opi-ai/tests/transcript_contract.rs",
         "crates/opi-ai/tests/usage_cost.rs",
+        "crates/opi-ai/tests/vertex_fixtures.rs",
         "crates/opi-coding-agent/README.md",
         "crates/opi-coding-agent/README.zh.md",
         "crates/opi-coding-agent/schemas/**",
@@ -11850,7 +11892,7 @@
       "title": "真实 native 平台／MSRV／feature 与供应链交付验收",
       "crate": "workspace",
       "parent_spec_row": "DEL-14",
-      "definition_of_done": "Freeze final root Cargo graph/features/checksums/build.rs/native/procmacro/unsafe/license/NOTICE and security-maintenance material, use Cargo-generated lock and review feature unions. Execute native Linux/macOS/Windows package and behavioral conformance plus MSRV1.97, map all advertised release target claims to real build/package/behavioral evidence (cross-check not native proof). Configure source-pinned deterministic CI/artifacts, explicit unavailable runner/input remains OPEN and blocks Phase exit. No cross-platform build from this skill, live provider, registry publication/release/CI dispatch/commit is implicitly authorized; external platform execution needs owning host or explicitly authorized CI. Update the existing delivery-evidence baseline with actual final platform/input outcomes only after they execute, before group closure. Supply complete criteria/artifacts for mandatory workflow F.1a, never substitute this task for that independent phase-exit gate.",
+      "definition_of_done": "Freeze final root Cargo graph/features/checksums/build.rs/native/procmacro/unsafe/license/NOTICE and security-maintenance material, use Cargo-generated lock and review feature unions. Execute native Linux/macOS/Windows package and behavioral conformance plus MSRV1.97, map all advertised release target claims to real build/package/behavioral evidence (cross-check not native proof). Configure source-pinned deterministic CI/artifacts, explicit unavailable runner/input remains OPEN and blocks Phase exit. No cross-platform build from this skill, live provider, registry publication/release/CI dispatch/commit is implicitly authorized; external platform execution needs owning host or explicitly authorized CI. Update the existing delivery-evidence baseline with actual final platform/input outcomes only after they execute, before group closure. Supply complete criteria/artifacts for mandatory workflow F.1a, never substitute this task for that independent phase-exit gate. Local completion covers the executed package/native/MSRV evidence only. Final upstream/test-disposition evidence is 20.59; full DEL-14 and delivery-group closure belong exclusively to the later independent F.1a, not this task or platform_delivery alone.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -11902,6 +11944,11 @@
           "field": "assurance_boundary",
           "reason": "Package/external/platform consumer is a verification harness, not an invented production consumer for PRIN002 or shared-decision triggers. Task adds no production runtime capability, new state owner or public seam.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+        },
+        {
+          "field": "acceptance_partition",
+          "reason": "DEL-14 and the delivery-group trace are split by actual completion: 20.57/20.58 supply SDK/package/native/MSRV runtime proof; 20.59 owns the final documentary evidence/disposition handoff after those tasks pass. Only the mandatory workflow F.1a, after every task passes, independently closes the complete DEL-14 criterion and delivery coverage group. No task requires its own future Phase exit or treats a documentation check as runtime proof.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-14"
         }
       ],
       "tier": "workspace",
@@ -11934,7 +11981,7 @@
         {
           "id": "P20-S58",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-14",
-          "scenario": "Freeze final root Cargo graph/features/checksums/build.rs/native/procmacro/unsafe/license/NOTICE and security-maintenance material, use Cargo-generated lock and review feature unions. Execute native Linux/macOS/Windows package and behavioral conformance plus MSRV1.97, map all advertised release target claims to real build/package/behavioral evidence (cross-check not native proof). Configure source-pinned deterministic CI/artifacts, explicit unavailable runner/input remains OPEN and blocks Phase exit. No cross-platform build from this skill, live provider, registry publication/release/CI dispatch/commit is implicitly authorized; external platform execution needs owning host or explicitly authorized CI. Update the existing delivery-evidence baseline with actual final platform/input outcomes only after they execute, before group closure. Supply complete criteria/artifacts for mandatory workflow F.1a, never substitute this task for that independent phase-exit gate.",
+          "scenario": "Freeze final root Cargo graph/features/checksums/build.rs/native/procmacro/unsafe/license/NOTICE and security-maintenance material, use Cargo-generated lock and review feature unions. Execute native Linux/macOS/Windows package and behavioral conformance plus MSRV1.97, map all advertised release target claims to real build/package/behavioral evidence (cross-check not native proof). Configure source-pinned deterministic CI/artifacts, explicit unavailable runner/input remains OPEN and blocks Phase exit. No cross-platform build from this skill, live provider, registry publication/release/CI dispatch/commit is implicitly authorized; external platform execution needs owning host or explicitly authorized CI. Update the existing delivery-evidence baseline with actual final platform/input outcomes only after they execute, before group closure. Supply complete criteria/artifacts for mandatory workflow F.1a, never substitute this task for that independent phase-exit gate. Local completion covers the executed package/native/MSRV evidence only. Final upstream/test-disposition evidence is 20.59; full DEL-14 and delivery-group closure belong exclusively to the later independent F.1a, not this task or platform_delivery alone.",
           "verification": [
             "cargo test -p opi-ai --test platform_delivery"
           ],
@@ -12026,30 +12073,6 @@
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
           "status": "open"
-        },
-        {
-          "id": "P20-GAP-DELIVERY",
-          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md#5. 七组设计已确定，产品覆盖全部 OPEN",
-          "scenario": "Future full product closure, currently OPEN: authenticcatalog/externalpackage/registry closure and every claimed native/MSRV target with final test disposition. Mechanism owners: 20.32,20.57,20.58,20.59. Every relevant V/RDF and platform requirement remains necessary, research counts do not close it.",
-          "verification": [
-            "cargo test -p opi-ai --test platform_delivery"
-          ],
-          "production_call_sites": [
-            "opi_ai external package consumer on native Linux/macOS/Windows (target)"
-          ],
-          "status": "open"
-        },
-        {
-          "id": "DEL-14",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-14",
-          "scenario": "| DEL-14 | Assembled external SDK/package/platform acceptance and upstream follow-up → verify: the unique matrix, real package/native/MSRV evidence, complete test dispositions and independent phase exit; no substrate-only completion. |",
-          "verification": [
-            "cargo test -p opi-ai --test platform_delivery"
-          ],
-          "production_call_sites": [
-            "opi_ai external package consumer on native Linux/macOS/Windows (target)"
-          ],
-          "status": "open"
         }
       ],
       "production_call_sites": [
@@ -12087,7 +12110,7 @@
       "title": "上游跟进／测试处置与交付证据基线",
       "crate": "documentation",
       "parent_spec_row": "DEL-14",
-      "definition_of_done": "After 20.58, record actual final Pi/Opi/runtime/dependency/catalog/platform identities and source-to-Rust add/update/delete/retain dispositions, commands, executed/skip/missing counts and gaps in the existing tracking/evidence locations with bilingual README/evidence handoff. In acceptance-matrix.md append only evidence/version/result links and factual counts required by V-59; do not edit AIR/V identities, requirements, accepted scope, original observations or historical 70/probe results. This exact registered-source evidence update intentionally causes hash drift: before this task is marked passing or F.1a runs, stop automatic task completion, enter the existing plan drift reconciliation, preserve runtime history and passing evidence, repeat P.0/P.2 and show P.4 for human confirmation. Only that confirmed reconciliation may install refreshed source hashes; never patch hashes alone or treat this task as phase exit. Resume this same task under the reconciled contract and then perform its documentation gate/checkpoint and independent workflow F.1a.",
+      "definition_of_done": "After 20.58, record actual final Pi/Opi/runtime/dependency/catalog/platform identities and source-to-Rust add/update/delete/retain dispositions, commands, executed/skip/missing counts and gaps in the existing tracking/evidence locations with bilingual README/evidence handoff. In acceptance-matrix.md append only evidence/version/result links and factual counts required by V-59; do not edit AIR/V identities, requirements, accepted scope, original observations or historical 70/probe results. This exact registered-source evidence update intentionally causes hash drift: before this task is marked passing or F.1a runs, stop automatic task completion, enter the existing plan drift reconciliation, preserve runtime history and passing evidence, repeat P.0/P.2 and show P.4 for human confirmation. Only that confirmed reconciliation may install refreshed source hashes; never patch hashes alone or treat this task as phase exit. Resume this same task under the reconciled contract and complete its documentation gate/checkpoint. Assemble the DEL-14/delivery-group handoff from the existing 20.57/20.58 public runtime, package, native and MSRV proof plus final upstream/test dispositions, checking exact input identities, artifact references and unresolved gaps without rerunning unchanged runtime evidence. Task completion acknowledges only this documentary handoff. After every task is passing, mandatory workflow F.1a independently rebuilds and judges the complete DEL-14 criterion and delivery coverage group; no documentation check closes runtime acceptance or substitutes for F.1a.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -12127,7 +12150,7 @@
         },
         {
           "field": "definition_of_done",
-          "reason": "After 20.58, record actual final Pi/Opi/runtime/dependency/catalog/platform identities and source-to-Rust add/update/delete/retain dispositions, commands, executed/skip/missing counts and gaps in the existing tracking/evidence locations with bilingual README/evidence handoff. In acceptance-matrix.md append only evidence/version/result links and factual counts required by V-59; do not edit AIR/V identities, requirements, accepted scope, original observations or historical 70/probe results. This exact registered-source evidence update intentionally causes hash drift: before this task is marked passing or F.1a runs, stop automatic task completion, enter the existing plan drift reconciliation, preserve runtime history and passing evidence, repeat P.0/P.2 and show P.4 for human confirmation. Only that confirmed reconciliation may install refreshed source hashes; never patch hashes alone or treat this task as phase exit. Resume this same task under the reconciled contract and then perform its documentation gate/checkpoint and independent workflow F.1a.",
+          "reason": "After 20.58, record actual final Pi/Opi/runtime/dependency/catalog/platform identities and source-to-Rust add/update/delete/retain dispositions, commands, executed/skip/missing counts and gaps in the existing tracking/evidence locations with bilingual README/evidence handoff. In acceptance-matrix.md append only evidence/version/result links and factual counts required by V-59; do not edit AIR/V identities, requirements, accepted scope, original observations or historical 70/probe results. This exact registered-source evidence update intentionally causes hash drift: before this task is marked passing or F.1a runs, stop automatic task completion, enter the existing plan drift reconciliation, preserve runtime history and passing evidence, repeat P.0/P.2 and show P.4 for human confirmation. Only that confirmed reconciliation may install refreshed source hashes; never patch hashes alone or treat this task as phase exit. Resume this same task under the reconciled contract and complete its documentation gate/checkpoint. Assemble the DEL-14/delivery-group handoff from the existing 20.57/20.58 public runtime, package, native and MSRV proof plus final upstream/test dispositions, checking exact input identities, artifact references and unresolved gaps without rerunning unchanged runtime evidence. Task completion acknowledges only this documentary handoff. After every task is passing, mandatory workflow F.1a independently rebuilds and judges the complete DEL-14 criterion and delivery coverage group; no documentation check closes runtime acceptance or substitutes for F.1a.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
         },
         {
@@ -12139,6 +12162,11 @@
           "field": "source_update_boundary",
           "reason": "The matrix is the sole acceptance index and has no existing English counterpart. Its factual evidence appendix is updated only after native outcomes exist; bilingual current evidence/README remain synchronized. Existing source drift gates control this amendment and preserve already-passing task history.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#Pi 1.3.0 完整公开能力补齐（V-49–59）"
+        },
+        {
+          "field": "acceptance_partition",
+          "reason": "DEL-14 and the delivery-group trace are split by actual completion: 20.57/20.58 supply SDK/package/native/MSRV runtime proof; 20.59 owns the final documentary evidence/disposition handoff after those tasks pass. Only the mandatory workflow F.1a, after every task passes, independently closes the complete DEL-14 criterion and delivery coverage group. No task requires its own future Phase exit or treats a documentation check as runtime proof.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-14"
         }
       ],
       "tier": "documentation",
@@ -12179,7 +12207,7 @@
         {
           "id": "P20-S59",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-14",
-          "scenario": "After 20.58, record actual final Pi/Opi/runtime/dependency/catalog/platform identities and source-to-Rust add/update/delete/retain dispositions, commands, executed/skip/missing counts and gaps in the existing tracking/evidence locations with bilingual README/evidence handoff. In acceptance-matrix.md append only evidence/version/result links and factual counts required by V-59; do not edit AIR/V identities, requirements, accepted scope, original observations or historical 70/probe results. This exact registered-source evidence update intentionally causes hash drift: before this task is marked passing or F.1a runs, stop automatic task completion, enter the existing plan drift reconciliation, preserve runtime history and passing evidence, repeat P.0/P.2 and show P.4 for human confirmation. Only that confirmed reconciliation may install refreshed source hashes; never patch hashes alone or treat this task as phase exit. Resume this same task under the reconciled contract and then perform its documentation gate/checkpoint and independent workflow F.1a.",
+          "scenario": "After 20.58, record actual final Pi/Opi/runtime/dependency/catalog/platform identities and source-to-Rust add/update/delete/retain dispositions, commands, executed/skip/missing counts and gaps in the existing tracking/evidence locations with bilingual README/evidence handoff. In acceptance-matrix.md append only evidence/version/result links and factual counts required by V-59; do not edit AIR/V identities, requirements, accepted scope, original observations or historical 70/probe results. This exact registered-source evidence update intentionally causes hash drift: before this task is marked passing or F.1a runs, stop automatic task completion, enter the existing plan drift reconciliation, preserve runtime history and passing evidence, repeat P.0/P.2 and show P.4 for human confirmation. Only that confirmed reconciliation may install refreshed source hashes; never patch hashes alone or treat this task as phase exit. Resume this same task under the reconciled contract and complete its documentation gate/checkpoint. Assemble the DEL-14/delivery-group handoff from the existing 20.57/20.58 public runtime, package, native and MSRV proof plus final upstream/test dispositions, checking exact input identities, artifact references and unresolved gaps without rerunning unchanged runtime evidence. Task completion acknowledges only this documentary handoff. After every task is passing, mandatory workflow F.1a independently rebuilds and judges the complete DEL-14 criterion and delivery coverage group; no documentation check closes runtime acceptance or substitutes for F.1a.",
           "verification": [
             "python scripts/opi-doc-check.py",
             "git diff --check"
@@ -12202,6 +12230,28 @@
           "id": "P20-EXIT-08",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Acceptance dependencies and completion / 8",
           "scenario": "8. Independent document review → verify: bilingual requirements, current annexes, unique acceptance matrix, historical supersession and all source/ID references agree. Document checks pass; unresolved material decisions are explicit. Runtime/test implementation and formal admission remain separate.",
+          "verification": [
+            "python scripts/opi-doc-check.py",
+            "git diff --check"
+          ],
+          "production_call_sites": [],
+          "status": "open"
+        },
+        {
+          "id": "P20-GAP-DELIVERY",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md#5. 七组设计已确定，产品覆盖全部 OPEN",
+          "scenario": "Delivery-group documentary handoff: combine the authentic catalog proof from 20.32/20.34, external package and registry closure from 20.57, every claimed native/MSRV result from 20.58, and final test dispositions/upstream evidence from 20.59. Check source/build/platform identity and references, preserving every missing or unresolved outcome. Completion means only the evidence handoff is ready; the full product coverage group stays OPEN until mandatory F.1a independently validates all current closing criteria after all tasks pass. Research counts and documentation checks are never runtime proof.",
+          "verification": [
+            "python scripts/opi-doc-check.py",
+            "git diff --check"
+          ],
+          "production_call_sites": [],
+          "status": "open"
+        },
+        {
+          "id": "DEL-14",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-14",
+          "scenario": "DEL-14 documentary handoff after 20.57/20.58: record the actual unique-matrix, external SDK/package/native/MSRV evidence references and exact inputs together with final upstream follow-up and complete test dispositions. Inspect predecessor proof and report missing, stale or mismatched evidence as a gap; reuse valid unchanged runtime results. This scenario closes only the final evidence handoff, not the full source criterion. After all tasks pass, mandatory F.1a independently judges the complete DEL-14 and refuses archive for unmet requirements; neither 20.58 nor this documentation task self-certifies Phase exit.",
           "verification": [
             "python scripts/opi-doc-check.py",
             "git diff --check"
@@ -12688,6 +12738,16 @@
       "flagged_count": 0,
       "rejected_count": 1,
       "ran_at": "2026-10-17T01:33:03+08:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 3,
+      "ran_at": "2026-10-17T01:59:31+08:00",
       "task_id": null,
       "criterion_id": null
     }
