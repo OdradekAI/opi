@@ -48,7 +48,7 @@
       "definition_of_done": "Freeze Pi tree/runtime/dependency/data identities and current Opi HEAD in bilingual delivery-input evidence, preserve all 57 SDK AIR/54 SDK V identities, enumerate 10 chat/1 image/4 classifier/42 profiles/9 OAuth and exclusions. Record source-to-Rust test mapping inputs without claiming runtime support or editing an admitted requirement. Before cross-layer auth migration, record the already-selected placement in bilingual ADR-0001: SDK protocol/rotation mechanisms, Reference Product presenter/keychain/locking policy, real consumers, minimal authority, dependency/native maintenance costs and reversible cutover. The ADR records the registered decision and does not introduce requirements or mark runtime acceptance met.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [],
       "inference_notes": [
         {
@@ -119,7 +119,7 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-EXIT-01",
@@ -130,7 +130,7 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-01",
@@ -141,14 +141,14 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [],
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "96b97096226d0b9ef59c82c9eb6bb67f8ed9da2f",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "docs/adr/0001-sdk-auth-placement.md",
@@ -156,10 +156,27 @@
         "docs/research/pi-ai-opi-ai-alignment/phase20-delivery-inputs.md",
         "docs/research/pi-ai-opi-ai-alignment/phase20-delivery-inputs.zh.md"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "124c2a768eeddf80e141324f9c1b50d46e828dfc",
+      "evidence": {
+        "Opi-Task": "20.1",
+        "Opi-DoD-SHA256": "b013020963ce8479adeee4f11419fdd3ebde657e312a48070bb6d1d760f6dad8",
+        "Opi-Verification": "documentation; python scripts/opi-doc-check.py PASS; git diff --check clean",
+        "Opi-Evaluator": "not-required",
+        "Opi-Acceptance": "P20-S01, P20-EXIT-01, DEL-01; doc-check + git diff --check evidence-only, no runtime claim"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-17T02:20:47+08:00",
+          "attempt": 1,
+          "summary": "DEL-01 documentation baseline delivered in commit 124c2a768eeddf80e141324f9c1b50d46e828dfc: bilingual delivery-input evidence (Pi 1.3.0 tree/runtime/dependency/data identities, Opi HEAD 96b9709, 57+9+1 AIR and 54+4+1 V dispositions, 10 chat/1 image/4 classifier/42 profiles/9 OAuth inventory with exclusions, 41+7 test-mapping inputs, Pi 171->174 corpus delta, historical 70-test baseline, offline research counts) plus bilingual ADR-0001 recording the SDK auth placement (opi-ai mechanisms; Reference Product presenter/keychain/fs4-lock policy as host adapters) gated on 20.18/20.22/20.23. No runtime support claimed; no admitted requirement edited; no test executed.",
+          "gate_results": {
+            "docs": "PASS: python scripts/opi-doc-check.py; git diff --check clean",
+            "task_owned_paths": "4 exact documentation paths committed; git diff --name-only shows no Rust/manifest/lockfile/fixture/generated changes",
+            "test_disposition": "none (documentation-only task; no tests added/updated/deleted/retained by this task; historical baselines remain as recorded)"
+          }
+        }
+      ]
     },
     {
       "id": "20.2",
