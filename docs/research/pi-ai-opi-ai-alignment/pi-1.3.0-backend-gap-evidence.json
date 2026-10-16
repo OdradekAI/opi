@@ -1,0 +1,2183 @@
+{
+  "kind": "Pi1.3.0-backend-gap-document-audit",
+  "date": "2026-10-16",
+  "status": "PASS",
+  "mode": "worktree-only",
+  "input_head": "a37ed708dfdac3528bc7dfeba18f0df3af68cadc",
+  "observed_head": "a927edfb0b7360a93361880fc83ec9d37b7ff103",
+  "committed": "none-for-this-task",
+  "scope": "only alignment research docs; 7 groups OPEN, no implementation",
+  "input_document_sha256": {
+    "acceptance-matrix.md": "721d36c87ee82b6b097883b83757de1da2300c276a0003dd74619502c3568b45",
+    "ai-telemetry-report-crosscheck.md": "792c41a27f29711d1b4001b74734255e7da72f9b6df1869a18718ccb54233e69",
+    "baseline.json": "f6db4d01bedbe5c0eebca675dce95f4fe18993c89aff63396aa8861a12b81a61",
+    "decision-reassessment.md": "7df787e770f9b17f2fc51dfe1b90fe9782d44fc4c8545e84a03cc7003b3d4d78",
+    "decisions.md": "307d37887a75e2d04ef1a200c4cb487170e5757ba3ba7733818db132384f233f",
+    "design-audit.md": "dfd0be6ad05a3712578428a0c8cd8521e660911d4f2347c14ea3b7b5902b55ae",
+    "design-evolution.md": "9f7a3b8ea69432063eca22059faa81e2e92ffdd4043a446b1ac2bbe73c0fc0ed",
+    "evidence-matrix.md": "d9fb034b588fd9883c18468d1247d9f3b0712eb37a23e2d5b3a1c6943d8e0cb0",
+    "evolution-target-proposal.md": "4d3092138a8a97546ee1198cdb6e61dad4f9793df86c2746ef3eb940295f8a98",
+    "offline-probe-result.json": "38b3d01dc85c58e8eafa1a68cc48abf210cc9eaa5b5e9454937ebfea790c8599",
+    "offline-probes.md": "5b386f4892f5d925ade21c782787e8d6238d9cc0dc151cf7d3e40f2117c2bf7d",
+    "operations-design.md": "9fa815d65f1885db2f488e7ff9297e3c0669c050bb50b942b3cea882be09a8f0",
+    "opi-audit-notes.md": "972dcbc8cb2e7bd30e8f0abc2d38bd7c1a9e67bc90ff3fb13b5c5629ed878a3a",
+    "pi-1.2.0-backend-revision-baseline.json": "ec58309392c4fd5f6fc160210cb5601f8810ae374f37112ae46ff42bc622f545",
+    "pi-1.2.0-backend-revision-review.md": "a4046bdad3caa57018133ed2ffc61476df7b525f080f4845c521f7e958d6daf1",
+    "pi-1.2.0-backend-revision-verification.json": "32caa79c71d59abae4602d00350c3069713890fe48d7049def4b9e3d7e9ebba0",
+    "pi-1.2.0-backend-source-evidence.json": "43d9bec02c7466d7ecfbf3c46093db382fee389ef37ddedff538d6ac50dcbeee",
+    "pi-1.2.0-followup-evidence.json": "e675c68609b54cf5b42498db4d0453e8beceaab8b6b375098eec6c60596c8d5a",
+    "pi-1.2.0-followup.md": "a9aef181c6c1e1b09c80c0ee5758fab0a90ab88322acd7e73a10b439c426dd05",
+    "pi-1.2.0-parameter-audit.md": "1984a94d692f4f8830ef85a5c91e818fb6e906d221258fa8e7d00567d60e0832",
+    "pi-1.2.0-parameter-revision-baseline.json": "7c644af51f3b392b93dc32b87e92309adf25072f6eb745831b67d976b97d38cb",
+    "pi-1.2.0-parameter-revision-review.md": "090e26c569c0afa5620e18bd0a26857775c9cedeb548c074c1e49f3206bc7a69",
+    "pi-1.2.0-parameter-revision-verification.json": "72b1e4f2df95722662363f45e67717022caf2b1a6afcaf66b8e0c8ca8160be33",
+    "pi-1.2.0-parameter-source-evidence.json": "943b7766b8d753459a606ebdb4acd3d641d5156401884f17be00969a74068648",
+    "pi-1.2.0-review-baseline.json": "255c2080f1450180b89d4d0c89522a4273cd0ec70bd262eeb055ab1e365dfc7f",
+    "pi-1.2.0-review.md": "bef13d28a13693a3b5ad32455bd5598209cf2f8010645597fd58a9233ab67aeb",
+    "pi-1.2.0-revision-baseline.json": "56639f4de9515ec9e2ab97b92080136d3eb2f8ecbff947db5d13fef6d81800c8",
+    "pi-1.2.0-revision-review.md": "0f81bdf63f8c416d188488f5a81a42f61afbf8cd13aba9d5d1340d8790ec0985",
+    "pi-1.2.0-revision-verification.json": "346ec7961eee8c050a51f72d68cb9f73183bd9d7a02527272e8be04a21237b1c",
+    "pi-1.2.0-rust-architecture-review.md": "a8b3ffcdaa00a3c2e3d170a721473c0209b55d64e300bb3ca92a9fa2e2f0f164",
+    "pi-1.2.0-rust-backends.md": "5bd9958f61b014a1b785e34b133db11df2bf9821cec81e6f3e50305f376937bf",
+    "pi-1.2.0-rust-differences.md": "60b340f107f576cefade9517e68e314d3dd791919d841f317eed0fe58daf81d3",
+    "pi-1.2.0-sdk-contracts.md": "f64e8ce67603632adc1a68d2605786d0e3bbbfc9e3fca67a5b5639c4c9e06e09",
+    "pi-1.3.0-revision-review.md": "c0af981a31b47616865ee363fca57e912fd690b0207c3df91fdf66ff2831c6e3",
+    "pi-1.3.0-revision-verification.json": "e7c6fdaf2814e1c4c2b2a694e46b0f444c4f9ffcae70d71199d782079bea3b53",
+    "pi-1.3.0-rust-backends.md": "0a1a82c0126a893ff1e6a93b2055f2058b9c32368b326165eb1e7b390ff05715",
+    "pi-1.3.0-rust-differences.md": "3733668d61288a220a825cdd8939b70c16a89c6db00c00aa2175463e2ee24268",
+    "pi-1.3.0-sdk-contracts.md": "89d64080bc105c0c6950dd8bc3ba2dba81ab1eeb556baab1df2e32f8061a5bdf",
+    "pi-1.3.0-source-evidence.json": "750a80ae5b37b6d8f87963cee14866a762918375f2a0dda78fe7fa14d4450540",
+    "pi-1.3.0-upgrade-review.md": "0d16c0fec3a72b706d342e1eb1a6777f50da1ee01be835e7c24c14b5993b0696",
+    "pi-contracts-notes.md": "d1c91f15216c852ec30604334d67960a6c83e8006099c07b2bde82b82bfd5767",
+    "placement-options.md": "bf354fdcaf4202afb04fbda32f3cc23d2ddc836bccd127ac7fc69bfd6ed418d3",
+    "provider-contract-addendum.md": "7bbe406b41d94d9c5fa648c0e0d2996cdc8d6225c0165791a8c21f134f78f4c3",
+    "README.md": "da099cd5a4515ad0adb3f6fe2daabbd5794aeed4394a8cf3e6a6c8a8fd0a2569",
+    "reassessment-evolution-notes.md": "be8da757e5cb4c748cceb6ecc8dc2b8773791ab3ae36fde7e81c57aa4fb80864",
+    "reassessment-sdk-notes.md": "d3b3006e9a3629abfeb571c60c87844caa7ef8d0626fc3f740464969f0d8a819",
+    "reassessment-transcript-notes.md": "15143d4c1cf94fb097afefdfa97ec8aa2de153a2e68361996d9ad0728243e121",
+    "replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
+    "review-notes.md": "994fcbfd1417dec930d0c973acb37873d2713d0ba5d077e7307cfc260e5c5921",
+    "route-probe-result.json": "2433d1a5b8210246b43d9fdb34416d30a66390d01eb3aee48ce19598a26e5d03",
+    "route-probe.md": "e203397c6cd4be556fea8f324ef058b82f84ac1f1b259effaac0c688e872479d",
+    "sdk-auth-provider-migration.md": "06811904ceb6d8029317dfc47df34b3a2108d5e549a4b094b189ba23d563f818",
+    "sdk-consumer-contract.md": "31de654cfd0f2aec9b61b4e11a1bbde0caedd8f3dadb0bca74494ed1bfd0bb74",
+    "sdk-opi-caller-review.md": "1b10011870d32a7d7d4f296bd1cad97286ddc9dcfce9e3d9f981da9d719cf91a",
+    "sdk-pi-caller-review.md": "cb0b218dc64dbd4577c5c23b7e1cc7a6877c69ea0dba8557319cff8c09d5ac6e",
+    "sdk-spec-review.md": "31e45a1b18ef36d9eccf72d9517338e69d3ccea0bb38df4165d49f942760ff37",
+    "sdk-target-proposal.md": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c",
+    "spec-draft.md": "66df6d27d7037b128bae2d49d04f3b8295de5908da4a295d96831119bc7cbec0",
+    "spec-draft.zh.md": "76c74e81440495e14c05cc5fe390b5e5c6a06684df381a4eef89e09ad4017aff",
+    "spec-evidence-review.md": "941cb117236c9bda631a74559aff7c0b75acc01e2c087c4e8b14658b71ec52d7",
+    "spec-review-round-2.md": "e2e18c29fa2358671b246debac2bb49afbc6072c20c870b516d45e8d494b9cb0",
+    "spec-review.md": "b7d658b7ba55fdbb789a98e5a84e173c316882d14a1d013cbdbf950743fc3692",
+    "telemetry-design.md": "dacb74435e6cf3c731372ee562f4cc88372497bbe5d037cb85154151d8e23a71",
+    "telemetry-evolution.md": "4c7805d8c269d6fd23c7faa3174ff945c8a0a6589b5a42a7e67557f1eb124073",
+    "telemetry-opi-audit.md": "c6d11e255b305d71a62d192c206fec96c940b656d67e1462ad238e11fc369202",
+    "telemetry-pi-contracts.md": "bc49f5cfd10b0ff7620e399d62e7169ac7ffe40afc15fdf887d81fc36b685388",
+    "telemetry-spec-review.md": "2e2f6234e8d397c45fd17c441c81c3203823f0f9cf098843edd824b382f6ce4f",
+    "transcript-migration.md": "c4a99752434e73d2472450bcbc3241058d40dc069212f42d6ab37ac41932b9ec",
+    "transcript-target-proposal.md": "25a4234507ab1c4c12d483c56bb4083172bf4d5c35dfec1dc92bc98c77a5d94e",
+    "upstream-tracking.md": "91f91a3c2545b8141dfec7b0216ca8db8562613ddcd57650a7cb01a9a18ab425"
+  },
+  "source_audits": [
+    {
+      "scope": "schema",
+      "report_sha256": "759de4adf7e56c505724b8dd4eb6260424eba747725898c8d80593d48085ce5f",
+      "sidecar_sha256": "66e52461d0c6ccea81fd4384a2b3116695fd44b93eea8ae530d09c92c9dbf925"
+    },
+    {
+      "scope": "transport",
+      "report_sha256": "20f5c90f8bee790317989d705541cefce4152e8a376f3f5cdb82cb6f1dd51270",
+      "sidecar_sha256": "52404e8c1aeee60a941b913d6de57c2eb8bfe81bc7534511317f152203e6d661"
+    },
+    {
+      "scope": "auth-runtime",
+      "report_sha256": "02826e308cb5d461097c9d44a05f165373953a5949e970725438df309a73632b",
+      "sidecar_sha256": "b2915b3e2e1369aab12cbee3f647535fb4ecd3cb981c20dac9eb8c1e6911448c"
+    }
+  ],
+  "source_files": [
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/fancy-regex-0.14.0/src/lib.rs",
+      "sha256": "5fceb05786b2e860ec2141c8e6bfbb85014c97b4f48cc634d0842b81b0dd6477",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "fancy-regex-0.14.0.crate",
+      "archive_member": "fancy-regex-0.14.0/src/lib.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/fancy-regex-0.14.0/src/vm.rs",
+      "sha256": "8442aec0c60680576130f0ebbd6da494bba14d1141e7035f66c68f3849933731",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "fancy-regex-0.14.0.crate",
+      "archive_member": "fancy-regex-0.14.0/src/vm.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/fancy-regex-0.14.0/tests/matching.rs",
+      "sha256": "3f8d1e0f6567375866b14610eda6e2dc1e96ed26ba1a451fe0c4bb2bf6f774fb",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "fancy-regex-0.14.0.crate",
+      "archive_member": "fancy-regex-0.14.0/tests/matching.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/Cargo.lock",
+      "sha256": "084cebcfc2da10bf7905ec6c2d0ca8ddbc92dea24d07f282c74111def65371df",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/Cargo.lock"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/compiler.rs",
+      "sha256": "e3f6c1f02e24e7870a4f8c1d0db6bc4a9d16797a89fee3997b8a939d3fd90b09",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/compiler.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/content_encoding.rs",
+      "sha256": "985613240b1bbac2f94a6e2c24b854d312a61e2d06aacfdf088669f55010431b",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/content_encoding.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/content_media_type.rs",
+      "sha256": "9b6d68b1bae53071075a70279cb43d0fb91e0c61b1b6849fe1caa45404268567",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/content_media_type.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/ecma.rs",
+      "sha256": "0eb88077aeac4ef6dd45d60b8635d0687f460d79dc88eb402032a8f3110cd307",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/ecma.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/additional_properties.rs",
+      "sha256": "c4b7f0c47cf636b459ed9f6372fd3009a6c8a6f82e5472983c2c9ca42451e544",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/additional_properties.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/any_of.rs",
+      "sha256": "3eb79603221b13bf6290f9d4c984b4c9e818cf1e1f852a6560c56b44c1c001aa",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/any_of.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/contains.rs",
+      "sha256": "876b6bacc809bdd08af64a617a144e15b1430fc2dd8ab0a24d9f0c6e578cef42",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/contains.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/content.rs",
+      "sha256": "46653a890df3ed31ca845f942fe48bc76c5f3f93154ac7e282942faaf712b8b8",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/content.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/custom.rs",
+      "sha256": "6e75a226a68ab8d1a60f757cd107c87a1e901f2ec7395fe878648f4fbd9d8318",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/custom.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/format.rs",
+      "sha256": "4ebdffc09223feeac6e0e805a45da65dd03f504e9f073fcb6fbb4905617171eb",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/format.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/if_.rs",
+      "sha256": "7d8d5492456882622c105e0c1b7e0dc7219369f55e8e642dd9f2c2eca6a75a41",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/if_.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/items.rs",
+      "sha256": "7de5db02a8506880a4c6e757db9f089455cba9e216c114857632ee89e48c8cdb",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/items.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/max_length.rs",
+      "sha256": "b16be04c93dd1b01365e6aaa86d68eeea8d974eed5319e8ab6f32bcb29c3cfd5",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/max_length.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/min_length.rs",
+      "sha256": "eb536dc7a6f176b2a79335687983b41f7dea087598b2220569da6af5b5c9bf6e",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/min_length.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/mod.rs",
+      "sha256": "16a0fa8a75cd4f0d5eaf712a50f8ebd3894ab03d1968061d3701005e68f347f6",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/mod.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/multiple_of.rs",
+      "sha256": "6465a90e65a8bc3d54855e368232d93b8ff920369c66b67aff04e9f45eb3d27d",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/multiple_of.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/not.rs",
+      "sha256": "59452111221c7eada3beabb5fd3e27d3b912f887b8087f93bec7c13f34d9b56b",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/not.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/pattern.rs",
+      "sha256": "7c15e6a94218ee503663afdee50db544efbc306131087751ff1f6443164ce917",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/pattern.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/pattern_properties.rs",
+      "sha256": "56ea0028136aad514627d06ecdad7e91c0b3544d83125acc8db08151a81e51ea",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/pattern_properties.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/keywords/ref_.rs",
+      "sha256": "8b3c9e46dd45402834eca2ec0e299731546ea5b5c632c8c165620589f96b074f",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/keywords/ref_.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/options.rs",
+      "sha256": "05d540d17e5046a00e444dc0c2c78e133a7f136398c77f4eff1728acf102b88a",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/options.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/retriever.rs",
+      "sha256": "3b75133284e1cba4cf4250a7a73df61834cc24cc8d4f2acea216dbf1cd8a3626",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/retriever.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3/src/validator.rs",
+      "sha256": "2e6b02dfda863f19b3143ea89cba9f7ddaddced27dfa15bd7dc0687268c30edc",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "jsonschema-0.28.3.crate",
+      "archive_member": "jsonschema-0.28.3/src/validator.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3/metaschemas/draft2019-09/meta/validation.json",
+      "sha256": "aaba7f2d6fcbdfa6ca97fdc3d3da1ae7d66ca3322b7e90cf5a98b067555d06e6",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "referencing-0.28.3.crate",
+      "archive_member": "referencing-0.28.3/metaschemas/draft2019-09/meta/validation.json"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3/metaschemas/draft2020-12/meta/applicator.json",
+      "sha256": "c4a6e4147b91fef7fea6dc058cb1bf93402f7414b76578a8b16aaf1dad6aacef",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "referencing-0.28.3.crate",
+      "archive_member": "referencing-0.28.3/metaschemas/draft2020-12/meta/applicator.json"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3/metaschemas/draft2020-12/meta/validation.json",
+      "sha256": "7010a31e541f32d2be721e2de348df75c9b36876a3ed304877fc0abda1d37a58",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "referencing-0.28.3.crate",
+      "archive_member": "referencing-0.28.3/metaschemas/draft2020-12/meta/validation.json"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3/metaschemas/draft2020-12/schema.json",
+      "sha256": "483c0526fdeb85e072d9cca4eee4ba7f1179d1ce89cb21c42b3c01296442f9e6",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "referencing-0.28.3.crate",
+      "archive_member": "referencing-0.28.3/metaschemas/draft2020-12/schema.json"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3/metaschemas/draft4.json",
+      "sha256": "83282c08bb193d490dd74978dafe7221b7354d2e58b62c81a93518268dbeff1c",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "referencing-0.28.3.crate",
+      "archive_member": "referencing-0.28.3/metaschemas/draft4.json"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3/metaschemas/draft6.json",
+      "sha256": "c29dfce9f54835c3a06c03b3c5d5ec0eda77706568f9c4df7cfbc7566a51006d",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "referencing-0.28.3.crate",
+      "archive_member": "referencing-0.28.3/metaschemas/draft6.json"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3/metaschemas/draft7.json",
+      "sha256": "9e786e2198debe6717675ce48e199199f2dba8e3a3e1ffe35cfc0959efd691cb",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "referencing-0.28.3.crate",
+      "archive_member": "referencing-0.28.3/metaschemas/draft7.json"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3/src/resource.rs",
+      "sha256": "6d0fbcaa8d5eaaaf7e18a2bb87da411bcd0dacc4260a1a91b278a85e52b212b2",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "referencing-0.28.3.crate",
+      "archive_member": "referencing-0.28.3/src/resource.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3/src/specification/draft201909.rs",
+      "sha256": "4c0473ad3558e007273f1f05b6e3c6865862088083c2971964272ad224fe2f28",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "referencing-0.28.3.crate",
+      "archive_member": "referencing-0.28.3/src/specification/draft201909.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3/src/specification/mod.rs",
+      "sha256": "9d990bda735aefa66a4c254a639e431a00ce86d3f808f74ddf6b001d95031769",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "referencing-0.28.3.crate",
+      "archive_member": "referencing-0.28.3/src/specification/mod.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3/src/specification/subresources.rs",
+      "sha256": "cb9922537f00b48e61e52c1c10e126e26fa48a5a53b710a2e4b6ec027eac47a9",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "referencing-0.28.3.crate",
+      "archive_member": "referencing-0.28.3/src/specification/subresources.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/reqwest-0.12.28/Cargo.toml",
+      "sha256": "23c8a0827aaac74059965a182c6873990e75aa550e8079d3b51bb95092871205",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "reqwest-0.12.28.crate",
+      "archive_member": "reqwest-0.12.28/Cargo.toml"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/Cargo.toml",
+      "sha256": "b81a19b27cc744410b056eb1d1195ecd41e25a163acadfca3c6457e96b797d3f",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "ring-0.17.14.crate",
+      "archive_member": "ring-0.17.14/Cargo.toml"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/build.rs",
+      "sha256": "9d1928ffb1d8e15766c1c1b9ead73e4b81a21703dd25f7c27b87842a2e6e9cee",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "ring-0.17.14.crate",
+      "archive_member": "ring-0.17.14/build.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/rsa.rs",
+      "sha256": "fe62407793ae487d663404dfe5642a7d4e8bc86db4ae70538781d35ea5626cf0",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "ring-0.17.14.crate",
+      "archive_member": "ring-0.17.14/src/rsa.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/rsa/keypair.rs",
+      "sha256": "b241467ef86cb3b050ea5b7f86f8fd3ac65cafcadeac09b021b8dd213636dfd5",
+      "audit_scopes": [
+        "auth-runtime",
+        "transport"
+      ],
+      "archive": "ring-0.17.14.crate",
+      "archive_member": "ring-0.17.14/src/rsa/keypair.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/rsa/public_exponent.rs",
+      "sha256": "e49a90b89b806322329a6fff85fee5c81c4ff7ee3b1e896ece0db0be9a35a2f8",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "ring-0.17.14.crate",
+      "archive_member": "ring-0.17.14/src/rsa/public_exponent.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ring-0.17.14/src/rsa/public_modulus.rs",
+      "sha256": "6b26971c63a5bd3762e52775d769098d915e2116f091a9b6347a0bd3e8a90a9d",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "ring-0.17.14.crate",
+      "archive_member": "ring-0.17.14/src/rsa/public_modulus.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/Cargo.toml",
+      "sha256": "d533e329ffe369ba19aab9bd42ccfb102840a8905b1d154111f49ceaddf44620",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "rustls-0.23.40.crate",
+      "archive_member": "rustls-0.23.40/Cargo.toml"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/src/client/builder.rs",
+      "sha256": "477ece7d60eecb8062341878cf541fc32ce02a1987f5790117b218ebc5b2ed7e",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "rustls-0.23.40.crate",
+      "archive_member": "rustls-0.23.40/src/client/builder.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40/src/crypto/ring/sign.rs",
+      "sha256": "6bb88454d5751ce1262d68c670ba41a52f88cd152b75d0740743ef603a43f650",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "rustls-0.23.40.crate",
+      "archive_member": "rustls-0.23.40/src/crypto/ring/sign.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.14.1/src/pem.rs",
+      "sha256": "b0fbf1416f09894808cb058fdb05989bb9ca2364e288c9c6a7c20c18d15d3051",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "rustls-pki-types-1.14.1.crate",
+      "archive_member": "rustls-pki-types-1.14.1/src/pem.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tracing-0.1.44/src/instrument.rs",
+      "sha256": "9266d792bd9b6678baa49728704c5f38003bbc24755eac16a9e0bffcb2728010",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "tracing-0.1.44.crate",
+      "archive_member": "tracing-0.1.44/src/instrument.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tracing-0.1.44/src/span.rs",
+      "sha256": "b87686c0ff6b55193a9377f3a0c978e0368edb6f46cd4d5a5b395c169df2f658",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "tracing-0.1.44.crate",
+      "archive_member": "tracing-0.1.44/src/span.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tracing-core-0.1.36/src/dispatcher.rs",
+      "sha256": "d2a0584196c7e053006490baebfa61c6b3145138e3209f82f44d1afbe066acb6",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "tracing-core-0.1.36.crate",
+      "archive_member": "tracing-core-0.1.36/src/dispatcher.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/authclient.js",
+      "sha256": "2cb3aad4b2985d7b7fb0123f36e9d3b837857be4e4638f61f5cdf37624ca8a9e",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/authclient.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/certificatesubjecttokensupplier.js",
+      "sha256": "e29f8fb8464dc88f91eff319df7661f215b50be955c9e50588c0605b5f261553",
+      "audit_scopes": [
+        "auth-runtime",
+        "transport"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/certificatesubjecttokensupplier.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/computeclient.js",
+      "sha256": "daf665758158bbb211056070f194536441a717310bac858edd0d1847bb195c95",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/computeclient.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/defaultawssecuritycredentialssupplier.js",
+      "sha256": "789b0f0de4e8c89e3170484d589b82cbac7f79ac8e1ebff4624d7123af2860f4",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/defaultawssecuritycredentialssupplier.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/externalAccountAuthorizedUserClient.js",
+      "sha256": "4c8b8dbcb16078eafa8d9fc26326ebd76d75d507ce91a4de7cbd8a9c5c8f359d",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/externalAccountAuthorizedUserClient.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/googleauth.js",
+      "sha256": "206721dbc822433cf069bba86aa3b60702f4ca9d74b628666d7eab3dba1a3016",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/googleauth.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/identitypoolclient.js",
+      "sha256": "4a0f123357c45e1b5186afc432b7f2128ffe49cebefca9434b00f9d502d282b0",
+      "audit_scopes": [
+        "auth-runtime",
+        "transport"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/identitypoolclient.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/impersonated.js",
+      "sha256": "61fa238327d1197f7fc22f733f7a342280190bf084da6b002b56587263e4a1ce",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/impersonated.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/jwtclient.js",
+      "sha256": "db4bc49b3fb65db1acf759c5c2a52f57f1d8bc3023df102b39102b9eeae44c03",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/jwtclient.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/pluggable-auth-client.js",
+      "sha256": "9f0e1b93d7bd9a9d7989a2ef8c1a8ae75b82ad04e54da86d40bf88144e9d3f86",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/pluggable-auth-client.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/pluggable-auth-handler.js",
+      "sha256": "aafa525c53e918d155a6abbb57e90524c0e2579903f28396cbd99931ac64f34e",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/pluggable-auth-handler.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/refreshclient.js",
+      "sha256": "189cac7b9a2f1d8ce024f6323d65ba04642e2bf8361137cffb45dda59ca63089",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/refreshclient.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/auth/stscredentials.js",
+      "sha256": "a33e677b4c7c21987c672d7235e7b43ecf7087309ad6b4ce0a5c3d0999fa86b8",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/auth/stscredentials.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/gtoken/getCredentials.js",
+      "sha256": "22614931c36f7049043596e4f40032b3113d1c2cfa6e8647d3e02598a8aad207",
+      "audit_scopes": [
+        "auth-runtime",
+        "transport"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/gtoken/getCredentials.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/gtoken/getToken.js",
+      "sha256": "9fda145506b0ba27a003dee7baf5793e3d1a7d4b333e391f60b2816ace00830d",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/gtoken/getToken.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2/package/build/src/gtoken/jwsSign.js",
+      "sha256": "5f09dea29ba730e55c0e1f2f3ddb698449aee342bbaacd76b483debb8277499a",
+      "audit_scopes": [
+        "auth-runtime",
+        "transport"
+      ],
+      "archive": "google-auth-library-10.6.2.tgz",
+      "archive_member": "package/build/src/gtoken/jwsSign.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-sdk-sts-1.119.0/src/client.rs",
+      "sha256": "b86dd373598f55333be1b0c28a12401ffddb38787e881f05ee3b8bbb55958f3d",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "aws-sdk-sts-1.119.0.crate",
+      "archive_member": "aws-sdk-sts-1.119.0/src/client.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-sdk-sts-1.119.0/src/config.rs",
+      "sha256": "09670057d7b69c056c889cd4f33a057df0a7dc727046d9e9567a98c2b5a2e359",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "aws-sdk-sts-1.119.0.crate",
+      "archive_member": "aws-sdk-sts-1.119.0/src/config.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-sdk-sts-1.119.0/src/config/endpoint.rs",
+      "sha256": "5580834421043328d2473fd00a0ee276e05c1db3d510e0c0fce2c22d68a609ef",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "aws-sdk-sts-1.119.0.crate",
+      "archive_member": "aws-sdk-sts-1.119.0/src/config/endpoint.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-sdk-sts-1.119.0/src/endpoint_lib.rs",
+      "sha256": "e54c9589b7cbfb7ee068382310679639f5ce4353564eec08579d4f3ec5e2ac5c",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "aws-sdk-sts-1.119.0.crate",
+      "archive_member": "aws-sdk-sts-1.119.0/src/endpoint_lib.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-sigv4-1.6.0/src/http_request/sign.rs",
+      "sha256": "28535dbac063ec66833c97c11e1ca41f6090fe3cf8101f9c4b721bae91c31c97",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "aws-sigv4-1.6.0.crate",
+      "archive_member": "aws-sigv4-1.6.0/src/http_request/sign.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-smithy-query-0.62.1/Cargo.toml",
+      "sha256": "7f1dee0f8676bdcb60586a4617a34c523a9108596ee35157372cd7ee957bfed1",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "aws-smithy-query-0.62.1.crate",
+      "archive_member": "aws-smithy-query-0.62.1/Cargo.toml"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-smithy-runtime-1.16.0/src/client/orchestrator/http.rs",
+      "sha256": "301ede6c67e6c7fe303f3fe67574926e3508c2349c5e9345f8c48e37952b4b65",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "aws-smithy-runtime-1.16.0.crate",
+      "archive_member": "aws-smithy-runtime-1.16.0/src/client/orchestrator/http.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-smithy-xml-0.62.1/Cargo.toml",
+      "sha256": "face11a9aed32bc311d28f3713e7fa8bdf277ca65791353f9417b03a4d8a1471",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "aws-smithy-xml-0.62.1.crate",
+      "archive_member": "aws-smithy-xml-0.62.1/Cargo.toml"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/p256-0.13.2/Cargo.toml",
+      "sha256": "7f2c98e9af91a495cf341425f77b782d6c253dba9cf4f63a16d63489ecb9ddfc",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "p256-0.13.2.crate",
+      "archive_member": "p256-0.13.2/Cargo.toml"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/xmlparser-0.13.5/Cargo.toml",
+      "sha256": "7a0b08af7649f54efb1c0fd0ef97339a44db4828070bad4b028ce9e9724e306e",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "xmlparser-0.13.5.crate",
+      "archive_member": "xmlparser-0.13.5/Cargo.toml"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@aws-sdk__credential-provider-ini-3.973.15/package/dist-cjs/index.js",
+      "sha256": "2d975f8114b17e1e96eea2735c7271f735f08bab35dc922384cd15735bbdd085",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "@aws-sdk__credential-provider-ini-3.973.15.tgz",
+      "archive_member": "package/dist-cjs/index.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@aws-sdk__credential-provider-node-3.972.82/package/dist-cjs/index.js",
+      "sha256": "afd158eca6193ed8d8a469013790b9ffa3bdcdea7f6116efda93705f67c6335c",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "@aws-sdk__credential-provider-node-3.972.82.tgz",
+      "archive_member": "package/dist-cjs/index.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@aws-sdk__credential-provider-process-3.972.70/package/dist-cjs/index.js",
+      "sha256": "459dccd69ac50b0cf33d00398dd6b18dec18521d8ed6bc359121e1a96115ea4d",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "@aws-sdk__credential-provider-process-3.972.70.tgz",
+      "archive_member": "package/dist-cjs/index.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@smithy__core-3.33.3/package/dist-cjs/submodules/retry/index.js",
+      "sha256": "e00b49dad152a3ff9b3b59ab990341adaf7a1213d1801fdc191982e76610feb3",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "@smithy__core-3.33.3.tgz",
+      "archive_member": "package/dist-cjs/submodules/retry/index.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@smithy__node-http-handler-4.12.1/package/dist-cjs/index.js",
+      "sha256": "0ecc976029422fbbb832c64fd9d320f7bac410a04a21b9c3bd217c7877135e13",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "@smithy__node-http-handler-4.12.1.tgz",
+      "archive_member": "package/dist-cjs/index.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/gaxios-7.1.4/package/build/cjs/src/retry.js",
+      "sha256": "6f9a99189913f2856531b11ff40ca627d1021d21fc79a5d3f0a48e348d529034",
+      "audit_scopes": [
+        "auth-runtime"
+      ],
+      "archive": "gaxios-7.1.4.tgz",
+      "archive_member": "package/build/cjs/src/retry.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/gaxios-7.1.4/package/build/esm/src/gaxios.js",
+      "sha256": "fd71f0d261754d0988ead6fc528430259f47901485112e59fede658b7287d5e3",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "gaxios-7.1.4.tgz",
+      "archive_member": "package/build/esm/src/gaxios.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/node-fetch-3.3.2/package/src/index.js",
+      "sha256": "e0a76062a308610126191bb288925470a2fb84fbbe5c913b444165d64fd9c4b5",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "node-fetch-3.3.2.tgz",
+      "archive_member": "package/src/index.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/node-fetch-3.3.2/package/src/request.js",
+      "sha256": "4a57dfc72f98d37646d7d0b464ad6157700fc875116618cb7af40238d0cbae4c",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "node-fetch-3.3.2.tgz",
+      "archive_member": "package/src/request.js"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/compile/compile.mjs",
+      "sha256": "05f0447542d1953db8268b138d0c83dd8e5d77c7f1824fbf07e6e1a108dcc876",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/compile/compile.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/compile/validator.mjs",
+      "sha256": "d2b2a9675042698abc5f36478e462fb88c8301edf249e6929516a55c3c19d7fc",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/compile/validator.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/format/_registry.mjs",
+      "sha256": "f60d2bf0b9a6e0c7e999123f971694e6e21a048ee7d8da79167b3aa3acb7d86a",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/format/_registry.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/format/json_pointer_uri_fragment.mjs",
+      "sha256": "4eb06e629623d416f7bbc036375130b0805a7319b8c3c10caadc0d7c7d30e8d1",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/format/json_pointer_uri_fragment.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/format/url.mjs",
+      "sha256": "f1dea199f91ffee22cfb63b645599df9c8838235ad0e980908905c2231eceb6b",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/format/url.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/format/uuid.mjs",
+      "sha256": "d2d72274c342fcd677ca0eb7163b3d27b5ba15b01b396fce0f8f1861623f6633",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/format/uuid.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/guard/emit.mjs",
+      "sha256": "ee96d04edc1dd32b1993c0dc47a8157c907e554b2c3f40ba1fded5fcb33d5f22",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/guard/emit.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/guard/guard.mjs",
+      "sha256": "6d244b6026c8820429dc8074124f175c749f01f67af6b1ef0a5df053c5bafe8d",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/guard/guard.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/guard/string.mjs",
+      "sha256": "06373a5407d9cdc1d4e0a764a82ab31fe285685a2118380b5e64501e19ab6504",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/guard/string.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/build.mjs",
+      "sha256": "797e1509300536cebe96ea67603c132bcbc659a17c6b2a3de7f604018f274841",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/build.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/_context.mjs",
+      "sha256": "ab58c4c7c009148498b5ed222e2251449bbbe454465b6a85fc73229a876e9c0b",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/_context.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/_functions.mjs",
+      "sha256": "6609b9b23900beb5c33195fa13873fbc62b704824df1d5b791778fccad5766a4",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/_functions.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/_regexp.mjs",
+      "sha256": "1480622faa8c90cadcfd04dba25f5e40854e5267f147c3a5270cc89e3beccaed",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/_regexp.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/additionalItems.mjs",
+      "sha256": "b3f9294f5bf65ac6b6cffbb555f73191dee818ff62e1de7b58d520b314043d9f",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/additionalItems.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/exclusiveMinimum.mjs",
+      "sha256": "d3a8efea049a30bc13cb6da7fc53c1b3b3e8d64d040e20422c27b854ae64a622",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/exclusiveMinimum.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/format.mjs",
+      "sha256": "072610c27fa12d63ab199352f14e5be28fe76f4ca7da749dad24212f8041535f",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/format.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/items.mjs",
+      "sha256": "8094313b44d3b5c08e2b3266b6251aa9c2c887ada25334182bb4d6c00bdf9ed3",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/items.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/minLength.mjs",
+      "sha256": "4811d90656586090c1f0903e436f5d5e0dea9c194036482146a54dc43a66adc9",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/minLength.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/multipleOf.mjs",
+      "sha256": "e3ad23f52bf5142b1d504622e11e3ebd6afcdf1b6ff5298bf0f48df5db59460c",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/multipleOf.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/pattern.mjs",
+      "sha256": "ad634237a29a932e6d5f2226982df6d2e267c81218c82e66f54b036ec1e75a52",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/pattern.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/patternProperties.mjs",
+      "sha256": "3aa84f0717f614ff30d6988afa7b7a58e9d2a08091d98625c480db72eb6d7349",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/patternProperties.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/prefixItems.mjs",
+      "sha256": "df0b198702a66a5c574c3f4b2e6b0991bb97fb22e0d3fb2edbcba1414a5cd479",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/prefixItems.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/ref.mjs",
+      "sha256": "5760b5d7324855b13acb45eaae95cf761db066ea5fbfd9644972f8da4d352c59",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/ref.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/engine/schema.mjs",
+      "sha256": "d3f99f995e393a26620046f8e73010845167524528a37a571f9758f398344b30",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/engine/schema.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/resolve/resolve.mjs",
+      "sha256": "f7c78d32a304a6d380379fdbc7113b1087f308700586c7a5b5748c1de628cbd1",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/resolve/resolve.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/types/exclusiveMinimum.mjs",
+      "sha256": "54d79891c2ebfd60a65002a97663d1477c484be3cf7bdce903cde11e1960a15b",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/types/exclusiveMinimum.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/schema/types/minLength.mjs",
+      "sha256": "f303d8bf4eb82fe2e58ea4011e6a1a51135473681e2b69169c9c0c176fd30c45",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/schema/types/minLength.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/system/memory/create.mjs",
+      "sha256": "c0dfd726660b633bcdbdd6b773eb4c315ebebfb1eca60eabf40aafcbe5505e18",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/system/memory/create.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/system/settings/settings.mjs",
+      "sha256": "d5d2395001e8990a3c23a105440db862bbb9989d7038176e511c009adf60a97d",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/system/settings/settings.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/type/types/_codec.mjs",
+      "sha256": "84f1607736ec1404c85c15c8456fc435a6bae612e95379f68457dfb58d0aa22a",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/type/types/_codec.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/type/types/number.mjs",
+      "sha256": "cdcca9398daa7a766a3bb38cce1b988e5abcd152661b16605fdf113d6ca1a13c",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/type/types/number.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/type/types/object.mjs",
+      "sha256": "2a721fecd90434a2d7c31410524faaa45299a7e610ece204568d3ed7fb20a2c1",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/type/types/object.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/type/types/schema.mjs",
+      "sha256": "c33f7e5cdbde038586d57386a90bcdf9c4a0cc676b73cb3826e83573e1f7a7fa",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/type/types/schema.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/value/codec/has.mjs",
+      "sha256": "30a832b8ce5f765e185ed10a5f3ce8a38105603b6812768bf1f0d41f46ad4dac",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/value/codec/has.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/build/value/convert/from_type.mjs",
+      "sha256": "da6e225a8fe52d22ccbba6eba9154b205f91d9ee270a75b8cbd6622f216bd466",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/build/value/convert/from_type.mjs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27/package/package.json",
+      "sha256": "c59ddfd977ce941f1e8ee8b0a0b14396c332fa27cc5fa6fa165227ffd5a3992f",
+      "audit_scopes": [
+        "schema"
+      ],
+      "archive": "typebox-1.3.27.tgz",
+      "archive_member": "package/package.json"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/httparse-1.10.1/src/lib.rs",
+      "sha256": "a8307ce632f27b095cb84de27cfd8fc237977075d3eed41041f463c6afd9b757",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "httparse-1.10.1.crate",
+      "archive_member": "httparse-1.10.1/src/lib.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/reqwest-0.12.28/Cargo.toml",
+      "sha256": "23c8a0827aaac74059965a182c6873990e75aa550e8079d3b51bb95092871205",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "reqwest-0.12.28.crate",
+      "archive_member": "reqwest-0.12.28/Cargo.toml"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/reqwest-0.12.28/src/async_impl/client.rs",
+      "sha256": "8c30b009838be2126b90344ef97fb6141ac8bdf695f4e7bb00a3052a707d9b5c",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "reqwest-0.12.28.crate",
+      "archive_member": "reqwest-0.12.28/src/async_impl/client.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/reqwest-0.12.28/src/redirect.rs",
+      "sha256": "b8a618396c45884e5557314a0fb99ec01c1868b77132e2cc81aa0a4ac4831c06",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "reqwest-0.12.28.crate",
+      "archive_member": "reqwest-0.12.28/src/redirect.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/source-manifest.json",
+      "sha256": "fed9c7b45983c41b3fc4b74457f3a176c063eb4b0f08834bc6e37d64f71d82bc",
+      "audit_scopes": [
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/tokio-tungstenite-0.28.0/src/lib.rs",
+      "sha256": "33ad167c6de78cc76f010bffe33f4f8bd254ce843136763be959384031cfb33f",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "archive_member": "tokio-tungstenite-0.28.0/src/lib.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/tokio-tungstenite-0.28.0/src/tls.rs",
+      "sha256": "ede833940750523f43aecad570e38d9b21de8e4128c8efc3f5e8900116d7c211",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "tokio-tungstenite-0.28.0.crate",
+      "archive_member": "tokio-tungstenite-0.28.0/src/tls.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/tungstenite-0.28.0/Cargo.toml",
+      "sha256": "2340cc29f213b135f5696532c75677926d1db8a911d784ac87d208758493aed7",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "tungstenite-0.28.0.crate",
+      "archive_member": "tungstenite-0.28.0/Cargo.toml"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/tungstenite-0.28.0/src/handshake/client.rs",
+      "sha256": "81d70f0bfce18bbbd126d716600efaeece3467d740b06a23b113f1b5f2cb0c8e",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "tungstenite-0.28.0.crate",
+      "archive_member": "tungstenite-0.28.0/src/handshake/client.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/tungstenite-0.28.0/src/handshake/headers.rs",
+      "sha256": "0e6d3e15faa8b82bd2a239f5094335368e578acef2f17ee74825de606f529b75",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "tungstenite-0.28.0.crate",
+      "archive_member": "tungstenite-0.28.0/src/handshake/headers.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/tungstenite-0.28.0/src/handshake/machine.rs",
+      "sha256": "54a82a2643682e2ae17a98e69dcfa8ad10761919ea42f696551970057a428420",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "tungstenite-0.28.0.crate",
+      "archive_member": "tungstenite-0.28.0/src/handshake/machine.rs"
+    },
+    {
+      "absolute_path": "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/tungstenite-0.28.0/src/protocol/mod.rs",
+      "sha256": "e7c0904c5ba7df3a3ecc13370e1e3e21a73d12d6dcbea7faafafb779e7f46076",
+      "audit_scopes": [
+        "transport"
+      ],
+      "archive": "tungstenite-0.28.0.crate",
+      "archive_member": "tungstenite-0.28.0/src/protocol/mod.rs"
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.agents/skills/_shared/references/change-scope-and-check-selection.md",
+      "sha256": "ff1274b7ebc41c3feb2831c2bab1b11d0f72025990d3a25cfa7e7f050159b6b7",
+      "audit_scopes": [
+        "parent"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.github/workflows/ci.yml",
+      "sha256": "976df755ac5cf85511ccb733efbb643267bc673bb6cbf2eba9a2a72ec29b2c42",
+      "audit_scopes": [
+        "parent"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/.gitignore",
+      "sha256": "2dd48539736645caf4363582a7aaaeee48412d90e499cf3888dbd77ca89b1535",
+      "audit_scopes": [
+        "auth-runtime"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/package-lock.json",
+      "sha256": "b686f30bc97e99aee6bb63c78714535ada1d307639db7f4e8972144059fc501d",
+      "audit_scopes": [
+        "auth-runtime",
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/package.json",
+      "sha256": "8f4bd471da2b70fca21276b519cb74e9e769218b0f2387af8c5b2007087eafd9",
+      "audit_scopes": [
+        "parent"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/README.md",
+      "sha256": "1d449a01dd6213ee0d513c52cb25be4154d1d4dcbcb340d554fdc3df7606b66f",
+      "audit_scopes": [
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/package.json",
+      "sha256": "4e9ed07b06a91d844485874c251f312b610d015a4a4fd32c78cde58a7862a3f1",
+      "audit_scopes": [
+        "schema",
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/scripts/generate-models.ts",
+      "sha256": "c832361208bf21e3cff185b74cb843c1e6cbb621b32e72f5ca67f6c890e4c5e1",
+      "audit_scopes": [
+        "auth-runtime"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/api/bedrock-converse-stream.ts",
+      "sha256": "476ed6f426f50532c922d1dcaa4b01f8aeca43b618483c061e764f3330c2b672",
+      "audit_scopes": [
+        "auth-runtime",
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/api/google-vertex.ts",
+      "sha256": "774b28c7c6c38d07bdbbdb8aceecdca1dfe8a1df79915eeee96c48694d08ce63",
+      "audit_scopes": [
+        "auth-runtime"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/api/lazy.ts",
+      "sha256": "1d38468b570b179dc404be7d13b737cb1d001bd96a0a9b3626d8c3f0bf9a49be",
+      "audit_scopes": [
+        "parent"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/api/openai-codex-responses.ts",
+      "sha256": "41a0095ce395f6ddf50ce3adbe7d03960bf183fb0f2f94412c88923adaa013b0",
+      "audit_scopes": [
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/api/simple-options.ts",
+      "sha256": "f68b3e13a55a72214243b37eb85fa0532b67cfb22ac80ea3434eb5d26ae36616",
+      "audit_scopes": [
+        "auth-runtime"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/auth/resolve.ts",
+      "sha256": "b64d4b13ccdb3e8d056ec4849190aa68f002988ee0417317151d59d8668502ec",
+      "audit_scopes": [
+        "auth-runtime"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/index.ts",
+      "sha256": "d8f7f7414fcf821c87ea69ee6f95ba654c955491e31586509dc51dbdf54edea8",
+      "audit_scopes": [
+        "schema"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/models.ts",
+      "sha256": "c10385291e4e79dc3ea5301629288a35cac354f8a3635c07f9312608c269f573",
+      "audit_scopes": [
+        "parent"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/providers/google-vertex.models.ts",
+      "sha256": "5e11c0ef6a852002234f8b6af7827501fab475d49850168e57f32c1e15b4c7a6",
+      "audit_scopes": [
+        "auth-runtime"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/types.ts",
+      "sha256": "258627828297eb0165de9828cab62666265a77e932dea5dba1542ace9c47c7d5",
+      "audit_scopes": [
+        "auth-runtime"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/utils/node-http-proxy.ts",
+      "sha256": "a13ab6556d127e6fb097147b209c68e47aed8e724e2774e7dd7df21ff91d9d5b",
+      "audit_scopes": [
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/src/utils/validation.ts",
+      "sha256": "e4b8029c184bd6df830e0ee2cb7034a39d49b5ecb8c068c26af9564c20246594",
+      "audit_scopes": [
+        "schema"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/ai/test/telemetry-options.test.ts",
+      "sha256": "fec8b73bd41971922e0568246ae143de0cab9c35faa47c5de154146af93b109a",
+      "audit_scopes": [
+        "auth-runtime"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/.repo/pi-1.3.0/packages/coding-agent/README.md",
+      "sha256": "fbc7abec7d0829ac8bc4b217e950794e1ba4d8d1b3e0850f970da318ad72e863",
+      "audit_scopes": [
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/AGENTS.md",
+      "sha256": "d7e280f6c1f6cbee3c2e1ac1d51d98453aacbe6c2f5083a62cad66d32072a121",
+      "audit_scopes": [
+        "auth-runtime",
+        "schema",
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/Cargo.lock",
+      "sha256": "fdb4fb24ce180da7bafa8ef885f6f5f18a3426d4070d1df0c9e319ba0510e240",
+      "audit_scopes": [
+        "auth-runtime",
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/Cargo.toml",
+      "sha256": "07cd3e97641a83406be171a8e70f28baf64daed6f4e9914bb1d3e679a3949c94",
+      "audit_scopes": [
+        "auth-runtime",
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/crates/opi-ai/Cargo.toml",
+      "sha256": "352a8b055d150a6d4ef87dbff2891ac59acceb013ba47404bf95187df929cd45",
+      "audit_scopes": [
+        "parent"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/crates/opi-ai/src/bedrock/credentials.rs",
+      "sha256": "479f09935bd73d3a609e584ad49e74f5b8bd83ffe8e26cfd53490916b09bf847",
+      "audit_scopes": [
+        "auth-runtime"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/docs/CONTEXT.md",
+      "sha256": "35bfe01cc73792929a6722fa83d86425759d1baad11b7115c211a5deef66d584",
+      "audit_scopes": [
+        "transport"
+      ]
+    },
+    {
+      "absolute_path": "D:/Luiz/Odradek/opi/docs/opi-spec.md",
+      "sha256": "d53f2fea1597371cfb51355e592fe4e52ca935685fb9df707d6aaf48093ce639",
+      "audit_scopes": [
+        "auth-runtime",
+        "schema",
+        "transport"
+      ]
+    }
+  ],
+  "archives": [
+    {
+      "name": "typebox-1.3.27.tgz",
+      "url": "https://registry.npmjs.org/typebox/-/typebox-1.3.27.tgz",
+      "sha256": "5a288bcd3d68f44567de84b185e04d205ef7d5b53602846bc3db30fdd219dda3",
+      "bytes": 264178,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/typebox-1.3.27.tgz"
+      ],
+      "members": {
+        "package/package.json": "c59ddfd977ce941f1e8ee8b0a0b14396c332fa27cc5fa6fa165227ffd5a3992f",
+        "package/build/compile/compile.mjs": "05f0447542d1953db8268b138d0c83dd8e5d77c7f1824fbf07e6e1a108dcc876",
+        "package/build/compile/validator.mjs": "d2b2a9675042698abc5f36478e462fb88c8301edf249e6929516a55c3c19d7fc",
+        "package/build/value/codec/has.mjs": "30a832b8ce5f765e185ed10a5f3ce8a38105603b6812768bf1f0d41f46ad4dac",
+        "package/build/schema/build.mjs": "797e1509300536cebe96ea67603c132bcbc659a17c6b2a3de7f604018f274841",
+        "package/build/schema/engine/schema.mjs": "d3f99f995e393a26620046f8e73010845167524528a37a571f9758f398344b30",
+        "package/build/schema/types/minLength.mjs": "f303d8bf4eb82fe2e58ea4011e6a1a51135473681e2b69169c9c0c176fd30c45",
+        "package/build/schema/types/exclusiveMinimum.mjs": "54d79891c2ebfd60a65002a97663d1477c484be3cf7bdce903cde11e1960a15b",
+        "package/build/schema/engine/exclusiveMinimum.mjs": "d3a8efea049a30bc13cb6da7fc53c1b3b3e8d64d040e20422c27b854ae64a622",
+        "package/build/schema/engine/items.mjs": "8094313b44d3b5c08e2b3266b6251aa9c2c887ada25334182bb4d6c00bdf9ed3",
+        "package/build/schema/engine/prefixItems.mjs": "df0b198702a66a5c574c3f4b2e6b0991bb97fb22e0d3fb2edbcba1414a5cd479",
+        "package/build/schema/engine/additionalItems.mjs": "b3f9294f5bf65ac6b6cffbb555f73191dee818ff62e1de7b58d520b314043d9f",
+        "package/build/guard/string.mjs": "06373a5407d9cdc1d4e0a764a82ab31fe285685a2118380b5e64501e19ab6504",
+        "package/build/guard/guard.mjs": "6d244b6026c8820429dc8074124f175c749f01f67af6b1ef0a5df053c5bafe8d",
+        "package/build/guard/emit.mjs": "ee96d04edc1dd32b1993c0dc47a8157c907e554b2c3f40ba1fded5fcb33d5f22",
+        "package/build/schema/engine/minLength.mjs": "4811d90656586090c1f0903e436f5d5e0dea9c194036482146a54dc43a66adc9",
+        "package/build/schema/engine/multipleOf.mjs": "e3ad23f52bf5142b1d504622e11e3ebd6afcdf1b6ff5298bf0f48df5db59460c",
+        "package/build/format/_registry.mjs": "f60d2bf0b9a6e0c7e999123f971694e6e21a048ee7d8da79167b3aa3acb7d86a",
+        "package/build/format/uuid.mjs": "d2d72274c342fcd677ca0eb7163b3d27b5ba15b01b396fce0f8f1861623f6633",
+        "package/build/format/url.mjs": "f1dea199f91ffee22cfb63b645599df9c8838235ad0e980908905c2231eceb6b",
+        "package/build/format/json_pointer_uri_fragment.mjs": "4eb06e629623d416f7bbc036375130b0805a7319b8c3c10caadc0d7c7d30e8d1",
+        "package/build/schema/engine/format.mjs": "072610c27fa12d63ab199352f14e5be28fe76f4ca7da749dad24212f8041535f",
+        "package/build/schema/resolve/resolve.mjs": "f7c78d32a304a6d380379fdbc7113b1087f308700586c7a5b5748c1de628cbd1",
+        "package/build/schema/engine/ref.mjs": "5760b5d7324855b13acb45eaae95cf761db066ea5fbfd9644972f8da4d352c59",
+        "package/build/schema/engine/_functions.mjs": "6609b9b23900beb5c33195fa13873fbc62b704824df1d5b791778fccad5766a4",
+        "package/build/type/types/object.mjs": "2a721fecd90434a2d7c31410524faaa45299a7e610ece204568d3ed7fb20a2c1",
+        "package/build/type/types/number.mjs": "cdcca9398daa7a766a3bb38cce1b988e5abcd152661b16605fdf113d6ca1a13c",
+        "package/build/type/types/schema.mjs": "c33f7e5cdbde038586d57386a90bcdf9c4a0cc676b73cb3826e83573e1f7a7fa",
+        "package/build/type/types/_codec.mjs": "84f1607736ec1404c85c15c8456fc435a6bae612e95379f68457dfb58d0aa22a",
+        "package/build/system/memory/create.mjs": "c0dfd726660b633bcdbdd6b773eb4c315ebebfb1eca60eabf40aafcbe5505e18",
+        "package/build/value/convert/from_type.mjs": "da6e225a8fe52d22ccbba6eba9154b205f91d9ee270a75b8cbd6622f216bd466",
+        "package/build/schema/engine/_regexp.mjs": "1480622faa8c90cadcfd04dba25f5e40854e5267f147c3a5270cc89e3beccaed",
+        "package/build/schema/engine/pattern.mjs": "ad634237a29a932e6d5f2226982df6d2e267c81218c82e66f54b036ec1e75a52",
+        "package/build/schema/engine/patternProperties.mjs": "3aa84f0717f614ff30d6988afa7b7a58e9d2a08091d98625c480db72eb6d7349",
+        "package/build/system/settings/settings.mjs": "d5d2395001e8990a3c23a105440db862bbb9989d7038176e511c009adf60a97d",
+        "package/build/schema/engine/_context.mjs": "ab58c4c7c009148498b5ed222e2251449bbbe454465b6a85fc73229a876e9c0b"
+      }
+    },
+    {
+      "name": "jsonschema-0.28.3.crate",
+      "url": "https://static.crates.io/crates/jsonschema/jsonschema-0.28.3.crate",
+      "sha256": "4b8f66fe41fa46a5c83ed1c717b7e0b4635988f427083108c8cf0a882cc13441",
+      "bytes": 112392,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonschema-0.28.3.crate"
+      ],
+      "members": {
+        "jsonschema-0.28.3/Cargo.lock": "084cebcfc2da10bf7905ec6c2d0ca8ddbc92dea24d07f282c74111def65371df",
+        "jsonschema-0.28.3/src/options.rs": "05d540d17e5046a00e444dc0c2c78e133a7f136398c77f4eff1728acf102b88a",
+        "jsonschema-0.28.3/src/compiler.rs": "e3f6c1f02e24e7870a4f8c1d0db6bc4a9d16797a89fee3997b8a939d3fd90b09",
+        "jsonschema-0.28.3/src/keywords/custom.rs": "6e75a226a68ab8d1a60f757cd107c87a1e901f2ec7395fe878648f4fbd9d8318",
+        "jsonschema-0.28.3/src/keywords/items.rs": "7de5db02a8506880a4c6e757db9f089455cba9e216c114857632ee89e48c8cdb",
+        "jsonschema-0.28.3/src/keywords/mod.rs": "16a0fa8a75cd4f0d5eaf712a50f8ebd3894ab03d1968061d3701005e68f347f6",
+        "jsonschema-0.28.3/src/keywords/min_length.rs": "eb536dc7a6f176b2a79335687983b41f7dea087598b2220569da6af5b5c9bf6e",
+        "jsonschema-0.28.3/src/keywords/max_length.rs": "b16be04c93dd1b01365e6aaa86d68eeea8d974eed5319e8ab6f32bcb29c3cfd5",
+        "jsonschema-0.28.3/src/keywords/multiple_of.rs": "6465a90e65a8bc3d54855e368232d93b8ff920369c66b67aff04e9f45eb3d27d",
+        "jsonschema-0.28.3/src/keywords/format.rs": "4ebdffc09223feeac6e0e805a45da65dd03f504e9f073fcb6fbb4905617171eb",
+        "jsonschema-0.28.3/src/content_encoding.rs": "985613240b1bbac2f94a6e2c24b854d312a61e2d06aacfdf088669f55010431b",
+        "jsonschema-0.28.3/src/content_media_type.rs": "9b6d68b1bae53071075a70279cb43d0fb91e0c61b1b6849fe1caa45404268567",
+        "jsonschema-0.28.3/src/keywords/content.rs": "46653a890df3ed31ca845f942fe48bc76c5f3f93154ac7e282942faaf712b8b8",
+        "jsonschema-0.28.3/src/retriever.rs": "3b75133284e1cba4cf4250a7a73df61834cc24cc8d4f2acea216dbf1cd8a3626",
+        "jsonschema-0.28.3/src/keywords/ref_.rs": "8b3c9e46dd45402834eca2ec0e299731546ea5b5c632c8c165620589f96b074f",
+        "jsonschema-0.28.3/src/ecma.rs": "0eb88077aeac4ef6dd45d60b8635d0687f460d79dc88eb402032a8f3110cd307",
+        "jsonschema-0.28.3/src/keywords/pattern.rs": "7c15e6a94218ee503663afdee50db544efbc306131087751ff1f6443164ce917",
+        "jsonschema-0.28.3/src/keywords/pattern_properties.rs": "56ea0028136aad514627d06ecdad7e91c0b3544d83125acc8db08151a81e51ea",
+        "jsonschema-0.28.3/src/keywords/additional_properties.rs": "c4b7f0c47cf636b459ed9f6372fd3009a6c8a6f82e5472983c2c9ca42451e544",
+        "jsonschema-0.28.3/src/keywords/not.rs": "59452111221c7eada3beabb5fd3e27d3b912f887b8087f93bec7c13f34d9b56b",
+        "jsonschema-0.28.3/src/keywords/any_of.rs": "3eb79603221b13bf6290f9d4c984b4c9e818cf1e1f852a6560c56b44c1c001aa",
+        "jsonschema-0.28.3/src/keywords/if_.rs": "7d8d5492456882622c105e0c1b7e0dc7219369f55e8e642dd9f2c2eca6a75a41",
+        "jsonschema-0.28.3/src/keywords/contains.rs": "876b6bacc809bdd08af64a617a144e15b1430fc2dd8ab0a24d9f0c6e578cef42",
+        "jsonschema-0.28.3/src/validator.rs": "2e6b02dfda863f19b3143ea89cba9f7ddaddced27dfa15bd7dc0687268c30edc"
+      }
+    },
+    {
+      "name": "referencing-0.28.3.crate",
+      "url": "https://static.crates.io/crates/referencing/referencing-0.28.3.crate",
+      "sha256": "d0dcb5ab28989ad7c91eb1b9531a37a1a137cc69a0499aee4117cae4a107c464",
+      "bytes": 34318,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/referencing-0.28.3.crate"
+      ],
+      "members": {
+        "referencing-0.28.3/metaschemas/draft4.json": "83282c08bb193d490dd74978dafe7221b7354d2e58b62c81a93518268dbeff1c",
+        "referencing-0.28.3/metaschemas/draft6.json": "c29dfce9f54835c3a06c03b3c5d5ec0eda77706568f9c4df7cfbc7566a51006d",
+        "referencing-0.28.3/metaschemas/draft7.json": "9e786e2198debe6717675ce48e199199f2dba8e3a3e1ffe35cfc0959efd691cb",
+        "referencing-0.28.3/metaschemas/draft2019-09/meta/validation.json": "aaba7f2d6fcbdfa6ca97fdc3d3da1ae7d66ca3322b7e90cf5a98b067555d06e6",
+        "referencing-0.28.3/metaschemas/draft2020-12/schema.json": "483c0526fdeb85e072d9cca4eee4ba7f1179d1ce89cb21c42b3c01296442f9e6",
+        "referencing-0.28.3/metaschemas/draft2020-12/meta/applicator.json": "c4a6e4147b91fef7fea6dc058cb1bf93402f7414b76578a8b16aaf1dad6aacef",
+        "referencing-0.28.3/metaschemas/draft2020-12/meta/validation.json": "7010a31e541f32d2be721e2de348df75c9b36876a3ed304877fc0abda1d37a58",
+        "referencing-0.28.3/src/specification/subresources.rs": "cb9922537f00b48e61e52c1c10e126e26fa48a5a53b710a2e4b6ec027eac47a9",
+        "referencing-0.28.3/src/specification/draft201909.rs": "4c0473ad3558e007273f1f05b6e3c6865862088083c2971964272ad224fe2f28",
+        "referencing-0.28.3/src/specification/mod.rs": "9d990bda735aefa66a4c254a639e431a00ce86d3f808f74ddf6b001d95031769",
+        "referencing-0.28.3/src/resource.rs": "6d0fbcaa8d5eaaaf7e18a2bb87da411bcd0dacc4260a1a91b278a85e52b212b2"
+      }
+    },
+    {
+      "name": "fancy-regex-0.14.0.crate",
+      "url": "https://static.crates.io/crates/fancy-regex/fancy-regex-0.14.0.crate",
+      "sha256": "6e24cb5a94bcae1e5408b0effca5cd7172ea3c5755049c5f3af4cd283a165298",
+      "bytes": 86969,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/fancy-regex-0.14.0.crate"
+      ],
+      "members": {
+        "fancy-regex-0.14.0/src/lib.rs": "5fceb05786b2e860ec2141c8e6bfbb85014c97b4f48cc634d0842b81b0dd6477",
+        "fancy-regex-0.14.0/src/vm.rs": "8442aec0c60680576130f0ebbd6da494bba14d1141e7035f66c68f3849933731",
+        "fancy-regex-0.14.0/tests/matching.rs": "3f8d1e0f6567375866b14610eda6e2dc1e96ed26ba1a451fe0c4bb2bf6f774fb"
+      }
+    },
+    {
+      "name": "tungstenite-0.28.0.crate",
+      "url": "https://static.crates.io/crates/tungstenite/tungstenite-0.28.0.crate",
+      "sha256": "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442",
+      "bytes": 67629,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/tungstenite-0.28.0.crate"
+      ],
+      "members": {
+        "tungstenite-0.28.0/src/handshake/machine.rs": "54a82a2643682e2ae17a98e69dcfa8ad10761919ea42f696551970057a428420",
+        "tungstenite-0.28.0/src/handshake/headers.rs": "0e6d3e15faa8b82bd2a239f5094335368e578acef2f17ee74825de606f529b75",
+        "tungstenite-0.28.0/src/handshake/client.rs": "81d70f0bfce18bbbd126d716600efaeece3467d740b06a23b113f1b5f2cb0c8e",
+        "tungstenite-0.28.0/src/protocol/mod.rs": "e7c0904c5ba7df3a3ecc13370e1e3e21a73d12d6dcbea7faafafb779e7f46076",
+        "tungstenite-0.28.0/Cargo.toml": "2340cc29f213b135f5696532c75677926d1db8a911d784ac87d208758493aed7"
+      }
+    },
+    {
+      "name": "tokio-tungstenite-0.28.0.crate",
+      "url": "https://static.crates.io/crates/tokio-tungstenite/tokio-tungstenite-0.28.0.crate",
+      "sha256": "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857",
+      "bytes": 29876,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/tokio-tungstenite-0.28.0.crate"
+      ],
+      "members": {
+        "tokio-tungstenite-0.28.0/src/tls.rs": "ede833940750523f43aecad570e38d9b21de8e4128c8efc3f5e8900116d7c211",
+        "tokio-tungstenite-0.28.0/src/lib.rs": "33ad167c6de78cc76f010bffe33f4f8bd254ce843136763be959384031cfb33f"
+      }
+    },
+    {
+      "name": "reqwest-0.12.28.crate",
+      "url": "https://static.crates.io/crates/reqwest/reqwest-0.12.28.crate",
+      "sha256": "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147",
+      "bytes": 157031,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/reqwest-0.12.28.crate",
+        "C:/Users/Luiz/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/reqwest-0.12.28.crate"
+      ],
+      "members": {
+        "reqwest-0.12.28/Cargo.toml": "23c8a0827aaac74059965a182c6873990e75aa550e8079d3b51bb95092871205",
+        "reqwest-0.12.28/src/redirect.rs": "b8a618396c45884e5557314a0fb99ec01c1868b77132e2cc81aa0a4ac4831c06",
+        "reqwest-0.12.28/src/async_impl/client.rs": "8c30b009838be2126b90344ef97fb6141ac8bdf695f4e7bb00a3052a707d9b5c"
+      }
+    },
+    {
+      "name": "httparse-1.10.1.crate",
+      "url": "https://static.crates.io/crates/httparse/httparse-1.10.1.crate",
+      "sha256": "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87",
+      "bytes": 45190,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-ws-backend-source/httparse-1.10.1.crate"
+      ],
+      "members": {
+        "httparse-1.10.1/src/lib.rs": "a8307ce632f27b095cb84de27cfd8fc237977075d3eed41041f463c6afd9b757"
+      }
+    },
+    {
+      "name": "@smithy__node-http-handler-4.12.1.tgz",
+      "url": "https://registry.npmjs.org/@smithy/node-http-handler/-/node-http-handler-4.12.1.tgz",
+      "sha256": "e9d05919fbdee16d095febc4fb5a88da22a8e9e5bb7afc7fbd9d86e4fccf8eeb",
+      "bytes": 26840,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@smithy__node-http-handler-4.12.1.tgz"
+      ],
+      "members": {
+        "package/dist-cjs/index.js": "0ecc976029422fbbb832c64fd9d320f7bac410a04a21b9c3bd217c7877135e13"
+      }
+    },
+    {
+      "name": "gaxios-7.1.4.tgz",
+      "url": "https://registry.npmjs.org/gaxios/-/gaxios-7.1.4.tgz",
+      "sha256": "231fb53f65108cb787acb02ae1a65e47ab9020d686575db5c07302867af17eb2",
+      "bytes": 103880,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/gaxios-7.1.4.tgz"
+      ],
+      "members": {
+        "package/build/esm/src/gaxios.js": "fd71f0d261754d0988ead6fc528430259f47901485112e59fede658b7287d5e3",
+        "package/build/cjs/src/retry.js": "6f9a99189913f2856531b11ff40ca627d1021d21fc79a5d3f0a48e348d529034"
+      }
+    },
+    {
+      "name": "node-fetch-3.3.2.tgz",
+      "url": "https://registry.npmjs.org/node-fetch/-/node-fetch-3.3.2.tgz",
+      "sha256": "615af90e363f8f276b4b54f8e6c163cf3686dce1d8867dd7e52cbed4d38d2dab",
+      "bytes": 31722,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/node-fetch-3.3.2.tgz"
+      ],
+      "members": {
+        "package/src/request.js": "4a57dfc72f98d37646d7d0b464ad6157700fc875116618cb7af40238d0cbae4c",
+        "package/src/index.js": "e0a76062a308610126191bb288925470a2fb84fbbe5c913b444165d64fd9c4b5"
+      }
+    },
+    {
+      "name": "google-auth-library-10.6.2.tgz",
+      "url": "https://registry.npmjs.org/google-auth-library/-/google-auth-library-10.6.2.tgz",
+      "sha256": "707a26e3dae617a5ae0a3758b8de8745ab942969f651643a76a84cbaf4ee1ba5",
+      "bytes": 128550,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-adc-source/google-auth-library-10.6.2.tgz"
+      ],
+      "members": {
+        "package/build/src/gtoken/jwsSign.js": "5f09dea29ba730e55c0e1f2f3ddb698449aee342bbaacd76b483debb8277499a",
+        "package/build/src/gtoken/getCredentials.js": "22614931c36f7049043596e4f40032b3113d1c2cfa6e8647d3e02598a8aad207",
+        "package/build/src/auth/certificatesubjecttokensupplier.js": "e29f8fb8464dc88f91eff319df7661f215b50be955c9e50588c0605b5f261553",
+        "package/build/src/auth/identitypoolclient.js": "4a0f123357c45e1b5186afc432b7f2128ffe49cebefca9434b00f9d502d282b0",
+        "package/build/src/auth/googleauth.js": "206721dbc822433cf069bba86aa3b60702f4ca9d74b628666d7eab3dba1a3016",
+        "package/build/src/auth/jwtclient.js": "db4bc49b3fb65db1acf759c5c2a52f57f1d8bc3023df102b39102b9eeae44c03",
+        "package/build/src/auth/defaultawssecuritycredentialssupplier.js": "789b0f0de4e8c89e3170484d589b82cbac7f79ac8e1ebff4624d7123af2860f4",
+        "package/build/src/auth/pluggable-auth-client.js": "9f0e1b93d7bd9a9d7989a2ef8c1a8ae75b82ad04e54da86d40bf88144e9d3f86",
+        "package/build/src/auth/pluggable-auth-handler.js": "aafa525c53e918d155a6abbb57e90524c0e2579903f28396cbd99931ac64f34e",
+        "package/build/src/auth/authclient.js": "2cb3aad4b2985d7b7fb0123f36e9d3b837857be4e4638f61f5cdf37624ca8a9e",
+        "package/build/src/auth/refreshclient.js": "189cac7b9a2f1d8ce024f6323d65ba04642e2bf8361137cffb45dda59ca63089",
+        "package/build/src/auth/stscredentials.js": "a33e677b4c7c21987c672d7235e7b43ecf7087309ad6b4ce0a5c3d0999fa86b8",
+        "package/build/src/auth/externalAccountAuthorizedUserClient.js": "4c8b8dbcb16078eafa8d9fc26326ebd76d75d507ce91a4de7cbd8a9c5c8f359d",
+        "package/build/src/auth/impersonated.js": "61fa238327d1197f7fc22f733f7a342280190bf084da6b002b56587263e4a1ce",
+        "package/build/src/auth/computeclient.js": "daf665758158bbb211056070f194536441a717310bac858edd0d1847bb195c95",
+        "package/build/src/gtoken/getToken.js": "9fda145506b0ba27a003dee7baf5793e3d1a7d4b333e391f60b2816ace00830d"
+      }
+    },
+    {
+      "name": "ring-0.17.14.crate",
+      "url": "https://static.crates.io/crates/ring/ring-0.17.14.crate",
+      "sha256": "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7",
+      "bytes": 1502610,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/ring-0.17.14.crate"
+      ],
+      "members": {
+        "ring-0.17.14/src/rsa.rs": "fe62407793ae487d663404dfe5642a7d4e8bc86db4ae70538781d35ea5626cf0",
+        "ring-0.17.14/src/rsa/keypair.rs": "b241467ef86cb3b050ea5b7f86f8fd3ac65cafcadeac09b021b8dd213636dfd5",
+        "ring-0.17.14/src/rsa/public_modulus.rs": "6b26971c63a5bd3762e52775d769098d915e2116f091a9b6347a0bd3e8a90a9d",
+        "ring-0.17.14/src/rsa/public_exponent.rs": "e49a90b89b806322329a6fff85fee5c81c4ff7ee3b1e896ece0db0be9a35a2f8",
+        "ring-0.17.14/Cargo.toml": "b81a19b27cc744410b056eb1d1195ecd41e25a163acadfca3c6457e96b797d3f",
+        "ring-0.17.14/build.rs": "9d1928ffb1d8e15766c1c1b9ead73e4b81a21703dd25f7c27b87842a2e6e9cee"
+      }
+    },
+    {
+      "name": "rustls-0.23.40.crate",
+      "url": "https://static.crates.io/crates/rustls/rustls-0.23.40.crate",
+      "sha256": "ef86cd5876211988985292b91c96a8f2d298df24e75989a43a3c73f2d4d8168b",
+      "bytes": 373839,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/rustls-0.23.40.crate"
+      ],
+      "members": {
+        "rustls-0.23.40/src/client/builder.rs": "477ece7d60eecb8062341878cf541fc32ce02a1987f5790117b218ebc5b2ed7e",
+        "rustls-0.23.40/src/crypto/ring/sign.rs": "6bb88454d5751ce1262d68c670ba41a52f88cd152b75d0740743ef603a43f650",
+        "rustls-0.23.40/Cargo.toml": "d533e329ffe369ba19aab9bd42ccfb102840a8905b1d154111f49ceaddf44620"
+      }
+    },
+    {
+      "name": "@aws-sdk__credential-provider-node-3.972.82.tgz",
+      "url": "https://registry.npmjs.org/@aws-sdk/credential-provider-node/-/credential-provider-node-3.972.82.tgz",
+      "sha256": "2f8732219e361edc37fdb26fec538c8037d292daab9e6f30eb7166911a6b200c",
+      "bytes": 9828,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@aws-sdk__credential-provider-node-3.972.82.tgz"
+      ],
+      "members": {
+        "package/dist-cjs/index.js": "afd158eca6193ed8d8a469013790b9ffa3bdcdea7f6116efda93705f67c6335c"
+      }
+    },
+    {
+      "name": "@aws-sdk__credential-provider-ini-3.973.15.tgz",
+      "url": "https://registry.npmjs.org/@aws-sdk/credential-provider-ini/-/credential-provider-ini-3.973.15.tgz",
+      "sha256": "35541ba7111317142d225fd619bd51060c756dca7c369f40798ebf5066230dd6",
+      "bytes": 11287,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@aws-sdk__credential-provider-ini-3.973.15.tgz"
+      ],
+      "members": {
+        "package/dist-cjs/index.js": "2d975f8114b17e1e96eea2735c7271f735f08bab35dc922384cd15735bbdd085"
+      }
+    },
+    {
+      "name": "@aws-sdk__credential-provider-process-3.972.70.tgz",
+      "url": "https://registry.npmjs.org/@aws-sdk/credential-provider-process/-/credential-provider-process-3.972.70.tgz",
+      "sha256": "09d70d8a8a3ce2191f4cdcac64b0f509d5a59e9953f915ea5d1736f4ebffda13",
+      "bytes": 7122,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@aws-sdk__credential-provider-process-3.972.70.tgz"
+      ],
+      "members": {
+        "package/dist-cjs/index.js": "459dccd69ac50b0cf33d00398dd6b18dec18521d8ed6bc359121e1a96115ea4d"
+      }
+    },
+    {
+      "name": "@smithy__core-3.33.3.tgz",
+      "url": "https://registry.npmjs.org/@smithy/core/-/core-3.33.3.tgz",
+      "sha256": "3fdfde668cab2a1cc97e674dc9e93e6f9c49641690a83b6c4abffce0560c4a87",
+      "bytes": 378369,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-parameter-npm-source/@smithy__core-3.33.3.tgz"
+      ],
+      "members": {
+        "package/dist-cjs/submodules/retry/index.js": "e00b49dad152a3ff9b3b59ab990341adaf7a1213d1801fdc191982e76610feb3"
+      }
+    },
+    {
+      "name": "aws-sdk-sts-1.119.0.crate",
+      "url": "https://static.crates.io/crates/aws-sdk-sts/aws-sdk-sts-1.119.0.crate",
+      "sha256": "03e490aa904849b38e770922faac779dd245f5cf8be81f19065acf18d276e4ad",
+      "bytes": 217514,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-sdk-sts-1.119.0.crate"
+      ],
+      "members": {
+        "aws-sdk-sts-1.119.0/src/client.rs": "b86dd373598f55333be1b0c28a12401ffddb38787e881f05ee3b8bbb55958f3d",
+        "aws-sdk-sts-1.119.0/src/config.rs": "09670057d7b69c056c889cd4f33a057df0a7dc727046d9e9567a98c2b5a2e359",
+        "aws-sdk-sts-1.119.0/src/config/endpoint.rs": "5580834421043328d2473fd00a0ee276e05c1db3d510e0c0fce2c22d68a609ef",
+        "aws-sdk-sts-1.119.0/src/endpoint_lib.rs": "e54c9589b7cbfb7ee068382310679639f5ce4353564eec08579d4f3ec5e2ac5c"
+      }
+    },
+    {
+      "name": "aws-smithy-runtime-1.16.0.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-runtime/aws-smithy-runtime-1.16.0.crate",
+      "sha256": "d6e302ac1d88b99652489df31abdec6ac42a2ab2ac3982ad0ac49f64dfaf28ba",
+      "bytes": 147175,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-smithy-runtime-1.16.0.crate"
+      ],
+      "members": {
+        "aws-smithy-runtime-1.16.0/src/client/orchestrator/http.rs": "301ede6c67e6c7fe303f3fe67574926e3508c2349c5e9345f8c48e37952b4b65"
+      }
+    },
+    {
+      "name": "aws-sigv4-1.6.0.crate",
+      "url": "https://static.crates.io/crates/aws-sigv4/aws-sigv4-1.6.0.crate",
+      "sha256": "2312577f088c9fbf4206dfdb884cf1de9407b43e1a923cbed5237775116fc24b",
+      "bytes": 97414,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-sigv4-1.6.0.crate"
+      ],
+      "members": {
+        "aws-sigv4-1.6.0/src/http_request/sign.rs": "28535dbac063ec66833c97c11e1ca41f6090fe3cf8101f9c4b721bae91c31c97"
+      }
+    },
+    {
+      "name": "aws-smithy-query-0.62.1.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-query/aws-smithy-query-0.62.1.crate",
+      "sha256": "f1d1d71f6562be974caa85442ecd90194c40fdb5df045f182a6c2e872ce95056",
+      "bytes": 26787,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-smithy-query-0.62.1.crate"
+      ],
+      "members": {
+        "aws-smithy-query-0.62.1/Cargo.toml": "7f1dee0f8676bdcb60586a4617a34c523a9108596ee35157372cd7ee957bfed1"
+      }
+    },
+    {
+      "name": "aws-smithy-xml-0.62.1.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-xml/aws-smithy-xml-0.62.1.crate",
+      "sha256": "0b932c8d6dc127fc980eecd78f8694ae9b9551b69a93a7def2a199c1c0033daf",
+      "bytes": 63614,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/aws-smithy-xml-0.62.1.crate"
+      ],
+      "members": {
+        "aws-smithy-xml-0.62.1/Cargo.toml": "face11a9aed32bc311d28f3713e7fa8bdf277ca65791353f9417b03a4d8a1471"
+      }
+    },
+    {
+      "name": "p256-0.13.2.crate",
+      "url": "https://static.crates.io/crates/p256/p256-0.13.2.crate",
+      "sha256": "c9863ad85fa8f4460f9c48cb909d38a0d689dba1f6f6988a5e3e0d31071bcd4b",
+      "bytes": 63434,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/p256-0.13.2.crate"
+      ],
+      "members": {
+        "p256-0.13.2/Cargo.toml": "7f2c98e9af91a495cf341425f77b782d6c253dba9cf4f63a16d63489ecb9ddfc"
+      }
+    },
+    {
+      "name": "xmlparser-0.13.5.crate",
+      "url": "https://static.crates.io/crates/xmlparser/xmlparser-0.13.5.crate",
+      "sha256": "4d25c75bf9ea12c4040a97f829154768bbbce366287e2dc044af160cd79a13fd",
+      "bytes": 26225,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/AppData/Local/Temp/opi-aws-backend-selection/xmlparser-0.13.5.crate"
+      ],
+      "members": {
+        "xmlparser-0.13.5/Cargo.toml": "7a0b08af7649f54efb1c0fd0ef97339a44db4828070bad4b028ce9e9724e306e"
+      }
+    },
+    {
+      "name": "rustls-pki-types-1.14.1.crate",
+      "url": "https://static.crates.io/crates/rustls-pki-types/rustls-pki-types-1.14.1.crate",
+      "sha256": "30a7197ae7eb376e574fe940d068c30fe0462554a3ddbe4eca7838e049c937a9",
+      "bytes": 35567,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/rustls-pki-types-1.14.1.crate"
+      ],
+      "members": {
+        "rustls-pki-types-1.14.1/src/pem.rs": "b0fbf1416f09894808cb058fdb05989bb9ca2364e288c9c6a7c20c18d15d3051"
+      }
+    },
+    {
+      "name": "tracing-0.1.44.crate",
+      "url": "https://static.crates.io/crates/tracing/tracing-0.1.44.crate",
+      "sha256": "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100",
+      "bytes": 463135,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/tracing-0.1.44.crate"
+      ],
+      "members": {
+        "tracing-0.1.44/src/span.rs": "b87686c0ff6b55193a9377f3a0c978e0368edb6f46cd4d5a5b395c169df2f658",
+        "tracing-0.1.44/src/instrument.rs": "9266d792bd9b6678baa49728704c5f38003bbc24755eac16a9e0bffcb2728010"
+      }
+    },
+    {
+      "name": "tracing-core-0.1.36.crate",
+      "url": "https://static.crates.io/crates/tracing-core/tracing-core-0.1.36.crate",
+      "sha256": "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a",
+      "bytes": 63967,
+      "origin_evidence": "prior pinned official archive record / Cargo.lock checksum; no redownload",
+      "physical_paths": [
+        "C:/Users/Luiz/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/tracing-core-0.1.36.crate"
+      ],
+      "members": {
+        "tracing-core-0.1.36/src/dispatcher.rs": "d2a0584196c7e053006490baebfa61c6b3145138e3209f82f44d1afbe066acb6"
+      }
+    }
+  ],
+  "commands": [
+    {
+      "argv": [
+        "python",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit_code": 0,
+      "stdout": "opi documentation contracts: PASS",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exit_code": 0,
+      "stdout": "a927edfb0b7360a93361880fc83ec9d37b7ff103",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--name-status",
+        "a37ed708dfdac3528bc7dfeba18f0df3af68cadc..a927edfb0b7360a93361880fc83ec9d37b7ff103"
+      ],
+      "exit_code": 0,
+      "stdout": "M\t.opi-impl-state.json\nM\tcrates/opi-coding-agent/tests/harness_resource_integration.rs\nD\tdocs/snapshots/phase1/opi-impl-state.json\nD\tdocs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md\nD\tdocs/snapshots/phase10/opi-impl-state.json\nD\tdocs/snapshots/phase11/2026-06-24-phase11-tooling-quality-design.md\nD\tdocs/snapshots/phase11/opi-impl-state.json\nD\tdocs/snapshots/phase12/2026-06-24-phase12-provider-correctness-design.md\nD\tdocs/snapshots/phase12/opi-impl-state.json\nD\tdocs/snapshots/phase13/2026-06-24-phase13-session-tree-context-reconstruction-design.md\nD\tdocs/snapshots/phase13/opi-impl-state.json\nD\tdocs/snapshots/phase14/2026-07-11-phase14-provider-auth-design.md\nD\tdocs/snapshots/phase14/opi-impl-state.json\nD\tdocs/snapshots/phase15/2026-07-11-phase15-safety-sandbox-design.md\nD\tdocs/snapshots/phase15/opi-impl-state.json\nD\tdocs/snapshots/phase2/opi-impl-state.json\nD\tdocs/snapshots/phase3/opi-impl-state.json\nD\tdocs/snapshots/phase4/opi-impl-state.json\nD\tdocs/snapshots/phase5/opi-impl-state.json\nD\tdocs/snapshots/phase6/2026-06-15-phase6-alignment-hardening-design.md\nD\tdocs/snapshots/phase6/opi-impl-state.json\nD\tdocs/snapshots/phase7/2026-06-15-phase7-reliability-observability-design.md\nD\tdocs/snapshots/phase7/opi-impl-state.json\nD\tdocs/snapshots/phase8/2026-06-15-phase8-agent-runtime-stabilization-design.md\nD\tdocs/snapshots/phase8/opi-impl-state.json\nD\tdocs/snapshots/phase9/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md\nD\tdocs/snapshots/phase9/opi-impl-state.json",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--cached",
+        "--raw"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--name-status"
+      ],
+      "exit_code": 0,
+      "stdout": "M\tdocs/research/pi-ai-opi-ai-alignment/README.md\nM\tdocs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md\nM\tdocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md\nM\tdocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md\nM\tdocs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "ls-files",
+        "--others",
+        "--exclude-standard"
+      ],
+      "exit_code": 0,
+      "stdout": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-backend-gap-audit.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-backend-gap-evidence.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-backend-gap-review.md",
+      "stderr": ""
+    }
+  ],
+  "static_checks": {
+    "source_files": 164,
+    "archive_files": 28,
+    "archive_members_matched": 134,
+    "Pi_snapshot": {
+      "files": 1925,
+      "tree_sha256": "08a98ac282590eeb8255dd326e566b8b456212b4018a6d59cce44caf7f62e9d2",
+      "excluded_directory_names": [
+        ".git",
+        "node_modules",
+        "dist"
+      ]
+    },
+    "changed_documents": 10,
+    "bilingual_lines": 484,
+    "identity_counts": {
+      "AIR": 67,
+      "V": 59,
+      "RDF": 20,
+      "backend_groups_open": 7,
+      "new_ids": 0
+    },
+    "retained_test_dispositions": {
+      "integration": 41,
+      "source_test_files": 7
+    },
+    "markdown": {
+      "tables": 76,
+      "rows": 874,
+      "local_links": 303,
+      "anchors": 51
+    }
+  },
+  "errors": [],
+  "independent_reviews": [
+    {
+      "scope": "schema",
+      "report_sha256": "ecaa692ebde370ef90b277591ba6f1323a4033637e11765452b7016d97b52483"
+    },
+    {
+      "scope": "transport-auth",
+      "report_sha256": "dfb36ccdd8ade019779c61cd04d56da8a5b7af8e79a1f1069c1b7e302af403bc"
+    },
+    {
+      "scope": "docs",
+      "report_sha256": "e7775d8dd24b01148f0db420e4984025f0f5c18b5838d3bbfbd3e86a0c081e68"
+    }
+  ],
+  "test_impact": "none",
+  "runtime_proof": false,
+  "not_executed": [
+    "Pi/TypeBox/Rust validator runtime or differential runner",
+    "loopback WS/HTTP/TLS/proxy/metadata/credential/process fixtures",
+    "Cargo resolution/features/native/MSRV/build/package/platform tests",
+    "install/import/hydration/third-party execution/network",
+    "formal admission/implementation/commit/push"
+  ],
+  "shared_worktree": {
+    "baseline_staged_raw": ":100644 000000 eb2e6de 0000000 D\tdocs/snapshots/phase1/opi-impl-state.json\n:100644 000000 1e511b3 0000000 D\tdocs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md\n:100644 000000 898c57c 0000000 D\tdocs/snapshots/phase10/opi-impl-state.json\n:100644 000000 9e97522 0000000 D\tdocs/snapshots/phase11/2026-06-24-phase11-tooling-quality-design.md\n:100644 000000 baf382c 0000000 D\tdocs/snapshots/phase11/opi-impl-state.json\n:100644 000000 d3353ae 0000000 D\tdocs/snapshots/phase12/2026-06-24-phase12-provider-correctness-design.md\n:100644 000000 f8765ba 0000000 D\tdocs/snapshots/phase12/opi-impl-state.json\n:100644 000000 59c8681 0000000 D\tdocs/snapshots/phase13/2026-06-24-phase13-session-tree-context-reconstruction-design.md\n:100644 000000 cc30ac4 0000000 D\tdocs/snapshots/phase13/opi-impl-state.json\n:100644 000000 927a756 0000000 D\tdocs/snapshots/phase14/2026-07-11-phase14-provider-auth-design.md\n:100644 000000 91360a9 0000000 D\tdocs/snapshots/phase14/opi-impl-state.json\n:100644 000000 42c2bda 0000000 D\tdocs/snapshots/phase15/2026-07-11-phase15-safety-sandbox-design.md\n:100644 000000 80f6a5a 0000000 D\tdocs/snapshots/phase15/opi-impl-state.json\n:100644 000000 9066d0c 0000000 D\tdocs/snapshots/phase2/opi-impl-state.json\n:100644 000000 9697e10 0000000 D\tdocs/snapshots/phase3/opi-impl-state.json\n:100644 000000 43d1a2b 0000000 D\tdocs/snapshots/phase4/opi-impl-state.json\n:100644 000000 4d483cc 0000000 D\tdocs/snapshots/phase5/opi-impl-state.json\n:100644 000000 ebf9479 0000000 D\tdocs/snapshots/phase6/2026-06-15-phase6-alignment-hardening-design.md\n:100644 000000 a5be0c7 0000000 D\tdocs/snapshots/phase6/opi-impl-state.json\n:100644 000000 116e137 0000000 D\tdocs/snapshots/phase7/2026-06-15-phase7-reliability-observability-design.md\n:100644 000000 a795640 0000000 D\tdocs/snapshots/phase7/opi-impl-state.json\n:100644 000000 c4c8137 0000000 D\tdocs/snapshots/phase8/2026-06-15-phase8-agent-runtime-stabilization-design.md\n:100644 000000 92ab1ab 0000000 D\tdocs/snapshots/phase8/opi-impl-state.json\n:100644 000000 787f1ff 0000000 D\tdocs/snapshots/phase9/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md\n:100644 000000 05fa720 0000000 D\tdocs/snapshots/phase9/opi-impl-state.json",
+    "concurrent_committed_name_status": "M\t.opi-impl-state.json\nM\tcrates/opi-coding-agent/tests/harness_resource_integration.rs\nD\tdocs/snapshots/phase1/opi-impl-state.json\nD\tdocs/snapshots/phase10/2026-06-24-phase10-core-architecture-deepening-design.md\nD\tdocs/snapshots/phase10/opi-impl-state.json\nD\tdocs/snapshots/phase11/2026-06-24-phase11-tooling-quality-design.md\nD\tdocs/snapshots/phase11/opi-impl-state.json\nD\tdocs/snapshots/phase12/2026-06-24-phase12-provider-correctness-design.md\nD\tdocs/snapshots/phase12/opi-impl-state.json\nD\tdocs/snapshots/phase13/2026-06-24-phase13-session-tree-context-reconstruction-design.md\nD\tdocs/snapshots/phase13/opi-impl-state.json\nD\tdocs/snapshots/phase14/2026-07-11-phase14-provider-auth-design.md\nD\tdocs/snapshots/phase14/opi-impl-state.json\nD\tdocs/snapshots/phase15/2026-07-11-phase15-safety-sandbox-design.md\nD\tdocs/snapshots/phase15/opi-impl-state.json\nD\tdocs/snapshots/phase2/opi-impl-state.json\nD\tdocs/snapshots/phase3/opi-impl-state.json\nD\tdocs/snapshots/phase4/opi-impl-state.json\nD\tdocs/snapshots/phase5/opi-impl-state.json\nD\tdocs/snapshots/phase6/2026-06-15-phase6-alignment-hardening-design.md\nD\tdocs/snapshots/phase6/opi-impl-state.json\nD\tdocs/snapshots/phase7/2026-06-15-phase7-reliability-observability-design.md\nD\tdocs/snapshots/phase7/opi-impl-state.json\nD\tdocs/snapshots/phase8/2026-06-15-phase8-agent-runtime-stabilization-design.md\nD\tdocs/snapshots/phase8/opi-impl-state.json\nD\tdocs/snapshots/phase9/2026-06-24-phase9-pi-0-80-2-baseline-realignment-design.md\nD\tdocs/snapshots/phase9/opi-impl-state.json",
+    "carried_index_observation": "Baseline staged snapshot deletions and carried runtime edit were committed externally in 0e860aa; ledger maintenance also formed external a927edf. Concurrent commit delta/status are recorded; neither contains task docs.",
+    "final_staged_raw": "",
+    "unstaged_name_status": "M\tdocs/research/pi-ai-opi-ai-alignment/README.md\nM\tdocs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md\nM\tdocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md\nM\tdocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.md\nM\tdocs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md\nM\tdocs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+    "untracked": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-backend-gap-audit.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-backend-gap-evidence.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.3.0-backend-gap-review.md",
+    "carried_runtime_sha256": "b3f26332e48adf523809d608512ded8cfab53b8f07395c54525b710523ea94c6",
+    "unrelated_index_runtime_preserved": true
+  },
+  "file_sha256": [
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md",
+      "sha256": "bfec9e7de9b276a4ed97605e82204e3200f5115911003c9b35ac7535c83ece55"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-backend-gap-audit.md",
+      "sha256": "0da139806682831aaedb1b263154a0c6fb37569528ed928f3eaed5647480ed2c"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-backend-gap-review.md",
+      "sha256": "1cdef2724f5d178583c853d2c52527c62b2ecc86b662abdf0fafc63ef6517fac"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md",
+      "sha256": "192079697ec338ce6802e4c0aff3ec933c50b651757bfb758a73ef98be927534"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md",
+      "sha256": "69843f6fa73ec55221b0bd4b5f7247d339e916859ca0364821da49a779094609"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/README.md",
+      "sha256": "3d08a9910595a9d86b099a30e88826de0a89b87888275b2e39b0c657906adac2"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md",
+      "sha256": "07c41dc0f85a467909c901d5858ab5767ff8c7c33f90b56faba3e867f56edccc"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md",
+      "sha256": "a2104c79374d79015b4b42a9eb9d6c0141ee5facf506e8c3cedcb7f7d9914ebe"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+      "sha256": "66c27ffadf4e6ebda9b9f1148714e595e9c4d79348532b4a205ad2f779a6e4ff"
+    }
+  ],
+  "self_hash": "excluded to avoid recursive digest"
+}

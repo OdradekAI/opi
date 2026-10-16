@@ -10,10 +10,10 @@
 | 本次逐项升级 | [1.2.0→1.3.0复核](pi-1.3.0-upgrade-review.md)、[固定来源与全路径摘要](pi-1.3.0-source-evidence.json)：AI47与telemetry2变化路径全部处置；本地身份不等于已验证上游tag |
 | 当前全部公开能力 | [Pi1.3.0 SDK合同](pi-1.3.0-sdk-contracts.md)：10 chat、1 image、4 classifier、42 factories、9 OAuth；profile复用wire仍须独立证明 |
 | Rust调用体验与差异 | [RDF-01–20](pi-1.3.0-rust-differences.md)：owned/lazy/Result/knownness/tracing/platform与真实能力缺口分别说明 |
-| Rust机制与OPEN后端缺口 | [后端／五项合同及缺口表](pi-1.3.0-rust-backends.md)：Schema、WS、HTTP/H2/proxy/redirect、trust/crypto、auth/source retry、native tracing、Cargo/platform/catalog均未关闭 |
+| Rust机制与OPEN后端缺口 | [后端／五项合同及缺口表](pi-1.3.0-rust-backends.md)、[专项源码核查与方案](pi-1.3.0-backend-gap-audit.md)：逐项来源、验证方法、补救条件；七组均OPEN |
 | 唯一验收与测试迁移 | [验收矩阵](acceptance-matrix.md)：59 V身份＝54 active SDK＋4 host-impact＋1 retired；Pi174 test files不是执行通过，Rust41 integration＋7 source-test处置保留 |
 | 参数、预算与新增拒绝依据 | [1.2.0来源审计](pi-1.2.0-parameter-audit.md)按本次同摘要继承，变化项以1.3.0复核为准；无来源固定cap／总deadline／blanket拒绝仍撤回 |
-| 复审与检查 | [本轮独立复审](pi-1.3.0-revision-review.md)：记录实际发现、修订、检查与未证明部分；不以旧review追认新稿 |
+| 复审与检查 | [后端专项独立复审](pi-1.3.0-backend-gap-review.md)、[本轮证据](pi-1.3.0-backend-gap-evidence.json)；[升级轮复审](pi-1.3.0-revision-review.md)保留原输入，不追认新稿 |
 | 版本、规划与决策 | [tracking与后续模板](upstream-tracking.md)、[decisions历史与本次替代关系](decisions.md)；不建立第二实施账本或自动监控 |
 
 当前行为修订集中在：退出compact frames；跨模型thinking全部drop；最终工具参数保留arguments_error而非执行可解析前缀；Responses/Anthropic effort与off；error-tool images、Chat同chunk次序、Kimi/OpenCode路由和模型metadata。telemetry实现／测试／README未变，内部依赖精确pin不代表新增instrumentation。所有source默认／backend默认／Rust差异按具体消费路径区分，不因库升级增加无依据限制。

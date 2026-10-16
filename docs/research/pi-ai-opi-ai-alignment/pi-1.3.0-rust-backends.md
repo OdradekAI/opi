@@ -6,6 +6,8 @@
 >
 > 输入见 [backend revision baseline](pi-1.2.0-backend-revision-baseline.json)；本页处理[架构审查](pi-1.2.0-rust-architecture-review.md)的 R-01–08。选型采用精确发布源码；参数/新增拒绝按[来源审计](pi-1.2.0-parameter-audit.md)修正，旧固定值不能作为默认实现依据；新增依赖的 Cargo 解析、完整传递闭包、平台和运行 conformance 都留给未来准入后的实施。没有安装、编译或执行下载的第三方代码。
 
+> 后续专项核查以 Opi `a37ed70` 为输入，见[逐项源码／验证／可行方案](pi-1.3.0-backend-gap-audit.md)和[独立复审](pi-1.3.0-backend-gap-review.md)。本页五项合同继续适用，但 Schema/WS 等选型必须先过专项接受集和机制可达性检查；七组覆盖缺口全部 OPEN。旧轮验证只证明当时文档。
+
 ## 1. 选择原则与适用层
 
 保留一个 Models、一个 frozen call、一个 acquisition owner、一个最终 collector。所选后端负责明确的协议机制；来源优先级、取消、预算、cache publication 和资源所有权仍在 opi-ai。不能因为引入成熟库，就委托它自行发现另一身份、重试、代理、重定向、启动进程或换一个全局 runtime。
@@ -58,6 +60,8 @@ jsonschema0.28.3(default-features=false)保留为有条件native引擎候选；�
 | regex/error | 撤回所有pattern×所有string/key guard、复制private ECMA canonicalizer及allOf碰撞重写。它们可能拒绝无关分支且新增未证算法。锁定engine吞掉某些嵌套regex错误的事实仍是blocker；必须按实际求值分支正确处理或重选机制，不得伪成功/全局拒绝替代等价 |
 | 调度/cache | 内部有界并发、等待可取消、cache可淘汰/不缓存，而不因缓存/worker tuning拒绝合法schema。实际同步计算不能被async timeout强杀；caller离开不提前释放仍运行worker的permit；不承诺CPU毫秒上限 |
 
+专项补充：jsonschema的metaschema验证早于公开keyword hook，关闭开关为pub(crate)，不能作为候选实现步骤。TypeBox已知keyword形状guard、mixed applicators/$ref siblings、近似grapheme长度、metadata ref target与$schema legacy frame、regex bool父节点吞错都须先证明公开机制可表达；详见[Schema专项](pi-1.3.0-backend-gap-audit.md#2-schema公开机制可表达性先于选型)。本轮不批准固定draft/全量lowering、自研validator或fork。
+
 验证语料至少包含unknown format、uuid/url/json-pointer-uri-fragment、unknown $schema、混用旧items/prefixItems、inert contentEncoding、ECMA whitespace U+1680、metadata及irrelevant regex branch；期望来自固定TypeBox/Pi源码，不是候选engine自证。八项源码导出正例在来源审计；尚未运行。保留clone-before-normalize、JS numeric/String语义、原schema完整验证与typed脱敏错误；修正Pi root-conversion验证漏洞须单独标记正确性差异，不借此添加全局资源拒绝。
 
 ### 2.5 Custom API：类型安全不等于实例准入门槛
@@ -86,7 +90,9 @@ HTTP proxy CONNECT；HTTPS proxy先outer TLS验证proxy，再CONNECT/inner TLS�
 
 后端默认read/write各128KiB、max write usize::MAX、接收frame16MiB/message64MiB是backend默认，不是Pi限制或SDK推荐。撤回研究者64KiB/32MiB/8MiB/16MiB设置。receive frame/message可通过WebSocketConfig选择不加backend size cap，以免引入额外接受上限；这不等于无限RSS或无限排队。Sink readiness/一个owned driver提供背压；配置关系max_write>write_buffer由checked验证，不能触发assertion。不要用新的写缓冲cap拒绝合法outgoing message。
 
-不可配置的Upgrade限制仍存在：64KiB response、124 headers、512 reads，以及64次read后平均至少128bytes启发式；所选版本没有permessage-deflate。这些不是RFC/Pi上限，可能拒绝合法握手或缺协商能力；须适配/重选或保持未关闭coverage，不能称调整WebSocketConfig即可完全消除。Text按RFC、Binary按Pi replacement，Ping/Pong/Close不伪装内容。3xx/Upgrade跟随取决于目标运行时，不能一概套none。
+不可配置的Upgrade限制仍存在：累计成功read返回的bytes>65536、reads>512、reads>64且平均<128bytes的启发式在解析前执行，可能计入coalesced首帧tail；另有124个headers解析槽。它们不是TCP分包数或单纯header长度。所选版本没有permessage-deflate。这些不是RFC/Pi上限，可能拒绝合法握手或缺协商能力；须适配/重选或保持未关闭coverage，不能称调整WebSocketConfig即可完全消除。Text按RFC、Binary按Pi replacement，Ping/Pong/Close不伪装内容。3xx/Upgrade跟随取决于目标运行时，不能一概套none。
+
+专项补充：Pi实际选global WebSocket，Node最低版本不是具体构造器/headers overload/压缩/握手上限证明；lock中的ws不提供该证据。Pi显式websocket也有eligible pre-start SSE fallback，验收必须观察Upgrade/frames。完整自有握手后接public from_partially_read是待验证可行路径，须保留tail并完整验证Accept/token/subprotocol/extensions；不能把它当压缩补救或已选定实现。
 
 取消/cleanup禁止新内容及continuation发布，drop socket并取消/await owned本地driver/timer；撤回2s flush/peer-close默认deadline。可显式采用host shutdown deadline并诚实报告pending，不把close发起当远端ACK/退款。Pi idle5min/max-age55min保留来源：Pi有idle timer且busy跳过；候选next-idle-acquire eviction机制是明确Rust生命周期差异，不是原timer完全等价。源级未运行local proxy/TLS/fragment/cleanup conformance。
 
@@ -144,7 +150,7 @@ V-05/09/20/39/49/51/55/58涵盖所有来源、MFA/SSO/login/DPoP/cache、多key 
 
 排除官方google-cloud-auth **1.17.0**：其MSRV1.91不是问题，实际user/external-account/STS交换内部Client::new/builder无公开通用transport注入，reqwest0.13.4/default aws-lc还会引第二套配置路径；仅包装default constructor不能修复内部proxy/env/redirect。gcp_auth0.12.7覆盖不全且有gcloud路径，也不采用。代价是SDK维护下面各条Google标准HTTP exchange与source状态；以固定google-auth-library10.6.2/@google/genai2.21.0源码与官方协议语料跟进，不能称选一个库已自动得到完整ADC。
 
-RSA采用RsaKeyPair::from_pkcs8或from_der(PKCS#1)、RSA_PKCS1_SHA256和SystemRandom；PEM用PemObject/PrivateKeyDer解析。固定JWT alg=RS256、typ=JWT、可选kid，iss=client_email、scope=cloud-platform、aud=canonical token endpoint、iat/exp=clock/clock+3600，以base64url无padding签名精确header.payload；不默加用户delegation。ring实际key构造范围/非RSA/encrypted-key不支持是backend能力边界，不是Pi通用拒绝规则；typed报告并保持覆盖缺口，不能猜另一算法或称caller增预算可修复。JSON服务账户的PKCS#1/PKCS#8 PEM和mTLS cert/key均支持；bare私钥文件缺client_email不能冒称有效ADC。锁定Node的P12/PFX本已拒绝，不为虚构的“Pi旧p12能力”新增OpenSSL或转换命令。
+RSA采用RsaKeyPair::from_pkcs8或from_der(PKCS#1)、RSA_PKCS1_SHA256和SystemRandom；PEM用PemObject/PrivateKeyDer解析。Node gtoken显式传入的JWT header只有alg=RS256；撤回未经jws精确源码证明的typ=JWT/可选kid默认。iss=client_email、scope=cloud-platform、aud=canonical token endpoint、iat/exp=clock/clock+3600，以base64url无padding签名精确header.payload；不默加用户delegation。ring实际key构造范围/非RSA/encrypted-key不支持是backend能力边界，不是Pi通用拒绝规则；typed报告并保持覆盖缺口，不能猜另一算法或称caller增预算可修复。JSON服务账户的PKCS#1/PKCS#8 PEM和mTLS cert/key分别作为待证明目标；ring的RSA签名限制不能推广为rustls全部mTLS算法限制；bare私钥文件缺client_email不能冒称有效ADC。锁定Node的P12/PFX本已拒绝，不为虚构的“Pi旧p12能力”新增OpenSSL或转换命令。
 
 | Pi实际ADC家族／source | 选定Rust机制与边界 |
 |---|---|
@@ -154,7 +160,7 @@ RSA采用RsaKeyPair::from_pkcs8或from_der(PKCS#1)、RSA_PKCS1_SHA256和SystemRa
 | external_account file/URL | text或JSON subject_token_field_name，显式URL headers/format，RFC8693 Google STS，audience/type/workforce_pool_user_project/confidential-client字段，optional IAM impersonation/lifetime；只限trusted所选config，未知/坏来源终止 |
 | external_account aws1 | Google supplier自己的region env→AZ metadata、complete env pair→配置IMDS（含可选v2token）；用同一owned SigV4形成serialized GetCallerIdentity subject token＋x-goog-cloud-target-resource；不因此实际调用AWS STS，不查Bedrock profile/SSO/process，不扩张身份发现 |
 | external_account certificate | use_default_certificate_config/certificate_config_location互斥，scoped证书配置路径与well-known配置；注入fs读cert/key/trust_chain，按Node顺序/leaf规则构成DER数组；显式mTLS client只用于其auth链，不污染其他provider/model client；仍验证server TLS |
-| external_account executable | 保留SDK-native有界ProcessRunner，不以callback占位；所选trusted config/既有host执行授权及selected GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1仍必需；不再虚构另一个独立默认拒绝开关，不能借不提供runner把已发布native能力变成Unsupported。env gate在读output_file/spawn前检查。解析兼容quoted argv，直接spawn，不插入sh/powershell；冻结child env，version1/token-type/id_token或saml/expiry验证。保留Node默认30s、config允许5–120s，不再用60s总事务截断；撤回stdout/stderr各64KiB的默认cap，取消/超时kill-reap进程树。output_file只读有效cache，missing/stale才执行，SDK不自动写输出 |
+| external_account executable | 保留SDK-native有界ProcessRunner，不以callback占位；所选trusted config/既有host执行授权及selected GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1仍必需；不再虚构另一个独立默认拒绝开关，不能借不提供runner把已发布native能力变成Unsupported。env gate在读output_file/spawn前检查。解析其特定quoted argv，直接spawn，不插入sh/powershell；保留Node stdout+stderr合并后的结果解析，malformed cache不一律当stale。冻结scoped child env、kill/reap tree为Rust安全/生命周期差异，Node继承env/直接child.kill不证明这些保证；version1/token-type/id_token或saml/expiry验证。保留Node默认30s、config允许5–120s，不再用60s总事务截断；撤回stdout/stderr各64KiB的默认cap，取消/超时kill-reap进程树。output_file只读有效cache，missing/stale才执行，SDK不自动写输出 |
 | external_account_authorized_user | HTTP Basic client auth＋refresh_token到validated token_url/default STS oauthtoken；保留quota、expires_in与返回的新refresh_token，在owner内原子更新；默认不写原ADC文件，需持久化时使用已选store ACK合同 |
 | explicit direct metadata | scoped标准metadata endpoint、Metadata-Flavor:Google、token/expiry与有界HTTP；只在明确direct/default-metadata source可达，不把Models available/check改成metadata健康探测 |
 
@@ -182,12 +188,12 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 
 ## 5. Pi 1.3.0 后端覆盖缺口：全部 OPEN
 
-此表细化已有 AIR/V/RDF 的证明义务，非实施任务或第二账本。新快照未改变WS代码、TypeBox版本或主要外部SDK依赖；新增argumentsError前置拒绝不修复Schema引擎。静态定位只让缺口更具体，不是关闭。保持原有secret/authority与显式caller policy，拒绝无来源默认cap；新增可配置override或typed Unsupported均不能代替接受集证明。
+此表细化已有 AIR/V/RDF 的证明义务，非实施任务或第二账本。[后端专项核查](pi-1.3.0-backend-gap-audit.md)给出各组细项、精确源码定位、未来验证方法与有条件补救路径；本表不替代该证据，也不把源码可行性记为运行通过。新快照未改变WS代码、TypeBox版本或主要外部SDK依赖；新增argumentsError前置拒绝不修复Schema引擎。静态定位只让缺口更具体，不是关闭。保持原有secret/authority与显式caller policy，拒绝无来源默认cap；新增可配置override或typed Unsupported均不能代替接受集证明。
 
 | 缺口／当前机制 | 1.3.0影响与明确未覆盖项 | 关闭所需证据／既有验收 |
 |---|---|---|
 | Schema：jsonschema0.28.3有条件候选 | TypeBox1.3.27未变；新最终参数错误只在validation前拒绝。dialect/混合keyword、已知/未知format、content assertions、in-memory refs/cycles、ECMA whitespace与branch相关regex error差异仍OPEN | 固定Pi/TypeBox输入→expected→native结果，含unknown format/$schema、uuid/url/json-pointer-uri-fragment、items/prefixItems、inert contentEncoding、U+1680、irrelevant branch与实际错误分支；没有隐式I/O、无全pattern guard/blanket拒绝，root-conversion修正单列。真实公开utility和external consumer；V-35/58，RDF-09 |
-| WS：tungstenite0.28.0 Upgrade与compression | Pi Codex WS路径同摘要；64KiB/124headers/512reads与小read heuristic是backend不可配置handshake约束，非Pi上限；缺permessage-deflate仍OPEN。移除receive可配置cap不能解除这两项 | 同运行时Pi与Rust接同一loopback服务：合法大header/多header/小碎片握手、extension协商/压缩消息、无压缩fallback与explicitWS/auto分支，source accept与失败均保留；不能只测非法拒绝或让auto SSE掩盖explicitWS缺口。机制补救/重选与特征闭包证据；V-02/30/49/58，RDF-13/18 |
+| WS：tungstenite0.28.0 Upgrade与compression | Pi Codex WS路径同摘要；不可配置的累计read bytes/次数/平均长度检查与124-header槽、Connection token-list验证和extension校验风险，以及缺permessage-deflate仍OPEN；精确作用域见专项源码核查。移除receive可配置cap不能解除这两项 | 同运行时Pi与Rust接同一loopback服务：合法大header/多header/小碎片握手、extension协商/压缩消息、无压缩fallback与explicitWS/auto分支，source accept与失败均保留；必须断言真实WS握手/frames；Pi显式websocket的eligible pre-start失败也可fallback，不能用最终SSE成功掩盖任何WS缺口。机制补救/重选与特征闭包证据；V-02/30/49/58，RDF-13/18 |
 | HTTP/proxy/H2与redirect | 仅WS Upgrade和显式placeholder/proxy H1有来源；普通Bedrock默认H2、source-specific retry/redirect仍须对应。runtime global fetch/WebSocket默认未知，不用npm其他库推断 | 目标协议/H1/H2协商、代理CONNECT/NO_PROXY/scopedenv、redirect方法/body/敏感header stripping与禁跨身份canary，SDK成功/负例/取消及custom零二次包；实际feature/lock＋双端local conformance。V-01/05/09/29/30/51/55/58 |
 | TLS/trust与RSA能力 | webpki/host DER roots与Node/Bun/OS trust不等价；ring可构造的RSA key范围、mTLS/非RSA/encrypted-key等能力不是Pi通用拒绝，仍OPEN | 固定真实来源支持矩阵、企业/系统CA、无bypass的信任与hostname负例、service-account PKCS#1/PKCS#8及mTLS、来源支持而backend拒绝的key语料与补救/差异；不自动扩大ambient读取。V-09/49/55/58 |
 | Auth/ADC/AWS source与retry模式 | 新依赖精确pin不提供新的Rust实现。默认source-chain/MFA/SSO/login/DPoP/cache、source retry/redirect、metadata timeout未证值，以及选定standard-only对ambient/adaptive模式缺口仍OPEN | 来源优先级/无账号fallback、每source协议与副作用、实际attempt/redirect/timeout scope、rotation ACK/unknown receipt/process-tree cleanup；精确锁图与isolated fake endpoints。显式mode失败仅标能力缺口，不算parity；V-05/09/12/43/55/58 |

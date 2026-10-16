@@ -240,3 +240,16 @@ RDF-01/08/20（typed字段／projection覆盖）与AIR-010/038：不同provider/
 RDF-14（telemetry）：Pi保持options引用，不冻结跨await的parent字段；Rust创建时冻结Span/Dispatch仍是有意owned差异。Noop/parent传播不等于SDK已自动发span，更不提供generic callback DSL同型兼容。旧telemetry README领域schema/import示例没有在1.3.0恢复，不能变成本包义务。
 
 所有backend缺口仍为G；[当前后端附件](pi-1.3.0-rust-backends.md)列出可关闭证据，没有任何一项因上游小版本、typed Unsupported或可覆盖默认而关闭。
+
+## 后端专项核查的差异边界
+
+本轮[专项核查](pi-1.3.0-backend-gap-audit.md)以a37ed70为输入，细化现有RDF而不新增编号。七组仍OPEN，不能把未证明的补救变成已接受的Rust差异：
+
+- RDF-09：metaschema前置拒绝、grapheme/format/keyword/ref/regex接受集属于engine缺口。公开leaf hook只能证明局部机制；不调用私有bypass，不以完整自研evaluator代替可行性证明。Pi guard仍检查旧TypeBox.Kind symbol，而该TypeBox factory另有~kind；Rust JSON-only边界不冒充复制全部factory/codec路径。root非法转换最终拒绝仍是单列正确性差异。
+- RDF-13/18：WS累计read检查、124-header槽、Connection token-list/extension验证与无压缩分别核。Pi真实global constructor/runtime尚未固定；显式websocket也会eligible fallback，最终SSE成功不关闭WS。provided-stream、自有完整Upgrade→from_partially_read、patch/重选都仅为有条件路径。
+- RDF-06/08/17/18：按source区分proxy/redirect/retry、H2、trust、RS256与mTLS。撤回JWT typ/kid默认；ring signing与verification范围不可混用，也不把RSA签名限制推成所有非RSA mTLS不支持。真实source不支持的key不凭想象增加义务。
+- RDF-10/11/12/18：full-chain、standard/adaptive/2026、ADC五家族和metadata timeout分别待证。executable默认保留源侧stdout+stderr合并解析；scoped frozen child env和kill/reap后代是明确安全/生命周期增强，非Node保证。无新的总时限、进程stdio默认cap或第二deny gate。
+- RDF-14：owned pinned Future/Stream可在matching Dispatch的短scope内poll/drop，producer也须接线；safe机制草案不等于实际tracing conformance，host语义结束与Span clone寿命分离。
+- RDF-18/20：有效Cargo feature union、native/transitive/MSRV、外部package consumer、三平台和hydrated catalog仍须真实证据。source档案不能关闭这些交付面。
+
+每个未来case保留Pi原始观察、Rust公开动作结果、允许差异和对应V；未知参考runtime、实际backend拒绝和未运行三者分开，不能统一归一化为已等价。

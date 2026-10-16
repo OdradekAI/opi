@@ -390,6 +390,8 @@ AWS 选定来源表和精确依赖证据见 [SDK 附录 A–D](sdk-target-propos
 | ADC | 私有五家族 adapter 与受控 reqwest/ring/pki-types1.14.1 以完整来源语义为条件。撤回60s/16sends/depth4/1MiB、zero-retry、same-origin5-hop 默认；来源 retry/redirect/process/config 必须可达 |
 | Schema | jsonschema0.28.3 是需 Pi TypeBox corpus/adapter 的有条件候选，不再称已完成 parity 选型。撤回强制 Draft7/unknown-format-keyword 拒绝、虚构 work/shape 配额和全 pattern guard；不引 JS runtime 或隐式 schema I/O |
 
+[后端专项核查](pi-1.3.0-backend-gap-audit.md)细化七组 OPEN：逐项精确源码、可证伪的公开边界语料及有条件补救。采纳机制前先证明其公开扩展点能表达所需语义；私有 API、假想转换、可配置上限、typed Unsupported 或成功的 SSE fallback 均非证明。Pi 中依赖运行时的行为须固定实际 runtime/build。本轮仅改文档，未关闭任何组。
+
 #### 流调度与可接受数据
 
 撤回默认 SSE8MiB、AWS8MiB/headers128KiB、接收 WS8MiB/message16MiB/outgoing16MiB、retained32MiB/4096 blocks/depth64、tool/opaque8MiB、queue64MiB 和 terminal-envelope256KiB。现 queue64 是内部 count bound，不是新拒绝阈值；实施背压/一个 in-progress event，以及不因大事件卡死的 handoff，不增加 retry driver。独立 single terminal 路径保留完整 partial/已知 usage，不依赖不足的 queue permits。
@@ -413,6 +415,8 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 目标是真实 Pi plain-JSON validation/normalization 路径。TypeBox 此处不按$schema选择 dialect，忽略未知 format，支持自身已知 format registry，ref 在内存解析。不能改成强制 Draft7/三 dialect/unknown-keyword-format/cycle 拒绝，也不能默默弱化支持约束。无隐式 schema network/file lookup；URI identity 不禁止。strict wire projection 仍独立于本地验证。
 
 撤回 schema256KiB/16384 nodes/256 targets、instance8MiB/262144 nodes/depth64/pattern4KiB、work1000000、cache128/32MiB、jobs4/queue16/errors32。fancy-regex1000000 backtracks 是 backend 默认，不是 Pi fuel 或已证安全默认。撤回 cross-product regex 预检/canonical-key 重写：可能拒绝无关分支或改变约束。候选引擎 format、ECMA regex、keyword/ref/recursion 及吞 regex error 的缺口须 branch-correct 差分证明或重选 backend；不得伪成功或 blanket fail-closed parity。内部有界调度/淘汰不能仅为 tuning 数字拒绝合法 schema；同步取消不是 hard-kill。
+
+保留jsonschema0.28.3前须证明mixed applicators/ref siblings、早于public keyword hook的强制metaschema准入、TypeBox近似grapheme长度、metadata ref发现和fallible regex组合。其绕过schema验证的方法是私有的，不能作为实现选项。小型leaf adapter可补子集；任意lowering或完整替代evaluator均未获采纳。详细语料与选型条件以专项核查为准。
 
 #### Custom API 类型与所有权 seam
 
