@@ -1,0 +1,181 @@
+{
+  "schema": 1,
+  "date": "2026-10-16",
+  "scope": "Parameter provenance source evidence only; not compile/conformance/admission",
+  "method": "Read pinned Pi/current Rust/locked Rust sources; restore 15 exact official npm archives, verify package-lock SRI, inspect source text only; no install/import/build/runtime/live/auth/process fixture",
+  "npm_archives": [
+    {
+      "lock_key": "packages/ai/node_modules/openai",
+      "version": "7.19.0",
+      "url": "https://registry.npmjs.org/openai/-/openai-7.19.0.tgz",
+      "integrity": "sha512-MX2s3u2L5racTO0CC/SWpCOasJQBCJrqLKXK+l82cAhdeF8mPMBEe/gxMm0ZFa2xpKpOFLRjxv5afYEZbBXmbQ==",
+      "sha256": "597532dcb9051ee8aa5edadedb57b798b42add68cc5aec1d67e994d0cfad07f1",
+      "bytes": 2781465,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/@smithy/core",
+      "version": "3.33.3",
+      "url": "https://registry.npmjs.org/@smithy/core/-/core-3.33.3.tgz",
+      "integrity": "sha512-CsOeKq/9kA3y6VJHt+/+VTCtBaxJ4OTFpgrjIUhPpDIKxBci1k2bJaQASF2h/ELWrulGp+t97DZ0mevfAD8idg==",
+      "sha256": "3fdfde668cab2a1cc97e674dc9e93e6f9c49641690a83b6c4abffce0560c4a87",
+      "bytes": 378369,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/@smithy/credential-provider-imds",
+      "version": "4.5.2",
+      "url": "https://registry.npmjs.org/@smithy/credential-provider-imds/-/credential-provider-imds-4.5.2.tgz",
+      "integrity": "sha512-A9uSdn72ozbRUSit0eib0TW7nXuNPlaeM0zcGkJ+nE6tFcSDbnmtwoxbTCFBukVQcszDAyvsd7+rTduPTXpygg==",
+      "sha256": "01ce4798200c999ed16b932c90adfa63e83cd9b437bd8809c3ac68ced0310612",
+      "bytes": 17698,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/@smithy/node-http-handler",
+      "version": "4.12.1",
+      "url": "https://registry.npmjs.org/@smithy/node-http-handler/-/node-http-handler-4.12.1.tgz",
+      "integrity": "sha512-ThMkboGeONWXAelq9FvGsuJC4rOi+qyC4/zhUF58xYpxUg5sQKx2VXZYJmtNjr4dSuBJ1HeJXETQILCz3wOHvw==",
+      "sha256": "e9d05919fbdee16d095febc4fb5a88da22a8e9e5bb7afc7fbd9d86e4fccf8eeb",
+      "bytes": 26840,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/@aws-sdk/core",
+      "version": "3.977.9",
+      "url": "https://registry.npmjs.org/@aws-sdk/core/-/core-3.977.9.tgz",
+      "integrity": "sha512-reqPFEQrZxDZpeGj4PFMepBeR5LGYHRqq/L0motTzgFkCRBA4rFdaVXDSLYyGHhxVz7sT2PDnPN9CluGSfgyJA==",
+      "sha256": "553bcc5d5191b751bdf56f21a793f320fa9383c2e026b6dcc3988903e50eab8b",
+      "bytes": 105061,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/@aws-sdk/credential-provider-http",
+      "version": "3.972.72",
+      "url": "https://registry.npmjs.org/@aws-sdk/credential-provider-http/-/credential-provider-http-3.972.72.tgz",
+      "integrity": "sha512-X98zYOrVOeuosCX+6ktf29FC2N2GHPLia7qv6mzPzTc+RPAuHWCDS++Z6JK7eGYqb/v6uaW7bAXaOvDBfol+0w==",
+      "sha256": "2fdfd740abe32d1bf93fd12fe3bc7aecdf253b56ed00de36555178b6eb681a53",
+      "bytes": 5167,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/@aws-sdk/credential-provider-ini",
+      "version": "3.973.15",
+      "url": "https://registry.npmjs.org/@aws-sdk/credential-provider-ini/-/credential-provider-ini-3.973.15.tgz",
+      "integrity": "sha512-Rykg6s5ceBuynMOGWgoowO4N+27JfnqXAnVaSunZl0hOO1XodSrxGNz6sCEbnmS0lAfQZDKyb3fbr46gSuv6Sg==",
+      "sha256": "35541ba7111317142d225fd619bd51060c756dca7c369f40798ebf5066230dd6",
+      "bytes": 11287,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/@aws-sdk/credential-provider-node",
+      "version": "3.972.82",
+      "url": "https://registry.npmjs.org/@aws-sdk/credential-provider-node/-/credential-provider-node-3.972.82.tgz",
+      "integrity": "sha512-znDkEOGXB8W3kG1LJUKP3foBZY/9qLM0eil/DxWXSp37XsdsRLQHE/d/OaCGGVgKpA6znR38h/+INk8do1FjiA==",
+      "sha256": "2f8732219e361edc37fdb26fec538c8037d292daab9e6f30eb7166911a6b200c",
+      "bytes": 9828,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/@aws-sdk/credential-provider-process",
+      "version": "3.972.70",
+      "url": "https://registry.npmjs.org/@aws-sdk/credential-provider-process/-/credential-provider-process-3.972.70.tgz",
+      "integrity": "sha512-2ry03fGRJr4sV3jI+ocjj5JqALnFD6ymM5KiNCDZMvq8bX2GSbE0vji4aM43TVCl2nXqqLRZaUxdq/KeWRAY4Q==",
+      "sha256": "09d70d8a8a3ce2191f4cdcac64b0f509d5a59e9953f915ea5d1736f4ebffda13",
+      "bytes": 7122,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/@aws-sdk/credential-provider-sso/node_modules/@aws-sdk/token-providers",
+      "version": "3.1116.0",
+      "url": "https://registry.npmjs.org/@aws-sdk/token-providers/-/token-providers-3.1116.0.tgz",
+      "integrity": "sha512-ygIivKqh8aHzNkucOCXHyIBgBpLPfrSI0mCqXF+vLBsPTUKqj0VSqAY0GFPe7lQl4HntjOcQ+KSyS7oUV2C54Q==",
+      "sha256": "a237c326d8b8abdc6e8ee7d8fe0b4a41843e65be6d5a791421d16cd26b1bf001",
+      "bytes": 10040,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/@aws-sdk/nested-clients",
+      "version": "3.997.44",
+      "url": "https://registry.npmjs.org/@aws-sdk/nested-clients/-/nested-clients-3.997.44.tgz",
+      "integrity": "sha512-NhEgryjlBF9w38ZXqGymQV28IhkYa1mKhlbYnqIis57AYwWGVYfUPgg/qC2rLRqOUfblxx++irvju10kVTa8Vw==",
+      "sha256": "bfadc489d5343dc2908b9bb8c0a462d85fbca0ed6a41f7cf73b7c67ed5303951",
+      "bytes": 90935,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/@aws-sdk/token-providers",
+      "version": "3.1127.0",
+      "url": "https://registry.npmjs.org/@aws-sdk/token-providers/-/token-providers-3.1127.0.tgz",
+      "integrity": "sha512-Dv2TMWBshJ+tF6ahs2Sy5bh4Iabsd4GAQqVvE9XZmYmnoaVbpS2QKIKE/HRacc7bTtbjEEvP+laGzHvHlf1CiQ==",
+      "sha256": "d5d3a58a713bbedf87cbfb6a616a0057d1718fd46438bb1cd64b5517cf3c95c0",
+      "bytes": 10040,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/gaxios",
+      "version": "7.1.4",
+      "url": "https://registry.npmjs.org/gaxios/-/gaxios-7.1.4.tgz",
+      "integrity": "sha512-bTIgTsM2bWn3XklZISBTQX7ZSddGW+IO3bMdGaemHZ3tbqExMENHLx6kKZ/KlejgrMtj8q7wBItt51yegqalrA==",
+      "sha256": "231fb53f65108cb787acb02ae1a65e47ab9020d686575db5c07302867af17eb2",
+      "bytes": 103880,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/node-fetch",
+      "version": "3.3.2",
+      "url": "https://registry.npmjs.org/node-fetch/-/node-fetch-3.3.2.tgz",
+      "integrity": "sha512-dRB78srN/l6gqWulah9SrxeYnxeddIG30+GOqK/9OlLVyLg3HPnr6SqOWTWOXKRwC2eGYCkZ59NNuSgvSrpgOA==",
+      "sha256": "615af90e363f8f276b4b54f8e6c163cf3686dce1d8867dd7e52cbed4d38d2dab",
+      "bytes": 31722,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    },
+    {
+      "lock_key": "node_modules/typebox",
+      "version": "1.3.27",
+      "url": "https://registry.npmjs.org/typebox/-/typebox-1.3.27.tgz",
+      "integrity": "sha512-zu+jc1pcy4UiNThxikUr36f0Rybk9PEeCg/NE6adeWr/SKsdNO4EzZHYRDlv2YCVAfj3Odq3dESSo/jNyoBXzA==",
+      "sha256": "5a288bcd3d68f44567de84b185e04d205ef7d5b53602846bc3db30fdd219dda3",
+      "bytes": 264178,
+      "method": "official registry archive; lock integrity verified, text source read only"
+    }
+  ],
+  "audit_source_reports": [
+    {
+      "name": "opi-budget-stream-media-audit.md",
+      "sha256": "bf38523853510f4750e14f51c539e1bcfb131788b6990c3b86f428dc01358275"
+    },
+    {
+      "name": "opi-budget-auth-transport-audit.md",
+      "sha256": "a19fe168147f4f35f2c0f57adbacddae3800afb4b504978bc9806d763effa625"
+    },
+    {
+      "name": "opi-budget-schema-semantics-audit.md",
+      "sha256": "4b354b9f9d4a6e24c32b1259c4c28122e2db86aa85daf800d76b54c26dcda95a"
+    },
+    {
+      "name": "opi-budget-model-parameters-audit.md",
+      "sha256": "9ae39ee48f5191cd81e77abe2197d5589566f2ed9f26b215a67ce86b6ab9d62a"
+    },
+    {
+      "name": "opi-budget-retry-flow-parameters-audit.md",
+      "sha256": "6dfc2cf50708d78ab12fa6ee61674b7c75740524bf6a1f4b49949b6b4a80baf7"
+    }
+  ],
+  "test_impact": "none",
+  "runtime_proof": "none",
+  "existing_backend_evidence": "pi-1.2.0-backend-source-evidence.json is prior frozen source identity, not renewed default/selection approval",
+  "locked_source_parameters": {
+    "archive_count": 15,
+    "all_integrities": "verified against pinned Pi package-lock SRI; SHA-256 recorded",
+    "npm_node_runtime": "global fetch/WebSocket behavior cannot be inferred from unrelated npm ws/undici versions",
+    "gcp_metadata": "metadata1s remains an exact-source evidence gap, not an accepted default"
+  },
+  "independent_review_source_correction": {
+    "package": "openai7.19.0",
+    "member": "package/src/client.ts",
+    "lines": "1008-1015,1033-1088",
+    "finding": "nonstream parseResponseWithTimeout preserves remaining attempt deadline over body/JSON parse; prior fetch-only analysis was incomplete",
+    "disposition": "retain source-backed image600000ms body scope; no new whole-Models/whole-call deadline"
+  }
+}

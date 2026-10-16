@@ -1,0 +1,221 @@
+{
+  "schema": 1,
+  "purpose": "Documentation-only Rust backend/contract revision input; not implementation admission or progress",
+  "date": "2026-10-16",
+  "head": "6b816580f7500bbeca6b2bf32ec04737edc3a1e9",
+  "carried_in": {
+    "unstaged": [
+      "docs/research/pi-ai-opi-ai-alignment/README.md"
+    ],
+    "untracked": [
+      "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-architecture-review.md"
+    ],
+    "staged": []
+  },
+  "inputs": [
+    {
+      "path": "docs/opi-spec.md",
+      "sha256": "1c26136df87f0f8e7c39f248cdd5b313393d343e58b2932b54682b6530f245db"
+    },
+    {
+      "path": "docs/CONTEXT.md",
+      "sha256": "35bfe01cc73792929a6722fa83d86425759d1baad11b7115c211a5deef66d584"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "07cd3e97641a83406be171a8e70f28baf64daed6f4e9914bb1d3e679a3949c94"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "fdb4fb24ce180da7bafa8ef885f6f5f18a3426d4070d1df0c9e319ba0510e240"
+    },
+    {
+      "path": "crates/opi-ai/Cargo.toml",
+      "sha256": "352a8b055d150a6d4ef87dbff2891ac59acceb013ba47404bf95187df929cd45"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md",
+      "sha256": "88057b23d6366143050db72dc4603629b3d9b9d7d7cd7269ccc10a0bd6980fe8"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/ai-telemetry-report-crosscheck.md",
+      "sha256": "792c41a27f29711d1b4001b74734255e7da72f9b6df1869a18718ccb54233e69"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/decision-reassessment.md",
+      "sha256": "7df787e770f9b17f2fc51dfe1b90fe9782d44fc4c8545e84a03cc7003b3d4d78"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/decisions.md",
+      "sha256": "5fd2ec42e4730781e13ac517f124e295811890d6c83ea3748f53efa3a775680a"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/design-audit.md",
+      "sha256": "dfd0be6ad05a3712578428a0c8cd8521e660911d4f2347c14ea3b7b5902b55ae"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/design-evolution.md",
+      "sha256": "9f7a3b8ea69432063eca22059faa81e2e92ffdd4043a446b1ac2bbe73c0fc0ed"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/evidence-matrix.md",
+      "sha256": "d9fb034b588fd9883c18468d1247d9f3b0712eb37a23e2d5b3a1c6943d8e0cb0"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/evolution-target-proposal.md",
+      "sha256": "4d3092138a8a97546ee1198cdb6e61dad4f9793df86c2746ef3eb940295f8a98"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/offline-probes.md",
+      "sha256": "5b386f4892f5d925ade21c782787e8d6238d9cc0dc151cf7d3e40f2117c2bf7d"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/operations-design.md",
+      "sha256": "9fa815d65f1885db2f488e7ff9297e3c0669c050bb50b942b3cea882be09a8f0"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/opi-audit-notes.md",
+      "sha256": "972dcbc8cb2e7bd30e8f0abc2d38bd7c1a9e67bc90ff3fb13b5c5629ed878a3a"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-followup.md",
+      "sha256": "a9aef181c6c1e1b09c80c0ee5758fab0a90ab88322acd7e73a10b439c426dd05"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-review.md",
+      "sha256": "bef13d28a13693a3b5ad32455bd5598209cf2f8010645597fd58a9233ab67aeb"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-revision-review.md",
+      "sha256": "0f81bdf63f8c416d188488f5a81a42f61afbf8cd13aba9d5d1340d8790ec0985"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-architecture-review.md",
+      "sha256": "eae6bc259f39659c4e93de8161925651129160ea0707240803c44429d392a19a"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-differences.md",
+      "sha256": "5c06372f4ad92f2f6bbf8bf49b1987a4aa33fa77b15cbf356169431732904eeb"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-sdk-contracts.md",
+      "sha256": "8a93ea4b495dec0d64ed7363a04c9c2e81ed0301b70eb2b58037783c7f3253b9"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-contracts-notes.md",
+      "sha256": "d1c91f15216c852ec30604334d67960a6c83e8006099c07b2bde82b82bfd5767"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/placement-options.md",
+      "sha256": "bf354fdcaf4202afb04fbda32f3cc23d2ddc836bccd127ac7fc69bfd6ed418d3"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/provider-contract-addendum.md",
+      "sha256": "7bbe406b41d94d9c5fa648c0e0d2996cdc8d6225c0165791a8c21f134f78f4c3"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/README.md",
+      "sha256": "6b17876e83dc3d526b27bc9396a327db742a6299963e954fcfc3600f7dfcf164"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/reassessment-evolution-notes.md",
+      "sha256": "be8da757e5cb4c748cceb6ecc8dc2b8773791ab3ae36fde7e81c57aa4fb80864"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/reassessment-sdk-notes.md",
+      "sha256": "d3b3006e9a3629abfeb571c60c87844caa7ef8d0626fc3f740464969f0d8a819"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/reassessment-transcript-notes.md",
+      "sha256": "15143d4c1cf94fb097afefdfa97ec8aa2de153a2e68361996d9ad0728243e121"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md",
+      "sha256": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/review-notes.md",
+      "sha256": "994fcbfd1417dec930d0c973acb37873d2713d0ba5d077e7307cfc260e5c5921"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/route-probe.md",
+      "sha256": "e203397c6cd4be556fea8f324ef058b82f84ac1f1b259effaac0c688e872479d"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/sdk-auth-provider-migration.md",
+      "sha256": "06811904ceb6d8029317dfc47df34b3a2108d5e549a4b094b189ba23d563f818"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/sdk-consumer-contract.md",
+      "sha256": "31de654cfd0f2aec9b61b4e11a1bbde0caedd8f3dadb0bca74494ed1bfd0bb74"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/sdk-opi-caller-review.md",
+      "sha256": "1b10011870d32a7d7d4f296bd1cad97286ddc9dcfce9e3d9f981da9d719cf91a"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/sdk-pi-caller-review.md",
+      "sha256": "cb0b218dc64dbd4577c5c23b7e1cc7a6877c69ea0dba8557319cff8c09d5ac6e"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/sdk-spec-review.md",
+      "sha256": "31e45a1b18ef36d9eccf72d9517338e69d3ccea0bb38df4165d49f942760ff37"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md",
+      "sha256": "6a7e5973ba8c6240dd6cdeb0e518f5e43f76df5a870029bfc202898307deedfd"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md",
+      "sha256": "499120e45437f590f44af57ac98b6278295e1a4cf0f20e1188bb5e218f5ddd5c"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md",
+      "sha256": "ea9fd69c3098e999abda9580727aa9a79f34a47e1273b192699a72828e73964f"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-evidence-review.md",
+      "sha256": "941cb117236c9bda631a74559aff7c0b75acc01e2c087c4e8b14658b71ec52d7"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-review-round-2.md",
+      "sha256": "e2e18c29fa2358671b246debac2bb49afbc6072c20c870b516d45e8d494b9cb0"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-review.md",
+      "sha256": "b7d658b7ba55fdbb789a98e5a84e173c316882d14a1d013cbdbf950743fc3692"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/telemetry-design.md",
+      "sha256": "dacb74435e6cf3c731372ee562f4cc88372497bbe5d037cb85154151d8e23a71"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/telemetry-evolution.md",
+      "sha256": "4c7805d8c269d6fd23c7faa3174ff945c8a0a6589b5a42a7e67557f1eb124073"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/telemetry-opi-audit.md",
+      "sha256": "c6d11e255b305d71a62d192c206fec96c940b656d67e1462ad238e11fc369202"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/telemetry-pi-contracts.md",
+      "sha256": "bc49f5cfd10b0ff7620e399d62e7169ac7ffe40afc15fdf887d81fc36b685388"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/telemetry-spec-review.md",
+      "sha256": "2e2f6234e8d397c45fd17c441c81c3203823f0f9cf098843edd824b382f6ce4f"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/transcript-migration.md",
+      "sha256": "c4a99752434e73d2472450bcbc3241058d40dc069212f42d6ab37ac41932b9ec"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/transcript-target-proposal.md",
+      "sha256": "25a4234507ab1c4c12d483c56bb4083172bf4d5c35dfec1dc92bc98c77a5d94e"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+      "sha256": "b98fad51db481f2fbd1696ec9af76464585e57a105b810a32fb178214746b840"
+    }
+  ]
+}

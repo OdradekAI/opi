@@ -1,6 +1,8 @@
 # pi-ai / opi-ai 设计对齐研究
 
-> **2026-10-16：Pi 1.2.0 候选修订。** 目标仅限 `opi-ai`：公开能力和可观察运行语义对齐，接口采用 Rust 惯用设计，每项差异明确说明。当前正文是下列双语稿与两个新附件；旧 Pi 1.0.0 子集、产品接线和历史“已通过”不再表达当前候选范围。本轮只改文档，不启动实施、不改变正式规范或 Opi 的全局定位。
+> **2026-10-16：Pi 1.2.0 候选修订。** 目标仅限 `opi-ai`：公开能力和可观察运行语义对齐，接口采用 Rust 惯用设计，每项差异明确说明。当前正文是下列双语稿与当前技术附件；旧 Pi 1.0.0 子集、产品接线和历史“已通过”不再表达当前候选范围。本轮只改文档，不启动实施、不改变正式规范或 Opi 的全局定位。
+
+> 当前参数/新增限制修正见[逐项来源审计](pi-1.2.0-parameter-audit.md)及[本轮复审](pi-1.2.0-parameter-revision-review.md)。前轮固定容量与“选型完成/无必须修正项”结论已收窄；当前双语spec/RDF/backend/验收以本轮为准。未改变runtime、Cargo、tests、CI或正式规范。
 
 ## 当前阅读入口与证明边界
 
@@ -9,8 +11,11 @@
 | 双语目标、责任、退出与完成条件 | [English spec](spec-draft.md)、[中文 spec](spec-draft.zh.md)：67 AIR，其中 58 项 SDK 要求、9 项宿主影响 |
 | Pi 1.2.0 全公开能力与协议默认值 | [SDK 能力契约](pi-1.2.0-sdk-contracts.md)：10 chat API、1 image API、4 classifier API、42 built-in provider factories、9 OAuth families；共用 wire 不代替 profile 证明 |
 | Rust 差异及调用方影响 | [RDF-01–20](pi-1.2.0-rust-differences.md)：区分语言表达、安全／资源选择、平台与真正缺口 |
+| Rust 技术栈与架构可行性 | [逐项技术审查](pi-1.2.0-rust-architecture-review.md)：67 AIR处置的修订前审查；R-01–08处置见下面后端修订，不作为新稿未补齐的声明 |
+| Rust后端与五项已补合同 | [精确后端附件](pi-1.2.0-rust-backends.md)：字节预算、store completion、redirect、Schema、typed custom API；HTTP/WS/AWS/ADC机制定位与待证明约束，源级证据与未实施边界 |
+| 前轮工程合同（已按参数审计收窄）独立复审与验证 | [后端修订复审](pi-1.2.0-backend-revision-review.md)、[本轮验证](pi-1.2.0-backend-revision-verification.json)、[source evidence](pi-1.2.0-backend-source-evidence.json)；旧复审仅对其冻结输入有效，runtime/正式准入仍未证明 |
 | 唯一验收索引及测试迁移 | [验收矩阵](acceptance-matrix.md)：59 V，其中 55 项 SDK 验收、4 项宿主影响；保留 41 integration＋7 src 测试文件逐项处置 |
-| 本轮独立复审与实际检查 | [修订复审](pi-1.2.0-revision-review.md)；[修订前输入身份](pi-1.2.0-revision-baseline.json) |
+| 前轮独立复审与实际检查（固定旧输入） | [修订复审](pi-1.2.0-revision-review.md)；[修订前输入身份](pi-1.2.0-revision-baseline.json) |
 | 人类授权、历史选择及替代关系 | [D-38 与历史 D/Q](decisions.md#d-38--pi-120-包内全公开能力与语义修订)；不把技术推导伪记成人类逐项批准 |
 | 两轮修订依据 | [版本审查](pi-1.2.0-review.md)、[五问补核](pi-1.2.0-followup.md)及各自固定证据；其“不通过”针对修订前稿 |
 | 后续版本和规划状态 | [上游跟进记录与模板](upstream-tracking.md)；每次固定新输入，记录变化、差异、测试和核准结论，不建立实施账本或自动监控 |
@@ -164,3 +169,5 @@ Telemetry 轮三项独立复核、56 AIR/48 V双语稿、组合文档检查、�
 当前目标问题全部已回答。候选仍DRAFT、非规范性：正式文档协调/实施准入尚未进行，runtime实现和48组验收设计均未执行。完整MCP/codemode、真实remote deferred、其余operation adapters、新OpenAI ChatGPT OAuth/Mistral原生Conversations，以及动态header callback/raw provider-event observer/compact frames便利层及AWS adaptive/ambient retry knobs明确不在本批；telemetry 自动 SDK spans、全套 Agent schema families和exporter也未纳入。重新评估需已记录的协议/调用方/权限证据及显式范围修订。未知live接受度、性能/计费、外部embedder兼容、future Rust依赖行为不冒充已知事实，也不让实施Agent自行扩大目标。
 
 本次测试影响：**none**（仓库测试add/update/delete均0）；首轮70个既有测试为**retain**运行记录。未来实施测试的add/update/delete/retain逐项见acceptance matrix和retirement表。
+
+本轮参数复核证据：[输入baseline](pi-1.2.0-parameter-revision-baseline.json)、[官方精确源码](pi-1.2.0-parameter-source-evidence.json)、[逐项来源/撤回与保留](pi-1.2.0-parameter-audit.md)、[独立复审](pi-1.2.0-parameter-revision-review.md)、[最终文档验证](pi-1.2.0-parameter-revision-verification.json)。旧verification仅证明其固定输入的文档检查，不证明新稿或参数标定。

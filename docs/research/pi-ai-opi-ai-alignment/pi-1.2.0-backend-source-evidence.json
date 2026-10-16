@@ -1,0 +1,399 @@
+{
+  "schema": 1,
+  "date": "2026-10-16",
+  "scope": "Rust backend document selection, no implementation admission",
+  "head": "6b816580f7500bbeca6b2bf32ec04737edc3a1e9",
+  "method": "Pinned local repository and official exact release archives/docs; archive/source reads only. No Cargo resolution/build, provider auth, metadata, process fixture or runtime test.",
+  "artifacts": [
+    {
+      "name": "aws-config-1.12.0.crate",
+      "url": "https://static.crates.io/crates/aws-config/aws-config-1.12.0.crate",
+      "sha256": "b8d7b388a9fc3a6db15a5ec778c38b354eff1364882c94d08e0252f7a47dcaa4",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 163580,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-credential-types-1.3.0.crate",
+      "url": "https://static.crates.io/crates/aws-credential-types/aws-credential-types-1.3.0.crate",
+      "sha256": "e93964ffdaf57857f544be3666a5f57570bb699e934700f11b49708f61bb556e",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 21288,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-runtime-1.10.0.crate",
+      "url": "https://static.crates.io/crates/aws-runtime/aws-runtime-1.10.0.crate",
+      "sha256": "2b8a9911551b4ea6ca13805ef52ed96f7d2bbb43cc3b4a14cb0776a71f33cfaa",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 96797,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-sdk-bedrockruntime-1.148.0.crate",
+      "url": "https://static.crates.io/crates/aws-sdk-bedrockruntime/aws-sdk-bedrockruntime-1.148.0.crate",
+      "sha256": "3f2542c0f038223ba2f9aefe3bd38c7395ccc6899d8fc58a99b8ddfeab3354f5",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 345622,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-sdk-signin-1.27.0.crate",
+      "url": "https://static.crates.io/crates/aws-sdk-signin/aws-sdk-signin-1.27.0.crate",
+      "sha256": "88f2f0eef24cb4502ff62c73319cb641e64bbea1f0ad05bf3d7f8def062a99c0",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 171367,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-sdk-sso-1.114.0.crate",
+      "url": "https://static.crates.io/crates/aws-sdk-sso/aws-sdk-sso-1.114.0.crate",
+      "sha256": "12be2f9c8eef7f5fc919c96d538e629698469a02b4cb75408b26b1bd984ebe79",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 99933,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-sdk-ssooidc-1.116.0.crate",
+      "url": "https://static.crates.io/crates/aws-sdk-ssooidc/aws-sdk-ssooidc-1.116.0.crate",
+      "sha256": "d7645db8724ea3b82fdccfb67e1b0f637c9d8ab0e7ef29d84884d8d8d73f805d",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 119996,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-sdk-sts-1.119.0.crate",
+      "url": "https://static.crates.io/crates/aws-sdk-sts/aws-sdk-sts-1.119.0.crate",
+      "sha256": "03e490aa904849b38e770922faac779dd245f5cf8be81f19065acf18d276e4ad",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 217514,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-sigv4-1.6.0.crate",
+      "url": "https://static.crates.io/crates/aws-sigv4/aws-sigv4-1.6.0.crate",
+      "sha256": "2312577f088c9fbf4206dfdb884cf1de9407b43e1a923cbed5237775116fc24b",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 97414,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-smithy-async-1.3.0.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-async/aws-smithy-async-1.3.0.crate",
+      "sha256": "f02e407fb3b54891734224b9ffac8a71fdd35f542500fa1af95754a6b2beb316",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 21977,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-smithy-http-0.64.1.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-http/aws-smithy-http-0.64.1.crate",
+      "sha256": "639b4d8f8555f24a9be649811c3eb0b4d4616f4d61daf0c32e28873bc1ea9af1",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 31772,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-smithy-json-0.63.1.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-json/aws-smithy-json-0.63.1.crate",
+      "sha256": "3385d469edbe8b60cc72002784652b5efca39178192aa9cc4b44c9875c6bdc18",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 61835,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-smithy-observability-0.3.0.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-observability/aws-smithy-observability-0.3.0.crate",
+      "sha256": "8e86338c869539a581bf161247762a6e87f92c5c075060057b5ed6d06632ed0c",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 14449,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-smithy-query-0.62.1.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-query/aws-smithy-query-0.62.1.crate",
+      "sha256": "f1d1d71f6562be974caa85442ecd90194c40fdb5df045f182a6c2e872ce95056",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 26787,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-smithy-runtime-1.16.0.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-runtime/aws-smithy-runtime-1.16.0.crate",
+      "sha256": "d6e302ac1d88b99652489df31abdec6ac42a2ab2ac3982ad0ac49f64dfaf28ba",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 147175,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-smithy-runtime-api-1.19.0.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-runtime-api/aws-smithy-runtime-api-1.19.0.crate",
+      "sha256": "c0730c16f91124c6a2abb4932c77e299288b3dd9f967ea2e9ec48cc6731e87a4",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 94322,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-smithy-schema-0.2.1.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-schema/aws-smithy-schema-0.2.1.crate",
+      "sha256": "e8f395d93304280b64b7632fea798d177e74897fe7f063416ce627cd6fa24829",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 57452,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-smithy-types-1.8.1.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-types/aws-smithy-types-1.8.1.crate",
+      "sha256": "69bb407740a197147da48238ecc94498493c9e85445732360cec180296ca45f1",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 108689,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-smithy-xml-0.62.1.crate",
+      "url": "https://static.crates.io/crates/aws-smithy-xml/aws-smithy-xml-0.62.1.crate",
+      "sha256": "0b932c8d6dc127fc980eecd78f8694ae9b9551b69a93a7def2a199c1c0033daf",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 63614,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "aws-types-1.6.0.crate",
+      "url": "https://static.crates.io/crates/aws-types/aws-types-1.6.0.crate",
+      "sha256": "209f3a6d82a6e9e5f94abbed94c7a26e1c052341002bf57a5fb5481f625896fc",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 35632,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "p256-0.13.2.crate",
+      "url": "https://static.crates.io/crates/p256/p256-0.13.2.crate",
+      "sha256": "c9863ad85fa8f4460f9c48cb909d38a0d689dba1f6f6988a5e3e0d31071bcd4b",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 63434,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "sha1-0.10.6.crate",
+      "url": "https://static.crates.io/crates/sha1/sha1-0.10.6.crate",
+      "sha256": "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba",
+      "role": "selected-or-compared AWS exact source",
+      "bytes": 13517,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "tokio-tungstenite-0.28.0.crate",
+      "url": "https://static.crates.io/crates/tokio-tungstenite/tokio-tungstenite-0.28.0.crate",
+      "sha256": "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857",
+      "role": "selected HTTP/WS source",
+      "bytes": 29876,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "tungstenite-0.28.0.crate",
+      "url": "https://static.crates.io/crates/tungstenite/tungstenite-0.28.0.crate",
+      "sha256": "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442",
+      "role": "selected HTTP/WS source",
+      "bytes": 67629,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "reqwest-0.12.28.crate",
+      "url": "https://static.crates.io/crates/reqwest/reqwest-0.12.28.crate",
+      "sha256": "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147",
+      "role": "selected HTTP/WS source",
+      "bytes": 157031,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "tokio-rustls-0.26.4.crate",
+      "url": "https://static.crates.io/crates/tokio-rustls/tokio-rustls-0.26.4.crate",
+      "sha256": "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61",
+      "role": "selected HTTP/WS source",
+      "bytes": 35430,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "rustls-0.23.40.crate",
+      "url": "https://static.crates.io/crates/rustls/rustls-0.23.40.crate",
+      "sha256": "ef86cd5876211988985292b91c96a8f2d298df24e75989a43a3c73f2d4d8168b",
+      "role": "selected HTTP/WS source",
+      "bytes": 373839,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "httparse-1.10.1.crate",
+      "url": "https://static.crates.io/crates/httparse/httparse-1.10.1.crate",
+      "sha256": "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87",
+      "role": "selected HTTP/WS source",
+      "bytes": 45190,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "webpki-roots-0.26.11.crate",
+      "url": "https://static.crates.io/crates/webpki-roots/webpki-roots-0.26.11.crate",
+      "sha256": "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9",
+      "role": "selected HTTP/WS source",
+      "bytes": 15557,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "google-cloud-auth 1.17.0",
+      "url": "https://static.crates.io/crates/google-cloud-auth/google-cloud-auth-1.17.0.crate",
+      "sha256": "ac9870b8ea484519aa8601e14886f2efc148ea490034e43d04bef1d246170cc9",
+      "role": "selected-or-compared ADC/signing/source reference",
+      "bytes": 185580,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "google-auth-library 10.6.2",
+      "url": "https://registry.npmjs.org/google-auth-library/-/google-auth-library-10.6.2.tgz",
+      "sha256": "707a26e3dae617a5ae0a3758b8de8745ab942969f651643a76a84cbaf4ee1ba5",
+      "role": "selected-or-compared ADC/signing/source reference",
+      "bytes": 128550,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "genai 2.21.0",
+      "url": "https://registry.npmjs.org/@google/genai/-/genai-2.21.0.tgz",
+      "sha256": "859e07d3fee1453ced3d60c2d48ce1b88894d2785b23f3cbd850c062bca1dfc6",
+      "role": "selected-or-compared ADC/signing/source reference",
+      "bytes": 1635618,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "ring 0.17.14",
+      "url": "https://static.crates.io/crates/ring/ring-0.17.14.crate",
+      "sha256": "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7",
+      "role": "selected-or-compared ADC/signing/source reference",
+      "bytes": 1502610,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "rustls-pki-types 1.14.1",
+      "url": "https://static.crates.io/crates/rustls-pki-types/rustls-pki-types-1.14.1.crate",
+      "sha256": "30a7197ae7eb376e574fe940d068c30fe0462554a3ddbe4eca7838e049c937a9",
+      "role": "selected-or-compared ADC/signing/source reference",
+      "bytes": 35567,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "gcloud-auth 1.3.0",
+      "url": "https://static.crates.io/crates/gcloud-auth/gcloud-auth-1.3.0.crate",
+      "sha256": "b43924e3df02cb3b846ca66a7ee58e8c13eb2556d0308c71f6154083f6980365",
+      "role": "selected-or-compared ADC/signing/source reference",
+      "bytes": 40157,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "jsonwebtoken 9.3.1",
+      "url": "https://static.crates.io/crates/jsonwebtoken/jsonwebtoken-9.3.1.crate",
+      "sha256": "5a87cc7a48537badeae96744432de36f4be2b4a34a05a5ef32e9dd8a1c169dde",
+      "role": "selected-or-compared ADC/signing/source reference",
+      "bytes": 49398,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "jsonwebtoken 10.3.0",
+      "url": "https://static.crates.io/crates/jsonwebtoken/jsonwebtoken-10.3.0.crate",
+      "sha256": "0529410abe238729a60b108898784df8984c87f6054c9c4fcacc47e4803c1ce1",
+      "role": "selected-or-compared ADC/signing/source reference",
+      "bytes": 64989,
+      "verification": "archive SHA-256 independently recomputed; inspected source only, not installed/imported/executed"
+    },
+    {
+      "name": "xmlparser-0.13.5.crate",
+      "url": "https://static.crates.io/crates/xmlparser/xmlparser-0.13.5.crate",
+      "sha256": "4d25c75bf9ea12c4040a97f829154768bbbce366287e2dc044af160cd79a13fd",
+      "bytes": 26225,
+      "role": "final selected AWS pure protocol/XML source",
+      "verification": "archive SHA-256 independently recomputed; source-only"
+    }
+  ],
+  "locked_local_source_files": [
+    {
+      "registry_relative_path": "jsonschema-0.28.3/Cargo.toml",
+      "sha256": "e9ca5e292f00b50c4a5c65c96ff463194a0ec6f0f4ab56033f713fe17fb638e2"
+    },
+    {
+      "registry_relative_path": "jsonschema-0.28.3/src/options.rs",
+      "sha256": "05d540d17e5046a00e444dc0c2c78e133a7f136398c77f4eff1728acf102b88a"
+    },
+    {
+      "registry_relative_path": "jsonschema-0.28.3/src/retriever.rs",
+      "sha256": "3b75133284e1cba4cf4250a7a73df61834cc24cc8d4f2acea216dbf1cd8a3626"
+    },
+    {
+      "registry_relative_path": "jsonschema-0.28.3/src/keywords/pattern.rs",
+      "sha256": "7c15e6a94218ee503663afdee50db544efbc306131087751ff1f6443164ce917"
+    },
+    {
+      "registry_relative_path": "fancy-regex-0.14.0/src/lib.rs",
+      "sha256": "5fceb05786b2e860ec2141c8e6bfbb85014c97b4f48cc634d0842b81b0dd6477"
+    },
+    {
+      "registry_relative_path": "tracing-0.1.44/src/span.rs",
+      "sha256": "b87686c0ff6b55193a9377f3a0c978e0368edb6f46cd4d5a5b395c169df2f658"
+    },
+    {
+      "registry_relative_path": "reqwest-0.12.28/src/retry.rs",
+      "sha256": "38e827605e2a1905cc9f9ae1194f4799902da43765b2e73a0d4dd9be130f8c7e"
+    },
+    {
+      "registry_relative_path": "reqwest-0.12.28/src/redirect.rs",
+      "sha256": "b8a618396c45884e5557314a0fb99ec01c1868b77132e2cc81aa0a4ac4831c06"
+    }
+  ],
+  "selected_contract": "pi-1.2.0-rust-backends.md",
+  "independent_source_reports": [
+    {
+      "topic": "AWS",
+      "sha256": "4b5322e0a23f9fe2547891543834a15af571cad28bf75e56f82962a2f3376ea7",
+      "status": "superseded: official service clients failed independent ambient/logging review; not final backend"
+    },
+    {
+      "topic": "HTTP/WS",
+      "sha256": "d5b81640935d54750413d97854d63d65b74d3278fe1760c23b994fd5bed607a6"
+    },
+    {
+      "topic": "ADC",
+      "sha256": "7b2b3f0f58c374e6303f82cebea50a8994414ab9edcf4e7930c7ed411f9d1777"
+    },
+    {
+      "topic": "AWS final codecs/owned protocol selection",
+      "sha256": "23dc225836f87d9c122d52f75921cf8ec0fb751158bb3c7f7c18837ec33d4360",
+      "status": "final documentation choice, no compile/conformance proof"
+    }
+  ],
+  "not_proved": [
+    "Cargo transitive dependency resolution/features/MSRV closure",
+    "Any target signature compile or object-safety run",
+    "Windows/macOS/Linux builds",
+    "Local adapter conformance/resource/crypto experiments",
+    "Vendor authentication, TLS/proxy interoperability, performance",
+    "Formal opi-spec capability admission"
+  ],
+  "test_impact": "none",
+  "rejected_runtime_backends": [
+    "aws-config ambient default chain",
+    "AWS service clients/Smithy orchestration eager partition and auth-body logging",
+    "aws-sigv4 http_request::sign hidden logging/env Debug",
+    "google-cloud-auth default/internal clients without controlled transport"
+  ],
+  "selected_additional_direct_intent": [
+    "tokio-tungstenite=0.28.0",
+    "rustls=0.23.40",
+    "tokio-rustls=0.26.4",
+    "webpki-roots=1.0.7",
+    "httparse=1.10.1",
+    "aws-smithy-query=0.62.1",
+    "aws-smithy-xml=0.62.1",
+    "xmlparser=0.13.5",
+    "p256=0.13.2",
+    "sha1=0.10.6",
+    "ring=0.17.14",
+    "rustls-pki-types=1.14.1",
+    "jsonschema=0.28.3",
+    "fancy-regex=0.14.0"
+  ]
+}

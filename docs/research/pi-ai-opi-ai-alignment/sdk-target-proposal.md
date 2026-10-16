@@ -1,5 +1,7 @@
 # SDK 目标契约细化提案
 
+> 参数修订适用范围（2026-10-16）：本页SP/旧预算及更严格媒体/分类器政策保留历史，不再作为当前parity默认。当前[参数来源审计](pi-1.2.0-parameter-audit.md)、双语spec/RDF/唯一矩阵优先。附录C的OpenAI timeout源码结论已据独立复审纠正，不能只追fetch timer。
+
 > **2026-10-16 历史材料定位：** 本页保留 Pi 1.0.0 时的事实、方案、D/Q、行号和执行记录；其中“当前目标”“已通过”、能力子集或产品接线不构成 Pi 1.2.0 候选要求。当前要求以[双语正文](spec-draft.zh.md)（[English](spec-draft.md)）、[1.2.0 SDK 附件](pi-1.2.0-sdk-contracts.md)和[Rust 差异](pi-1.2.0-rust-differences.md)为准，[验收矩阵](acceptance-matrix.md)为唯一证明索引。历史中有效细则仅在当前正文明确采纳且无冲突时沿用；不把旧源码链接机械改成新快照行号。宿主执行／会话／产品策略只作下游影响，本页不授权实施。
 
 > **非规范性中文提案；2026-10-03；未授权实施。** 以用户更正后的“opi 是 pi 的 Rust 实现”为判断前提；Q24/Q27–30已确认具体方向，当时44 AIR已重写（历史阶段）；旧HOLD仅是复审历史。本文细化 [RA-01/02/07/10](decision-reassessment.md) 与 [RS-01–06](reassessment-sdk-notes.md)，不把建议写成人类已确认的要求，也不因旧 core/product 规则删减已发布的 SDK 能力。本文只有研究用途，无既有中英 counterpart，因而不改其他双语文件。
@@ -119,7 +121,7 @@ classification 请求保留 object state、question ID、string instructions 和
 
 重试建议按已核实 operation defaults：System One maxRetries=2（最多3 attempts），image=0；调用方可以覆盖。重试相同已准备 payload、model与auth；不重复执行 payload transform，不切provider/account，不在解析到语义无效成功 body 后重发。HTTP 408/409/429/≥500及 x-should-retry 规则、可取消 backoff、默认60s服务器延迟上限由 SE-10确定；Rust enum识别错误，不能照搬 JS status/headers属性形状作为契约。
 
-每 attempt 独立 timeout；整体 deadline 可选且不随 retry重置。System One 未设 timeout 时不强加新的总deadline。image的实际OpenAI Node 7.19.0默认600000ms已在附录C核验，SDK默认retry2但pi覆盖为0；Node计时止于headers，Rust目标覆盖body是明确正确性修正。不能误用root OpenAI 6.40.0。caller cancel、总deadline到期、attempt timeout和HTTP失败要可区分；所有wait/drop仍需按流/operation生命周期契约释放本地资源。
+每 attempt 独立 timeout；整体 deadline 可选且不随 retry重置。System One 未设 timeout 时不强加新的总deadline。image的实际OpenAI Node 7.19.0默认600000ms已在附录C核验，SDK默认retry2但pi覆盖为0；Node7.19.0非流式JSON由responsePromise/parseResponseWithTimeout继续使用remaining attempt预算覆盖body/parse；这项范围有后端依据，不是Rust新增。不能误用root OpenAI 6.40.0。caller cancel、总deadline到期、attempt timeout和HTTP失败要可区分；所有wait/drop仍需按流/operation生命周期契约释放本地资源。
 
 | ID / 状态 | Owner / trigger | 目标行为与失败 | 机械验收 / 证据 |
 |---|---|---|---|
@@ -258,9 +260,9 @@ pi自身还有入口可达性差别：`amazon-bedrock.ts:54–78`不探测defaul
 
 pi `src/api/openrouter-images.ts:67–81`对每次SDK request传maxRetries=0，只有显式timeoutMs才传timeout；外层`retryProviderRequest`默认0。因此首批image目标的基线是：默认SDK fetch timeout 600000ms、默认0重试、显式maxRetries由pi外层管理；不能把SDK constructor的默认2当作pi image默认retry。每次外层retry新建SDK request，从而重新取同样timeout。
 
-**计时范围有实质限制**：client `fetchWithTimeout:1610–1652`在fetch前setTimeout、fetch返回Response后finally clearTimeout；之后 `src/internal/parse.ts:18–88`再读取response.text并JSON.parse，`src/core/api-promise.ts:69–80`的withResponse等待解析。默认600000ms因此不是包括auth、hook、完整body下载、parse、retry/backoff在内的总deadline；对普通fetch，它连headers之后的全部body读取都不持续计时。System One的AbortSignal.timeout则位于包住fetch和next.json的attempt closure内，是不同机制。
+**计时范围复审核正（2026-10-16）**：fetchWithTimeout在headers后clear timer，但client.ts:1008–1015的responsePromise调用parseResponseWithTimeout:1033–1088；普通非流式JSON（image stream=false）按startTime+timeout剩余时间继续限制body/parse。streaming/binary/204/no-content分支跳过这层；不能从内部parse.ts读取发生在fetch之后推导无timer。600000ms是每request attempt预算，不包含整个Models auth/hook/所有retry/backoff，也不是强制overall deadline。System One由其attempt closure的signal包fetch+json，机制不同。前一headers-only事实判断撤回。
 
-SP-13可据此固定image默认数值与retry归属。若目标将同一timeout明确覆盖完整HTTP body，这是有意修正，建议保留但不能称精确复现锁定OpenAI timer；已有可选overall deadline也不能用600000ms冒充强制整体预算。验收用假fetch将headers立即返回但body挂起，区分header timer、body预算和caller取消；本轮没有执行该SDK测试。
+SP-13中的旧预算选择不授予当前实施；image默认600000ms及0 retry归属按精确7.19.0保留，完整非流式body计时属于后端行为。未来假fetch/假时钟同时覆盖headers立即返回但body挂起、正常body、caller取消、每attempt独立与可选overall；本轮未运行SDK或fixture。
 
 ## 补证附录 D：AWS_BEDROCK_SKIP_AUTH 不是无签名模式
 

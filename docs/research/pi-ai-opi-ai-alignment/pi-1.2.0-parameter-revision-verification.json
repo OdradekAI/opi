@@ -1,0 +1,278 @@
+{
+  "kind": "document-parameter-revision-verification",
+  "date": "2026-10-16",
+  "status": "PASS",
+  "mode": "worktree-only",
+  "head": "6b816580f7500bbeca6b2bf32ec04737edc3a1e9",
+  "committed": "none-for-this-task",
+  "scope": "Only research docs; no formal spec/source/Cargo/tests/CI/implementation admission or ledger change",
+  "commands": [
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exit_code": 0,
+      "stdout": "6b816580f7500bbeca6b2bf32ec04737edc3a1e9",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--cached",
+        "--name-status"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--name-only"
+      ],
+      "exit_code": 0,
+      "stdout": "docs/research/pi-ai-opi-ai-alignment/README.md\ndocs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md\ndocs/research/pi-ai-opi-ai-alignment/decisions.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-differences.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-sdk-contracts.md\ndocs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md\ndocs/research/pi-ai-opi-ai-alignment/spec-draft.md\ndocs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md\ndocs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "ls-files",
+        "--others",
+        "--exclude-standard"
+      ],
+      "exit_code": 0,
+      "stdout": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-baseline.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-review.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-verification.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-source-evidence.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-audit.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-revision-baseline.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-revision-review.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-revision-verification.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-source-evidence.json\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-architecture-review.md\ndocs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-backends.md",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "python",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit_code": 0,
+      "stdout": "opi documentation contracts: PASS",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "static_check_method": "Read-only Python structural/integrity validator: scoped inventories/baseline hashes, ordered AIR/V/RDF and host sets, all EN/ZH numeric tokens by line, retained test-file inventory, GFM widths, relative links/line ranges/heading anchors, UTF-8/LF/whitespace, official npm SHA-256/SRI and source-report digests. This is not executable parity proof.",
+  "static_checks": {
+    "scope": {
+      "total_worktree_docs": 20,
+      "tracked_modified": 9,
+      "untracked": 11,
+      "task_touched": 17,
+      "carried_in_and_touched": [
+        "docs/research/pi-ai-opi-ai-alignment/README.md",
+        "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md",
+        "docs/research/pi-ai-opi-ai-alignment/decisions.md",
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-review.md",
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-architecture-review.md",
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-backends.md",
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-differences.md",
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-sdk-contracts.md",
+        "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md",
+        "docs/research/pi-ai-opi-ai-alignment/spec-draft.md",
+        "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md",
+        "docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md"
+      ],
+      "carried_in_untouched": [
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-baseline.json",
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-verification.json",
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-source-evidence.json"
+      ],
+      "new_for_this_task": [
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-audit.md",
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-revision-baseline.json",
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-revision-review.md",
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-revision-verification.json",
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-source-evidence.json"
+      ],
+      "unchanged_baseline_input_files": 51,
+      "staged": "",
+      "head_unchanged": true
+    },
+    "text": {
+      "utf8_lf_final_newline_files": 20,
+      "trailing_whitespace": "none",
+      "json_parsed": 6
+    },
+    "traceability": {
+      "AIR": 67,
+      "SDK_AIR": 58,
+      "host_AIR": [
+        "AIR-009",
+        "AIR-015",
+        "AIR-016",
+        "AIR-017",
+        "AIR-018",
+        "AIR-019",
+        "AIR-037",
+        "AIR-039",
+        "AIR-041"
+      ],
+      "V": 59,
+      "SDK_V": 55,
+      "host_V": [
+        "V-17",
+        "V-18",
+        "V-19",
+        "V-33"
+      ],
+      "RDF": 20,
+      "spec_lines_each": 470,
+      "numeric_tokens_match_every_corresponding_line": true
+    },
+    "test_inventory": {
+      "integration_files": 41,
+      "source_test_files": 7,
+      "all_still_present_in_matrix": true,
+      "actual_test_impact": "none"
+    },
+    "gfm": {
+      "tables_checked": 123,
+      "rows_checked": 1515,
+      "width_errors": 0
+    },
+    "links": {
+      "local_links": 641,
+      "line_ranges": 324,
+      "heading_anchors": 8,
+      "missing": 0
+    },
+    "source_provenance": {
+      "official_npm_archives_rehashed": 15,
+      "SRI_verified_against_pinned_lock": true,
+      "raw_source_audits_hashed": 5,
+      "source_execution": "none",
+      "runtime_qualifications": [
+        "global fetch/WebSocket limits depend on actual Node/Bun/runtime",
+        "backend defaults/constraints are not accepted Pi budgets"
+      ]
+    }
+  },
+  "errors": [],
+  "independent_reviews": [
+    {
+      "reviewer": "parameter_acceptance_independent_review",
+      "report_sha256": "697c562fba3adcd0cc655b6d35cbb347f383d56481283aa3a916aac364560db2",
+      "final_disposition": "all reported findings and residuals closed after bounded reread; source/document review only, no remaining must-fix in reviewed scope"
+    },
+    {
+      "reviewer": "parameter_numeric_independent_review",
+      "report_sha256": "d8bc1dc6d63f7b2555f133a109dad35640d9247f2856a51e4956c1f8164c7d49",
+      "final_disposition": "all reported findings and residuals closed after bounded reread; source/document review only, no remaining must-fix in reviewed scope"
+    },
+    {
+      "reviewer": "parameter_bilingual_independent_review",
+      "report_sha256": "2f80e2ec891a5e2e1f75e8ac0d3c3e21ab13d2d509ea30d5adc34de65a97090d",
+      "final_disposition": "all reported findings and residuals closed after bounded reread; source/document review only, no remaining must-fix in reviewed scope"
+    }
+  ],
+  "review_record": "pi-1.2.0-parameter-revision-review.md",
+  "test_impact": "none",
+  "not_executed": [
+    "Rust/Node compile/build/runtime or behavioral tests",
+    "Cargo dependency resolution/MSRV/features/native closure",
+    "live provider/OAuth/metadata/process/conformance fixtures",
+    "formal capability/placement admission"
+  ],
+  "remaining_proof": [
+    "Pi TypeBox-equivalent native schema validation",
+    "transport runtime/WS hard-constraint/H2/trust-store/crypto support",
+    "actual caller and adapter conformance; platform and supplier acceptance"
+  ],
+  "file_sha256": [
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/README.md",
+      "sha256": "56429ed7972d701c76fe88c2c6a558757c1663f5ae9566b050cb4740151b5997"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md",
+      "sha256": "780720a6a4db89132e466919d7ba0a1bfe531fe5f0c089a670be1a2043904f72"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/decisions.md",
+      "sha256": "282519f7a32c17eaf97a7ac501cf2a4dbc0e4918c30086891d307a68a31ed995"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-baseline.json",
+      "sha256": "ec58309392c4fd5f6fc160210cb5601f8810ae374f37112ae46ff42bc622f545"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-review.md",
+      "sha256": "a4046bdad3caa57018133ed2ffc61476df7b525f080f4845c521f7e958d6daf1"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-revision-verification.json",
+      "sha256": "32caa79c71d59abae4602d00350c3069713890fe48d7049def4b9e3d7e9ebba0"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-backend-source-evidence.json",
+      "sha256": "43d9bec02c7466d7ecfbf3c46093db382fee389ef37ddedff538d6ac50dcbeee"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-audit.md",
+      "sha256": "1984a94d692f4f8830ef85a5c91e818fb6e906d221258fa8e7d00567d60e0832"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-revision-baseline.json",
+      "sha256": "7c644af51f3b392b93dc32b87e92309adf25072f6eb745831b67d976b97d38cb"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-revision-review.md",
+      "sha256": "090e26c569c0afa5620e18bd0a26857775c9cedeb548c074c1e49f3206bc7a69"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-parameter-source-evidence.json",
+      "sha256": "943b7766b8d753459a606ebdb4acd3d641d5156401884f17be00969a74068648"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-architecture-review.md",
+      "sha256": "a8b3ffcdaa00a3c2e3d170a721473c0209b55d64e300bb3ca92a9fa2e2f0f164"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-backends.md",
+      "sha256": "96da3eda3a317db9fb2380d743750168e2edf37d310c94a72ae01001635d84f1"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-rust-differences.md",
+      "sha256": "b54d5fb620e93a46b55270267b49318dc83d3669a3af61dd0ac051f2b8c9ccb0"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.2.0-sdk-contracts.md",
+      "sha256": "3f25ab09863c45c7bb2ef2e9fdf8e661142e8bf7bcf8cb02e52fd9a8f61cf017"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md",
+      "sha256": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md",
+      "sha256": "a94df88667d0215f3d573dbc5923f779c4fc29b96b48afbe43a5b279bcb7de00"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md",
+      "sha256": "5450cda2afdf00f7492f0ebd2e207b2ef751d16052a718575e9919907e4cd7e3"
+    },
+    {
+      "path": "docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
+      "sha256": "93f9b20d779cb4a4d48a3975bf7541725f236b86d2ea4cb9eea4ece0fe70ac5e"
+    }
+  ],
+  "self_hash": "excluded to avoid recursive digest"
+}

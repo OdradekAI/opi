@@ -10,6 +10,7 @@
 | 2026-10-16；Pi 1.0.0 → 1.2.0 | 当前 Opi HEAD `e6c2eb80b99a69f80aefc7aafee3b61140a0a6c8`；Pi tree `a2c03e7c77aa5e6837ed69055a29d724eff9e65a18c1534221ef58e299cc0c10`。AI 378→394，新增18/变化79/删除2；406项 AI＋telemetry 摘要匹配。候选暂不核准，R1–R10 为修订依据 | [1.2.0 审查](pi-1.2.0-review.md)、[输入证据](pi-1.2.0-review-baseline.json)、[独立 Pi 报告](../pi-1.2.0/README.md) |
 | 2026-10-16；同一 1.2.0 的五问补核 | 分清三类 Context；telemetry 主要设计仍有效、未实施。刷新官方规划状态；目录版本选择已有本地代码。当前调用体验未等价、没有差分 runner。补测试处置和持续记录；无 runtime tests/live | [五问补核](pi-1.2.0-followup.md)、[输入/清单/网页摘要](pi-1.2.0-followup-evidence.json)、[测试处置](acceptance-matrix.md#2026-10-16-测试迁移补核) |
 | 2026-10-16；两轮核查后的候选修订 | 文档扩展为 67 AIR（58 SDK＋9 宿主）、59 V（55 SDK＋4 宿主）；完整公开能力及 RDF-01–20、测试迁移和版本跟进；不改变运行时。独立复审结论以链接报告为准 | [当前双语稿](spec-draft.zh.md)、[能力附件](pi-1.2.0-sdk-contracts.md)、[Rust 差异](pi-1.2.0-rust-differences.md)、[修订输入](pi-1.2.0-revision-baseline.json)、[复审](pi-1.2.0-revision-review.md) |
+| 2026-10-16；同一1.2.0的Rust工程修订 | Opi输入6b81658，五项合同补齐与精确HTTP/WS/AWS/ADC/Schema后端选择；没有升级Pi/Cargo或实施，不豁免正式准入。审查/结果按本轮报告，旧核准仅针对原输入 | [工程合同](pi-1.2.0-rust-backends.md)、[本轮输入](pi-1.2.0-backend-revision-baseline.json)、[source evidence](pi-1.2.0-backend-source-evidence.json)、[本轮复审](pi-1.2.0-backend-revision-review.md) |
 
 本表的“暂不核准”是研究候选结论，不是线上故障或产品实施进度。旧 Pi 1.0.0 源码当前不在工作区；[历史报告恢复关系](../pi-1.2.0/evidence/pi-1.0.0/README.md)不能替代源码恢复。上游网页按访问日记录；本地快照按 manifest/hash 固定，两种身份不混用。
 
@@ -45,6 +46,7 @@ Context、auth、telemetry、序列化与资源所有权变化：
 未来规划：已交付 / 明确接受但未实现 / 讨论实验 / 历史替代 / 未知：
 调用方动作、默认值、失败、回调、retry/cancel/cleanup 变化：
 Rust 有意差异及理由 / 尚缺能力：
+Rust backend版本/features/API/source hash、默认环境/代理/TLS/retry/redirect/Schema变化及upgrade guards：
 测试处置：add / update / delete / retain，含替代证明与唯一矩阵定位：
 实际检查：输入身份、精确命令、退出码、执行/skip/缺失；未运行项目：
 候选/附录需修订处 / 人类确认来源 / 本轮核准结论：
@@ -52,3 +54,7 @@ Rust 有意差异及理由 / 尚缺能力：
 ```
 
 按 `固定输入 → public surface/实现/消费者/文档/测试 diff → 规划状态核对 → Rust 差异与唯一验收矩阵 → 核准与实际检查记录` 执行。报告可提示后续修订，但不自动启动实现、live、安装、提交或定时监控。产品交付进度只进入其拥有权限的既有工作流，本文件不记录百分比、任务状态或另建账本。
+
+### 参数与新增限制的复核规则
+
+2026-10-16：[参数审计](pi-1.2.0-parameter-audit.md)/[本轮复审](pi-1.2.0-parameter-revision-review.md)取代前轮关于固定预算和后端完全定型的结论。后续每项新增/改动默认值、zero/omission/sentinel、timeout作用域、retry/redirect、format/field拒绝、backend硬上限，都记录Pi消费路径/精确依赖/default、Rust差异及接受集正反例；无依据不得直接继承。不能以可覆盖、typed Unsupported、历史D/Q或后端默认关闭parity。运行时相关常量与metadata/注释/fixture输入分开；复杂阈值需真实语料与分配/兼容性证据。只修改版本号不完成跟进。

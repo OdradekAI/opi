@@ -10,6 +10,18 @@
 
 若独立复审发现能力取舍、正式规范冲突或权限变化，才就具体新问题请求人类决定；普通源码事实纠正和已经选定范围内的设计细化不重新询问同一口径。
 
+## D-39 · 五项Rust工程合同与精确后端选型
+
+> **已收窄的前轮工程修订记录：** 下述byte/state默认值、redirect/Schema拒绝、额外executable gate及“源级选型完成”结论，已由[参数来源审计](pi-1.2.0-parameter-audit.md)撤回或降为条件候选；保留历史推导，不授予当前默认值有效性。当前双语正文/RDF/矩阵与本轮复审为准。
+
+**实际人类授权（2026-10-16）：** 用户要求根据本轮技术审查补齐五项合同、完成Rust后端选型、同步双语spec/RDF/唯一验收矩阵并独立复审；仍只改文档，暂不实施。正式规范准入或真实能力/权限取舍需另问。此前“直接提交”针对前轮已完成文档，不能当作本轮提交/实现授权。
+
+**技术推导与选型：** 采用[后端合同](pi-1.2.0-rust-backends.md)的byte/state预算、同store mutation barrier、默认无redirect/隐藏retry、固定Schema与opaque typed custom registration；保留现HTTP/TLS、选provided-stream WS、AWS owned认证协议/完整来源＋官方Query/XML codec、owned ADC标准exchange+成熟crypto。不选vendor ambient default chain/client；不删除SSO/login/MFA/ADC实际家族，也不借“成熟库”宣称注入已满足。参数、版本、来源和差异见唯一正文/附件，不在此重复要求表。
+
+barrier/限额/Schema拒绝集、ADC无gcloud/explicit executable gate、H1/WS约束是Rust候选的明确安全/资源/平台选择，不伪记为用户逐项问答。源级选型完成不表示Cargo传递闭包可解析、interface已经编译、未来V已运行或正式规范准入通过。所选public seam仍需PRIN-002/§8.1/GATE-002证据；本轮不做规范豁免。
+
+**变更与证明边界：** 两版正文共同采纳新附件，67 AIR/59 V及宿主分类不变。既有41+7测试文件处置保留，未来按细化V add/update/retain并在替代证明后delete；本轮none，不改源码/Cargo/tests/CI/.opi-impl-state.json。原评审/verification保持冻结输入限定；新审查证据按本轮baseline记录。
+
 ## 历史决策原始记录
 
 > 非规范性候选决策。2026-10-03。**Q1–Q21 是首轮回答记录；后续用户更新了判断前提，受影响项已通过Q22–31及修订Q31完成重新选择。先读 [决策重审](decision-reassessment.md) 与 D-18。**
@@ -362,3 +374,9 @@ pi 的公开 cleanupSessionResources 是 SDK 真需求，0.73.0 已引入；其�
 当前候选用AIR-001–056表达owner、trigger、behavior/failure和验收；V-01–48全部是未来验证设计。Q22–31及修订Q31已明确回答，受影响首轮选择由D-19–37替代；双语稿和专项独立评审针对新目标。Q32–37均已实际确认；没有未回答的目标问题；正式文档协调、实现及其验收仍未进行，不构成产品准入。
 
 本目录现阶段是调查与讨论材料，不将其登记成正式实施来源。完成研究文档检查不等于产品实施准入。
+
+## 2026-10-16 参数与新增限制复核处置
+
+用户要求全面复核所有参数/预算/新拒绝，区分Pi1.2.0/后端默认/Rust差异并撤回无依据固定值。本条记录该指令下的文档修订，不编造新增Q或逐项人类批准。D-16/Q21、D-25/Q28及后续工程细化保留历史日期和原回答；其中无Pi依据的统一容量、媒体/分类器强拒绝、Schema/transport预算不再作为当前parity默认。当前[来源审计](pi-1.2.0-parameter-audit.md)、双语spec/RDF/backend/唯一矩阵取代冲突值，不追改历史测试结果。
+
+保留source-backed协议/算法常量和准确作用域、现opi有界背压及明确Rust所有权/信息/权限差异；省略caller policy不能暗中选择撤回的内容上限。后端默认只证明backend，缺语义/不可配置限制保持coverage gap。Schema/transport“完整定型”和前轮“无必须修正项”相应收窄。只改研究docs，正式规范/准入/runtime/Cargo/tests/CI/ledger不变；本次没有需要立即改变正式规范或授权执行的取舍。

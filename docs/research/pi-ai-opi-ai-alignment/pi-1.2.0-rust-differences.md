@@ -4,6 +4,8 @@
 >
 > 本页依据[首轮审查](pi-1.2.0-review.md)、[五问补核](pi-1.2.0-followup.md)、本地 Pi 1.2.0 与当前 Rust 源码静态核对。当前 Rust 基线为 `e6c2eb80b99a69f80aefc7aafee3b61140a0a6c8`；Pi 来源身份见[review baseline](pi-1.2.0-review-baseline.json)。本文的 Rust 契约均为**待实施和证明的目标**，不是当前 API 可编译、测试通过或远端可用的声明。中文附件没有既有英文 counterpart，由主双语 spec 共同引用。
 
+> 本轮[参数与新增限制来源审计](pi-1.2.0-parameter-audit.md)纠正前轮结论：撤回无来源默认值/额外拒绝，backend选择有条件，Schema/transport差异仍未证明。前轮baseline/评审仅对原输入有效，不能替代本轮接受集证明。
+
 ## 分类和使用规则
 
 “等价”检查调用方能完成的动作，以及输入、输出、失败、状态、回调、取消、重试、资源与可用性。语法、对象形状或运行时目录相同不构成等价证明；同一最终字符串也不够。正式父规范的 [GOAL-003、§3.2–3.3](../../opi-spec.md#3-first-design-doctrine)允许 Rust 原生设计，同时保留 PRIN-002/003、INV-001/002 和实施准入权威。本附件没有发现需要先修改整个项目定位才能表达的语言障碍。
@@ -45,7 +47,7 @@
 ### RDF-01 · Rust 调用形式和 typed 公共边界
 
 - **Pi 事实：** [`Models`](../../../.repo/pi-1.2.0/packages/ai/src/models.ts#L255)提供实例管理、native/simple stream/complete、完整自定义 model 及按操作查询；[`ApiOptionsMap`／KnownApi](../../../.repo/pi-1.2.0/packages/ai/src/types.ts#L61)区分协议与 provider。provider ID、API/wire、model ID 和 endpoint/deployment 是不同身份。
-- **Rust 目标：** 日常 `Models` 调用与高级 prepared 机制共用状态；snake_case、封闭的已知操作 enum、typed native 选项和 Rust 自有 Serde 形式表达同样动作。可注册 custom provider/wire；闭合内置 enum 不能成为禁止真实扩展的借口。完整自定义 record 不要求 catalog membership，不被同名目录记录重选覆盖。普通 SDK 无 Agent/session 前提。
+- **Rust 目标：** 日常Models与advanced共用状态/typed native options；闭合操作、开放精确ApiId、完整custom model不要求catalog membership。RegisteredChatApi<O>/fixed-O dyn与opaque API/type tag是Rust表达；兼容Models间选项可复用，同type替换不单因revision拒绝，注册沿upsert。不添加ID trim/grammar/length或blanket namespace/stale拒绝。旧owned call冻结完整adapter/record；真类型错配typed失败，不公开Any/通用JSON executor。
 - **理由与分类：** 命名、enum 和借用／拥有形式属于语言表达；wire mismatch 提前 typed 失败是明确边界行为，不能把任意 TypeScript `Record` 动态值等同于可执行配置。不能为符号对称创建 `opi-context`、`opi-telemetry` 或通用 operation/plugin 框架。
 - **外部 caller 影响：** 调用动作对应，源代码和序列化字节不互换。已有 0.x `ProviderCollection`、`CompletedRequest`、Config/Model 壳的消费者需在实际准入后同步迁移；本附件不授权删除。
 - **机械验证：** V-39/42/49/58 用 workspace 外 consumer 覆盖查询、注册／替换／移除／清空、custom record、typed native mismatch、手动工具循环和双实例隔离；public export 存在性不能替代 wire/失败行为证明。
@@ -72,7 +74,7 @@
 ### RDF-04 · 容量 64、背压和主动 result drain
 
 - **Pi 事实：** [`FifoQueue`／`EventStream`](../../../.repo/pi-1.2.0/packages/ai/src/utils/event-stream.ts#L3)不设队列上限；final-result Promise 由 producer 推入 terminal 时独立解决，无需先迭代消费队列。
-- **Rust 目标：** 保持队列容量 **64**；生产、连接、发送、读取和背压等待均响应内部取消及 receiver 关闭。`result(self)`主动驱动／drain 剩余流，复用已交付 terminal 缓存；不保存无限事件归档，不重发请求，不因消费 self 自取消。取消在 terminal 交付前优先于缓冲内容。
+- **Rust 目标：** 保留现opi队列容量64及可取消背压；这是opi内部调度差异，Pi队列无该count check。撤回logical-byte cap、single-event超队列拒绝和terminal envelope阈值。合法大event仍须可交付且不deadlock；single terminal/完整partial与已知usage不依赖queue permits。result(self)主动drain同一结果，不保存无限archive、不重发、不self-cancel；已交付final不撤回。
 - **理由与分类：** 有界内存和明确 backpressure 是资源策略，不是 Rust 唯一可能的实现；其完成时机与 Pi 不相同。单独被动等待 final Promise 会在满队列下死锁，不满足同样的 caller 动作。
 - **外部 caller 影响：** 暂停消费可能暂停 producer 并延长本地 duration；caller 可直接 await result，不必先启动另一 drain task。drop 表示放弃本地 call/attempt，不承诺远端停止或退款。
 - **机械验证：** V-04/40/41 必须超过 64 个事件，分别不消费、消费一半、读到 terminal、满队列取消和 drop；证明终态唯一、永久 EOF、零后续 dispatch 与 producer 退出，而非仅用短流。
@@ -81,7 +83,7 @@
 ### RDF-05 · 不可变事件时点 partial 与 compact frames
 
 - **Pi 事实：** 事件 `partial` 可指向共享 live accumulator；[`AssistantMessageFrameEncoder`](../../../.repo/pi-1.2.0/packages/ai/src/utils/assistant-message-frame.ts#L137)特意跟踪偏移，避免旧排队事件消费时重复已经可见的 delta。frames 是 compact、可重放的**进度**，[`done/error` 不编码为 frame](../../../.repo/pi-1.2.0/packages/ai/src/utils/assistant-message-frame.ts#L153)；terminal 必须另存。
-- **Rust 目标：** 对外 partial 是 owned 不可变事件时点视图；旧事件不随未来输出变化。仍保留完整 block index/start/delta/end、权威 end 内容、签名／opaque／provenance、partial JSON 和终态信息。提供同用途 frames encoder/reducer；保留进度与 settlement 分离、checkpoint、合法 partial 重建及畸形序列失败，不能因 partial 已不可变就删除这个公开能力。
+- **Rust 目标：** partial保持owned不可变事件时点视图，内部可用Arc/immutable blocks共享；不强制每delta深clone或宣称性能优势。保留完整frame start/delta/end/checkpoint/index/signature/opaque及进度与settlement分离。撤回retained bytes/block/depth和compact单frame默认cap；内容增长与queue/transport调度分别计量，不称固定RSS/总token/连接总流量上限。
 - **理由与分类：** alias 行为属于语言／所有权差异；compact frame 的业务能力不变。内部可共享不可变数据，公开语义不要求逐事件深拷贝整个历史，也不引入通用事件框架。
 - **外部 caller 影响：** 保留先前 partial 即保留当时状态；不依赖“旧 partial 自动变成最终值”。消费 frames 的持久化方仍需另存 terminal 和 Result，不能以有 start/frame 推定成功完成。
 - **机械验证：** V-41/52 同时测试立即消费与延迟消费、交错 blocks、签名只在 end、工具 checkpoint／不完整 JSON、重复 start/index gap／错误类型／end 后 delta、输入不被 reducer 修改；差分在 JS 事件发生时捕获 snapshot，不归一化掉 alias 差异。
@@ -90,9 +92,9 @@
 ### RDF-06 · typed 脱敏失败、边界验证和有限预算
 
 - **Pi 事实：** [`ModelsError`](../../../.repo/pi-1.2.0/packages/ai/src/utils/models-error.ts)提供有限 code，但 adapter 与 validation 仍可能把上游 body／原始参数拼入错误；例如 [`validateToolArguments`](../../../.repo/pi-1.2.0/packages/ai/src/utils/validation.ts#L344)。图片、classifier、不同 transport 的校验与 timeout 支持并不完全一致。
-- **Rust 目标：** 生成、管理、媒体／分类和 store 失败保持 typed、有限、脱敏；真实 missing 与 backend/source/validation failure 不合并。边界严格校验 UTF-8/JSON、finite/domain、base64/MIME/container、必要字段和协议关联；预算有限且有文档化覆盖路径，不默默 unlimited。不将合法额外 classifier IDs、非 argmax 结果或未要求 sum=1 的 distribution 加上无证据拒绝；各 adapter 的 modality、timeout/body/header 边界分别固定。
+- **Rust 目标：** 保留typed脱敏错误、unknown/known信息、checked arithmetic/真实allocation失败、协议关联与各adapter真实required/type/finite校验。撤回所有无来源frame/retained/schema/media/classifier/body/depth/count默认cap及统一positive-only/no-unlimited。Pi接收的data URL、text-only/空image结果、跳过非匹配URI、宽classifier finite结果不能被strict base64/signature/四MIME/domain/label-completeness拒绝替代。省略caller resource policy不启用这些政策。source-backed参数与backend不可配置限制详见来源审计；后者保持未关闭coverage，不借typed Unsupported冒称等价。
 - **理由与分类：** 错误隐私、fail-closed 和有界资源是明确行为选择，不是 `thiserror` 自动保证。基础型别／安全拒绝不能演变成随意收窄 Pi 的合法输入，或用 Rust 严格性掩盖未实现 adapter。
-- **外部 caller 影响：** 某些 Pi 接受的畸形输入会提前失败；caller 得到分类与安全摘要，而非原始 provider body。可用范围及限值须在 SDK 支持表和错误中可发现，不能只留内部实现常数。
+- **外部 caller 影响：** 既有秘密保护/typed错误表达仍有明确差异；没有新默认容量拒绝、隐式截断或固定总deadline。Rust返回owned bytes不能自行扩大媒体校验；必要时保留原encoded payload与可选decode状态，不能因backend解码更严格丢掉Pi可观察结果。显式host policy只影响选择它的调用，不称默认等价。
 - **机械验证：** 对应 V-02/09/13/21–26/50 的负例、边界值和 canary；保留可观察失败类别、已知 partial/usage、取消与作用边界。安全差异 fixture 单列预期，不把 Pi 错误当成功 oracle。
 - **历史 D 依赖：** D-04/09/10/16/20/25/28；旧 D-16/25 的预算选择不授权漏掉新的协议支持。
 
@@ -108,7 +110,7 @@
 ### RDF-08 · headers／payload 扩展受身份约束
 
 - **Pi 事实：** [`applyAuth`](../../../.repo/pi-1.2.0/packages/ai/src/models.ts#L850)合并 auth 与 caller headers，再运行 `transformHeaders`；[`ProviderHeaders`](../../../.repo/pi-1.2.0/packages/ai/src/types.ts#L149)允许 null remove；payload/response/raw provider event callbacks 是不同入口。Bedrock 对部分保留 header 静默忽略，其他 adapter 的覆盖行为也不能概括成一个规则。
-- **Rust 目标：** 提供静态 set/remove、动态 header transform、payload transform、只读 response/provider-event observer 的对应能力，并逐 adapter 明示支持。HTTP 名值、大小和大小写冲突验证；protected auth/routing/header、provider/model/wire/account、endpoint/deployment 身份不能由扩展改写。非法 protected 修改 typed 失败，不静默忽略。显式 key/source 仍在鉴权前选择；低层 transport retry 复用冻结输入，strict 变体另见 RDF-17。回调失败按功能失败传递，不能被 telemetry 吞掉。
+- **Rust 目标：** 保留static set/remove、dynamic headers/payload/response/provider-event callbacks及真实支持面。HTTP header语法有效性与protected auth/routing/identity保留，不增加任意header大小限。显式key/source在auth前选择；callback失败不被telemetry吞掉，普通retry复用输入。撤回blanket redirect:none及ADC same-origin5-hop例外；按具体Pi fetch/SDK/source的method/body/credential-stripping与retry计数对应，真实secret/目标权限边界明确列差异。custom transport不二次包、不反射担保opaque client。
 - **理由与分类：** 扩展存在性属于能力；身份保护和拒绝方式属于明确安全差异。当前 [`provider_headers.rs`](../../../crates/opi-ai/src/provider_headers.rs#L9)的保护列表可作既有证据，但其“不覆盖任何 configured header”也不能代替目标合法 set/remove 合同。
 - **外部 caller 影响：** 可用动态定制仍保留；依赖 callback 偷换凭据／身份的 Pi 用法在此拒绝，须改用显式来源或另建 provider。observer 数据只读且受脱敏策略，不能从 response callback 重写业务结果。
 - **机械验证：** V-12/34/36/51 固定每个 callback 阶段、顺序、次数、取消、async failure、大小写／remove／CRLF／protected canary、未知 adapter 支持；同时证明正常定制实际到 wire，不能只有拒绝测试。
@@ -117,7 +119,7 @@
 ### RDF-09 · JSON Schema normalization，不复制 TypeBox 私有路径
 
 - **Pi 事实：** [`validateToolArguments`](../../../.repo/pi-1.2.0/packages/ai/src/utils/validation.ts#L317)clone 参数，normalize optional-null，经过 TypeBox Value.Convert；无 `Symbol.for("TypeBox.Kind")` 时还运行 plain JSON Schema coercion，再 validation。两条路径并非完全相同算法。
-- **Rust 目标：** 公开 schema 是 JSON，不伪造 TypeBox 私有 symbol；固定 schema-guided plain-JSON normalization／coercion／validation，保留 raw 字符串／JSON、解析状态与 effective 值。转换前复制，有限的 primitive 字符串转换采用已选 ECMAScript Number/String binary64 语义；已有精确 Rust 整数不先降精度。不默默 repair 非法根值或用空对象顶替。normalized transcript 的构造／反序列化均维护必要不变量。
+- **Rust 目标：** 公开JSON schema、clone-before-normalize、JS numeric/String/plain-JSON规则与raw/effective区分保留，不复制TypeBox private symbols。jsonschema0.28.3降为有条件候选；撤回强制Draft7/三dialect/unknown-format-keyword/cycle拒绝、任意shape/work/cache/jobs/error配额和所有pattern×subject guard/canonical重写。按Pi已知format执行、未知format通过、in-memory ref/keyword语义差分；没有隐式schema I/O。engine format/ECMA regex/吞错缺口仍须补救/重选，不得伪成功或 blanket拒绝掩盖。原schema最终全验证修正root-conversion漏洞为单列正确性差异。
 - **理由与分类：** JSON-only schema 是语言／包边界差异；保留 raw 与拒绝坏关联是安全选择。并不意味着不做 normalization，也不承诺任意 TypeBox runtime 值在 Rust 可重建。
 - **外部 caller 影响：** caller 可在独立 SDK 手动验证工具，不必有 hook/authorizer；拿到 raw 与 normalized 的区别。执行和授权属于宿主，库不会因为验证成功就执行；host-only hook 顺序不作为 SDK 调用前提。
 - **机械验证：** V-11/35/39/41 用 plain JSON 的 optional null、union 保留优先、数组／additionalProperties、numeric string/boolean、非法根值及 precision corpus；TypeBox-only cases 作为显式差异，不通过删除失败或统一 coercion 输出掩盖。
@@ -125,9 +127,9 @@
 
 ### RDF-10 · OAuth rotation owner 与 caller 等待分离
 
-- **Pi 事实：** [`refreshStoredOAuthCredential`](../../../.repo/pi-1.2.0/packages/ai/src/auth/resolve.ts#L105)在 store 锁中复核、刷新并保存；caller signal 只取消等锁，刷新一旦开始使用独立 **15s** deadline，忽略 caller signal，持久化完成才释放锁。外层 race 允许 caller 立即返回取消。
-- **Rust 目标：** 分开 caller 停止等待与库拥有的已开始 rotation。获取锁前取消零 refresh；同 source/store/provider 串行并二次检查 expiry。开始后由有界 owner 持续驱动 refresh＋原子存储确认；caller Future/stream drop 或 generation cleanup 不抛弃唯一有效的新 token，不自动恢复已取消 generation。owner 保留所需 provider/store 和 runtime handle，记录可脱敏观察的失败并在生命周期内收束；宿主须保持 Tokio 存活直到已开始操作在独立预算内收束，Handle 不延长 Runtime 本体寿命。runtime shutdown/进程 abort/timeout/remote或store失败不承诺保存、回滚或旧token仍有效；不能用遗忘 JoinHandle 的无界 fire-and-forget，也不能在库内建立私有 executor。
-- **理由与分类：** 防止服务器已经旋转 token 而本地仍保留旧 token，是安全／资源合同；不是一般“取消总是中断所有网络”。15s 是 refresh 网络 deadline；store 操作仍须有自身文档化有限等待／确认合同，不能把无限 store await 叫有界成功。
+- **Pi 事实：** [`refreshStoredOAuthCredential`](../../../.repo/pi-1.2.0/packages/ai/src/auth/resolve.ts#L105)在store锁内复核/refresh/save；caller signal只影响原caller等待。独立15s AbortSignal传给refresh网络调用，不包store锁或modify/save ACK；持久化完成才释放锁。不能把注释中的rotation理解为总15s。
+- **Rust 目标：** caller可停止等锁/等结果；已开始rotation由store/source owner持有并在成功前ACK，不丢唯一新token或恢复取消generation。保留runtime活性、crash/remote/store未确认效果与no rollback限制。mutation_barrier同步捕获同store跨Models cutoff/按key未确认receipts，等待不发auth/logout且可取消；无默认wait30s/keys256/ADC60s或ownership-to-ACK15s cap。Pi15s仅网络refresh，其他source按自身timeout；host正常关闭须保持Tokio并核barrier报告。
+- **理由与分类：** 完整保存rotation是安全/所有权合同，不是固定事务总时长。10s网络refresh＋6s ACK不因超过15s被新SDK拒绝；网络refresh真正越过来源15s则失败并保留known/pending。wait deadline仅在caller明确选择时生效，不能据timeout声称底层I/O强杀/远端回滚。
 - **外部 caller 影响：** 取消的调用及时得到 Aborted，但相同来源后台事务可能仍完成凭据更新；它不产生新的模型请求。后续 logout/login/replace 与该更新串行，不允许晚到 refresh 覆盖新身份。成功本地确认不保证远端撤销；commit 失败如实报告已知／未知效果，绝不捏造回滚。
 - **机械验证：** V-12/43/55 用 fake OAuth＋store gates 覆盖等待锁取消、开始后取消/drop、服务已 rotation、提交失败/timeout、并发 refresh、logout/replace、取消 generation 后零 dispatch、owner 退出及 runtime 关闭限制；不能以 sleep 结束或旧 token 仍在证明正确。
 - **历史 D 依赖：** D-04/09/23/32/35 的同源与生命周期理由保留；旧 OA-05/D-32/AIR-051 的“commit 前 caller 取消丢弃结果”已被 Pi 1.0.3 事实取代，不作本轮批准。
@@ -135,7 +137,7 @@
 ### RDF-11 · 对象安全的 store 原子更新
 
 - **Pi 事实：** [`CredentialStore.modify`](../../../.repo/pi-1.2.0/packages/ai/src/auth/types.ts#L47)是 serialized read-modify-write，delete 与 modify 串行；[内存 store](../../../.repo/pi-1.2.0/packages/ai/src/auth/credential-store.ts#L4)按 provider 排队，Promise chain 在活动工作 settle 前不释放。Pi 允许 best-effort store；这不等于真实 durable ack。
-- **Rust 目标：** 保持 `Arc<dyn CredentialStore>` 可用，以已有 `BoxAuthFuture` 风格返回 Send boxed futures。read/write/delete/probe 的真实消费者保留；新增原子 modify 以 **boxed owned update callback＋boxed Future** 表达，不在 public trait 放使其失去对象安全的泛型 callback／裸 `async fn`。锁内回读 current，callback 成功后 credential 与关联 metadata 一次提交，返回 post-write 状态；no change、missing 与 failure 可区分。write/login/delete/replace 共享同一串行边界；只取消等待不能提前释放仍在工作的 mutation。
+- **Rust 目标：** Arc<dyn CredentialStore>保持对象安全，用boxed owned callback/Future实现同键serialized modify/ACK；login/logout/replace共享边界，取消等待不能提前释放仍会晚写的mutation。mutation_barrier捕获active及provider/source-generation/resource-key/revision未确认效果，另一key成功不能覆盖；撤回默认key-count准入限制。只回收confirmed/unreferenced记录，同key reconcile才清unknown；不引通用shutdown trait/新crate/实施账本。
 - **理由与分类：** boxing 是 Rust trait-object 表达差异；ack 强度和事务所有权是安全合同。SDK 内存 adapter 与产品注入的 persistent adapter 是两个实际目标适配器，使用同一 conformance；SDK 不依赖具体 keychain，不为它再造通用事务框架、crate 或独立账本。存储不支持 durable ack 时只能明示其能力，不能冒充已经持久化。
 - **外部 caller 影响：** 自定义 store 需迁移到原子更新语义；只有外部 read→refresh→write 不能保证 token rotation。产品自行提供 native store、跨进程锁及持久化确认；SDK 内存默认仍可独立使用，不要求 keychain 或 session。
 - **机械验证：** V-12/42/43/55 编译并运行 dyn store consumer；两 adapter 共用并发 refresh/login/delete/replace、current 二次检查、ack/failure、取消等待及 active mutation 未释放用例。一次 fake callback 通过不证明 persistent adapter。
@@ -153,8 +155,8 @@
 
 ### RDF-13 · 实例可 await cleanup 与 Drop
 
-- **Pi 事实：** [`cleanupSessionResources`](../../../.repo/pi-1.2.0/packages/ai/src/session-resources.ts#L1)是 module-global 同步 registry，收集同步 errors；它不 await 本地 producer 退出。Codex cached、temporary、connecting/busy-overflow 路径不应仅凭 helper 名称推定都已覆盖，见 [SDK UX-15](sdk-consumer-contract.md#ux-11–15继续复核的管理与资源边界)。
-- **Rust 目标：** `Models::cleanup_session_resources(Some(id)/None)`是实例 owned、可 await 的清理屏障；Some(empty) typed 失败，Some(nonempty)精确匹配原始 ID，None 包含 sessionless。首次 poll 截止点取消旧 matching generation，包含准备与相关 fallback，阻止晚 publish；释放 selected cached/temporary/connecting/busy-overflow lease，等待库拥有的本地 producer/connection 退出。失败仍尝试其他选中清理并返回已知效果／未确认释放。共享外部 client 只释放本 namespace lease。
+- **Pi 事实：** [`cleanupSessionResources`](../../../.repo/pi-1.2.0/packages/ai/src/session-resources.ts#L1)是 module-global 同步 registry，收集同步 errors；它不 await 本地 producer 退出。Codex cached、temporary、connecting/busy-overflow 路径不应仅凭 helper 名称推定都已覆盖，见 [SDK UX-15](sdk-consumer-contract.md#ux-1115继续复核的管理与资源边界)。
+- **Rust 目标：** Models实例owned/awaitable cleanup保持原scope与cutoff，释放cached/temporary/connecting/busy-overflow本地资源，失败仍尝试其他并报告known/pending；只释放自身lease、不碰外部共享client/credential/catalog。撤回2s close默认deadline；host可显式给shutdown deadline，但不能冒称peer ACK/远端退款。None明确All含sessionless；空session ID不能被隐式扩大为All，具体空ID typed处理为保留的安全差异，不能称Pi parity。store barrier与连接namespace独立。
 - **理由与分类：** 所有权与可 await cleanup 是资源保证的有意增强。Drop 只能发关闭信号，不能声称已 await；后台任务不得充当公共 owner 无限延长自身。drop Models/remove/replace 不取消已经 owned call；最后 public owner/call guard 释放才触发相应关闭。
 - **外部 caller 影响：** 需要确定本地静止的宿主必须 await cleanup；成功 result 可保留 idle cache。cleanup 不删除 credential/catalog，不取消外部 caller 的父 token、其他实例或截止点后的调用，也不证明远端撤销／退款。
 - **机械验证：** V-04/29/42/58 以 gates 覆盖同 session 双实例、sessionless/空 ID、prepare/connect/busy/fallback、晚 publication、重入、cleanup Future drop 后再次 await、外部 shared lease、失败继续清理与最后 owner 退出。
@@ -190,7 +192,7 @@
 ### RDF-17 · 唯一 retry owner 与 strict 降级变体
 
 - **Pi 事实：** [`retryProviderRequest`](../../../.repo/pi-1.2.0/packages/ai/src/utils/provider-retry.ts)与 adapter 自身路径／锁定 AWS SDK 共同决定真实重试；公共 options 的注释不能当请求次数。Anthropic [`prefer strict` 降级](../../../.repo/pi-1.2.0/packages/ai/src/api/anthropic-messages.ts#L644)对特定 pre-stream 400 至多一次去掉 prefer、保留 require、重建 payload 并再次调用 onPayload。SDK 另公开 [`retryAssistantCall`](../../../.repo/pi-1.2.0/packages/ai/src/utils/retry.ts#L174)，不是 Models 默认高层恢复。
-- **Rust 目标：** 一个 logical call 一个 acquisition-retry owner；显式 max_retries=N 为每语义变体额外最多 N 次，0 关闭 transport retry。strict fallback 是单独有界语义 transition，至多两变体，最多 `2*(1+N)` 个 HTTP acquisition sends；N=0 仍允许一次满足精确 predicate 的降级。相同变体 retry 复用 payload，第二变体重建且再调用 transform；冻结 auth/model/account/telemetry，保留 require、诊断及取消。advanced start_attempt 不重置计数／quota／降级状态；handoff 后不重放。显式 whole-call helper 可用同一 typed contracts，调用方选择启用，不要求 session。
+- **Rust 目标：** 一个 logical call 一个 acquisition-retry owner；显式 max_retries=N 为每语义变体额外最多 N 次，0 关闭 transport retry。strict fallback 是单独有界语义 transition，至多两变体，最多 `2*(1+N)` 个 HTTP acquisition sends；N=0 仍允许一次满足精确 predicate 的降级。相同变体 retry 复用 payload，第二变体重建且再调用 transform；冻结 auth/model/account/telemetry，保留 require、诊断及取消。advanced start_attempt 不重置计数／quota／降级状态；handoff 后不重放。显式 whole-call helper 可用同一 typed contracts，调用方选择启用，不要求 session。 reqwest显式retry(never)即使Cargo feature合并开启H2/H3也保持单owner；当前独立H1不能被误报已隐式重试。AWS owned auth/source sends与generation分账，不运行vendor runtime/默认resolver或其隐藏日志；无I/O codec调用路径升级需重验。
 - **理由与分类：** 修复 Bedrock 忽略公共 override、Codex 省略 auto 与显式 auto 的分歧、以及统一 owner，属于行为修正；不能称 Pi 所有路径本来一致。AWS standard＋typed overrides 不读取 ambient retry-mode knobs；未支持的 adaptive/experimental 明确失败，不静默采用 standard。不能以“payload只变一次”抹去 1.2.0 的 strict callback 行为。
 - **外部 caller 影响：** callbacks 可能对两个语义变体各执行一次，但不会为同一 transport retry 重跑。只有显式 whole-call helper 才可能新建 logical calls；产品的恢复次数／compaction 是另一层。既有 caller 需看见适用默认、次数和取消边界。
 - **机械验证：** V-05/34/36/57 分别计 variant、send、callback、auth、quota；覆盖 N=0/1/2、特定／非特定400、require 保留、取消／deadline、handoff 后 failure、advanced入口、Busy/transient/Bedrock stalled分类和 helper终态/partial。不能只测最终成功或以 nested SDK 重试充数。
@@ -199,7 +201,7 @@
 ### RDF-18 · Cargo/native 平台与 npm/Bun/browser/CLI 边界
 
 - **Pi 事实：** [`package.json`](../../../.repo/pi-1.2.0/packages/ai/package.json#L10)公开 root/subpaths、`pi-ai` CLI 和 bun-oauth；[root export](../../../.repo/pi-1.2.0/packages/ai/src/index.ts#L4)强调 core side-effect-free，provider/catalog 分开；[Bun bridge](../../../.repo/pi-1.2.0/packages/ai/src/bun-oauth.ts#L12)为静态打包加载 OAuth。[AuthContext](../../../.repo/pi-1.2.0/packages/ai/src/auth/context.ts#L19)存在 browser fallback，Node-only flow 仍需对应平台能力。
-- **Rust 目标：** Cargo crate/module、显式 factory 与包内资源提供功能对应，不复制 npm subpath 字符串、Bun loader、JS compat-global registry 或 Node `pi-ai` CLI 符号；CLI 的登录／刷新等 SDK 功能仍由公开 Models/presenter/store/source 完成。构造／注册／静态读取零 env/store/外部 I/O，无 import-time/global 注册。异步使用宿主 Tokio，无私有／嵌套 runtime；生成 catalog 必需资源进入离线 package，不依赖源码树私有路径。
+- **Rust 目标：** Cargo/module/resources/host Tokio表达独立SDK，npm/Bun/browser/CLI符号和任意executor/WASM不承诺ABI。HTTP/WS/rustls、AWS owned协议/纯codecs、ADC owned来源/成熟crypto保持有条件机制选择；H1-only、webpki-only、ring key范围、WS handshake/no compression等属于backend/platform覆盖缺口，不是Pi安全要求。撤回虚构ADC预算/零retry/双独立executable gate；保留真实GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES及host授权。portable well-known/无自动gcloud为明确平台/来源差异；不得以override可用冒称默认等价。closure/MSRV/native仍需Cargo/平台证明。
 - **理由与分类：** packaging/runtime 桥属于平台差异；不是删除 OAuth/helper/catalog/独立 SDK 动作的理由。当前 [manifest](../../../crates/opi-ai/Cargo.toml)与[CI](../../../.github/workflows/ci.yml#L40)支持 native 依赖与 Linux/macOS/Windows 验证路线；本候选**不承诺 WASM/browser 或任意 executor 支持**，也不从源码无显式 wasm forbid 推断可用。
 - **外部 caller 影响：** Rust caller 自行装配 runtime、Stream/Serde 和 UI；无 Agent/产品 crate 前提。SDK 文档需列 native 支持面、平台相关 OAuth presenter/callback限制和正常依赖。未证明编译大小、lazy link、启动或性能收益，不为 tree-shaking 猜测加 feature。
 - **机械验证：** V-26/42/49/58 用离线 package 与 workspace 外 consumer、native 多平台组装／假传输、资源定位、无环境读取构造、公开工具能力映射。不能以 monorepo 内编译证明可发布，也不能用未缓存依赖的自动下载补缺。
@@ -217,7 +219,7 @@
 ### RDF-20 · 全公开能力覆盖仍须实施证明
 
 - **Pi 事实：** [`KnownApi/KnownClassifierApi`](../../../.repo/pi-1.2.0/packages/ai/src/types.ts#L61)列 **10 个 chat API、4 个 classifier API、1 个 image API**；[内置工厂](../../../.repo/pi-1.2.0/packages/ai/src/providers/all.ts)为 42 个；[OAuth loader](../../../.repo/pi-1.2.0/packages/ai/src/auth/oauth/load.ts#L16)有 **9 类 flow**。多个 factory 复用 wire；不因此免核身份、auth、endpoint、默认值和 availability。Mistral 历史 API 名 `mistral-conversations`当前[实际走 chat/completions](../../../.repo/pi-1.2.0/packages/ai/src/api/mistral-conversations.ts#L298)，不能据名字实现错误 endpoint。
-- **Rust 目标：** 全部已发布能力进入唯一 public-surface inventory，逐项给出公开 Rust 动作、binding／wire、正常与失败语义、差异和验收。包括四 classifier 的 images/modality／结果／usage／retry，九 OAuth 的 login/refresh/metadata，动态 headers/raw observer、frames、duration、metadata/sampling/tiers、catalog personalization、whole-call helper、faux/deferred、custom adapters 和 package 可达性。remote deferred 仅在有真实协议与 fixture 时声明支持；faux 成功不推导远端能力。
+- **Rust 目标：** 全部已发布能力进入唯一 public-surface inventory，逐项给出公开 Rust 动作、binding／wire、正常与失败语义、差异和验收。包括四 classifier 的 images/modality／结果／usage／retry，九 OAuth 的 login/refresh/metadata，动态 headers/raw observer、frames、duration、metadata/sampling/tiers、catalog personalization、whole-call helper、faux/deferred、custom adapters 和 package 可达性。remote deferred 仅在有真实协议与 fixture 时声明支持；faux 成功不推导远端能力。 R-01–08的设计处置与source-level精确后端选择已写入候选；这只关闭文档设计空白，不关闭任何未实施的SDK能力或V。正式image/classifier placement及全部运行/编译/平台证据仍缺，不靠后端名/下载hash替代。
 - **理由与分类：** 这是**真正能力及证明缺口**，不能用 RDF-01–19 关闭。当前 [`lib.rs`](../../../crates/opi-ai/src/lib.rs#L1)的导出与实现尚未交付上述完整目标；旧稿只选 System One、三 OAuth、部分 chat、延后 callbacks/frames 的范围已不足。native Rust 可行性不等于当前功能已存在。
 - **外部 caller 影响：** 支持表必须区分 registered、可执行、已实现 adapter、验证层次与 host integration；缺生成 model data 时不能宣称全模型 ID/catalog 数据逐字节等价。不存在的独立 image wire／image streaming 或仅实验计划也不能凭想象加为 Pi 1.2.0 硬要求。
 - **机械验证：** V-49–59 与既有 V 的公共面清单逐项闭合；严格离线 fixtures／fake transport 后才进行所需的 consumer/package/native 证明。运行记录固定输入、case/skip/缺失和归一化；live 另获授权。`未实现`、`未执行`、`无协议证据`分别保留，不能一律填“Rust差异已接受”。
