@@ -29,6 +29,7 @@ pub mod provider;
 pub mod provider_headers;
 pub mod registry;
 pub mod retry;
+pub mod schema;
 pub mod stream;
 #[doc(hidden)]
 pub mod test_support;

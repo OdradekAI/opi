@@ -1184,13 +1184,29 @@ fn fixture_task_binding(
         .or_else(|| metadata["task"].get("id"))
         .and_then(toml::Value::as_str)
         .unwrap_or(id);
-    let mut rows = walk_files(package).into_iter().map(|file| {
-        use std::os::unix::fs::PermissionsExt;
-        let bytes = fs::read(&file).unwrap();
-        serde_json::json!({"path": file.strip_prefix(package).unwrap().to_string_lossy(),
-            "mode": if fs::metadata(file).unwrap().permissions().mode() & 0o111 != 0 {"100755"} else {"100644"},
-            "size": bytes.len(), "sha256": sha256_hex(&bytes)})
-    }).collect::<Vec<_>>();
+    // Row key order matches `canonical_package_digest` byte-for-byte
+    // (serde_json preserve_order serializes insertion order).
+    let mut rows = walk_files(package)
+        .into_iter()
+        .map(|file| {
+            use std::os::unix::fs::PermissionsExt;
+            let bytes = fs::read(&file).unwrap();
+            let mode = if fs::metadata(&file).unwrap().permissions().mode() & 0o111 != 0 {
+                "100755"
+            } else {
+                "100644"
+            };
+            let path = file.strip_prefix(package).unwrap().to_string_lossy();
+            let digest = sha256_hex(&bytes);
+            let size = bytes.len();
+            serde_json::json!({
+                "mode": mode,
+                "path": path,
+                "sha256": digest,
+                "size": size,
+            })
+        })
+        .collect::<Vec<_>>();
     rows.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
     for (key, value) in [
         (

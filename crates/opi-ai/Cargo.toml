@@ -26,6 +26,9 @@ hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 regex = { workspace = true }
+regress = { workspace = true }
+unicode-normalization = { workspace = true }
+url = { workspace = true }
 secrecy = { workspace = true }
 
 [dev-dependencies]

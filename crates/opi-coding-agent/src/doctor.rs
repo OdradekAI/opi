@@ -605,6 +605,11 @@ fn package_diagnostics(workspace_root: &Path, user_config_dir: &Path) -> Vec<Dia
     out
 }
 
+// The inlined `Diagnostic` crossed clippy's large-Err threshold when the
+// workspace switched serde_json to preserve_order maps (larger `Value`);
+// the error is constructed inline and returned immediately, so the size is
+// not a concern at this seam.
+#[allow(clippy::result_large_err)]
 fn activation_records_for_doctor(
     records: Result<
         Vec<package_activation::ActivationRecord>,

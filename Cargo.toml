@@ -33,7 +33,7 @@ futures-util = "0.3"
 
 # serialization
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = { package = "yaml_serde", version = "0.10" }
 base64 = "0.22"
 
@@ -45,6 +45,12 @@ thiserror = "2"
 # HTTP/SSE
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 url = "2.5.8"
+
+# private schema dialect backend identities (see docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md)
+# regress: research-pinned feature profile, no PikeVM backend; the Unicode-16 data fork is the
+# registry-published opi-vendor-regress identity resolved at packaging time (task 20.8/20.57).
+regress = { version = "0.12.0", default-features = false, features = ["std", "utf16", "prohibit-unsafe"] }
+unicode-normalization = "0.1.26"
 
 # CLI
 clap = { version = "4", features = ["derive"] }

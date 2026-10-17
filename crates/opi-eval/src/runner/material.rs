@@ -1271,10 +1271,15 @@ pub(crate) fn materialize_task(
         };
         #[cfg(not(unix))]
         let executable = false;
-        rows.push(
-            serde_json::json!({"path": relative, "mode": if executable {"100755"} else {"100644"},
-            "size": bytes.len(), "sha256": sha256_hex(&bytes)}),
-        );
+        // Key order matches `canonical_package_digest` exactly; with
+        // serde_json preserve_order the insertion order is the serialized
+        // order, so the two construction sites must agree byte-for-byte.
+        rows.push(serde_json::json!({
+            "mode": if executable {"100755"} else {"100644"},
+            "path": relative,
+            "sha256": sha256_hex(&bytes),
+            "size": bytes.len(),
+        }));
     }
     verify_materialized_package(&source, package, lock)?;
     let mut profile: toml::Value = std::fs::read_to_string(template)?

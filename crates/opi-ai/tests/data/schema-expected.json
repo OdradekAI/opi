@@ -1,0 +1,322 @@
+{
+ "normal-valid": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "normal-invalid": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "mixed-pass": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "mixed-fail": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "malformed-minlength": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "grapheme-max-combining": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "grapheme-min-combining": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "grapheme-max-zwj": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "grapheme-max-flag": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "content-base64": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "content-json": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "local-ref-valid": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "sibling-ref-valid": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "local-ref-invalid": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "sibling-ref-invalid": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "unresolved-ref": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "metadata-id-ref": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "metadata-id-ref-invalid": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "regex-u1680": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "normalize-integer-hex": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "normalize-integer-null": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "normalize-optional-null": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "normalize-string-union": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "normalize-anyof-string": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "normalize-number-string": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "normalize-large-integer": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "root-correctness": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "root-valid-coercion": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "multipleof-decimal": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "regex-backtrack-bare": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "regex-backtrack-not": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "regex-backtrack-anyof": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "regex-backtrack-if": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "regex-backtrack-contains": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "regex-backtrack-patternproperties": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "regex-backtrack-additionalproperties": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "regex-backtrack-propertynames": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "regex-backtrack-unselected-anyof": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "regex-backtrack-allof": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "ecma-whitespace-positive": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "ecma-whitespace-negative": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "ecma-letter": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "ecma-letter-negative": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "ecma-kawi": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "ecma-nag-mundari": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "ecma-unicode17-script": {
+  "outcome": "mechanism-error",
+  "valid": null,
+  "deferred": true
+ },
+ "ecma-unicode16-todhri": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "ecma-unicode16-gurung": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "ecma-unicode16-ol-onal": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "ecma-unicode17-new-letter": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": true
+ },
+ "ecma-astral-dot": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "ecma-backref": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "ecma-lookbehind": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "ecma-invalid-unicode-escape": {
+  "outcome": "mechanism-error",
+  "valid": null,
+  "deferred": false
+ },
+ "ecma-invalid-range": {
+  "outcome": "mechanism-error",
+  "valid": null,
+  "deferred": false
+ },
+ "ecma-identity-escape": {
+  "outcome": "mechanism-error",
+  "valid": null,
+  "deferred": false
+ },
+ "ecma-named-backref": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "guard-malformed-minimum": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "guard-malformed-pattern": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "guard-schema-label": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "guard-mixed-ref-prefix": {
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
+ },
+ "guard-mixed-ref-prefix-negative": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "grapheme-hangul-source-not-UAX29": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ },
+ "grapheme-emoji-modifier-source-not-UAX29": {
+  "outcome": "evaluated",
+  "valid": false,
+  "deferred": false
+ }
+}

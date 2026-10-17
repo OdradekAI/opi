@@ -33,6 +33,31 @@
 
 ### Added
 
+- `opi-ai`: private TypeBox JSON dialect schema engine (`schema` module,
+  DEL-04 substrate). Admission compiles every structurally-selected regex
+  leaf (fail-closed, with JSON-pointer paths) and selects fast vs reducer
+  evaluation by structural presence of `unevaluatedItems`/
+  `unevaluatedProperties`; the evaluator ports the pinned TypeBox 1.3.27
+  `Compile` semantics — all 42 JSON mechanisms, the 21 default string
+  formats (including the upstream IDNA hostname family, punycode and NFC
+  normalization), JavaScript key-enumeration order, full
+  lexical/resource/dynamic/recursive reference frames (WHATWG URL base math,
+  anchors, retrieved/resolved resource frames, legacy draft-4 bases;
+  unresolved references evaluate invalid, not error), per-branch evaluated
+  keys/indices with successful-arm merge, `uniqueItems` via the upstream
+  FNV-1a-64 value hash, and the upstream grapheme-cluster length rules.
+  Evaluation uses an explicit work stack (schema depth never exhausts the
+  Rust call stack), types unchanged-instance self-recursion as a typed
+  `NoProgress` failure while productive recursion continues, and has no
+  implicit I/O or source-free size/fuel limits. The frozen 64-case research
+  differential corpus is asserted with the two UCD-17-only cases explicitly
+  deferred to the packaged Unicode-16 backend proof (20.8/20.57).
+  `serde_json` switches to `preserve_order` workspace-wide (insertion-order
+  maps, the selected dialect identity); mechanical serialization-order
+  fallouts were updated deliberately (eval manifest digest key order,
+  execution-v1 schema snapshot, one clippy large-Err allowance). New
+  dependencies: regress 0.12.0 (exact research feature profile, no PikeVM),
+  unicode-normalization 0.1.26.
 - `third_party/unicode16-ecma-url`: controlled private dependency
   distribution closure (DEL-04). Exact upstream archives (url 2.5.8,
   idna 1.1.0, idna_adapter 1.2.1, seven ICU4X 2.0.0 crates, regress

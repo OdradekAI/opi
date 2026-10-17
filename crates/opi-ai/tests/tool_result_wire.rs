@@ -422,6 +422,7 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "provider_headers",
         "registry",
         "retry",
+        "schema",
         "stream",
         "test_support",
         "time",

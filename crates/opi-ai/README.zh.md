@@ -263,6 +263,22 @@ OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是�
 因此，只要任一轮 usage 未知，或模型定价缺失，面向 session 的费用汇总就应省略。费用绝不
 阻塞成功的流。
 
+## 私有 Schema 方言引擎
+
+`schema` 实现固定 TypeBox JSON 方言（由 schema readiness 附件选定）：固定
+TypeBox 1.3.27 `Compile` 路径在受信 JSON schema 上的求值语义——全部 42 个
+JSON 机制、21 个默认字符串 format、结构化关键字 guard（guard 不满足的关键字
+为 inert，绝不是错误）、JavaScript 属性键枚举顺序（integer-index 键升序在
+前，随后为插入顺序）以及完整的 lexical/resource/dynamic/recursive 引用
+frame。求值运行在显式 work stack 上（schema 深度不会耗尽 Rust 调用栈），
+区分 productive 递归与 no-progress 递归（后者为 typed 失败），没有隐式
+I/O 或 source-free 的规模/fuel 上限。regex 叶子在准入期以精确的 regress
+0.12.0 feature profile 编译；URL 族 format 使用 WHATWG `url` 实现。该引擎
+是 evidence-only 底座：不关闭任何产品验收；公开 normalizer/validator 接缝
+（以及打包时的 Unicode-16 后端身份）属于后续切片。被结构选中的非法 regex
+即使在 upstream 永不访问的分支也在准入期失败——这是有记录的 fail-closed
+差异。
+
 ## 非目标
 
 以下是明确的非目标，不得作为当前核心行为出现：

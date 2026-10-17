@@ -306,6 +306,26 @@ known-zero usage. Session-facing cost summaries should therefore be omitted
 when any turn has unknown usage or when pricing is absent. Cost never blocks a
 successful stream.
 
+## Private Schema Dialect Engine
+
+`schema` implements the fixed private TypeBox JSON dialect selected by the
+schema readiness annex: the evaluation semantics of the pinned TypeBox 1.3.27
+`Compile` path over trusted JSON schemas — all 42 JSON mechanisms, the 21
+default string formats, structural keyword guards (a keyword whose guard fails
+is inert, never an error), JavaScript property-key enumeration order
+(integer-index keys ascending, then insertion order) and full
+lexical/resource/dynamic/recursive reference frames. Evaluation runs on an
+explicit work stack (schema depth cannot exhaust the Rust call stack),
+distinguishes productive recursion from no-progress recursion as a typed
+failure, and carries no implicit I/O or source-free size/fuel limits.
+Regex leaves compile at admission with the exact regress 0.12.0 feature
+profile; URL-family formats use the WHATWG `url` implementation. The engine is
+evidence-only substrate: it closes no product acceptance; the public
+normalizer/validator seam (and the packaged Unicode-16 backend identity) are
+later slices. Structurally selected invalid regexes fail admission even in
+branches the upstream would never visit — a documented fail-closed
+divergence.
+
 ## Non-Goals
 
 The following are explicit non-goals and must not appear as current core
