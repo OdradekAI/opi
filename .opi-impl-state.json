@@ -2378,7 +2378,7 @@
       "definition_of_done": "Public clone-before-normalize keeps raw, optional-null and primitive/union/allOf conversion follow exact JS corpus, final original-schema validation checks normalized root. Preserve precise integers, typed lone-surrogate conversion failure, owned arguments_error rejection before coercion and redacted diagnostics. Generation-owned IR/cache and cancellable scheduling release permits without pretending synchronous hard-kill. Agent calls the same mechanism and keeps hooks/final-authorizer policy.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.5",
@@ -2429,6 +2429,11 @@
           "field": "acceptance_partition",
           "reason": "V-15 full source closure moves from 20.10 to 20.7; the earlier task proves only its named P20 production slice. Reuse predecessor behavioral proof and add only distinct assembled cases.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#已有要求的修订验收（V-01–26） / V-15"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "C.1a append before edit (B.3): source study found the generation-owned schema IR must live on the tool declaration itself - RegisteredTool gains a private OnceLock<Arc<ToolSchemaIr>> lazily compiled from definition.input_schema. Loop-side caches cannot key the registry-generation identity without a new authority seam; the declaration-owned OnceLock is the smallest coherent placement (new() keeps its 6-arg signature; no caller changes). RegisteredTool lives in crates/opi-agent/src/authority.rs, which the reviewed inventory did not list.",
+          "source": "readiness-schema annex line 76 (generation-owned IR/cache); preflight registry flow in agent_loop.rs"
         }
       ],
       "tier": "workspace",
@@ -2493,7 +2498,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "6625058e4a61b37fdd0f0b69ab4a15c14b547fd3",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -2555,12 +2560,71 @@
         "crates/opi-coding-agent/tests/*oauth*",
         "crates/opi-coding-agent/tests/*provider*",
         "crates/opi-coding-agent/tests/*rpc*",
-        "crates/opi-coding-agent/tests/*session*"
+        "crates/opi-coding-agent/tests/*session*",
+        "crates/opi-agent/src/authority.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "f47b5b73bfc9e6b13cf1a68d00fb65c6ba093edd",
+      "evidence": {
+        "Opi-Task": "20.10",
+        "Opi-DoD-SHA256": "6afd618f13e802bf3ba452ceb37eab1efb48f84752e3ec91abb258d75a7b1cbe",
+        "Opi-Verification": "workspace; smoke full PASSED (opi-doc-check, fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets, cargo test --workspace --doc, rustdoc -D warnings); behavioral: cargo test -p opi-ai --test schema_public -> 11 passed (frozen 44-case public_pi battery: 43 exact matches + root-correctness RDF-09 fix + exact-integer divergence asserted in-case); cargo test -p opi-ai --lib -> 138 passed incl. 5 ECMA number tests (whitespace set, radix rounding vs mathematical values incl. sticky tails, Infinity); cargo test -p opi-agent --test tool_validation -> 24 passed incl. end-to-end raw-for-hooks/normalized-for-authorizer-and-execution; all 12 opi-agent test binaries green",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; all DoD clauses mapped (clone-keeps-raw, JS-corpus conversions, final original-schema check, precise integers, arguments_error-before-coercion, redacted diagnostics, generation-owned IR, cancellable blocking-pool scheduling without hard-kill claim, agent consumption with hooks/authorizer policy preserved); authority.rs C.1a append executed before edit (correct timing, recorded in B.3); environment incidents disclosed (E: 100% full mid-cycle then relieved; WSL E_ILLEGAL_STATE_CHANGE crash; one corrupted test binary relinked and verified); Workflow runtime unavailable, wf_ref=null (recorded in verify_runs)",
+        "Opi-Acceptance": "V-35 SDK-active sub-boundary and AIR-024 delivered for this slice (schema_public battery + production preflight consumer); full V-35 host-impact clauses and strict/grammar remain with later tasks (20.11+, AIR-041 excluded by design)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-18T01:44:20+08:00",
+          "attempt": 1,
+          "summary": "B.2 authorized. Contract: port Pi's pinned validation.ts pipeline (argumentsError gate -> structuredClone -> normalizeOptionalNulls with independent sub-compiles -> Value.Convert no-op for plain JSON dialect schemas (~kind dispatch out of JSON dialect, documented divergence) -> coerceWithJsonSchema (allOf fold, anyOf/oneOf value-first + clone-per-arm with independent arm compiles, type-union primitive coercion in type-array order, object properties + object additionalProperties, tuple/single items) -> final original-schema check with the mandatory RDF-09 root fix (never return unvalidated raw). Number via private ECMA StringNumericLiteral classification (full whitespace set, signless 0x/0b/0o with exact round-to-nearest-even, correctly-rounded decimal, Infinity rejected by finite gate); String via ryu-js 1.0.2 for floats and exact integer Display (RDF-09 precision). JS corpus = frozen results/original/pi.jsonl (sha f310f81c...) 44 public_pi normalized outputs. Agent cutover: authority.rs OnceLock IR (generation-owned), validation.rs on the 20.9 engine (jsonschema removed from opi-agent), preflight validation under spawn_blocking + biased cancel select (discard result, no sync hard-kill claim), hooks observe RAW args, authorizer+execution receive the normalized value. Evidence tree re-verified at %TEMP%/opi-parameter-npm-source (names+content hash formula == pin ebf39b14...).",
+          "gate_results": {}
+        },
+        {
+          "timestamp": "2026-10-18T03:52:10+08:00",
+          "attempt": 1,
+          "summary": "DEL-04 normalizer slice delivered in commit f47b5b73bfc9e6b13cf1a68d00fb65c6ba093edd: (1) opi-ai schema/normalize.rs public seam validate_tool_arguments/validate_tool_call porting the pinned Pi validation.ts pipeline - arguments_error gate before coercion, clone-before-normalize (raw never mutated), optional-null deletion via independent sub-compiles (compile failure keeps the key, $ref skipped), Value.Convert no-op for plain JSON dialect schemas (~kind out of the dialect, documented divergence), coerceWithJsonSchema (allOf fold, anyOf/oneOf value-first + clone-per-arm with independent arm compiles, type-union primitive coercion in type-array order, properties + object additionalProperties, tuple/single items), and the mandatory final original-schema check on the normalized root (RDF-09: root-correctness recorded bug case asserted as fixed Invalid with keyword/path); (2) ecma_number.rs private StringNumericLiteral classifier - full StrWhiteSpace trim set, signless 0x/0b/0o with exact significant-bit round-to-nearest-even incl. sticky tails beyond u128 accumulation, strict decimal grammar feeding Rust's correctly rounded parser, Infinity handled by the finite gate; String conversion via annex-pinned ryu-js 1.0.2 (=1.0.2 exact pin, pure Rust, build=false, verified crate) for floats and exact integer Display (RDF-09: normalize-large-integer records JS JSON.parse collapsing 2^53+1 to 2^53 and the battery asserts the exact preserved integer as an in-case documented divergence); (3) eval.rs observation-only first-failure localization - JSON-pointer instance paths threaded through NodeFrame + 17 child frames, per-keyword redacted reasons at leaf/verdict sites (schema-derived bounds only, never instance content); acceptance set unchanged proven by the frozen 62-case corpus + all engine tests; CompiledSchema::check_detailed exposes it crate-internally; (4) frozen 44-case public differential battery (tests/schema_public.rs + data/schema-public-expected.json generated from results/original/pi.jsonl sha f310f81c..., cited in the test header) asserting recorded Pi normalized outputs; (5) opi-agent consumption - RegisteredTool OnceLock generation-owned IR (C.1a authority.rs append executed before edit at B.3 with evidence), validation.rs rewritten on the SDK seam (jsonschema removed from opi-agent; opi-protocol uses retained), preflight compile+validate under spawn_blocking with biased cancel select (result discarded, no sync hard-kill claim, doc comments enforce), hooks observe raw while authorizer+execute receive normalized (AUT-002), redacted ValidationError with 'schema validation failed' prefix retained; wrong_type test updated to non-coercible wrong type under normalization semantics; new end-to-end test proves raw-for-hooks/normalized-for-authorizer-and-execution. Environment incidents during the cycle, disclosed: E: drive reached 100% mid-cycle (blocked compiles, later relieved to ~89G free), one WSL E_ILLEGAL_STATE_CHANGE crash, and one corrupted target binary (image_input_cli) from the full-disk link that was relinked and verified stable before the passing smoke. V-35 SDK-active/AIR-024 closed for this slice; host-impact clauses and strict/grammar stay with 20.11+.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.sh full (after environment recovery)",
+            "d0_scenarios": "PASS: schema_public 11/11 (frozen 44-case battery + RDF-09 fix + divergence), tool_validation 24/24 (incl. e2e normalized execution), opi-ai lib 138/138",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7), no must-fix; C.1a timing correct this cycle",
+            "d3_gap_checks": "PASS: lone-surrogate boundary remains the 20.5 message-layer typed parse failure (not reachable from parsed Values; recorded in normalize.rs docs); documented divergences: ~kind inert in JSON dialect, RDF-09 exact integers, upstream raw-return bug not replicated; ryu-js internal-unsafe leaf isolation noted per annex",
+            "test_disposition": [
+              {
+                "subject": "20.10 public normalizer",
+                "action": "add",
+                "test": "crates/opi-ai/tests/schema_public.rs (11 tests) + tests/data/schema-public-expected.json (frozen 44-case battery) + 5 ECMA number unit tests in ecma_number.rs",
+                "interface": "opi_ai::schema::{validate_tool_arguments, validate_tool_call, ToolArgumentOutcome}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "agent validation path",
+                "action": "update",
+                "test": "crates/opi-agent/tests/tool_validation.rs -> ToolSchemaIr API, non-coercible wrong-type case, new normalization end-to-end test (raw hooks/normalized execution)",
+                "interface": "opi_agent::validation::ToolSchemaIr",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "engine evaluator",
+                "action": "update",
+                "test": "eval.rs localization is observation-only; frozen corpus + engine batteries retained unchanged and green",
+                "interface": "opi_ai::schema::CompiledSchema (check unchanged; check_detailed crate-internal)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "workspace suites",
+                "action": "retain",
+                "test": "all other suites green in smoke full",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.11",
@@ -13121,6 +13185,14 @@
       "mode": "manual-7-lens (workflow runtime unavailable)",
       "wf_ref": null,
       "result": "no must-fix findings; L-D1 clause-by-clause against commit 98b5c900b963bb42cc4f4a50a1d1bd7f9b8cb9c0 including finite IR, 42 mechanisms, 21 formats, structural inert guards, JS integer-index enumeration, full ref frames, fallible evaluated state, explicit work stack, productive/no-progress recursion distinction, and the no-I/O/no-source-free-limits constraints; L-D7 noted the task_owned_paths append timing deviation, disclosed in the C.1a inference note"
+    },
+    {
+      "timestamp": "2026-10-18T03:52:10+08:00",
+      "task": "20.10",
+      "stage": "exec",
+      "mode": "manual-7-lens (workflow runtime unavailable)",
+      "wf_ref": null,
+      "result": "no must-fix findings; L-D1 clause-by-clause against commit f47b5b73bfc9e6b13cf1a68d00fb65c6ba093edd covering the DoD's clone-before-normalize, JS-corpus conversions (frozen 44-case battery from recorded public_pi outputs), final original-schema check with the RDF-09 fix, precise integers, arguments_error-before-coercion, redacted diagnostics, generation-owned IR (OnceLock on the declaration), blocking-pool cancellation without hard-kill claims, and agent consumption with hooks/final-authorizer policy preserved; L-D7 confirmed the authority.rs C.1a append was executed before the edit at B.3 with recorded evidence"
     }
   ]
 }
