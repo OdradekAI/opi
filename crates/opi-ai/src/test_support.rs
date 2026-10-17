@@ -245,6 +245,7 @@ pub fn tool_call_response(
         id: tool_call_id.into(),
         name: tool_name.into(),
         arguments: arguments.into(),
+        arguments_error: None,
     };
     let mut partial = base_assistant();
     partial

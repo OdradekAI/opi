@@ -32,6 +32,7 @@ pub mod retry;
 pub mod stream;
 #[doc(hidden)]
 pub mod test_support;
+mod text_decode;
 pub mod time;
 pub mod vertex;
 

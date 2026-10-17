@@ -343,6 +343,7 @@ impl GeminiMapper {
                         id: id.clone(),
                         name: name.clone(),
                         arguments: args_str.clone(),
+                        arguments_error: None,
                     },
                 });
 
@@ -362,6 +363,7 @@ impl GeminiMapper {
                         id,
                         name,
                         arguments: args_str,
+                        arguments_error: None,
                     },
                     partial: self.partial.clone(),
                 }));
@@ -753,6 +755,7 @@ impl GeminiProvider {
 
         let mut byte_stream = response.bytes_stream();
         let mut buffer = String::new();
+        let mut decoder = crate::text_decode::StreamTextDecoder::new();
         let mut mapper = GeminiMapper::new("gemini");
 
         loop {
@@ -776,7 +779,7 @@ impl GeminiProvider {
                     ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
                 }
             })?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
+            buffer.push_str(&decoder.push(&chunk));
 
             for parsed in drain_sse_data(&mut buffer) {
                 match parsed {
@@ -799,6 +802,8 @@ impl GeminiProvider {
             }
         }
 
+        let eof_tail = decoder.finish();
+        buffer.push_str(&eof_tail);
         if !mapper.saw_done {
             let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
                 "stream ended without a terminal event",

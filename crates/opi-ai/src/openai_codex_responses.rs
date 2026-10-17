@@ -19,7 +19,7 @@ use crate::openai_responses_shared::{
 use crate::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
 };
-use crate::stream::AssistantStreamEvent;
+use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_cancel};
 
 const PROVIDER_ID: &str = "openai-codex";
 const DEFAULT_BASE_URL: &str = "https://chatgpt.com/backend-api";
@@ -208,6 +208,7 @@ impl OpenAiCodexResponsesProvider {
 
         let mut bytes = response.bytes_stream();
         let mut buffer = String::new();
+        let mut decoder = crate::text_decode::StreamTextDecoder::new();
         let mut mapper = ResponsesMapper::new(PROVIDER_ID);
         loop {
             let chunk = tokio::select! {
@@ -226,7 +227,7 @@ impl OpenAiCodexResponsesProvider {
                     ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
                 }
             })?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
+            buffer.push_str(&decoder.push(&chunk));
             for frame in drain_sse_frames(&mut buffer) {
                 match ResponsesEvent::try_from_frame(&frame) {
                     ParsedEvent::Valid(event) => {
@@ -237,7 +238,7 @@ impl OpenAiCodexResponsesProvider {
                             event => event,
                         };
                         for item in mapper.process(event) {
-                            if tx.send(item).await.is_err() {
+                            if !send_or_cancel(&cancel, &tx, item).await? {
                                 return Ok(());
                             }
                         }
@@ -255,12 +256,17 @@ impl OpenAiCodexResponsesProvider {
                 }
             }
         }
+        let eof_tail = decoder.finish();
+        buffer.push_str(&eof_tail);
         if !mapper.saw_done {
-            let _ = tx
-                .send(Err(ProviderError::StreamError(
+            let _ = send_or_cancel(
+                &cancel,
+                &tx,
+                Err(ProviderError::StreamError(
                     ProviderErrorSummary::attested_static("stream ended without a terminal event"),
-                )))
-                .await;
+                )),
+            )
+            .await;
         }
         Ok(())
     }
@@ -320,6 +326,7 @@ impl Provider for OpenAiCodexResponsesProvider {
         let cancel = request.cancel.clone();
         let client = self.client.client().clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
+        let stream_cancel = cancel.clone();
 
         // C9: UnknownModel pre-I/O guard — zero auth and zero HTTP for unknown or
         // cross-provider models (the prepared path already holds resolved auth,
@@ -334,16 +341,17 @@ impl Provider for OpenAiCodexResponsesProvider {
                     }))
                     .await;
             });
-            return Box::pin(ReceiverStream { rx });
+            return Box::pin(CancelAwareReceiverStream::new(rx, stream_cancel));
         }
 
         let tx_closed = tx.clone();
+        let producer_cancel = cancel.clone();
         tokio::spawn(async move {
             let work = async {
                 let extra_headers = match extra_headers {
                     Ok(headers) => headers,
                     Err(error) => {
-                        let _ = tx.send(Err(error)).await;
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
                         return;
                     }
                 };
@@ -362,7 +370,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                 )
                 .await
                 {
-                    let _ = tx.send(Err(error)).await;
+                    let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
                 }
             };
 
@@ -372,7 +380,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                 _ = work => {},
             }
         });
-        Box::pin(ReceiverStream { rx })
+        Box::pin(CancelAwareReceiverStream::new(rx, stream_cancel))
     }
 }
 
@@ -404,20 +412,5 @@ fn map_http_status(
         },
         408 | 504 => ProviderError::Timeout,
         code => ProviderError::ProviderSide(ProviderErrorSummary::from_http_response(code)),
-    }
-}
-
-struct ReceiverStream {
-    rx: tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>,
-}
-
-impl futures_core::Stream for ReceiverStream {
-    type Item = Result<AssistantStreamEvent, ProviderError>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        context: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        self.rx.poll_recv(context)
     }
 }

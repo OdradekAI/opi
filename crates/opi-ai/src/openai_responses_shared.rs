@@ -447,6 +447,7 @@ impl ResponsesMapper {
                         id: id.clone(),
                         name: name.clone(),
                         arguments: arguments.clone(),
+                        arguments_error: None,
                     },
                 });
                 self.tool_calls.push(ToolCallState {
@@ -642,15 +643,20 @@ impl ResponsesMapper {
         }
         state.ended = true;
         let content_index = state.content_index;
+        // Final textual arguments are parsed once at item end (AIR-048).
+        let (arguments, arguments_error) =
+            ToolCall::finalize_text_arguments(state.arguments.clone());
         let tool_call = ToolCall {
             id: state.id.clone(),
             name: state.name.clone(),
-            arguments: state.arguments.clone(),
+            arguments: arguments.clone(),
+            arguments_error,
         };
         if let Some(AssistantContent::ToolCall { tool_call: partial }) =
             self.partial.content.get_mut(content_index)
         {
-            partial.arguments = tool_call.arguments.clone();
+            partial.arguments = arguments;
+            partial.arguments_error = tool_call.arguments_error.clone();
         }
         Some(AssistantStreamEvent::ToolCallEnd {
             content_index,

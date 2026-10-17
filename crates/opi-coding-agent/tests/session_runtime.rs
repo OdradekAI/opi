@@ -680,7 +680,7 @@ fn session_coordinator_redacts_assistant_tool_call_arguments() {
             arguments:
                 r#"{"command":"echo OPI_SESSION_TOOL_ARGS_SECRET_CANARY","cwd":"C:\\Users\\private"}"#
                     .into(),
-        },
+                    arguments_error: None,},
     });
 
     let messages = vec![AgentMessage::Llm(Message::Assistant(assistant))];
@@ -1898,6 +1898,7 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
         id: "tc-1".into(),
         name: "noop".into(),
         arguments: "{}".into(),
+        arguments_error: None,
     };
     let mut tool_partial = test_support::base_assistant();
     tool_partial.content.push(AssistantContent::ToolCall {

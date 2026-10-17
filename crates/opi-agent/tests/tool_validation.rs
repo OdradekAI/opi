@@ -587,6 +587,7 @@ fn tool_call_response(call_id: &str, name: &str, args: &str) -> Vec<AssistantStr
         id: call_id.to_string(),
         name: name.to_string(),
         arguments: args.to_string(),
+        arguments_error: None,
     };
     let mut partial = base_msg();
     partial.content.push(AssistantContent::ToolCall {
@@ -1124,6 +1125,7 @@ fn length_response(arguments: &[&str]) -> Vec<AssistantStreamEvent> {
                 id: format!("partial-{index}"),
                 name: "length_probe".into(),
                 arguments: (*arguments).into(),
+                arguments_error: None,
             },
         })
         .collect();

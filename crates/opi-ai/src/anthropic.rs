@@ -17,7 +17,9 @@ use crate::provider::{
 };
 use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
-use crate::stream::{AssistantStreamEvent, StopReason, Usage};
+use crate::stream::{
+    AssistantStreamEvent, CancelAwareReceiverStream, StopReason, Usage, send_or_cancel,
+};
 
 // ---------------------------------------------------------------------------
 // SSE line parser
@@ -478,6 +480,7 @@ impl AnthropicMapper {
                                 id,
                                 name,
                                 arguments: String::new(),
+                                arguments_error: None,
                             },
                         });
                         vec![Ok(AssistantStreamEvent::ToolCallStart {
@@ -592,16 +595,24 @@ impl AnthropicMapper {
                         name,
                         partial_json,
                     }) => {
+                        // Final textual arguments are parsed once at block
+                        // end: empty normalizes to `{}`, repairable escapes
+                        // stay literal, anything else keeps the owned raw
+                        // text plus `arguments_error` (AIR-048).
+                        let (arguments, arguments_error) =
+                            ToolCall::finalize_text_arguments(partial_json.clone());
                         let tool_call = ToolCall {
                             id: id.clone(),
                             name: name.clone(),
-                            arguments: partial_json.clone(),
+                            arguments: arguments.clone(),
+                            arguments_error,
                         };
                         // Update the partial message's tool call with final arguments
                         if let Some(AssistantContent::ToolCall { tool_call: tc }) =
                             self.partial.content.get_mut(index)
                         {
-                            tc.arguments = partial_json.clone();
+                            tc.arguments = arguments;
+                            tc.arguments_error = tool_call.arguments_error.clone();
                         }
                         vec![Ok(AssistantStreamEvent::ToolCallEnd {
                             content_index,
@@ -1076,7 +1087,7 @@ impl AnthropicProvider {
                 match parsed {
                     ParsedEvent::Valid(event) => {
                         for item in mapper.process(event) {
-                            if tx.send(item).await.is_err() {
+                            if !send_or_cancel(&cancel, tx, item).await? {
                                 return Ok(()); // receiver dropped
                             }
                         }
@@ -1086,7 +1097,7 @@ impl AnthropicProvider {
                         let err = ProviderError::StreamError(ProviderErrorSummary::sanitized(
                             format!("malformed Anthropic SSE event '{event_type}'"),
                         ));
-                        if tx.send(Err(err)).await.is_err() {
+                        if !send_or_cancel(&cancel, tx, Err(err)).await? {
                             return Ok(());
                         }
                     }
@@ -1102,7 +1113,7 @@ impl AnthropicProvider {
             let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
                 "stream ended without a terminal event (message_stop or error)",
             ));
-            let _ = tx.send(Err(err)).await;
+            let _ = send_or_cancel(&cancel, tx, Err(err)).await;
         }
 
         Ok(())
@@ -1114,21 +1125,6 @@ impl AnthropicProvider {
 // ---------------------------------------------------------------------------
 
 /// Wrapper to adapt `tokio::sync::mpsc::Receiver` to `futures_core::Stream`.
-struct ReceiverStream {
-    rx: tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>,
-}
-
-impl futures_core::Stream for ReceiverStream {
-    type Item = Result<AssistantStreamEvent, ProviderError>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        self.rx.poll_recv(cx)
-    }
-}
-
 /// Drain complete SSE events from a growing buffer.
 /// Returns parsed [`ParsedEvent`]s and leaves incomplete data in the buffer.
 /// Decode only complete frames so UTF-8 and CRLF split across HTTP chunks
@@ -1171,11 +1167,14 @@ fn drain_sse_events(buffer: &mut Vec<u8>, eof: bool) -> Result<Vec<ParsedEvent>,
         let Some(end) = end else {
             break;
         };
-        let chunk = String::from_utf8(buffer.drain(..end).collect()).map_err(|_| {
-            ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                "invalid UTF-8 in Anthropic SSE frame",
-            ))
-        })?;
+        // Frames end on ASCII line terminators, so decoding complete frames
+        // with the streaming replacement decoder preserves multi-byte
+        // characters and replaces each maximal invalid subsequence with one
+        // U+FFFD instead of failing the call (AIR-006).
+        let frame_bytes: Vec<u8> = buffer.drain(..end).collect();
+        let mut frame_decoder = crate::text_decode::StreamTextDecoder::new();
+        let mut chunk = frame_decoder.push(&frame_bytes);
+        chunk.push_str(&frame_decoder.finish());
         let normalized = chunk.replace("\r\n", "\n").replace('\r', "\n");
         events.extend(parse_sse_events(&normalized));
     }
@@ -1422,13 +1421,15 @@ impl Provider for AnthropicProvider {
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let tx_closed = tx.clone();
+        let producer_cancel = cancel.clone();
+        let stream_cancel = cancel.clone();
 
         tokio::spawn(async move {
             let work = async {
                 let extra_headers = match extra_headers {
                     Ok(headers) => headers,
                     Err(error) => {
-                        let _ = tx.send(Err(error)).await;
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
                         return;
                     }
                 };
@@ -1463,7 +1464,7 @@ impl Provider for AnthropicProvider {
             }
         });
 
-        Box::pin(ReceiverStream { rx })
+        Box::pin(CancelAwareReceiverStream::new(rx, stream_cancel))
     }
 
     fn id(&self) -> &str {
@@ -1511,6 +1512,7 @@ mod tests {
                 id: "tc_1".into(),
                 name: "read".into(),
                 arguments: r#"{"path":"/tmp/foo.txt"}"#.into(),
+                arguments_error: None,
             },
         }]);
 
@@ -1527,6 +1529,7 @@ mod tests {
                 id: "tc_2".into(),
                 name: "bash".into(),
                 arguments: "not valid json".into(),
+                arguments_error: None,
             },
         }]);
 
@@ -1550,6 +1553,7 @@ mod tests {
                     id: "tc".into(),
                     name: "test".into(),
                     arguments: args.into(),
+                    arguments_error: None,
                 },
             }]);
 
@@ -1772,6 +1776,7 @@ mod tests {
                     id: "tool-2".into(),
                     name: "read".into(),
                     arguments: "{}".into(),
+                    arguments_error: None,
                 },
             }]),
             test_assistant_msg(vec![AssistantContent::Thinking {
@@ -1811,5 +1816,27 @@ mod tests {
 
         // Unknown model has no capabilities, so no cache markers
         assert!(body["system"].is_string());
+    }
+}
+
+#[cfg(test)]
+mod framing_tests {
+    use super::drain_sse_events;
+
+    #[test]
+    fn invalid_utf8_byte_in_frame_is_replaced_and_frame_parses() {
+        let mut frame: Vec<u8> = br#"event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a"#
+            .to_vec();
+        frame.push(0x80);
+        frame.extend_from_slice(
+            br#"b"}}
+
+"#,
+        );
+        let events = drain_sse_events(&mut frame, false).expect("frames parse with replacement");
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], super::ParsedEvent::Valid(_)));
+        assert!(frame.is_empty(), "complete frame drained");
     }
 }

@@ -198,12 +198,63 @@ fn tool_def_round_trips_through_json() {
 }
 
 #[test]
+fn tool_call_end_event_carries_arguments_error_through_json() {
+    // AIR-048: the optional final-parse error survives event serialization
+    // and stays absent for clean calls; historical events keep deserializing.
+    let tool_call = ToolCall {
+        id: "t1".into(),
+        name: "read".into(),
+        arguments: r#"{"path": "trunc"#.into(),
+        arguments_error: Some("final tool arguments were not a complete JSON object".into()),
+    };
+    let event = AssistantStreamEvent::ToolCallEnd {
+        content_index: 0,
+        tool_call,
+        partial: sample_assistant_message(),
+    };
+    let value = serde_json::to_value(&event).unwrap();
+    assert_eq!(
+        value["tool_call"]["arguments_error"],
+        "final tool arguments were not a complete JSON object"
+    );
+    let back: AssistantStreamEvent = serde_json::from_value(value).unwrap();
+    match back {
+        AssistantStreamEvent::ToolCallEnd { tool_call, .. } => {
+            assert_eq!(
+                tool_call.arguments_error.as_deref(),
+                Some("final tool arguments were not a complete JSON object")
+            );
+            assert_eq!(tool_call.arguments, r#"{"path": "trunc"#);
+        }
+        other => panic!("expected ToolCallEnd, got {other:?}"),
+    }
+}
+
+#[test]
+fn legacy_tool_call_end_event_without_arguments_error_deserializes() {
+    let legacy = serde_json::json!({
+        "type": "tool_call_end",
+        "content_index": 0,
+        "tool_call": {"id": "t2", "name": "read", "arguments": "{}"},
+        "partial": sample_assistant_message(),
+    });
+    let event: AssistantStreamEvent = serde_json::from_value(legacy).unwrap();
+    match event {
+        AssistantStreamEvent::ToolCallEnd { tool_call, .. } => {
+            assert_eq!(tool_call.arguments_error, None);
+        }
+        other => panic!("expected ToolCallEnd, got {other:?}"),
+    }
+}
+
+#[test]
 fn tool_call_in_stream_event() {
     let msg = sample_assistant_message();
     let tc = ToolCall {
         id: "call_abc".into(),
         name: "read_file".into(),
         arguments: "{\"path\":\"/tmp/x\"}".into(),
+        arguments_error: None,
     };
     let event = AssistantStreamEvent::ToolCallEnd {
         content_index: 0,

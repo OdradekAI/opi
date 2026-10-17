@@ -144,7 +144,11 @@ impl BedrockProvider {
 
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
         for frame in frames {
-            let payload_str = std::str::from_utf8(&frame.payload).unwrap_or("");
+            // Payloads decode with replacement semantics (AIR-006): an invalid
+            // byte becomes U+FFFD instead of silently dropping the
+            // event text.
+            let payload = String::from_utf8_lossy(&frame.payload);
+            let payload_str = payload.as_ref();
             let parsed = parse_bedrock_event(&frame.event_type, payload_str);
             for event in parsed {
                 match event {
@@ -415,7 +419,11 @@ impl BedrockProvider {
                 }
             };
             for frame in frames {
-                let payload_str = std::str::from_utf8(&frame.payload).unwrap_or("");
+                // Payloads decode with replacement semantics (AIR-006): an invalid
+                // byte becomes U+FFFD instead of silently dropping the
+                // event text.
+                let payload = String::from_utf8_lossy(&frame.payload);
+                let payload_str = payload.as_ref();
                 for event in parse_bedrock_event(&frame.event_type, payload_str) {
                     match event {
                         Ok(bedrock_event) => {
@@ -805,6 +813,7 @@ impl BedrockMapper {
                                 id: tool_use_id,
                                 name,
                                 arguments: String::new(),
+                                arguments_error: None,
                             },
                         });
                         vec![Ok(AssistantStreamEvent::ToolCallStart {
@@ -869,15 +878,21 @@ impl BedrockMapper {
                         name,
                         partial_input,
                     }) => {
+                        // Final textual arguments are parsed once at block
+                        // end (AIR-048).
+                        let (arguments, arguments_error) =
+                            ToolCall::finalize_text_arguments(partial_input.clone());
                         let tool_call = ToolCall {
                             id: id.clone(),
                             name: name.clone(),
-                            arguments: partial_input.clone(),
+                            arguments: arguments.clone(),
+                            arguments_error,
                         };
                         if let Some(AssistantContent::ToolCall { tool_call: tc }) =
                             self.partial.content.last_mut()
                         {
-                            tc.arguments = partial_input.clone();
+                            tc.arguments = arguments;
+                            tc.arguments_error = tool_call.arguments_error.clone();
                         }
                         vec![Ok(AssistantStreamEvent::ToolCallEnd {
                             content_index,

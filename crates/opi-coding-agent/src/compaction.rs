@@ -729,6 +729,7 @@ mod tests {
                     id: "invented".into(),
                     name: "read".into(),
                     arguments: "{}".into(),
+                    arguments_error: None,
                 },
             },
         ];

@@ -349,6 +349,7 @@ fn tool_call_response(call_id: &str, tool_name: &str, args: &str) -> Vec<Assista
         id: call_id.into(),
         name: tool_name.into(),
         arguments: args.into(),
+        arguments_error: None,
     };
     let mut partial = base_assistant();
     partial.content.push(AssistantContent::ToolCall {

@@ -234,3 +234,144 @@ async fn stream_no_terminal_event() {
         "should produce StreamError about missing terminal event"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Task 20.5 (AIR-006/V-02/V-04): replacement decoding at byte boundaries and
+// cancellation priority over buffered events.
+// ---------------------------------------------------------------------------
+
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+async fn gemini_chunked_server(payload: Vec<u8>) -> (String, tokio::sync::oneshot::Receiver<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let (written_tx, written_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut received = Vec::new();
+        let mut buffer = [0u8; 4096];
+        loop {
+            let n = socket.read(&mut buffer).await.unwrap();
+            assert_ne!(n, 0);
+            received.extend_from_slice(&buffer[..n]);
+            if let Some(end) = received.windows(4).position(|w| w == b"\r\n\r\n") {
+                let headers = std::str::from_utf8(&received[..end]).unwrap();
+                let length: usize = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse().unwrap())
+                    })
+                    .unwrap();
+                if received.len() >= end + 4 + length {
+                    break;
+                }
+            }
+        }
+        let mut response =
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+                .to_vec();
+        for byte in payload {
+            response.extend_from_slice(b"1\r\n");
+            response.push(byte);
+            response.extend_from_slice(b"\r\n");
+        }
+        response.extend_from_slice(b"0\r\n\r\n");
+        let _ = socket.write_all(&response).await;
+        let _ = written_tx.send(());
+        let mut sink = Vec::new();
+        let _ = socket.read_to_end(&mut sink).await;
+    });
+    (url, written_rx)
+}
+
+#[tokio::test]
+async fn gemini_multibyte_text_survives_byte_chunked_stream_with_replacement() {
+    use serde_json::json;
+    let opening =
+        json!({"candidates":[{"content":{"role":"model","parts":[{"text":""}]},"index":0}]});
+    // Serialize with an ASCII placeholder, then splice a raw invalid byte so
+    // the wire carries a genuinely malformed UTF-8 sequence inside the JSON
+    // string (serde would otherwise escape it into a legal \u0080 form).
+    let delta = json!({"candidates":[{"content":{"role":"model","parts":[{"text":"a<INVALID>b你好🌍"}]},"index":0}]});
+    let closing = json!({"candidates":[{"content":{"role":"model","parts":[{"text":""}]},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}});
+    let mut body: Vec<u8> = Vec::new();
+    for event in [&opening, &delta, &closing] {
+        let mut frame = format!("data: {event}\n\n").into_bytes();
+        body.append(&mut frame);
+    }
+    // Replace the placeholder bytes <INVALID> with one raw invalid byte.
+    let marker = b"<INVALID>";
+    if let Some(pos) = find_subslice(&body, marker) {
+        body.splice(
+            pos..pos + marker.len(),
+            [0x80u8].into_iter().collect::<Vec<u8>>(),
+        );
+    }
+
+    let (url, _written) = gemini_chunked_server(body).await;
+    let provider = GeminiProvider::new(Some(url));
+    let results: Vec<_> = provider
+        .stream_prepared(
+            make_request(CancellationToken::new()),
+            opi_ai::test_support::resolved_auth(),
+        )
+        .collect()
+        .await;
+    let message = results
+        .into_iter()
+        .find_map(|result| match result.expect("valid gemini stream") {
+            AssistantStreamEvent::Done { message, .. } => Some(message),
+            _ => None,
+        })
+        .expect("complete gemini stream");
+    let text = message
+        .content
+        .iter()
+        .find_map(|content| match content {
+            opi_ai::message::AssistantContent::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .expect("text block present");
+    assert_eq!(text, "a\u{FFFD}b你好🌍");
+}
+
+#[tokio::test]
+async fn gemini_cancel_discards_buffered_events_at_the_queue_barrier() {
+    let mut body: Vec<u8> = Vec::new();
+    for _ in 0..200 {
+        body.extend_from_slice(
+            b"data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"d\"}]},\"index\":0}]}\n\n".as_slice(),
+        );
+    }
+    let (url, written_rx) = gemini_chunked_server(body).await;
+    let provider = GeminiProvider::new(Some(url));
+    let cancel = CancellationToken::new();
+    let mut stream = provider.stream_prepared(
+        make_request(cancel.clone()),
+        opi_ai::test_support::resolved_auth(),
+    );
+
+    written_rx.await.expect("server wrote payload");
+    use futures_util::StreamExt as _;
+    let first = tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
+        .await
+        .expect("producer delivers into the queue")
+        .expect("stream alive");
+    assert!(first.is_ok());
+
+    cancel.cancel();
+    let next = tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
+        .await
+        .expect("cancellation must be visible without draining the queue");
+    match next {
+        Some(Err(ProviderError::Cancelled)) => {}
+        other => panic!("cancellation must take priority, got {other:?}"),
+    }
+    assert!(stream.next().await.is_none());
+}

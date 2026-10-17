@@ -520,6 +520,7 @@ fn public_message_events_redact_assistant_tool_call_arguments() {
             id: "tc-message".into(),
             name: "bash".into(),
             arguments: r#"{"command":"echo OPI_MESSAGE_COMMAND_SECRET_CANARY","safe":true}"#.into(),
+            arguments_error: None,
         },
     });
 
@@ -543,6 +544,7 @@ fn public_stream_tool_call_delta_redacts_delta_and_partial_arguments() {
             id: "tc-delta".into(),
             name: "bash".into(),
             arguments: r#"{"command":"echo OPI_DELTA_PARTIAL_SECRET_CANARY"}"#.into(),
+            arguments_error: None,
         },
     });
 

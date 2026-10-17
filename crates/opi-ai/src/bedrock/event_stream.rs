@@ -425,3 +425,58 @@ mod tests {
         assert!(buffer.is_empty());
     }
 }
+
+#[cfg(test)]
+mod split_frame_tests {
+    use super::{build_test_frame, parse_frames};
+
+    /// The same lawful frame parses identically at every byte-boundary split
+    /// (AIR-006/V-02): AWS prelude/CRC validation and checked lengths are
+    /// preserved, with no byte-cap on lawful frames.
+    #[test]
+    fn frames_parse_identically_at_every_byte_split() {
+        let payload = "{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"你好🌍\"}}"
+            .as_bytes();
+        let frame = build_test_frame("contentBlockDelta", "application/json", payload);
+        let reference = parse_frames(&mut frame.clone()).expect("whole frame parses");
+        assert_eq!(reference.len(), 1);
+
+        for split in 0..=frame.len() {
+            let mut buffer = frame[..split].to_vec();
+            if split < frame.len() {
+                assert!(
+                    parse_frames(&mut buffer).unwrap().is_empty(),
+                    "prefix must not parse a partial frame (split={split})"
+                );
+            }
+            buffer.extend_from_slice(&frame[split..]);
+            let parsed = parse_frames(&mut buffer).expect("completed frame parses");
+            assert_eq!(parsed.len(), 1, "split={split}");
+            assert_eq!(&parsed[0].payload, payload, "split={split}");
+            assert!(buffer.is_empty(), "split={split}");
+        }
+    }
+
+    /// A corrupted CRC fails typed for every split, keeping protocol-mandated
+    /// validation intact.
+    #[test]
+    fn corrupted_crc_fails_at_every_byte_split() {
+        let payload = b"{\"ok\":true}";
+        let mut frame = build_test_frame("messageStart", "application/json", payload);
+        let last = frame.len() - 1;
+        frame[last] ^= 0xFF;
+        for split in 0..=frame.len() {
+            let mut buffer = frame[..split].to_vec();
+            if !buffer.is_empty() && parse_frames(&mut buffer).is_err() {
+                // Prefixes that already contain a complete corrupted frame may
+                // fail immediately; both outcomes reject the frame.
+                continue;
+            }
+            buffer.extend_from_slice(&frame[split..]);
+            assert!(
+                parse_frames(&mut buffer).is_err(),
+                "corrupted CRC must fail (split={split})"
+            );
+        }
+    }
+}

@@ -373,6 +373,7 @@ fn redact_tool_call(tool_call: &opi_ai::message::ToolCall) -> opi_ai::message::T
         id: tool_call.id.clone(),
         name: tool_call.name.clone(),
         arguments: redact_tool_arguments(&tool_call.arguments),
+        arguments_error: tool_call.arguments_error.clone(),
     }
 }
 

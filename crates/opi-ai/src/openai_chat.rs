@@ -24,7 +24,9 @@ use crate::provider::{
 };
 use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
-use crate::stream::{AssistantStreamEvent, StopReason, Usage};
+use crate::stream::{
+    AssistantStreamEvent, CancelAwareReceiverStream, StopReason, Usage, send_or_cancel,
+};
 
 // ---------------------------------------------------------------------------
 // SSE line parser
@@ -566,6 +568,7 @@ impl OpenAiChatMapper {
                         id,
                         name,
                         arguments: String::new(),
+                        arguments_error: None,
                     },
                 });
 
@@ -664,15 +667,22 @@ impl OpenAiChatMapper {
                                 false
                             })
                             .unwrap_or(0);
+                        // Final textual arguments are parsed once at finish
+                        // (AIR-048); Mistral/Azure/OpenRouter inherit this
+                        // site through the shared Chat mapper.
+                        let (arguments, arguments_error) =
+                            ToolCall::finalize_text_arguments(tc_state.arguments.clone());
                         if let Some(AssistantContent::ToolCall { tool_call }) =
                             self.partial.content.get_mut(tool_content_index)
                         {
-                            tool_call.arguments = tc_state.arguments.clone();
+                            tool_call.arguments = arguments.clone();
+                            tool_call.arguments_error = arguments_error.clone();
                         }
                         let tool_call = ToolCall {
                             id: tc_state.id.clone(),
                             name: tc_state.name.clone(),
-                            arguments: tc_state.arguments.clone(),
+                            arguments,
+                            arguments_error,
                         };
                         events.push(Ok(AssistantStreamEvent::ToolCallEnd {
                             content_index: tool_content_index,
@@ -1193,6 +1203,7 @@ impl OpenAiChatProvider {
 
         let mut byte_stream = response.bytes_stream();
         let mut buffer = String::new();
+        let mut decoder = crate::text_decode::StreamTextDecoder::new();
         let mut mapper = OpenAiChatMapper::new(crate::ApiKind::OpenAi, &provider_id);
 
         loop {
@@ -1217,14 +1228,14 @@ impl OpenAiChatProvider {
                     ProviderError::StreamError(ProviderErrorSummary::sanitized(e.to_string()))
                 }
             })?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
+            buffer.push_str(&decoder.push(&chunk));
 
             for parsed in drain_sse_events(&mut buffer) {
                 match parsed {
                     ParsedEvent::Valid(events) => {
                         for event in events {
                             for item in mapper.process(event) {
-                                if tx.send(item).await.is_err() {
+                                if !send_or_cancel(&cancel, tx, item).await? {
                                     return Ok(());
                                 }
                             }
@@ -1242,13 +1253,15 @@ impl OpenAiChatProvider {
             }
         }
 
+        let eof_tail = decoder.finish();
+        buffer.push_str(&eof_tail);
         if let Some(done) = mapper.flush_pending_done() {
-            let _ = tx.send(Ok(done)).await;
+            let _ = send_or_cancel(&cancel, tx, Ok(done)).await;
         } else if !mapper.saw_done {
             let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
                 "stream ended without a terminal event",
             ));
-            let _ = tx.send(Err(err)).await;
+            let _ = send_or_cancel(&cancel, tx, Err(err)).await;
         }
 
         Ok(())
@@ -1258,21 +1271,6 @@ impl OpenAiChatProvider {
 // ---------------------------------------------------------------------------
 // Streaming helpers
 // ---------------------------------------------------------------------------
-
-struct ReceiverStream {
-    rx: tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>,
-}
-
-impl futures_core::Stream for ReceiverStream {
-    type Item = Result<AssistantStreamEvent, ProviderError>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        self.rx.poll_recv(cx)
-    }
-}
 
 fn drain_sse_events(buffer: &mut String) -> Vec<ParsedEvent> {
     if buffer.contains('\r') {
@@ -1513,13 +1511,15 @@ impl Provider for OpenAiChatProvider {
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let tx_closed = tx.clone();
+        let producer_cancel = cancel.clone();
+        let stream_cancel = cancel.clone();
 
         tokio::spawn(async move {
             let work = async {
                 let extra_headers = match extra_headers {
                     Ok(headers) => headers,
                     Err(error) => {
-                        let _ = tx.send(Err(error)).await;
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
                         return;
                     }
                 };
@@ -1554,7 +1554,7 @@ impl Provider for OpenAiChatProvider {
             }
         });
 
-        Box::pin(ReceiverStream { rx })
+        Box::pin(CancelAwareReceiverStream::new(rx, stream_cancel))
     }
 
     fn id(&self) -> &str {

@@ -1702,6 +1702,7 @@ fn thinking_tool_text_stream(
         id: "stream-read".into(),
         name: "read".into(),
         arguments: String::new(),
+        arguments_error: None,
     };
     partial.content.push(AssistantContent::ToolCall {
         tool_call: tool_call.clone(),

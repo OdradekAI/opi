@@ -1705,3 +1705,114 @@ async fn stream_cancellation_aborts_before_completion() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Task 20.5 (AIR-006/V-02/AIR-048): final tool arguments on the Chat wire
+// (Mistral/Azure/OpenRouter inherit through the shared mapper) and
+// keepalive/large-event acceptance.
+// ---------------------------------------------------------------------------
+
+fn chat_tool_fixture(arguments: &str) -> String {
+    let escaped = arguments.replace('\\', "\\\\").replace('"', "\\\"");
+    format!(
+        "data: {{\"id\":\"chatcmpl-a\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{{\"index\":0,\"delta\":{{\"tool_calls\":[{{\"index\":0,\"id\":\"call_a\",\"type\":\"function\",\"function\":{{\"name\":\"read_file\",\"arguments\":\"\"}}}}]}},\"finish_reason\":null}}]}}\n\n\
+         data: {{\"id\":\"chatcmpl-a\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{{\"index\":0,\"delta\":{{\"tool_calls\":[{{\"index\":0,\"function\":{{\"arguments\":\"{escaped}\"}}}}]}},\"finish_reason\":null}}]}}\n\n\
+         : keepalive comment frames are ignored\n\n\
+         data: {{\"id\":\"chatcmpl-a\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"tool_calls\"}}],\"usage\":{{\"prompt_tokens\":5,\"completion_tokens\":3}}}}\n\n\
+         data: [DONE]\n\n"
+    )
+}
+
+async fn chat_final_tool_call(arguments: &str) -> AssistantStreamEvent {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(chat_tool_fixture(arguments))
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+    let provider = OpenAiChatProvider::new(Some(server.uri()));
+    let request = opi_ai::provider::Request {
+        model: "openai:gpt-4o".into(),
+        system: None,
+        messages: vec![],
+        tools: vec![],
+        max_tokens: None,
+        temperature: None,
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: tokio_util::sync::CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+    };
+    use opi_ai::provider::Provider as _;
+    let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
+    futures_util::StreamExt::collect::<Vec<_>>(stream)
+        .await
+        .into_iter()
+        .find_map(|result| match result.expect("valid chat tool stream") {
+            AssistantStreamEvent::ToolCallEnd { tool_call, .. } => {
+                Some(AssistantStreamEvent::ToolCallEnd {
+                    content_index: 0,
+                    tool_call,
+                    partial: opi_ai::test_support::base_assistant(),
+                })
+            }
+            _ => None,
+        })
+        .expect("chat tool call terminal")
+}
+
+fn tool_call_of(event: AssistantStreamEvent) -> opi_ai::message::ToolCall {
+    match event {
+        AssistantStreamEvent::ToolCallEnd { tool_call, .. } => tool_call,
+        _ => panic!("expected ToolCallEnd"),
+    }
+}
+
+#[tokio::test]
+async fn chat_final_tool_arguments_empty_input_normalizes_to_object() {
+    let tool_call = tool_call_of(chat_final_tool_call("").await);
+    assert_eq!(tool_call.arguments, "{}");
+    assert_eq!(tool_call.arguments_error, None);
+}
+
+#[tokio::test]
+async fn chat_final_tool_arguments_invalid_escape_repairs_literal_text() {
+    let tool_call = tool_call_of(chat_final_tool_call(r#"{"cmd":"\usepackage{x}","n":2}"#).await);
+    assert_eq!(tool_call.arguments_error, None);
+    let parsed: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&tool_call.arguments).expect("repaired arguments parse");
+    assert_eq!(parsed["cmd"], r#"\usepackage{x}"#);
+    assert_eq!(parsed["n"], 2);
+}
+
+#[tokio::test]
+async fn chat_final_tool_arguments_truncated_keeps_raw_and_marks_error() {
+    let raw = r#"{"path": "trunc"#;
+    let tool_call = tool_call_of(chat_final_tool_call(raw).await);
+    assert_eq!(tool_call.arguments, raw);
+    assert_eq!(
+        tool_call.arguments_error.as_deref(),
+        Some("final tool arguments were not a complete JSON object")
+    );
+}
+
+#[tokio::test]
+async fn chat_keepalive_frames_are_ignored_between_events() {
+    // Covered inline by chat_tool_fixture's keepalive frame: the fixture above
+    // parses to completion with the keepalive line present.
+    let events: Vec<_> = parse_sse_events(&chat_tool_fixture("{}"))
+        .flat_map(|parsed| match parsed {
+            ParsedEvent::Valid(evts) => evts,
+            _ => Vec::new(),
+        })
+        .collect();
+    assert!(!events.is_empty(), "keepalive frame does not break parsing");
+}

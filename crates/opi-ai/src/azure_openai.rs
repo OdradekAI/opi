@@ -318,6 +318,7 @@ async fn stream_azure_http(
 
     let mut byte_stream = response.bytes_stream();
     let mut buffer = String::new();
+    let mut decoder = crate::text_decode::StreamTextDecoder::new();
     let mut mapper = OpenAiChatMapper::new(crate::ApiKind::OpenAi, "azure");
     let mut saw_done = false;
 
@@ -342,7 +343,7 @@ async fn stream_azure_http(
                 ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
             }
         })?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        buffer.push_str(&decoder.push(&chunk));
 
         for parsed in drain_sse_events(&mut buffer) {
             match parsed {
@@ -379,6 +380,8 @@ async fn stream_azure_http(
         }
     }
 
+    let eof_tail = decoder.finish();
+    buffer.push_str(&eof_tail);
     if !saw_done {
         let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
             "stream ended without a terminal event",

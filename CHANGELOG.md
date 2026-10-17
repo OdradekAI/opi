@@ -33,6 +33,30 @@
 
 ### Added
 
+- `opi-ai`: byte-exact stream framing across all current real adapters
+  (AIR-006). One shared incremental replacement decoder replaces per-chunk
+  lossy decoding: multi-byte UTF-8 split across network chunks survives
+  byte-exactly, each maximal invalid subsequence becomes one U+FFFD instead
+  of a fatal SSE UTF-8 rejection (Anthropic previously failed the call),
+  Bedrock payloads replace instead of silently emptying, valid keepalive
+  comments and large lawful events beyond the withdrawn size caps stay
+  accepted, and AWS prelude/CRC validation with checked arithmetic is
+  preserved (proven at every byte split).
+- `opi-ai`: final tool-argument parsing on the five textual wire sites
+  (Anthropic, Bedrock, Mistral, Chat and shared Responses, with inherited
+  adapters). `ToolCall` gains an optional serialized `arguments_error`:
+  empty input finalizes to `{}` without an error, input differing only by
+  invalid escape sequences is repaired so escaped text stays literal and
+  later fields survive, and incomplete or non-object finals keep the owned
+  raw text plus the error, never a partial-prefix success. Streaming partial
+  JSON stays provisional.
+- `opi-ai`: cancellation now takes priority over buffered events on every
+  adapter (V-04). Anthropic, OpenAI Chat, OpenAI Responses and Codex
+  Responses migrate to the cancel-aware queue/consumer seams already used by
+  Azure, Gemini, Vertex and Bedrock: cancelling at a confirmed wait point
+  (read or full queue) delivers exactly one typed cancellation without
+  pre-cancel buffered events penetrating, and dropping the stream ends that
+  attempt's delivery without affecting a fresh attempt.
 - `opi-ai`: one `Models` front door for chat calls (AIR-045). Native
   `stream`/`complete`, neutral `stream_simple`/`complete_simple`, direct
   `stream_direct`/`complete_direct` (injected, already-resolved auth) and

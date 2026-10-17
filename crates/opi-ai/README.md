@@ -73,6 +73,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `ProviderRegistry` | Resolves `provider:model`, registers custom providers, and layers model overrides. |
 | `Models` / `AuthDescriptor` / `AuthStatus` | Unstable-0.x single driver above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. Ordinary native/simple/direct entries and advanced `prepare_call` share one compiler, auth resolution, attempt seam, and collector. |
 | `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | Typed custom chat adapter registration with its exact API identity and fixed options type; handle-created options carry the API/type tag and stay portable across instances with compatible registrations. |
+| `ToolCall::arguments_error` | Optional final-parse outcome for textual tool arguments (AIR-048): empty input finalizes to `{}`, repairable invalid escapes stay literal, and incomplete/non-object finals keep the owned raw text plus this error, never a partial-prefix success. Historical records without the field keep deserializing. |
 | `ChatModelRecord` / `SimpleOptions` / `ChatCall` | Complete caller-owned chat record (provider id, bare model id, exact wire) usable without catalog membership; neutral simple options; the lazy ordinary-call owner that captures input at construction and starts auth on first poll. |
 | `PreparedProviderCall` / `PreparedRoute` | Opaque logical-call state returned by `Models::prepare_call`, plus its public redacted route facts. `route`, `auth_provenance`, and `start_attempt` are the prepared-call lifecycle APIs. |
 | `CredentialStore` / `Credential` / `CredentialSource` | IO-free, object-safe credential persistence and redacted three-state probe contracts. |
@@ -157,6 +158,12 @@ support off.
 `cache_read_cost`, and `cache_write_cost`. The weighted one-hour write subset
 is folded into `cache_write_cost`, reasoning remains in `output_cost`, and
 cost and total-token calculation count the parent buckets once.
+All HTTP adapters decode streaming bytes through one incremental
+replacement decoder: multi-byte UTF-8 split across network chunks survives
+byte-exactly, each maximal invalid subsequence becomes one U+FFFD (no fatal
+SSE UTF-8 rejection), valid keepalive comments and large lawful events beyond
+the withdrawn size caps stay accepted, and AWS event-stream framing keeps its
+prelude/CRC validation and checked arithmetic.
 `Provider::refresh_models` and
 `Models::refresh` implement deterministic atomic catalog
 replacement, but remain substrate-only with no production trigger.

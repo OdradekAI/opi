@@ -397,6 +397,7 @@ fn multi_tool_call_response(calls: Vec<(&str, &str, &str)>) -> Vec<AssistantStre
             id: id.to_string(),
             name: name.to_string(),
             arguments: args.to_string(),
+            arguments_error: None,
         };
         partial
             .content
@@ -412,6 +413,7 @@ fn multi_tool_call_response(calls: Vec<(&str, &str, &str)>) -> Vec<AssistantStre
             id: id.to_string(),
             name: name.to_string(),
             arguments: args.to_string(),
+            arguments_error: None,
         };
         events.push(AssistantStreamEvent::ToolCallEnd {
             content_index: 0,

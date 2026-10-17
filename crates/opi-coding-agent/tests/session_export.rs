@@ -127,6 +127,7 @@ fn assistant_with_tool_call(
                     id: call_id.into(),
                     name: tool.into(),
                     arguments: args.into(),
+                    arguments_error: None,
                 },
             }],
             api: opi_ai::ApiKind::Anthropic,

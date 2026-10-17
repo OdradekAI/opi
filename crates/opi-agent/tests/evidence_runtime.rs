@@ -569,11 +569,13 @@ fn two_tool_response() -> Vec<AssistantStreamEvent> {
             id: "c1".into(),
             name: "first".into(),
             arguments: "{}".into(),
+            arguments_error: None,
         },
         ToolCall {
             id: "c2".into(),
             name: "second".into(),
             arguments: "{}".into(),
+            arguments_error: None,
         },
     ];
     message.content = calls
