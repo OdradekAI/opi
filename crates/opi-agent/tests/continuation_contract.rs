@@ -79,10 +79,7 @@ impl opi_ai::auth::AuthResolver for RequireCredentialsOnce {
     }
 }
 
-fn public_agent(
-    collection: opi_ai::ProviderCollection,
-    hooks: Box<dyn AgentHooks>,
-) -> opi_agent::Agent {
+fn public_agent(collection: opi_ai::Models, hooks: Box<dyn AgentHooks>) -> opi_agent::Agent {
     opi_agent::Agent::new(
         Arc::new(collection),
         vec![],
@@ -128,7 +125,7 @@ async fn public_retry_retains_initial_steering_after_hook_failure() {
 async fn public_retry_retains_initial_steering_after_auth_preparation_failure() {
     let provider = MockProvider::new("mock", vec![text_response("recovered")]);
     let calls = provider.call_log_handle();
-    let mut collection = opi_ai::ProviderCollection::new();
+    let mut collection = opi_ai::Models::new();
     collection
         .register_route(
             Box::new(provider),

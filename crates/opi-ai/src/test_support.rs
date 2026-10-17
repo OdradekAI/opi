@@ -16,7 +16,7 @@ use crate::model_info::WireApi;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
-use crate::{CompatMetadata, ProviderCollection};
+use crate::{CompatMetadata, Models};
 use secrecy::SecretString;
 
 /// An `AuthResolver` that increments a shared counter on every `resolve` and
@@ -75,13 +75,13 @@ pub fn resolved_bearer_auth() -> ResolvedAuth {
     }
 }
 
-/// Build a [`ProviderCollection`] with one dispatchable route for `provider`,
+/// Build a [`Models`] with one dispatchable route for `provider`,
 /// using a dummy static resolver. Mock providers ignore the resolved auth, so
 /// this lets tests dispatch through `prepare_call` without supplying real
 /// credentials.
 #[doc(hidden)]
-pub fn single_route_collection(provider: Box<dyn Provider>) -> ProviderCollection {
-    let mut collection = ProviderCollection::new();
+pub fn single_route_collection(provider: Box<dyn Provider>) -> Models {
+    let mut collection = Models::new();
     collection
         .register_route(
             provider,
@@ -298,7 +298,7 @@ impl Provider for MockProvider {
 
     /// Ignore the supplied resolved auth because the mock does not authenticate.
     /// This lets the Agent's
-    /// `ProviderCollection::prepare_call` path drive the mock in tests;
+    /// `Models::prepare_call` path drive the mock in tests;
     /// `stream_call_count` then records one entry per attempt, so a counting
     /// resolver can prove auth is resolved once across retries.
     fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {

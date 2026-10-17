@@ -94,7 +94,7 @@ agent_start                              # once, before the first turn
     append pending input                  # QueueUpdate; after any state replacement
     transform_context                     # AgentHooks::transform_context
     convert_to_llm                        # AgentHooks::convert_to_llm
-    ProviderCollection::prepare_call(Request)
+    Models::prepare_call(Request)
       validate route/request model schema and capabilities
                                          # hook transformations have already run
       PreparedProviderCall::start_attempt
@@ -129,7 +129,7 @@ agent_end                                 # once, on termination
 Boundaries:
 
 - `transform_context` and `convert_to_llm` finish before
-  `ProviderCollection::prepare_call` validates the resulting request against
+  `Models::prepare_call` validates the resulting request against
   the resolved model schema, wire, and capabilities.
 - `should_stop_after_turn` observes the completed state after `turn_end` and
   before queue polling or preparation. A terminal stop skips both.

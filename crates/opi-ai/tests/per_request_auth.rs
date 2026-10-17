@@ -4,7 +4,7 @@
 //! `Provider::stream` entry point is gone and the sole provider entry is
 //! `Provider::stream_prepared(request, auth)`, which consumes an already-resolved
 //! [`ResolvedAuth`] directly at the HTTP boundary. Auth resolution now lives in
-//! [`ProviderCollection::prepare_call`], which resolves the route's credential
+//! [`Models::prepare_call`], which resolves the route's credential
 //! once per logical call and freezes it for every retry attempt.
 //!
 //! These tests prove both halves of that contract:
@@ -96,7 +96,7 @@ async fn prepare_call_yields_credential_needed_when_route_resolver_has_no_creden
     // and the collection that decide it, so one representative route covers the
     // contract the per-provider `stream`-level tests used to assert.)
     let provider = AnthropicProvider::new(Some("http://127.0.0.1:1".into()));
-    let mut collection = opi_ai::ProviderCollection::new();
+    let mut collection = opi_ai::Models::new();
     collection
         .register_route(
             Box::new(provider),
@@ -116,7 +116,7 @@ async fn prepare_call_yields_credential_needed_when_route_resolver_has_no_creden
         .await
         .unwrap_err();
     match error {
-        opi_ai::CollectionError::Provider(ProviderError::CredentialNeeded { provider_id }) => {
+        opi_ai::ModelsError::Provider(ProviderError::CredentialNeeded { provider_id }) => {
             assert_eq!(provider_id, "anthropic");
         }
         other => panic!("expected CredentialNeeded, got {other:?}"),

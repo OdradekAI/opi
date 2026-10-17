@@ -2,14 +2,14 @@
 //!
 //! This module is the single place in `opi-coding-agent` that turns CLI config,
 //! env vars, and package/extension provider inputs into [`opi_ai::Provider`]
-//! values, [`opi_ai::ProviderRegistry`] / [`opi_ai::ProviderCollection`]
+//! values, [`opi_ai::ProviderRegistry`] / [`opi_ai::Models`]
 //! lookups, and redacted auth descriptors. Every run-mode startup path
 //! (`--list-models`, non-interactive, JSON, RPC, interactive) and the
 //! [`crate::harness::CodingHarness`] model registry are built here.
 //!
 //! # Routing through the provider collection/auth seam
 //!
-//! The factory produces [`opi_ai::ProviderCollection`] (the Workstream 10.1
+//! The factory produces [`opi_ai::Models`] (the Workstream 10.1
 //! seam) so provider+model lookup, OpenAI-compatible compatibility metadata,
 //! and the auth contract live on one type:
 //!
@@ -18,7 +18,7 @@
 //! - [`build_harness_collection`] registers the dispatchable route set (active
 //!   plus eagerly-built extra routes) with per-route auth resolvers, plus the
 //!   lookup-only extension providers/model overrides, into one
-//!   [`ProviderCollection`] through checked route registration. Credentials are
+//!   [`Models`] through checked route registration. Credentials are
 //!   resolved lazily for each prepared call, not validated during construction.
 //!
 //! # Centralization contract
@@ -47,8 +47,7 @@ use opi_agent::diagnostic::{Diagnostic, SOURCE_PROVIDER, Severity};
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::{
-    AuthDescriptor, AuthInvalidPolicy, CompatMetadata, ProviderCollection, ProviderRegistry,
-    WireApi,
+    AuthDescriptor, AuthInvalidPolicy, CompatMetadata, Models, ProviderRegistry, WireApi,
 };
 use secrecy::ExposeSecret;
 
@@ -92,7 +91,7 @@ pub struct ProviderBundle {
     pub provider: Box<dyn Provider>,
     /// The per-call auth resolver for the active provider's dispatch route. The
     /// harness registers this alongside `provider` so
-    /// `ProviderCollection::prepare_call` resolves auth once per turn.
+    /// `Models::prepare_call` resolves auth once per turn.
     pub auth_resolver: Arc<dyn opi_ai::AuthResolver>,
     /// Additional dispatchable routes constructed eagerly at startup. Every
     /// provider that can dispatch is built here with a lazy auth
@@ -138,15 +137,15 @@ impl ProviderBuildOutcome {
 /// object, so every runtime construction returns both halves.
 pub type ProviderAuthPair = (Box<dyn Provider>, Arc<dyn opi_ai::AuthResolver>);
 
-/// Assemble the single harness [`ProviderCollection`] serving dispatch and
+/// Assemble the single harness [`Models`] serving dispatch and
 /// model lookup/picker/listing. Every supplied route is registered
-/// with its per-call `AuthResolver` so `ProviderCollection::prepare_call`
+/// with its per-call `AuthResolver` so `Models::prepare_call`
 /// resolves auth once per turn for whichever provider:model the Agent selects,
 /// including a cross-provider switch. Lookup-only extension providers and
 /// extension model overrides are registered onto the same collection so model
 /// listing/picker/resolution sees the whole set.
 ///
-/// Centralized here so `ProviderCollection` construction lives only in the
+/// Centralized here so `Models` construction lives only in the
 /// provider factory; the harness calls this rather than building the collection
 /// inline. `routes` must contain at least the active route; extra dispatchable
 /// routes (built eagerly with lazy credential IO by [`build_provider_bundle`])
@@ -163,7 +162,7 @@ pub fn build_harness_collection(
     extension_providers: Vec<Box<dyn Provider>>,
     overrides: Vec<(String, ModelInfo)>,
     active_provider_id: &str,
-) -> Arc<ProviderCollection> {
+) -> Arc<Models> {
     let mut registry = ProviderRegistry::new();
     for provider in extension_providers {
         registry
@@ -181,7 +180,7 @@ pub fn build_harness_collection(
             .register_model(&provider_id, model)
             .expect("registering an extension model override must succeed at startup");
     }
-    let mut collection = ProviderCollection::from_registry(registry);
+    let mut collection = Models::from_registry(registry);
     for (provider, auth_resolver) in routes {
         collection
             .register_route(
@@ -2297,14 +2296,14 @@ pub fn compat_metadata_for_profile(profile: &OpenAiCompatibleProviderConfig) -> 
 /// Build the provider collection for `--list-models` from CLI config + env.
 ///
 /// Each config-sourced provider that successfully constructs is registered
-/// through [`ProviderCollection::register`] with its derived auth descriptor
+/// through [`Models::register`] with its derived auth descriptor
 /// and compatibility metadata, so listing routes through the collection/auth
 /// seam. Providers with missing credentials are skipped silently; broken
 /// config (e.g. invalid proxy) is fatal.
 pub fn build_collection_for_listing(
     config: &OpiConfig,
     store_probe: &std::collections::HashMap<String, opi_ai::CredentialSource>,
-) -> Result<ProviderCollection, ListModelsError> {
+) -> Result<Models, ListModelsError> {
     let store_probe = metadata_probes_from_sources(store_probe);
     build_collection_for_listing_with_probes(config, &store_probe)
 }
@@ -2315,8 +2314,8 @@ fn build_collection_for_listing_with_probes(
         String,
         crate::credential_store::CredentialMetadataProbe,
     >,
-) -> Result<ProviderCollection, ListModelsError> {
-    let mut collection = ProviderCollection::new();
+) -> Result<Models, ListModelsError> {
+    let mut collection = Models::new();
     for provider_id in BUILT_IN_PROVIDER_IDS {
         let availability = provider_availability(
             config,
@@ -2405,7 +2404,7 @@ fn build_collection_for_listing_with_probes(
 pub async fn build_collection_for_listing_with_store(
     config: &OpiConfig,
     store: &dyn crate::credential_store::CredentialMetadataStore,
-) -> Result<ProviderCollection, ListModelsError> {
+) -> Result<Models, ListModelsError> {
     let provider_ids = BUILT_IN_PROVIDER_IDS
         .iter()
         .filter(|provider_id| !matches!(**provider_id, "github-copilot" | "openai-codex"))
@@ -2422,7 +2421,7 @@ pub async fn build_collection_for_listing_command(
     config: &OpiConfig,
     user_config_dir: std::path::PathBuf,
     backend_factory: crate::credential_store::KeyringBackendFactory,
-) -> Result<ProviderCollection, ListModelsError> {
+) -> Result<Models, ListModelsError> {
     let store =
         crate::credential_store::keychain_store_from_factory(user_config_dir, backend_factory)
             .await;

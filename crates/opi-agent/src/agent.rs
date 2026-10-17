@@ -4,12 +4,12 @@
 //! `follow_up` methods. The Agent is the sole durable owner of the complete
 //! mutable [`NextTurnState`] (conversation context, canonical provider:model
 //! selection, and inference configuration) and dispatches every logical model
-//! call through the registered [`opi_ai::ProviderCollection`] via one prepared call.
+//! call through the registered [`opi_ai::Models`] via one prepared call.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use opi_ai::ProviderCollection;
+use opi_ai::Models;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::ThinkingConfig;
 use tokio_util::sync::CancellationToken;
@@ -540,11 +540,11 @@ impl ArmedAgentRun {
 /// event subscription, and message queue management.
 ///
 /// The Agent durably owns one complete [`NextTurnState`] and one dispatchable
-/// [`opi_ai::ProviderCollection`]. [`Agent::replace_state`] is the single
+/// [`opi_ai::Models`]. [`Agent::replace_state`] is the single
 /// validated idle-state replacement operation for model, inference, and
 /// messages together.
 pub struct Agent {
-    collection: Arc<ProviderCollection>,
+    collection: Arc<Models>,
     registry: Arc<crate::authority::ToolRegistry>,
     authorizer: Option<Arc<dyn crate::authority::ToolAuthorizer>>,
     state: NextTurnState,
@@ -571,7 +571,7 @@ impl Agent {
     /// via [`Agent::replace_state`] between runs.
     #[allow(clippy::too_many_arguments)] // Agent construction seam (carries the authorizer binding)
     pub fn new(
-        collection: Arc<ProviderCollection>,
+        collection: Arc<Models>,
         registrations: Vec<crate::authority::RegisteredTool>,
         authorizer: Option<Arc<dyn crate::authority::ToolAuthorizer>>,
         model_spec: String,

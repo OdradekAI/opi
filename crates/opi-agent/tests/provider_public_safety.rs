@@ -19,7 +19,7 @@ use opi_agent::loop_types::{
 use opi_agent::message::AgentMessage;
 use opi_agent::streaming_proxy::{ProxyConfig, ProxyEvent, ProxyHandler, StreamingProxy};
 use opi_agent::{DiagnosticSink, RecordingSink, SdkCommand, SdkResponse};
-use opi_ai::CollectionError;
+use opi_ai::ModelsError;
 use opi_ai::WireApi;
 use opi_ai::auth::ResolvedAuth;
 use opi_ai::message::{InputContent, Message, UserMessage};
@@ -424,7 +424,7 @@ fn every_provider_error_preserves_category_code_and_safe_typed_metadata() {
 
 #[test]
 fn collection_failures_keep_typed_agent_categories_and_diagnostic_codes() {
-    let mismatch = AgentError::from(CollectionError::RequestRouteMismatch {
+    let mismatch = AgentError::from(ModelsError::RequestRouteMismatch {
         request_model: "other:model".to_owned(),
         route_provider: "canary".to_owned(),
         route_model: "mock-model".to_owned(),
@@ -444,7 +444,7 @@ fn collection_failures_keep_typed_agent_categories_and_diagnostic_codes() {
         CODE_PROVIDER_REQUEST_FAILED
     );
 
-    let terminated = AgentError::from(CollectionError::CredentialTerminated {
+    let terminated = AgentError::from(ModelsError::CredentialTerminated {
         provider: "canary".to_owned(),
     });
     assert!(matches!(

@@ -19,13 +19,13 @@ pub mod message;
 pub mod mistral;
 pub mod model;
 pub mod model_info;
+pub mod models;
 pub mod openai_chat;
 pub mod openai_codex_responses;
 pub mod openai_responses;
 mod openai_responses_shared;
 pub mod openrouter;
 pub mod provider;
-pub mod provider_collection;
 pub mod provider_headers;
 pub mod registry;
 pub mod retry;
@@ -50,11 +50,12 @@ pub use model_info::{
     ModelCapabilities, ModelInfo, ModelInfoError, ModelPricing, PricingTier, ThinkingLevel,
     ThinkingLevelMap, ThinkingLevelMapping, WireApi, WireCompat,
 };
-pub use provider::Provider;
-pub use provider_collection::{
-    AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, PreparedProviderCall,
-    PreparedRoute, ProviderCollection, SecretKey,
+pub use models::{
+    ApiId, AuthDescriptor, AuthStatus, ChatApi, ChatApiHandle, ChatCall, ChatModelRecord,
+    CompatMetadata, Models, ModelsError, NativeOptions, PreparedProviderCall, PreparedRoute,
+    SecretKey, SimpleOptions,
 };
+pub use provider::Provider;
 pub use provider_headers::{ProviderHeaders, ProviderHeadersError};
 pub use registry::{ProviderRegistry, RegistrationError, RegistryError};
 pub use stream::AssistantStreamEvent;

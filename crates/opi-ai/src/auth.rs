@@ -2,7 +2,7 @@
 //!
 //! IO-free types owned by [`crate`]. The concrete resolvers (`AuthSource`,
 //! `OAuthProviderRegistry`, `TuiLoginPresenter`) live in `opi-coding-agent`;
-//! `opi-ai` defines only the object-safe contracts so `ProviderCollection`
+//! `opi-ai` defines only the object-safe contracts so `Models`
 //! can resolve authentication once per prepared logical call and reuse it for
 //! sequential retries without depending on a concrete backend or making
 //! providers generic over the resolver.
@@ -142,7 +142,7 @@ pub struct ResolvedAuth {
     /// Provider account identity, when required by a concrete wire.
     pub account_id: Option<String>,
     /// Non-secret source classification plus fallback decision. Resolver-owned
-    /// source selection is retained; [`crate::ProviderCollection`] supplies the
+    /// source selection is retained; [`crate::Models`] supplies the
     /// registered route source only for the default value.
     pub provenance: AuthProvenance,
 }
@@ -282,7 +282,7 @@ pub struct AuthProvenance {
 
 /// Object-safe per-logical-call auth resolver.
 ///
-/// [`crate::ProviderCollection::prepare_call`] invokes the selected route's
+/// [`crate::Models::prepare_call`] invokes the selected route's
 /// resolver once and freezes the resulting [`ResolvedAuth`] for that prepared
 /// logical call. Each permitted sequential retry receives the same prepared
 /// auth through [`crate::Provider::stream_prepared`] without invoking the

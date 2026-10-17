@@ -8,9 +8,7 @@ use opi_ai::message::{
     ImageSource, InputContent, MediaType, Message, OutputContent, ToolResultMessage, UserMessage,
 };
 use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
-use opi_ai::{
-    AuthProvenanceSource, CompatMetadata, ProviderCollection, ThinkingLevel, WireApi, WireCompat,
-};
+use opi_ai::{AuthProvenanceSource, CompatMetadata, Models, ThinkingLevel, WireApi, WireCompat};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{
     AuthSource, CredentialResolver, FakeKeyringBackend, KeychainCredentialStore,
@@ -256,7 +254,7 @@ async fn factory_provider(
     model: &str,
     access: &str,
     base_url: String,
-) -> (TempDir, Arc<KeychainCredentialStore>, ProviderCollection) {
+) -> (TempDir, Arc<KeychainCredentialStore>, Models) {
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(KeychainCredentialStore::new(
         Box::new(FakeKeyringBackend::new()),
@@ -283,7 +281,7 @@ async fn factory_provider(
             .lookup("github-copilot")
             .expect("github-copilot OAuth provider registered"),
     });
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             provider,
@@ -333,7 +331,7 @@ async fn mount_stream(server: &MockServer, request_path: &str, status: u16) {
         .await;
 }
 
-async fn drain(collection: &ProviderCollection, request: Request) -> Option<ProviderError> {
+async fn drain(collection: &Models, request: Request) -> Option<ProviderError> {
     let spec = request.model.clone();
     let prepared = collection
         .prepare_call(&spec, request)

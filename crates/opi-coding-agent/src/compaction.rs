@@ -175,7 +175,7 @@ struct Staged {
 
 pub(crate) struct ProductCompactionHooks {
     pub inner: Box<dyn AgentHooks>,
-    pub collection: Arc<opi_ai::ProviderCollection>,
+    pub collection: Arc<opi_ai::Models>,
     pub system: String,
     pub tools: Vec<ToolDef>,
     pub enabled: bool,
@@ -190,7 +190,7 @@ pub(crate) struct ProductCompactionHooks {
 impl ProductCompactionHooks {
     pub fn new(
         inner: Box<dyn AgentHooks>,
-        collection: Arc<opi_ai::ProviderCollection>,
+        collection: Arc<opi_ai::Models>,
         system: String,
         tools: Vec<ToolDef>,
         config: &crate::config::OpiConfig,

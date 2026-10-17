@@ -11,11 +11,10 @@ use opi_ai::auth::{
     AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver,
 };
 use opi_ai::message::{AssistantContent, AssistantMessage};
-use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
-use opi_ai::provider_collection::{
-    AuthDescriptor, AuthStatus, CollectionError, CompatMetadata, ProviderCollection, SecretKey,
-    drain_to_completion,
+use opi_ai::models::{
+    AuthDescriptor, AuthStatus, CompatMetadata, Models, ModelsError, SecretKey, drain_to_completion,
 };
+use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::test_support::{MockProvider, text_response};
 use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
@@ -71,21 +70,21 @@ fn text_mock_repeated(id: &str, text: &str, count: usize) -> Box<dyn Provider> {
 
 const SECRET_VALUE: &str = "sk-super-secret-value-DO-NOT-LEAK";
 
-fn collection_error_kind(error: &CollectionError) -> &'static str {
+fn collection_error_kind(error: &ModelsError) -> &'static str {
     match error {
-        CollectionError::Registry(_) => "registry",
-        CollectionError::RouteNotDispatchable { .. } => "route-not-dispatchable",
-        CollectionError::RequestRouteMismatch { .. } => "request-route-mismatch",
-        CollectionError::AttemptAlreadyActive => "attempt-already-active",
-        CollectionError::CallCancelled => "call-cancelled",
-        CollectionError::CredentialTerminated { .. } => "credential-terminated",
-        CollectionError::Provider(_) => "provider",
+        ModelsError::Registry(_) => "registry",
+        ModelsError::RouteNotDispatchable { .. } => "route-not-dispatchable",
+        ModelsError::RequestRouteMismatch { .. } => "request-route-mismatch",
+        ModelsError::AttemptAlreadyActive => "attempt-already-active",
+        ModelsError::CallCancelled => "call-cancelled",
+        ModelsError::CredentialTerminated { .. } => "credential-terminated",
+        ModelsError::Provider(_) => "provider",
     }
 }
 
 #[test]
 fn collection_error_match_is_exhaustive_for_current_public_surface() {
-    let error = CollectionError::RouteNotDispatchable {
+    let error = ModelsError::RouteNotDispatchable {
         provider: "metadata-only".to_owned(),
     };
     assert_eq!(collection_error_kind(&error), "route-not-dispatchable");
@@ -288,7 +287,7 @@ async fn dropping_chat_stream_without_draining_releases_the_attempt_slot() {
     // An undrained ChatStream must release the prepared call's single active
     // attempt slot (owned producer release): a sequential retry can start
     // immediately after the handle is dropped.
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             text_mock_repeated("release", "ok", 2),
@@ -330,7 +329,7 @@ async fn dropping_chat_stream_without_draining_releases_the_attempt_slot() {
 
 #[tokio::test]
 async fn provider_collection_dispatches_with_redacted_auth() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             text_mock_repeated("mock", "hello from mock", 2),
@@ -380,7 +379,7 @@ async fn provider_collection_dispatches_with_redacted_auth() {
 
 #[tokio::test]
 async fn enabled_none_thinking_on_non_thinking_model_is_rejected_before_auth() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             text_mock("no-thinking", "must not stream"),
@@ -405,13 +404,13 @@ async fn enabled_none_thinking_on_non_thinking_model_is_rejected_before_auth() {
 
     assert!(matches!(
         error,
-        CollectionError::Provider(ProviderError::UnsupportedCapability(_))
+        ModelsError::Provider(ProviderError::UnsupportedCapability(_))
     ));
 }
 
 #[tokio::test]
 async fn provider_collection_dispatch_rejects_missing_auth_with_redacted_diagnostic() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             text_mock("noauth", "should not stream"),
@@ -434,7 +433,7 @@ async fn provider_collection_dispatch_rejects_missing_auth_with_redacted_diagnos
     assert!(
         matches!(
             err,
-            CollectionError::Provider(ProviderError::CredentialNeeded { .. })
+            ModelsError::Provider(ProviderError::CredentialNeeded { .. })
         ),
         "got {err:?}"
     );
@@ -460,7 +459,7 @@ async fn dispatch_complete_returns_terminal_error_event() {
         error_message: Some("terminal failure".into()),
         timestamp_ms: 0,
     };
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             Box::new(StreamProvider::new(
@@ -500,7 +499,7 @@ async fn dispatch_complete_returns_terminal_error_event() {
 
 #[tokio::test]
 async fn dispatch_complete_propagates_mid_stream_provider_error() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             Box::new(StreamProvider::new(
@@ -532,7 +531,7 @@ async fn dispatch_complete_propagates_mid_stream_provider_error() {
 
 #[tokio::test]
 async fn dispatch_complete_rejects_empty_stream() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             Box::new(StreamProvider::new("mock", Vec::new())),
@@ -584,7 +583,7 @@ async fn collection_supports_provider_correctness_fixtures() {
         vec![text_response("profile response")],
     ));
 
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             profile_provider,
@@ -645,7 +644,7 @@ async fn collection_supports_provider_correctness_fixtures() {
 
 #[tokio::test]
 async fn collection_refresh_is_a_documented_noop_extension_point() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     let result = collection.refresh().await;
     assert!(result.is_ok());
 }
@@ -661,7 +660,7 @@ fn collection_wraps_existing_registry_via_from_registry() {
         .register_provider(text_mock("wrapped", "wrapped response"))
         .unwrap();
 
-    let collection = ProviderCollection::from_registry(registry);
+    let collection = Models::from_registry(registry);
     // Underlying registry is accessible for list-models / overrides.
     assert_eq!(collection.registry().provider_ids(), vec!["wrapped"]);
     // Model lookup flows through the wrapped registry.
@@ -770,7 +769,7 @@ fn auth_descriptor_store_credential_resolves_configured_not_authoritative() {
 #[tokio::test]
 async fn store_credential_dispatch_proceeds_when_probe_present() {
     // A present credential resolves and dispatches through prepare_call.
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             text_mock("storeprov", "ok"),
@@ -798,7 +797,7 @@ async fn store_credential_dispatch_proceeds_when_probe_present() {
 #[tokio::test]
 async fn store_credential_dispatch_rejects_when_probe_absent_with_redacted_detail() {
     // An absent credential terminates the call before the provider is touched.
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             text_mock("absentprov", "should not stream"),
@@ -820,7 +819,7 @@ async fn store_credential_dispatch_rejects_when_probe_absent_with_redacted_detai
     assert!(
         matches!(
             err,
-            CollectionError::Provider(ProviderError::CredentialNeeded { .. })
+            ModelsError::Provider(ProviderError::CredentialNeeded { .. })
         ),
         "got {err:?}"
     );
@@ -832,7 +831,7 @@ async fn store_credential_dispatch_rejects_when_probe_absent_with_redacted_detai
 async fn store_credential_dispatch_proceeds_when_backend_unavailable() {
     // Dispatch proceeds when auth resolves; backend availability is the live
     // resolver's concern, not the non-live status gate.
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             text_mock("unavailprov", "ok"),
@@ -861,7 +860,7 @@ async fn store_credential_dispatch_proceeds_when_backend_unavailable() {
 async fn store_credential_dispatch_proceeds_when_no_probe_injected() {
     // No probe is needed on the dispatch path: a route with a resolver
     // dispatches regardless of the (metadata-only) probe substrate.
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             text_mock("noprobe", "ok"),
@@ -1133,7 +1132,7 @@ impl Provider for MutableRefreshProvider {
 #[tokio::test]
 async fn refresh_models_is_atomic_substrate() {
     // Mixed static + dynamic providers.
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
 
     // Static provider — default refresh_models returns Ok(None).
     let static_prov = text_mock("staticprov", "static");
@@ -1222,7 +1221,7 @@ async fn refresh_models_is_atomic_substrate() {
 #[tokio::test]
 async fn refresh_models_atomic_rollback_on_error() {
     const STATIC_PROVIDER_CANARY: &str = "static-refresh-provider-canary";
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
 
     // Dynamic provider that succeeds on refresh.
     let good =
@@ -1270,7 +1269,7 @@ async fn refresh_models_atomic_rollback_on_error() {
 async fn refresh_models_deterministic_ordering() {
     // Refresh evaluates providers in deterministic (sorted) id order.
     // Test: the result is the same regardless of registration order.
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
 
     // Register in non-alphabetical order.
     for id in ["zulu", "alpha", "mike"] {
@@ -1305,7 +1304,7 @@ async fn refresh_models_deterministic_ordering() {
 
 #[tokio::test]
 async fn refresh_models_repeated_refresh_replaces() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
 
     let prov = MutableRefreshProvider::new("dyn", vec![], vec![model_info("v1", "Version 1")]);
     let refresh_result = Arc::clone(&prov.refresh_result);
@@ -1342,7 +1341,7 @@ async fn refresh_models_repeated_refresh_replaces() {
 
 #[tokio::test]
 async fn refresh_models_none_clears_prior_dynamic_snapshot() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
 
     let provider = MutableRefreshProvider::new(
         "dyn",
@@ -1373,7 +1372,7 @@ async fn refresh_models_none_clears_prior_dynamic_snapshot() {
 
 #[tokio::test]
 async fn refresh_models_empty_catalog_is_valid() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
 
     let dyn_prov = RefreshProvider::new("dyn", vec![model_info("old", "Old")]).with_refresh(vec![]); // Empty catalog.
     collection
@@ -1416,8 +1415,8 @@ mod phase17 {
     };
     use opi_ai::azure_openai::AzureOpenAIProvider;
     use opi_ai::credential::BoxAuthFuture;
+    use opi_ai::models::CompatMetadata;
     use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
-    use opi_ai::provider_collection::CompatMetadata;
     use opi_ai::test_support::text_response;
     use secrecy::SecretString;
     use std::sync::Arc;
@@ -1634,7 +1633,7 @@ mod phase17 {
         registry
             .register_model("budget", model("overridden", 65_536))
             .unwrap();
-        let mut collection = ProviderCollection::from_registry(registry);
+        let mut collection = Models::from_registry(registry);
         collection
             .register_route(
                 Box::new(provider),
@@ -1685,7 +1684,7 @@ mod phase17 {
             (0..4).map(|_| text_response("done")).collect(),
         );
         let calls = provider.call_log_handle();
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         collection
             .register_route(
                 Box::new(provider),
@@ -1770,7 +1769,7 @@ mod phase17 {
         );
         let calls = provider.call_log_handle();
         let resolutions = Arc::new(AtomicUsize::new(0));
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         collection
             .register_route(
                 Box::new(provider),
@@ -1814,9 +1813,9 @@ mod phase17 {
             let result = collection.prepare_call("budget:anthropic", request).await;
             assert!(matches!(
                 result,
-                Err(CollectionError::Provider(
-                    ProviderError::UnsupportedCapability(_)
-                ))
+                Err(ModelsError::Provider(ProviderError::UnsupportedCapability(
+                    _
+                )))
             ));
         }
         assert_eq!(resolutions.load(Ordering::SeqCst), 2);
@@ -1864,7 +1863,7 @@ mod phase17 {
         );
         let calls = provider.call_log_handle();
         let resolve_hits = Arc::new(AtomicUsize::new(0));
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         collection
             .register_route(
                 Box::new(provider),
@@ -1890,7 +1889,7 @@ mod phase17 {
             };
             assert!(matches!(
                 error,
-                CollectionError::Provider(ProviderError::UnsupportedCapability(_))
+                ModelsError::Provider(ProviderError::UnsupportedCapability(_))
             ));
             assert!(!error.to_string().contains(SECRET_VALUE));
         }
@@ -1933,7 +1932,7 @@ mod phase17 {
             secret: SecretString::from("sk-alpha-canary"),
         });
 
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         collection
             .register_route(
                 Box::new(provider),
@@ -1990,7 +1989,7 @@ mod phase17 {
     #[tokio::test]
     async fn metadata_registration_replaces_and_removes_prior_dispatch_state() {
         let resolve_hits = Arc::new(AtomicUsize::new(0));
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         collection
             .register_route(
                 Box::new(ProbeProvider::new(
@@ -2026,16 +2025,13 @@ mod phase17 {
             .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
             .await
             .expect_err("metadata-only replacement must not retain stale resolver");
-        assert!(matches!(
-            error,
-            CollectionError::RouteNotDispatchable { .. }
-        ));
+        assert!(matches!(error, ModelsError::RouteNotDispatchable { .. }));
         assert_eq!(resolve_hits.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
     async fn dispatch_registration_replaces_and_removes_prior_metadata_state() {
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         collection
             .register(
                 Box::new(ProbeProvider::new(
@@ -2074,7 +2070,7 @@ mod phase17 {
 
     #[tokio::test]
     async fn prepare_call_preserves_resolver_reported_source_and_fallback() {
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         collection
             .register_route(
                 Box::new(ProbeProvider::new(
@@ -2127,8 +2123,8 @@ mod phase17 {
         prepared: Arc<AtomicUsize>,
         legacy: Arc<AtomicUsize>,
         resolved: Arc<AtomicUsize>,
-    ) -> ProviderCollection {
-        let mut collection = ProviderCollection::new();
+    ) -> Models {
+        let mut collection = Models::new();
         collection
             .register_route(
                 Box::new(ProbeProvider::new("alpha", "model-a", prepared, legacy)),
@@ -2165,7 +2161,7 @@ mod phase17 {
             Ok(_) => panic!("second concurrent attempt must be rejected"),
         };
         assert!(
-            matches!(err, CollectionError::AttemptAlreadyActive),
+            matches!(err, ModelsError::AttemptAlreadyActive),
             "got {err:?}"
         );
         drop(attempt);
@@ -2195,7 +2191,7 @@ mod phase17 {
     async fn cancelling_during_auth_resolution_stops_preparation() {
         let resolve_hits = Arc::new(AtomicUsize::new(0));
         let resolver_entered = Arc::new(tokio::sync::Notify::new());
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         collection
             .register_route(
                 Box::new(ProbeProvider::new(
@@ -2230,7 +2226,7 @@ mod phase17 {
             .expect("cancellation must interrupt pending auth resolution")
             .expect("prepare task panicked")
             .expect_err("cancelled preparation must fail");
-        assert!(matches!(error, CollectionError::CallCancelled));
+        assert!(matches!(error, ModelsError::CallCancelled));
     }
 
     #[tokio::test]
@@ -2290,7 +2286,7 @@ mod phase17 {
             Err(error) => error,
             Ok(_) => panic!("cancelled call must reject attempts"),
         };
-        assert!(matches!(err, CollectionError::CallCancelled), "got {err:?}");
+        assert!(matches!(err, ModelsError::CallCancelled), "got {err:?}");
         assert_eq!(
             prepared_hits.load(Ordering::SeqCst),
             0,
@@ -2303,7 +2299,7 @@ mod phase17 {
         let dispatches = Arc::new(AtomicUsize::new(0));
         let cancellations = Arc::new(AtomicUsize::new(0));
         let resolver_hits = Arc::new(AtomicUsize::new(0));
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         collection
             .register_route(
                 Box::new(CancelAwareProvider {
@@ -2345,7 +2341,7 @@ mod phase17 {
         assert_eq!(cancellations.load(Ordering::SeqCst), 1);
         assert!(matches!(
             prepared.start_attempt(),
-            Err(CollectionError::CallCancelled)
+            Err(ModelsError::CallCancelled)
         ));
         assert_eq!(dispatches.load(Ordering::SeqCst), 1, "no retry dispatch");
     }
@@ -2385,7 +2381,7 @@ mod phase17 {
         let provider =
             AzureOpenAIProvider::new(Some(base_url), "my-gpt4o".into(), Some("2024-06-01".into()))
                 .expect("construct Azure provider");
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         collection
             .register_route(
                 Box::new(CountingAzureProvider {
@@ -2429,7 +2425,7 @@ mod phase17 {
         );
         assert!(matches!(
             prepared.start_attempt(),
-            Err(CollectionError::CallCancelled)
+            Err(ModelsError::CallCancelled)
         ));
         assert_eq!(dispatches.load(Ordering::SeqCst), 1, "no redispatch");
     }
@@ -2503,7 +2499,7 @@ mod phase17 {
                 prepared_hits.clone(),
                 legacy_hits.clone(),
             );
-            let mut collection = ProviderCollection::new();
+            let mut collection = Models::new();
             collection
                 .register_route(
                     Box::new(provider),
@@ -2523,7 +2519,7 @@ mod phase17 {
             assert!(
                 matches!(
                     err,
-                    CollectionError::Provider(
+                    ModelsError::Provider(
                         ProviderError::CredentialRevoked { .. }
                             | ProviderError::CredentialNeeded { .. }
                     )
@@ -2542,7 +2538,7 @@ mod phase17 {
     async fn stream_time_credential_failure_forbids_redispatch() {
         for kind in [FailKind::Revoked, FailKind::Needed] {
             let dispatches = Arc::new(AtomicUsize::new(0));
-            let mut collection = ProviderCollection::new();
+            let mut collection = Models::new();
             collection
                 .register_route(
                     Box::new(CredentialRejectingProvider {
@@ -2588,7 +2584,7 @@ mod phase17 {
             assert!(
                 matches!(
                     &error,
-                    CollectionError::CredentialTerminated { provider }
+                    ModelsError::CredentialTerminated { provider }
                         if provider.as_str() == "alpha"
                 ),
                 "got {error:?}"
@@ -2656,7 +2652,7 @@ mod phase17 {
             .prepare_call("nope:missing", minimal_request("nope:missing"))
             .await
             .expect_err("unknown route must fail");
-        assert!(matches!(err, CollectionError::Registry(_)), "got {err:?}");
+        assert!(matches!(err, ModelsError::Registry(_)), "got {err:?}");
         assert_eq!(
             prepared_hits.load(Ordering::SeqCst),
             0,
@@ -2685,7 +2681,7 @@ mod phase17 {
         assert!(
             matches!(
                 err,
-                CollectionError::Registry(opi_ai::registry::RegistryError::UnknownModel { .. })
+                ModelsError::Registry(opi_ai::registry::RegistryError::UnknownModel { .. })
             ),
             "got {err:?}"
         );
@@ -2697,7 +2693,7 @@ mod phase17 {
         let alpha_resolutions = Arc::new(AtomicUsize::new(0));
         let beta_dispatches = Arc::new(AtomicUsize::new(0));
         let beta_resolutions = Arc::new(AtomicUsize::new(0));
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         for (provider, dispatches, resolutions) in [
             ("alpha", alpha_dispatches.clone(), alpha_resolutions.clone()),
             ("beta", beta_dispatches.clone(), beta_resolutions.clone()),
@@ -2733,7 +2729,7 @@ mod phase17 {
             assert!(
                 matches!(
                     &error,
-                    CollectionError::RequestRouteMismatch {
+                    ModelsError::RequestRouteMismatch {
                         request_model: actual_request_model,
                         route_provider,
                         route_model,
@@ -2754,7 +2750,7 @@ mod phase17 {
     async fn auth_failure_does_not_silently_fall_back_to_another_provider() {
         // alpha's auth fails; beta is healthy and must NOT be tried.
         let beta_prepared = Arc::new(AtomicUsize::new(0));
-        let mut collection = ProviderCollection::new();
+        let mut collection = Models::new();
         collection
             .register_route(
                 Box::new(ProbeProvider::new(
@@ -2795,7 +2791,7 @@ mod phase17 {
         assert!(
             matches!(
                 err,
-                CollectionError::Provider(ProviderError::CredentialRevoked { .. })
+                ModelsError::Provider(ProviderError::CredentialRevoked { .. })
             ),
             "got {err:?}"
         );
@@ -2825,7 +2821,7 @@ mod phase17 {
         assert!(
             matches!(
                 err,
-                CollectionError::Provider(ProviderError::UnsupportedCapability(_))
+                ModelsError::Provider(ProviderError::UnsupportedCapability(_))
             ),
             "got {err:?}"
         );
@@ -2868,7 +2864,7 @@ mod phase17 {
             ),
         ];
         for (id, source) in sources {
-            let mut collection = ProviderCollection::new();
+            let mut collection = Models::new();
             collection
                 .register_route(
                     Box::new(ProbeProvider::new(
@@ -2897,4 +2893,62 @@ mod phase17 {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.3: simple and advanced entries observe the same route and outcome
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn models_simple_and_advanced_observe_same_route_and_outcome() {
+    // One dispatchable route; the caller uses the neutral entry and advanced
+    // preparation and must observe the same selected route and final message.
+    let mut models = Models::new();
+    models
+        .register_route(
+            text_mock_repeated("parity", "same answer", 2),
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                secret("configured"),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+            CompatMetadata::default(),
+        )
+        .unwrap();
+
+    // The complete record comes from the sync catalog read.
+    let info = models
+        .get_model("parity", "mock-model")
+        .expect("catalog record");
+    assert_eq!(info.id, "mock-model");
+    let record = opi_ai::models::ChatModelRecord::new("parity", info);
+
+    // Neutral entry.
+    let simple_message = models
+        .complete_simple(
+            record,
+            minimal_request("parity:mock-model"),
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(assistant_text(&simple_message), "same answer");
+
+    // Advanced preparation through the same state machine.
+    let prepared = models
+        .prepare_call("parity:mock-model", minimal_request("parity:mock-model"))
+        .await
+        .unwrap();
+    assert_eq!(prepared.route().provider_id, "parity");
+    assert_eq!(prepared.route().model_id, "mock-model");
+    let attempt = prepared.start_attempt().unwrap();
+    let advanced_message = opi_ai::stream::ChatStream::new(attempt)
+        .result()
+        .await
+        .unwrap();
+    assert_eq!(assistant_text(&advanced_message), "same answer");
+
+    // Both paths resolve the same route facts and canonical model identity.
+    assert_eq!(simple_message.model, advanced_message.model);
+    assert_eq!(simple_message.provider, advanced_message.provider);
 }

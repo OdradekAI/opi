@@ -74,7 +74,7 @@ impl std::fmt::Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Manual impl so a future secrecy version that changes SecretString's
         // Debug cannot leak secret material here. Mirrors SecretKey's redacting
-        // Debug in crate::provider_collection.
+        // Debug in crate::models.
         match self {
             Credential::ApiKey(_) => f.write_str("Credential::ApiKey(<redacted>)"),
             Credential::OAuthToken {

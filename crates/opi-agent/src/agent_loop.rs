@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
-use opi_ai::CollectionError;
+use opi_ai::ModelsError;
 use opi_ai::message::{
     AssistantContent, InputContent, Message, ToolCall, ToolResultMessage, UserMessage,
 };
@@ -32,7 +32,7 @@ use crate::validation;
 /// The loop operates on one complete [`NextTurnState`] (context, canonical
 /// provider:model selection, inference) owned durably by the Agent.
 /// Each turn prepares one logical model call through the registered
-/// [`opi_ai::ProviderCollection`] (route lookup + auth resolution + validation) before
+/// [`opi_ai::Models`] (route lookup + auth resolution + validation) before
 /// the retry loop, then opens every sequential attempt from that same opaque
 /// prepared call. After a turn completes, `should_stop_after_turn` observes its
 /// complete state before queue polling. Only warranted continuation prepares,
@@ -568,7 +568,7 @@ async fn run_operation(
             // partial and typed cause.
             let mut stream = match prepared.start_attempt() {
                 Ok(attempt) => opi_ai::stream::ChatStream::new(attempt),
-                Err(CollectionError::CallCancelled) => {
+                Err(ModelsError::CallCancelled) => {
                     observe(&diagnostic_sink, cancelled_diagnostic("during_prepare"));
                     fail_before_dispatch!(AgentError::Cancelled);
                 }
@@ -1451,7 +1451,7 @@ async fn run_operation(
 
 async fn commit_preparation(
     hooks: &dyn AgentHooks,
-    collection: &opi_ai::ProviderCollection,
+    collection: &opi_ai::Models,
     candidate: Option<NextTurnState>,
     selected_input: &[AgentMessage],
     cancel: CancellationToken,
@@ -1625,7 +1625,7 @@ impl PreparationEvidence<'_> {
     /// into Agent conversation state or treated as a completed task turn.
     pub async fn run_provider_call(
         &mut self,
-        collection: &opi_ai::ProviderCollection,
+        collection: &opi_ai::Models,
         mut request: Request,
         parent: &PendingPreparationCompaction,
         cancel: CancellationToken,

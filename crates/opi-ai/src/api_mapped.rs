@@ -3,7 +3,7 @@
 //! Construction validates the complete model-to-wire route graph. A mapped
 //! provider delegates a collection-prepared request and opaque authentication
 //! to the concrete route selected by wire API. Resolver ownership stays in
-//! [`crate::ProviderCollection`], outside this adapter.
+//! [`crate::Models`], outside this adapter.
 
 use std::collections::{BTreeMap, BTreeSet};
 

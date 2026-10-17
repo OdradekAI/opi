@@ -107,6 +107,9 @@ pub enum RegistrationError {
         #[source]
         source: ModelInfoError,
     },
+    /// Chat API id is empty.
+    #[error("chat api id cannot be empty")]
+    EmptyApiId,
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +127,7 @@ pub struct ProviderRegistry {
     /// Per-provider dynamic catalogs populated by `Provider::refresh_models`.
     /// When present, the dynamic catalog replaces the provider's built-in
     /// model list for resolution and enumeration. Cleared and replaced
-    /// atomically by `ProviderCollection::refresh`.
+    /// atomically by `Models::refresh`.
     dynamic_catalogs: HashMap<String, Vec<ModelInfo>>,
 }
 
@@ -338,7 +341,7 @@ impl ProviderRegistry {
 
     /// Replace the dynamic catalog for a single provider.
     ///
-    /// Used by [`crate::ProviderCollection::refresh`] to atomically install refreshed
+    /// Used by [`crate::Models::refresh`] to atomically install refreshed
     /// catalogs after all providers succeed.
     pub fn set_dynamic_catalog(&mut self, provider_id: &str, models: Vec<ModelInfo>) {
         self.dynamic_catalogs.insert(provider_id.to_owned(), models);
@@ -347,7 +350,7 @@ impl ProviderRegistry {
     /// Atomically replace all dynamic catalogs.
     ///
     /// Clears existing catalogs and installs `catalogs` as the new set.
-    /// Used by [`crate::ProviderCollection::refresh`] for all-or-nothing replacement.
+    /// Used by [`crate::Models::refresh`] for all-or-nothing replacement.
     pub fn replace_all_dynamic_catalogs(&mut self, catalogs: HashMap<String, Vec<ModelInfo>>) {
         self.dynamic_catalogs = catalogs;
     }

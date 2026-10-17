@@ -2,6 +2,12 @@
 
 ### Breaking Changes
 
+- `opi-ai`: `ProviderCollection` is replaced by a single `Models` driver
+  (`provider_collection` module renamed to `models`; `CollectionError` is
+  now `ModelsError`). All current callers migrate together: `register`,
+  `register_route`, `prepare_call`, `refresh`, catalog/auth reads and the
+  prepared-call lifecycle keep their contracts under the new owner, with no
+  parallel facade or router.
 - `opi-ai`: one final `Result` per logical provider call. `CompletedRequest`
   is removed; `drain_to_completion` returns
   `Result<AssistantMessage, CallFailure>`, sharing the new
@@ -27,6 +33,26 @@
 
 ### Added
 
+- `opi-ai`: one `Models` front door for chat calls (AIR-045). Native
+  `stream`/`complete`, neutral `stream_simple`/`complete_simple`, direct
+  `stream_direct`/`complete_direct` (injected, already-resolved auth) and
+  advanced `prepare_call` share the sole request compiler, auth resolution,
+  attempt seam and `ChatStream` collector. Ordinary calls capture the owned
+  input, the caller's complete record, and the registered adapter at
+  construction (`Send + 'static`), and authentication starts on the first
+  poll; pre-auth failures (unregistered ApiId, options type/provider
+  mismatch, non-dispatchable route, cancellation) surface as exactly one
+  typed `CallFailure` and never reach auth.
+- `opi-ai`: typed custom chat registration. `ChatApi<O>` adapters register
+  with an exact `ApiId` and a fixed options type; the registration installs
+  a catalog-invisible route, so the adapter's complete record stays absent
+  from `get_model`/`all_models` yet remains callable without catalog
+  membership, and same-ID catalog data never replaces a frozen caller
+  record. `ChatApiHandle::options` tags values with their API/type identity,
+  so the same option value crosses `Models` instances with compatible
+  registrations; an incompatible upsert fails old options with a typed
+  pre-auth mismatch. Already-created calls keep their captured adapter
+  across later registration changes.
 - `opi-ai`: `ChatStream` and `CallFailure` are exported at the crate root;
   `ProviderError` is now `Clone` + `PartialEq`.
 
@@ -78,7 +104,7 @@
   compaction markers add optional provider/model/usage metadata for summary
   accounting; older records remain readable with unrecorded usage treated
   as unknown.
-- `opi-ai`: `ProviderCollection::prepare_call` now resolves an omitted
+- `opi-ai`: `Models::prepare_call` now resolves an omitted
   response output limit from the selected model's capacity before
   authentication and rejects default thinking budgets that cannot fit. Both
   implicit and explicit ceilings are clamped to estimated remaining context

@@ -43,7 +43,7 @@ use opi_ai::provider::{
     ProviderErrorSummary, Request, ThinkingConfig,
 };
 use opi_ai::registry::ModelCapabilities;
-use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
+use opi_ai::{AuthProvenanceSource, CompatMetadata, Models};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{
     AuthSource, CredentialResolver, EnvLookup, FakeKeyringBackend, KEYCHAIN_SERVICE,
@@ -4303,7 +4303,7 @@ async fn drain_stream(stream: &mut opi_ai::provider::EventStream) {
     }
 }
 
-/// Phase 17.5: build a dispatchable [`ProviderCollection`] for the active
+/// Phase 17.5: build a dispatchable [`Models`] for the active
 /// provider, mirroring `build_provider_with_oauth`'s routing.
 ///
 /// Authentication moved off the provider object onto the collection route, so
@@ -4316,9 +4316,9 @@ fn dispatch_collection(
     config: &OpiConfig,
     resolver: CredentialResolver,
     registry: &OAuthProviderRegistry,
-) -> ProviderCollection {
+) -> Models {
     let auth_resolver = oauth_auth_resolver_for(provider_id, config, resolver, registry);
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             provider,
@@ -4366,7 +4366,7 @@ fn oauth_auth_resolver_for(
 
 /// Phase 17.5: drain a dispatchable collection route to completion (or first
 /// stream error), mirroring a harness turn through `prepare_call` + `start_attempt`.
-async fn drain_route(collection: &ProviderCollection, spec: &str) {
+async fn drain_route(collection: &Models, spec: &str) {
     let prepared = collection
         .prepare_call(spec, factory_request(spec))
         .await
@@ -5100,7 +5100,7 @@ async fn anthropic_oauth_revoked_stops_turn_without_retry_or_relogin() {
         .mount(&server)
         .await;
 
-    // Phase 17.5: auth resolution lives in ProviderCollection::prepare_call.
+    // Phase 17.5: auth resolution lives in Models::prepare_call.
     // Register the one-shot resolver on the route so the revoked-credential path
     // surfaces from prepare_call (the resolver returns CredentialRevoked on its
     // second resolution, before any HTTP request).
@@ -5110,7 +5110,7 @@ async fn anthropic_oauth_revoked_stops_turn_without_retry_or_relogin() {
         revoked: std::sync::atomic::AtomicBool::new(false),
     });
     let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()));
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             Box::new(provider),
@@ -5133,8 +5133,8 @@ async fn anthropic_oauth_revoked_stops_turn_without_retry_or_relogin() {
     // Second call: the resolver now returns CredentialRevoked, which must surface
     // from prepare_call (no retry, no other request sent).
     let err_provider = match collection.prepare_call(spec, factory_request(spec)).await {
-        Err(opi_ai::CollectionError::Provider(p)) => p,
-        other => panic!("expected CollectionError::Provider(CredentialRevoked), got {other:?}"),
+        Err(opi_ai::ModelsError::Provider(p)) => p,
+        other => panic!("expected ModelsError::Provider(CredentialRevoked), got {other:?}"),
     };
     match &err_provider {
         AiProviderError::CredentialRevoked { provider_id } => {
@@ -5217,7 +5217,7 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
         let collection = dispatch_collection(provider, provider_id, &config, resolver, &registry);
         let spec = config.defaults.model.clone();
         let first = match collection.prepare_call(&spec, factory_request(&spec)).await {
-            Err(opi_ai::CollectionError::Provider(p)) => p,
+            Err(opi_ai::ModelsError::Provider(p)) => p,
             other => panic!("{provider_id} expected CredentialNeeded, got {other:?}"),
         };
         match first {
@@ -5283,12 +5283,9 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
 
 /// Phase 17.5 helper: run prepare_call and return the wrapped ProviderError if
 /// the collection rejected the call, or `None` if it resolved a route.
-async fn collection_prepare_call_error(
-    collection: &ProviderCollection,
-    spec: &str,
-) -> Option<AiProviderError> {
+async fn collection_prepare_call_error(collection: &Models, spec: &str) -> Option<AiProviderError> {
     match collection.prepare_call(spec, factory_request(spec)).await {
-        Err(opi_ai::CollectionError::Provider(p)) => Some(p),
+        Err(opi_ai::ModelsError::Provider(p)) => Some(p),
         Err(other) => panic!("expected Provider error from prepare_call, got {other:?}"),
         Ok(_) => None,
     }

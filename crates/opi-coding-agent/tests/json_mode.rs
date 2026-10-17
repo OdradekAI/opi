@@ -1054,7 +1054,7 @@ async fn json_mode_emits_session_summary_with_token_totals() {
     let _env_guard = common::empty_user_config_dir();
 
     let response = test_support::text_response("hi");
-    // Phase 17.5: the harness dispatches via ProviderCollection::prepare_call,
+    // Phase 17.5: the harness dispatches via Models::prepare_call,
     // which strictly resolves the `provider:model` spec. Register the asserted
     // model under provider id "anthropic" so "anthropic:claude-sonnet-4" resolves
     // and the session summary records exactly that canonical spec.

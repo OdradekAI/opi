@@ -1107,7 +1107,7 @@ async fn harness_metadata_includes_adapter_extensions() {
 //
 // CodingHarness is the coding-agent product wrapper over the generic opi-agent
 // runtime seams (Agent, AgentHooks, ExtensionRegistry, session storage,
-// ProviderCollection, CompactionEngine). Generic turn lifecycle / phase /
+// Models, CompactionEngine). Generic turn lifecycle / phase /
 // save-point / pending-write semantics live in opi_agent::harness. These two
 // contract tests pin (a) that the wrapper composes product inputs over the
 // generic seams at runtime, and (b) that product/CLI/package policy never leaks

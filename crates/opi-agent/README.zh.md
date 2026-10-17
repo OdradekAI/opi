@@ -82,7 +82,7 @@ agent_start                              # 仅一次，首轮之前
     append pending input                  # QueueUpdate；在候选替换之后追加
     transform_context                     # AgentHooks::transform_context
     convert_to_llm                        # AgentHooks::convert_to_llm
-    ProviderCollection::prepare_call(Request)
+    Models::prepare_call(Request)
       validate route/request model schema and capabilities
                                          # hook 转换已经完成
       PreparedProviderCall::start_attempt
@@ -117,7 +117,7 @@ agent_end                                 # 仅一次，终止时
 边界：
 
 - `transform_context` 与 `convert_to_llm` 先完成，随后
-  `ProviderCollection::prepare_call` 才针对已解析模型的 schema、wire 和能力校验
+  `Models::prepare_call` 才针对已解析模型的 schema、wire 和能力校验
   转换后的请求。
 - `should_stop_after_turn` 在 `turn_end` 之后、队列轮询和准备之前观察已完成状态。
   返回终止决定时跳过后续轮询和准备。

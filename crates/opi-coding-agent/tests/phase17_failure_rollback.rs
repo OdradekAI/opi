@@ -558,7 +558,7 @@ async fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
         )))
         .unwrap();
     let agent = Agent::new(
-        Arc::new(opi_ai::ProviderCollection::from_registry(lookup_registry)),
+        Arc::new(opi_ai::Models::from_registry(lookup_registry)),
         Vec::new(),
         None,
         "lookup:mock-model".to_owned(),
@@ -571,7 +571,7 @@ async fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
         agent,
         Err(AgentError::InvalidNextTurnCandidate(
             opi_agent::loop_types::InvalidNextTurnReason::Route(
-                opi_ai::provider_collection::CollectionError::RouteNotDispatchable { provider }
+                opi_ai::models::ModelsError::RouteNotDispatchable { provider }
             )
         )) if provider == "lookup"
     ));
@@ -589,7 +589,7 @@ async fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
         .await;
     assert!(matches!(
         cancelled,
-        Err(opi_ai::provider_collection::CollectionError::CallCancelled)
+        Err(opi_ai::models::ModelsError::CallCancelled)
     ));
 
     // Complete-state validation returns a typed registry class and preserves

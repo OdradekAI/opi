@@ -10,7 +10,7 @@ use opi_ai::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request, ThinkingConfig,
 };
 use opi_ai::stream::AssistantStreamEvent;
-use opi_ai::{ApiMappedProvider, CompatMetadata, ProviderCollection, ProviderHeaders};
+use opi_ai::{ApiMappedProvider, CompatMetadata, Models, ProviderHeaders};
 use secrecy::{ExposeSecret, SecretString};
 use tokio_util::sync::CancellationToken;
 
@@ -256,7 +256,7 @@ async fn mapped_provider_dispatches_one_catalog_across_three_wires() {
 #[tokio::test]
 async fn mapped_provider_uses_collection_prepared_auth_once_across_retries() {
     let (provider, auth, logs) = mapped_fixture();
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             Box::new(provider),

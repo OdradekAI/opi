@@ -19,8 +19,7 @@ use opi_agent::message::AgentMessage;
 use opi_ai::provider::ProviderError;
 use opi_ai::test_support::{CountingAuthResolver, MockProvider, MockResponse, text_response};
 use opi_ai::{
-    AuthProvenanceSource, CollectionError, CompatMetadata, ProviderCollection, ProviderRegistry,
-    RegistryError,
+    AuthProvenanceSource, CompatMetadata, Models, ModelsError, ProviderRegistry, RegistryError,
 };
 
 struct StopImmediatelyHooks;
@@ -71,7 +70,7 @@ async fn prepare_call_resolves_auth_once_across_retries() {
     let resolver: Arc<dyn opi_ai::auth::AuthResolver> =
         Arc::new(CountingAuthResolver::new(resolve_count.clone()));
 
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             Box::new(provider),
@@ -119,7 +118,7 @@ async fn prepare_call_resolves_auth_once_across_retries() {
     );
 }
 
-fn agent_construction_error(collection: ProviderCollection, spec: &str) -> AgentError {
+fn agent_construction_error(collection: Models, spec: &str) -> AgentError {
     match Agent::new(
         Arc::new(collection),
         common::registrations_from(Vec::new()),
@@ -150,15 +149,15 @@ fn construction_preserves_registry_and_dispatch_failure_classes() {
     ));
     assert!(matches!(
         agent_construction_error(route(), "missing:mock-model"),
-        AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::Route(
-            CollectionError::Registry(RegistryError::UnknownProvider(_))
-        ))
+        AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::Route(ModelsError::Registry(
+            RegistryError::UnknownProvider(_)
+        )))
     ));
     assert!(matches!(
         agent_construction_error(route(), "mock:missing"),
-        AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::Route(
-            CollectionError::Registry(RegistryError::UnknownModel { .. })
-        ))
+        AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::Route(ModelsError::Registry(
+            RegistryError::UnknownModel { .. }
+        )))
     ));
 
     let mut registry = ProviderRegistry::new();
@@ -169,12 +168,9 @@ fn construction_preserves_registry_and_dispatch_failure_classes() {
         )))
         .unwrap();
     assert!(matches!(
-        agent_construction_error(
-            ProviderCollection::from_registry(registry),
-            "mock:mock-model"
-        ),
+        agent_construction_error(Models::from_registry(registry), "mock:mock-model"),
         AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::Route(
-            CollectionError::RouteNotDispatchable { .. }
+            ModelsError::RouteNotDispatchable { .. }
         ))
     ));
 }

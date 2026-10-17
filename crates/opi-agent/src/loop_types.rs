@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use opi_ai::provider::{
     ProviderError, ProviderErrorCategory, ProviderErrorSummary, ThinkingConfig,
 };
-use opi_ai::{CollectionError, ProviderCollection, RegistryError};
+use opi_ai::{Models, ModelsError, RegistryError};
 
 use crate::authority::{ToolAuthorizer, ToolRegistry};
 use crate::diagnostic_sink::DiagnosticSink;
@@ -32,7 +32,7 @@ pub struct AgentProviderFailure {
 pub enum InvalidNextTurnReason {
     /// The selected canonical route is unknown or is not dispatchable.
     #[error(transparent)]
-    Route(#[from] CollectionError),
+    Route(#[from] ModelsError),
     /// The raw selected identity differs from the canonical resolved route.
     #[error(
         "selected route '{selected_provider}:{selected_model}' is not canonical for resolved route '{resolved_provider}:{resolved_model}'"
@@ -215,25 +215,25 @@ impl From<ProviderError> for AgentError {
     }
 }
 
-impl From<CollectionError> for AgentError {
-    fn from(error: CollectionError) -> Self {
+impl From<ModelsError> for AgentError {
+    fn from(error: ModelsError) -> Self {
         match error {
-            CollectionError::Registry(RegistryError::InvalidSpec(spec)) => {
+            ModelsError::Registry(RegistryError::InvalidSpec(spec)) => {
                 AgentError::InvalidModelSpec { spec }
             }
-            CollectionError::Registry(RegistryError::UnknownProvider(provider)) => {
+            ModelsError::Registry(RegistryError::UnknownProvider(provider)) => {
                 AgentError::UnknownProvider { provider }
             }
-            CollectionError::Registry(RegistryError::UnknownModel { provider, model }) => {
+            ModelsError::Registry(RegistryError::UnknownModel { provider, model }) => {
                 AgentError::UnknownModel { provider, model }
             }
-            CollectionError::Registry(_) => AgentError::Provider(AgentProviderFailure::new(
+            ModelsError::Registry(_) => AgentError::Provider(AgentProviderFailure::new(
                 ProviderError::Config(ProviderErrorSummary::redacted()),
             )),
-            CollectionError::RouteNotDispatchable { provider } => {
+            ModelsError::RouteNotDispatchable { provider } => {
                 AgentError::RouteNotDispatchable { provider }
             }
-            CollectionError::RequestRouteMismatch {
+            ModelsError::RequestRouteMismatch {
                 request_model,
                 route_provider,
                 route_model,
@@ -242,12 +242,12 @@ impl From<CollectionError> for AgentError {
                 route_provider,
                 route_model,
             },
-            CollectionError::AttemptAlreadyActive => AgentError::AttemptAlreadyActive,
-            CollectionError::CallCancelled => AgentError::Cancelled,
-            CollectionError::CredentialTerminated { provider } => {
+            ModelsError::AttemptAlreadyActive => AgentError::AttemptAlreadyActive,
+            ModelsError::CallCancelled => AgentError::Cancelled,
+            ModelsError::CredentialTerminated { provider } => {
                 AgentError::CredentialTerminated { provider }
             }
-            CollectionError::Provider(error) => AgentError::from(error),
+            ModelsError::Provider(error) => AgentError::from(error),
         }
     }
 }
@@ -285,7 +285,7 @@ impl ModelSelection {
     }
 
     /// Render the canonical `provider:model` spec consumed by
-    /// [`ProviderCollection::prepare_call`].
+    /// [`Models::prepare_call`].
     pub fn to_spec(&self) -> String {
         format!("{}:{}", self.provider_id, self.model_id)
     }
@@ -342,7 +342,7 @@ impl NextTurnState {
 /// facts are checked here; transformed request content and headers are checked
 /// later by the provider collection before authentication and dispatch.
 pub(crate) fn validate_next_turn_candidate(
-    collection: &ProviderCollection,
+    collection: &Models,
     candidate: &NextTurnState,
 ) -> Result<(), AgentError> {
     let model_spec = candidate.model_selection.to_spec();
@@ -354,7 +354,7 @@ pub(crate) fn validate_next_turn_candidate(
 
     let (provider, model) = collection
         .resolve(&model_spec)
-        .map_err(CollectionError::Registry)
+        .map_err(ModelsError::Registry)
         .map_err(InvalidNextTurnReason::Route)
         .map_err(AgentError::InvalidNextTurnCandidate)?;
     if provider.id() != candidate.model_selection.provider_id
@@ -410,7 +410,7 @@ pub struct AgentLoopContext {
     /// auth preparation, and attempt dispatch. The loop prepares
     /// one call per turn and opens every retry attempt from that same prepared
     /// call.
-    pub collection: Arc<ProviderCollection>,
+    pub collection: Arc<Models>,
     /// Immutable trusted-tool registry. The loop resolves every
     /// model-proposed tool name against this registry, projects provider-facing
     /// definitions from it, and executes only implementations reachable through

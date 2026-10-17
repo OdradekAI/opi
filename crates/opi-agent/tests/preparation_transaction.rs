@@ -325,7 +325,7 @@ async fn initial_replacement_cannot_discard_selected_input_before_delivery() {
 }
 
 struct SummaryHooks {
-    collection: Arc<opi_ai::ProviderCollection>,
+    collection: Arc<opi_ai::Models>,
     pending: Mutex<Option<opi_agent::hooks::PendingPreparationCompaction>>,
     next_turns: Arc<Mutex<Vec<u64>>>,
     completed: Arc<AtomicUsize>,

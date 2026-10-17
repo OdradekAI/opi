@@ -7,11 +7,11 @@ use opi_ai::http::HttpClient;
 use opi_ai::model_info::{
     AnthropicMessagesCompat, ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping, WireCompat,
 };
+use opi_ai::models::{AuthDescriptor, CompatMetadata, Models, SecretKey};
 use opi_ai::openai_chat::OpenAiChatEvent;
 use opi_ai::provider::{
     CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
 };
-use opi_ai::provider_collection::{AuthDescriptor, CompatMetadata, ProviderCollection, SecretKey};
 use opi_ai::stream::{CumulativeUsage, Pricing, calculate_cumulative_cost};
 use opi_ai::{ApiMappedProvider, ModelCapabilities, ModelInfo, WireApi};
 use tokio_util::sync::CancellationToken;
@@ -296,7 +296,7 @@ fn mapped_provider_materializes_an_effective_model_catalog_into_routes() {
 #[tokio::test]
 async fn collection_preflights_registry_model_before_provider_dispatch() {
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register(
             Box::new(CountingRoute {
@@ -393,7 +393,7 @@ impl Provider for LoggedRefreshProvider {
 #[tokio::test]
 async fn refresh_collects_every_provider_after_the_first_error() {
     let log = Arc::new(Mutex::new(Vec::new()));
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     for provider in [
         LoggedRefreshProvider {
             id: "a-error",

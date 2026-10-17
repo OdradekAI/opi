@@ -1251,12 +1251,12 @@ async fn raw_image_removed_by_transform_is_not_rejected_before_transform() {
 async fn image_injected_by_transform_fails_request_validation_before_auth_or_dispatch() {
     use opi_ai::auth::AuthResolver;
     use opi_ai::test_support::CountingAuthResolver;
-    use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
+    use opi_ai::{AuthProvenanceSource, CompatMetadata, Models};
 
     let provider = RecordingProvider::new(vec![]);
     let received = provider.received_messages.clone();
     let auth_count = Arc::new(AtomicU32::new(0));
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             Box::new(provider),

@@ -27,7 +27,7 @@ implement an agent loop, sessions, package loading, or built-in coding tools;
 those live in `opi-agent` and `opi-coding-agent`.
 
 `opi-ai` also exposes an unstable-0.x models/auth seam: the
-`provider_collection` module (`ProviderCollection`) wraps `ProviderRegistry`
+`models` module (`Models`) is the single driver wrapping `ProviderRegistry`
 with provider-side auth contracts, OpenAI-compatible compatibility metadata,
 and stream/complete dispatch. IO-free credential and OAuth traits live here;
 keychain, environment, login-presenter, and refresh implementations remain in
@@ -57,7 +57,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 
 | Item | Purpose |
 |------|---------|
-| `Provider` | Backend trait with `id`, `models`, and `stream_prepared` (the sole dispatch entry, reached through `ProviderCollection::prepare_call` with already-resolved auth). |
+| `Provider` | Backend trait with `id`, `models`, and `stream_prepared` (the sole dispatch entry, reached through `Models::prepare_call` with already-resolved auth). |
 | `Request` / `CacheRetention` | Provider request: model, messages, tools, token limits, thinking config, metadata, cancellation, timeout, extra headers, cache retention, and session affinity. |
 | `Message` | Provider-facing user, assistant, and tool-result messages. |
 | `InputContent` / `OutputContent` | Text and image content blocks. |
@@ -71,11 +71,13 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `ProviderError` / `ProviderErrorCategory` | Provider failure taxonomy: auth, config, request, network, rate_limit, provider, stream, capability, and cancelled (timeouts classify as network). |
 | `ProviderErrorSummary` | Closed redaction-safe provider-error text. Public construction is limited to `redacted()`, `authentication_rejected()`, and `from_untrusted(...)`; arbitrary provider payloads are not retained. |
 | `ProviderRegistry` | Resolves `provider:model`, registers custom providers, and layers model overrides. |
-| `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | Unstable-0.x models/auth seam above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. |
-| `PreparedProviderCall` / `PreparedRoute` | Opaque logical-call state returned by `ProviderCollection::prepare_call`, plus its public redacted route facts. `route`, `auth_provenance`, and `start_attempt` are the prepared-call lifecycle APIs. |
+| `Models` / `AuthDescriptor` / `AuthStatus` | Unstable-0.x single driver above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. Ordinary native/simple/direct entries and advanced `prepare_call` share one compiler, auth resolution, attempt seam, and collector. |
+| `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | Typed custom chat adapter registration with its exact API identity and fixed options type; handle-created options carry the API/type tag and stay portable across instances with compatible registrations. |
+| `ChatModelRecord` / `SimpleOptions` / `ChatCall` | Complete caller-owned chat record (provider id, bare model id, exact wire) usable without catalog membership; neutral simple options; the lazy ordinary-call owner that captures input at construction and starts auth on first poll. |
+| `PreparedProviderCall` / `PreparedRoute` | Opaque logical-call state returned by `Models::prepare_call`, plus its public redacted route facts. `route`, `auth_provenance`, and `start_attempt` are the prepared-call lifecycle APIs. |
 | `CredentialStore` / `Credential` / `CredentialSource` | IO-free, object-safe credential persistence and redacted three-state probe contracts. |
 | `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | Flow-independent boxed-future OAuth contracts; concrete flows live in `opi-coding-agent`. |
-| `AuthResolver` / `ResolvedAuth` | Collection-owned per-call auth resolution contract; one prepared result is frozen before an attempt starts. |
+| `AuthResolver` / `ResolvedAuth` | Driver-owned per-call auth resolution contract; one prepared result is frozen before an attempt starts. |
 | `ApiKind` | Crate-root enum tagging the backend family (`Anthropic`, `OpenAi`, `Google`, `Mistral`) carried on assistant messages. |
 | `HttpClient` | Shared `reqwest` client with pooling and explicit/env proxy support. |
 | `retry` | Retry config, exponential backoff, and `Retry-After` parsing. |
@@ -107,7 +109,7 @@ and returns `PreparedProviderCall`. Its `route()` exposes only `PreparedRoute`,
 `auth_provenance()` exposes non-secret provenance, and every `start_attempt()`
 reuses the frozen route, request, authentication, and cancellation token.
 Attempts are sequential: an overlapping stream returns
-`CollectionError::AttemptAlreadyActive`, cancellation returns `CallCancelled`,
+`ModelsError::AttemptAlreadyActive`, cancellation returns `CallCancelled`,
 and a prior credential-needed/revoked attempt closes the prepared call with
 `CredentialTerminated`. Missing and revoked credentials surface as explicit, non-retryable
 `ProviderError::CredentialNeeded` and `ProviderError::CredentialRevoked`
@@ -156,7 +158,7 @@ support off.
 is folded into `cache_write_cost`, reasoning remains in `output_cost`, and
 cost and total-token calculation count the parent buckets once.
 `Provider::refresh_models` and
-`ProviderCollection::refresh` implement deterministic atomic catalog
+`Models::refresh` implement deterministic atomic catalog
 replacement, but remain substrate-only with no production trigger.
 
 ## Image Support
@@ -328,7 +330,7 @@ use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
 use opi_ai::{
-    AuthProvenanceSource, AuthScheme, CompatMetadata, ProviderCollection,
+    AuthProvenanceSource, AuthScheme, CompatMetadata, Models,
     StaticAuthResolver,
 };
 use secrecy::SecretString;
@@ -341,8 +343,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         AuthScheme::ApiKey,
         SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
     ));
-    let mut collection = ProviderCollection::new();
-    collection.register_route(
+    let mut models = Models::new();
+    models.register_route(
         Box::new(provider),
         resolver,
         AuthProvenanceSource::Environment {
@@ -372,7 +374,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         session_id: None,
     };
 
-    let prepared = collection.prepare_call(model, request).await?;
+    let prepared = models.prepare_call(model, request).await?;
     let mut stream = prepared.start_attempt()?;
     while let Some(event) = stream.next().await {
         println!("{:?}", event?);
@@ -384,7 +386,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Modules
 
 `provider`, `message`, `stream`, `model_info`, `api_mapped`, `registry`,
-`provider_collection`, `provider_headers`, `auth`, `credential`, `http`, `retry`, `model`,
+`models`, `provider_headers`, `auth`, `credential`, `http`, `retry`, `model`,
 `anthropic`, `openai_chat`, `openai_responses`, `openai_codex_responses`,
 `openrouter`, `mistral`, `gemini`, `bedrock`, `azure_openai`, `vertex`,
 `config`, `time`, and `test_support`.

@@ -1134,7 +1134,7 @@ async fn phase17_next_call_routes_from_applied_state_nxt006() {
     use opi_agent::loop_types::ModelSelection;
     use opi_ai::auth::AuthResolver;
     use opi_ai::test_support::{CountingAuthResolver, MockProvider};
-    use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
+    use opi_ai::{AuthProvenanceSource, CompatMetadata, Models};
 
     let provider_a = MockProvider::new("a", vec![text_response("from-a")]);
     let provider_b = MockProvider::new("b", vec![text_response("from-b")]);
@@ -1143,7 +1143,7 @@ async fn phase17_next_call_routes_from_applied_state_nxt006() {
 
     let resolver: Arc<dyn AuthResolver> =
         Arc::new(CountingAuthResolver::new(Arc::new(AtomicU32::new(0))));
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             Box::new(provider_a),

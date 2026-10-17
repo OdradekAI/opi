@@ -490,7 +490,7 @@ async fn custom_mapped_provider_routes_three_wires_with_lazy_shared_env_auth() {
     use futures_util::StreamExt;
     use opi_ai::AssistantStreamEvent;
     use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
-    use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
+    use opi_ai::{AuthProvenanceSource, CompatMetadata, Models};
     use opi_coding_agent::credential_store::FakeKeyringBackend;
     use opi_coding_agent::provider_factory::build_provider_bundle;
     use tokio_util::sync::CancellationToken;
@@ -580,7 +580,7 @@ max_output_tokens = 8192
     // Phase 17.5: auth moved off the provider object onto the collection route.
     // Register the bundle's resolver so prepare_call resolves env auth per
     // logical call (one per model), observing the env value current at each call.
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             bundle.provider,
@@ -663,7 +663,7 @@ async fn production_custom_provider_reloads_store_then_env_auth_for_each_stream(
     use futures_util::StreamExt;
     use opi_ai::credential::Credential;
     use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
-    use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
+    use opi_ai::{AuthProvenanceSource, CompatMetadata, Models};
     use opi_coding_agent::credential_store::{
         FakeKeyringBackend, KEYCHAIN_PRESENCE_SERVICE, KEYCHAIN_SERVICE, KeyringBackend,
     };
@@ -753,7 +753,7 @@ max_output_tokens = 8192
     // Each prepare_call resolves auth once: the first call reads the stored
     // credential; after the store entries are deleted, the second call falls
     // back to the env value (a new logical call, not a mid-retry re-resolution).
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             bundle.provider,
@@ -809,7 +809,7 @@ async fn production_custom_provider_redacts_401_and_403_for_all_three_wires() {
     use opi_ai::provider::{
         CacheRetention, ProviderError, ProviderErrorSummary, Request, ThinkingConfig,
     };
-    use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
+    use opi_ai::{AuthProvenanceSource, CompatMetadata, Models};
     use opi_coding_agent::credential_store::FakeKeyringBackend;
     use opi_coding_agent::provider_factory::build_provider_bundle;
     use tokio_util::sync::CancellationToken;
@@ -887,7 +887,7 @@ max_output_tokens = 8192
 
             // Phase 17.5: route through the collection so prepare_call resolves
             // auth; the 401/403 redaction is preserved by the provider error path.
-            let mut collection = ProviderCollection::new();
+            let mut collection = Models::new();
             collection
                 .register_route(
                     bundle.provider,
@@ -940,7 +940,7 @@ max_output_tokens = 8192
 async fn custom_responses_affinity_requires_explicit_true_compat() {
     use futures_util::StreamExt;
     use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
-    use opi_ai::{AuthProvenanceSource, CompatMetadata, ProviderCollection};
+    use opi_ai::{AuthProvenanceSource, CompatMetadata, Models};
     use opi_coding_agent::credential_store::FakeKeyringBackend;
     use opi_coding_agent::provider_factory::build_provider_bundle;
     use tokio_util::sync::CancellationToken;
@@ -1006,7 +1006,7 @@ send_session_id_header = true
     .await
     .expect("custom responses provider bundle");
     // Phase 17.5: route through the collection so prepare_call resolves env auth.
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             bundle.provider,

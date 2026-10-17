@@ -20,7 +20,7 @@ pub fn credential_runner(workspace: &Path) -> NonInteractiveRunner {
             provider_id: "anthropic".into(),
         })],
     );
-    // Phase 17.5: the harness dispatches through ProviderCollection::prepare_call,
+    // Phase 17.5: the harness dispatches through Models::prepare_call,
     // which strictly resolves the `provider:model` spec against the provider's
     // catalog. MockProvider only registers "mock-model", so the spec must match it;
     // the CredentialNeeded provider_id is driven by the mock error, not the spec.

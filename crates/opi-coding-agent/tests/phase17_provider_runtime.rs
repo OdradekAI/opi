@@ -1,7 +1,7 @@
 //! Phase 17.5 provider-runtime acceptance (P17-A02 + PRV-001/002/004, OUT-001).
 //!
 //! These tests prove the dispatchable-provider-collection contract at the
-//! `ProviderCollection` seam: route lookup and per-call auth preparation go
+//! `Models` seam: route lookup and per-call auth preparation go
 //! through the registered runtime collection (not a startup-selected provider
 //! object), a missing / ambiguous / unauthenticated route or auth-preparation
 //! failure yields a typed error with ZERO model dispatch and NO silent fallback
@@ -23,12 +23,12 @@ use opi_ai::auth::{
 };
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::model_info::WireApi;
+use opi_ai::models::drain_to_completion;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
-use opi_ai::provider_collection::drain_to_completion;
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use opi_ai::test_support::base_assistant;
-use opi_ai::{CompatMetadata, ProviderCollection};
+use opi_ai::{CompatMetadata, Models};
 use tokio_util::sync::CancellationToken;
 
 /// A provider that counts how many times `stream_prepared` is invoked, so a
@@ -140,7 +140,7 @@ fn static_resolver() -> Arc<dyn AuthResolver> {
 
 /// Register a dispatchable counting route and return its dispatch counter.
 fn register_counting_route(
-    collection: &mut ProviderCollection,
+    collection: &mut Models,
     provider_id: &str,
     model_id: &str,
     resolver: Arc<dyn AuthResolver>,
@@ -184,7 +184,7 @@ impl opi_agent::extension::Extension for ExtProviderExtension {
 /// no silent provider/credential fallback. Every dispatch counter stays at 0.
 #[tokio::test]
 async fn phase17_route_and_auth_failures_do_not_dispatch_model_http() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     let alpha_dispatches =
         register_counting_route(&mut collection, "alpha", "a1", static_resolver());
 
@@ -194,7 +194,7 @@ async fn phase17_route_and_auth_failures_do_not_dispatch_model_http() {
         .await
         .expect_err("unknown provider must fail before dispatch");
     assert!(
-        matches!(err, opi_ai::CollectionError::Registry(_)),
+        matches!(err, opi_ai::ModelsError::Registry(_)),
         "unknown provider must be a registry typed error, got {err:?}"
     );
 
@@ -204,7 +204,7 @@ async fn phase17_route_and_auth_failures_do_not_dispatch_model_http() {
         .await
         .expect_err("unknown model must fail before dispatch");
     assert!(
-        matches!(err, opi_ai::CollectionError::Registry(_)),
+        matches!(err, opi_ai::ModelsError::Registry(_)),
         "unknown model must be a registry typed error, got {err:?}"
     );
 
@@ -215,7 +215,7 @@ async fn phase17_route_and_auth_failures_do_not_dispatch_model_http() {
         .await
         .expect_err("ambiguous bare model must fail before dispatch");
     assert!(
-        matches!(err, opi_ai::CollectionError::Registry(_)),
+        matches!(err, opi_ai::ModelsError::Registry(_)),
         "bare model must be a registry typed error, got {err:?}"
     );
 
@@ -236,7 +236,7 @@ async fn phase17_route_and_auth_failures_do_not_dispatch_model_http() {
     assert!(
         matches!(
             err,
-            opi_ai::CollectionError::Provider(ProviderError::CredentialNeeded { .. })
+            opi_ai::ModelsError::Provider(ProviderError::CredentialNeeded { .. })
         ),
         "unauthenticated route must surface the owning CredentialNeeded failure, got {err:?}"
     );
@@ -259,7 +259,7 @@ async fn phase17_route_and_auth_failures_do_not_dispatch_model_http() {
 /// providers through ONE collection without reconstructing it.
 #[tokio::test]
 async fn phase17_two_providers_dispatch_through_one_collection_without_rebuild() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     let alpha = register_counting_route(&mut collection, "alpha", "a1", static_resolver());
     let beta = register_counting_route(&mut collection, "beta", "b1", static_resolver());
 
@@ -301,7 +301,7 @@ async fn phase17_two_providers_dispatch_through_one_collection_without_rebuild()
 /// bare selection fails before the provider is touched. No alias registry exists.
 #[tokio::test]
 async fn phase17_canonical_selection_resolves_and_bare_is_ambiguous() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     let alpha = register_counting_route(&mut collection, "alpha", "a1", static_resolver());
 
     // Canonical spec resolves and dispatches.
@@ -330,7 +330,7 @@ async fn phase17_canonical_selection_resolves_and_bare_is_ambiguous() {
 /// to another registered provider; the typed failure is returned.
 #[tokio::test]
 async fn phase17_auth_failure_does_not_silently_fallback() {
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     let alpha = register_counting_route(&mut collection, "alpha", "a1", static_resolver());
     let _gamma = register_counting_route(
         &mut collection,
@@ -350,7 +350,7 @@ async fn phase17_auth_failure_does_not_silently_fallback() {
     assert!(
         matches!(
             err,
-            opi_ai::CollectionError::Provider(ProviderError::CredentialNeeded { .. })
+            opi_ai::ModelsError::Provider(ProviderError::CredentialNeeded { .. })
         ),
         "got {err:?}"
     );

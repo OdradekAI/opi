@@ -23,9 +23,9 @@ cargo add opi-ai
 `opi-agent` 诊断层使用的 Provider 侧错误分类。它不实现 Agent 主循环、会话、
 package 加载或内置编程工具；这些能力分别位于 `opi-agent` 和 `opi-coding-agent`。
 
-`opi-ai` 还暴露一个 unstable-0.x 的模型/鉴权 seam：`provider_collection`
-模块（`ProviderCollection`）在 `ProviderRegistry` 之上叠加 Provider 侧鉴权契约、
-OpenAI-compatible 兼容性元数据，以及 stream/complete 派发。无 IO 的凭据与 OAuth
+`opi-ai` 还暴露一个 unstable-0.x 的模型/鉴权 seam：`models`
+模块（`Models`）是唯一的 driver，在 `ProviderRegistry` 之上叠加 Provider 侧鉴权契约、
+OpenAI-compatible 兼容性元数据，以及全部聊天调用入口。无 IO 的凭据与 OAuth
 trait 位于本 crate；keychain、环境变量、登录 presenter 和 refresh 实现仍位于
 `opi-coding-agent`。
 
@@ -53,7 +53,7 @@ OpenAI-compatible profile 加入。
 
 | 项 | 作用 |
 |----|------|
-| `Provider` | 后端 trait，包含 `id`、`models` 和 `stream_prepared`（唯一分发入口，经 `ProviderCollection::prepare_call` 携已解析认证调用）。 |
+| `Provider` | 后端 trait，包含 `id`、`models` 和 `stream_prepared`（唯一分发入口，经 `Models::prepare_call` 携已解析认证调用）。 |
 | `Request` / `CacheRetention` | Provider 请求：模型、消息、工具、token 限制、thinking 配置、metadata、取消、timeout、额外 header、cache retention 和会话亲和。 |
 | `Message` | 面向 Provider 的 user、assistant 和 tool-result 消息。 |
 | `InputContent` / `OutputContent` | 文本与图片内容块。 |
@@ -67,11 +67,13 @@ OpenAI-compatible profile 加入。
 | `ProviderError` / `ProviderErrorCategory` | Provider 失败分类：auth、config、request、network、rate_limit、provider、stream、capability 和 cancelled（超时归为 network）。 |
 | `ProviderErrorSummary` | 封闭且可安全脱敏的 Provider error 文本。公共构造仅限 `redacted()`、`authentication_rejected()` 与 `from_untrusted(...)`；不会保留任意 Provider payload。 |
 | `ProviderRegistry` | 解析 `provider:model`、注册自定义 Provider、叠加模型覆盖。 |
-| `ProviderCollection` / `AuthDescriptor` / `AuthStatus` | unstable-0.x 模型/鉴权 seam，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。 |
-| `PreparedProviderCall` / `PreparedRoute` | `ProviderCollection::prepare_call` 返回的不透明 logical-call 状态，以及公开的已脱敏 route facts。`route`、`auth_provenance` 与 `start_attempt` 是 prepared-call 生命周期 API。 |
+| `Models` / `AuthDescriptor` / `AuthStatus` | unstable-0.x 唯一 driver，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。普通 native/simple/direct 入口与 advanced `prepare_call` 共用同一 compiler、鉴权解析、attempt seam 与 collector。 |
+| `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | 类型化自定义 chat adapter 注册，携带精确 API 身份与固定 options 类型；由 handle 创建的 options 携带 API/类型标签，可在具备兼容注册的实例间移植。 |
+| `ChatModelRecord` / `SimpleOptions` / `ChatCall` | 调用方持有的完整 chat record（provider id、裸模型 id、精确 wire），无需目录成员即可调用；中性 simple options；构造时捕获输入、首次 poll 才启动鉴权的惰性普通调用 owner。 |
+| `PreparedProviderCall` / `PreparedRoute` | `Models::prepare_call` 返回的不透明 logical-call 状态，以及公开的已脱敏 route facts。`route`、`auth_provenance` 与 `start_attempt` 是 prepared-call 生命周期 API。 |
 | `CredentialStore` / `Credential` / `CredentialSource` | 无 IO、object-safe 的凭据持久化与已脱敏三态探测契约。 |
 | `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | 与 flow 无关的 boxed-future OAuth 契约；具体 flow 位于 `opi-coding-agent`。 |
-| `AuthResolver` / `ResolvedAuth` | 由 collection 按调用解析的鉴权契约；attempt 开始前会冻结一次准备结果。 |
+| `AuthResolver` / `ResolvedAuth` | 由 driver 按调用解析的鉴权契约；attempt 开始前会冻结一次准备结果。 |
 | `ApiKind` | crate 根枚举，标注 assistant 消息携带的后端家族（`Anthropic`、`OpenAi`、`Google`、`Mistral`）。 |
 | `HttpClient` | 共享 `reqwest` client，支持连接池和显式/环境变量代理。 |
 | `retry` | 重试配置、指数退避和 `Retry-After` 解析。 |
@@ -98,7 +100,7 @@ collection 在 `prepare_call` 中、任何 attempt 之前只解析一次 `AuthRe
 `PreparedProviderCall`。其 `route()` 只暴露 `PreparedRoute`，`auth_provenance()` 暴露
 非 secret provenance，每次 `start_attempt()` 都复用已冻结的 route、request、鉴权和
 cancellation token。attempt 必须串行：重叠 stream 返回
-`CollectionError::AttemptAlreadyActive`，取消返回 `CallCancelled`，先前 attempt 若报告
+`ModelsError::AttemptAlreadyActive`，取消返回 `CallCancelled`，先前 attempt 若报告
 credential-needed/revoked，则 prepared call 以 `CredentialTerminated` 关闭。凭据缺失与撤销分别成为显式且不可重试的
 `ProviderError::CredentialNeeded` 和 `ProviderError::CredentialRevoked`。
 按调用凭据仍不在范围内：`extra_headers` 会拒绝 Provider 管理的鉴权 header。
@@ -134,7 +136,7 @@ Anthropic 则使用模型能力门控的 cache marker。`ModelInfo` 包含现有
 可区分缺失与显式上报的零。`CostBreakdown` 只有四行：`input_cost`、`output_cost`、
 `cache_read_cost` 和 `cache_write_cost`。加权的一小时 write 子集折算进
 `cache_write_cost`，reasoning 仍计入 `output_cost`，费用与总 token 只计一次父 bucket。
-`Provider::refresh_models` 与 `ProviderCollection::refresh` 实现确定性的原子目录替换，
+`Provider::refresh_models` 与 `Models::refresh` 实现确定性的原子目录替换，
 但仅为基底、无生产触发。
 
 ## 图片支持
@@ -290,7 +292,7 @@ use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
 use opi_ai::{
-    AuthProvenanceSource, AuthScheme, CompatMetadata, ProviderCollection,
+    AuthProvenanceSource, AuthScheme, CompatMetadata, Models,
     StaticAuthResolver,
 };
 use secrecy::SecretString;
@@ -303,8 +305,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         AuthScheme::ApiKey,
         SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
     ));
-    let mut collection = ProviderCollection::new();
-    collection.register_route(
+    let mut models = Models::new();
+    models.register_route(
         Box::new(provider),
         resolver,
         AuthProvenanceSource::Environment {
@@ -334,7 +336,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         session_id: None,
     };
 
-    let prepared = collection.prepare_call(model, request).await?;
+    let prepared = models.prepare_call(model, request).await?;
     let mut stream = prepared.start_attempt()?;
     while let Some(event) = stream.next().await {
         println!("{:?}", event?);
@@ -346,7 +348,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## 模块
 
 `provider`、`message`、`stream`、`model_info`、`api_mapped`、`registry`、
-`provider_collection`、`provider_headers`、`auth`、`credential`、`http`、`retry`、`model`、
+`models`、`provider_headers`、`auth`、`credential`、`http`、`retry`、`model`、
 `anthropic`、`openai_chat`、`openai_responses`、`openai_codex_responses`、
 `openrouter`、`mistral`、`gemini`、`bedrock`、`azure_openai`、`vertex`、
 `config`、`time` 和 `test_support`。

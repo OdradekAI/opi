@@ -1046,7 +1046,7 @@ supports_thinking = false
         let collection = build_collection_for_listing(&config, &std::collections::HashMap::new())
             .expect("listing collection builds through the factory");
 
-        // The factory returns the ProviderCollection/auth-seam type and the profile
+        // The factory returns the Models/auth-seam type and the profile
         // model is resolvable through it.
         let (_provider, model) = collection
             .resolve("testprof:test-model")
@@ -1295,7 +1295,7 @@ async fn metadata_only_provider_dispatch_returns_explicit_error() {
 
     // A lookup-only extension provider (registered without a route resolver) is
     // not dispatchable. 17.5: the metadata-only rejection surfaces at
-    // prepare_call as CollectionError::RouteNotDispatchable.
+    // prepare_call as ModelsError::RouteNotDispatchable.
     let collection = build_harness_collection(
         Vec::new(),
         vec![Box::new(MockProvider::new("metadata-provider", vec![]))],
@@ -2119,7 +2119,7 @@ max_output_tokens = 4096
 }
 
 /// The harness model-lookup collection is built via
-/// `ProviderCollection::from_registry` with NO auth descriptors, distinct from
+/// `Models::from_registry` with NO auth descriptors, distinct from
 /// `build_collection_for_listing`'s register-with-AuthDescriptor listing path.
 /// DoD: "assembles harness model lookup through from_registry without claiming
 /// auth-gated runtime dispatch". The existing
@@ -2243,8 +2243,8 @@ fn provider_policy_is_centralized() {
 
     let tokens = [
         "ProviderRegistry::new",
-        "ProviderCollection::from_registry",
-        "ProviderCollection::new",
+        "Models::from_registry",
+        "Models::new",
         "fn parse_model_spec",
         "fn build_provider",
         "fn build_runtime_route",

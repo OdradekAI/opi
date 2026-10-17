@@ -5,6 +5,7 @@
 //! streaming, and model listing all work through the existing contracts.
 //! All tests use MockProvider — no live provider calls.
 
+use opi_ai::provider::ProviderError;
 use opi_ai::provider::{CacheRetention, ModelInfo, Provider};
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::registry::ProviderRegistry;
@@ -490,4 +491,727 @@ fn get_provider_returns_registered() {
     let provider = registry.get_provider("my-prov").unwrap();
     assert_eq!(provider.id(), "my-prov");
     assert_eq!(provider.models().len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.3: single Models, frozen binding, typed custom chat calls
+// (AIR-045 / P20-S03 / P20-ACTOR-02)
+// ---------------------------------------------------------------------------
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+
+use futures_util::StreamExt;
+use opi_ai::Models;
+use opi_ai::auth::{AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth};
+use opi_ai::credential::BoxAuthFuture;
+use opi_ai::message::AssistantContent;
+use opi_ai::models::{ApiId, ChatApi, ChatModelRecord, SimpleOptions};
+use opi_ai::provider::{Request, ThinkingConfig};
+use secrecy::{ExposeSecret, SecretString};
+use tokio_util::sync::CancellationToken;
+
+fn assistant_text(message: &opi_ai::message::AssistantMessage) -> String {
+    message
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            AssistantContent::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Typed native options for the echo adapter: the label must reach the
+/// adapter unchanged.
+#[derive(Clone, Debug, PartialEq)]
+struct EchoOptions {
+    label: String,
+}
+
+/// A second, incompatible options type for the same ApiId.
+#[derive(Clone, Debug)]
+struct OtherOptions {
+    #[expect(dead_code)]
+    value: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct ObservedCall {
+    request_model: String,
+    max_tokens: Option<u64>,
+    temperature: Option<f64>,
+    options_label: String,
+    auth_secret: String,
+}
+
+type Observed = Arc<Mutex<Vec<ObservedCall>>>;
+
+/// One custom chat adapter: records the effective request, options, and
+/// resolved-auth secret, then completes with a fixed text.
+struct EchoChatApi {
+    api: ApiId,
+    provider_id: String,
+    record: ModelInfo,
+    text: String,
+    observed: Observed,
+}
+
+impl ChatApi<EchoOptions> for EchoChatApi {
+    fn api_id(&self) -> &ApiId {
+        &self.api
+    }
+
+    fn provider_id(&self) -> &str {
+        &self.provider_id
+    }
+
+    fn complete_record(&self) -> ModelInfo {
+        self.record.clone()
+    }
+
+    fn simple_options(&self) -> EchoOptions {
+        EchoOptions {
+            label: "simple".into(),
+        }
+    }
+
+    fn stream_prepared(
+        &self,
+        request: Request,
+        options: EchoOptions,
+        auth: ResolvedAuth,
+    ) -> opi_ai::provider::EventStream {
+        self.observed.lock().unwrap().push(ObservedCall {
+            request_model: request.model,
+            max_tokens: request.max_tokens,
+            temperature: request.temperature,
+            options_label: options.label,
+            auth_secret: auth.secret.expose_secret().to_owned(),
+        });
+        let events = text_response(&self.text);
+        Box::pin(futures_util::stream::iter(events.into_iter().map(Ok)))
+    }
+}
+
+/// An adapter with an incompatible options type, registered under the same
+/// ApiId to prove changed-type failures.
+struct TypedChatApi {
+    api: ApiId,
+    provider_id: String,
+    record: ModelInfo,
+}
+
+impl ChatApi<OtherOptions> for TypedChatApi {
+    fn api_id(&self) -> &ApiId {
+        &self.api
+    }
+
+    fn provider_id(&self) -> &str {
+        &self.provider_id
+    }
+
+    fn complete_record(&self) -> ModelInfo {
+        self.record.clone()
+    }
+
+    fn simple_options(&self) -> OtherOptions {
+        OtherOptions { value: 0 }
+    }
+
+    fn stream_prepared(
+        &self,
+        _request: Request,
+        _options: OtherOptions,
+        _auth: ResolvedAuth,
+    ) -> opi_ai::provider::EventStream {
+        let events = text_response("typed");
+        Box::pin(futures_util::stream::iter(events.into_iter().map(Ok)))
+    }
+}
+
+struct CountingResolver {
+    calls: AtomicUsize,
+}
+
+impl AuthResolver for CountingResolver {
+    fn resolve(&self) -> BoxAuthFuture<'_, Result<ResolvedAuth, ProviderError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {
+            Ok(ResolvedAuth {
+                scheme: AuthScheme::ApiKey,
+                secret: SecretString::from("resolver-secret"),
+                base_url: None,
+                account_id: None,
+                provenance: opi_ai::AuthProvenance::default(),
+            })
+        })
+    }
+}
+
+fn echo_record_info(max_output: u64) -> ModelInfo {
+    ModelInfo::new(
+        "echo-model",
+        "Echo model",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(100_000, max_output).with_streaming(true),
+    )
+}
+
+fn models_request() -> Request {
+    Request {
+        model: String::new(),
+        system: Some("be terse".into()),
+        messages: vec![],
+        tools: vec![],
+        max_tokens: None,
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: opi_ai::provider::CacheRetention::None,
+        session_id: None,
+    }
+}
+
+fn observed_call(observed: &Observed) -> ObservedCall {
+    observed.lock().unwrap().last().unwrap().clone()
+}
+
+fn counting_resolver() -> Arc<CountingResolver> {
+    Arc::new(CountingResolver {
+        calls: AtomicUsize::new(0),
+    })
+}
+
+#[tokio::test]
+async fn models_register_chat_api_keeps_record_out_of_catalog() {
+    let mut models = Models::new();
+    let observed: Observed = Arc::default();
+    let record_info = echo_record_info(2_048);
+    let adapter = EchoChatApi {
+        api: ApiId::new("custom-chat-v1"),
+        provider_id: "custom".into(),
+        record: record_info.clone(),
+        text: "api response".into(),
+        observed: observed.clone(),
+    };
+    let handle = models
+        .register_chat_api(
+            Arc::new(adapter),
+            counting_resolver(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    // Exact ApiId identity is preserved on the registration handle.
+    assert_eq!(handle.api_id().as_str(), "custom-chat-v1");
+    // The custom complete record stays absent from every catalog read.
+    assert_eq!(models.get_model("custom", "echo-model"), None);
+    assert!(
+        models
+            .registry()
+            .all_models()
+            .iter()
+            .all(|(provider, _)| *provider != "custom")
+    );
+
+    // ... yet it is callable on the registered provider/wire.
+    let record = ChatModelRecord::new("custom", record_info);
+    let message = models
+        .complete(
+            record,
+            models_request(),
+            handle.options(EchoOptions {
+                label: "native".into(),
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(assistant_text(&message), "api response");
+    let call = observed_call(&observed);
+    assert_eq!(call.request_model, "custom:echo-model");
+    assert_eq!(call.options_label, "native");
+    assert_eq!(call.auth_secret, "resolver-secret");
+}
+
+#[tokio::test]
+async fn models_get_model_returns_owned_record_with_exact_wire() {
+    let mut models = Models::new();
+    let provider = custom_provider("owned", vec![custom_model("owned-model", "Owned Model")]);
+    models
+        .register_route(
+            provider,
+            counting_resolver(),
+            AuthProvenanceSource::Static,
+            opi_ai::CompatMetadata::default(),
+        )
+        .unwrap();
+
+    let owned = models
+        .get_model("owned", "owned-model")
+        .expect("catalog record");
+    assert_eq!(owned.id, "owned-model");
+    assert_eq!(owned.wire_api, WireApi::OpenAiCompletions);
+    assert_eq!(models.get_model("owned", "missing"), None);
+    assert_eq!(models.get_model("missing", "owned-model"), None);
+}
+
+#[tokio::test]
+async fn models_frozen_record_is_not_replaced_by_same_id_catalog_data() {
+    let mut models = Models::new();
+    let observed: Observed = Arc::default();
+    let record_info = echo_record_info(1_024);
+    let adapter = EchoChatApi {
+        api: ApiId::new("custom-chat-v1"),
+        provider_id: "custom".into(),
+        record: record_info.clone(),
+        text: "frozen".into(),
+        observed: observed.clone(),
+    };
+    let handle = models
+        .register_chat_api(
+            Arc::new(adapter),
+            counting_resolver(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    // A catalog model with the SAME provider+model id but a larger output
+    // limit exists; it must not replace the caller's complete record. The
+    // route registration replaces the adapter's catalog-invisible route
+    // provider while the typed ApiId registration keeps serving the native
+    // entry.
+    let catalog_model = ModelInfo::new(
+        "echo-model",
+        "Catalog Echo",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(200_000, 8_192).with_streaming(true),
+    );
+    models
+        .register_route(
+            custom_provider("custom", vec![catalog_model]),
+            counting_resolver(),
+            AuthProvenanceSource::Static,
+            opi_ai::CompatMetadata::default(),
+        )
+        .unwrap();
+    let catalog = models
+        .get_model("custom", "echo-model")
+        .expect("catalog record present");
+    assert_eq!(catalog.capabilities.max_output_tokens, 8_192);
+
+    let record = ChatModelRecord::new("custom", record_info);
+    models
+        .complete(
+            record,
+            models_request(),
+            handle.options(EchoOptions {
+                label: "native".into(),
+            }),
+        )
+        .await
+        .unwrap();
+    let call = observed_call(&observed);
+    // The frozen caller record's limit (1,024) reached the adapter; the
+    // catalog record's larger default did not replace it.
+    assert_eq!(call.max_tokens, Some(1_024));
+}
+
+#[tokio::test]
+async fn models_simple_entry_uses_neutral_options_and_same_binding() {
+    let mut models = Models::new();
+    let observed: Observed = Arc::default();
+    let record_info = echo_record_info(2_048);
+    let adapter = EchoChatApi {
+        api: ApiId::new("custom-chat-v1"),
+        provider_id: "custom".into(),
+        record: record_info.clone(),
+        text: "simple response".into(),
+        observed: observed.clone(),
+    };
+    models
+        .register_chat_api(
+            Arc::new(adapter),
+            counting_resolver(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    let record = ChatModelRecord::new("custom", record_info);
+    let message = models
+        .complete_simple(
+            record,
+            models_request(),
+            SimpleOptions {
+                temperature: Some(0.25),
+                ..SimpleOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+    let call = observed_call(&observed);
+    assert_eq!(call.options_label, "simple");
+    assert_eq!(call.temperature, Some(0.25));
+    assert_eq!(call.request_model, "custom:echo-model");
+    assert_eq!(assistant_text(&message), "simple response");
+    assert_eq!(call.auth_secret, "resolver-secret");
+}
+
+#[tokio::test]
+async fn models_direct_entry_uses_injected_auth_without_models_auth() {
+    let mut models = Models::new();
+    let observed: Observed = Arc::default();
+    let record_info = echo_record_info(2_048);
+    let adapter = EchoChatApi {
+        api: ApiId::new("custom-chat-v1"),
+        provider_id: "custom".into(),
+        record: record_info.clone(),
+        text: "direct response".into(),
+        observed: observed.clone(),
+    };
+    let reads = counting_resolver();
+    let handle = models
+        .register_chat_api(
+            Arc::new(adapter),
+            reads.clone() as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    let auth = ResolvedAuth {
+        scheme: AuthScheme::Bearer,
+        secret: SecretString::from("direct-secret"),
+        base_url: None,
+        account_id: None,
+        provenance: opi_ai::AuthProvenance::default(),
+    };
+    let record = ChatModelRecord::new("custom", record_info);
+    models
+        .complete_direct(
+            record,
+            models_request(),
+            handle.options(EchoOptions {
+                label: "direct".into(),
+            }),
+            auth,
+        )
+        .await
+        .unwrap();
+
+    let call = observed_call(&observed);
+    assert_eq!(call.auth_secret, "direct-secret");
+    assert_eq!(reads.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn models_native_options_portable_across_instances() {
+    let record_info = echo_record_info(2_048);
+    let mut first = Models::new();
+    let observed_a: Observed = Arc::default();
+    let handle = first
+        .register_chat_api(
+            Arc::new(EchoChatApi {
+                api: ApiId::new("custom-chat-v1"),
+                provider_id: "custom".into(),
+                record: record_info.clone(),
+                text: "instance-a".into(),
+                observed: observed_a.clone(),
+            }),
+            counting_resolver(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    let mut second = Models::new();
+    let observed_b: Observed = Arc::default();
+    second
+        .register_chat_api(
+            Arc::new(EchoChatApi {
+                api: ApiId::new("custom-chat-v1"),
+                provider_id: "custom".into(),
+                record: record_info.clone(),
+                text: "instance-b".into(),
+                observed: observed_b.clone(),
+            }),
+            counting_resolver(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    // The same option value (created from the FIRST instance's handle)
+    // crosses to the second instance with a compatible registration.
+    let options = handle.options(EchoOptions {
+        label: "portable".into(),
+    });
+    let record = ChatModelRecord::new("custom", record_info.clone());
+    let a = first
+        .complete(record.clone(), models_request(), options.clone())
+        .await
+        .unwrap();
+    let b = second
+        .complete(record, models_request(), options)
+        .await
+        .unwrap();
+    assert_eq!(assistant_text(&a), "instance-a");
+    assert_eq!(assistant_text(&b), "instance-b");
+    assert_eq!(observed_call(&observed_a).options_label, "portable");
+    assert_eq!(observed_call(&observed_b).options_label, "portable");
+}
+
+#[tokio::test]
+async fn models_old_call_survives_provider_mutation() {
+    let mut models = Models::new();
+    let observed: Observed = Arc::default();
+    let record_info = echo_record_info(2_048);
+    let handle = models
+        .register_chat_api(
+            Arc::new(EchoChatApi {
+                api: ApiId::new("custom-chat-v1"),
+                provider_id: "custom".into(),
+                record: record_info.clone(),
+                text: "before-mutation".into(),
+                observed: observed.clone(),
+            }),
+            counting_resolver(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    // Create (but do not poll) a call; then replace the registration.
+    let record = ChatModelRecord::new("custom", record_info.clone());
+    let call = models.stream(
+        record.clone(),
+        models_request(),
+        handle.options(EchoOptions {
+            label: "frozen".into(),
+        }),
+    );
+
+    models
+        .register_chat_api(
+            Arc::new(EchoChatApi {
+                api: ApiId::new("custom-chat-v1"),
+                provider_id: "custom".into(),
+                record: record_info,
+                text: "after-mutation".into(),
+                observed: Arc::default(),
+            }),
+            counting_resolver(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    // The already-created call keeps its captured binding.
+    let message = call.result().await.unwrap();
+    assert_eq!(assistant_text(&message), "before-mutation");
+
+    // A NEW call on the same handle observes the replacement.
+    let message = models
+        .complete(
+            record,
+            models_request(),
+            handle.options(EchoOptions {
+                label: "fresh".into(),
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(assistant_text(&message), "after-mutation");
+}
+
+#[tokio::test]
+async fn models_type_mismatch_and_unregistered_api_fail_before_auth() {
+    let mut models = Models::new();
+    let observed: Observed = Arc::default();
+    let record_info = echo_record_info(2_048);
+    let reads = counting_resolver();
+    let handle = models
+        .register_chat_api(
+            Arc::new(EchoChatApi {
+                api: ApiId::new("custom-chat-v1"),
+                provider_id: "custom".into(),
+                record: record_info.clone(),
+                text: "unreachable".into(),
+                observed: observed.clone(),
+            }),
+            reads.clone() as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let record = ChatModelRecord::new("custom", record_info.clone());
+
+    // Upsert the same ApiId with an incompatible options type.
+    models
+        .register_chat_api(
+            Arc::new(TypedChatApi {
+                api: ApiId::new("custom-chat-v1"),
+                provider_id: "custom".into(),
+                record: record_info.clone(),
+            }),
+            counting_resolver(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    // Options created before the upsert now fail the type check pre-auth.
+    let failure = models
+        .complete(
+            record.clone(),
+            models_request(),
+            handle.options(EchoOptions {
+                label: "stale".into(),
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        failure.cause().to_string().contains("does not match"),
+        "{}",
+        failure.cause()
+    );
+    // The failed preflight never reached the replaced adapter or auth.
+    assert!(observed.lock().unwrap().is_empty());
+    assert_eq!(reads.calls.load(Ordering::SeqCst), 0);
+
+    // Options from another instance's handle (different ApiId) fail as
+    // unregistered on this instance, also before auth.
+    let mut fresh = Models::new();
+    let orphan = fresh
+        .register_chat_api(
+            Arc::new(EchoChatApi {
+                api: ApiId::new("orphan-chat"),
+                provider_id: "orphan".into(),
+                record: record_info.clone(),
+                text: "orphan".into(),
+                observed: Arc::default(),
+            }),
+            counting_resolver(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let failure = models
+        .complete(
+            record.clone(),
+            models_request(),
+            orphan.options(EchoOptions {
+                label: "orphan".into(),
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        failure.cause().to_string().contains("not registered"),
+        "{}",
+        failure.cause()
+    );
+
+    // A record whose provider does not own the API fails pre-auth as well.
+    let failure = models
+        .complete(
+            ChatModelRecord::new("elsewhere", record_info),
+            models_request(),
+            handle.options(EchoOptions {
+                label: "mismatched".into(),
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        failure.cause().to_string().contains("does not match"),
+        "{}",
+        failure.cause()
+    );
+    assert_eq!(reads.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn models_auth_starts_on_first_poll_and_call_is_send_static() {
+    let mut models = Models::new();
+    let observed: Observed = Arc::default();
+    let record_info = echo_record_info(2_048);
+    let reads = counting_resolver();
+    let handle = models
+        .register_chat_api(
+            Arc::new(EchoChatApi {
+                api: ApiId::new("custom-chat-v1"),
+                provider_id: "custom".into(),
+                record: record_info.clone(),
+                text: "lazy auth".into(),
+                observed,
+            }),
+            reads.clone() as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    let record = ChatModelRecord::new("custom", record_info);
+    let call = models.stream(
+        record,
+        models_request(),
+        handle.options(EchoOptions {
+            label: "lazy".into(),
+        }),
+    );
+    // Construction captured the binding without auth IO.
+    assert_eq!(reads.calls.load(Ordering::SeqCst), 0);
+
+    // The call is Send + 'static: it can cross into a fresh runtime task.
+    let first_poll_happened = tokio::spawn(async move {
+        let mut call = call;
+        let first = call.next().await;
+        let saw_event = first.is_some();
+        let message = call.result().await.unwrap();
+        (saw_event, assistant_text(&message))
+    })
+    .await
+    .unwrap();
+    assert!(first_poll_happened.0);
+    assert_eq!(first_poll_happened.1, "lazy auth");
+    assert_eq!(reads.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn models_cancel_before_first_poll_fails_typed() {
+    let mut models = Models::new();
+    let record_info = echo_record_info(2_048);
+    let reads = counting_resolver();
+    let handle = models
+        .register_chat_api(
+            Arc::new(EchoChatApi {
+                api: ApiId::new("custom-chat-v1"),
+                provider_id: "custom".into(),
+                record: record_info.clone(),
+                text: "cancelled".into(),
+                observed: Arc::default(),
+            }),
+            reads.clone() as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    let request = models_request();
+    request.cancel.cancel();
+    let record = ChatModelRecord::new("custom", record_info);
+    let failure = models
+        .complete(
+            record,
+            request,
+            handle.options(EchoOptions {
+                label: "never".into(),
+            }),
+        )
+        .await
+        .unwrap_err();
+    // A cancelled logical call fails typed with the cancellation cause
+    // (mapped to Aborted by CallFailure), before any auth resolution.
+    assert!(matches!(
+        failure.cause(),
+        ProviderError::Cancelled | ProviderError::LoginCancelled { .. }
+    ));
+    assert_eq!(failure.message().stop_reason.as_str(), "aborted");
+    assert_eq!(reads.calls.load(Ordering::SeqCst), 0);
 }

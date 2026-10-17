@@ -3103,7 +3103,7 @@ fn phase17_hermetic_concrete_provider_constructors_fail_closed() {
         r#"PendingProvider::new(provider_url());"#,
         r#"UnrelatedProviderLike::new(provider_url());"#,
         r#"Mock::mistral_provider(provider_url());"#,
-        r#"ProviderCollection::new();"#,
+        r#"Models::new();"#,
     ] {
         assert!(
             hermetic_source_violations(unrelated).is_empty(),
@@ -3120,7 +3120,7 @@ fn phase17_hermetic_executable_consumers_require_local_endpoints() {
         r#"let provider = CustomProvider::new(provider_url()); provider.stream_prepared(request, auth).await;"#,
         r#"let provider = CustomProvider::new(); provider.stream_prepared(request, auth).await;"#,
         r#"let provider = CustomProvider::default(); provider.stream_prepared(request, auth).await;"#,
-        r#"let mut collection = ProviderCollection::new(); collection.register_route(Box::new(CustomProvider::new()), resolver, provenance, compat); collection.prepare_call(model, request).await;"#,
+        r#"let mut collection = Models::new(); collection.register_route(Box::new(CustomProvider::new()), resolver, provenance, compat); collection.prepare_call(model, request).await;"#,
     ] {
         assert!(
             !hermetic_source_violations(executable).is_empty(),

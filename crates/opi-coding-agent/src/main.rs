@@ -884,7 +884,7 @@ where
         }
     };
     // TEST SEAM: when a provider override is injected (tests only), align the
-    // model with the override's first advertised model so ProviderCollection's
+    // model with the override's first advertised model so Models's
     // prepare_call resolves the override route. Production passes no override.
     let effective_model = provider_override
         .as_ref()
@@ -1080,7 +1080,7 @@ async fn run_rpc_core(
         }
     };
     // TEST SEAM: when a provider override is injected (tests only), align the
-    // model with the override's first advertised model so ProviderCollection's
+    // model with the override's first advertised model so Models's
     // prepare_call resolves the override route. Production passes no override.
     let effective_model = provider_override
         .as_ref()

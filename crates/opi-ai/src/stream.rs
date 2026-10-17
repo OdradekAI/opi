@@ -560,7 +560,7 @@ pub struct ChatStream {
 
 impl ChatStream {
     /// Wrap one provider event stream (for example
-    /// [`PreparedProviderCall::start_attempt`](crate::provider_collection::PreparedProviderCall::start_attempt)).
+    /// [`PreparedProviderCall::start_attempt`](crate::models::PreparedProviderCall::start_attempt)).
     ///
     /// Construction is lazy: the inner stream is not polled until the first
     /// `poll_next`/`next().await` or [`ChatStream::result`].

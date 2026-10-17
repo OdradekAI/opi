@@ -217,7 +217,7 @@ fn resolve_runtime_input(
     agent: &Agent,
     config: &OpiConfig,
     system_prompt: &str,
-    model_registry: &opi_ai::ProviderCollection,
+    model_registry: &opi_ai::Models,
 ) -> ResolvedRuntimeInput {
     let state = agent.state_snapshot();
     let model_spec = state.model_selection.to_spec();
@@ -669,7 +669,7 @@ pub struct ResumeInfo {
 /// context files, package resources/adapters, interactive commands, product
 /// defaults, extension-state restore/persist) and composes it over the generic
 /// [`Agent`] loop, [`AgentHooks`], [`ExtensionRegistry`], generic session
-/// storage, [`opi_ai::ProviderCollection`], and compaction.
+/// storage, [`opi_ai::Models`], and compaction.
 pub struct CodingHarness {
     agent: Agent,
     /// Cancellation generation armed for the next public run. Product modes
@@ -683,7 +683,7 @@ pub struct CodingHarness {
     /// `model_info`, `model_picker_items`, and thinking-validation in addition
     /// to the Agent's dispatch path; the active provider is a real dispatchable
     /// route in it (no metadata proxy).
-    model_registry: Arc<opi_ai::ProviderCollection>,
+    model_registry: Arc<opi_ai::Models>,
     /// The dispatchable provider ids in [`Self::model_registry`]:
     /// the active route plus every extra route registered with an auth resolver.
     /// Lookup-only extension providers are excluded. Used by read-side legacy
@@ -4229,7 +4229,7 @@ fn merge_package_resources(
 }
 
 fn initial_thinking_request_config(
-    collection: &opi_ai::ProviderCollection,
+    collection: &opi_ai::Models,
     model: &str,
     config: &OpiConfig,
 ) -> (Option<ThinkingConfig>, Option<u64>) {
@@ -4321,7 +4321,7 @@ fn request_output_limit_diagnostic(message: &str) -> Diagnostic {
 
 fn validate_request_output_state(
     limit: u64,
-    collection: &opi_ai::ProviderCollection,
+    collection: &opi_ai::Models,
     state: &NextTurnState,
 ) -> Result<(), String> {
     if state.inference.max_tokens != Some(limit) {
@@ -4369,7 +4369,7 @@ fn validate_request_output_limit(
 /// output settings after extension preparation, before atomic state application.
 struct ConfiguredLimitHooks {
     inner: Box<dyn AgentHooks>,
-    collection: Arc<opi_ai::ProviderCollection>,
+    collection: Arc<opi_ai::Models>,
     output_limit: Option<u64>,
     turn_limit: Option<u32>,
     diagnostics: Option<Arc<RecordingSink>>,

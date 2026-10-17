@@ -815,7 +815,7 @@ async fn credential_needed_fails_without_prompt() {
     let _env_guard = common::empty_user_config_dir();
 
     // Phase 17.5: CredentialNeeded now surfaces through the harness's
-    // ProviderCollection::prepare_call path. NonInteractiveRunner does not expose
+    // Models::prepare_call path. NonInteractiveRunner does not expose
     // a custom auth resolver (the harness installs a dummy static resolver that
     // mock-provider tests rely on), so a mock stream yielding CredentialNeeded
     // exercises the identical classify_provider_error → AgentError::CredentialNeeded

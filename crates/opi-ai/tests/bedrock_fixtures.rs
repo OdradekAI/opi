@@ -24,7 +24,7 @@ use opi_ai::provider::{CacheRetention, Provider, ProviderError, ProviderErrorCat
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use opi_ai::{
     AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme,
-    AwsCredentialSource, CollectionError, CompatMetadata, ProviderCollection, ResolvedAuth,
+    AwsCredentialSource, CompatMetadata, Models, ModelsError, ResolvedAuth,
 };
 use secrecy::SecretString;
 use tokio::sync::Notify;
@@ -1583,11 +1583,8 @@ impl AuthResolver for CountingBedrockResolver {
     }
 }
 
-fn prepared_bedrock_collection(
-    base_url: String,
-    resolutions: Arc<AtomicUsize>,
-) -> ProviderCollection {
-    let mut collection = ProviderCollection::new();
+fn prepared_bedrock_collection(base_url: String, resolutions: Arc<AtomicUsize>) -> Models {
+    let mut collection = Models::new();
     collection
         .register_route(
             Box::new(BedrockProvider::new(
@@ -1814,7 +1811,7 @@ impl AuthResolver for PendingBedrockResolver {
 async fn cancelling_during_bedrock_resolution_fails_closed_without_dispatch() {
     let server = MockServer::start().await;
     let entered = Arc::new(Notify::new());
-    let mut collection = ProviderCollection::new();
+    let mut collection = Models::new();
     collection
         .register_route(
             Box::new(BedrockProvider::new(
@@ -1846,7 +1843,7 @@ async fn cancelling_during_bedrock_resolution_fails_closed_without_dispatch() {
         .await
         .expect("preparation task did not panic")
         .expect_err("cancelled resolution must fail");
-    assert!(matches!(error, CollectionError::CallCancelled));
+    assert!(matches!(error, ModelsError::CallCancelled));
     assert!(
         server
             .received_requests()
