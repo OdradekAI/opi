@@ -33,6 +33,40 @@
 
 ### Added
 
+- `opi-ai`: public tool-argument normalizer/validator seam
+  (`schema::validate_tool_arguments`/`validate_tool_call`, DEL-04 task
+  20.10). Ports the pinned Pi 1.3.0 `validateToolArguments` pipeline:
+  owned `arguments_error` rejects before coercion, clone-before-normalize
+  keeps the caller's raw value untouched, optional-null deletion via
+  independently compiled sub-schemas (compile failures keep the key,
+  `$ref` properties skipped), TypeBox `Value.Convert` is a no-op for plain
+  JSON dialect schemas (`~kind` out of the dialect, documented), and the
+  upstream coercion walk (allOf fold, anyOf/oneOf value-first with
+  clone-per-arm, type-union primitive coercion in `type`-array order,
+  object properties + object additionalProperties, tuple/single items).
+  Number conversion uses a private ECMAScript StringNumericLiteral
+  classifier (full StrWhiteSpace set, signless 0x/0b/0o with exact
+  round-to-nearest-even, correctly rounded decimal, `Infinity` rejected by
+  the finite gate); string conversion uses the annex-pinned `ryu-js` 1.0.2
+  for floats and exact integer display (RDF-09 precision). The normalized
+  root is always checked against the original schema — the upstream's
+  return of unvalidated raw on a failing coerced root is not replicated
+  (RDF-09 fix, asserted against the recorded bug case). Invalid outcomes
+  carry redacted failures (instance pointer, keyword, schema-derived
+  reason); the evaluator grew observation-only first-failure localization
+  (JSON-pointer paths threaded through the work-stack frames; acceptance
+  unchanged, proven by the frozen 62-case corpus). The frozen 44-case
+  public differential battery asserts the recorded Pi normalized outputs
+  (one RDF-09 exact-integer divergence documented in-case).
+- `opi-agent`: tool validation now consumes the SDK seam. `RegisteredTool`
+  owns its compiled schema IR generation (lazy `OnceLock`, replaced
+  registries compile anew, in-flight calls keep theirs); preflight runs
+  compile+validate on the blocking pool under biased cancellation (result
+  discarded, no synchronous hard-kill claim); hooks observe the raw
+  proposal while the authorizer and `Tool::execute` receive the normalized
+  value (the exact validated value is the value authorized and executed).
+  The `jsonschema` dependency leaves the tool-validation path (unrelated
+  `opi-protocol` uses retained).
 - `opi-ai`: private TypeBox JSON dialect schema engine (`schema` module,
   DEL-04 substrate). Admission compiles every structurally-selected regex
   leaf (fail-closed, with JSON-pointer paths) and selects fast vs reducer

@@ -2277,7 +2277,7 @@ async fn preflight_tool(
     evidence_turn_id: crate::evidence::TurnId,
     evidence_call_id: crate::evidence::CallId,
     invocation_context: crate::authority::InvocationContext,
-    registry: &crate::authority::ToolRegistry,
+    registry: &Arc<crate::authority::ToolRegistry>,
     authorizer: Option<&Arc<dyn crate::authority::ToolAuthorizer>>,
     evidence_health: &mut crate::evidence::EvidenceHealth,
     mut tool_evidence: Option<&mut ToolEvidenceContext<'_>>,
@@ -2335,21 +2335,46 @@ async fn preflight_tool(
     }
 
     // 3. Validate the FINAL arguments against the registered schema (AUT-002).
-    //    The exact validated value is the value authorized and executed.
-    let schema = &registration.definition.input_schema;
-    if let Err(err) = validation::validate(schema, args) {
-        observe(
-            sink,
-            tool_diagnostic(
-                CODE_TOOL_VALIDATION_FAILED,
-                tool_name,
-                "tool arguments failed schema validation",
-            ),
-        );
-        return Ok(ToolPreflight::Rejected(ToolResult::from_validation_error(
-            err,
-        )));
-    }
+    //    The exact validated value is the value authorized and executed: the
+    //    SDK normalizer converts a clone (the raw proposal stays with the
+    //    hook/evidence path) and the original schema checks the normalized
+    //    root. The compile+validate stage runs on the blocking pool under
+    //    the registration's generation-owned IR; cancellation discards the
+    //    result without claiming a synchronous hard-kill of the engine.
+    let args = {
+        let registry = Arc::clone(registry);
+        let resolved_name = tool_name.to_owned();
+        let raw_args = args.clone();
+        let validation_task =
+            tokio::task::spawn_blocking(move || match registry.get(resolved_name.as_str()) {
+                Some(resolved) => resolved.schema_validation().validate(&raw_args),
+                None => Err(validation::ValidationError {
+                    errors: vec!["tool registration disappeared".to_owned()],
+                }),
+            });
+        let validated = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+            joined = validation_task => joined
+                .expect("schema validation worker must not panic"),
+        };
+        match validated {
+            Ok(normalized) => normalized,
+            Err(err) => {
+                observe(
+                    sink,
+                    tool_diagnostic(
+                        CODE_TOOL_VALIDATION_FAILED,
+                        tool_name,
+                        "tool arguments failed schema validation",
+                    ),
+                );
+                return Ok(ToolPreflight::Rejected(ToolResult::from_validation_error(
+                    err,
+                )));
+            }
+        }
+    };
 
     // 4-5. Mandatory trusted authorization against the current evidence-health
     //      snapshot (AUT-003/005). Missing authorizer, authorizer error, denial,
@@ -2390,7 +2415,7 @@ async fn preflight_tool(
     let mut decision = authorize_and_verify(
         authorizer.as_ref(),
         registration,
-        args,
+        &args,
         evidence_health.clone(),
         run_id,
         evidence_turn_id,
@@ -2418,7 +2443,7 @@ async fn preflight_tool(
         decision = authorize_and_verify(
             authorizer.as_ref(),
             registration,
-            args,
+            &args,
             evidence_health.clone(),
             run_id,
             evidence_turn_id,
@@ -2638,7 +2663,7 @@ async fn execute_tool(
     evidence_turn_id: crate::evidence::TurnId,
     evidence_call_id: crate::evidence::CallId,
     invocation_context: crate::authority::InvocationContext,
-    registry: &crate::authority::ToolRegistry,
+    registry: &Arc<crate::authority::ToolRegistry>,
     authorizer: Option<&Arc<dyn crate::authority::ToolAuthorizer>>,
     evidence_health: &mut crate::evidence::EvidenceHealth,
     tool_evidence: Option<&mut ToolEvidenceContext<'_>>,

@@ -28,6 +28,7 @@ hex = { workspace = true }
 regex = { workspace = true }
 regress = { workspace = true }
 unicode-normalization = { workspace = true }
+ryu-js = { workspace = true }
 url = { workspace = true }
 secrecy = { workspace = true }
 

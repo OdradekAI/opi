@@ -99,6 +99,12 @@ pub struct RegisteredTool {
     pub definition: ToolDef,
     /// The tool implementation invoked only after a current `Allow`.
     pub implementation: Arc<dyn Tool>,
+    /// Generation-owned schema IR: compiled lazily once per registration
+    /// from `definition.input_schema`. A replacement registry builds new
+    /// registrations, so in-flight calls keep their generation's compiled
+    /// schemas alive through the shared Arc while new calls recompile
+    /// against the new declaration (readiness-schema annex).
+    schema_validation: std::sync::OnceLock<Arc<crate::validation::ToolSchemaIr>>,
 }
 
 impl RegisteredTool {
@@ -118,7 +124,17 @@ impl RegisteredTool {
             capability,
             definition,
             implementation,
+            schema_validation: std::sync::OnceLock::new(),
         }
+    }
+
+    /// The registration's compiled schema IR (compiled once, then reused).
+    pub fn schema_validation(&self) -> &Arc<crate::validation::ToolSchemaIr> {
+        self.schema_validation.get_or_init(|| {
+            Arc::new(crate::validation::ToolSchemaIr::compile(
+                &self.definition.input_schema,
+            ))
+        })
     }
 }
 

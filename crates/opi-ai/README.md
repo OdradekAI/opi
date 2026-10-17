@@ -326,6 +326,26 @@ later slices. Structurally selected invalid regexes fail admission even in
 branches the upstream would never visit — a documented fail-closed
 divergence.
 
+## Public Tool-Argument Normalizer/Validator
+
+`schema::validate_tool_arguments` (and the name-lookup
+`schema::validate_tool_call`) is the SDK-owned seam over the dialect engine:
+an owned `arguments_error` marker rejects before any coercion; the caller's
+raw value is never mutated; normalization deletes optional `null` properties
+whose independently compiled sub-schema rejects `null`, applies the pinned Pi
+coercion corpus (allOf fold, anyOf/oneOf value-first then clone-per-arm,
+type-union primitive coercion in `type`-array order with exact ECMAScript
+`Number`/`String` conversions — `Number("0x10")` is 16, `String(1e21)` is
+`"1e+21"` through the pinned ryu-js 1.0.2), and finally checks the
+normalized root against the original schema (the upstream's return of
+unvalidated raw on a failing coerced root is deliberately not replicated —
+RDF-09). Invalid outcomes carry redacted failures only (instance pointer,
+keyword, schema-derived reason); precise JSON integers keep their exact
+decimal digits instead of replicating JavaScript's parse-time precision loss
+(RDF-09). TypeBox `Value.Convert` is a no-op for plain JSON dialect schemas
+(its dispatch reads the non-JSON `~kind` marker), and `~kind` markers in
+JSON schemas stay inert — a documented dialect boundary.
+
 ## Non-Goals
 
 The following are explicit non-goals and must not appear as current core

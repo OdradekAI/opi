@@ -25,6 +25,13 @@ use opi_agent::loop_types::{
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult};
 use opi_agent::validation::{self, ValidationError};
+
+fn validate(
+    schema: &serde_json::Value,
+    args: &serde_json::Value,
+) -> Result<serde_json::Value, ValidationError> {
+    validation::ToolSchemaIr::compile(schema).validate(args)
+}
 use opi_ai::message::{
     AssistantContent, AssistantMessage, InputContent, Message, OutputContent, ToolCall,
 };
@@ -133,7 +140,7 @@ fn valid_args_pass_validation() {
         "required": ["name"]
     });
     let args = json!({ "name": "Alice" });
-    assert!(validation::validate(&schema, &args).is_ok());
+    assert!(validate(&schema, &args).is_ok());
 }
 
 #[test]
@@ -144,7 +151,7 @@ fn missing_required_field_fails_validation() {
         "required": ["name"]
     });
     let args = json!({});
-    let result = validation::validate(&schema, &args);
+    let result = validate(&schema, &args);
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(!err.errors.is_empty());
@@ -152,13 +159,15 @@ fn missing_required_field_fails_validation() {
 
 #[test]
 fn wrong_type_fails_validation() {
+    // Numbers coerce into strings under normalization; a nested object does
+    // not, and stays invalid against a string property.
     let schema = json!({
         "type": "object",
         "properties": { "name": { "type": "string" } },
         "required": ["name"]
     });
-    let args = json!({ "name": 123 });
-    let result = validation::validate(&schema, &args);
+    let args = json!({ "name": { "deep": 1 } });
+    let result = validate(&schema, &args);
     assert!(result.is_err());
 }
 
@@ -180,9 +189,7 @@ fn validation_error_text_never_contains_the_offending_instance() {
     });
     let args = json!({ "backend": canary });
 
-    let public = validation::validate(&schema, &args)
-        .unwrap_err()
-        .to_string();
+    let public = validate(&schema, &args).unwrap_err().to_string();
 
     assert!(
         !public.contains(canary),
@@ -199,21 +206,21 @@ fn extra_properties_allowed_by_default() {
         "required": ["name"]
     });
     let args = json!({ "name": "Alice", "extra": true });
-    assert!(validation::validate(&schema, &args).is_ok());
+    assert!(validate(&schema, &args).is_ok());
 }
 
 #[test]
 fn empty_schema_accepts_any_object() {
     let schema = json!({ "type": "object" });
     let args = json!({ "anything": "goes" });
-    assert!(validation::validate(&schema, &args).is_ok());
+    assert!(validate(&schema, &args).is_ok());
 }
 
 #[test]
 fn empty_object_passes_empty_schema() {
     let schema = json!({ "type": "object" });
     let args = json!({});
-    assert!(validation::validate(&schema, &args).is_ok());
+    assert!(validate(&schema, &args).is_ok());
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +283,7 @@ async fn valid_args_execute_successfully() {
     let args = json!({ "name": "World" });
     let schema = &tool.definition().input_schema;
 
-    validation::validate(schema, &args).unwrap();
+    validate(schema, &args).unwrap();
 
     let result = tool
         .execute("call-1", args, CancellationToken::new(), None)
@@ -296,7 +303,7 @@ async fn invalid_args_become_error_tool_result() {
     let args = json!({});
     let schema = &tool.definition().input_schema;
 
-    let validation_result = validation::validate(schema, &args);
+    let validation_result = validate(schema, &args);
     assert!(validation_result.is_err());
 
     // Agent loop would convert validation error to error ToolResult
@@ -713,6 +720,175 @@ async fn phase8_tool_validation_failure_contract() {
     assert!(
         text.as_ref().is_some_and(|t| !t.is_empty()),
         "error result carries a non-empty message: {text:?}"
+    );
+}
+
+#[tokio::test]
+async fn normalization_coerces_before_authorization_and_execution() {
+    // The model proposes a numeric string; the SDK normalizer converts the
+    // clone ("7" -> 7) and the original schema admits the normalized root.
+    // The before-hook observes the RAW proposal; the authorizer and the
+    // tool implementation receive the NORMALIZED value (AUT-002: the exact
+    // validated value is the value authorized and executed).
+    let executed_args: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+    let hook_args: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+    let authorized_args: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+
+    struct CaptureTool {
+        args: Arc<Mutex<Option<serde_json::Value>>>,
+    }
+    impl Tool for CaptureTool {
+        fn definition(&self) -> ToolDef {
+            ToolDef {
+                name: "count".into(),
+                description: "capture tool".into(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": { "n": { "type": "integer" } },
+                    "required": ["n"]
+                }),
+            }
+        }
+        fn execute(
+            &self,
+            _call_id: &str,
+            arguments: serde_json::Value,
+            _signal: CancellationToken,
+            _on_update: Option<opi_agent::tool::UpdateCallback>,
+        ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
+            let args = self.args.clone();
+            Box::pin(async move {
+                *args.lock().unwrap() = Some(arguments);
+                Ok(ToolResult {
+                    content: vec![OutputContent::Text { text: "ok".into() }],
+                    details: None,
+                    is_error: false,
+                    terminate: false,
+                    truncated: false,
+                    diagnostics: vec![],
+                })
+            })
+        }
+        fn execution_mode(&self) -> ExecutionMode {
+            ExecutionMode::Sequential
+        }
+    }
+
+    struct CaptureHooks {
+        args: Arc<Mutex<Option<serde_json::Value>>>,
+    }
+    impl AgentHooks for CaptureHooks {
+        fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
+            Ok(messages
+                .iter()
+                .filter_map(|m| match m {
+                    AgentMessage::Llm(msg) => Some(msg.clone()),
+                    _ => None,
+                })
+                .collect())
+        }
+        fn should_stop_after_turn(
+            &self,
+            _: ShouldStopAfterTurnContext,
+        ) -> Pin<Box<dyn Future<Output = bool> + Send>> {
+            Box::pin(async { false })
+        }
+        fn before_tool_call(
+            &self,
+            ctx: BeforeToolCallContext,
+        ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
+            let args = self.args.clone();
+            Box::pin(async move {
+                *args.lock().unwrap() = Some(ctx.args.clone());
+                BeforeToolCallResult::Continue
+            })
+        }
+    }
+
+    struct CaptureAuthorizer {
+        args: Arc<Mutex<Option<serde_json::Value>>>,
+    }
+    impl ToolAuthorizer for CaptureAuthorizer {
+        fn authorize(
+            &self,
+            request: ToolAuthorizationRequest,
+            _cancel: CancellationToken,
+        ) -> Pin<Box<dyn Future<Output = Result<AuthorizationDecision, AuthorizationError>> + Send>>
+        {
+            let args = self.args.clone();
+            Box::pin(async move {
+                *args.lock().unwrap() = Some(request.arguments.clone());
+                Ok(AuthorizationDecision::Allow {
+                    policy_ref: PolicyReference::new("test-policy").unwrap(),
+                    permission_ref: PermissionReference::new("test-permission").unwrap(),
+                    permission_scope: PermissionScope::new("test-scope").unwrap(),
+                    scoped_grant_ref: None,
+                    registration_id: request.registration_id,
+                    capability: request.capability,
+                    evidence_health_generation: request.evidence_health.generation(),
+                })
+            })
+        }
+    }
+
+    let provider = ScriptedProvider::new(vec![
+        tool_call_response("call-1", "count", r#"{"n": "7"}"#),
+        text_response("done"),
+    ]);
+    let context = AgentLoopContext {
+        collection: Arc::new(single_route_collection(Box::new(provider))),
+        registry: common::test_registry(vec![Box::new(CaptureTool {
+            args: executed_args.clone(),
+        })]),
+        authorizer: Some(Arc::new(CaptureAuthorizer {
+            args: authorized_args.clone(),
+        })),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(
+                opi_ai::message::UserMessage {
+                    content: vec![InputContent::Text { text: "hi".into() }],
+                    timestamp_ms: 0,
+                },
+            ))],
+            ModelSelection::parse_spec("scripted:mock").unwrap(),
+            InferenceConfig::default(),
+        ),
+        system: None,
+        steering_queue: None,
+        follow_up_queue: None,
+        diagnostic_sink: None,
+        session_id: None,
+        evidence_sink: None,
+    };
+
+    opi_agent::agent_loop(
+        context,
+        AgentLoopConfig::default(),
+        &CaptureHooks {
+            args: hook_args.clone(),
+        },
+        Box::new(|_| {}),
+        CancellationToken::new(),
+    )
+    .await
+    .into_execution_result()
+    .expect("coerced call runs to completion");
+
+    assert_eq!(
+        hook_args.lock().unwrap().clone(),
+        Some(json!({ "n": "7" })),
+        "before_tool_call observes the raw proposal"
+    );
+    assert_eq!(
+        authorized_args.lock().unwrap().clone(),
+        Some(json!({ "n": 7 })),
+        "the authorizer sees the normalized value"
+    );
+    assert_eq!(
+        executed_args.lock().unwrap().clone(),
+        Some(json!({ "n": 7 })),
+        "the tool executes with the normalized value"
     );
 }
 

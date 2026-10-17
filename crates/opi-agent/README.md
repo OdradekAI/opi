@@ -20,7 +20,8 @@ cargo add opi-agent
 Current crate version: `0.8.3`, inherited from the workspace package version.
 
 `opi-agent` owns the agent loop and runtime primitives: tool contracts,
-JSON Schema argument validation, parallel/sequential tool execution, lifecycle
+tool-argument normalization/validation through the opi-ai private schema
+dialect, parallel/sequential tool execution, lifecycle
 hooks, event emission, steering/follow-up queues, session JSONL storage,
 branch reconstruction, context compaction, SDK/RPC types, extensions, local
 diagnostics, redacted evidence records, and streaming proxy support.
@@ -105,7 +106,7 @@ agent_start                              # once, before the first turn
         tool_execution_start              # per tool call
         resolve trusted registration
         before_tool_call                  # may block; never grants authority
-        validate tool args (jsonschema)
+        normalize + validate tool args (opi-ai private schema dialect)
         authorize tool call               # mandatory trusted ToolAuthorizer
         tool.execute                      # parallel batch, or sequential if any tool is Sequential
         after_tool_call                   # AgentHooks::after_tool_call (may replace result)
@@ -209,12 +210,21 @@ every call in source order without invoking tool hooks, authorization, or
 execution. These non-terminating failures preserve normal stop and continuation
 handling; a length response without tool calls does not create another turn.
 
-For a resolved tool, `before_tool_call` runs first; argument validation then
-runs before mandatory authorization and `Tool::execute`. A validation failure
-is a normal runtime outcome, not a loop error: an error `ToolResult`
-(`is_error = true`, `terminate = false`) is persisted and the run continues.
-The hook has already run, but the authorizer and tool do not. An unknown tool
-is rejected before the hook.
+For a resolved tool, `before_tool_call` runs first (it observes the raw
+proposed arguments); argument validation then runs before mandatory
+authorization and `Tool::execute`. Validation normalizes a clone of the final
+parsed arguments through the opi-ai private schema dialect (optional-null
+deletion, the pinned Pi coercion corpus) and checks the normalized root
+against the registration's original schema; the exact validated value is the
+value authorized and executed (AUT-002). The compile+validate stage runs on
+the blocking pool under the registration's generation-owned compiled schema
+(a replaced registry yields new compilations; in-flight calls keep theirs),
+and cancellation discards the result without claiming a synchronous hard-kill
+of the engine. A validation failure is a normal runtime outcome, not a loop
+error: an error `ToolResult` (`is_error = true`, `terminate = false`) with
+redacted failures (instance pointer, keyword, schema-derived reason only) is
+persisted and the run continues. The hook has already run, but the authorizer
+and tool do not. An unknown tool is rejected before the hook.
 
 ## Tool Results and Diagnostics
 

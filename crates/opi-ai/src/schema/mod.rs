@@ -23,6 +23,7 @@
 //! agreement of `\p{...}` classes and IDN domains is proven at packaging
 //! time with the vendor family, not by the workspace's stock backend.
 
+mod ecma_number;
 mod eval;
 mod format_patterns;
 mod formats;
@@ -31,6 +32,7 @@ mod guards;
 mod hashing;
 mod ir;
 pub(crate) mod js;
+mod normalize;
 mod punycode;
 mod refs;
 
@@ -78,6 +80,10 @@ impl std::fmt::Debug for CompiledSchema {
     }
 }
 
+pub use normalize::{
+    ToolArgumentFailure, ToolArgumentOutcome, validate_tool_arguments, validate_tool_call,
+};
+
 /// Admit a trusted schema document into the dialect IR.
 ///
 /// Fails closed on structurally-selected invalid regex leaves (see the
@@ -90,6 +96,12 @@ pub fn compile(schema: Value) -> Result<CompiledSchema, SchemaError> {
 }
 
 impl CompiledSchema {
+    /// The trusted schema value this IR was admitted from (the root of the
+    /// reference graph; normalization walks it structurally).
+    pub(crate) fn root_value(&self) -> &Value {
+        &self.inner.schema
+    }
+
     /// Validate one instance against the admitted schema.
     ///
     /// Returns `Ok(true)` for a valid instance, `Ok(false)` for an invalid
@@ -98,5 +110,16 @@ impl CompiledSchema {
     pub fn check(&self, value: &Value) -> Result<bool, SchemaError> {
         let mut evaluator = eval::Evaluator::new(&self.inner);
         evaluator.run(value)
+    }
+
+    /// [`Self::check`] plus the first observed failure site for invalid
+    /// instances (redacted; observation only — the verdict is identical).
+    pub(crate) fn check_detailed(
+        &self,
+        value: &Value,
+    ) -> Result<(bool, Option<eval::FailureSite>), SchemaError> {
+        let mut evaluator = eval::Evaluator::new(&self.inner);
+        let valid = evaluator.run(value)?;
+        Ok((valid, evaluator.first_failure.take()))
     }
 }

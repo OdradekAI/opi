@@ -69,6 +69,32 @@ enum Step<'a> {
     Child(Frame<'a>),
 }
 
+/// First failing leaf observed during evaluation (public failure reports).
+///
+/// Recorded for observation only: the verdict logic is untouched, so the
+/// acceptance set of the engine is unchanged. `path` is the JSON pointer of
+/// the failing instance location ("" is the root); `reason` is redacted —
+/// schema-derived bounds only, never instance content.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct FailureSite {
+    pub(crate) path: String,
+    pub(crate) keyword: &'static str,
+    pub(crate) reason: String,
+}
+
+/// JSON-pointer token escaping (RFC 6901 `~0`/`~1`).
+fn pointer_escape(token: &str) -> String {
+    token.replace('~', "~0").replace('/', "~1")
+}
+
+fn child_pointer(base: &str, token: &str) -> String {
+    format!("{}/{}", base, pointer_escape(token))
+}
+
+fn index_pointer(base: &str, idx: usize) -> String {
+    format!("{base}/{idx}")
+}
+
 // ------------------------------------------------------------------
 // Frames
 // ------------------------------------------------------------------
@@ -77,6 +103,9 @@ enum Step<'a> {
 struct NodeFrame<'a> {
     schema: &'a Value,
     value: ValueRef<'a>,
+    /// JSON pointer of this node's instance location ("" is the root);
+    /// used only for failure reporting.
+    path: String,
     stages: Vec<Stage<'a>>,
     stage_idx: usize,
     visit_key: Option<u64>,
@@ -181,6 +210,8 @@ enum ArmKind {
 }
 
 struct ArmsFrame<'a> {
+    /// Instance pointer of the arms' location (failure reporting only).
+    base_path: String,
     kind: ArmKind,
     arms: &'a [Value],
     value: ValueRef<'a>,
@@ -193,12 +224,16 @@ struct ArmsFrame<'a> {
 }
 
 struct RefFrame<'a> {
+    /// Instance pointer of the reference's location (failure reporting only).
+    base_path: String,
     target: &'a Value,
     value: ValueRef<'a>,
     saved_ctx: Vec<CtxFrame>,
 }
 
 struct ContainsFrame<'a> {
+    /// Instance pointer of the containing array (failure reporting only).
+    base_path: String,
     schema: &'a Value,
     array: &'a [Value],
     idx: usize,
@@ -207,6 +242,8 @@ struct ContainsFrame<'a> {
 }
 
 struct MinContainsFrame<'a> {
+    /// Instance pointer of the containing array (failure reporting only).
+    base_path: String,
     schema: &'a Value,
     array: &'a [Value],
     idx: usize,
@@ -216,6 +253,8 @@ struct MinContainsFrame<'a> {
 }
 
 struct MaxContainsFrame<'a> {
+    /// Instance pointer of the containing array (failure reporting only).
+    base_path: String,
     schema: &'a Value,
     array: &'a [Value],
     idx: usize,
@@ -224,18 +263,24 @@ struct MaxContainsFrame<'a> {
 }
 
 struct ItemsSizedFrame<'a> {
+    /// Instance pointer of the array (failure reporting only).
+    base_path: String,
     items: &'a [Value],
     array: &'a [Value],
     idx: usize,
 }
 
 struct ItemsUnsizedFrame<'a> {
+    /// Instance pointer of the array (failure reporting only).
+    base_path: String,
     schema: &'a Value,
     array: &'a [Value],
     idx: usize,
 }
 
 struct AdditionalItemsFrame<'a> {
+    /// Instance pointer of the array (failure reporting only).
+    base_path: String,
     schema: &'a Value,
     array: &'a [Value],
     items_len: usize,
@@ -243,18 +288,24 @@ struct AdditionalItemsFrame<'a> {
 }
 
 struct PrefixItemsFrame<'a> {
+    /// Instance pointer of the array (failure reporting only).
+    base_path: String,
     items: &'a [Value],
     array: &'a [Value],
     idx: usize,
 }
 
 struct PropertiesFrame<'a> {
+    /// Instance pointer of the object (failure reporting only).
+    base_path: String,
     entries: Vec<(&'a str, &'a Value)>,
     map: &'a serde_json::Map<String, Value>,
     idx: usize,
 }
 
 struct PatternPropertiesFrame<'a> {
+    /// Instance pointer of the object (failure reporting only).
+    base_path: String,
     patterns: &'a Vec<(String, regress::Regex)>,
     pattern_map: &'a serde_json::Map<String, Value>,
     value_map: &'a serde_json::Map<String, Value>,
@@ -264,6 +315,8 @@ struct PatternPropertiesFrame<'a> {
 }
 
 struct AdditionalPropsFrame<'a> {
+    /// Instance pointer of the object (failure reporting only).
+    base_path: String,
     node: &'a Value,
     schema: &'a Value,
     value_map: &'a serde_json::Map<String, Value>,
@@ -272,18 +325,25 @@ struct AdditionalPropsFrame<'a> {
 }
 
 struct PropertyNamesFrame<'a> {
+    /// Instance pointer of the object (failure reporting only; name-string
+    /// children report at the object location, matching the upstream).
+    base_path: String,
     schema: &'a Value,
     keys: Vec<String>,
     idx: usize,
 }
 
 struct DepsFrame<'a> {
+    /// Instance pointer of the object (failure reporting only).
+    base_path: String,
     entries: Vec<(&'a str, &'a Value)>,
     value: ValueRef<'a>,
     idx: usize,
 }
 
 struct IfThenElseFrame<'a> {
+    /// Instance pointer of the condition's location (failure reporting only).
+    base_path: String,
     schema: &'a Value,
     value: ValueRef<'a>,
     phase: IfPhase,
@@ -295,12 +355,16 @@ enum IfPhase {
 }
 
 struct UnevaluatedItemsFrame<'a> {
+    /// Instance pointer of the array (failure reporting only).
+    base_path: String,
     schema: &'a Value,
     array: &'a [Value],
     idx: usize,
 }
 
 struct UnevaluatedPropsFrame<'a> {
+    /// Instance pointer of the object (failure reporting only).
+    base_path: String,
     schema: &'a Value,
     value_map: &'a serde_json::Map<String, Value>,
     keys: Vec<String>,
@@ -333,6 +397,8 @@ enum Frame<'a> {
 // ------------------------------------------------------------------
 
 pub(crate) struct Evaluator<'a> {
+    /// First observed failure (observation only; verdicts are unchanged).
+    pub(crate) first_failure: Option<FailureSite>,
     root: &'a Value,
     stack: RefStack<'a>,
     reducer: bool,
@@ -349,6 +415,7 @@ impl<'a> Evaluator<'a> {
             ctx.push(CtxFrame::default());
         }
         Self {
+            first_failure: None,
             root: &compiled.schema,
             stack: RefStack::new(empty_remotes(), &compiled.schema),
             reducer: compiled.reducer,
@@ -364,6 +431,7 @@ impl<'a> Evaluator<'a> {
         self.work.push(Frame::Node(NodeFrame {
             schema: root_schema,
             value: Cow::Borrowed(value),
+            path: String::new(),
             stages: Vec::new(),
             stage_idx: 0,
             visit_key: None,
@@ -417,6 +485,18 @@ impl<'a> Evaluator<'a> {
     }
 
     // -- ancestry ----------------------------------------------------------
+
+    /// Record the first observed failure site (later sites keep the first,
+    /// which is the deterministic failure the verdict traversal produced).
+    pub(crate) fn note_failure(&mut self, path: &str, keyword: &'static str, reason: String) {
+        if self.first_failure.is_none() {
+            self.first_failure = Some(FailureSite {
+                path: path.to_owned(),
+                keyword,
+                reason,
+            });
+        }
+    }
 
     fn visit_key(&self, schema: &Value, value: &ValueRef<'_>) -> u64 {
         let mut state = FNV_OFFSET;
@@ -730,10 +810,16 @@ fn pattern_list<'a>(ev: &Evaluator<'a>, node: &'a Value) -> &'a Vec<(String, reg
 // NodeFrame
 // ------------------------------------------------------------------
 
-fn node_child<'a>(schema: &'a Value, value: ValueRef<'a>, ctx_push: bool) -> Frame<'a> {
+fn node_child<'a>(
+    schema: &'a Value,
+    value: ValueRef<'a>,
+    ctx_push: bool,
+    path: String,
+) -> Frame<'a> {
     Frame::Node(NodeFrame {
         schema,
         value,
+        path,
         stages: Vec::new(),
         stage_idx: 0,
         visit_key: None,
@@ -876,6 +962,62 @@ fn eval_leaf(ev: &Evaluator<'_>, stage: &Stage<'_>, schema: &Value, value: &Valu
     }
 }
 
+/// Redacted `(keyword, reason)` for a failing leaf stage. Reasons carry
+/// schema-derived bounds only — never instance content.
+fn leaf_failure(stage: &Stage<'_>, schema: &Value) -> (&'static str, String) {
+    match stage {
+        Stage::TypeLeaf => {
+            let expected = match guards::get(schema, "type") {
+                Some(Value::String(name)) => name.clone(),
+                Some(Value::Array(names)) => names
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(" | "),
+                _ => String::new(),
+            };
+            ("type", format!("instance is not of type {expected}"))
+        }
+        Stage::RequiredLeaf => ("required", "required property is missing".to_owned()),
+        Stage::DependentRequiredLeaf => (
+            "dependentRequired",
+            "required dependent property is missing".to_owned(),
+        ),
+        Stage::MinPropertiesLeaf => ("minProperties", "object has too few properties".to_owned()),
+        Stage::MaxPropertiesLeaf => ("maxProperties", "object has too many properties".to_owned()),
+        Stage::MinItemsLeaf => ("minItems", "array has too few items".to_owned()),
+        Stage::MaxItemsLeaf => ("maxItems", "array has too many items".to_owned()),
+        Stage::UniqueItemsLeaf => ("uniqueItems", "array items are not unique".to_owned()),
+        Stage::MaxLengthLeaf => ("maxLength", "string is too long".to_owned()),
+        Stage::MinLengthLeaf => ("minLength", "string is too short".to_owned()),
+        Stage::FormatLeaf => {
+            let name = guards::get_str(schema, "format").unwrap_or_default();
+            ("format", format!("string does not match format `{name}`"))
+        }
+        Stage::PatternLeaf => (
+            "pattern",
+            "string does not match the schema pattern".to_owned(),
+        ),
+        Stage::ExclusiveMaximumLeaf => (
+            "exclusiveMaximum",
+            "number is not below the bound".to_owned(),
+        ),
+        Stage::ExclusiveMinimumLeaf => (
+            "exclusiveMinimum",
+            "number is not above the bound".to_owned(),
+        ),
+        Stage::MaximumLeaf => ("maximum", "number exceeds the bound".to_owned()),
+        Stage::MinimumLeaf => ("minimum", "number is below the bound".to_owned()),
+        Stage::MultipleOfLeaf => (
+            "multipleOf",
+            "number is not a multiple of the divisor".to_owned(),
+        ),
+        Stage::ConstLeaf => ("const", "value does not equal the schema const".to_owned()),
+        Stage::EnumLeaf => ("enum", "value does not equal any enum option".to_owned()),
+        _ => ("schema", "value failed the schema".to_owned()),
+    }
+}
+
 impl<'a> NodeFrame<'a> {
     /// The node's instance value when it is a borrowed reference. Container
     /// stages (arrays/objects) only exist for borrowed values; synthesized
@@ -937,6 +1079,11 @@ impl<'a> NodeFrame<'a> {
                             .map(|map| js_keys(map).len())
                             .unwrap_or(0);
                         if count != required_len {
+                            ev.note_failure(
+                                &self.path,
+                                "additionalProperties",
+                                "object has properties not allowed by the schema".to_owned(),
+                            );
                             return Ok(self.finish(ev, false));
                         }
                     } else if !ev.reducer && additional_properties_ignored(schema) {
@@ -949,6 +1096,7 @@ impl<'a> NodeFrame<'a> {
                             ));
                         };
                         return Ok(Step::Child(Frame::AdditionalProps(AdditionalPropsFrame {
+                            base_path: self.path.clone(),
                             node,
                             schema,
                             value_map: map,
@@ -967,6 +1115,7 @@ impl<'a> NodeFrame<'a> {
                         // shortcut: empty object passes
                     } else {
                         return Ok(Step::Child(Frame::Deps(DepsFrame {
+                            base_path: self.path.clone(),
                             entries: entries.clone(),
                             value: self.value.clone(),
                             idx: 0,
@@ -987,6 +1136,7 @@ impl<'a> NodeFrame<'a> {
                     };
                     return Ok(Step::Child(Frame::PatternProperties(
                         PatternPropertiesFrame {
+                            base_path: self.path.clone(),
                             patterns,
                             pattern_map,
                             value_map,
@@ -1002,6 +1152,7 @@ impl<'a> NodeFrame<'a> {
                         return Err(SchemaError::Internal("properties stage without object"));
                     };
                     return Ok(Step::Child(Frame::Properties(PropertiesFrame {
+                        base_path: self.path.clone(),
                         entries: entries.clone(),
                         map,
                         idx: 0,
@@ -1009,6 +1160,7 @@ impl<'a> NodeFrame<'a> {
                 }
                 Stage::PropertyNames { schema, keys } => {
                     return Ok(Step::Child(Frame::PropertyNames(PropertyNamesFrame {
+                        base_path: self.path.clone(),
                         schema,
                         keys: keys.clone(),
                         idx: 0,
@@ -1020,6 +1172,7 @@ impl<'a> NodeFrame<'a> {
                         return Err(SchemaError::Internal("additionalItems stage without array"));
                     };
                     return Ok(Step::Child(Frame::AdditionalItems(AdditionalItemsFrame {
+                        base_path: self.path.clone(),
                         schema,
                         array,
                         items_len: *items_len,
@@ -1038,6 +1191,7 @@ impl<'a> NodeFrame<'a> {
                         // inert: minContains === 0 disables contains
                     } else {
                         return Ok(Step::Child(Frame::Contains(ContainsFrame {
+                            base_path: self.path.clone(),
                             schema,
                             array,
                             idx: 0,
@@ -1056,6 +1210,7 @@ impl<'a> NodeFrame<'a> {
                             .and_then(Value::as_array)
                             .unwrap();
                         return Ok(Step::Child(Frame::ItemsSized(ItemsSizedFrame {
+                            base_path: self.path.clone(),
                             items,
                             array,
                             idx: 0,
@@ -1070,6 +1225,7 @@ impl<'a> NodeFrame<'a> {
                     };
                     let schema = guards::get(node, "items").unwrap();
                     return Ok(Step::Child(Frame::ItemsUnsized(ItemsUnsizedFrame {
+                        base_path: self.path.clone(),
                         schema,
                         array,
                         idx: offset,
@@ -1081,6 +1237,7 @@ impl<'a> NodeFrame<'a> {
                         return Err(SchemaError::Internal("minContains stage without array"));
                     };
                     return Ok(Step::Child(Frame::MinContains(MinContainsFrame {
+                        base_path: self.path.clone(),
                         schema,
                         array,
                         idx: 0,
@@ -1095,6 +1252,7 @@ impl<'a> NodeFrame<'a> {
                         return Err(SchemaError::Internal("maxContains stage without array"));
                     };
                     return Ok(Step::Child(Frame::MaxContains(MaxContainsFrame {
+                        base_path: self.path.clone(),
                         schema,
                         array,
                         idx: 0,
@@ -1109,6 +1267,7 @@ impl<'a> NodeFrame<'a> {
                     };
                     if !array.is_empty() {
                         return Ok(Step::Child(Frame::PrefixItems(PrefixItemsFrame {
+                            base_path: self.path.clone(),
                             items,
                             array,
                             idx: 0,
@@ -1117,6 +1276,7 @@ impl<'a> NodeFrame<'a> {
                 }
                 Stage::IfThenElse { schema } => {
                     return Ok(Step::Child(Frame::IfThenElse(IfThenElseFrame {
+                        base_path: self.path.clone(),
                         schema,
                         value: self.value.clone(),
                         phase: IfPhase::Condition,
@@ -1126,16 +1286,25 @@ impl<'a> NodeFrame<'a> {
                     let reference = guards::get_str(self.schema, "$ref").unwrap_or_default();
                     let target = ev.stack.apply_ref(reference)?;
                     match target {
-                        None => return Ok(self.finish(ev, false)),
+                        None => {
+                            ev.note_failure(&self.path, "$ref", "unresolved reference".to_owned());
+                            return Ok(self.finish(ev, false));
+                        }
                         Some(target) => {
                             if ev.reducer {
                                 return Ok(Step::Child(Frame::Ref(RefFrame {
+                                    base_path: self.path.clone(),
                                     target,
                                     value: self.value.clone(),
                                     saved_ctx: Vec::new(),
                                 })));
                             }
-                            return Ok(Step::Child(node_child(target, self.value.clone(), false)));
+                            return Ok(Step::Child(node_child(
+                                target,
+                                self.value.clone(),
+                                false,
+                                self.path.clone(),
+                            )));
                         }
                     }
                 }
@@ -1144,9 +1313,21 @@ impl<'a> NodeFrame<'a> {
                         guards::get_str(self.schema, "$recursiveRef").unwrap_or_default();
                     let target = ev.stack.apply_recursive_ref(reference)?;
                     match target {
-                        None => return Ok(self.finish(ev, false)),
+                        None => {
+                            ev.note_failure(
+                                &self.path,
+                                "$recursiveRef",
+                                "unresolved reference".to_owned(),
+                            );
+                            return Ok(self.finish(ev, false));
+                        }
                         Some(target) => {
-                            return Ok(Step::Child(node_child(target, self.value.clone(), false)));
+                            return Ok(Step::Child(node_child(
+                                target,
+                                self.value.clone(),
+                                false,
+                                self.path.clone(),
+                            )));
                         }
                     }
                 }
@@ -1154,15 +1335,28 @@ impl<'a> NodeFrame<'a> {
                     let reference = guards::get_str(self.schema, "$dynamicRef").unwrap_or_default();
                     let target = ev.stack.apply_dynamic_ref(reference)?;
                     match target {
-                        None => return Ok(self.finish(ev, false)),
+                        None => {
+                            ev.note_failure(
+                                &self.path,
+                                "$dynamicRef",
+                                "unresolved reference".to_owned(),
+                            );
+                            return Ok(self.finish(ev, false));
+                        }
                         Some(target) => {
-                            return Ok(Step::Child(node_child(target, self.value.clone(), false)));
+                            return Ok(Step::Child(node_child(
+                                target,
+                                self.value.clone(),
+                                false,
+                                self.path.clone(),
+                            )));
                         }
                     }
                 }
                 Stage::Not => {
                     let inner = guards::get(self.schema, "not").unwrap();
                     return Ok(Step::Child(Frame::Arms(ArmsFrame {
+                        base_path: self.path.clone(),
                         kind: ArmKind::AllOf,
                         arms: std::slice::from_ref(inner),
                         value: self.value.clone(),
@@ -1175,6 +1369,7 @@ impl<'a> NodeFrame<'a> {
                 }
                 Stage::Arms { kind, arms } => {
                     return Ok(Step::Child(Frame::Arms(ArmsFrame {
+                        base_path: self.path.clone(),
                         kind: *kind,
                         arms,
                         value: self.value.clone(),
@@ -1194,6 +1389,7 @@ impl<'a> NodeFrame<'a> {
                     };
                     return Ok(Step::Child(Frame::UnevaluatedItems(
                         UnevaluatedItemsFrame {
+                            base_path: self.path.clone(),
                             schema,
                             array,
                             idx: 0,
@@ -1209,6 +1405,7 @@ impl<'a> NodeFrame<'a> {
                     };
                     return Ok(Step::Child(Frame::UnevaluatedProps(
                         UnevaluatedPropsFrame {
+                            base_path: self.path.clone(),
                             schema,
                             value_map: map,
                             keys: keys.clone(),
@@ -1218,6 +1415,8 @@ impl<'a> NodeFrame<'a> {
                 }
                 leaf => {
                     if !eval_leaf(ev, leaf, self.schema, as_value(&self.value)) {
+                        let (keyword, reason) = leaf_failure(leaf, self.schema);
+                        ev.note_failure(&self.path, keyword, reason);
                         return Ok(self.finish(ev, false));
                     }
                 }
@@ -1291,7 +1490,12 @@ impl<'a> ArmsFrame<'a> {
             if ev.reducer {
                 ev.ctx = vec![CtxFrame::default()];
             }
-            return Ok(Step::Child(node_child(arm, self.value.clone(), false)));
+            return Ok(Step::Child(node_child(
+                arm,
+                self.value.clone(),
+                false,
+                self.base_path.clone(),
+            )));
         }
         self.finish(ev)
     }
@@ -1310,6 +1514,24 @@ impl<'a> ArmsFrame<'a> {
             ArmKind::AnyOf => self.passed > 0,
             ArmKind::OneOf => self.passed == 1,
         };
+        if !check {
+            let (keyword, reason) = if self.not_mode {
+                ("not", "instance matches the negated schema".to_owned())
+            } else {
+                match self.kind {
+                    ArmKind::AllOf => (
+                        "allOf",
+                        "instance failed at least one allOf branch".to_owned(),
+                    ),
+                    ArmKind::AnyOf => ("anyOf", "instance matched no anyOf branch".to_owned()),
+                    ArmKind::OneOf => (
+                        "oneOf",
+                        "instance did not match exactly one oneOf branch".to_owned(),
+                    ),
+                }
+            };
+            ev.note_failure(&self.base_path, keyword, reason);
+        }
         if ev.reducer {
             let Some(mut saved) = self.saved_ctx.take() else {
                 return Ok(Step::Done(check));
@@ -1368,6 +1590,7 @@ impl<'a> RefFrame<'a> {
                     self.target,
                     self.value.clone(),
                     false,
+                    self.base_path.clone(),
                 )))
             }
             Input::Child(result) => {
@@ -1388,12 +1611,18 @@ impl<'a> ContainsFrame<'a> {
         match input {
             Input::Start => {
                 if self.array.is_empty() {
+                    ev.note_failure(
+                        &self.base_path,
+                        "contains",
+                        "array has no element matching the contains schema".to_owned(),
+                    );
                     return Ok(Step::Done(false));
                 }
                 Ok(Step::Child(node_child(
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
             Input::Child(result) => {
@@ -1409,12 +1638,20 @@ impl<'a> ContainsFrame<'a> {
                 }
                 self.idx += 1;
                 if self.idx >= self.array.len() {
+                    if !self.matched {
+                        ev.note_failure(
+                            &self.base_path,
+                            "contains",
+                            "array has no element matching the contains schema".to_owned(),
+                        );
+                    }
                     return Ok(Step::Done(self.matched));
                 }
                 Ok(Step::Child(node_child(
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
         }
@@ -1426,12 +1663,21 @@ impl<'a> MinContainsFrame<'a> {
         match input {
             Input::Start => {
                 if self.array.is_empty() {
-                    return Ok(Step::Done((self.count as f64) >= self.limit));
+                    let ok = (self.count as f64) >= self.limit;
+                    if !ok {
+                        ev.note_failure(
+                            &self.base_path,
+                            "minContains",
+                            format!("fewer matching elements than minContains {}", self.limit),
+                        );
+                    }
+                    return Ok(Step::Done(ok));
                 }
                 Ok(Step::Child(node_child(
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
             Input::Child(result) => {
@@ -1443,12 +1689,21 @@ impl<'a> MinContainsFrame<'a> {
                 }
                 self.idx += 1;
                 if self.idx >= self.array.len() {
-                    return Ok(Step::Done((self.count as f64) >= self.limit));
+                    let ok = (self.count as f64) >= self.limit;
+                    if !ok {
+                        ev.note_failure(
+                            &self.base_path,
+                            "minContains",
+                            format!("fewer matching elements than minContains {}", self.limit),
+                        );
+                    }
+                    return Ok(Step::Done(ok));
                 }
                 Ok(Step::Child(node_child(
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
         }
@@ -1456,7 +1711,7 @@ impl<'a> MinContainsFrame<'a> {
 }
 
 impl<'a> MaxContainsFrame<'a> {
-    fn step(&mut self, _ev: &mut Evaluator<'a>, input: Input) -> Result<Step<'a>, SchemaError> {
+    fn step(&mut self, ev: &mut Evaluator<'a>, input: Input) -> Result<Step<'a>, SchemaError> {
         match input {
             Input::Start => {
                 if self.array.is_empty() {
@@ -1466,6 +1721,7 @@ impl<'a> MaxContainsFrame<'a> {
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
             Input::Child(result) => {
@@ -1474,12 +1730,21 @@ impl<'a> MaxContainsFrame<'a> {
                 }
                 self.idx += 1;
                 if self.idx >= self.array.len() {
-                    return Ok(Step::Done((self.count as f64) <= self.limit));
+                    let ok = (self.count as f64) <= self.limit;
+                    if !ok {
+                        ev.note_failure(
+                            &self.base_path,
+                            "maxContains",
+                            format!("more matching elements than maxContains {}", self.limit),
+                        );
+                    }
+                    return Ok(Step::Done(ok));
                 }
                 Ok(Step::Child(node_child(
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
         }
@@ -1497,6 +1762,7 @@ impl<'a> ItemsSizedFrame<'a> {
                     &self.items[self.idx],
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
             Input::Child(result) => {
@@ -1512,6 +1778,7 @@ impl<'a> ItemsSizedFrame<'a> {
                     &self.items[self.idx],
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
         }
@@ -1529,6 +1796,7 @@ impl<'a> ItemsUnsizedFrame<'a> {
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
             Input::Child(result) => {
@@ -1544,6 +1812,7 @@ impl<'a> ItemsUnsizedFrame<'a> {
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
         }
@@ -1575,6 +1844,7 @@ impl<'a> AdditionalItemsFrame<'a> {
             self.schema,
             Cow::Borrowed(&self.array[self.idx]),
             true,
+            index_pointer(&self.base_path, self.idx),
         )))
     }
 }
@@ -1590,6 +1860,7 @@ impl<'a> PrefixItemsFrame<'a> {
                     &self.items[self.idx],
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
             Input::Child(result) => {
@@ -1605,6 +1876,7 @@ impl<'a> PrefixItemsFrame<'a> {
                     &self.items[self.idx],
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
+                    index_pointer(&self.base_path, self.idx),
                 )))
             }
         }
@@ -1635,7 +1907,13 @@ impl<'a> PropertiesFrame<'a> {
                 continue;
             }
             let value = &self.map[key];
-            return Ok(Step::Child(node_child(child, Cow::Borrowed(value), true)));
+            let path = child_pointer(&self.base_path, key);
+            return Ok(Step::Child(node_child(
+                child,
+                Cow::Borrowed(value),
+                true,
+                path,
+            )));
         }
         Ok(Step::Done(true))
     }
@@ -1671,7 +1949,13 @@ impl<'a> PatternPropertiesFrame<'a> {
                     .get(pattern.as_str())
                     .expect("pattern key present in patternProperties");
                 let value = &self.value_map[key];
-                return Ok(Step::Child(node_child(child, Cow::Borrowed(value), true)));
+                let path = child_pointer(&self.base_path, key);
+                return Ok(Step::Child(node_child(
+                    child,
+                    Cow::Borrowed(value),
+                    true,
+                    path,
+                )));
             }
             self.pattern_idx += 1;
             self.key_idx = 0;
@@ -1704,10 +1988,12 @@ impl<'a> AdditionalPropsFrame<'a> {
                 continue;
             }
             let value = &self.value_map[key];
+            let path = child_pointer(&self.base_path, key);
             return Ok(Step::Child(node_child(
                 self.schema,
                 Cow::Borrowed(value),
                 true,
+                path,
             )));
         }
         Ok(Step::Done(true))
@@ -1735,6 +2021,7 @@ impl<'a> PropertyNamesFrame<'a> {
                 self.schema,
                 Cow::Owned(Value::String(key)),
                 false,
+                self.base_path.clone(),
             )));
         }
         Ok(Step::Done(true))
@@ -1742,20 +2029,20 @@ impl<'a> PropertyNamesFrame<'a> {
 }
 
 impl<'a> DepsFrame<'a> {
-    fn step(&mut self, _ev: &mut Evaluator<'a>, input: Input) -> Result<Step<'a>, SchemaError> {
+    fn step(&mut self, ev: &mut Evaluator<'a>, input: Input) -> Result<Step<'a>, SchemaError> {
         match input {
-            Input::Start => self.advance(),
+            Input::Start => self.advance(ev),
             Input::Child(result) => {
                 if !result {
                     return Ok(Step::Done(false));
                 }
                 self.idx += 1;
-                self.advance()
+                self.advance(ev)
             }
         }
     }
 
-    fn advance(&mut self) -> Result<Step<'a>, SchemaError> {
+    fn advance(&mut self, ev: &mut Evaluator<'a>) -> Result<Step<'a>, SchemaError> {
         let Some(map) = as_value(&self.value).as_object() else {
             return Ok(Step::Done(true));
         };
@@ -1772,13 +2059,23 @@ impl<'a> DepsFrame<'a> {
                     .filter_map(Value::as_str)
                     .all(|needed| map.contains_key(needed));
                 if !ok {
+                    ev.note_failure(
+                        &self.base_path,
+                        "dependencies",
+                        "required dependency property is missing".to_owned(),
+                    );
                     return Ok(Step::Done(false));
                 }
                 self.idx += 1;
                 continue;
             }
             // Schema form validates the whole instance object.
-            return Ok(Step::Child(node_child(dep, self.value.clone(), false)));
+            return Ok(Step::Child(node_child(
+                dep,
+                self.value.clone(),
+                false,
+                self.base_path.clone(),
+            )));
         }
         Ok(Step::Done(true))
     }
@@ -1793,6 +2090,7 @@ impl<'a> IfThenElseFrame<'a> {
                     condition,
                     self.value.clone(),
                     false,
+                    self.base_path.clone(),
                 )))
             }
             (IfPhase::Condition, Input::Child(result)) => {
@@ -1808,7 +2106,12 @@ impl<'a> IfThenElseFrame<'a> {
                     &TRUE_SCHEMA
                 };
                 self.phase = IfPhase::Branch;
-                Ok(Step::Child(node_child(branch, self.value.clone(), false)))
+                Ok(Step::Child(node_child(
+                    branch,
+                    self.value.clone(),
+                    false,
+                    self.base_path.clone(),
+                )))
             }
             (IfPhase::Branch, Input::Child(result)) => Ok(Step::Done(result)),
             (IfPhase::Branch, Input::Start) => {
@@ -1849,6 +2152,7 @@ impl<'a> UnevaluatedItemsFrame<'a> {
                 self.schema,
                 Cow::Borrowed(&self.array[self.idx]),
                 false,
+                index_pointer(&self.base_path, self.idx),
             )));
         }
         Ok(Step::Done(true))
@@ -1880,10 +2184,12 @@ impl<'a> UnevaluatedPropsFrame<'a> {
                 continue;
             }
             let value = &self.value_map[key];
+            let path = child_pointer(&self.base_path, key);
             return Ok(Step::Child(node_child(
                 self.schema,
                 Cow::Borrowed(value),
                 false,
+                path,
             )));
         }
         Ok(Step::Done(true))

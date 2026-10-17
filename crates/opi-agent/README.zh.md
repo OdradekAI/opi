@@ -19,7 +19,8 @@ cargo add opi-agent
 
 当前 crate 版本是 `0.8.3`，继承自 workspace 包版本。
 
-`opi-agent` 负责 Agent 主循环和运行时基础能力：工具契约、JSON Schema 参数校验、
+`opi-agent` 负责 Agent 主循环和运行时基础能力：工具契约、经由 opi-ai
+私有 schema 方言的工具参数 normalize／校验、
 并行/串行工具执行、生命周期 hooks、事件输出、steering/follow-up 队列、会话
 JSONL 存储、分支重建、上下文压缩、SDK/RPC 类型、扩展、本地诊断、已脱敏证据
 记录，以及 streaming proxy。
@@ -93,7 +94,7 @@ agent_start                              # 仅一次，首轮之前
         tool_execution_start              # 每个 tool call
         resolve trusted registration
         before_tool_call                  # 可阻止；绝不授予 authority
-        validate tool args (jsonschema)
+        normalize + validate tool args（opi-ai 私有 schema 方言）
         authorize tool call               # 必须经过可信 ToolAuthorizer
         tool.execute                      # 并行批次；若任一工具为 Sequential 则整批串行
         after_tool_call                   # AgentHooks::after_tool_call（可替换结果）
@@ -140,7 +141,7 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
 |------|------------|
 | `transform_context` | 在 Provider 转换之前运行；可改写应用层消息。 |
 | `convert_to_llm` | 将应用消息转换为 Provider 消息，并过滤仅会话状态。 |
-| `before_tool_call` | 在解析可信工具之后、JSON Schema 参数校验与强制 authorization 之前运行；可 `Deny` 阻止执行（拒绝原因成为工具错误）。`Continue` 不是授权。 |
+| `before_tool_call` | 在解析可信工具之后、参数校验与强制 authorization 之前运行（观察原始提议参数）；可 `Deny` 阻止执行（拒绝原因成为工具错误）。`Continue` 不是授权。 |
 | `after_tool_call` | 在执行之后、最终的 `ToolExecutionEnd` 事件之前运行；可 `Replace` 展示结果，使替换值被发出并持久化，但工具 evidence 仍保留原始的底层执行结果。 |
 | `should_stop_after_turn` | 在队列轮询和准备之前观察已完成轮次；返回 `true` 立即结束运行。 |
 | `prepare_next_turn` | 仅在停止决定和输入选择后确实需要续轮时运行；返回的可选完整候选在下一次 provider 派发前校验并原子应用。 |
@@ -181,10 +182,16 @@ Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.re
 循环会按源顺序为每个调用生成错误结果，不运行工具 hook、authorization 或执行。
 这些非终止失败保留正常的停止与续轮处理；没有工具调用的 length 响应不会凭空创建下一轮。
 
-对于已解析的工具，`before_tool_call` 先运行；随后参数校验会在强制 authorization 与
-`Tool::execute` 之前执行。校验失败是正常的运行时结果，而非循环错误：会持久化一个
-错误 `ToolResult`（`is_error = true`、`terminate = false`）并继续运行。此时 hook
-已经运行，但 authorizer 与工具不会运行；未知工具则会在 hook 之前被拒绝。
+对于已解析的工具，`before_tool_call` 先运行（观察到的是原始提议参数）；随后参数
+校验在强制 authorization 与 `Tool::execute` 之前执行。校验通过 opi-ai 私有 schema
+方言对最终解析参数的克隆做 normalize（optional-null 删除、固定 Pi coercion 语料），
+再用注册的原始 schema 检查 normalize 后的根值；被验证的确切值即被授权与执行的值
+（AUT-002）。compile+validate 阶段在阻塞线程池上、以注册所属 generation 的已编译
+schema 运行（替换 registry 获得新编译，in-flight 调用保留旧的）；取消丢弃结果，
+但不声称能同步硬杀引擎。校验失败是正常的运行时结果，而非循环错误：会持久化一个
+错误 `ToolResult`（`is_error = true`、`terminate = false`，仅含脱敏失败信息：实例
+指针、keyword 与来自 schema 的原因）并继续运行。此时 hook 已经运行，但 authorizer
+与工具不会运行；未知工具则会在 hook 之前被拒绝。
 
 ## 工具结果与诊断
 

@@ -279,6 +279,22 @@ I/O 或 source-free 的规模/fuel 上限。regex 叶子在准入期以精确的
 即使在 upstream 永不访问的分支也在准入期失败——这是有记录的 fail-closed
 差异。
 
+## 公开工具参数 Normalizer／Validator
+
+`schema::validate_tool_arguments`（以及按名字查找的
+`schema::validate_tool_call`）是构建在方言引擎上的 SDK 接缝：传入自有的
+`arguments_error` 标记会在任何 coercion 之前拒绝；调用方的 raw 值绝不被改写；
+normalize 删除“独立编译的子 schema 拒绝 null”的可选 `null` 属性，应用固定 Pi
+coercion 语料（allOf 顺序折叠、anyOf/oneOf 原值优先再 clone-per-arm、按
+`type` 数组顺序的类型联合 primitive coercion，使用精确 ECMAScript
+`Number`／`String` 转换——`Number("0x10")` 为 16，`String(1e21)` 经固定的
+ryu-js 1.0.2 得到 `"1e+21"`），最后用原 schema 检查 normalize 后的根值（上游
+在 coerced 根失败时返回未验证 raw 的行为被有意不复制——RDF-09）。Invalid 结果
+只携带脱敏失败信息（实例指针、keyword、来自 schema 的原因）；精确 JSON 整数
+保留精确十进制数字，不复制 JavaScript 解析期的精度丢失（RDF-09）。TypeBox
+`Value.Convert` 对纯 JSON 方言 schema 是 no-op（其分发读取非 JSON 的 `~kind`
+标记），JSON schema 中的 `~kind` 标记保持 inert——有记录的方言边界。
+
 ## 非目标
 
 以下是明确的非目标，不得作为当前核心行为出现：
