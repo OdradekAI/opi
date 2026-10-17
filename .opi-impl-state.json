@@ -609,7 +609,7 @@
       "definition_of_done": "Replace ProviderCollection public assembly with one Models/driver and typed ChatApi<O> registration. Native/simple/direct/advanced enter the same frozen complete-record binding and collector, Send+static owned input capture occurs at construction and auth starts on first poll. Prove portable compatible options/upsert/type mismatch, old-call survival after provider mutation, custom complete records absent from catalog and exact ApiId identity. Migrate all compiling current callers without a permanent collection facade. Local scope: one frozen complete chat record/custom chat adapter through native/simple/direct/advanced calls; protocol-specific effort, all built-in profiles and complete AIR-001/V-01 close at 20.34.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2"
       ],
@@ -709,7 +709,7 @@
             "opi_agent::agent_loop",
             "opi_coding_agent::provider_factory"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S03",
@@ -723,7 +723,7 @@
             "opi_agent::agent_loop",
             "opi_coding_agent::provider_factory"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-ACTOR-02",
@@ -737,7 +737,7 @@
             "opi_agent::agent_loop",
             "opi_coding_agent::provider_factory"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -748,7 +748,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "33918c2604a7f3c3a8fe9bb4bef8982057c41cd2",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -854,10 +854,70 @@
         "crates/opi-coding-agent/tests/provider_factory.rs",
         "crates/opi-coding-agent/tests/provider_identity.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "bd8bf84f4ac9e1de8e62c8b1262925fd466bc511",
+      "evidence": {
+        "Opi-Task": "20.3",
+        "Opi-DoD-SHA256": "bf33d199fd1db2311ec5e0ee70e77e4554bfd3d7ff6a8dc316cd3be1801b4578",
+        "Opi-Verification": "workspace; smoke full PASSED (doc-check, fmt --all, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets + --doc, rustdoc -D warnings); scenario cargo test -p opi-ai --test api_mapped_provider --test custom_provider_registration --test provider_collection 107 passed (15+32+60); zero ProviderCollection symbols remain in crates",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; Workflow runtime unavailable in environment, wf_ref=null (recorded in verify_runs)",
+        "Opi-Acceptance": "AIR-045, P20-S03, P20-ACTOR-02 met via SDK behavioral suites; production consumers opi_agent::agent_loop and opi_coding_agent::provider_factory exercised through passing workspace suites; no runtime claim beyond tests and preserved behavior"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-17T09:44:20+08:00",
+          "attempt": 1,
+          "summary": "DEL-02/AIR-045 delivered in commit bd8bf84f4ac9e1de8e62c8b1262925fd466bc511: provider_collection module renamed to models with Models/ModelsError replacing ProviderCollection/CollectionError (zero old symbols remain; register/register_route/prepare_call/refresh and catalog/auth reads keep contracts); the request compiler and auth resolution extracted as the sole shared state machine (compile_prepared_request, resolve_route_auth) reused by advanced prepare_call and every ordinary entry; new typed custom chat registration ChatApi<O> + exact ApiId + ChatApiHandle/NativeOptions (API/type-tagged, portable across compatible instances), register_chat_api installs a catalog-invisible route so complete records stay out of get_model/all_models; ChatModelRecord freezes provider id + bare model id + exact wire without catalog membership or same-ID catalog replacement; ChatCall lazily captures owned Send+static input at construction and starts auth on first poll with exactly one typed pre-auth CallFailure for unregistered ApiId, options type/provider mismatch, non-dispatchable route or cancellation; compatible upserts keep old options valid, incompatible upserts fail them pre-auth, already-created calls survive provider mutation; stream/complete, stream_simple/complete_simple, stream_direct/complete_direct (injected auth) all drain through the 20.2 ChatStream collector. All compiling callers migrated (opi-agent Agent/loop context/evidence paths, opi-coding-agent factory/harness/compaction/model paths); AgentLoopContext keeps its field name so non-owned suites compile unchanged. Protocol-specific effort, all built-in profiles and complete AIR-001/V-01 remain with 20.34.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.sh full (opi-doc-check, cargo fmt --all --check, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps); one transient host OOM retry excluded from evidence",
+            "d0_scenarios": "PASS: cargo test -p opi-ai --test api_mapped_provider --test custom_provider_registration --test provider_collection -> 15+32+60 passed",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7), no must-fix findings, none flagged; exec.workflow.js runtime unavailable in environment, wf_ref=null per Phase 19 precedent",
+            "d3_gap_checks": "PASS: crates-wide grep zero for ProviderCollection/provider_collection/CollectionError outside immutable released CHANGELOG history and test-file-name references; module baseline fixture updated deliberately",
+            "test_disposition": [
+              {
+                "subject": "AIR-045/P20-S03",
+                "action": "add",
+                "test": "crates/opi-ai/tests/custom_provider_registration.rs models_* battery (9 tokio tests: catalog-invisible registration + exact ApiId, owned get_model with exact wire, frozen record vs same-ID catalog data, simple neutral mapping + auth, direct injected auth without driver auth, portable options across instances, old-call survival across upsert, type-mismatch/unregistered/provider-mismatch pre-auth failures with resolver-count zero, first-poll auth + Send+'static spawn, cancelled-before-poll typed cause)",
+                "interface": "opi_ai::models::{Models, ChatApi<O>, ApiId, ChatApiHandle, NativeOptions, SimpleOptions, ChatModelRecord, ChatCall}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-ACTOR-02",
+                "action": "add",
+                "test": "crates/opi-ai/tests/provider_collection.rs models_simple_and_advanced_observe_same_route_and_outcome",
+                "interface": "Models::complete_simple vs Models::prepare_call/start_attempt/ChatStream::result",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.3 rename",
+                "action": "update",
+                "test": "crates/opi-ai/tests/{provider_collection, api_mapped_provider, bedrock_fixtures, per_request_auth, phase14_remediation, tool_result_wire}.rs plus opi-agent and opi-coding-agent suites referencing the collection types",
+                "interface": "opi_ai::Models / opi_ai::ModelsError / opi_ai::models",
+                "replacement": "mechanical type/module migration with identical assertions; module-freeze baseline updated deliberately (sorted)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.3",
+                "action": "retain",
+                "test": "all remaining suites unchanged (233 test binaries pass); non-owned agent suites (agent_loop_mock, agent_loop_semantics) compile unchanged via preserved AgentLoopContext field name and test-support helper name",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.3",
+                "action": "none",
+                "test": "none deleted",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.4",
@@ -12859,6 +12919,14 @@
       "mode": "manual-7-lens (workflow runtime unavailable)",
       "wf_ref": null,
       "result": "no must-fix findings; lenses L-D1..L-D7 audited against commit b2ff2f398b8d2416f0284ac7a77731338cf0a436 (DoD clause-by-clause, non-vacuous tests, production call sites via agent_loop/run_provider_call/drain_to_completion, truthful evidence, non-goals excluded incl. no deferred-fetch scope, dependency rules unchanged, P20-FINAL locality with closure test and closed legacy producer writes)"
+    },
+    {
+      "timestamp": "2026-10-17T09:44:20+08:00",
+      "task": "20.3",
+      "stage": "exec",
+      "mode": "manual-7-lens (workflow runtime unavailable)",
+      "wf_ref": null,
+      "result": "no must-fix findings; lenses L-D1..L-D7 audited against commit bd8bf84f4ac9e1de8e62c8b1262925fd466bc511 (DoD clause-by-clause incl. frozen binding/lazy auth/portability/upsert/mismatch/survival/catalog-absence/ApiId identity, non-vacuous adapter-observed assertions, production call sites via agent_loop and provider_factory through passing workspace suites, truthful evidence, non-goals excluded, dependency manifests unchanged, single-owner locality with deleted parallel facade)"
     }
   ]
 }
