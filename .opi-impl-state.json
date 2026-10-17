@@ -1147,7 +1147,7 @@
       "definition_of_done": "Across current real adapters compare every-byte UTF8/CRLF splits, adapter TextDecoder replacement, keepalive and large lawful events beyond withdrawn caps. Keep AWS prelude/CRC and checked arithmetic. Final malformed/nonobject tool arguments carry owned raw plus arguments_error at all five source sites and inherited adapters, provisional partial JSON never grants execution. Barrier tests prove task/read/queue exit at connect, response, read, backpressure and receiver drop without wall-clock guesses. Local scope: byte framing, producer ownership and final argument events in current migrated adapters; full Context/grammar/Serde V-41 closes at 20.11.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2"
       ],
@@ -1250,7 +1250,7 @@
             "crates/opi-ai/src/bedrock/mod.rs::Provider::stream_prepared",
             "opi_ai::ChatStream (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-04",
@@ -1271,7 +1271,7 @@
             "crates/opi-ai/src/bedrock/mod.rs::Provider::stream_prepared",
             "opi_ai::ChatStream (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-004",
@@ -1292,7 +1292,7 @@
             "crates/opi-ai/src/bedrock/mod.rs::Provider::stream_prepared",
             "opi_ai::ChatStream (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-005",
@@ -1313,7 +1313,7 @@
             "crates/opi-ai/src/bedrock/mod.rs::Provider::stream_prepared",
             "opi_ai::ChatStream (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-006",
@@ -1334,7 +1334,7 @@
             "crates/opi-ai/src/bedrock/mod.rs::Provider::stream_prepared",
             "opi_ai::ChatStream (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-048",
@@ -1355,7 +1355,7 @@
             "crates/opi-ai/src/bedrock/mod.rs::Provider::stream_prepared",
             "opi_ai::ChatStream (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S05",
@@ -1376,7 +1376,7 @@
             "crates/opi-ai/src/bedrock/mod.rs::Provider::stream_prepared",
             "opi_ai::ChatStream (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -1394,7 +1394,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "0cf4aa800b28dc9e962feed5a2ff52ef353c3039",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -1423,10 +1423,78 @@
         "crates/opi-ai/tests/provider_lifecycle.rs",
         "crates/opi-ai/tests/stream_events.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "5489861037a3cd72ab8a1c202aa0c362278d9581",
+      "evidence": {
+        "Opi-Task": "20.5",
+        "Opi-DoD-SHA256": "efcd26a0481c52a1b22b5235ac79d9a7ad5234ee544790e96c5bbc272fd78350",
+        "Opi-Verification": "workspace; smoke full PASSED (doc-check, fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets 233 binaries + --doc, rustdoc -D warnings); scenario cargo test -p opi-ai --test provider_lifecycle --test stream_events --test openai_responses_lifecycle --test gemini_lifecycle 61 passed (18+27+10+6); chat-wire battery in openai_chat_fixtures 4 passed; lib suites text_decode 9 + tool_argument 8 + framing 2 + split_frame 2 + cancellation 2",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; connect/read/queue/response/drop barriers each proven deterministically without wall-clock guesses; Workflow runtime unavailable, wf_ref=null (recorded in verify_runs)",
+        "Opi-Acceptance": "V-02, V-04, AIR-004, AIR-005, AIR-006, AIR-048, P20-S05 met via behavioral suites over Provider::stream_prepared on anthropic/chat/responses/gemini wires plus bedrock framing units; full Context/grammar/Serde V-41 deliberately deferred to 20.11"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-17T15:00:56+08:00",
+          "attempt": 1,
+          "summary": "B.2 authorization granted: execute 20.5 with one task commit plus a separate ledger-checkpoint commit; no push. Baseline dirty files: none.",
+          "gate_results": {
+            "b2_authorization": "granted (user) ; commits=task+ledger-checkpoint ; push=no"
+          }
+        },
+        {
+          "timestamp": "2026-10-17T17:22:23+08:00",
+          "attempt": 1,
+          "summary": "DEL-02 wire alignment delivered in commit 5489861037a3cd72ab8a1c202aa0c362278d9581: (1) new private text_decode module gives every HTTP adapter one incremental replacement decoder - legal UTF-8/CRLF fixtures proven at every byte boundary (unit property loop + byte-chunked HTTP tests for anthropic/responses/gemini/chat with \\n, \\r\\n and \\r separators), each maximal invalid subsequence becomes one U+FFFD (anthropic no longer fails the call, bedrock payloads no longer silently empty), keepalive comments and a 300KB lawful event accepted with no size caps reintroduced, AWS prelude/CRC with checked arithmetic proven at every split including corrupted-CRC rejection; (2) ToolCall gains optional serialized arguments_error and finalize_text_arguments runs once at block/item end on the five textual sites (anthropic ContentBlockStop, bedrock tool end, chat Finish covering Mistral/Azure/OpenRouter, shared Responses finish covering Codex/Vertex): empty -> {}, invalid-escape-only -> repaired literal text with later fields surviving, incomplete/non-object -> owned raw + redacted-safe error, provisional deltas never grant execution; (3) anthropic/chat/responses/codex migrate to send_or_cancel + CancelAwareReceiverStream matching azure/gemini/vertex/bedrock, with deterministic barrier tests at connect (accepted-but-no-response-head + cancel -> one typed Cancelled), read (stall + cancel), response (retained 401/429/500), backpressure (200 events fill the 64-slot queue, one buffered event confirmed delivered, then cancel -> no buffered penetration) and drop (delivery ends, fresh attempt unaffected); a reqwest-only probe proved socket-FIN timing is a transport internal so it is deliberately not asserted (matrix rejects socket-window claims). Evidence-appended owned paths (later-discovered necessary): crates/opi-ai/src/message.rs (ToolCall field + finalize), crates/opi-ai/src/text_decode.rs (shared decoder), crates/opi-ai/tests/openai_chat_fixtures.rs (chat is one of the five sites), plus mechanical arguments_error: None additions in opi-agent event.rs/4 test files and opi-coding-agent compaction.rs/runner.rs/3 test files required by the public field.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.sh full (opi-doc-check, cargo fmt --all --check, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps)",
+            "d0_scenarios": "PASS: cargo test -p opi-ai --test provider_lifecycle --test stream_events --test openai_responses_lifecycle --test gemini_lifecycle -> 18+27+10+6 = 61 passed",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7), no must-fix; initial audit gap (connect-stage barrier lacked a dedicated wire test) closed by adding anthropic_cancel_at_the_connect_barrier_is_immediately_visible before commit; exec.workflow.js runtime unavailable, wf_ref=null per Phase 19 precedent",
+            "d3_gap_checks": "PASS: every DoD clause mapped to a named passing test; no caps found or introduced; P20-FINAL untouched; V-41/Context/grammar deliberately deferred to 20.11 per acceptance_partition",
+            "test_disposition": [
+              {
+                "subject": "AIR-006/V-02 framing",
+                "action": "add",
+                "test": "crates/opi-ai/src/text_decode.rs 9 unit tests (every-byte two-way split property, single-byte chunks, split 4-byte across 3 chunks, one-FFFD-per-maximal-invalid, invalid-across-chunks, truncated-at-EOF, invalid-then-incomplete carry, incremental emission); provider_lifecycle anthropic every-byte CRLF/keepalive/multibyte + invalid-UTF-8 replacement + 300KB large event; openai_responses_lifecycle + gemini_lifecycle multibyte/replacement acceptance; openai_chat_fixtures keepalive",
+                "interface": "StreamTextDecoder::push/finish; Provider::stream_prepared over raw-TCP byte-chunked/wiremock servers",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "AIR-048 final arguments",
+                "action": "add",
+                "test": "message.rs tool_argument_tests 8 unit tests; 3-case wire battery x4 suites (anthropic/responses/chat x empty+escape-repair+truncated, plus non-object cases); stream_events ToolCallEnd arguments_error round-trip + legacy deserialization; bedrock event_stream split_frame_tests 2",
+                "interface": "opi_ai::message::ToolCall::{arguments, arguments_error}; AssistantStreamEvent::ToolCallEnd",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "V-04/AIR-004/005 barriers",
+                "action": "add",
+                "test": "provider_lifecycle queue/connect/drop barriers (anthropic); gemini_lifecycle queue barrier proof",
+                "interface": "Provider::stream_prepared + send_or_cancel/CancelAwareReceiverStream",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.5 migration",
+                "action": "update",
+                "test": "anthropic/openai_chat/openai_responses/openai_codex_responses producer loops moved to cancel-aware seams; bedrock payload decode lossy; mechanical arguments_error: None in non-owned agent/coding-agent files",
+                "interface": "crate-internal stream plumbing; public ToolCall field",
+                "replacement": "identical assertions retained; ReceiverStream structs deleted after all wraps migrated",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.5",
+                "action": "retain",
+                "test": "all other suites unchanged (233 test binaries pass; 401/429/500 response-stage and no-terminal tests retained)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.6",
@@ -12927,6 +12995,14 @@
       "mode": "manual-7-lens (workflow runtime unavailable)",
       "wf_ref": null,
       "result": "no must-fix findings; lenses L-D1..L-D7 audited against commit bd8bf84f4ac9e1de8e62c8b1262925fd466bc511 (DoD clause-by-clause incl. frozen binding/lazy auth/portability/upsert/mismatch/survival/catalog-absence/ApiId identity, non-vacuous adapter-observed assertions, production call sites via agent_loop and provider_factory through passing workspace suites, truthful evidence, non-goals excluded, dependency manifests unchanged, single-owner locality with deleted parallel facade)"
+    },
+    {
+      "timestamp": "2026-10-17T17:22:23+08:00",
+      "task": "20.5",
+      "stage": "exec",
+      "mode": "manual-7-lens (workflow runtime unavailable)",
+      "wf_ref": null,
+      "result": "no must-fix findings after closing the connect-barrier gap; lenses L-D1..L-D7 audited against commit 5489861037a3cd72ab8a1c202aa0c362278d9581 (DoD clause-by-clause incl. every-byte legal fixtures, TextDecoder-replacement parity, keepalive/large-event acceptance, AWS CRC/checked-arithmetic preservation, five-site final arguments with owned raw + arguments_error, provisional-never-executable, and deterministic connect/response/read/backpressure/drop barriers with timeout guards only)"
     }
   ]
 }
