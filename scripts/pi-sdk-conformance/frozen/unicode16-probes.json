@@ -1,0 +1,50 @@
+{
+  "script_match_probes": [
+    {
+      "pattern": "^\\p{Script=Beria_Erfe}+$",
+      "code_point": 93856,
+      "stock_matches": true,
+      "fork_matches": false
+    },
+    {
+      "pattern": "^\\p{Script=Sidetic}+$",
+      "code_point": 67904,
+      "stock_matches": true,
+      "fork_matches": false
+    },
+    {
+      "pattern": "^\\p{Script=Tai_Yo}+$",
+      "code_point": 124608,
+      "stock_matches": true,
+      "fork_matches": false
+    },
+    {
+      "pattern": "^\\p{Script=Tolong_Siki}+$",
+      "code_point": 73136,
+      "stock_matches": true,
+      "fork_matches": false
+    },
+    {
+      "pattern": "^\\p{Script=Adlam}+$",
+      "code_point": 125184,
+      "stock_matches": true,
+      "fork_matches": true
+    },
+    {
+      "pattern": "^\\p{Script=Ahom}+$",
+      "code_point": 71424,
+      "stock_matches": true,
+      "fork_matches": true
+    },
+    {
+      "pattern": "^\\p{Script=Anatolian_Hieroglyphs}+$",
+      "code_point": 82944,
+      "stock_matches": true,
+      "fork_matches": true
+    }
+  ],
+  "derived_from": {
+    "ucd17_scripts": 4,
+    "shared_scripts": 127
+  }
+}

@@ -1,0 +1,214 @@
+{
+  "task": "20.8 substrate preparation",
+  "closure_sha256": "2ec23e59b3eb4423bbb6eff7c64fcab94bad826f65ac7bc81760066f1da11fed",
+  "generation": {
+    "runs": [
+      {
+        "attempt": 1,
+        "exit": 0,
+        "table_sha256": "475cb03589f0deb859b9a2ccfb34e3f33026a1e89500524024ce575a135e5daf",
+        "tests_sha256": "ae24799bc5c8ef417b72de6cbc2808fb581c28e6412284fa00c8f034cd21497c"
+      },
+      {
+        "attempt": 2,
+        "exit": 0,
+        "table_sha256": "475cb03589f0deb859b9a2ccfb34e3f33026a1e89500524024ce575a135e5daf",
+        "tests_sha256": "ae24799bc5c8ef417b72de6cbc2808fb581c28e6412284fa00c8f034cd21497c"
+      }
+    ],
+    "table_sha256": "475cb03589f0deb859b9a2ccfb34e3f33026a1e89500524024ce575a135e5daf",
+    "tests_sha256": "ae24799bc5c8ef417b72de6cbc2808fb581c28e6412284fa00c8f034cd21497c",
+    "upstream_generator_commit": "aae35dee1596cc9a9caaad2425b088081c09e5d5"
+  },
+  "integrity": [
+    {
+      "label": "opi-vendor-url",
+      "unchanged_members": 16,
+      "changed_members": [
+        "url-2.5.8/Cargo.toml"
+      ]
+    },
+    {
+      "label": "opi-vendor-idna",
+      "unchanged_members": 18,
+      "changed_members": [
+        "idna-1.1.0/Cargo.toml"
+      ]
+    },
+    {
+      "label": "opi-vendor-idna-adapter",
+      "unchanged_members": 6,
+      "changed_members": [
+        "idna_adapter-1.2.1/Cargo.toml"
+      ]
+    },
+    {
+      "label": "opi-vendor-icu-collections",
+      "unchanged_members": 73,
+      "changed_members": [
+        "icu_collections-2.0.0/Cargo.toml"
+      ]
+    },
+    {
+      "label": "opi-vendor-icu-locale-core",
+      "unchanged_members": 86,
+      "changed_members": [
+        "icu_locale_core-2.0.0/Cargo.toml"
+      ]
+    },
+    {
+      "label": "opi-vendor-icu-normalizer",
+      "unchanged_members": 34,
+      "changed_members": [
+        "icu_normalizer-2.0.0/Cargo.toml"
+      ]
+    },
+    {
+      "label": "opi-vendor-icu-normalizer-data",
+      "unchanged_members": 13,
+      "changed_members": [
+        "icu_normalizer_data-2.0.0/Cargo.toml"
+      ]
+    },
+    {
+      "label": "opi-vendor-icu-properties",
+      "unchanged_members": 15,
+      "changed_members": [
+        "icu_properties-2.0.0/Cargo.toml"
+      ]
+    },
+    {
+      "label": "opi-vendor-icu-properties-data",
+      "unchanged_members": 128,
+      "changed_members": [
+        "icu_properties_data-2.0.0/Cargo.toml"
+      ]
+    },
+    {
+      "label": "opi-vendor-icu-provider",
+      "unchanged_members": 22,
+      "changed_members": [
+        "icu_provider-2.0.0/Cargo.toml"
+      ]
+    },
+    {
+      "label": "opi-vendor-regress",
+      "unchanged_members": 41,
+      "changed_members": [
+        "regress-0.12.0/Cargo.toml",
+        "regress-0.12.0/src/unicodetables.rs",
+        "regress-0.12.0/tests/unicode_property_escapes.rs"
+      ]
+    }
+  ],
+  "unicode_probes": {
+    "script_match_probes": [
+      {
+        "pattern": "^\\p{Script=Beria_Erfe}+$",
+        "code_point": 93856,
+        "stock_matches": true,
+        "fork_matches": false
+      },
+      {
+        "pattern": "^\\p{Script=Sidetic}+$",
+        "code_point": 67904,
+        "stock_matches": true,
+        "fork_matches": false
+      },
+      {
+        "pattern": "^\\p{Script=Tai_Yo}+$",
+        "code_point": 124608,
+        "stock_matches": true,
+        "fork_matches": false
+      },
+      {
+        "pattern": "^\\p{Script=Tolong_Siki}+$",
+        "code_point": 73136,
+        "stock_matches": true,
+        "fork_matches": false
+      },
+      {
+        "pattern": "^\\p{Script=Adlam}+$",
+        "code_point": 125184,
+        "stock_matches": true,
+        "fork_matches": true
+      },
+      {
+        "pattern": "^\\p{Script=Ahom}+$",
+        "code_point": 71424,
+        "stock_matches": true,
+        "fork_matches": true
+      },
+      {
+        "pattern": "^\\p{Script=Anatolian_Hieroglyphs}+$",
+        "code_point": 82944,
+        "stock_matches": true,
+        "fork_matches": true
+      }
+    ],
+    "derived_from": {
+      "ucd17_scripts": 4,
+      "shared_scripts": 127
+    }
+  },
+  "registry_order": [
+    "opi-vendor-icu-collections",
+    "opi-vendor-icu-locale-core",
+    "opi-vendor-icu-normalizer-data",
+    "opi-vendor-icu-properties-data",
+    "opi-vendor-icu-provider",
+    "opi-vendor-icu-properties",
+    "opi-vendor-icu-normalizer",
+    "opi-vendor-idna-adapter",
+    "opi-vendor-idna",
+    "opi-vendor-regress",
+    "opi-vendor-url"
+  ],
+  "packaged": {
+    "opi-vendor-icu-collections": {
+      "crate": "opi-vendor-icu-collections-2.0.0.crate",
+      "sha256": "59690a6fd86f21b6f35ef16e352daff22b1a260cce9be26724c9047684fb330c"
+    },
+    "opi-vendor-icu-locale-core": {
+      "crate": "opi-vendor-icu-locale-core-2.0.0.crate",
+      "sha256": "efddaa780e983aec5ec2e29882a8db9abb0cee46d3d334aa5b9a30a7a6b7c347"
+    },
+    "opi-vendor-icu-normalizer-data": {
+      "crate": "opi-vendor-icu-normalizer-data-2.0.0.crate",
+      "sha256": "4fd6fa0f6dabd42f9c4218eb5277e37d48bc9868554a53f3b13c8981726e81e4"
+    },
+    "opi-vendor-icu-properties-data": {
+      "crate": "opi-vendor-icu-properties-data-2.0.0.crate",
+      "sha256": "4564b30873877ffd495db63b6ffd222817c6db7a7e3f458a9d8e3692a50478e0"
+    },
+    "opi-vendor-icu-provider": {
+      "crate": "opi-vendor-icu-provider-2.0.0.crate",
+      "sha256": "c148d155d25bfb61f656362084078fd08bc03c474695f7ac6e66dd47e8a3a928"
+    },
+    "opi-vendor-icu-properties": {
+      "crate": "opi-vendor-icu-properties-2.0.0.crate",
+      "sha256": "784bd39c31a901f7ea9722f7fb137b77f7d425e46755da4391c7abe0fa2e729c"
+    },
+    "opi-vendor-icu-normalizer": {
+      "crate": "opi-vendor-icu-normalizer-2.0.0.crate",
+      "sha256": "2be5e12eba88fbc990125d8f9bc2b09b0289c61ba4dc2b3636ba70e87c3485bd"
+    },
+    "opi-vendor-idna-adapter": {
+      "crate": "opi-vendor-idna-adapter-1.2.1.crate",
+      "sha256": "1305fb5480dea881ff84404046b3913ba10d63869e05f4b68747f4cac84e09b7"
+    },
+    "opi-vendor-idna": {
+      "crate": "opi-vendor-idna-1.1.0.crate",
+      "sha256": "dcc25915796c772bbf64f46086839efb2798d2016f3361c1c7593e0b6b6c69e3"
+    },
+    "opi-vendor-regress": {
+      "crate": "opi-vendor-regress-0.12.0-ucd16.1.crate",
+      "sha256": "b643cb3b131e0e74c77d438b1c0fb48d937b60d28364465cbec0ed7520b5c99c"
+    },
+    "opi-vendor-url": {
+      "crate": "opi-vendor-url-2.5.8.crate",
+      "sha256": "fb30af621d4837b9ba73847bb9cba0b6b58222401c6d9a55a8f12f5d70d3ada5"
+    }
+  },
+  "elapsed_seconds": 36.8
+}

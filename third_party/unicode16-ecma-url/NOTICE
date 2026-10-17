@@ -1,0 +1,29 @@
+NOTICE — opi-vendor Unicode16/ECMA/URL dependency closure (task 20.8)
+
+Each package in this closure is derived from an exact upstream archive
+pinned in closure.json; upstream license files ship inside every archive
+and remain authoritative. Derivations:
+
+- The ten URL/IDNA/ICU4X packages (url 2.5.8, idna 1.1.0,
+  idna_adapter 1.2.1, icu_collections/icu_locale_core/icu_normalizer/
+  icu_normalizer_data/icu_properties/icu_properties_data/icu_provider
+  2.0.0) are repackaged under `opi-vendor-*` identities with only
+  Cargo.toml identity changes; all other archive members are
+  byte-identical (verified per member by the proof harness).
+- `opi-vendor-regress` 0.12.0-ucd16.1 is a maintained fork of regress
+  0.12.0 (MIT OR Apache-2.0,
+  https://github.com/ridiculousfish/regress): the algorithm sources are
+  unchanged; `src/unicodetables.rs` and
+  `tests/unicode_property_escapes.rs` are regenerated from official
+  Unicode 16.0.0 UCD + emoji data using regress's own upstream
+  generator at commit aae35dee1596cc9a9caaad2425b088081c09e5d5.
+- ryu-js 1.0.2 (Apache-2.0 OR MIT-equivalent upstream licensing, see
+  its archive) is consumed unmodified from crates.io.
+
+Upstream data origins: Unicode Character Database 16.0.0 and emoji 16.0
+sequence files (unicode.org, hashes pinned); ICU4X data crates carry
+CLDR/ICU data under the Unicode License and their upstream manifests.
+
+These identities are NOT published to any registry. Distribution as
+`opi-vendor-*` packages requires separately authorized registry
+publication.

@@ -1,0 +1,174 @@
+[
+ {
+  "id": "number-0",
+  "result": "0"
+ },
+ {
+  "id": "number-1",
+  "result": "0"
+ },
+ {
+  "id": "number-2",
+  "result": "1e-7"
+ },
+ {
+  "id": "number-3",
+  "result": "0.000001"
+ },
+ {
+  "id": "number-4",
+  "result": "100000000000000000000"
+ },
+ {
+  "id": "number-5",
+  "result": "1e+21"
+ },
+ {
+  "id": "number-6",
+  "result": "1e+23"
+ },
+ {
+  "id": "number-7",
+  "result": "1000000000000000100"
+ },
+ {
+  "id": "number-8",
+  "result": "5e-324"
+ },
+ {
+  "id": "number-9",
+  "result": "1.7976931348623157e+308"
+ },
+ {
+  "id": "number-10",
+  "result": "0.1"
+ },
+ {
+  "id": "number-11",
+  "result": "-0.000001"
+ },
+ {
+  "id": "number-12",
+  "result": "1.2345678901234567"
+ },
+ {
+  "id": "number-13",
+  "result": "9007199254740992"
+ },
+ {
+  "id": "url-0",
+  "result": true
+ },
+ {
+  "id": "url-1",
+  "result": true
+ },
+ {
+  "id": "url-2",
+  "result": false
+ },
+ {
+  "id": "url-3",
+  "result": false
+ },
+ {
+  "id": "url-4",
+  "result": false
+ },
+ {
+  "id": "url-5",
+  "result": true
+ },
+ {
+  "id": "url-6",
+  "result": false
+ },
+ {
+  "id": "url-7",
+  "result": true
+ },
+ {
+  "id": "url-8",
+  "result": true
+ },
+ {
+  "id": "url-9",
+  "result": true
+ },
+ {
+  "id": "url-10",
+  "result": false
+ },
+ {
+  "id": "url-11",
+  "result": false
+ },
+ {
+  "id": "url-12",
+  "result": true
+ },
+ {
+  "id": "url-13",
+  "result": true
+ },
+ {
+  "id": "url-14",
+  "result": true
+ },
+ {
+  "id": "url-15",
+  "result": true
+ },
+ {
+  "id": "url-16",
+  "result": true
+ },
+ {
+  "id": "url-17",
+  "result": true
+ },
+ {
+  "id": "url-18",
+  "result": true
+ },
+ {
+  "id": "url-19",
+  "result": false
+ },
+ {
+  "id": "url-20",
+  "result": false
+ },
+ {
+  "id": "url-21",
+  "result": false
+ },
+ {
+  "id": "url-22",
+  "result": true
+ },
+ {
+  "id": "url-23",
+  "result": false
+ },
+ {
+  "id": "url-24",
+  "result": true
+ },
+ {
+  "id": "url-25",
+  "result": true
+ },
+ {
+  "id": "url-26",
+  "result": true
+ },
+ {
+  "id": "url-27",
+  "result": true
+ },
+ {
+  "id": "url-28",
+  "result": false
+ }
+]

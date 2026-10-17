@@ -1,0 +1,24 @@
+[package]
+name = "opi-sdk-conformance-consumer"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Ordinary external consumer of the opi-vendor Unicode16/ECMA/URL closure.
+# Family packages resolve from the local `opi-vendor` registry under their
+# controlled identities; everything else resolves from crates.io exactly as
+# any ordinary consumer would. No [patch], no path dependencies, no source
+# replacement, no vendored directory, no build-time code generation.
+
+[dependencies]
+# --- opi-vendor family (local registry) ------------------------------------
+url16 = { package = "opi-vendor-url", version = "=2.5.8", registry = "opi-vendor" }
+regress16 = { package = "opi-vendor-regress", version = "=0.12.0-ucd16.1", registry = "opi-vendor" }
+# --- ordinary upstream dependencies (coexistence proof) --------------------
+ordinary_url = { package = "url", version = "=2.5.8" }
+consumer_idna_adapter = { package = "idna_adapter", version = "=1.2.2", features = ["compiled_data"] }
+regress = { version = "=0.12.0" }
+# --- leaf battery ----------------------------------------------------------
+ryu-js = { version = "=1.0.2", default-features = false }
+serde_json = "=1.0.149"
+writeable = { version = "=0.6.3", default-features = false, features = ["alloc"] }

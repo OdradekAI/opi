@@ -1,0 +1,13 @@
+{
+  "task": "20.8 early ordinary external-consumer package proof",
+  "port": 8173,
+  "skip_prepare": true,
+  "steps": [
+    {
+      "name": "consumer cargo build --release",
+      "exit": 101,
+      "elapsed_seconds": 2.8
+    }
+  ],
+  "consumer_build_stderr_tail": "    Updating crates.io index\n    Updating `opi-vendor` index\nerror: no matching package named `opi-vendor-regress` found\nlocation searched: `opi-vendor` index\nrequired by package `opi-sdk-conformance-consumer v0.0.0 (/tmp/opi208/red/consumer)`\n"
+}
