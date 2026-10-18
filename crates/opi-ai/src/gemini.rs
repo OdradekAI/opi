@@ -268,9 +268,9 @@ pub(crate) struct GeminiMapper {
 }
 
 impl GeminiMapper {
-    pub(crate) fn new(provider: &str) -> Self {
+    pub(crate) fn new(provider: &str, wire: crate::model_info::WireApi, model: &str) -> Self {
         Self {
-            partial: empty_assistant_message(provider),
+            partial: empty_assistant_message(provider, wire, model),
             saw_done: false,
             text_started: false,
             tool_calls: Vec::new(),
@@ -434,13 +434,18 @@ impl GeminiMapper {
     }
 }
 
-fn empty_assistant_message(provider: &str) -> AssistantMessage {
+fn empty_assistant_message(
+    provider: &str,
+    wire: crate::model_info::WireApi,
+    model: &str,
+) -> AssistantMessage {
     AssistantMessage {
         content: Vec::new(),
         api: crate::ApiKind::Google,
         provider: provider.into(),
-        model: String::new(),
+        model: model.to_owned(),
         response_model: None,
+        wire: Some(wire),
         response_id: None,
         usage: Usage::default(),
         stop_reason: StopReason::Stop,
@@ -513,8 +518,11 @@ impl GeminiProvider {
 
     /// Build the Gemini `generateContent` request body.
     /// The model ID goes in the URL path, not the body.
-    pub fn build_request_body(&self, request: &Request) -> serde_json::Value {
-        let _model_id = request
+    pub fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        let model_id = request
             .model
             .split_once(':')
             .map(|(_, id)| id)
@@ -534,8 +542,18 @@ impl GeminiProvider {
         let transcript = transcript.as_ref();
         let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
-        let body_messages =
-            crate::transcript::without_initial_system_message(transcript.messages());
+        // Canonical replay projection (task 20.7) before body building.
+        let replay = crate::replay::project_replay(
+            &crate::transcript::without_initial_system_message(transcript.messages()),
+            &crate::replay::ReplayRoute {
+                wire: crate::model_info::WireApi::GoogleGenerativeAi,
+                provider: "gemini".to_owned(),
+                model: model_id.to_owned(),
+                supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
+            },
+            crate::replay::ReplayProjection::NativeOrCollapse,
+        )?;
+        let body_messages = replay.messages;
 
         for msg in &body_messages {
             match msg {
@@ -598,10 +616,15 @@ impl GeminiProvider {
                                 Some(serde_json::json!({"text": text}))
                             }
                             AssistantContent::ToolCall { tool_call } => {
-                                // Convert to functionCall response part
+                                // Convert to functionCall response part.
+                                // Replay guarantees remaining calls
+                                // finalized as complete JSON objects
+                                // (malformed and legacy unmarked ones
+                                // were projected away); parsing cannot
+                                // fabricate a null substitute.
                                 let args: serde_json::Value =
                                     serde_json::from_str(&tool_call.arguments)
-                                        .unwrap_or(serde_json::Value::Null);
+                                        .expect("replay projected only complete object arguments");
                                 Some(serde_json::json!({
                                     "functionCall": {
                                         "name": tool_call.name,
@@ -694,12 +717,13 @@ impl GeminiProvider {
             })]);
         }
 
-        body
+        Ok(body)
     }
 
     /// Stream events from a raw SSE response body.
     pub fn stream_from_sse(&self, sse_body: &str, cancel: CancellationToken) -> EventStream {
-        let mut mapper = GeminiMapper::new("gemini");
+        let mut mapper =
+            GeminiMapper::new("gemini", crate::model_info::WireApi::GoogleGenerativeAi, "");
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
 
         for data in parse_sse_data(sse_body) {
@@ -775,7 +799,11 @@ impl GeminiProvider {
         let mut byte_stream = response.bytes_stream();
         let mut buffer = String::new();
         let mut decoder = crate::text_decode::StreamTextDecoder::new();
-        let mut mapper = GeminiMapper::new("gemini");
+        let mut mapper = GeminiMapper::new(
+            "gemini",
+            crate::model_info::WireApi::GoogleGenerativeAi,
+            &model_id,
+        );
 
         loop {
             let chunk = tokio::select! {
@@ -907,7 +935,10 @@ impl Provider for GeminiProvider {
             .split_once(':')
             .map(|(_, id)| id.to_string())
             .unwrap_or(request.model.clone());
-        let body = self.build_request_body(&request);
+        let body = match self.build_request_body(&request) {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
         let cancel = request.cancel.clone();
         let timeout = request.timeout;
         let extra_headers = request.extra_headers;

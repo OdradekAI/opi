@@ -295,6 +295,34 @@ ryu-js 1.0.2 得到 `"1e+21"`），最后用原 schema 检查 normalize 后的�
 `Value.Convert` 对纯 JSON 方言 schema 是 no-op（其分发读取非 JSON 的 `~kind`
 标记），JSON schema 中的 `~kind` 标记保持 inert——有记录的方言边界。
 
+## 规范 Replay 投影
+
+`replay` 把规范时序转换为请求局部的 wire 视图（AIR-010/012/013/014，
+任务 20.7）。`project_replay(&[Message], &ReplayRoute, ReplayProjection)` 按
+批次位置＋source ID 校验工具关联：已闭合批次可以复用 ID，但批内重复 call
+ID、重复 result、孤儿 result 或 result／call 名称不匹配都是类型化
+`ReplayError`，在任何请求构造之前（授权与网络之前）失败。无歧义的缺失
+result 以请求局部合成错误 result 收尾，声明结果不可得且执行效果未知——
+绝不声称“未执行”，也绝不重新执行；只有可信 Agent 路径记录已知的未执行。
+继续身份是精确 wire＋provider＋请求模型（`AssistantMessage.wire`，serde
+默认缺省：legacy 未知绝不视为同身份）。跨身份丢弃全部 thinking——可读、
+signed 与 redacted 一视同仁——绝不把推理转成可见文本（Pi 1.3 语义）；同
+身份保留 redacted 数据与 signed 块（含 signed 空块），丢弃空白未签名
+thinking。失败回合（`Error`／`Aborted`）及其关联的未执行 result 作为闭合
+单元一并省略，`Length` 回合保留可表达的对；length 绝不授予执行。畸形
+proposal 在字符串参数 wire（Chat、Responses）上原样发送原始文本，在对象
+参数 wire（Anthropic、Bedrock、Google）上替换为显式具名失败上下文——绝不
+`{}`、`null` 或伪造调用。wire ID 请求局部合法化（字符集／长度，稳定双射，
+call／result 同步；canonical 不变）。图像在能力路由上保留关联、顺序与失败
+标志（Anthropic 错误 result 的图像拆到回合结果之后）；`details` 绝不进
+wire，URL 源原样透传不下载。`ReplayProjection::Strict` 用类型化错误拒绝同
+批有损转换而不是记录事实。六个 provider adapter 在构造请求体开头消费该投
+影（`build_request_body` 现在返回 `Result`）；Responses 解析器打包
+`call_id|fc_item_id` 支持同身份双 ID 往返，序列化器还原两者，外来历史丢弃
+item id。固定参考：
+`.repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts`；逐 wire 加密推理
+parity（AIR-038）与 effort 戳（V-32）由后续任务收尾。
+
 ## 规范 Context／Transcript 时序
 
 `transcript` 拥有规范的请求时序（AIR-008/011/020）：公共 `Context` 简写

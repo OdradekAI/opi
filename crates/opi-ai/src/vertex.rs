@@ -114,13 +114,16 @@ impl VertexProvider {
     }
 
     /// Build the request body (delegates to inner Gemini provider).
-    pub fn build_request_body(&self, request: &Request) -> serde_json::Value {
+    pub fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
         self.inner.build_request_body(request)
     }
 
     /// Stream events from a raw SSE response body (for testing).
     pub fn stream_from_sse(&self, sse_body: &str, cancel: CancellationToken) -> EventStream {
-        let mut mapper = GeminiMapper::new("vertex");
+        let mut mapper = GeminiMapper::new("vertex", crate::model_info::WireApi::GoogleVertex, "");
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
 
         for data in parse_sse_data(sse_body) {
@@ -174,7 +177,11 @@ impl Provider for VertexProvider {
             .to_string();
 
         let url = self.build_vertex_url(&model_id);
-        let body = self.inner.build_request_body(&request);
+        let requested_model = model_id;
+        let body = match self.inner.build_request_body(&request) {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
         let cancel = request.cancel;
         let timeout = request.timeout;
         let extra_headers = request.extra_headers;
@@ -188,6 +195,7 @@ impl Provider for VertexProvider {
                 http_client,
                 access_token,
                 &url,
+                requested_model,
                 &body,
                 producer_cancel.clone(),
                 timeout,
@@ -213,6 +221,7 @@ async fn stream_vertex_http(
     http_client: reqwest::Client,
     access_token: String,
     url: &str,
+    requested_model: String,
     body: &serde_json::Value,
     cancel: CancellationToken,
     timeout: Option<std::time::Duration>,
@@ -260,7 +269,11 @@ async fn stream_vertex_http(
     let mut byte_stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut decoder = crate::text_decode::StreamTextDecoder::new();
-    let mut mapper = GeminiMapper::new("vertex");
+    let mut mapper = GeminiMapper::new(
+        "vertex",
+        crate::model_info::WireApi::GoogleVertex,
+        &requested_model,
+    );
     let mut saw_done = false;
 
     loop {

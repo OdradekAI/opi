@@ -212,7 +212,7 @@ fn dedicated_codex_only_strips_its_own_model_prefix() {
     foreign.model = "foreign:gpt-5.4".into();
 
     assert_eq!(
-        provider.build_request_body(&foreign)["model"],
+        provider.build_request_body(&foreign).unwrap()["model"],
         "foreign:gpt-5.4"
     );
 }
@@ -226,6 +226,7 @@ fn dedicated_codex_does_not_fallback_for_unsupported_thinking_level() {
     assert!(
         provider
             .build_request_body(&request())
+            .unwrap()
             .get("reasoning")
             .is_none()
     );

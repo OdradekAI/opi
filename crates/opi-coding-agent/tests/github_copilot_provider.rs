@@ -5,7 +5,8 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use opi_ai::credential::{Credential, CredentialStore};
 use opi_ai::message::{
-    ImageSource, InputContent, MediaType, Message, OutputContent, ToolResultMessage, UserMessage,
+    AssistantContent, ImageSource, InputContent, MediaType, Message, OutputContent, ToolCall,
+    ToolResultMessage, UserMessage,
 };
 use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
 use opi_ai::{AuthProvenanceSource, CompatMetadata, Models, ThinkingLevel, WireApi, WireCompat};
@@ -492,6 +493,29 @@ async fn github_copilot_headers_match_reviewed_static_contract() {
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
+fn call_assistant(id: &str, name: &str) -> Message {
+    Message::Assistant(opi_ai::message::AssistantMessage {
+        content: vec![AssistantContent::ToolCall {
+            tool_call: ToolCall {
+                id: id.into(),
+                name: name.into(),
+                arguments: "{}".into(),
+                arguments_error: None,
+            },
+        }],
+        api: opi_ai::ApiKind::OpenAi,
+        provider: "github-copilot".into(),
+        model: "gpt-4.1".into(),
+        response_model: None,
+        wire: None,
+        response_id: None,
+        usage: Default::default(),
+        stop_reason: opi_ai::stream::StopReason::ToolUse,
+        error_message: None,
+        timestamp_ms: 0,
+    })
+}
+
 #[tokio::test]
 async fn github_copilot_initiator_tracks_last_user_or_agent_message() {
     let server = MockServer::start().await;
@@ -513,6 +537,7 @@ async fn github_copilot_initiator_tracks_last_user_or_agent_message() {
 
     let mut tool = request("gpt-5.4");
     let mut tool_messages = tool.context.into_messages();
+    tool_messages.push(call_assistant("call-1", "read"));
     tool_messages.push(Message::ToolResult(ToolResultMessage {
         tool_call_id: "call-1".into(),
         tool_name: "read".into(),
@@ -578,6 +603,7 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
     let _ = drain(&collection, user_image).await;
     let mut tool_image = request("gpt-5.4");
     let mut tool_image_messages = tool_image.context.into_messages();
+    tool_image_messages.push(call_assistant("call-image", "screenshot"));
     tool_image_messages.push(Message::ToolResult(ToolResultMessage {
         tool_call_id: "call-image".into(),
         tool_name: "screenshot".into(),

@@ -60,7 +60,10 @@ impl OpenAiCodexResponsesProvider {
     }
 
     /// Build the subscription-specific Codex request body.
-    pub fn build_request_body(&self, request: &Request) -> serde_json::Value {
+    pub fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
         let model_id = request
             .model
             .strip_prefix("openai-codex:")
@@ -77,9 +80,18 @@ impl OpenAiCodexResponsesProvider {
         let transcript = transcript.as_ref();
         let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
-        let input = convert_messages(&crate::transcript::without_initial_system_message(
-            transcript.messages(),
-        ));
+        let replay_route = crate::replay::ReplayRoute {
+            wire: crate::model_info::WireApi::OpenAiCodexResponses,
+            provider: PROVIDER_ID.to_owned(),
+            model: model_id.to_owned(),
+            supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
+        };
+        let replay = crate::replay::project_replay(
+            &crate::transcript::without_initial_system_message(transcript.messages()),
+            &replay_route,
+            crate::replay::ReplayProjection::NativeOrCollapse,
+        )?;
+        let input = convert_messages(&replay.messages, &replay_route);
         let session_id = if request.cache_retention != CacheRetention::Disabled {
             request.session_id.as_deref().filter(|id| !id.is_empty())
         } else {
@@ -144,7 +156,7 @@ impl OpenAiCodexResponsesProvider {
         {
             body["temperature"] = serde_json::Value::Number(number);
         }
-        body
+        Ok(body)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -152,6 +164,7 @@ impl OpenAiCodexResponsesProvider {
         client: reqwest::Client,
         resolved: ResolvedAuth,
         base_url: String,
+        requested_model: String,
         extra_headers: Vec<(String, String)>,
         body: serde_json::Value,
         cancel: CancellationToken,
@@ -226,7 +239,11 @@ impl OpenAiCodexResponsesProvider {
         let mut bytes = response.bytes_stream();
         let mut buffer = String::new();
         let mut decoder = crate::text_decode::StreamTextDecoder::new();
-        let mut mapper = ResponsesMapper::new(PROVIDER_ID);
+        let mut mapper = ResponsesMapper::new(
+            PROVIDER_ID,
+            crate::model_info::WireApi::OpenAiCodexResponses,
+            &requested_model,
+        );
         loop {
             let chunk = tokio::select! {
                 _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
@@ -322,7 +339,16 @@ impl Provider for OpenAiCodexResponsesProvider {
             .find(|model| model.id == model_id)
             .and_then(|model| model.base_url.clone());
         let extra_headers = validate_headers(&request.extra_headers);
-        let body = self.build_request_body(&request);
+        let requested_model = request
+            .model
+            .split_once(':')
+            .map(|(_, id)| id)
+            .unwrap_or(&request.model)
+            .to_owned();
+        let body = match self.build_request_body(&request) {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
         let timeout = request.timeout;
         let session_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
             Some(
@@ -377,6 +403,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                     client,
                     resolved,
                     base_url,
+                    requested_model,
                     extra_headers,
                     body,
                     cancel,

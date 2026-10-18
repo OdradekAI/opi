@@ -423,9 +423,14 @@ struct ToolCallState {
 }
 
 impl OpenAiChatMapper {
-    pub fn new(api: crate::ApiKind, provider: &str) -> Self {
+    pub fn new(
+        api: crate::ApiKind,
+        provider: &str,
+        wire: crate::model_info::WireApi,
+        model: &str,
+    ) -> Self {
         Self {
-            partial: empty_assistant_message(api, provider),
+            partial: empty_assistant_message(api, provider, wire, model),
             tool_calls: Vec::new(),
             saw_done: false,
             started: false,
@@ -441,7 +446,9 @@ impl OpenAiChatMapper {
         if let Some(model) = model
             && !model.is_empty()
         {
-            self.partial.model = model;
+            // The reported model is a separate fact from the requested
+            // identity stored at construction (AIR-010/RP-02).
+            self.partial.response_model = Some(model);
         }
         if let Some(usage) = usage {
             self.partial.usage = usage;
@@ -737,13 +744,19 @@ fn map_stop_reason(raw: &str) -> StopReason {
     }
 }
 
-fn empty_assistant_message(api: crate::ApiKind, provider: &str) -> AssistantMessage {
+fn empty_assistant_message(
+    api: crate::ApiKind,
+    provider: &str,
+    wire: crate::model_info::WireApi,
+    model: &str,
+) -> AssistantMessage {
     AssistantMessage {
         content: Vec::new(),
         api,
         provider: provider.into(),
-        model: String::new(),
+        model: model.to_owned(),
         response_model: None,
+        wire: Some(wire),
         response_id: None,
         usage: Usage::default(),
         stop_reason: StopReason::Stop,
@@ -1024,7 +1037,10 @@ impl OpenAiChatProvider {
     }
 
     /// Build the OpenAI Chat Completions API request body.
-    pub fn build_request_body(&self, request: &Request) -> serde_json::Value {
+    pub fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
         let model_id = request
             .model
             .split_once(':')
@@ -1048,11 +1064,23 @@ impl OpenAiChatProvider {
         let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
 
+        // Canonical replay projection (task 20.7) before body building.
+        let replay = crate::replay::project_replay(
+            &crate::transcript::without_initial_system_message(transcript.messages()),
+            &crate::replay::ReplayRoute {
+                wire: crate::model_info::WireApi::OpenAiCompletions,
+                provider: self.provider_id.clone(),
+                model: model_id.to_owned(),
+                supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
+            },
+            crate::replay::ReplayProjection::NativeOrCollapse,
+        )?;
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
             "messages": serialize_messages(
-                &crate::transcript::without_initial_system_message(transcript.messages()),
+                &replay.messages,
+                crate::replay::supports_images_in_catalog(&self.models, model_id),
                 &system_prompt,
                 &compat,
             ),
@@ -1120,12 +1148,17 @@ impl OpenAiChatProvider {
                     serde_json::Value::String(session_id.chars().take(64).collect());
             }
         }
-        body
+        Ok(body)
     }
 
     /// Stream events from a raw SSE response body.
     pub fn stream_from_sse(&self, sse_body: &str, cancel: CancellationToken) -> EventStream {
-        let mut mapper = OpenAiChatMapper::new(crate::ApiKind::OpenAi, &self.provider_id);
+        let mut mapper = OpenAiChatMapper::new(
+            crate::ApiKind::OpenAi,
+            &self.provider_id,
+            crate::model_info::WireApi::OpenAiCompletions,
+            "",
+        );
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
         for parsed in parse_sse_events(sse_body) {
             match parsed {
@@ -1163,6 +1196,7 @@ impl OpenAiChatProvider {
         provider_id: String,
         auth_invalid_policy: AuthInvalidPolicy,
         chat_completions_path: String,
+        requested_model: String,
         extra_headers: Vec<(String, String)>,
         body: &serde_json::Value,
         cancel: CancellationToken,
@@ -1220,7 +1254,12 @@ impl OpenAiChatProvider {
         let mut byte_stream = response.bytes_stream();
         let mut buffer = String::new();
         let mut decoder = crate::text_decode::StreamTextDecoder::new();
-        let mut mapper = OpenAiChatMapper::new(crate::ApiKind::OpenAi, &provider_id);
+        let mut mapper = OpenAiChatMapper::new(
+            crate::ApiKind::OpenAi,
+            &provider_id,
+            crate::model_info::WireApi::OpenAiCompletions,
+            &requested_model,
+        );
 
         loop {
             let chunk = tokio::select! {
@@ -1322,6 +1361,7 @@ fn map_http_status(
 
 fn serialize_messages(
     messages: &[crate::message::Message],
+    supports_images: bool,
     system_prompt: &str,
     compat: &CompatConfig,
 ) -> serde_json::Value {
@@ -1396,17 +1436,16 @@ fn serialize_messages(
                             text_parts.push(text.clone());
                         }
                         AssistantContent::ToolCall { tool_call } => {
-                            let input: serde_json::Value =
-                                serde_json::from_str(&tool_call.arguments)
-                                    .ok()
-                                    .filter(|v: &serde_json::Value| v.is_object())
-                                    .unwrap_or(serde_json::json!({}));
+                            // The wire's arguments field is a raw JSON string:
+                            // replayed proposals ride their original text
+                            // (malformed ones included), never a re-encoded
+                            // or fabricated substitute (RP-08).
                             tool_calls_json.push(serde_json::json!({
                                 "id": tool_call.id,
                                 "type": "function",
                                 "function": {
                                     "name": tool_call.name,
-                                    "arguments": serde_json::to_string(&input).unwrap_or_default(),
+                                    "arguments": tool_call.arguments,
                                 }
                             }));
                         }
@@ -1418,11 +1457,19 @@ fn serialize_messages(
                 let mut assistant_msg = serde_json::json!({
                     "role": "assistant",
                 });
+                // Text produced in the same turn stays visible alongside
+                // its tool calls (AIR-012/RP-03 representable-order rule);
+                // a textless tool turn keeps `content: null`.
+                let joined = text_parts.join("");
                 if !tool_calls_json.is_empty() {
                     assistant_msg["tool_calls"] = serde_json::Value::Array(tool_calls_json);
-                    assistant_msg["content"] = serde_json::Value::Null;
+                    assistant_msg["content"] = if joined.is_empty() {
+                        serde_json::Value::Null
+                    } else {
+                        serde_json::Value::String(joined)
+                    };
                 } else {
-                    assistant_msg["content"] = serde_json::Value::String(text_parts.join(""));
+                    assistant_msg["content"] = serde_json::Value::String(joined);
                 }
                 result.push(assistant_msg);
             }
@@ -1431,6 +1478,65 @@ fn serialize_messages(
                 unreachable!("system messages are projected out of the body list")
             }
             crate::message::Message::ToolResult(t) => {
+                let has_images = t
+                    .content
+                    .iter()
+                    .any(|c| matches!(c, OutputContent::Image { .. }));
+                if supports_images && has_images {
+                    // Real image parts preserve the tool association, the
+                    // in-result ordering and the failure flag (AIR-014);
+                    // this wire has no native error field, so the marker
+                    // rides the leading text part.
+                    let mut parts: Vec<serde_json::Value> = Vec::new();
+                    if t.is_error {
+                        parts.push(serde_json::json!({
+                            "type": "text",
+                            "text": TOOL_ERROR_MARKER,
+                        }));
+                    }
+                    for c in &t.content {
+                        match c {
+                            OutputContent::Text { text } => {
+                                parts.push(serde_json::json!({
+                                    "type": "text",
+                                    "text": text,
+                                }));
+                            }
+                            OutputContent::Image { source, media_type } => {
+                                let url = match source {
+                                    crate::message::ImageSource::Url { url } => url.clone(),
+                                    crate::message::ImageSource::Base64 { data } => {
+                                        format!("data:{};base64,{}", media_type.as_str(), data)
+                                    }
+                                    crate::message::ImageSource::Bytes { data } => {
+                                        format!(
+                                            "data:{};base64,{}",
+                                            media_type.as_str(),
+                                            base64::Engine::encode(
+                                                &base64::engine::general_purpose::STANDARD,
+                                                data,
+                                            )
+                                        )
+                                    }
+                                };
+                                parts.push(serde_json::json!({
+                                    "type": "image_url",
+                                    "image_url": {"url": url},
+                                }));
+                            }
+                        }
+                    }
+                    let mut tool_msg = serde_json::json!({
+                        "role": "tool",
+                        "tool_call_id": t.tool_call_id,
+                        "content": parts,
+                    });
+                    if compat.tool_result_name_field {
+                        tool_msg["name"] = serde_json::Value::String(t.tool_name.clone());
+                    }
+                    result.push(tool_msg);
+                    continue;
+                }
                 let content_text: String = t
                     .content
                     .iter()
@@ -1526,7 +1632,16 @@ impl Provider for OpenAiChatProvider {
                 .merge_request(&extra_headers, &request.extra_headers)
         });
         let timeout = request.timeout;
-        let body = self.build_request_body(&request);
+        let body = match self.build_request_body(&request) {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
+        let requested_model = request
+            .model
+            .split_once(':')
+            .map(|(_, id)| id)
+            .unwrap_or(&request.model)
+            .to_owned();
         let cancel = request.cancel.clone();
         let http_client = self.client.client().clone();
 
@@ -1556,6 +1671,7 @@ impl Provider for OpenAiChatProvider {
                     provider_id,
                     auth_invalid_policy,
                     chat_completions_path,
+                    requested_model,
                     extra_headers,
                     &body,
                     cancel,

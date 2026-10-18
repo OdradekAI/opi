@@ -346,6 +346,44 @@ decimal digits instead of replicating JavaScript's parse-time precision loss
 (its dispatch reads the non-JSON `~kind` marker), and `~kind` markers in
 JSON schemas stay inert — a documented dialect boundary.
 
+## Canonical Replay Projection
+
+`replay` turns a canonical chronology into the request-local wire view
+(AIR-010/012/013/014, task 20.7). `project_replay(&[Message], &ReplayRoute,
+ReplayProjection)` validates tool association by batch position plus source
+ID: a closed batch may reuse an ID, but a duplicate call ID, duplicate
+result, orphan result or result/call name mismatch inside a batch is a
+typed `ReplayError` raised before any request is built (before
+authorization or network). An unambiguous missing result closes
+request-locally with a synthetic error result stating the result is
+unavailable and the execution effect is unknown - never "not executed",
+never re-executed; only a trusted Agent path records known non-execution.
+Continuation identity is the exact wire plus provider plus requested model
+(`AssistantMessage.wire`, serde-defaulted: legacy-unknown is never
+same-identity). Cross-identity turns drop every thinking block - readable,
+signed and redacted alike - and never convert reasoning into visible text
+(Pi 1.3 semantics); same identity keeps redacted data and signed blocks,
+including signed-empty ones, and drops blank unsigned thinking. Failed
+turns (`Error`/`Aborted`) and their linked non-execution results are
+omitted as a closed unit while `Length` turns keep their expressible
+pairs; length never grants execution. Malformed proposals ride their raw
+text on string-argument wires (Chat, Responses) and become explicit named
+failure contexts on object-argument wires (Anthropic, Bedrock, Google) -
+never `{}`, `null` or a fabricated call. Wire IDs are legalized
+request-locally (charset/length, stable bijective, synchronized across
+call/result; canonical untouched). Images keep association, order and
+failure flag on capable routes (Anthropic error-result images split after
+the turn's results); `details` never serialize and URL sources pass
+through undownloaded. `ReplayProjection::Strict` rejects the same lossy
+transforms with a typed error instead of recording facts. All six provider
+adapters consume the projection at the head of request construction
+(`build_request_body` now returns `Result`); the Responses parser packs
+`call_id|fc_item_id` for same-identity dual-ID round-trip and the
+serializer restores both, dropping the item id for foreign history. Pinned
+reference: `.repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts`;
+per-wire encrypted-reasoning parity (AIR-038) and effort stamps (V-32)
+close with later tasks.
+
 ## Canonical Context/Transcript Chronology
 
 `transcript` owns the canonical request chronology (AIR-008/011/020): the

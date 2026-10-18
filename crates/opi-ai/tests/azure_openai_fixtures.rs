@@ -481,7 +481,7 @@ fn secret_redaction_in_debug() {
 fn request_body_uses_deployment_name() {
     let provider = make_provider();
     let request = text_request();
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
     assert_eq!(body["model"], "my-gpt4o");
 }
 
@@ -764,14 +764,14 @@ fn azure_inherits_shared_compat_flags_via_with_compat() {
         ..Default::default()
     });
     // text_request carries a system message -> developer role override applies.
-    let body_text = provider.build_request_body(&text_request());
+    let body_text = provider.build_request_body(&text_request()).unwrap();
     let messages = body_text["messages"].as_array().unwrap();
     assert_eq!(
         messages[0]["role"], "developer",
         "Azure inherits developer-role override from the shared compat path"
     );
     // tool_request carries tools -> strict flag applies.
-    let body_tool = provider.build_request_body(&tool_request());
+    let body_tool = provider.build_request_body(&tool_request()).unwrap();
     let tools = body_tool["tools"].as_array().expect("tools present");
     assert!(
         tools[0]["function"]["strict"] == true,

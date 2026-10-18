@@ -24,6 +24,7 @@ fn sample_assistant_message() -> AssistantMessage {
         provider: "anthropic".into(),
         model: "claude-sonnet-4-5-20250514".into(),
         response_model: None,
+        wire: None,
         response_id: None,
         usage: Usage::default(),
         stop_reason: StopReason::Stop,

@@ -94,6 +94,7 @@ impl Provider for RecordingRoute {
                     provider: "acme".into(),
                     model: String::new(),
                     response_model: None,
+                    wire: None,
                     response_id: None,
                     usage: Default::default(),
                     stop_reason: opi_ai::stream::StopReason::Error,

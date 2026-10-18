@@ -522,6 +522,7 @@ fn setup_failure_message(cause: &ProviderError) -> crate::message::AssistantMess
         provider: String::new(),
         model: String::new(),
         response_model: None,
+        wire: None,
         response_id: None,
         usage: crate::stream::Usage::default(),
         stop_reason: StopReason::Error,

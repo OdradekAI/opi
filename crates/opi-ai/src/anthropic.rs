@@ -696,6 +696,7 @@ fn empty_assistant_message(provider_id: &str) -> AssistantMessage {
         provider: provider_id.into(),
         model: String::new(),
         response_model: None,
+        wire: Some(crate::model_info::WireApi::AnthropicMessages),
         response_id: None,
         usage: Usage::default(),
         stop_reason: StopReason::Stop,
@@ -851,7 +852,10 @@ impl AnthropicProvider {
     /// the last assistant-message text block, and the last tool definition.
     /// TTL `"1h"` is used only when the model also advertises
     /// `supports_long_cache_retention` and the request retention is `Long`.
-    pub fn build_request_body(&self, request: &Request) -> serde_json::Value {
+    pub fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
         let model_id = request
             .model
             .split_once(':')
@@ -903,10 +907,24 @@ impl AnthropicProvider {
         let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
 
+        // Canonical replay projection (task 20.7): association is
+        // validated and lossy transforms applied before the body is
+        // built; association failures fail typed with zero
+        // authorization/network use.
+        let replay = crate::replay::project_replay(
+            &crate::transcript::without_initial_system_message(transcript.messages()),
+            &crate::replay::ReplayRoute {
+                wire: crate::model_info::WireApi::AnthropicMessages,
+                provider: self.provider_id.clone(),
+                model: model_id.to_owned(),
+                supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
+            },
+            crate::replay::ReplayProjection::NativeOrCollapse,
+        )?;
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
-            "messages": serialize_messages(&crate::transcript::without_initial_system_message(transcript.messages()), &self.provider_id, model_id, emit_cache, &cache_marker),
+            "messages": serialize_messages(&replay.messages, emit_cache, &cache_marker, crate::replay::supports_images_in_catalog(&self.models, model_id)),
         });
 
         // System prompt: when caching is active, wrap the bare string as a
@@ -969,7 +987,7 @@ impl AnthropicProvider {
                 })
             };
         }
-        body
+        Ok(body)
     }
 
     /// Stream events from a raw SSE response body.
@@ -1218,17 +1236,65 @@ fn map_http_status(
 
 fn serialize_messages(
     messages: &[crate::message::Message],
-    provider_id: &str,
-    model_id: &str,
     emit_cache: bool,
     cache_marker: &serde_json::Value,
+    supports_images: bool,
 ) -> serde_json::Value {
-    use crate::message::AssistantContent;
+    use crate::message::{AssistantContent, ImageSource, OutputContent};
 
-    let mut array: Vec<serde_json::Value> = messages
-        .iter()
-        .map(|msg| match msg {
+    fn image_block(
+        source: &ImageSource,
+        media_type: &crate::message::MediaType,
+    ) -> serde_json::Value {
+        match source {
+            ImageSource::Url { url } => serde_json::json!({
+                "type": "image",
+                "source": {"type": "url", "url": url},
+            }),
+            ImageSource::Base64 { data } => serde_json::json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type.as_str(),
+                    "data": data,
+                },
+            }),
+            ImageSource::Bytes { data } => serde_json::json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type.as_str(),
+                    "data": base64::Engine::encode(
+                        &base64::engine::general_purpose::STANDARD,
+                        data,
+                    ),
+                },
+            }),
+        }
+    }
+
+    let mut array: Vec<serde_json::Value> = Vec::new();
+    // Error-result images split out of their tool_result blocks, flushed
+    // after the turn's tool results (pinned splitErrorToolResultImages):
+    // each entry is a caption plus the deferred image blocks.
+    let mut deferred_error_images: Vec<(String, Vec<serde_json::Value>)> = Vec::new();
+
+    fn flush_deferred_error_images(
+        array: &mut Vec<serde_json::Value>,
+        deferred: &mut Vec<(String, Vec<serde_json::Value>)>,
+    ) {
+        for (caption, images) in deferred.drain(..) {
+            let mut content: Vec<serde_json::Value> =
+                vec![serde_json::json!({"type": "text", "text": caption})];
+            content.extend(images);
+            array.push(serde_json::json!({"role": "user", "content": content}));
+        }
+    }
+
+    for msg in messages {
+        match msg {
             crate::message::Message::User(u) => {
+                flush_deferred_error_images(&mut array, &mut deferred_error_images);
                 let content: Vec<serde_json::Value> = u
                     .content
                     .iter()
@@ -1237,62 +1303,34 @@ fn serialize_messages(
                             serde_json::json!({"type": "text", "text": text})
                         }
                         crate::message::InputContent::Image { source, media_type } => {
-                            match source {
-                                crate::message::ImageSource::Url { url } => {
-                                    serde_json::json!({
-                                        "type": "image",
-                                        "source": {
-                                            "type": "url",
-                                            "url": url,
-                                        }
-                                    })
-                                }
-                                crate::message::ImageSource::Base64 { data } => {
-                                    serde_json::json!({
-                                        "type": "image",
-                                        "source": {
-                                            "type": "base64",
-                                            "media_type": media_type.as_str(),
-                                            "data": data,
-                                        }
-                                    })
-                                }
-                                crate::message::ImageSource::Bytes { data } => {
-                                    serde_json::json!({
-                                        "type": "image",
-                                        "source": {
-                                            "type": "base64",
-                                            "media_type": media_type.as_str(),
-                                            "data": base64::Engine::encode(
-                                                &base64::engine::general_purpose::STANDARD,
-                                                data,
-                                            ),
-                                        }
-                                    })
-                                }
-                            }
+                            image_block(source, media_type)
                         }
                     })
                     .collect();
-                serde_json::json!({"role": "user", "content": content})
+                array.push(serde_json::json!({"role": "user", "content": content}));
             }
             crate::message::Message::Assistant(a) => {
-                let same_route = a.api == crate::ApiKind::Anthropic
-                    && a.provider == provider_id
-                    && a.model == model_id;
+                flush_deferred_error_images(&mut array, &mut deferred_error_images);
+                // The replay projection already applied the continuation
+                // identity rules (AIR-010/RP-02): every thinking block in
+                // this list is same-identity, blank unsigned thinking is
+                // gone, and malformed proposals on this object wire were
+                // replaced by explicit failure contexts.
                 let content: Vec<serde_json::Value> = a
                     .content
                     .iter()
-                    .filter_map(|c| { Some(match c {
+                    .map(|c| match c {
                         AssistantContent::Text { text } => {
                             serde_json::json!({"type": "text", "text": text})
                         }
                         AssistantContent::ToolCall { tool_call } => {
+                            // Replay guarantees remaining calls finalized as
+                            // complete JSON objects (malformed and legacy
+                            // unmarked ones were projected away); parsing
+                            // cannot fabricate a substitute object.
                             let input: serde_json::Value =
                                 serde_json::from_str(&tool_call.arguments)
-                                    .ok()
-                                    .filter(|v: &serde_json::Value| v.is_object())
-                                    .unwrap_or(serde_json::json!({}));
+                                    .expect("replay projected only complete object arguments");
                             serde_json::json!({
                                 "type": "tool_use",
                                 "id": tool_call.id,
@@ -1300,25 +1338,23 @@ fn serialize_messages(
                                 "input": input,
                             })
                         }
-                        AssistantContent::Thinking { thinking, signature } => {
-                            if !same_route && signature.is_some() {
-                                if thinking.is_empty() { return None; }
-                                serde_json::json!({"type": "text", "text": thinking})
-                            } else {
-                                let mut block = serde_json::json!({"type": "thinking", "thinking": thinking});
-                                if let Some(signature) = signature {
-                                    block["signature"] = serde_json::json!(signature);
-                                }
-                                block
+                        AssistantContent::Thinking {
+                            thinking,
+                            signature,
+                        } => {
+                            let mut block =
+                                serde_json::json!({"type": "thinking", "thinking": thinking});
+                            if let Some(signature) = signature {
+                                block["signature"] = serde_json::json!(signature);
                             }
+                            block
                         }
                         AssistantContent::RedactedThinking { data } => {
-                            if !same_route { return None; }
                             serde_json::json!({"type": "redacted_thinking", "data": data})
                         }
-                    }) })
+                    })
                     .collect();
-                serde_json::json!({"role": "assistant", "content": content})
+                array.push(serde_json::json!({"role": "assistant", "content": content}));
             }
             crate::message::Message::System(_) => {
                 // Unreachable after collapse + without_initial_system_message:
@@ -1327,37 +1363,97 @@ fn serialize_messages(
                 unreachable!("system messages are projected out of the body list")
             }
             crate::message::Message::ToolResult(t) => {
-                let text = t
+                // Success results keep their tool association, ordering and
+                // failure flag: real image blocks ride the content array on
+                // image-capable routes (AIR-014/V-08). Error results cannot
+                // carry images on this wire: they are split out and sent
+                // after the turn's tool results in the same user message
+                // (pinned splitErrorToolResultImages, #10794).
+                let has_images = t
+                    .content
+                    .iter()
+                    .any(|c| matches!(c, OutputContent::Image { .. }));
+                let is_error_with_images = t.is_error && has_images && supports_images;
+                if !supports_images || !has_images || is_error_with_images {
+                    // Replay already replaced images with text
+                    // placeholders on non-image routes; any surviving image
+                    // (an error result about to be split) contributes no
+                    // inline text of its own.
+                    let text = t
+                        .content
+                        .iter()
+                        .filter_map(|c| match c {
+                            OutputContent::Text { text } => Some(text.clone()),
+                            OutputContent::Image { .. } => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("");
+                    let mut block = serde_json::json!({
+                        "type": "tool_result",
+                        "tool_use_id": t.tool_call_id,
+                        "content": text,
+                    });
+                    if is_error_with_images {
+                        // Placeholder text notes the deferred images; the
+                        // split payload is appended after this turn's
+                        // results.
+                        block["content"] =
+                            serde_json::json!("[image attached after the tool results]");
+                        let images: Vec<serde_json::Value> = t
+                            .content
+                            .iter()
+                            .filter_map(|c| match c {
+                                OutputContent::Image { source, media_type } => {
+                                    Some(image_block(source, media_type))
+                                }
+                                _ => None,
+                            })
+                            .collect();
+                        deferred_error_images.push((
+                            format!(
+                                "Images from the error result of tool call {} ({}):",
+                                t.tool_call_id, t.tool_name
+                            ),
+                            images,
+                        ));
+                        block["is_error"] = serde_json::Value::Bool(true);
+                    } else if t.is_error {
+                        // The Anthropic Messages API documents `is_error` on
+                        // the tool_result content block as the failure
+                        // signal. Emit it only on failure so successful
+                        // results keep their established wire shape.
+                        block["is_error"] = serde_json::Value::Bool(true);
+                    }
+                    array.push(serde_json::json!({
+                        "role": "user",
+                        "content": [block],
+                    }));
+                    continue;
+                }
+                let blocks: Vec<serde_json::Value> = t
                     .content
                     .iter()
                     .map(|c| match c {
-                        crate::message::OutputContent::Text { text } => text.clone(),
-                        crate::message::OutputContent::Image { media_type, .. } => {
-                            format!("[image: {}]", media_type.as_str())
+                        OutputContent::Text { text } => {
+                            serde_json::json!({"type": "text", "text": text})
+                        }
+                        OutputContent::Image { source, media_type } => {
+                            image_block(source, media_type)
                         }
                     })
-                    .collect::<Vec<_>>()
-                    .join("");
-                let mut block = serde_json::json!({
-                    "type": "tool_result",
-                    "tool_use_id": t.tool_call_id,
-                    "content": text,
-                });
-                // The Anthropic Messages API documents `is_error` on the
-                // tool_result content block as the failure signal. Emit it only
-                // on failure so successful results keep their established wire
-                // shape.
-                if t.is_error {
-                    block["is_error"] = serde_json::Value::Bool(true);
-                }
-                serde_json::json!({
+                    .collect();
+                array.push(serde_json::json!({
                     "role": "user",
-                    "content": [block],
-                })
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": t.tool_call_id,
+                        "content": blocks,
+                    }],
+                }));
             }
-        })
-        .filter(|message| message["role"] != "assistant" || message["content"].as_array().is_none_or(|content| !content.is_empty()))
-        .collect();
+        }
+    }
+    flush_deferred_error_images(&mut array, &mut deferred_error_images);
 
     // Post-process: when caching is active, mark the last text block in the
     // last user message and the last text block in the last assistant message.
@@ -1365,6 +1461,13 @@ fn serialize_messages(
         mark_last_role_text(&mut array, "user", cache_marker);
         mark_last_role_text(&mut array, "assistant", cache_marker);
     }
+
+    array.retain(|message| {
+        message["role"] != "assistant"
+            || message["content"]
+                .as_array()
+                .is_none_or(|content| !content.is_empty())
+    });
 
     serde_json::Value::Array(array)
 }
@@ -1418,7 +1521,12 @@ impl Provider for AnthropicProvider {
             .iter()
             .find(|model| model.id == model_id)
             .and_then(|model| model.base_url.clone());
-        let body = self.build_request_body(&request);
+        let body = match self.build_request_body(&request) {
+            Ok(body) => body,
+            Err(error) => {
+                return Box::pin(stream::once(async move { Err(error) }));
+            }
+        };
         let cancel = request.cancel.clone();
         let timeout = request.timeout;
         let copilot_headers = if self.copilot_headers {
@@ -1514,9 +1622,10 @@ mod tests {
         Message::Assistant(AssistantMessage {
             content,
             api: crate::ApiKind::Anthropic,
-            provider: String::new(),
-            model: String::new(),
+            provider: "anthropic".into(),
+            model: "claude-sonnet-4-5-20250514".into(),
             response_model: None,
+            wire: Some(crate::model_info::WireApi::AnthropicMessages),
             response_id: None,
             usage: Usage::default(),
             stop_reason: StopReason::Stop,
@@ -1536,14 +1645,17 @@ mod tests {
             },
         }]);
 
-        let serialized = serialize_messages(&[msg], "", "", false, &serde_json::Value::Null);
+        let serialized = serialize_messages(&[msg], false, &serde_json::Value::Null, true);
         let input = &serialized[0]["content"][0]["input"];
         assert!(input.is_object(), "input must be JSON object, got: {input}");
         assert_eq!(input["path"], "/tmp/foo.txt");
     }
 
     #[test]
-    fn serialize_tool_call_malformed_args_defaults_to_empty_object() {
+    fn malformed_args_become_failure_context_not_empty_object() {
+        // RP-08: this wire only accepts object arguments, so a malformed
+        // proposal is replaced by an explicit failure context - never a
+        // fabricated `{}` tool_use.
         let msg = test_assistant_msg(vec![AssistantContent::ToolCall {
             tool_call: ToolCall {
                 id: "tc_2".into(),
@@ -1553,14 +1665,26 @@ mod tests {
             },
         }]);
 
-        let serialized = serialize_messages(&[msg], "", "", false, &serde_json::Value::Null);
-        let input = &serialized[0]["content"][0]["input"];
-        assert!(input.is_object());
-        assert_eq!(input.as_object().unwrap().len(), 0);
+        let replay = crate::replay::project_replay(
+            &[msg],
+            &crate::replay::ReplayRoute {
+                wire: crate::model_info::WireApi::AnthropicMessages,
+                provider: "anthropic".into(),
+                model: "claude-sonnet-4-5-20250514".into(),
+                supports_images: true,
+            },
+            crate::replay::ReplayProjection::NativeOrCollapse,
+        )
+        .unwrap();
+        let serialized =
+            serialize_messages(&replay.messages, false, &serde_json::Value::Null, true);
+        let body = serde_json::to_string(&serialized).unwrap();
+        assert!(body.contains("[tool proposal not replayed]"));
+        assert!(!body.contains("\"tool_use\""));
     }
 
     #[test]
-    fn serialize_tool_call_non_object_json_defaults_to_empty_object() {
+    fn non_object_json_args_become_failure_contexts() {
         for (label, args) in [
             ("null", "null"),
             ("array", "[1,2]"),
@@ -1577,16 +1701,27 @@ mod tests {
                 },
             }]);
 
-            let serialized = serialize_messages(&[msg], "", "", false, &serde_json::Value::Null);
-            let input = &serialized[0]["content"][0]["input"];
+            let replay = crate::replay::project_replay(
+                &[msg],
+                &crate::replay::ReplayRoute {
+                    wire: crate::model_info::WireApi::AnthropicMessages,
+                    provider: "anthropic".into(),
+                    model: "claude-sonnet-4-5-20250514".into(),
+                    supports_images: true,
+                },
+                crate::replay::ReplayProjection::NativeOrCollapse,
+            )
+            .unwrap();
+            let serialized =
+                serialize_messages(&replay.messages, false, &serde_json::Value::Null, true);
+            let body = serde_json::to_string(&serialized).unwrap();
             assert!(
-                input.is_object(),
-                "{label}: input must be JSON object, got: {input}"
+                body.contains("[tool proposal not replayed]"),
+                "{label}: expected failure context"
             );
-            assert_eq!(
-                input.as_object().unwrap().len(),
-                0,
-                "{label}: input should be empty object"
+            assert!(
+                !body.contains("\"tool_use\""),
+                "{label}: no fabricated call"
             );
         }
     }
@@ -1623,6 +1758,7 @@ mod tests {
                         provider: "anthropic".into(),
                         model: "claude-sonnet-4-5-20250514".into(),
                         response_model: None,
+                        wire: None,
                         response_id: None,
                         usage: crate::stream::Usage::unknown(),
                         stop_reason: crate::stream::StopReason::Stop,
@@ -1653,7 +1789,7 @@ mod tests {
     fn cache_control_long_ttl_emits_all_markers() {
         let provider = cache_capable_provider();
         let request = make_request(CacheRetention::Long);
-        let body = provider.build_request_body(&request);
+        let body = provider.build_request_body(&request).unwrap();
 
         // System prompt wrapped as array with cache_control
         let system = &body["system"];
@@ -1701,7 +1837,7 @@ mod tests {
     fn cache_control_short_uses_ephemeral_no_ttl() {
         let provider = cache_capable_provider();
         let request = make_request(CacheRetention::Short);
-        let body = provider.build_request_body(&request);
+        let body = provider.build_request_body(&request).unwrap();
 
         let system = &body["system"];
         assert!(system.is_array());
@@ -1716,7 +1852,7 @@ mod tests {
     fn cache_control_disabled_suppresses_all_markers() {
         let provider = cache_capable_provider();
         let request = make_request(CacheRetention::Disabled);
-        let body = provider.build_request_body(&request);
+        let body = provider.build_request_body(&request).unwrap();
 
         // System stays as string (no array wrapping)
         assert!(
@@ -1747,7 +1883,7 @@ mod tests {
     fn cache_control_none_preserves_provider_default_markers() {
         let provider = cache_capable_provider();
         let request = make_request(CacheRetention::None);
-        let body = provider.build_request_body(&request);
+        let body = provider.build_request_body(&request).unwrap();
 
         assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
         assert!(
@@ -1776,6 +1912,14 @@ mod tests {
                 }],
                 timestamp_ms: 0,
             }),
+            test_assistant_msg(vec![AssistantContent::ToolCall {
+                tool_call: ToolCall {
+                    id: "tool-1".into(),
+                    name: "inspect".into(),
+                    arguments: "{}".into(),
+                    arguments_error: None,
+                },
+            }]),
             Message::ToolResult(ToolResultMessage {
                 tool_call_id: "tool-1".into(),
                 tool_name: "inspect".into(),
@@ -1811,16 +1955,18 @@ mod tests {
             ..crate::transcript::Context::default()
         });
 
-        let body = provider.build_request_body(&request);
+        let body = provider.build_request_body(&request).unwrap();
         assert_eq!(
             body["messages"][0]["content"][0]["cache_control"]["type"],
             "ephemeral"
         );
+        // Last assistant message carrying a text block is the plain-text
+        // turn; textless tool-call/thinking turns stay unmarked.
         assert_eq!(
-            body["messages"][3]["content"][0]["cache_control"]["type"],
+            body["messages"][4]["content"][0]["cache_control"]["type"],
             "ephemeral"
         );
-        for message_index in [1, 2, 4, 5] {
+        for message_index in [1, 2, 3, 5, 6] {
             for block in body["messages"][message_index]["content"]
                 .as_array()
                 .unwrap()
@@ -1838,7 +1984,7 @@ mod tests {
         let provider = cache_capable_provider();
         let mut request = make_request(CacheRetention::Long);
         request.model = "anthropic:unknown-model".into();
-        let body = provider.build_request_body(&request);
+        let body = provider.build_request_body(&request).unwrap();
 
         // Unknown model has no capabilities, so no cache markers
         assert!(body["system"].is_string());

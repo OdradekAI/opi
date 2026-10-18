@@ -38,6 +38,7 @@ fn assistant_text(id: &str, text: &str) -> Entry {
             provider: "mock".into(),
             model: "mock-model".into(),
             response_model: None,
+            wire: None,
             response_id: None,
             usage: Usage::default(),
             stop_reason: StopReason::Stop,

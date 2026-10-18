@@ -951,7 +951,7 @@ fn build_request_body_includes_thinking_when_enabled() {
         session_id: None,
     };
 
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
 
     let thinking = body
         .get("thinking")
@@ -991,7 +991,7 @@ fn build_request_body_uses_default_budget_when_none() {
         session_id: None,
     };
 
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
 
     let thinking = body
         .get("thinking")
@@ -1029,7 +1029,7 @@ fn build_request_body_omits_thinking_when_disabled() {
         session_id: None,
     };
 
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
 
     assert!(
         body.get("thinking").is_none(),

@@ -171,12 +171,18 @@ fn foreign_route_does_not_receive_signed_or_opaque_thinking() {
             "api":api,"provider":origin,"model":model,"response_model":null,"response_id":null,
             "usage":opi_ai::stream::Usage::default(),"stop_reason":"stop","error_message":null,"timestamp_ms":0
         })).unwrap();
-        let body = provider.build_request_body(&request(vec![Message::Assistant(message.clone())]));
+        let body = provider
+            .build_request_body(&request(vec![Message::Assistant(message.clone())]))
+            .unwrap();
         let serialized = body.to_string();
         assert!(!serialized.contains("private-"));
+        // Pi 1.3 semantics (V-07/AIR-010): cross-identity thinking is
+        // dropped entirely - readable, signed and redacted alike - and is
+        // never converted into visible text.
+        assert!(!serialized.contains("visible reasoning"));
         assert_eq!(
             body["messages"][0]["content"],
-            json!([{"type":"text","text":"visible reasoning"},{"type":"text","text":"answer"}])
+            json!([{"type":"text","text":"answer"}])
         );
         let mut opaque_only = message;
         opaque_only.content = serde_json::from_value(json!([
@@ -188,8 +194,9 @@ fn foreign_route_does_not_receive_signed_or_opaque_thinking() {
             json!({"role":"user","content":[{"type":"text","text":"continue"}],"timestamp_ms":0}),
         )
         .unwrap();
-        let body =
-            provider.build_request_body(&request(vec![Message::Assistant(opaque_only), user]));
+        let body = provider
+            .build_request_body(&request(vec![Message::Assistant(opaque_only), user]))
+            .unwrap();
         assert_eq!(
             body["messages"],
             json!([{"role":"user","content":[{"type":"text","text":"continue"}]}]),
@@ -338,13 +345,19 @@ fn bedrock_omits_opaque_only_assistants_and_preserves_readable_content() {
         json!({"role":"user","content":[{"type":"text","text":"continue"}],"timestamp_ms":0}),
     )
     .unwrap();
-    let body = provider.build_converse_body(&request(vec![opaque, mixed, user]));
+    let body = provider
+        .build_converse_body(&request(vec![opaque, mixed, user]))
+        .unwrap();
+    // The history is foreign to this Bedrock route, so replay drops every
+    // thinking block (Pi 1.3 semantics) before the wire serializer runs;
+    // only the visible answer survives.
     assert_eq!(
         body["messages"],
         json!([
-            {"role":"assistant","content":[{"text":"reasoning"},{"text":"answer"}]},
+            {"role":"assistant","content":[{"text":"answer"}]},
             {"role":"user","content":[{"text":"continue"}]}
         ])
     );
     assert!(!body.to_string().contains("private-"));
+    assert!(!body.to_string().contains("reasoning"));
 }

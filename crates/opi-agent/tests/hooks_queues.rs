@@ -315,6 +315,7 @@ fn base_assistant() -> AssistantMessage {
         provider: "recording".into(),
         model: "mock-model".into(),
         response_model: None,
+        wire: None,
         response_id: None,
         usage: Usage::default(),
         stop_reason: StopReason::Stop,

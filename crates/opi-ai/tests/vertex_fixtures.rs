@@ -331,7 +331,7 @@ fn vertex_request_body_uses_gemini_format() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
     assert!(
         body.get("contents").is_some(),
         "should use Gemini contents format"

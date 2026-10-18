@@ -384,6 +384,7 @@ struct ToolCallState {
     output_index: usize,
     content_index: usize,
     id: String,
+    item_id: String,
     name: String,
     arguments: String,
     ended: bool,
@@ -399,9 +400,9 @@ pub(crate) struct ResponsesMapper {
 }
 
 impl ResponsesMapper {
-    pub(crate) fn new(provider: &str) -> Self {
+    pub(crate) fn new(provider: &str, wire: crate::model_info::WireApi, model: &str) -> Self {
         Self {
-            partial: empty_assistant_message(provider),
+            partial: empty_assistant_message(provider, wire, model),
             saw_done: false,
             text_started: false,
             text_content_index: None,
@@ -418,8 +419,10 @@ impl ResponsesMapper {
         }
         match event {
             ResponsesEvent::Created { model, id } => {
+                // Reported model is a separate fact from the requested
+                // identity set at construction (AIR-010/RP-02).
                 if let Some(model) = model {
-                    self.partial.model = model;
+                    self.partial.response_model = Some(model);
                 }
                 if let Some(id) = id {
                     self.partial.response_id = Some(id);
@@ -452,6 +455,7 @@ impl ResponsesMapper {
                 });
                 self.tool_calls.push(ToolCallState {
                     output_index,
+                    item_id: String::new(),
                     content_index,
                     id,
                     name,
@@ -576,7 +580,7 @@ impl ResponsesMapper {
                     }
                 }
                 if let Some(model) = model {
-                    self.partial.model = model;
+                    self.partial.response_model = Some(model);
                 }
                 if let Some(id) = id {
                     self.partial.response_id = Some(id);
@@ -646,8 +650,22 @@ impl ResponsesMapper {
         // Final textual arguments are parsed once at item end (AIR-048).
         let (arguments, arguments_error) =
             ToolCall::finalize_text_arguments(state.arguments.clone());
+        // Dual-ID packing (pinned pi 1.3.0 Responses mechanism): the
+        // canonical id carries `call_id|item_id` so same-identity replay
+        // can restore both fields. Item ids must start with `fc_`; a
+        // foreign-shaped one is legalized through a stable digest instead
+        // of being guessed (RP-02/RP-07).
+        let packed_id = if state.item_id.is_empty() {
+            state.id.clone()
+        } else {
+            let mut item_id = state.item_id.clone();
+            if !item_id.starts_with("fc_") {
+                item_id = format!("fc_{item_id}");
+            }
+            format!("{}|{}", state.id, item_id)
+        };
         let tool_call = ToolCall {
-            id: state.id.clone(),
+            id: packed_id,
             name: state.name.clone(),
             arguments: arguments.clone(),
             arguments_error,
@@ -657,6 +675,9 @@ impl ResponsesMapper {
         {
             partial.arguments = arguments;
             partial.arguments_error = tool_call.arguments_error.clone();
+            // The finalized message carries the packed dual id so the
+            // canonical history round-trips both parts (V-07).
+            partial.id = tool_call.id.clone();
         }
         Some(AssistantStreamEvent::ToolCallEnd {
             content_index,
@@ -682,6 +703,11 @@ impl ResponsesMapper {
         {
             state.id = id.clone();
         }
+        if let Some(item_id) = item.id.as_ref()
+            && !item_id.is_empty()
+        {
+            state.item_id = item_id.clone();
+        }
         if let Some(name) = item.name.as_ref()
             && !name.is_empty()
         {
@@ -700,13 +726,18 @@ impl ResponsesMapper {
     }
 }
 
-fn empty_assistant_message(provider: &str) -> AssistantMessage {
+fn empty_assistant_message(
+    provider: &str,
+    wire: crate::model_info::WireApi,
+    model: &str,
+) -> AssistantMessage {
     AssistantMessage {
         content: Vec::new(),
         api: crate::ApiKind::OpenAi,
         provider: provider.into(),
-        model: String::new(),
+        model: model.to_owned(),
         response_model: None,
+        wire: Some(wire),
         response_id: None,
         usage: Usage::default(),
         stop_reason: StopReason::Stop,
@@ -715,8 +746,20 @@ fn empty_assistant_message(provider: &str) -> AssistantMessage {
     }
 }
 
-/// Convert opi messages to standard Responses input items.
-pub(crate) fn convert_messages(messages: &[crate::message::Message]) -> Vec<serde_json::Value> {
+/// Split a packed dual Responses tool-call id (`call_id|fc_item_id`) into
+/// its call and item parts; ids without a separator carry only a call id.
+fn split_packed_call_id(id: &str) -> (&str, Option<&str>) {
+    match id.split_once('|') {
+        Some((call_id, item_id)) => (call_id, Some(item_id)),
+        None => (id, None),
+    }
+}
+
+/// Convert the replay-projected messages to standard Responses input items.
+pub(crate) fn convert_messages(
+    messages: &[crate::message::Message],
+    route: &crate::replay::ReplayRoute,
+) -> Vec<serde_json::Value> {
     let mut input = Vec::new();
     for message in messages {
         match message {
@@ -756,28 +799,44 @@ pub(crate) fn convert_messages(messages: &[crate::message::Message]) -> Vec<serd
                 }
             }
             crate::message::Message::Assistant(assistant) => {
-                let mut text = String::new();
-                let mut calls = Vec::new();
+                // Items follow the canonical block order: text and calls
+                // interleave exactly as the turn produced them (AIR-012/
+                // RP-03). Thinking blocks ride this wire only through the
+                // 20.34 encrypted-reasoning parity, not as fabricated
+                // visible items.
+                let same = crate::replay::same_identity(assistant, route);
                 for content in &assistant.content {
                     match content {
-                        AssistantContent::Text { text: part } => text.push_str(part),
+                        AssistantContent::Text { text: part } => {
+                            input.push(serde_json::json!({
+                                "type":"message",
+                                "role":"assistant",
+                                "content":[{"type":"output_text","text":part,"annotations":[]}],
+                                "status":"completed",
+                            }));
+                        }
                         AssistantContent::ToolCall { tool_call } => {
-                            calls.push(serde_json::json!({
+                            let (call_id, item_id) = split_packed_call_id(&tool_call.id);
+                            // Same-identity replay restores both ids; a
+                            // different-identity call omits the item id so
+                            // the service's reasoning-pairing validation
+                            // never fires on foreign history (pinned
+                            // behavior).
+                            let mut call = serde_json::json!({
                                 "type":"function_call",
-                                "id":tool_call.id,
-                                "call_id":tool_call.id,
+                                "call_id":call_id,
                                 "name":tool_call.name,
                                 "arguments":tool_call.arguments,
-                            }));
+                            });
+                            if same && let Some(item_id) = item_id {
+                                call["id"] = serde_json::json!(item_id);
+                            }
+                            input.push(call);
                         }
                         AssistantContent::Thinking { .. }
                         | AssistantContent::RedactedThinking { .. } => {}
                     }
                 }
-                if !text.is_empty() {
-                    input.push(serde_json::json!({"role":"assistant","content":text}));
-                }
-                input.extend(calls);
             }
             crate::message::Message::System(_) => {
                 // Unreachable after collapse + without_initial_system_message.
@@ -799,9 +858,10 @@ pub(crate) fn convert_messages(messages: &[crate::message::Message]) -> Vec<serd
                 } else {
                     content
                 };
+                let (call_id, _item_id) = split_packed_call_id(&result.tool_call_id);
                 input.push(serde_json::json!({
                     "type":"function_call_output",
-                    "call_id":result.tool_call_id,
+                    "call_id":call_id,
                     "output":output,
                 }));
             }

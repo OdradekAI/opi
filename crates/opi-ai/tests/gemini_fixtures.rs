@@ -198,7 +198,7 @@ fn gemini_request_body_uses_contents_field() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
     // Gemini uses "contents" not "messages"
     assert!(
         body.get("contents").is_some(),
@@ -255,7 +255,7 @@ fn gemini_request_body_strips_provider_prefix() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
     // Model is not in the body — just verify no crash and empty contents
     assert!(
         body.get("model").is_none(),

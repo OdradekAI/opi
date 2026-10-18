@@ -75,6 +75,7 @@ fn assistant(texts: &[&str]) -> Message {
         provider: "anthropic".into(),
         model: "claude-sonnet-4-5-20250514".into(),
         response_model: None,
+        wire: None,
         response_id: None,
         usage: Usage::unknown(),
         stop_reason: StopReason::Stop,

@@ -205,6 +205,9 @@ pub fn base_assistant() -> AssistantMessage {
         provider: "mock".into(),
         model: "mock-model".into(),
         response_model: None,
+        // Mock histories carry no wire provenance: replay treats them as
+        // legacy-unknown (fail-closed) exactly like hand-built records.
+        wire: None,
         response_id: None,
         usage: Usage::default(),
         stop_reason: StopReason::Stop,

@@ -81,7 +81,15 @@ impl BedrockProvider {
     }
 
     /// Build the Converse API request body.
-    pub fn build_converse_body(&self, request: &Request) -> serde_json::Value {
+    pub fn build_converse_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, id)| id)
+            .unwrap_or(&request.model);
         // Canonical transcript consumption (AIR-020); this wire currently
         // projects by collapse.
         const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
@@ -95,10 +103,19 @@ impl BedrockProvider {
         let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
 
+        // Canonical replay projection (task 20.7) before body building.
+        let replay = crate::replay::project_replay(
+            &crate::transcript::without_initial_system_message(transcript.messages()),
+            &crate::replay::ReplayRoute {
+                wire: crate::model_info::WireApi::BedrockConverseStream,
+                provider: "bedrock".to_owned(),
+                model: model_id.to_owned(),
+                supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
+            },
+            crate::replay::ReplayProjection::NativeOrCollapse,
+        )?;
         let mut body = serde_json::json!({
-            "messages": serialize_converse_messages(
-                &crate::transcript::without_initial_system_message(transcript.messages()),
-            ),
+            "messages": serialize_converse_messages(&replay.messages),
         });
 
         if !system_prompt.is_empty() {
@@ -139,7 +156,7 @@ impl BedrockProvider {
             });
         }
 
-        body
+        Ok(body)
     }
 
     /// Parse event-stream bytes and emit stream events from fixture data.
@@ -155,7 +172,7 @@ impl BedrockProvider {
                 ))]));
             }
         };
-        let mut mapper = BedrockMapper::new();
+        let mut mapper = BedrockMapper::new("");
 
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
         for frame in frames {
@@ -204,7 +221,10 @@ impl Provider for BedrockProvider {
     }
 
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
-        let body = self.build_converse_body(&request);
+        let body = match self.build_converse_body(&request) {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
         let cancel = request.cancel.clone();
         let model_id = request
             .model
@@ -396,7 +416,7 @@ impl BedrockProvider {
 
         let mut byte_stream = response.bytes_stream();
         let mut buffer: Vec<u8> = Vec::new();
-        let mut mapper = BedrockMapper::new();
+        let mut mapper = BedrockMapper::new(model_id);
 
         loop {
             let chunk = tokio::select! {
@@ -759,9 +779,9 @@ enum BlockState {
 }
 
 impl BedrockMapper {
-    fn new() -> Self {
+    fn new(model: &str) -> Self {
         Self {
-            partial: empty_assistant_message(),
+            partial: empty_assistant_message(model),
             blocks: Vec::new(),
             saw_done: false,
             usage: BedrockUsage::default(),
@@ -958,13 +978,14 @@ impl BedrockMapper {
     }
 }
 
-fn empty_assistant_message() -> AssistantMessage {
+fn empty_assistant_message(model: &str) -> AssistantMessage {
     AssistantMessage {
         content: Vec::new(),
         api: crate::ApiKind::Anthropic, // Bedrock uses Anthropic-style content
         provider: "bedrock".into(),
-        model: String::new(),
+        model: model.to_owned(),
         response_model: None,
+        wire: Some(crate::model_info::WireApi::BedrockConverseStream),
         response_id: None,
         usage: Usage::default(),
         stop_reason: StopReason::Stop,

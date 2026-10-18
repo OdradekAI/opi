@@ -10,7 +10,10 @@
 
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::gemini::GeminiProvider;
-use opi_ai::message::{InputContent, Message, OutputContent, ToolResultMessage, UserMessage};
+use opi_ai::message::{
+    AssistantContent, AssistantMessage, InputContent, Message, OutputContent, ToolCall,
+    ToolResultMessage, UserMessage,
+};
 use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::openai_responses::OpenAiResponsesProvider;
 use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
@@ -24,6 +27,26 @@ fn request_with_truncated_tool_result() -> Request {
             messages: vec![
                 Message::User(UserMessage {
                     content: vec![InputContent::Text { text: "hi".into() }],
+                    timestamp_ms: 0,
+                }),
+                Message::Assistant(AssistantMessage {
+                    content: vec![AssistantContent::ToolCall {
+                        tool_call: ToolCall {
+                            id: "tc-1".into(),
+                            name: "tool".into(),
+                            arguments: "{}".into(),
+                            arguments_error: None,
+                        },
+                    }],
+                    api: opi_ai::ApiKind::Anthropic,
+                    provider: "m".into(),
+                    model: "m".into(),
+                    response_model: None,
+                    wire: None,
+                    response_id: None,
+                    usage: Default::default(),
+                    stop_reason: opi_ai::stream::StopReason::ToolUse,
+                    error_message: None,
                     timestamp_ms: 0,
                 }),
                 Message::ToolResult(ToolResultMessage {
@@ -64,27 +87,35 @@ fn assert_no_truncated(body: &serde_json::Value, label: &str) {
 #[test]
 fn anthropic_body_does_not_leak_truncated() {
     let provider = AnthropicProvider::new(None);
-    let body = provider.build_request_body(&request_with_truncated_tool_result());
+    let body = provider
+        .build_request_body(&request_with_truncated_tool_result())
+        .unwrap();
     assert_no_truncated(&body, "anthropic");
 }
 
 #[test]
 fn openai_chat_body_does_not_leak_truncated() {
     let provider = OpenAiChatProvider::new(None);
-    let body = provider.build_request_body(&request_with_truncated_tool_result());
+    let body = provider
+        .build_request_body(&request_with_truncated_tool_result())
+        .unwrap();
     assert_no_truncated(&body, "openai_chat");
 }
 
 #[test]
 fn openai_responses_body_does_not_leak_truncated() {
     let provider = OpenAiResponsesProvider::new(None);
-    let body = provider.build_request_body(&request_with_truncated_tool_result());
+    let body = provider
+        .build_request_body(&request_with_truncated_tool_result())
+        .unwrap();
     assert_no_truncated(&body, "openai_responses");
 }
 
 #[test]
 fn gemini_body_does_not_leak_truncated() {
     let provider = GeminiProvider::new(None);
-    let body = provider.build_request_body(&request_with_truncated_tool_result());
+    let body = provider
+        .build_request_body(&request_with_truncated_tool_result())
+        .unwrap();
     assert_no_truncated(&body, "gemini");
 }

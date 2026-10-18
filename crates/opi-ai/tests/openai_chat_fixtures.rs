@@ -8,7 +8,7 @@
 //! All tests use fixture strings — no live provider calls (red flag #10).
 
 use futures_util::StreamExt;
-use opi_ai::message::AssistantContent;
+use opi_ai::message::{AssistantContent, AssistantMessage, ToolCall};
 use opi_ai::openai_chat::{
     CompatConfig, OpenAiChatEvent, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent,
     parse_sse_events,
@@ -27,7 +27,12 @@ fn map_fixture(input: &str) -> Vec<AssistantStreamEvent> {
             ParsedEvent::Malformed { .. } => Vec::new(),
         })
         .collect();
-    let mut mapper = OpenAiChatMapper::new(opi_ai::ApiKind::OpenAi, "openai");
+    let mut mapper = OpenAiChatMapper::new(
+        opi_ai::ApiKind::OpenAi,
+        "openai",
+        opi_ai::model_info::WireApi::OpenAiCompletions,
+        "",
+    );
     let mut stream_events: Vec<_> = events
         .into_iter()
         .flat_map(|e| mapper.process(e))
@@ -49,7 +54,12 @@ fn map_fixture_as(input: &str, api: opi_ai::ApiKind, provider: &str) -> Vec<Assi
             ParsedEvent::Malformed { .. } => Vec::new(),
         })
         .collect();
-    let mut mapper = OpenAiChatMapper::new(api, provider);
+    let mut mapper = OpenAiChatMapper::new(
+        api,
+        provider,
+        opi_ai::model_info::WireApi::OpenAiCompletions,
+        "",
+    );
     let mut stream_events: Vec<_> = events
         .into_iter()
         .flat_map(|e| mapper.process(e))
@@ -366,14 +376,17 @@ data: {"id":"chatcmpl-content-first","object":"chat.completion.chunk","created":
     let (response_id, model) = events
         .into_iter()
         .find_map(|event| match event {
-            AssistantStreamEvent::Done { message, .. } => {
-                Some((message.response_id, message.model))
-            }
+            AssistantStreamEvent::Done { message, .. } => Some((
+                message.response_id,
+                message.response_model.unwrap_or_default(),
+            )),
             _ => None,
         })
         .expect("Done event");
 
     assert_eq!(response_id.as_deref(), Some("chatcmpl-content-first"));
+    // The provider-reported model is a separate fact from the requested
+    // identity (AIR-010/RP-02): it now rides response_model.
     assert_eq!(model, "gpt-4o");
 }
 
@@ -655,7 +668,12 @@ fn error_event_maps_to_stream_error() {
             ParsedEvent::Malformed { .. } => Vec::new(),
         })
         .collect();
-    let mut mapper = OpenAiChatMapper::new(opi_ai::ApiKind::OpenAi, "openai");
+    let mut mapper = OpenAiChatMapper::new(
+        opi_ai::ApiKind::OpenAi,
+        "openai",
+        opi_ai::model_info::WireApi::OpenAiCompletions,
+        "",
+    );
     let items: Vec<_> = events.into_iter().flat_map(|e| mapper.process(e)).collect();
 
     assert_eq!(items.len(), 1);
@@ -952,7 +970,7 @@ fn make_test_request() -> Request {
 #[test]
 fn build_request_body_uses_max_tokens_by_default() {
     let provider = OpenAiChatProvider::new(None);
-    let body = provider.build_request_body(&make_test_request());
+    let body = provider.build_request_body(&make_test_request()).unwrap();
     assert!(body.get("max_tokens").is_some());
     assert_eq!(body["max_tokens"], 4096);
 }
@@ -964,7 +982,7 @@ fn build_request_body_with_compat_max_completion_tokens() {
         ..Default::default()
     };
     let provider = OpenAiChatProvider::new_with_compat(None, config);
-    let body = provider.build_request_body(&make_test_request());
+    let body = provider.build_request_body(&make_test_request()).unwrap();
     assert!(body.get("max_completion_tokens").is_some());
     assert!(body.get("max_tokens").is_none());
     assert_eq!(body["max_completion_tokens"], 4096);
@@ -973,7 +991,7 @@ fn build_request_body_with_compat_max_completion_tokens() {
 #[test]
 fn build_request_body_system_role_default() {
     let provider = OpenAiChatProvider::new(None);
-    let body = provider.build_request_body(&make_test_request());
+    let body = provider.build_request_body(&make_test_request()).unwrap();
     // Default: system message uses "system" role
     let messages = body["messages"].as_array().unwrap();
     assert_eq!(messages[0]["role"], "system");
@@ -986,7 +1004,7 @@ fn build_request_body_developer_role_override() {
         ..Default::default()
     };
     let provider = OpenAiChatProvider::new_with_compat(None, config);
-    let body = provider.build_request_body(&make_test_request());
+    let body = provider.build_request_body(&make_test_request()).unwrap();
     let messages = body["messages"].as_array().unwrap();
     assert_eq!(messages[0]["role"], "developer");
 }
@@ -1011,7 +1029,7 @@ fn build_request_body_usage_in_stream_emits_stream_options() {
 
     let mut request = make_test_request();
     request.model = "compat:model".into();
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
     assert_eq!(body["stream_options"]["include_usage"], true);
 }
 
@@ -1105,7 +1123,7 @@ fn build_request_body_strict_tool_schema_emits_strict_flag() {
         ..Default::default()
     };
     let provider = OpenAiChatProvider::new_with_compat(None, config);
-    let body = provider.build_request_body(&make_tool_request());
+    let body = provider.build_request_body(&make_tool_request()).unwrap();
     let tools = body["tools"].as_array().expect("tools array present");
     assert!(
         tools[0]["function"]["strict"] == true,
@@ -1116,7 +1134,7 @@ fn build_request_body_strict_tool_schema_emits_strict_flag() {
 #[test]
 fn build_request_body_strict_tool_schema_off_by_default() {
     let provider = OpenAiChatProvider::new(None);
-    let body = provider.build_request_body(&make_tool_request());
+    let body = provider.build_request_body(&make_tool_request()).unwrap();
     let tools = body["tools"].as_array().expect("tools array present");
     assert!(
         tools[0]["function"].get("strict").is_none(),
@@ -1131,14 +1149,14 @@ fn static_compat_reasoning_effort_does_not_drive_wire_output() {
         ..Default::default()
     };
     let provider = OpenAiChatProvider::new_with_compat(None, config);
-    let body = provider.build_request_body(&make_test_request());
+    let body = provider.build_request_body(&make_test_request()).unwrap();
     assert!(body.get("reasoning_effort").is_none());
 }
 
 #[test]
 fn build_request_body_reasoning_effort_absent_by_default() {
     let provider = OpenAiChatProvider::new(None);
-    let body = provider.build_request_body(&make_test_request());
+    let body = provider.build_request_body(&make_test_request()).unwrap();
     assert!(body.get("reasoning_effort").is_none());
 }
 
@@ -1155,7 +1173,7 @@ fn chat_reasoning_effort_uses_request_thinking_and_model_map() {
         level: ThinkingLevel::High,
     };
     assert_eq!(
-        provider.build_request_body(&identity)["reasoning_effort"],
+        provider.build_request_body(&identity).unwrap()["reasoning_effort"],
         "high"
     );
 
@@ -1184,7 +1202,7 @@ fn chat_reasoning_effort_uses_request_thinking_and_model_map() {
     let mut remapped = identity;
     remapped.model = "mapped:mapped".into();
     assert_eq!(
-        mapped_provider.build_request_body(&remapped)["reasoning_effort"],
+        mapped_provider.build_request_body(&remapped).unwrap()["reasoning_effort"],
         "provider-high"
     );
 
@@ -1193,6 +1211,7 @@ fn chat_reasoning_effort_uses_request_thinking_and_model_map() {
     assert!(
         mapped_provider
             .build_request_body(&disabled)
+            .unwrap()
             .get("reasoning_effort")
             .is_none()
     );
@@ -1203,6 +1222,7 @@ fn chat_reasoning_effort_uses_request_thinking_and_model_map() {
     assert!(
         mapped_provider
             .build_request_body(&off)
+            .unwrap()
             .get("reasoning_effort")
             .is_none()
     );
@@ -1229,6 +1249,7 @@ fn chat_reasoning_effort_uses_request_thinking_and_model_map() {
     assert!(
         unsupported_provider
             .build_request_body(&unsupported)
+            .unwrap()
             .get("reasoning_effort")
             .is_none()
     );
@@ -1241,14 +1262,14 @@ fn build_request_body_cache_key_emits_prompt_cache_key() {
         ..Default::default()
     };
     let provider = OpenAiChatProvider::new_with_compat(None, config);
-    let body = provider.build_request_body(&make_test_request());
+    let body = provider.build_request_body(&make_test_request()).unwrap();
     assert_eq!(body["prompt_cache_key"], "sess-abc");
 }
 
 #[test]
 fn build_request_body_cache_key_absent_by_default() {
     let provider = OpenAiChatProvider::new(None);
-    let body = provider.build_request_body(&make_test_request());
+    let body = provider.build_request_body(&make_test_request()).unwrap();
     assert!(body.get("prompt_cache_key").is_none());
 }
 
@@ -1262,6 +1283,26 @@ fn make_tool_result_request() -> Request {
                     content: vec![InputContent::Text {
                         text: "run it".into(),
                     }],
+                    timestamp_ms: 0,
+                }),
+                Message::Assistant(AssistantMessage {
+                    content: vec![AssistantContent::ToolCall {
+                        tool_call: ToolCall {
+                            id: "call_1".into(),
+                            name: "list_dir".into(),
+                            arguments: "{}".into(),
+                            arguments_error: None,
+                        },
+                    }],
+                    api: opi_ai::ApiKind::OpenAi,
+                    provider: "openai".into(),
+                    model: "gpt-4o".into(),
+                    response_model: None,
+                    wire: Some(opi_ai::model_info::WireApi::OpenAiCompletions),
+                    response_id: None,
+                    usage: Default::default(),
+                    stop_reason: opi_ai::stream::StopReason::ToolUse,
+                    error_message: None,
                     timestamp_ms: 0,
                 }),
                 Message::ToolResult(ToolResultMessage {
@@ -1298,7 +1339,9 @@ fn build_request_body_tool_result_name_field_wire_shape() {
         ..Default::default()
     };
     let provider = OpenAiChatProvider::new_with_compat(None, config);
-    let body = provider.build_request_body(&make_tool_result_request());
+    let body = provider
+        .build_request_body(&make_tool_result_request())
+        .unwrap();
     let messages = body["messages"].as_array().unwrap();
     let tool_msg = messages
         .iter()
@@ -1315,7 +1358,9 @@ fn build_request_body_tool_result_name_field_wire_shape() {
 #[test]
 fn build_request_body_tool_result_name_field_absent_by_default() {
     let provider = OpenAiChatProvider::new(None);
-    let body = provider.build_request_body(&make_tool_result_request());
+    let body = provider
+        .build_request_body(&make_tool_result_request())
+        .unwrap();
     let messages = body["messages"].as_array().unwrap();
     let tool_msg = messages
         .iter()
@@ -1414,7 +1459,7 @@ fn model_level_override_takes_precedence_over_provider_profile() {
     // o3: model-level override wins for role + max_tokens field.
     let mut req_o3 = make_tool_request();
     req_o3.model = "prof:o3".into();
-    let body = provider.build_request_body(&req_o3);
+    let body = provider.build_request_body(&req_o3).unwrap();
     let messages = body["messages"].as_array().unwrap();
     assert_eq!(messages[0]["role"], "developer", "model override wins");
     assert!(
@@ -1432,7 +1477,7 @@ fn model_level_override_takes_precedence_over_provider_profile() {
     // gpt-4o: no model override -> profile default applies.
     let mut req_plain = make_tool_request();
     req_plain.model = "prof:gpt-4o".into();
-    let body2 = provider.build_request_body(&req_plain);
+    let body2 = provider.build_request_body(&req_plain).unwrap();
     let messages2 = body2["messages"].as_array().unwrap();
     assert_eq!(
         messages2[0]["role"], "system",

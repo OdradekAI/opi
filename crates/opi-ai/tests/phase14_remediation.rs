@@ -100,7 +100,7 @@ fn anthropic_request_honors_adaptive_thinking_and_temperature_compat() {
         level: ThinkingLevel::High,
     };
 
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
 
     assert!(body.get("temperature").is_none());
     assert_eq!(body["thinking"], serde_json::json!({"type": "adaptive"}));
@@ -117,7 +117,7 @@ fn anthropic_direct_catalog_preserves_fixed_thinking_and_temperature() {
         level: ThinkingLevel::High,
     };
 
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
 
     assert_eq!(body["temperature"], 0.4);
     assert_eq!(

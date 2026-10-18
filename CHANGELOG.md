@@ -33,6 +33,43 @@
 
 ### Added
 
+- `opi-ai`: canonical replay projection and tool association (DEL-03,
+  task 20.7; V-07/V-08/V-15 SDK-active, AIR-010/012/013/014). New `replay`
+  module projects the canonical chronology into the request-local wire
+  view: association by batch position plus source ID (closed batches may
+  reuse IDs; duplicate call/result, orphan result and name mismatch are
+  typed failures before any request is built), unambiguous missing results
+  closed request-locally as ResultUnavailable/UnknownEffect synthetic
+  error results (never NotExecuted, never re-executed, canonical
+  untouched), continuation identity by exact wire + provider + requested
+  model with cross-identity turns dropping ALL thinking (readable, signed,
+  redacted; never converted to visible text - Pi 1.3 semantics) and
+  same-identity keeping signed/redacted blocks including signed-empty while
+  dropping blank unsigned thinking, failed (Error/Aborted) turns omitted
+  with their linked non-execution results as a closed unit while Length
+  turns keep expressible pairs, malformed proposals as raw text on
+  string-argument wires and explicit named failure contexts on
+  object-argument wires (no `{}`/`null` fabrication), request-local
+  bijective wire-ID legalization synchronized across call/result, image
+  association/order/failure-flag preservation with Anthropic error-result
+  image splitting after the turn's results, `details` never serialized,
+  URL sources passed through, and `ReplayProjection::Strict` rejecting
+  lossy transforms with typed errors. **Breaking (0.x):**
+  `AssistantMessage` gains a serde-defaulted `wire: Option<WireApi>`
+  provenance field (legacy `None` is never same-identity, fail-closed);
+  reported models now ride `response_model` with the requested identity in
+  `model` on Chat/Responses/Codex/Gemini/Vertex/Azure/Bedrock (matching
+  Anthropic); all six provider `build_request_body`/`build_converse_body`
+  entry points return `Result<Value, ProviderError>` and consume
+  `project_replay` at the head of request construction (Chat keeps visible
+  turn text alongside `tool_calls`; Chat/Responses send raw argument
+  strings; Responses parser packs `call_id|fc_item_id` and the serializer
+  restores both for same identity, dropping the item id for foreign
+  history); real tool-result image blocks on image-capable Anthropic/Chat
+  routes replace MIME-note placeholders. Host policy (execution,
+  authorization, retry, session readers/writer) is unchanged; AIR-038
+  per-wire encrypted-reasoning parity and V-32 effort stamps close with
+  later tasks.
 - `opi-ai`: canonical Context/Transcript chronology (DEL-03, task 20.6).
   New `transcript` module ports the pinned Pi 1.3.0 `transcript.ts`
   semantics: the public `Context` shorthand folds once into a leading

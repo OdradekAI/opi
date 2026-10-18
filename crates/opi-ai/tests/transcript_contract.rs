@@ -303,7 +303,7 @@ fn adapters_consume_only_the_normalized_transcript() {
         cache_retention: opi_ai::provider::CacheRetention::None,
         session_id: None,
     };
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
     // The built-in model enables cache control, so the prompt rides a
     // single-content-block array carrying the ephemeral marker.
     assert_eq!(body["system"][0]["text"], serde_json::json!("system text"));
@@ -323,7 +323,7 @@ fn adapters_consume_only_the_normalized_transcript() {
             ..change()
         })
         .unwrap();
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
     assert_eq!(
         body["system"][0]["text"],
         serde_json::json!("system text\n\nlater instruction")

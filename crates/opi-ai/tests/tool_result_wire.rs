@@ -33,7 +33,10 @@ use opi_ai::azure_openai::AzureOpenAIProvider;
 use opi_ai::bedrock::BedrockProvider;
 use opi_ai::gemini::GeminiProvider;
 use opi_ai::http::HttpClient;
-use opi_ai::message::{InputContent, Message, OutputContent, ToolResultMessage, UserMessage};
+use opi_ai::message::{
+    AssistantContent, AssistantMessage, InputContent, Message, OutputContent, ToolCall,
+    ToolResultMessage, UserMessage,
+};
 use opi_ai::mistral::mistral_provider;
 use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::openai_responses::OpenAiResponsesProvider;
@@ -58,6 +61,28 @@ fn request_with_tool_result(is_error: bool, payload: &str) -> Request {
             messages: vec![
                 Message::User(UserMessage {
                     content: vec![InputContent::Text { text: "hi".into() }],
+                    timestamp_ms: 0,
+                }),
+                // The result pairs with its batch's call (AIR-012):
+                // orphan results are a typed association failure now.
+                Message::Assistant(AssistantMessage {
+                    content: vec![AssistantContent::ToolCall {
+                        tool_call: ToolCall {
+                            id: "tc-1".into(),
+                            name: "tool".into(),
+                            arguments: "{}".into(),
+                            arguments_error: None,
+                        },
+                    }],
+                    api: opi_ai::ApiKind::Anthropic,
+                    provider: "m".into(),
+                    model: "m".into(),
+                    response_model: None,
+                    wire: None,
+                    response_id: None,
+                    usage: Default::default(),
+                    stop_reason: opi_ai::stream::StopReason::ToolUse,
+                    error_message: None,
                     timestamp_ms: 0,
                 }),
                 Message::ToolResult(ToolResultMessage {
@@ -100,7 +125,9 @@ fn last_msg<'a>(body: &'a serde_json::Value, key: &str) -> &'a serde_json::Value
 
 fn anthropic_asserts(is_error: bool, payload: &str) {
     let provider = AnthropicProvider::new(None);
-    let body = provider.build_request_body(&request_with_tool_result(is_error, payload));
+    let body = provider
+        .build_request_body(&request_with_tool_result(is_error, payload))
+        .unwrap();
     let block = &last_msg(&body, "messages")["content"][0];
     assert_eq!(block["type"], "tool_result", "anthropic tool_result block");
     assert_eq!(
@@ -128,7 +155,9 @@ fn anthropic_asserts(is_error: bool, payload: &str) {
 
 fn bedrock_asserts(is_error: bool, payload: &str) {
     let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
-    let body = provider.build_converse_body(&request_with_tool_result(is_error, payload));
+    let body = provider
+        .build_converse_body(&request_with_tool_result(is_error, payload))
+        .unwrap();
     let result = &last_msg(&body, "messages")["content"][0]["toolResult"];
     assert_eq!(
         result["toolUseId"], "tc-1",
@@ -151,7 +180,9 @@ fn bedrock_asserts(is_error: bool, payload: &str) {
 
 fn openai_chat_asserts(is_error: bool, payload: &str) {
     let provider = OpenAiChatProvider::new(None);
-    let body = provider.build_request_body(&request_with_tool_result(is_error, payload));
+    let body = provider
+        .build_request_body(&request_with_tool_result(is_error, payload))
+        .unwrap();
     let msg = last_msg(&body, "messages");
     assert_eq!(msg["role"], "tool", "openai_chat role");
     assert_eq!(
@@ -178,7 +209,9 @@ fn openai_chat_asserts(is_error: bool, payload: &str) {
 
 fn openai_responses_asserts(is_error: bool, payload: &str) {
     let provider = OpenAiResponsesProvider::new(None);
-    let body = provider.build_request_body(&request_with_tool_result(is_error, payload));
+    let body = provider
+        .build_request_body(&request_with_tool_result(is_error, payload))
+        .unwrap();
     let item = last_msg(&body, "input");
     assert_eq!(
         item["type"], "function_call_output",
@@ -211,7 +244,9 @@ fn openai_responses_asserts(is_error: bool, payload: &str) {
 
 fn gemini_asserts(is_error: bool, payload: &str) {
     let provider = GeminiProvider::new(None);
-    let body = provider.build_request_body(&request_with_tool_result(is_error, payload));
+    let body = provider
+        .build_request_body(&request_with_tool_result(is_error, payload))
+        .unwrap();
     let response = &last_msg(&body, "contents")["parts"][0]["functionResponse"]["response"];
     assert_eq!(
         response["content"].as_str(),
@@ -259,7 +294,9 @@ fn assert_chat_compatible_body(body: &serde_json::Value, is_error: bool, payload
 
 fn vertex_inherits_gemini_shape(is_error: bool, payload: &str) {
     let provider = VertexProvider::new("proj".into(), "loc".into(), None);
-    let body = provider.build_request_body(&request_with_tool_result(is_error, payload));
+    let body = provider
+        .build_request_body(&request_with_tool_result(is_error, payload))
+        .unwrap();
     let response = &last_msg(&body, "contents")["parts"][0]["functionResponse"]["response"];
     assert_eq!(
         response["content"].as_str(),
@@ -308,17 +345,23 @@ fn tool_result_error_semantics_across_providers() {
     let mistral = mistral_provider(None);
     for is_error in [true, false] {
         assert_chat_compatible_body(
-            &azure.build_request_body(&request_with_tool_result(is_error, payload)),
+            &azure
+                .build_request_body(&request_with_tool_result(is_error, payload))
+                .unwrap(),
             is_error,
             payload,
         );
         assert_chat_compatible_body(
-            &openrouter.build_request_body(&request_with_tool_result(is_error, payload)),
+            &openrouter
+                .build_request_body(&request_with_tool_result(is_error, payload))
+                .unwrap(),
             is_error,
             payload,
         );
         assert_chat_compatible_body(
-            &mistral.build_request_body(&request_with_tool_result(is_error, payload)),
+            &mistral
+                .build_request_body(&request_with_tool_result(is_error, payload))
+                .unwrap(),
             is_error,
             payload,
         );
@@ -332,8 +375,12 @@ fn tool_result_error_semantics_across_providers() {
     // output through the shared marker constant.
     let chat = OpenAiChatProvider::new(None);
     let responses = OpenAiResponsesProvider::new(None);
-    let chat_body = chat.build_request_body(&request_with_tool_result(true, payload));
-    let responses_body = responses.build_request_body(&request_with_tool_result(true, payload));
+    let chat_body = chat
+        .build_request_body(&request_with_tool_result(true, payload))
+        .unwrap();
+    let responses_body = responses
+        .build_request_body(&request_with_tool_result(true, payload))
+        .unwrap();
     let chat_content = last_msg(&chat_body, "messages")["content"]
         .as_str()
         .unwrap();
@@ -423,6 +470,7 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "provider",
         "provider_headers",
         "registry",
+        "replay",
         "retry",
         "schema",
         "stream",

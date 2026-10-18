@@ -35,6 +35,13 @@ pub struct AssistantMessage {
     /// Reported model override: `None` falls back to `model`; an empty string
     /// explicitly records that the provider did not report a model.
     pub response_model: Option<String>,
+    /// Exact wire the turn was produced on (continuation provenance,
+    /// AIR-010/RP-02). `None` marks legacy or synthesized records with
+    /// unknown provenance: replay never treats them as same-identity
+    /// (fail-closed; `ApiKind` alone cannot distinguish the
+    /// Completions/Responses/Codex wires).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wire: Option<crate::model_info::WireApi>,
     pub response_id: Option<String>,
     pub usage: crate::stream::Usage,
     pub stop_reason: crate::stream::StopReason,

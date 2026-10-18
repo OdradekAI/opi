@@ -28,6 +28,7 @@ pub mod openrouter;
 pub mod provider;
 pub mod provider_headers;
 pub mod registry;
+pub mod replay;
 pub mod retry;
 pub mod schema;
 pub mod stream;

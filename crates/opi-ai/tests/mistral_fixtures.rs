@@ -165,7 +165,7 @@ fn mistral_request_body_strips_provider_prefix() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
     assert_eq!(body["model"], "mistral-small-latest");
 }
 
@@ -496,7 +496,7 @@ fn mistral_profile_inherits_shared_compat_flags() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
     let messages = body["messages"].as_array().unwrap();
     assert_eq!(
         messages[0]["role"], "developer",

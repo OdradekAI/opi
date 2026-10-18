@@ -20,6 +20,7 @@ fn assistant(timestamp_ms: i64) -> Message {
         provider: "test".into(),
         model: "model".into(),
         response_model: None,
+        wire: None,
         response_id: None,
         usage: Usage::reported(500, 20, 100, 50, Some(10), Some(15)),
         stop_reason: StopReason::Stop,

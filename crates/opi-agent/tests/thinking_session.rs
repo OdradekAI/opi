@@ -33,6 +33,7 @@ fn assistant() -> AssistantMessage {
         provider: "anthropic".into(),
         model: "claude-sonnet-4".into(),
         response_model: None,
+        wire: None,
         response_id: None,
         usage: Default::default(),
         stop_reason: StopReason::ToolUse,

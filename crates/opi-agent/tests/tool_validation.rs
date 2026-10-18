@@ -560,6 +560,7 @@ fn base_msg() -> AssistantMessage {
         provider: "scripted".into(),
         model: "mock".into(),
         response_model: None,
+        wire: None,
         response_id: None,
         usage: Usage::default(),
         stop_reason: StopReason::Stop,

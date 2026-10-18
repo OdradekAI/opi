@@ -337,6 +337,7 @@ fn redact_assistant_message(
         provider: message.provider.clone(),
         model: message.model.clone(),
         response_model: message.response_model.clone(),
+        wire: message.wire,
         response_id: message.response_id.clone(),
         usage: message.usage.clone(),
         stop_reason: message.stop_reason,

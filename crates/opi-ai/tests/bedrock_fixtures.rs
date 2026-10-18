@@ -17,8 +17,8 @@ use opi_ai::bedrock::sigv4::AwsCredentials;
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{
-    ImageSource, InputContent, MediaType, Message, OutputContent, ToolDef, ToolResultMessage,
-    UserMessage,
+    AssistantContent, AssistantMessage, ImageSource, InputContent, MediaType, Message,
+    OutputContent, ToolCall, ToolDef, ToolResultMessage, UserMessage,
 };
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, ProviderErrorCategory, Request};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
@@ -650,31 +650,58 @@ async fn url_image_rejected_with_clear_error() {
     }
 }
 
+fn assistant_call(id: &str, name: &str) -> Message {
+    Message::Assistant(AssistantMessage {
+        content: vec![AssistantContent::ToolCall {
+            tool_call: ToolCall {
+                id: id.into(),
+                name: name.into(),
+                arguments: "{}".into(),
+                arguments_error: None,
+            },
+        }],
+        api: opi_ai::ApiKind::Anthropic,
+        provider: "bedrock".into(),
+        model: "m".into(),
+        response_model: None,
+        wire: Some(opi_ai::model_info::WireApi::BedrockConverseStream),
+        response_id: None,
+        usage: Default::default(),
+        stop_reason: opi_ai::stream::StopReason::ToolUse,
+        error_message: None,
+        timestamp_ms: 0,
+    })
+}
+
 #[test]
 fn tool_result_image_placeholder_preserves_media_type() {
     let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
     let mut request = text_stream_request();
     request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
         system_prompt: None,
-        messages: vec![Message::ToolResult(ToolResultMessage {
-            tool_call_id: "tool-1".into(),
-            tool_name: "screenshot".into(),
-            content: vec![OutputContent::Image {
-                source: ImageSource::Bytes {
-                    data: vec![0xff, 0xd8, 0xff],
-                },
-                media_type: MediaType::Jpeg,
-            }],
-            details: None,
-            is_error: false,
-            truncated: false,
-            timestamp_ms: 0,
-        })],
+        messages: vec![
+            // The result pairs with its batch's call (AIR-012).
+            assistant_call("tool-1", "screenshot"),
+            Message::ToolResult(ToolResultMessage {
+                tool_call_id: "tool-1".into(),
+                tool_name: "screenshot".into(),
+                content: vec![OutputContent::Image {
+                    source: ImageSource::Bytes {
+                        data: vec![0xff, 0xd8, 0xff],
+                    },
+                    media_type: MediaType::Jpeg,
+                }],
+                details: None,
+                is_error: false,
+                truncated: false,
+                timestamp_ms: 0,
+            }),
+        ],
         tools: vec![],
     });
 
-    let body = provider.build_converse_body(&request);
-    let text = body["messages"][0]["content"][0]["toolResult"]["content"][0]["text"]
+    let body = provider.build_converse_body(&request).unwrap();
+    let text = body["messages"][1]["content"][0]["toolResult"]["content"][0]["text"]
         .as_str()
         .unwrap();
 

@@ -101,7 +101,7 @@ fn responses_request_body_uses_input_field() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
     // Responses API uses "input" not "messages"
     assert!(body.get("input").is_some(), "should have 'input' field");
     assert!(
@@ -148,7 +148,7 @@ fn responses_request_body_strips_provider_prefix() {
         cache_retention: CacheRetention::None,
         session_id: None,
     };
-    let body = provider.build_request_body(&request);
+    let body = provider.build_request_body(&request).unwrap();
     assert_eq!(body["model"], "o3");
 }
 
@@ -213,7 +213,9 @@ fn responses_request_body_store_emitted_when_configured() {
             ..Default::default()
         },
     );
-    let body = provider.build_request_body(&responses_tool_request());
+    let body = provider
+        .build_request_body(&responses_tool_request())
+        .unwrap();
     assert_eq!(
         body["store"], false,
         "store must be emitted when configured"
@@ -223,7 +225,9 @@ fn responses_request_body_store_emitted_when_configured() {
 #[test]
 fn responses_request_body_store_absent_by_default() {
     let provider = responses_provider();
-    let body = provider.build_request_body(&responses_tool_request());
+    let body = provider
+        .build_request_body(&responses_tool_request())
+        .unwrap();
     assert!(
         body.get("store").is_none(),
         "store must be absent by default"
@@ -239,14 +243,18 @@ fn responses_static_reasoning_effort_does_not_drive_wire_output() {
             ..Default::default()
         },
     );
-    let body = provider.build_request_body(&responses_tool_request());
+    let body = provider
+        .build_request_body(&responses_tool_request())
+        .unwrap();
     assert!(body.get("reasoning").is_none());
 }
 
 #[test]
 fn responses_request_body_reasoning_effort_absent_by_default() {
     let provider = responses_provider();
-    let body = provider.build_request_body(&responses_tool_request());
+    let body = provider
+        .build_request_body(&responses_tool_request())
+        .unwrap();
     assert!(
         body.get("reasoning").is_none(),
         "reasoning must be absent by default"
@@ -272,7 +280,7 @@ fn responses_reasoning_effort_uses_request_thinking_and_model_map() {
         level: ThinkingLevel::High,
     };
     assert_eq!(
-        provider.build_request_body(&identity)["reasoning"]["effort"],
+        provider.build_request_body(&identity).unwrap()["reasoning"]["effort"],
         "high"
     );
 
@@ -298,7 +306,7 @@ fn responses_reasoning_effort_uses_request_thinking_and_model_map() {
     let mut remapped = identity;
     remapped.model = "mapped:mapped".into();
     assert_eq!(
-        mapped_provider.build_request_body(&remapped)["reasoning"]["effort"],
+        mapped_provider.build_request_body(&remapped).unwrap()["reasoning"]["effort"],
         "provider-high"
     );
 
@@ -307,6 +315,7 @@ fn responses_reasoning_effort_uses_request_thinking_and_model_map() {
     assert!(
         mapped_provider
             .build_request_body(&disabled)
+            .unwrap()
             .get("reasoning")
             .is_none()
     );
@@ -317,6 +326,7 @@ fn responses_reasoning_effort_uses_request_thinking_and_model_map() {
     assert!(
         mapped_provider
             .build_request_body(&off)
+            .unwrap()
             .get("reasoning")
             .is_none()
     );
@@ -343,6 +353,7 @@ fn responses_reasoning_effort_uses_request_thinking_and_model_map() {
     assert!(
         unsupported_provider
             .build_request_body(&unsupported)
+            .unwrap()
             .get("reasoning")
             .is_none()
     );
@@ -357,7 +368,9 @@ fn responses_request_body_strict_tools_emitted_when_configured() {
             ..Default::default()
         },
     );
-    let body = provider.build_request_body(&responses_tool_request());
+    let body = provider
+        .build_request_body(&responses_tool_request())
+        .unwrap();
     let tools = body["tools"].as_array().expect("tools array present");
     assert!(
         tools[0]["strict"] == true,
@@ -368,7 +381,9 @@ fn responses_request_body_strict_tools_emitted_when_configured() {
 #[test]
 fn responses_request_body_strict_tools_absent_by_default() {
     let provider = responses_provider();
-    let body = provider.build_request_body(&responses_tool_request());
+    let body = provider
+        .build_request_body(&responses_tool_request())
+        .unwrap();
     let tools = body["tools"].as_array().expect("tools array present");
     assert!(
         tools[0].get("strict").is_none(),
@@ -386,7 +401,9 @@ fn responses_request_body_previous_response_id_is_deferred() {
     // This test pins that the shared Responses adapter does not synthesize a
     // previous_response_id field today; 12.9 documents the deferral in docs.
     let provider = responses_provider();
-    let body = provider.build_request_body(&responses_tool_request());
+    let body = provider
+        .build_request_body(&responses_tool_request())
+        .unwrap();
     assert!(
         body.get("previous_response_id").is_none(),
         "previous_response_id is deferred (no response-loop state in opi's Request model)"
@@ -965,9 +982,11 @@ data: {"type":"response.completed","response":{"id":"resp_interleave","model":"g
         .collect();
 
     assert_eq!(ended.len(), 2);
-    assert_eq!(ended[0].id, "call_a");
+    // Dual-ID packing (V-07): the canonical id carries `call_id|fc_item_id`
+    // so same-identity replay can restore both fields.
+    assert_eq!(ended[0].id, "call_a|fc_a");
     assert_eq!(ended[0].arguments, "{\"path\":\"a.rs\"}");
-    assert_eq!(ended[1].id, "call_b");
+    assert_eq!(ended[1].id, "call_b|fc_b");
     assert_eq!(ended[1].arguments, "{\"cmd\":\"ls\"}");
 }
 
@@ -1100,7 +1119,7 @@ data: {"type":"response.completed","response":{"id":"resp_fallback","model":"gpt
         .count();
 
     assert_eq!(tool_ends, 1, "one ToolCallEnd from completion fallback");
-    assert_eq!(ended[0].id, "call_1");
+    assert_eq!(ended[0].id, "call_1|fc_1");
     assert_eq!(ended[0].name, "read_file");
     assert_eq!(ended[0].arguments, "{\"path\":\"a.rs\"}");
     assert!(
@@ -1135,8 +1154,8 @@ async fn responses_tool_call_id_is_the_call_id() {
         })
         .expect("ToolCallEnd emitted");
     assert_eq!(
-        end.id, "call_roundtrip",
-        "ToolCall.id must be the Responses call_id, not the item id"
+        end.id, "call_roundtrip|fc_1",
+        "ToolCall.id packs `call_id|fc_item_id` so both round-trip (V-07)"
     );
     assert_eq!(
         end.arguments, "{}",
@@ -1168,7 +1187,7 @@ async fn responses_malformed_tool_args_pass_raw_string_without_panic() {
         })
         .expect("ToolCallEnd emitted despite malformed argument JSON");
     assert_eq!(end.arguments, "{not-json");
-    assert_eq!(end.id, "call_bad");
+    assert_eq!(end.id, "call_bad|fc_bad");
     assert_eq!(end.name, "read_file");
 }
 

@@ -254,7 +254,10 @@ impl OpenAiResponsesProvider {
     }
 
     /// Build the standard Responses request body.
-    pub fn build_request_body(&self, request: &Request) -> serde_json::Value {
+    pub fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
         let model_id = request
             .model
             .split_once(':')
@@ -274,12 +277,22 @@ impl OpenAiResponsesProvider {
         let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
 
+        // Canonical replay projection (task 20.7) before body building.
+        let replay_route = crate::replay::ReplayRoute {
+            wire: crate::model_info::WireApi::OpenAiResponses,
+            provider: self.provider_id.clone(),
+            model: model_id.to_owned(),
+            supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
+        };
+        let replay = crate::replay::project_replay(
+            &crate::transcript::without_initial_system_message(transcript.messages()),
+            &replay_route,
+            crate::replay::ReplayProjection::NativeOrCollapse,
+        )?;
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
-            "input": convert_messages(
-                &crate::transcript::without_initial_system_message(transcript.messages()),
-            ),
+            "input": convert_messages(&replay.messages, &replay_route),
         });
         if !system_prompt.is_empty() {
             body["instructions"] = serde_json::Value::String(system_prompt.clone());
@@ -320,12 +333,16 @@ impl OpenAiResponsesProvider {
         {
             body["reasoning"] = serde_json::json!({"effort": effort});
         }
-        body
+        Ok(body)
     }
 
     /// Map a complete in-memory SSE body without HTTP.
     pub fn stream_from_sse(&self, sse_body: &str, cancel: CancellationToken) -> EventStream {
-        let mut mapper = ResponsesMapper::new(&self.provider_id);
+        let mut mapper = ResponsesMapper::new(
+            &self.provider_id,
+            crate::model_info::WireApi::OpenAiResponses,
+            "",
+        );
         let mut events = Vec::new();
         for frame in parse_sse_frames(sse_body) {
             match ResponsesEvent::try_from_frame(&frame) {
@@ -362,6 +379,7 @@ impl OpenAiResponsesProvider {
         auth_invalid_policy: AuthInvalidPolicy,
         extra_headers: Vec<(String, String)>,
         provider_id: String,
+        requested_model: String,
         body: serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
@@ -430,7 +448,11 @@ impl OpenAiResponsesProvider {
         let mut bytes = response.bytes_stream();
         let mut buffer = String::new();
         let mut decoder = crate::text_decode::StreamTextDecoder::new();
-        let mut mapper = ResponsesMapper::new(&provider_id);
+        let mut mapper = ResponsesMapper::new(
+            &provider_id,
+            crate::model_info::WireApi::OpenAiResponses,
+            &requested_model,
+        );
         loop {
             let chunk = tokio::select! {
                 _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
@@ -572,7 +594,16 @@ impl Provider for OpenAiResponsesProvider {
                 ResponsesAffinityPolicy::CustomOptIn => config.send_session_id_header,
             };
         let request_id = affinity_enabled.then(|| uuid::Uuid::now_v7().to_string());
-        let mut body = self.build_request_body(&request);
+        let requested_model = request
+            .model
+            .split_once(':')
+            .map(|(_, id)| id)
+            .unwrap_or(&request.model)
+            .to_owned();
+        let mut body = match self.build_request_body(&request) {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
         if affinity_enabled && let Some(session_id) = session_id.as_deref() {
             body["prompt_cache_key"] =
                 serde_json::Value::String(session_id.chars().take(64).collect());
@@ -608,6 +639,7 @@ impl Provider for OpenAiResponsesProvider {
                     auth_invalid_policy,
                     extra_headers,
                     provider_id,
+                    requested_model,
                     body,
                     cancel,
                     timeout,

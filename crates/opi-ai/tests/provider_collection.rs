@@ -455,6 +455,7 @@ async fn dispatch_complete_returns_terminal_error_event() {
         provider: "mock".into(),
         model: "mock-model".into(),
         response_model: None,
+        wire: None,
         response_id: None,
         usage: opi_ai::stream::Usage::default(),
         stop_reason: opi_ai::stream::StopReason::Error,
