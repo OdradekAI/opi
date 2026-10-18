@@ -287,6 +287,21 @@ workspace lock 不固定所有库消费者的图。Opi 关闭 regress 默认 fea
 数据差异不放宽 schema guard、admission/ref 顺序、normalization、授权或
 零 I/O 合同。完整 conformance 与包／平台验收仍保持 OPEN。
 
+上游 profile 审查（regress、`url`、`idna`、`idna_adapter`、ICU4X `icu_*`、
+`unicode-ident` 及其 `yoke`／`zerofrom`／`zerovec` 支撑 crate）：profile 内
+没有 crate 携带 `build.rs`；仅有的 proc-macro 是 `*-derive` 伴随 crate
+（`yoke-derive`、`zerofrom-derive`、`zerovec-derive`）；Schema 数据 profile
+不向依赖图引入新的原生（C/C++）代码（`ring` 仍是既有的 rustls 传输依赖）。
+regress 以 `prohibit-unsafe` 编译，任何 `unsafe` 块都会变成编译错误；
+ICU4X 家族为纯 Rust，数据经 `compiled_data` 内嵌，构建不依赖外部 ICU
+数据目录。家族 `rust-version` 要求最高为 1.88（consumer 侧 ICU4X 2.3.x），
+低于 workspace MSRV 1.97。许可证为 MIT OR Apache-2.0（regress、`url`、
+`idna`、`idna_adapter`）、Unicode-3.0（ICU4X 家族及支撑 crate）与
+`(MIT OR Apache-2.0) AND Unicode-3.0`（`unicode-ident`）——解析版本、
+registry 来源与校验和记录在 `Cargo.lock`，两个 caller profile 的普通外部
+consumer 实际解析图与有效 features 记录在 package-consumer 证明证据
+（`scripts/pi-sdk-conformance/evidence/upstream-package-proof.json`）。
+
 ## 公开工具参数 Normalizer／Validator
 
 `schema::validate_tool_arguments`（以及按名字查找的

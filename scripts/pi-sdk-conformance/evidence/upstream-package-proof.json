@@ -1,0 +1,958 @@
+{
+  "task": "20.8 upstream ordinary external-consumer package proof (RDF-21 revised contract)",
+  "recorded_for_commit_context": "executed after 7a83f48 upstream migration; first execution of the revised DoD",
+  "command": "python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch /mnt/e/opi-package-proofs/20261019-20-8-a --target-dir /mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+  "environment": {
+    "platform": "WSL2 Linux x86_64",
+    "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "ICU4X_DATA_DIR": "unset",
+    "cache_preparation": "ordinary online 'cargo fetch' in a throwaway mirror of the consumer template prewarmed the shared CARGO_HOME registry with the consumer's independently resolved graph (ICU 2.3.0 family, icu_provider 2.3.1, unicode-ident 1.0.27) before the offline proof; the proof itself ran fully offline"
+  },
+  "scope": "packaged public Schema smoke; not final SDK acceptance",
+  "target": "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+  "package": {
+    "file": "opi-ai-0.8.3.crate",
+    "sha256": "8d05986f75a7c636d76cd314cbbdd3adb849aac03fd40a41822ac93ebf20f8b3"
+  },
+  "consumer_lock_sha256": "71d85ac31347c2d9052827e2c38d1b48200e98c2e1a5c2a8793368bd47aa27fc",
+  "inputs": {
+    "current-profile.json": "43e9ef448412c7be775a1ee1fa561e559609e9320ac4052b15d706151f3f6519",
+    "consumer/src/main.rs": "51d6228dc3b69df2a24adab8d32e9fed7283f15a03cf24fa64a9e1f735a76a3f",
+    "frozen/leaf-cases.json": "2d832035e60e1dc6989ac5d956d39be73352876a5fc22a25199adcfc5d69272a",
+    "frozen/leaf-expected.json": "bb1dec60edb115827d39fe57343a92524aa01bca1786763ebffbfca6a4135a89",
+    "frozen/unicode16-probes.json": "e5b4db1c0e8d1605648aa0faec0969e180b02795aa67110b2a29ee19a2c582d4"
+  },
+  "steps": [
+    {
+      "name": "lease-start",
+      "command": [
+        "/usr/bin/python3",
+        "/mnt/d/Luiz/Odradek/opi/scripts/opi-cargo-cache.py",
+        "lease",
+        "start",
+        "--target",
+        "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "--pid",
+        "661408"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.23
+    },
+    {
+      "name": "package",
+      "command": [
+        "cargo",
+        "package",
+        "-p",
+        "opi-ai",
+        "--allow-dirty",
+        "--no-verify",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 7.89
+    },
+    {
+      "name": "consumer-lock",
+      "command": [
+        "cargo",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.41
+    },
+    {
+      "name": "defaults-off-metadata",
+      "command": [
+        "cargo",
+        "metadata",
+        "--format-version",
+        "1",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.22
+    },
+    {
+      "name": "defaults-off-consumer",
+      "command": [
+        "cargo",
+        "run",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 45.4
+    },
+    {
+      "name": "caller-defaults-on-metadata",
+      "command": [
+        "cargo",
+        "metadata",
+        "--format-version",
+        "1",
+        "--offline",
+        "--locked",
+        "--features",
+        "caller-default-regress"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.18
+    },
+    {
+      "name": "caller-defaults-on-consumer",
+      "command": [
+        "cargo",
+        "run",
+        "--offline",
+        "--locked",
+        "--features",
+        "caller-default-regress"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 39.21
+    },
+    {
+      "name": "lease-end",
+      "command": [
+        "/usr/bin/python3",
+        "/mnt/d/Luiz/Odradek/opi/scripts/opi-cargo-cache.py",
+        "lease",
+        "end",
+        "--target",
+        "/mnt/e/opi/cargo-targets/opi-8abcf38f9871653e",
+        "--pid",
+        "661408"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.2
+    }
+  ],
+  "profiles": [
+    {
+      "name": "defaults-off",
+      "graph": {
+        "regress": {
+          "version": "0.12.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "features": [
+            "prohibit-unsafe",
+            "std",
+            "utf16"
+          ]
+        },
+        "url": {
+          "version": "2.5.8",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "features": [
+            "default",
+            "std"
+          ]
+        },
+        "data_dependencies": [
+          {
+            "name": "icu_collections",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_locale_core",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "zerovec"
+            ]
+          },
+          {
+            "name": "icu_normalizer",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "icu_normalizer_data",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_properties",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "icu_properties_data",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_provider",
+            "version": "2.3.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "baked"
+            ]
+          },
+          {
+            "name": "idna",
+            "version": "1.1.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "alloc",
+              "compiled_data",
+              "std"
+            ]
+          },
+          {
+            "name": "idna_adapter",
+            "version": "1.2.2",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "unicode-ident",
+            "version": "1.0.27",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "unicode-normalization",
+            "version": "0.1.26",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "default",
+              "std"
+            ]
+          }
+        ]
+      },
+      "report": {
+        "verdict": "PASS",
+        "total": 73,
+        "failed": 0,
+        "checks": [
+          {
+            "name": "number-0",
+            "passed": true
+          },
+          {
+            "name": "number-1",
+            "passed": true
+          },
+          {
+            "name": "number-2",
+            "passed": true
+          },
+          {
+            "name": "number-3",
+            "passed": true
+          },
+          {
+            "name": "number-4",
+            "passed": true
+          },
+          {
+            "name": "number-5",
+            "passed": true
+          },
+          {
+            "name": "number-6",
+            "passed": true
+          },
+          {
+            "name": "number-7",
+            "passed": true
+          },
+          {
+            "name": "number-8",
+            "passed": true
+          },
+          {
+            "name": "number-9",
+            "passed": true
+          },
+          {
+            "name": "number-10",
+            "passed": true
+          },
+          {
+            "name": "number-11",
+            "passed": true
+          },
+          {
+            "name": "number-12",
+            "passed": true
+          },
+          {
+            "name": "number-13",
+            "passed": true
+          },
+          {
+            "name": "url-0",
+            "passed": true
+          },
+          {
+            "name": "url-1",
+            "passed": true
+          },
+          {
+            "name": "url-2",
+            "passed": true
+          },
+          {
+            "name": "url-3",
+            "passed": true
+          },
+          {
+            "name": "url-4",
+            "passed": true
+          },
+          {
+            "name": "url-5",
+            "passed": true
+          },
+          {
+            "name": "url-6",
+            "passed": true
+          },
+          {
+            "name": "url-7",
+            "passed": true
+          },
+          {
+            "name": "url-8",
+            "passed": true
+          },
+          {
+            "name": "url-9",
+            "passed": true
+          },
+          {
+            "name": "url-10",
+            "passed": true
+          },
+          {
+            "name": "url-11",
+            "passed": true
+          },
+          {
+            "name": "url-12",
+            "passed": true
+          },
+          {
+            "name": "url-13",
+            "passed": true
+          },
+          {
+            "name": "url-14",
+            "passed": true
+          },
+          {
+            "name": "url-15",
+            "passed": true
+          },
+          {
+            "name": "url-16",
+            "passed": true
+          },
+          {
+            "name": "url-17",
+            "passed": true
+          },
+          {
+            "name": "url-18",
+            "passed": true
+          },
+          {
+            "name": "url-19",
+            "passed": true
+          },
+          {
+            "name": "url-20",
+            "passed": true
+          },
+          {
+            "name": "url-21",
+            "passed": true
+          },
+          {
+            "name": "url-22",
+            "passed": true
+          },
+          {
+            "name": "url-23",
+            "passed": true
+          },
+          {
+            "name": "url-24",
+            "passed": true
+          },
+          {
+            "name": "url-25",
+            "passed": true
+          },
+          {
+            "name": "url-26",
+            "passed": true
+          },
+          {
+            "name": "url-27",
+            "passed": true
+          },
+          {
+            "name": "url-28",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Beria_Erfe}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Sidetic}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Tai_Yo}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Tolong_Siki}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Adlam}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Ahom}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Anatolian_Hieroglyphs}+$",
+            "passed": true
+          },
+          {
+            "name": "new-letter",
+            "passed": true
+          },
+          {
+            "name": "old-letter",
+            "passed": true
+          },
+          {
+            "name": "non-letter",
+            "passed": true
+          },
+          {
+            "name": "named-backref",
+            "passed": true
+          },
+          {
+            "name": "named-backref-reject",
+            "passed": true
+          },
+          {
+            "name": "lookbehind",
+            "passed": true
+          },
+          {
+            "name": "unvisited-regex-admission",
+            "passed": true
+          },
+          {
+            "name": "inert-annotation",
+            "passed": true
+          },
+          {
+            "name": "no-progress",
+            "passed": true
+          },
+          {
+            "name": "optional-null-after-successful-compile",
+            "passed": true
+          },
+          {
+            "name": "raw-preserved",
+            "passed": true
+          },
+          {
+            "name": "parse-failure-precedes-normalization",
+            "passed": true
+          },
+          {
+            "name": "required-null-rejected",
+            "passed": true
+          },
+          {
+            "name": "final-original-schema-check",
+            "passed": true
+          },
+          {
+            "name": "raw-to-ace",
+            "passed": true
+          },
+          {
+            "name": "ace-to-raw",
+            "passed": true
+          },
+          {
+            "name": "percent-to-ace",
+            "passed": true
+          },
+          {
+            "name": "ordinary-url-canonical-idna",
+            "passed": true
+          },
+          {
+            "name": "invalid-unmapped-ace",
+            "passed": true
+          },
+          {
+            "name": "invalid-url",
+            "passed": true
+          },
+          {
+            "name": "invalid-idna-joiner",
+            "passed": true
+          },
+          {
+            "name": "idn-hostname",
+            "passed": true
+          },
+          {
+            "name": "idn-email",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "caller-defaults-on",
+      "graph": {
+        "regress": {
+          "version": "0.12.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "features": [
+            "backend-pikevm",
+            "default",
+            "prohibit-unsafe",
+            "std",
+            "utf16"
+          ]
+        },
+        "url": {
+          "version": "2.5.8",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "features": [
+            "default",
+            "std"
+          ]
+        },
+        "data_dependencies": [
+          {
+            "name": "icu_collections",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_locale_core",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "zerovec"
+            ]
+          },
+          {
+            "name": "icu_normalizer",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "icu_normalizer_data",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_properties",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "icu_properties_data",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_provider",
+            "version": "2.3.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "baked"
+            ]
+          },
+          {
+            "name": "idna",
+            "version": "1.1.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "alloc",
+              "compiled_data",
+              "std"
+            ]
+          },
+          {
+            "name": "idna_adapter",
+            "version": "1.2.2",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "unicode-ident",
+            "version": "1.0.27",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "unicode-normalization",
+            "version": "0.1.26",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "default",
+              "std"
+            ]
+          }
+        ]
+      },
+      "report": {
+        "verdict": "PASS",
+        "total": 73,
+        "failed": 0,
+        "checks": [
+          {
+            "name": "number-0",
+            "passed": true
+          },
+          {
+            "name": "number-1",
+            "passed": true
+          },
+          {
+            "name": "number-2",
+            "passed": true
+          },
+          {
+            "name": "number-3",
+            "passed": true
+          },
+          {
+            "name": "number-4",
+            "passed": true
+          },
+          {
+            "name": "number-5",
+            "passed": true
+          },
+          {
+            "name": "number-6",
+            "passed": true
+          },
+          {
+            "name": "number-7",
+            "passed": true
+          },
+          {
+            "name": "number-8",
+            "passed": true
+          },
+          {
+            "name": "number-9",
+            "passed": true
+          },
+          {
+            "name": "number-10",
+            "passed": true
+          },
+          {
+            "name": "number-11",
+            "passed": true
+          },
+          {
+            "name": "number-12",
+            "passed": true
+          },
+          {
+            "name": "number-13",
+            "passed": true
+          },
+          {
+            "name": "url-0",
+            "passed": true
+          },
+          {
+            "name": "url-1",
+            "passed": true
+          },
+          {
+            "name": "url-2",
+            "passed": true
+          },
+          {
+            "name": "url-3",
+            "passed": true
+          },
+          {
+            "name": "url-4",
+            "passed": true
+          },
+          {
+            "name": "url-5",
+            "passed": true
+          },
+          {
+            "name": "url-6",
+            "passed": true
+          },
+          {
+            "name": "url-7",
+            "passed": true
+          },
+          {
+            "name": "url-8",
+            "passed": true
+          },
+          {
+            "name": "url-9",
+            "passed": true
+          },
+          {
+            "name": "url-10",
+            "passed": true
+          },
+          {
+            "name": "url-11",
+            "passed": true
+          },
+          {
+            "name": "url-12",
+            "passed": true
+          },
+          {
+            "name": "url-13",
+            "passed": true
+          },
+          {
+            "name": "url-14",
+            "passed": true
+          },
+          {
+            "name": "url-15",
+            "passed": true
+          },
+          {
+            "name": "url-16",
+            "passed": true
+          },
+          {
+            "name": "url-17",
+            "passed": true
+          },
+          {
+            "name": "url-18",
+            "passed": true
+          },
+          {
+            "name": "url-19",
+            "passed": true
+          },
+          {
+            "name": "url-20",
+            "passed": true
+          },
+          {
+            "name": "url-21",
+            "passed": true
+          },
+          {
+            "name": "url-22",
+            "passed": true
+          },
+          {
+            "name": "url-23",
+            "passed": true
+          },
+          {
+            "name": "url-24",
+            "passed": true
+          },
+          {
+            "name": "url-25",
+            "passed": true
+          },
+          {
+            "name": "url-26",
+            "passed": true
+          },
+          {
+            "name": "url-27",
+            "passed": true
+          },
+          {
+            "name": "url-28",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Beria_Erfe}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Sidetic}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Tai_Yo}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Tolong_Siki}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Adlam}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Ahom}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Anatolian_Hieroglyphs}+$",
+            "passed": true
+          },
+          {
+            "name": "new-letter",
+            "passed": true
+          },
+          {
+            "name": "old-letter",
+            "passed": true
+          },
+          {
+            "name": "non-letter",
+            "passed": true
+          },
+          {
+            "name": "named-backref",
+            "passed": true
+          },
+          {
+            "name": "named-backref-reject",
+            "passed": true
+          },
+          {
+            "name": "lookbehind",
+            "passed": true
+          },
+          {
+            "name": "unvisited-regex-admission",
+            "passed": true
+          },
+          {
+            "name": "inert-annotation",
+            "passed": true
+          },
+          {
+            "name": "no-progress",
+            "passed": true
+          },
+          {
+            "name": "optional-null-after-successful-compile",
+            "passed": true
+          },
+          {
+            "name": "raw-preserved",
+            "passed": true
+          },
+          {
+            "name": "parse-failure-precedes-normalization",
+            "passed": true
+          },
+          {
+            "name": "required-null-rejected",
+            "passed": true
+          },
+          {
+            "name": "final-original-schema-check",
+            "passed": true
+          },
+          {
+            "name": "raw-to-ace",
+            "passed": true
+          },
+          {
+            "name": "ace-to-raw",
+            "passed": true
+          },
+          {
+            "name": "percent-to-ace",
+            "passed": true
+          },
+          {
+            "name": "ordinary-url-canonical-idna",
+            "passed": true
+          },
+          {
+            "name": "invalid-unmapped-ace",
+            "passed": true
+          },
+          {
+            "name": "invalid-url",
+            "passed": true
+          },
+          {
+            "name": "invalid-idna-joiner",
+            "passed": true
+          },
+          {
+            "name": "idn-hostname",
+            "passed": true
+          },
+          {
+            "name": "idn-email",
+            "passed": true
+          }
+        ]
+      }
+    }
+  ],
+  "rdf21_data_differences": {
+    "leaf_overrides": "scripts/pi-sdk-conformance/current-profile.json (url-23, url-28: upstream IDNA accepts the Beria Erfe domain in raw and percent-encoded form; frozen Node/Unicode16 observations remain false in frozen/leaf-expected.json)",
+    "consumer_graph": "independent resolution: ICU 2.3.0 family / icu_provider 2.3.1 / unicode-ident 1.0.27, recorded separately from the workspace graph (ICU 2.2.0 / unicode-ident 1.0.24)",
+    "feature_union": "caller-defaults-on adds regress default + backend-pikevm; required std/utf16/prohibit-unsafe present in both profiles; ordinary Regex API semantics exercised by the battery in both"
+  },
+  "verdict": "PASS",
+  "note": "scratch retains full stdout/stderr per command and evidence.json; this file is the durable in-repo record of the actual executed results"
+}

@@ -337,6 +337,25 @@ external consumers also exercise feature union. These data differences do not
 relax schema guards, admission/ref order, normalization, authorization or the
 no-I/O contract. Full conformance and package/platform acceptance remain open.
 
+Upstream profile review (regress, `url`, `idna`, `idna_adapter`, ICU4X
+`icu_*`, `unicode-ident`, and their `yoke`/`zerofrom`/`zerovec` support
+crates): no crate in the profile ships a `build.rs`; the only proc-macros are
+the `*-derive` companions (`yoke-derive`, `zerofrom-derive`,
+`zerovec-derive`); no new native (C/C++) code enters the dependency graph
+through the Schema data profile (`ring` remains the pre-existing rustls
+transport dependency). regress is compiled with `prohibit-unsafe`, which turns
+any `unsafe` block in that crate into a compile error; the ICU4X family is
+pure Rust with data baked through `compiled_data`, so no external ICU data
+directory participates in builds. Family `rust-version` requirements peak at
+1.88 (ICU4X 2.3.x on the consumer side), within the workspace MSRV 1.97.
+Licenses are MIT OR Apache-2.0 (regress, `url`, `idna`, `idna_adapter`),
+Unicode-3.0 (ICU4X family and support crates), and
+`(MIT OR Apache-2.0) AND Unicode-3.0` (`unicode-ident`) — resolved versions,
+registry sources and checksums are recorded in `Cargo.lock`, and the actual
+ordinary-consumer resolution and effective features of both caller profiles
+in the package-consumer proof evidence
+(`scripts/pi-sdk-conformance/evidence/upstream-package-proof.json`).
+
 ## Public Tool-Argument Normalizer/Validator
 
 `schema::validate_tool_arguments` (and the name-lookup

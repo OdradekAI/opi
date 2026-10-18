@@ -27,10 +27,13 @@ There is no registry publication or live model call.
 - `frozen/` retains the original 43 leaf cases, historical Node/Unicode16
   expectations and seven script probes. The current consumer selects the
   recorded stock-regress outcomes for script probes.
-- `evidence/` retains historical vendor preparation and local-registry results.
-  Those files describe the retired implementation. They are not current passing
-  proof and cannot be replayed with this harness alone: the vendor input archive,
-  generation and local-registry tools have been retired.
+- `evidence/upstream-package-proof.json` records the actual executed results of
+  the current upstream proof: both feature profiles, the resolved consumer
+  graph, package and lockfile hashes, per-step exits and the full 73-check
+  reports. The remaining files retain historical vendor preparation and
+  local-registry results. Those describe the retired implementation, are not
+  current passing proof and cannot be replayed with this harness alone: the
+  vendor input archive, generation and local-registry tools have been retired.
 - `test_package_proof.py` covers scratch/cache safety, package extraction,
   metadata/feature validation, failure evidence, lease release and the CLI
   negative path.
