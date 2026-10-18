@@ -21,14 +21,14 @@
   "spec_files_sha256": {
     "docs/opi-spec.md": "7979f349811d5e8da8ed4b60adb0fa41175c76462a78e449fd326dd4c19cf9e1",
     "docs/opi-spec.zh.md": "6a199822c5f4233ab7c13942db87f7986ac8b0e74a68075402371476f431c005",
-    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "d0bf73ecc1713792f924c3417b8225460ef3cb19c16e7744b0ddaaae7c3461fc",
-    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "29fc6a2093d0976e43ce817ad98145d9f720fb4bebd714aa6439bda38b970f1b",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "87858cc9279f2fe157b6f27a6044b3b1ef5daac7b2c62f4cb195df6ad582d20e",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "18322ffa3ab1fd0dbbe51495e1124d574a0b4c8ab5ac1e20a5317318da827370",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "b62068ddc7aabf8bc0782d26df3db380b8c769eea28756c6887e858ecbd10d3f",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "f1a0e790308cd330d03f1c706d4808d2940514354cf05c0276e1ea9f79706b58",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "0fff63289564e815c0d6836bd52e8494e25774821d5227c6e9f7e6d756da5a3a",
-    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "06be7904d3d9527ab07105cef49f0c5a39ba17691e632123a7942314bd5a5ff6",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "efe6b5948205fddda61be8902f2c49def299dccd64ab9c64b6c59831e3a197c5",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md": "eb5db22f85cfba481d5ed6466b08ae54e8ea4c3ca581144a771727b5bbbdb19f",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "87538f4dfb1ebffbcd0b8e875e8d1b0e2f004a67817051b4f8138a53828db366",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "e598f281a5e167b19f02eea7ffa7f1fabea25ec1a3bcd17e0beeef843023360f",
+    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "801f3b961ffd2ac99e6d7c0296ccbe03acd651b278e661f604c09dae86e9d9ba",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "ecf4e367ee593d1ce978d8a0ad547660f94ccdfa8785eebf022b2be8cd46864f",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md": "878d15231e734dc03772e1f1bd48cb8ffe2252a2818748e4b8630af43a2e8a76",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md": "fd97dcfbe5fa485d83ecc569398c4cf39ae1d475fa4ee624609d65715989a888",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-transport-auth.md": "e2897af04a10a56c069eac959d71fae723dd1a8c7fc6afc3e68bd847a84f3bf9",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-runtime.md": "0f7098ad7754ee4d0919362aaba622708b80a643f7f4db74e982f0d3468d17ea",
@@ -36,7 +36,7 @@
     "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
     "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c"
   },
-  "task_graph_confirmed_at": "2026-10-17T01:59:31+08:00",
+  "task_graph_confirmed_at": "2026-10-19T02:58:40+08:00",
   "current_phase": 20,
   "tasks": [
     {
@@ -461,8 +461,9 @@
         "crates/opi-ai/tests/openai_responses_lifecycle.rs",
         "crates/opi-ai/tests/openrouter_fixtures.rs",
         "crates/opi-ai/tests/per_request_auth.rs",
-        "crates/opi-ai/tests/phase14_remediation.rs",
+        "crates/opi-ai/tests/model_wire_metadata.rs",
         "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/usage_cost.rs",
         "crates/opi-ai/tests/provider_lifecycle.rs",
         "crates/opi-ai/tests/provider_trait.rs",
         "crates/opi-ai/tests/registry.rs",
@@ -502,11 +503,11 @@
         "crates/opi-coding-agent/tests/json_mode.rs",
         "crates/opi-coding-agent/tests/list_models.rs",
         "crates/opi-coding-agent/tests/oauth_auth.rs",
-        "crates/opi-coding-agent/tests/phase17_cross_mode.rs",
-        "crates/opi-coding-agent/tests/phase17_failure_rollback.rs",
-        "crates/opi-coding-agent/tests/phase17_product_evidence.rs",
-        "crates/opi-coding-agent/tests/phase17_provider_runtime.rs",
-        "crates/opi-coding-agent/tests/phase17_tool_authority.rs",
+        "crates/opi-coding-agent/tests/cross_mode_runtime.rs",
+        "crates/opi-coding-agent/tests/runtime_failure_recovery.rs",
+        "crates/opi-coding-agent/tests/product_evidence.rs",
+        "crates/opi-coding-agent/tests/provider_runtime.rs",
+        "crates/opi-coding-agent/tests/tool_authority.rs",
         "crates/opi-coding-agent/tests/picker_integration.rs",
         "crates/opi-coding-agent/tests/rpc_jsonl.rs",
         "crates/opi-coding-agent/tests/session_runtime.rs"
@@ -596,6 +597,30 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-19T02:49:10+08:00",
+          "attempt": 0,
+          "summary": "Proposed plan evidence reconciliation: repairs in 7a83f48 and semantic regression migration/temporary artifact ownership in 13e1891 are attributed by the root coordination note. Historical task commit/footer and execution facts are preserved. No fresh task execution or replacement Opi-* footer is asserted. Current full-source scenario closure remains with the declared later owners.",
+          "gate_results": {
+            "evidence_records": [
+              "R20-UPSTREAM-PACKAGE",
+              "R20-TEST-ORGANIZATION",
+              "R20-TEMP-ARTIFACTS",
+              "R20-COMMIT-AUDIT"
+            ],
+            "test_disposition": [
+              {
+                "subject": "20.2 existing verification",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/stream_events.rs, crates/opi-ai/tests/provider_collection.rs, crates/opi-ai/tests/provider_lifecycle.rs",
+                "interface": "opi_ai::ChatStream::result (target), opi_ai::drain_to_completion, opi_agent::agent_loop, opi_agent::PreparationEvidence::run_provider_call",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "historical_dependency_verdict": "Preserved local task verdict. Revised 20.8 is pending new-contract verification and does not inherit the old passing proof."
           }
         }
       ]
@@ -776,7 +801,7 @@
         "crates/opi-agent/tests/agent_wrapper.rs",
         "crates/opi-agent/tests/continuation_contract.rs",
         "crates/opi-agent/tests/hooks_queues.rs",
-        "crates/opi-agent/tests/phase17_prepare_call.rs",
+        "crates/opi-agent/tests/retry_agent.rs",
         "crates/opi-agent/tests/preparation_transaction.rs",
         "crates/opi-ai/README.md",
         "crates/opi-ai/README.zh.md",
@@ -810,8 +835,11 @@
         "crates/opi-ai/tests/openai_responses_fixtures.rs",
         "crates/opi-ai/tests/openrouter_fixtures.rs",
         "crates/opi-ai/tests/per_request_auth.rs",
-        "crates/opi-ai/tests/phase14_remediation.rs",
+        "crates/opi-ai/tests/anthropic_fixtures.rs",
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
+        "crates/opi-ai/tests/model_wire_metadata.rs",
         "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/usage_cost.rs",
         "crates/opi-ai/tests/registry.rs",
         "crates/opi-ai/tests/vertex_fixtures.rs",
         "crates/opi-coding-agent/README.md",
@@ -836,7 +864,7 @@
         "crates/opi-coding-agent/tests/*rpc*",
         "crates/opi-coding-agent/tests/*session*",
         "crates/opi-coding-agent/tests/anthropic_cache_markers.rs",
-        "crates/opi-coding-agent/tests/common/phase14_auth_runtime.rs",
+        "crates/opi-coding-agent/tests/common/auth_runtime.rs",
         "crates/opi-coding-agent/tests/custom_provider_map.rs",
         "crates/opi-coding-agent/tests/custom_provider_registration.rs",
         "crates/opi-coding-agent/tests/extension_mapped_catalog.rs",
@@ -847,9 +875,13 @@
         "crates/opi-coding-agent/tests/list_models.rs",
         "crates/opi-coding-agent/tests/non_interactive.rs",
         "crates/opi-coding-agent/tests/oauth_auth.rs",
-        "crates/opi-coding-agent/tests/phase17_api_audit.rs",
-        "crates/opi-coding-agent/tests/phase17_failure_rollback.rs",
-        "crates/opi-coding-agent/tests/phase17_provider_runtime.rs",
+        "crates/opi-coding-agent/tests/architecture_guards.rs",
+        "crates/opi-coding-agent/tests/test_hermeticity.rs",
+        "crates/opi-coding-agent/tests/ci_contract.rs",
+        "crates/opi-coding-agent/tests/common/source_audit.rs",
+        "scripts/opi-doc-check.py",
+        "crates/opi-coding-agent/tests/runtime_failure_recovery.rs",
+        "crates/opi-coding-agent/tests/provider_runtime.rs",
         "crates/opi-coding-agent/tests/picker_integration.rs",
         "crates/opi-coding-agent/tests/provider_factory.rs",
         "crates/opi-coding-agent/tests/provider_identity.rs"
@@ -915,6 +947,30 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-19T02:49:10+08:00",
+          "attempt": 0,
+          "summary": "Proposed plan evidence reconciliation: repairs in 7a83f48 and semantic regression migration/temporary artifact ownership in 13e1891 are attributed by the root coordination note. Historical task commit/footer and execution facts are preserved. No fresh task execution or replacement Opi-* footer is asserted. Current full-source scenario closure remains with the declared later owners.",
+          "gate_results": {
+            "evidence_records": [
+              "R20-UPSTREAM-PACKAGE",
+              "R20-TEST-ORGANIZATION",
+              "R20-TEMP-ARTIFACTS",
+              "R20-COMMIT-AUDIT"
+            ],
+            "test_disposition": [
+              {
+                "subject": "20.3 existing verification",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/provider_collection.rs, crates/opi-ai/tests/api_mapped_provider.rs, crates/opi-ai/tests/custom_provider_registration.rs",
+                "interface": "opi_ai::Models::{stream,complete,stream_simple,complete_simple,prepare_call} (target), opi_agent::agent_loop, opi_coding_agent::provider_factory",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "historical_dependency_verdict": "Preserved local task verdict. Revised 20.8 is pending new-contract verification and does not inherit the old passing proof."
           }
         }
       ]
@@ -1025,7 +1081,7 @@
           "crates/opi-ai/tests/openai_chat_fixtures.rs",
           "crates/opi-ai/tests/provider_collection.rs",
           "crates/opi-ai/tests/retry_backoff.rs",
-          "crates/opi-coding-agent/tests/phase17_product_evidence.rs"
+          "crates/opi-coding-agent/tests/product_evidence.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -1038,7 +1094,7 @@
           "verification": [
             "cargo test -p opi-agent --test agent_loop_semantics --test retry_agent",
             "cargo test -p opi-ai --test openai_chat_fixtures --test provider_collection --test retry_backoff",
-            "cargo test -p opi-coding-agent --test phase17_product_evidence"
+            "cargo test -p opi-coding-agent --test product_evidence"
           ],
           "production_call_sites": [
             "opi_ai::Models::prepare_call (target)",
@@ -1131,7 +1187,7 @@
         "crates/opi-coding-agent/tests/*provider*",
         "crates/opi-coding-agent/tests/*rpc*",
         "crates/opi-coding-agent/tests/*session*",
-        "crates/opi-coding-agent/tests/phase17_product_evidence.rs"
+        "crates/opi-coding-agent/tests/product_evidence.rs"
       ],
       "verified_at_commit": null,
       "evidence": null,
@@ -1493,6 +1549,30 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-19T02:49:10+08:00",
+          "attempt": 0,
+          "summary": "Proposed plan evidence reconciliation: repairs in 7a83f48 and semantic regression migration/temporary artifact ownership in 13e1891 are attributed by the root coordination note. Historical task commit/footer and execution facts are preserved. No fresh task execution or replacement Opi-* footer is asserted. Current full-source scenario closure remains with the declared later owners.",
+          "gate_results": {
+            "evidence_records": [
+              "R20-UPSTREAM-PACKAGE",
+              "R20-TEST-ORGANIZATION",
+              "R20-TEMP-ARTIFACTS",
+              "R20-COMMIT-AUDIT"
+            ],
+            "test_disposition": [
+              {
+                "subject": "20.5 existing verification",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/provider_lifecycle.rs, crates/opi-ai/tests/stream_events.rs, crates/opi-ai/tests/openai_responses_lifecycle.rs, crates/opi-ai/tests/gemini_lifecycle.rs",
+                "interface": "crates/opi-ai/src/anthropic.rs::Provider::stream_prepared, crates/opi-ai/src/api_mapped.rs::Provider::stream_prepared, crates/opi-ai/src/azure_openai.rs::Provider::stream_prepared, crates/opi-ai/src/gemini.rs::Provider::stream_prepared, crates/opi-ai/src/openai_chat.rs::Provider::stream_prepared, crates/opi-ai/src/openai_codex_responses.rs::Provider::stream_prepared, crates/opi-ai/src/openai_responses.rs::Provider::stream_prepared, crates/opi-ai/src/vertex.rs::Provider::stream_prepared, crates/opi-ai/src/bedrock/mod.rs::Provider::stream_prepared, opi_ai::ChatStream (target)",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "historical_dependency_verdict": "Preserved local task verdict. Revised 20.8 is pending new-contract verification and does not inherit the old passing proof."
+          }
         }
       ]
     },
@@ -1573,8 +1653,13 @@
         },
         {
           "field": "task_owned_paths",
-          "reason": "Include the four existing Request.system/tools test consumers in the same canonical-input cutover: rpc.rs GatedCompactionProvider summary detection, interactive_startup_diagnostics.rs tool listing, phase17_product_evidence.rs trusted write advertisement and phase17_tool_authority.rs tool projection. Update their reads through the canonical interface while retaining their current summary, authority and advertisement assertions; the workspace gate also executes rpc.rs source tests.",
+          "reason": "Include the four existing Request.system/tools test consumers in the same canonical-input cutover: rpc.rs GatedCompactionProvider summary detection, interactive_startup_diagnostics.rs tool listing, product_evidence.rs trusted write advertisement and tool_authority.rs tool projection. Update their reads through the canonical interface while retaining their current summary, authority and advertisement assertions; the workspace gate also executes rpc.rs source tests.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Host impacts: durable facts and migration"
+        },
+        {
+          "field": "scenario_reconciliation",
+          "reason": "Local P20-S06 is proposed met from attributed unchanged evidence; full source V/AIR/DEL scenarios remain open and also have a final assembled owner at 20.57. No source text or historical execution count is narrowed. Original passing status means the shipped local DoD; a changed upstream substrate remains separately pending at 20.8.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Acceptance dependencies and completion"
         }
       ],
       "tier": "workspace",
@@ -1588,8 +1673,8 @@
         "behavioral_tests": [
           "crates/opi-ai/tests/transcript_contract.rs",
           "crates/opi-coding-agent/tests/interactive_startup_diagnostics.rs",
-          "crates/opi-coding-agent/tests/phase17_product_evidence.rs",
-          "crates/opi-coding-agent/tests/phase17_tool_authority.rs"
+          "crates/opi-coding-agent/tests/product_evidence.rs",
+          "crates/opi-coding-agent/tests/tool_authority.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -1677,7 +1762,7 @@
             "opi_ai real adapter request preparation",
             "opi_agent request construction"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -1756,8 +1841,8 @@
         "crates/opi-ai/tests/openai_responses_lifecycle.rs",
         "crates/opi-ai/tests/openrouter_fixtures.rs",
         "crates/opi-ai/tests/per_request_auth.rs",
-        "crates/opi-ai/tests/phase14_remediation.rs",
         "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/usage_cost.rs",
         "crates/opi-ai/tests/provider_diagnostics.rs",
         "crates/opi-ai/tests/provider_error_classes.rs",
         "crates/opi-ai/tests/provider_lifecycle.rs",
@@ -1800,10 +1885,10 @@
         "crates/opi-coding-agent/tests/interactive_startup_diagnostics.rs",
         "crates/opi-coding-agent/tests/list_models.rs",
         "crates/opi-coding-agent/tests/oauth_auth.rs",
-        "crates/opi-coding-agent/tests/phase17_failure_rollback.rs",
-        "crates/opi-coding-agent/tests/phase17_product_evidence.rs",
-        "crates/opi-coding-agent/tests/phase17_provider_runtime.rs",
-        "crates/opi-coding-agent/tests/phase17_tool_authority.rs",
+        "crates/opi-coding-agent/tests/runtime_failure_recovery.rs",
+        "crates/opi-coding-agent/tests/product_evidence.rs",
+        "crates/opi-coding-agent/tests/provider_runtime.rs",
+        "crates/opi-coding-agent/tests/tool_authority.rs",
         "crates/opi-coding-agent/tests/provider_factory.rs",
         "crates/opi-agent/tests/agent_wrapper.rs",
         "crates/opi-agent/tests/continuation_contract.rs",
@@ -1893,6 +1978,30 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-19T02:49:10+08:00",
+          "attempt": 0,
+          "summary": "Proposed plan evidence reconciliation: repairs in 7a83f48 and semantic regression migration/temporary artifact ownership in 13e1891 are attributed by the root coordination note. Historical task commit/footer and execution facts are preserved. No fresh task execution or replacement Opi-* footer is asserted. Current full-source scenario closure remains with the declared later owners.",
+          "gate_results": {
+            "evidence_records": [
+              "R20-UPSTREAM-PACKAGE",
+              "R20-TEST-ORGANIZATION",
+              "R20-TEMP-ARTIFACTS",
+              "R20-COMMIT-AUDIT"
+            ],
+            "test_disposition": [
+              {
+                "subject": "20.6 existing verification",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/transcript_contract.rs, crates/opi-coding-agent/tests/interactive_startup_diagnostics.rs, crates/opi-coding-agent/tests/product_evidence.rs, crates/opi-coding-agent/tests/tool_authority.rs",
+                "interface": "opi_ai::Context/TranscriptContext normalize/resolve (target), opi_ai real adapter request preparation, opi_agent request construction",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "historical_dependency_verdict": "Preserved local task verdict. Revised 20.8 is pending new-contract verification and does not inherit the old passing proof."
+          }
         }
       ]
     },
@@ -1972,6 +2081,11 @@
           "field": "acceptance_partition",
           "reason": "V-32 full source closure moves from 20.7 to 20.34 after the real protocol adapters and effort metadata exist. 20.7 proves its current-adapter canonical replay and opaque-preservation slice only; a hand-constructed historical stamp is not producer-to-next-request proof. Reuse predecessor assertions and add only distinct assembled cases; do not add a reverse dependency from 20.7 to 20.37.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#新增已确认能力的验收（V-27–38） / V-32"
+        },
+        {
+          "field": "scenario_reconciliation",
+          "reason": "Local P20-S07 is proposed met from attributed unchanged evidence; full source V/AIR/DEL scenarios remain open and also have a final assembled owner at 20.57. No source text or historical execution count is narrowed. Original passing status means the shipped local DoD; a changed upstream substrate remains separately pending at 20.8.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Acceptance dependencies and completion"
         }
       ],
       "tier": "workspace",
@@ -2092,7 +2206,7 @@
             "opi_ai transcript projection/real adapter preparation (target)",
             "opi_ai serialized Message roundtrip"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-03",
@@ -2177,8 +2291,9 @@
         "crates/opi-ai/tests/openai_codex_responses.rs",
         "crates/opi-ai/tests/openai_responses_fixtures.rs",
         "crates/opi-ai/tests/openrouter_fixtures.rs",
-        "crates/opi-ai/tests/phase14_remediation.rs",
+        "crates/opi-ai/tests/model_wire_metadata.rs",
         "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/usage_cost.rs",
         "crates/opi-ai/tests/provider_trait.rs",
         "crates/opi-ai/tests/replay_contract.rs",
         "crates/opi-ai/tests/schema_public.rs",
@@ -2209,7 +2324,7 @@
           "gate_results": {
             "phase": "B.1",
             "contract": "recorded in this note",
-            "authorization": "PENDING B.2"
+            "b2_approval_status": "PENDING B.2"
           }
         },
         {
@@ -2218,7 +2333,7 @@
           "summary": "B.2 authorized by user (execute per B.1 contract, task commit + separate ledger checkpoint, no push/publish). B.3: status -> in_progress, start HEAD 7fd0c61.",
           "gate_results": {
             "phase": "B.3",
-            "authorization": "granted"
+            "b2_approval_status": "granted"
           }
         },
         {
@@ -2298,6 +2413,30 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-19T02:49:10+08:00",
+          "attempt": 0,
+          "summary": "Proposed plan evidence reconciliation: repairs in 7a83f48 and semantic regression migration/temporary artifact ownership in 13e1891 are attributed by the root coordination note. Historical task commit/footer and execution facts are preserved. No fresh task execution or replacement Opi-* footer is asserted. Current full-source scenario closure remains with the declared later owners.",
+          "gate_results": {
+            "evidence_records": [
+              "R20-UPSTREAM-PACKAGE",
+              "R20-TEST-ORGANIZATION",
+              "R20-TEMP-ARTIFACTS",
+              "R20-COMMIT-AUDIT"
+            ],
+            "test_disposition": [
+              {
+                "subject": "20.7 existing verification",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/replay_contract.rs, crates/opi-ai/tests/schema_public.rs",
+                "interface": "opi_ai transcript projection/real adapter preparation (target), opi_ai serialized Message roundtrip",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "historical_dependency_verdict": "Preserved local task verdict. Revised 20.8 is pending new-contract verification and does not inherit the old passing proof."
+          }
         }
       ],
       "started_at_commit": "7fd0c61"
@@ -2305,36 +2444,36 @@
     {
       "id": "20.8",
       "phase": 20,
-      "title": "固定 Unicode16／ECMA／URL 私有依赖分发闭包",
+      "title": "Schema 上游依赖 profile 与早期外部 package 证明",
       "crate": "workspace",
       "parent_spec_row": "DEL-04",
-      "definition_of_done": "Prepare registry-resolvable controlled identities with exact archives, data/codegen/checksums, namespace transforms, license/NOTICE and upgrade ownership. Reproduce Unicode generation and independent ordinary-ICU coexistence without consumer root patch/library lock or build-time generator. Keep product feature/native/unsafe/MSRV review explicit; packaging activation needs separately authorized registry publication and must stop while artifacts are unavailable. This task proves dependency substrate only. Verify the early ordinary external-consumer package proof in inference_notes before this dependency slice passes; 20.57 reuses it and proves final assembled package behavior.",
+      "definition_of_done": "Establish the supported crates.io Schema dependency profile using unmodified regress0.12.0 with std,utf16,prohibit-unsafe and url2.5.8, without the retired Unicode16 vendor, local code generation or namespace family. Record actual workspace and ordinary-consumer resolution, registry sources/checksums, effective features and applicable build.rs/native/unsafe/MSRV/license review. Exercise the packaged public Schema seam from an actual cargo package artifact extracted outside the workspace, with ordinary registry backend dependencies and both defaults-off and caller-defaults-on feature profiles; no source-checkout substitution or consumer root patch establishes proof. Reject every defined ICU4X_DATA_DIR value, including empty, before scratch creation or any subprocess/Cargo invocation, while retaining the shared Cargo cache. Preserve frozen Pi observations and generic conformance controls, recording RDF-21 data differences and actual executed results. This dependency-substrate slice does not close full Schema, strict/grammar, assembled SDK/package or native-platform acceptance owned by 20.10,20.11,20.34,20.57 and20.58.",
       "definition_source": "inferred",
-      "replaces": null,
-      "status": "passing",
+      "replaces": "固定 Unicode16／ECMA／URL 私有依赖分发闭包",
+      "status": "failing",
       "depends_on": [
         "20.1"
       ],
       "inference_notes": [
         {
           "field": "reuse_search",
-          "reason": "searched=readiness-schema fixed regress0.12.0 algorithm/Unicode16 generator, ryu-js1.0.2 and URL/IDNA/ICU ten-package coexistence proof; reused=readiness-schema fixed regress0.12.0 algorithm/Unicode16 generator, ryu-js1.0.2 and URL/IDNA/ICU ten-package coexistence proof; gap=Prepare registry-resolvable controlled identities with exact archives, data/codegen/checksums, namespace transforms, license/NOTICE and upgrade ownership",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition; repository sources named in searched clause"
+          "reason": "searched=Cargo.toml regress/url declarations, Cargo.lock registry graph, crates/opi-ai/src/schema, schema_engine.rs, schema_public.rs and scripts/pi-sdk-conformance; reused=existing private Schema engine and public utilities, current package consumer, frozen corpus, approved current-profile overrides and shared Cargo cache lease; gap=reconcile the retired Unicode16 distribution contract with the supported upstream profile and independently attributable current proof; production_consumers=opi_ai::schema::compile, CompiledSchema::check, validate_tool_arguments and the existing Agent ToolSchemaIr preflight; nonproduction_consumers=schema_engine.rs, schema_public.rs, scripts/pi-sdk-conformance/consumer and test_package_proof.py",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile"
         },
         {
           "field": "placement",
-          "reason": "target=package; existing_home=opi-ai product-neutral model runtime; cannot_fit_fully=use existing opi-ai ownership, keep policy in current host, no new Opi crate or inward edge",
+          "reason": "target=package; existing_home=workspace registry dependency declarations, existing opi-ai private Schema module and scripts/pi-sdk-conformance package harness; cannot_fit_fully=not-applicable, reuse current SDK and assurance locations without a new Opi crate or runtime ownership seam",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
         },
         {
           "field": "surface_necessity",
-          "reason": "public_api=none, evidence only; config=none, no new host policy key, existing source overrides only; state=固定 Unicode16／ECMA／URL 私有依赖分发闭包 source-owned state, exact transition/result/failure contract in DoD; dependency_edge=reviewed exact backend/data/native closure only, no internal Opi edge",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+          "reason": "public_api=none, retain current public Schema seam; config=none, ICU4X_DATA_DIR is a rejected ambient build input rather than a product setting; state=none, reuse existing declaration-owned Schema state and harness evidence; dependency_edge=ordinary crates.io regress/url/IDNA/ICU replace retired vendor family without new internal Opi edges",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile"
         },
         {
           "field": "simplification_ceiling",
-          "reason": "ceiling=existing crate and single owning mechanism, no speculative generic framework or extra compatibility layer; revisit_when=a named public conformance case or advertised native/MSRV target fails, or a second real use cannot fit the selected interface; simplification_trigger=none",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+          "reason": "ceiling=ordinary upstream profile plus existing private engine and package proof without a second backend, data selector, generator or compatibility route; revisit_when=a named public Schema or feature-union case fails, a dependency upgrade changes accepted data or algorithms, or an advertised native/MSRV target lacks evidence; simplification_trigger=dependency-substitution; net_deletion=retired vendor sources, Unicode16 generation, namespace transformation, sparse-registry preparation and exclusive checks stay removed; residual_glue=current-profile.json records only approved frozen-result overrides while generic conformance, historical observations and ordinary external consumer remain",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile"
         },
         {
           "field": "forbidden_scope",
@@ -2353,17 +2492,22 @@
         },
         {
           "field": "early_package_proof",
-          "reason": "At first dependency activation, a fresh workspace-external ordinary Cargo consumer must resolve and actually use the Unicode16/ECMA/URL namespace graph from distributable package identities, alongside ordinary upstream dependencies where applicable. Keep the consumer/harness under scripts/pi-sdk-conformance and reuse it at 20.57; no root patch, TEMP path dependency, library lockfile or build-time generator may establish delivery. Unavailable registry artifacts stop this affected task and remain OPEN; preparation grants no publication/installation/live authorization.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+          "reason": "Run python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch <new-workspace-external-directory> --target-dir <existing-marked-shared-workspace-cache>. Both feature profiles must exercise the actual extracted cargo package through public Schema entry points, retain real dependency metadata, registry checksums and outputs, and refuse ICU4X_DATA_DIR before scratch/subprocess side effects. Placeholders are required operator-resolved paths, not shell redirection. No registry publication, new target directory, source-checkout replacement or caller root patch. This early slice stays substrate-only; 20.57 reuses applicable proof and owns final assembled SDK package behavior, 20.58 owns native/MSRV closure.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile"
         },
         {
           "field": "definition_of_done",
-          "reason": "Prepare registry-resolvable controlled identities with exact archives, data/codegen/checksums, namespace transforms, license/NOTICE and upgrade ownership. Reproduce Unicode generation and independent ordinary-ICU coexistence without consumer root patch/library lock or build-time generator. Keep product feature/native/unsafe/MSRV review explicit; packaging activation needs separately authorized registry publication and must stop while artifacts are unavailable. This task proves dependency substrate only. Verify the early ordinary external-consumer package proof in inference_notes before this dependency slice passes; 20.57 reuses it and proves final assembled package behavior.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+          "reason": "Establish the supported crates.io Schema dependency profile using unmodified regress0.12.0 with std,utf16,prohibit-unsafe and url2.5.8, without the retired Unicode16 vendor, local code generation or namespace family. Record actual workspace and ordinary-consumer resolution, registry sources/checksums, effective features and applicable build.rs/native/unsafe/MSRV/license review. Exercise the packaged public Schema seam from an actual cargo package artifact extracted outside the workspace, with ordinary registry backend dependencies and both defaults-off and caller-defaults-on feature profiles; no source-checkout substitution or consumer root patch establishes proof. Reject every defined ICU4X_DATA_DIR value, including empty, before scratch creation or any subprocess/Cargo invocation, while retaining the shared Cargo cache. Preserve frozen Pi observations and generic conformance controls, recording RDF-21 data differences and actual executed results. This dependency-substrate slice does not close full Schema, strict/grammar, assembled SDK/package or native-platform acceptance owned by 20.10,20.11,20.34,20.57 and20.58.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile"
+        },
+        {
+          "field": "replaces",
+          "reason": "Substantive in-place replacement of fixed Unicode16/vendor distribution by approved upstream profile. Default status becomes failing pending verification of the new contract. Original verified_at_commit and evidence below remain historical mirrors of the retired DoD, not proof that this revised DoD passes. Graph approval does not pass this task.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile"
         }
       ],
       "tier": "workspace",
-      "commit_type": "feat",
+      "commit_type": "fix",
       "parallelize": [],
       "evaluator_required": true,
       "verification": {
@@ -2371,10 +2515,11 @@
           ".agents/skills/opi-implement/scripts/opi-impl-smoke.ps1 full"
         ],
         "behavioral_tests": [
-          "crates/opi-ai/tests/schema_dependencies.rs"
+          "crates/opi-ai/tests/schema_engine.rs",
+          "crates/opi-ai/tests/schema_public.rs"
         ],
         "snapshot_tests": [],
-        "smoke_addendum": "python scripts/pi-sdk-conformance/package_slice.py --family schema --offline"
+        "smoke_addendum": "python -B -m unittest discover -s scripts/pi-sdk-conformance -p test_package_proof.py -v"
       },
       "acceptance_scenarios": [],
       "production_call_sites": [],
@@ -2391,10 +2536,9 @@
         "crates/opi-ai/README.md",
         "crates/opi-ai/README.zh.md",
         "crates/opi-ai/src/lib.rs",
-        "crates/opi-ai/tests/schema_dependencies.rs",
-        "scripts/pi-schema/**",
         "scripts/pi-sdk-conformance/**",
-        "third-party/pi-schema/**"
+        "crates/opi-ai/tests/schema_engine.rs",
+        "crates/opi-ai/tests/schema_public.rs"
       ],
       "verified_at_commit": "57eff804b54998b3b0b3aa729414d5e91ca2ed45",
       "evidence": {
@@ -2439,9 +2583,40 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-19T02:49:10+08:00",
+          "attempt": 0,
+          "summary": "Proposed drift reconciliation: RDF-21 substantively replaces the fixed Unicode16/vendor contract. Preserve old runtime history and footer mirrors; default the revised contract to failing. Existing upstream migration and package proof are candidate reuse inputs, not a new task execution or new Opi-* footer. No code, Cargo or publication executed by this plan.",
+          "gate_results": {
+            "superseded_contract": {
+              "title": "固定 Unicode16／ECMA／URL 私有依赖分发闭包",
+              "definition_of_done": "Prepare registry-resolvable controlled identities with exact archives, data/codegen/checksums, namespace transforms, license/NOTICE and upgrade ownership. Reproduce Unicode generation and independent ordinary-ICU coexistence without consumer root patch/library lock or build-time generator. Keep product feature/native/unsafe/MSRV review explicit; packaging activation needs separately authorized registry publication and must stop while artifacts are unavailable. This task proves dependency substrate only. Verify the early ordinary external-consumer package proof in inference_notes before this dependency slice passes; 20.57 reuses it and proves final assembled package behavior.",
+              "status": "passing",
+              "verified_at_commit": "57eff804b54998b3b0b3aa729414d5e91ca2ed45",
+              "evidence": {
+                "Opi-Task": "20.8",
+                "Opi-DoD-SHA256": "f78b289438a3bb4d3318ba84a07e7df5fca21bced2af671621aad406a2d0b750",
+                "Opi-Verification": "workspace; smoke full PASSED (opi-doc-check, fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets, cargo test --workspace --doc, rustdoc -D warnings; workspace crates and Cargo.lock untouched by this task); scenario python3 scripts/pi-sdk-conformance/run_early_package_proof.py --scratch <tmp> --port 8173 -> verdict PASS (43/43 leaves, 7/7 script probes, coexistence both chains; unicode16 probes stable across reruns); red run --skip-prepare -> resolution failure against empty registry recorded; py_compile clean on all three harness scripts",
+                "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; all DoD clauses mapped to committed evidence; publication OPEN recorded per contract; Workflow runtime unavailable, wf_ref=null (recorded in verify_runs)",
+                "Opi-Acceptance": "substrate-only task by admission (no product AIR/V scenario assigned); 20.57 reuses this harness for the final assembled package proof"
+              }
+            },
+            "test_disposition": [
+              {
+                "subject": "20.8 upstream substrate",
+                "action": "update",
+                "test": "crates/opi-ai/tests/schema_engine.rs + crates/opi-ai/tests/schema_public.rs + scripts/pi-sdk-conformance/test_package_proof.py",
+                "interface": "public Schema utility and actual packaged external consumer",
+                "replacement": "run_early_package_proof.py with both actual feature profiles",
+                "slim_candidate": null
+              }
+            ],
+            "candidate_evidence_record": "R20-UPSTREAM-PACKAGE",
+            "proof_command": "python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch <new-workspace-external-directory> --target-dir <existing-marked-shared-workspace-cache>"
+          }
         }
-      ],
-      "baseline_dirty": []
+      ]
     },
     {
       "id": "20.9",
@@ -2592,6 +2767,30 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-19T02:49:10+08:00",
+          "attempt": 0,
+          "summary": "Proposed plan evidence reconciliation: repairs in 7a83f48 and semantic regression migration/temporary artifact ownership in 13e1891 are attributed by the root coordination note. Historical task commit/footer and execution facts are preserved. No fresh task execution or replacement Opi-* footer is asserted. Current full-source scenario closure remains with the declared later owners.",
+          "gate_results": {
+            "evidence_records": [
+              "R20-UPSTREAM-PACKAGE",
+              "R20-TEST-ORGANIZATION",
+              "R20-TEMP-ARTIFACTS",
+              "R20-COMMIT-AUDIT"
+            ],
+            "test_disposition": [
+              {
+                "subject": "20.9 existing verification",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/schema_engine.rs",
+                "interface": "dependency substrate",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "historical_dependency_verdict": "Preserved local task verdict. Revised 20.8 is pending new-contract verification and does not inherit the old passing proof."
+          }
         }
       ]
     },
@@ -2660,6 +2859,16 @@
           "field": "task_owned_paths",
           "reason": "C.1a append before edit (B.3): source study found the generation-owned schema IR must live on the tool declaration itself - RegisteredTool gains a private OnceLock<Arc<ToolSchemaIr>> lazily compiled from definition.input_schema. Loop-side caches cannot key the registry-generation identity without a new authority seam; the declaration-owned OnceLock is the smallest coherent placement (new() keeps its 6-arg signature; no caller changes). RegisteredTool lives in crates/opi-agent/src/authority.rs, which the reviewed inventory did not list.",
           "source": "readiness-schema annex line 76 (generation-owned IR/cache); preflight registry flow in agent_loop.rs"
+        },
+        {
+          "field": "upstream_data_contract",
+          "reason": "AIR-024 now uses RDF-21, not fixed Unicode16. Reuse valid normalizer/Agent evidence for unchanged algorithms, and keep full V-35/AIR-024 source closure open for final assembled proof. Local P20-S10 status is independent of strict/grammar, all adapters, package or native closure.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile"
+        },
+        {
+          "field": "scenario_reconciliation",
+          "reason": "Local P20-S10 is proposed met from attributed unchanged evidence; full source V/AIR/DEL scenarios remain open and also have a final assembled owner at 20.57. No source text or historical execution count is narrowed. Original passing status means the shipped local DoD; a changed upstream substrate remains separately pending at 20.8.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Acceptance dependencies and completion"
         }
       ],
       "tier": "workspace",
@@ -2693,7 +2902,7 @@
         {
           "id": "AIR-024",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: compat, retained safety and typed operations / AIR-024",
-          "scenario": "SDK argument validator/error/usage producers; normalize or report. MUST expose clone-before-normalize and full original-schema validation, preserving raw and typed redacted failure. Use the private JSON-only TypeBox-dialect evaluator and the fixed Unicode16 regex data described in the adopted design; jsonschema0.28.3 exits this default path. This is a selected design, not proven SDK equivalence. Derive dialect/keyword/format/ref/regex behavior from the pinned Pi path and a differential corpus; no invented schema size/work/branch rejection, all-pattern guard or implicit schema HTTP/file I/O. Unsupported backend semantics remain a coverage gap, never false validation success. Strict wire is neither local validation nor authority; keep usage knownness/costs distinct. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
+          "scenario": "SDK argument validator/error/usage producers; normalize or report. MUST expose clone-before-normalize and full original-schema validation, preserving raw and typed redacted failure. Use the private JSON-only TypeBox-dialect evaluator and the supported crates.io upstream Unicode/IDNA data profile defined by RDF-21; jsonschema0.28.3 exits this default path. This is a selected design, not proven SDK equivalence. Derive dialect/keyword/format/ref/regex behavior from the pinned Pi path and a differential corpus; no invented schema size/work/branch rejection, all-pattern guard or implicit schema HTTP/file I/O. Unsupported backend semantics remain a coverage gap, never false validation success. Strict wire is neither local validation nor authority; keep usage knownness/costs distinct. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
           "verification": [
             "cargo test -p opi-ai --test schema_public"
           ],
@@ -2714,7 +2923,7 @@
             "opi_ai::validate_tool_arguments/validate_tool_call (target)",
             "opi_agent::validation::validate"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -2848,6 +3057,30 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-19T02:49:10+08:00",
+          "attempt": 0,
+          "summary": "Proposed plan evidence reconciliation: repairs in 7a83f48 and semantic regression migration/temporary artifact ownership in 13e1891 are attributed by the root coordination note. Historical task commit/footer and execution facts are preserved. No fresh task execution or replacement Opi-* footer is asserted. Current full-source scenario closure remains with the declared later owners.",
+          "gate_results": {
+            "evidence_records": [
+              "R20-UPSTREAM-PACKAGE",
+              "R20-TEST-ORGANIZATION",
+              "R20-TEMP-ARTIFACTS",
+              "R20-COMMIT-AUDIT"
+            ],
+            "test_disposition": [
+              {
+                "subject": "20.10 existing verification",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/schema_public.rs",
+                "interface": "opi_ai::validate_tool_arguments/validate_tool_call (target), opi_agent::validation::validate",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "historical_dependency_verdict": "Preserved local task verdict. Revised 20.8 is pending new-contract verification and does not inherit the old passing proof."
           }
         }
       ]
@@ -11751,6 +11984,11 @@
           "field": "definition_of_done",
           "reason": "Run fresh workspace-external consumer using opi-ai as its sole Opi runtime dependency and ordinary Tokio/Serde/Stream dependencies, with actually packaged offline resources and registry-resolvable controlled dependency closure, no root patch/TEMP paths. Exercise every public workflow, all10 chat/1image/4classifier/42profiles/9flow paths with fake sources/transport and complete model records, two instances/shared store/cleanup/options portability/tool loop/serde. Differential fixed Pi public entrypoints use import-reviewed mock-only runner, isolated HOME/env/no credentials-triggered live/no silent install, exact source/runtime/fixture/RDF/result pins. Public failures/actual allocation/large lawful acceptance/typed policies remain observable, not helper-only proof. Reuse early external-consumer packaging checks from 20.8/12/15 and predecessor behavioral suites, adding only distinct assembled external-use cases. Own full cross-operation duration AIR-061/V-53 and callbacks AIR-059/V-51 proof including new image/classifier/deferred producers; no second implementation pass.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+        },
+        {
+          "field": "upstream_data_contract",
+          "reason": "Own P20-RDF-21 final assembled SDK/package semantic closure and the open full-source scenarios inherited from current chronology/replay/normalizer slices. Reuse original early package proof only with its original archive/input identity; changed test resources or new operations require applicable final artifact evidence. Schema vendor gates are retired, remaining HTTP/WS controlled dependency closure is unchanged. Native/MSRV and final supply-chain proof remain 20.58.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile"
         }
       ],
       "tier": "workspace",
@@ -12482,6 +12720,228 @@
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
           "status": "open"
+        },
+        {
+          "id": "V-06",
+          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#已有要求的修订验收（V-01–26） / V-06",
+          "scenario": "SDK-only public input: **SDK active：** 公共 Context→normalize→adapter；initial shorthand、content/section/tool add/remove/redefine；**host-impact：** 实现 revision 安装. Observable result and failure: SDK 初始便利输入一次归入 leading entry；content 追加，section replace 保序、null 删除、delete+add 移末尾；工具声明按值保序，真实变更才记 delta；call 捕获 owned revision，raw 不被投影改写，无效名称/schema 在 auth 前失败。Anthropic 使用 inline-tools-2026-09-15 与 by-value tool_addition，同名重定义不得套旧 collapse 限制。宿主下一 call 原子更换实现/schema、旧工具批次继续旧实现属 AIR-009 下游义务，不计 SDK 完成. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "V-31",
+          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#新增已确认能力的验收（V-27–38） / V-31",
+          "scenario": "SDK-only public input: **SDK active 子边界：** transcript→adapter tool change 能力；**host-impact：** 产品 tool_search/loadout/resume. Observable result and failure: SDK 按真实 capability 编译 native additions/removals/redefinitions 或默认 collapse；保留 canonical/声明顺序与 projection loss，不能让声明授权执行。此子边界由 AIR-008/011 和 V-06/16/49 共同计 SDK。原 AIR-037 的 CLI 注册/启用 tool_search、发现未 active 工具、下一请求 loadout、resume 迟到注册及 session 关闭策略仅保留影响，不计 SDK 完成；完整 MCP/codemode 不在本轮. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "AIR-008",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: transcript, execution and replay / AIR-008",
+          "scenario": "Transcript; initial/changed instructions or declarations. MUST retain ordered content appends, named section insertion/replacement/deletion and tool add/remove/redefine. Same-name section replacement keeps position; delete/readd appends. Body and sections remain distinguishable. Tool definition changes are remove+add; execution implementation revisions remain host-owned under AIR-009 and add no SDK execution registry. Invalid/ambiguous names or source-dialect compile/preflight errors fail before installation; a keyword inert under the pinned structural guard is not a metaschema admission error. Equal state adds no redundant change. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "AIR-011",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: transcript, execution and replay / AIR-011",
+          "scenario": "Transcript compiler; adapter capability. Default MUST be native-or-collapse: preserve temporal placement for supported change classes, otherwise use current effective system/tools at the head. Record projection mode/affected range/source prefix; never call collapse lossless or rewrite canonical history. Explicit Strict rejects unsupported requested temporal fidelity before auth/network. One unchanged initial state is lossless. No universal native-transcript boolean substitutes for adapter fixtures. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "AIR-020",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Host impacts: durable facts and migration / AIR-020",
+          "scenario": "Public builders/adapters/callers; input normalization. MUST normalize initial system/tools shorthand into one leading transcript state; adapters consume only canonical normalized input. Convenience construction may remain, but independent downstream runtime fields/readers exit in the same scoped break. Migrate direct adapters, mocks, hooks, compaction and examples; old session readers cannot dispatch the old request path. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "V-07",
+          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#已有要求的修订验收（V-01–26） / V-07",
+          "scenario": "SDK-only public input: replay/adapter；same/cross/unknown来源、重复ID、缺result、mixed text/tool、failed/Length历史. Observable result and failure: 按批次位置＋source ID关联；闭合批次可复用ID，批内歧义/重复或orphan result失败；request-local双射同步call/result。可关联缺项补ResultUnavailable/UnknownEffect，不改canonical、不声称NotExecuted、不重执行；Error/Aborted及Length细则见V-15。mixed次序、Responses双ID和签名来源保真 Pi1.3新增：provider/API/model任一不同即drop全部thinking，不转可见文本；同身份signed/redacted空块保留，canonical不变。. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "V-08",
+          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#已有要求的修订验收（V-01–26） / V-08",
+          "scenario": "SDK-only public input: tool-result图像preflight/serializer；bytes/base64/URL×user/tool×model/wire. Observable result and failure: 支持的wire收到实际图像并保留tool关联、顺序及失败标志，否则在适当preflight边界typed拒绝；不以MIME占位冒充图；private details不进wire，URL不自动下载. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "AIR-010",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: transcript, execution and replay / AIR-010",
+          "scenario": "Producers/history/replay; same or changed route. MUST preserve provider, exact wire and requested model separately from reported model, historical ApiKind, and block-bound opaque metadata. Pi 1.3.0 drops every thinking block when provider/API/model identity differs, including readable, signed and redacted blocks; it does not turn earlier reasoning into visible text. Same-identity signed/redacted empty blocks remain, ordinary blank thinking is omitted. Preserve canonical originals and record projection facts; AIR-038 adds family-specific replay. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "AIR-012",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: transcript, execution and replay / AIR-012",
+          "scenario": "Replay/Agent recovery; tool association. MUST associate batch position+source ID; closed batches may reuse IDs. Ambiguous duplicates/orphan/duplicate results fail. An unambiguous missing result gets request-local error ResultUnavailable with UnknownEffect, never NotExecuted, rollback or automatic re-execution. Fact-supported malformed pairs retain originals; when wire cannot express them use explicit failure context, not fabricated {} or null. Only Agent records known non-execution compensation. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "AIR-013",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: transcript, execution and replay / AIR-013",
+          "scenario": "SDK replay projection; failed/truncated assistant. MUST preserve canonical Error/Aborted while omitting their failed request views and linked fact-supported non-execution results from wire. Length never grants execution permission. Preserve complete valid pairs when expressible; malformed/unrepresentable proposals use explicit local failure projection. Contradictory executed-effect facts fail rather than disappear. Host retry/execution policy remains outside this requirement. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "AIR-014",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: transcript, execution and replay / AIR-014",
+          "scenario": "Image preflight/serializer; tool result. MUST send a real image through a supported native or verified alternative message placement, keeping association/order/error, or reject before dispatch. MIME placeholder is not support. Validate media and model+wire together; preserve existing user images and keep private tool details outside wire. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "AIR-038",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: published paths and request customization / AIR-038",
+          "scenario": "Adapters/history/persistence; emit/continue thinking. MUST capture and roundtrip Anthropic signed/redacted, Responses/Codex/Azure encrypted reasoning+item metadata, Google/Vertex text/thinking/tool thoughtSignature, Chat reasoning_details and Bedrock signatures/redacted bytes. Preserve signed-empty and terminal-only metadata, order and exact source. Same-route replay follows actual capabilities; changed/unknown provenance or stale disabled-thinking rules project safely with facts. Never expose encrypted bytes as readable text or fabricate lost legacy metadata. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "DEL-03",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-03",
+          "scenario": "| DEL-03 | Serializable Context/Transcript, ordered declarations and replay/projection → verify: public manual tool loop/model change, raw/opaque preservation, tool-association and malformed/final-argument behavior; no execution or session writer. |",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "V-15",
+          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#已有要求的修订验收（V-01–26） / V-15",
+          "scenario": "SDK-only public input: **SDK active：** 公共工具参数 normalize/validate、replay projection；坏 JSON/schema、stop reason；**host-impact：** hook→授权→执行. Observable result and failure: SDK raw 不变，plain-JSON normalized 按原 schema 校验；失败为 typed 可区分结果，不产生执行许可；Length/Error/Aborted 的 request projection 依 V-07，不能虚构 NotExecuted 或抹掉已执行事实。SDK 不执行工具。宿主只读 rejected proposal、trusted hook 可改实际值且 final authorizer 绑定实际值、deny/cancel/Length 零执行，是 AIR-009/041 的保留影响，不计 SDK gate；必要 API caller 适配仍须编译及保留已有安全回归. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "V-35",
+          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#新增已确认能力的验收（V-27–38） / V-35",
+          "scenario": "SDK-only public input: **SDK active 子边界：** plain-JSON normalize/validate 公共 utility；optional-null/primitive/union/nested/root；**host-impact：** hooks/final authorizer/execution. Observable result and failure: SDK raw 不变，normalized 通过原 schema；不填 default/偷删 extra、不依 TypeBox 私有标记；数值/string 转换固定 JS corpus，不以 Rust parse/Debug 猜测，返回 raw/normalized/validation failures 可辨，失败不授予执行权。此子边界由 AIR-024/049 与 V-15/58 计 SDK。原 AIR-041 的可信 hook mutation、阶段观察、最终授权绑定实际 execution/revision、deny/cancel 零执行仅下游影响，不要求本轮交付 最终malformed/nonobject工具参数保留arguments_error/raw text，schema coercion前拒绝；省略/空白合法{}、非法\\u修复保留后续字段；partial展示不授予执行。. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "AIR-024",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: compat, retained safety and typed operations / AIR-024",
+          "scenario": "SDK argument validator/error/usage producers; normalize or report. MUST expose clone-before-normalize and full original-schema validation, preserving raw and typed redacted failure. Use the private JSON-only TypeBox-dialect evaluator and the supported crates.io upstream Unicode/IDNA data profile defined by RDF-21; jsonschema0.28.3 exits this default path. This is a selected design, not proven SDK equivalence. Derive dialect/keyword/format/ref/regex behavior from the pinned Pi path and a differential corpus; no invented schema size/work/branch rejection, all-pattern guard or implicit schema HTTP/file I/O. Unsupported backend semantics remain a coverage gap, never false validation success. Strict wire is neither local validation nor authority; keep usage knownness/costs distinct. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "P20-RDF-21",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile",
+          "scenario": "Verify RDF-21 across the final assembled public SDK and actual packaged external consumer: declared upstream registry/data profile, defaults-off and caller feature union, allowed data propagation and retained ECMA/admission/ref/resource/normalization/Serde contracts. Record actual final artifact and resolution identity. Reuse early Schema proof only for unchanged relevant inputs; it does not close this final SDK slice or native/MSRV evidence owned by 20.58.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk",
+            "python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch <new-workspace-external-directory> --target-dir <existing-marked-shared-workspace-cache>"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
         }
       ],
       "production_call_sites": [
@@ -12570,6 +13030,11 @@
           "field": "acceptance_partition",
           "reason": "DEL-14 and the delivery-group trace are split by actual completion: 20.57/20.58 supply SDK/package/native/MSRV runtime proof; 20.59 owns the final documentary evidence/disposition handoff after those tasks pass. Only the mandatory workflow F.1a, after every task passes, independently closes the complete DEL-14 criterion and delivery coverage group. No task requires its own future Phase exit or treats a documentation check as runtime proof.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-14"
+        },
+        {
+          "field": "upstream_data_contract",
+          "reason": "Existing V-58/P20-GAP-SCHEMA own final resolved sources/checksums/features, ICU data build inputs, native Linux/macOS/Windows and MSRV evidence under RDF-21. Do not claim no build.rs, a permanently fixed Unicode release, or early Schema smoke as full package/platform acceptance. Reuse valid original proof only within its stated artifact/data identity.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile"
         }
       ],
       "tier": "workspace",
@@ -13300,7 +13765,1523 @@
       ]
     }
   },
-  "session_notes": [],
+  "session_notes": [
+    {
+      "timestamp": "2026-10-19T02:49:10+08:00",
+      "summary": "Plan-only drift reconciliation, pending P.4 confirmation. Canonical source SHA and prior graph are retained in Git; seven source hashes refreshed only in this draft. Preserve all historical runtime/commit evidence and frozen observations. Eight malformed legacy exec verify_runs are relocated verbatim here, without fabricating missing counters; two noncredential approval-status keys renamed and one redundant empty baseline_dirty alias removed. This plan executed no Cargo, Rust regression, provider call or publication.",
+      "gate_results": {
+        "baseline_head": "13e189160f459c50539d228bac2df0bba85d69d8",
+        "original_graph_confirmed_at": "2026-10-17T01:59:31+08:00",
+        "source_changes": [
+          {
+            "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md",
+            "before": "d0bf73ecc1713792f924c3417b8225460ef3cb19c16e7744b0ddaaae7c3461fc",
+            "after": "87858cc9279f2fe157b6f27a6044b3b1ef5daac7b2c62f4cb195df6ad582d20e"
+          },
+          {
+            "path": "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md",
+            "before": "29fc6a2093d0976e43ce817ad98145d9f720fb4bebd714aa6439bda38b970f1b",
+            "after": "18322ffa3ab1fd0dbbe51495e1124d574a0b4c8ab5ac1e20a5317318da827370"
+          },
+          {
+            "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md",
+            "before": "f1a0e790308cd330d03f1c706d4808d2940514354cf05c0276e1ea9f79706b58",
+            "after": "87538f4dfb1ebffbcd0b8e875e8d1b0e2f004a67817051b4f8138a53828db366"
+          },
+          {
+            "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md",
+            "before": "0fff63289564e815c0d6836bd52e8494e25774821d5227c6e9f7e6d756da5a3a",
+            "after": "e598f281a5e167b19f02eea7ffa7f1fabea25ec1a3bcd17e0beeef843023360f"
+          },
+          {
+            "path": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md",
+            "before": "06be7904d3d9527ab07105cef49f0c5a39ba17691e632123a7942314bd5a5ff6",
+            "after": "801f3b961ffd2ac99e6d7c0296ccbe03acd651b278e661f604c09dae86e9d9ba"
+          },
+          {
+            "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md",
+            "before": "efe6b5948205fddda61be8902f2c49def299dccd64ab9c64b6c59831e3a197c5",
+            "after": "ecf4e367ee593d1ce978d8a0ad547660f94ccdfa8785eebf022b2be8cd46864f"
+          },
+          {
+            "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md",
+            "before": "eb5db22f85cfba481d5ed6466b08ae54e8ea4c3ca581144a771727b5bbbdb19f",
+            "after": "878d15231e734dc03772e1f1bd48cb8ffe2252a2818748e4b8630af43a2e8a76"
+          }
+        ],
+        "renamed_coordination_keys": [
+          {
+            "task": "20.7",
+            "session_note": 0,
+            "old_field": "gate_results.authorization",
+            "new_field": "gate_results.b2_approval_status",
+            "original_value": "PENDING B.2"
+          },
+          {
+            "task": "20.7",
+            "session_note": 1,
+            "old_field": "gate_results.authorization",
+            "new_field": "gate_results.b2_approval_status",
+            "original_value": "granted"
+          }
+        ],
+        "removed_redundant_alias": {
+          "task": "20.8",
+          "baseline_dirty": [],
+          "canonical_field": "baseline_dirty_files"
+        },
+        "legacy_exec_verify_runs": [
+          {
+            "timestamp": "2026-10-17T04:46:45+08:00",
+            "task": "20.2",
+            "stage": "exec",
+            "mode": "manual-7-lens (workflow runtime unavailable)",
+            "wf_ref": null,
+            "result": "no must-fix findings; lenses L-D1..L-D7 audited against commit b2ff2f398b8d2416f0284ac7a77731338cf0a436 (DoD clause-by-clause, non-vacuous tests, production call sites via agent_loop/run_provider_call/drain_to_completion, truthful evidence, non-goals excluded incl. no deferred-fetch scope, dependency rules unchanged, P20-FINAL locality with closure test and closed legacy producer writes)"
+          },
+          {
+            "timestamp": "2026-10-17T09:44:20+08:00",
+            "task": "20.3",
+            "stage": "exec",
+            "mode": "manual-7-lens (workflow runtime unavailable)",
+            "wf_ref": null,
+            "result": "no must-fix findings; lenses L-D1..L-D7 audited against commit bd8bf84f4ac9e1de8e62c8b1262925fd466bc511 (DoD clause-by-clause incl. frozen binding/lazy auth/portability/upsert/mismatch/survival/catalog-absence/ApiId identity, non-vacuous adapter-observed assertions, production call sites via agent_loop and provider_factory through passing workspace suites, truthful evidence, non-goals excluded, dependency manifests unchanged, single-owner locality with deleted parallel facade)"
+          },
+          {
+            "timestamp": "2026-10-17T17:22:23+08:00",
+            "task": "20.5",
+            "stage": "exec",
+            "mode": "manual-7-lens (workflow runtime unavailable)",
+            "wf_ref": null,
+            "result": "no must-fix findings after closing the connect-barrier gap; lenses L-D1..L-D7 audited against commit 5489861037a3cd72ab8a1c202aa0c362278d9581 (DoD clause-by-clause incl. every-byte legal fixtures, TextDecoder-replacement parity, keepalive/large-event acceptance, AWS CRC/checked-arithmetic preservation, five-site final arguments with owned raw + arguments_error, provisional-never-executable, and deterministic connect/response/read/backpressure/drop barriers with timeout guards only)"
+          },
+          {
+            "timestamp": "2026-10-17T20:23:55+08:00",
+            "task": "20.8",
+            "stage": "exec",
+            "mode": "manual-7-lens (workflow runtime unavailable)",
+            "wf_ref": null,
+            "result": "no must-fix findings; L-D1 clause-by-clause against commit 57eff804b54998b3b0b3aa729414d5e91ca2ed45 including exact-archive pins, deterministic pinned-hash Unicode-16 generation, per-member namespace transform integrity, ordinary-consumer proof without root patch/path deps/lockfile/generator, explicit feature/native/unsafe/MSRV review, OPEN publication stop, and substrate-only scope"
+          },
+          {
+            "timestamp": "2026-10-18T00:44:07+08:00",
+            "task": "20.9",
+            "stage": "exec",
+            "mode": "manual-7-lens (workflow runtime unavailable)",
+            "wf_ref": null,
+            "result": "no must-fix findings; L-D1 clause-by-clause against commit 98b5c900b963bb42cc4f4a50a1d1bd7f9b8cb9c0 including finite IR, 42 mechanisms, 21 formats, structural inert guards, JS integer-index enumeration, full ref frames, fallible evaluated state, explicit work stack, productive/no-progress recursion distinction, and the no-I/O/no-source-free-limits constraints; L-D7 noted the task_owned_paths append timing deviation, disclosed in the C.1a inference note"
+          },
+          {
+            "timestamp": "2026-10-18T03:52:10+08:00",
+            "task": "20.10",
+            "stage": "exec",
+            "mode": "manual-7-lens (workflow runtime unavailable)",
+            "wf_ref": null,
+            "result": "no must-fix findings; L-D1 clause-by-clause against commit f47b5b73bfc9e6b13cf1a68d00fb65c6ba093edd covering the DoD's clone-before-normalize, JS-corpus conversions (frozen 44-case battery from recorded public_pi outputs), final original-schema check with the RDF-09 fix, precise integers, arguments_error-before-coercion, redacted diagnostics, generation-owned IR (OnceLock on the declaration), blocking-pool cancellation without hard-kill claims, and agent consumption with hooks/final-authorizer policy preserved; L-D7 confirmed the authority.rs C.1a append was executed before the edit at B.3 with recorded evidence"
+          },
+          {
+            "timestamp": "2026-10-18T13:22:12+08:00",
+            "task": "20.6",
+            "stage": "exec",
+            "mode": "manual-7-lens (workflow runtime unavailable)",
+            "wf_ref": null,
+            "result": "no must-fix findings; L-D1 clause-by-clause against commit 41559c603ee0d4f152578e5056b0b131e8039f70 covering the DoD's serializable chronology, shorthand normalization, ordered body/sections/tools with by-value redefine and dedup, validated installation, canonical-raw preservation, the same-compiling-cutover migration of independent system/tools readers (adapters, mocks, Agent/summary callers) with session v1 readers/v2 writer and host authorization retained, and native/collapse projection for current migrated adapters; L-D7 confirmed via a python fnmatch audit that all 83 changed paths are owned, including both C.1a appends executed before edits with compiler evidence"
+          },
+          {
+            "timestamp": "2026-10-18T15:36:12+08:00",
+            "task": "20.7",
+            "stage": "exec",
+            "mode": "manual-7-lens (workflow runtime unavailable)",
+            "wf_ref": null,
+            "result": "no must-fix findings; L-D1 clause-by-clause against commit 4d660c6f7bf11ce6187976032c56df1d30dc9e45 covering association rejection, request-local ResultUnavailable/UnknownEffect closure with zero execution, Error/Aborted/Length projections with native/collapse/Strict distinction, Pi-1.3 cross-identity thinking drop with signed-empty/terminal-only data and Responses dual-ID round trip, and opaque preservation through the six migrated adapters; L-D7 confirmed via python fnmatch audit after the recorded C.1a append of 36 execution-discovered paths"
+          }
+        ],
+        "evidence_records": [
+          {
+            "id": "R20-UPSTREAM-PACKAGE",
+            "path": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-icu-data-guard-review-b181cfc-20261019-010824\\review.json",
+            "sha256": "53255d55c9ebe93603c6e199ca8f32ac54d2c3f419225182da00c543084aacd6",
+            "availability": "external-local retained receipt; not a committed or newly executed proof"
+          },
+          {
+            "id": "R20-TEST-ORGANIZATION",
+            "path": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-test-organization-usnwwlwi\\verification.json",
+            "sha256": "afd73a6fc1f3e60c4d44433de9107cc9e0b3ab07e40008cd5a152346e5f608d9",
+            "availability": "external-local retained receipt; not a committed or newly executed proof"
+          },
+          {
+            "id": "R20-TEMP-ARTIFACTS",
+            "path": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-temporary-evidence-7rckj50n\\verification.json",
+            "sha256": "e9e4bf9ff6ab8665e4b52639bbb9c8d8621318ca2c4b247a245c37e81547c7e4",
+            "availability": "external-local retained receipt; not a committed or newly executed proof"
+          },
+          {
+            "id": "R20-COMMIT-AUDIT",
+            "path": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-test-cleanup-commit-x3340mbe\\commit-audit.json",
+            "sha256": "1114a6e49b7562b84e74b417f568a8907cc2e4e56b95e88eddc257b90e258f38",
+            "availability": "external-local retained receipt; not a committed or newly executed proof"
+          }
+        ],
+        "upstream_package_reuse": {
+          "archive": {
+            "file": "opi-ai-0.8.3.crate",
+            "sha256": "42de4f549164a6c399346adb6e93bed666cd5b7e1c37ed3f28c47508ed1741b9"
+          },
+          "receipt_path": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-icu-data-guard-review-b181cfc-20261019-010824\\package-proof\\evidence.json",
+          "receipt_sha256": "7bc306144ffce173d6d6920b99abb97249bbdd5179b49906b4ebd80b25447613",
+          "profiles": [
+            {
+              "name": "defaults-off",
+              "report": {
+                "verdict": "PASS",
+                "total": 73,
+                "failed": 0
+              },
+              "graph": {
+                "regress": {
+                  "version": "0.12.0",
+                  "source": "registry+https://github.com/rust-lang/crates.io-index",
+                  "features": [
+                    "prohibit-unsafe",
+                    "std",
+                    "utf16"
+                  ]
+                },
+                "url": {
+                  "version": "2.5.8",
+                  "source": "registry+https://github.com/rust-lang/crates.io-index",
+                  "features": [
+                    "default",
+                    "std"
+                  ]
+                },
+                "data_dependencies": [
+                  {
+                    "name": "icu_collections",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": []
+                  },
+                  {
+                    "name": "icu_locale_core",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "zerovec"
+                    ]
+                  },
+                  {
+                    "name": "icu_normalizer",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "compiled_data"
+                    ]
+                  },
+                  {
+                    "name": "icu_normalizer_data",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": []
+                  },
+                  {
+                    "name": "icu_properties",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "compiled_data"
+                    ]
+                  },
+                  {
+                    "name": "icu_properties_data",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": []
+                  },
+                  {
+                    "name": "icu_provider",
+                    "version": "2.3.1",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "baked"
+                    ]
+                  },
+                  {
+                    "name": "idna",
+                    "version": "1.1.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "alloc",
+                      "compiled_data",
+                      "std"
+                    ]
+                  },
+                  {
+                    "name": "idna_adapter",
+                    "version": "1.2.2",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "compiled_data"
+                    ]
+                  },
+                  {
+                    "name": "unicode-ident",
+                    "version": "1.0.27",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": []
+                  },
+                  {
+                    "name": "unicode-normalization",
+                    "version": "0.1.26",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "default",
+                      "std"
+                    ]
+                  },
+                  {
+                    "name": "unicode-xid",
+                    "version": "0.2.6",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "default"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "caller-defaults-on",
+              "report": {
+                "verdict": "PASS",
+                "total": 73,
+                "failed": 0
+              },
+              "graph": {
+                "regress": {
+                  "version": "0.12.0",
+                  "source": "registry+https://github.com/rust-lang/crates.io-index",
+                  "features": [
+                    "backend-pikevm",
+                    "default",
+                    "prohibit-unsafe",
+                    "std",
+                    "utf16"
+                  ]
+                },
+                "url": {
+                  "version": "2.5.8",
+                  "source": "registry+https://github.com/rust-lang/crates.io-index",
+                  "features": [
+                    "default",
+                    "std"
+                  ]
+                },
+                "data_dependencies": [
+                  {
+                    "name": "icu_collections",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": []
+                  },
+                  {
+                    "name": "icu_locale_core",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "zerovec"
+                    ]
+                  },
+                  {
+                    "name": "icu_normalizer",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "compiled_data"
+                    ]
+                  },
+                  {
+                    "name": "icu_normalizer_data",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": []
+                  },
+                  {
+                    "name": "icu_properties",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "compiled_data"
+                    ]
+                  },
+                  {
+                    "name": "icu_properties_data",
+                    "version": "2.3.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": []
+                  },
+                  {
+                    "name": "icu_provider",
+                    "version": "2.3.1",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "baked"
+                    ]
+                  },
+                  {
+                    "name": "idna",
+                    "version": "1.1.0",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "alloc",
+                      "compiled_data",
+                      "std"
+                    ]
+                  },
+                  {
+                    "name": "idna_adapter",
+                    "version": "1.2.2",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "compiled_data"
+                    ]
+                  },
+                  {
+                    "name": "unicode-ident",
+                    "version": "1.0.27",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": []
+                  },
+                  {
+                    "name": "unicode-normalization",
+                    "version": "0.1.26",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "default",
+                      "std"
+                    ]
+                  },
+                  {
+                    "name": "unicode-xid",
+                    "version": "0.2.6",
+                    "source": "registry+https://github.com/rust-lang/crates.io-index",
+                    "features": [
+                      "default"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "input_checks": [
+            {
+              "path": "scripts\\pi-sdk-conformance\\current-profile.json",
+              "recorded": "43e9ef448412c7be775a1ee1fa561e559609e9320ac4052b15d706151f3f6519",
+              "current": "43e9ef448412c7be775a1ee1fa561e559609e9320ac4052b15d706151f3f6519",
+              "match": true
+            },
+            {
+              "path": "scripts\\pi-sdk-conformance\\consumer\\src\\main.rs",
+              "recorded": "51d6228dc3b69df2a24adab8d32e9fed7283f15a03cf24fa64a9e1f735a76a3f",
+              "current": "51d6228dc3b69df2a24adab8d32e9fed7283f15a03cf24fa64a9e1f735a76a3f",
+              "match": true
+            },
+            {
+              "path": "scripts\\pi-sdk-conformance\\frozen\\leaf-cases.json",
+              "recorded": "2d832035e60e1dc6989ac5d956d39be73352876a5fc22a25199adcfc5d69272a",
+              "current": "2d832035e60e1dc6989ac5d956d39be73352876a5fc22a25199adcfc5d69272a",
+              "match": true
+            },
+            {
+              "path": "scripts\\pi-sdk-conformance\\frozen\\leaf-expected.json",
+              "recorded": "bb1dec60edb115827d39fe57343a92524aa01bca1786763ebffbfca6a4135a89",
+              "current": "bb1dec60edb115827d39fe57343a92524aa01bca1786763ebffbfca6a4135a89",
+              "match": true
+            },
+            {
+              "path": "scripts\\pi-sdk-conformance\\frozen\\unicode16-probes.json",
+              "recorded": "e5b4db1c0e8d1605648aa0faec0969e180b02795aa67110b2a29ee19a2c582d4",
+              "current": "e5b4db1c0e8d1605648aa0faec0969e180b02795aa67110b2a29ee19a2c582d4",
+              "match": true
+            }
+          ],
+          "runtime_sources_equal": 52,
+          "limits": "Original archive identity only; seven packaged test paths later migrated. Not a package produced at current HEAD and not final 20.57/58 proof."
+        },
+        "reused_runtime": {
+          "counts_receipt": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-unicode-upstream-impl-b181cfc\\workspace-test-counts.json",
+          "counts_sha256": "702b25d3ae1383f979230c75121196eeb85779354ff3f6fb3d4cf08842f0525d",
+          "source_receipt": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-unicode-upstream-impl-b181cfc\\final-audit.json",
+          "source_receipt_sha256": "01a0084d2494435232de1462b4ac61c62b2dad8dd7bb11ca26f756d5b9c285c8",
+          "suites": [
+            {
+              "path": "crates/opi-ai/tests/transcript_contract.rs",
+              "sha256": "ba41a0477f821e5614ac3019dab65adba8bcba67eb4d375b8806146e7fdae8f4",
+              "recorded_summaries": [
+                {
+                  "outcome": "ok",
+                  "passed": 10,
+                  "failed": 0,
+                  "ignored": 0,
+                  "summary": "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+                }
+              ],
+              "identity_match": true
+            },
+            {
+              "path": "crates/opi-ai/tests/replay_contract.rs",
+              "sha256": "04fe49bef874e3ef464b7d12317d30b4e328f36c6f2899f3606ee1619e41ece7",
+              "recorded_summaries": [
+                {
+                  "outcome": "ok",
+                  "passed": 18,
+                  "failed": 0,
+                  "ignored": 0,
+                  "summary": "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+                }
+              ],
+              "identity_match": true
+            },
+            {
+              "path": "crates/opi-ai/tests/schema_public.rs",
+              "sha256": "4f89852c6b79669399f5ce07167032474dde6834cb6633ab7fed821da049285b",
+              "recorded_summaries": [
+                {
+                  "outcome": "ok",
+                  "passed": 24,
+                  "failed": 0,
+                  "ignored": 0,
+                  "summary": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.96s"
+                }
+              ],
+              "identity_match": true
+            },
+            {
+              "path": "crates/opi-ai/tests/schema_engine.rs",
+              "sha256": "654ed1f9462f5cda0a7f1f95c373f1556b3a1da511bf90e04f39c677a3978140",
+              "recorded_summaries": [
+                {
+                  "outcome": "ok",
+                  "passed": 65,
+                  "failed": 0,
+                  "ignored": 0,
+                  "summary": "test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 31.29s"
+                }
+              ],
+              "identity_match": true
+            },
+            {
+              "path": "crates/opi-agent/tests/tool_validation.rs",
+              "sha256": "8b9c029c5401a592de7185d54576e30e6a23e9dfdc595c0d9dba39a6b8199449",
+              "recorded_summaries": [
+                {
+                  "outcome": "ok",
+                  "passed": 28,
+                  "failed": 0,
+                  "ignored": 0,
+                  "summary": "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s"
+                }
+              ],
+              "identity_match": true
+            },
+            {
+              "path": "crates/opi-coding-agent/tests/session_runtime.rs",
+              "sha256": "cccfb639dc706da37d23c5c7a5821a8a69265c5e4cbbbd15cef256818dc2c51f",
+              "recorded_summaries": [
+                {
+                  "outcome": "ok",
+                  "passed": 64,
+                  "failed": 0,
+                  "ignored": 0,
+                  "summary": "test result: ok. 64 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.34s"
+                }
+              ],
+              "identity_match": true
+            }
+          ],
+          "execution": "prior recorded run only; no Cargo executed by this plan"
+        },
+        "committed_repair": "7a83f480e1b2c3bef3de3c30ab6c3f57bae4bfae",
+        "committed_test_migration": "13e189160f459c50539d228bac2df0bba85d69d8",
+        "scenario_dispositions": [
+          {
+            "task": "20.6",
+            "criterion": "V-06",
+            "before": "open",
+            "after": "open",
+            "reason": "Anthropic native inline-tools/by-value tool_addition is not established by current collapse fixtures; real adapter and assembled closure remain 20.39/20.34/20.57. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.6",
+            "criterion": "V-31",
+            "before": "open",
+            "after": "open",
+            "reason": "Current chronology projection proves a local slice; full source-defined capability behavior across the published adapter set still needs final protocol/assembled proof. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.6",
+            "criterion": "AIR-008",
+            "before": "open",
+            "after": "open",
+            "reason": "Ordered sections/declarations and guarded installation have local proof; source-wide complete SDK chronology remains open for final assembled public consumer verification. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.6",
+            "criterion": "AIR-011",
+            "before": "open",
+            "after": "open",
+            "reason": "Local native/collapse/Strict fixtures do not prove every completed published adapter capability and its loss facts. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.6",
+            "criterion": "AIR-020",
+            "before": "open",
+            "after": "open",
+            "reason": "Current compiling caller cutover is evidenced; final all-public-entry/direct-adapter consumer closure is not inferred from that local cutover. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.6",
+            "criterion": "P20-S06",
+            "before": "open",
+            "after": "met",
+            "reason": "Proposed local-slice state reconciliation: the exact historical DoD slice and unchanged/current regression inputs have evidence; this is not closure of its broader source V/AIR criteria."
+          },
+          {
+            "task": "20.7",
+            "criterion": "V-07",
+            "before": "open",
+            "after": "open",
+            "reason": "Local pairing/replay regressions pass; do not infer complete published adapter capture/serialization coverage from the constructed/current histories. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.7",
+            "criterion": "V-08",
+            "before": "open",
+            "after": "open",
+            "reason": "Current supported-wire/rejection cases are evidence; final model-by-wire user/tool image matrix remains with completed real adapters and assembled consumer. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.7",
+            "criterion": "AIR-010",
+            "before": "open",
+            "after": "open",
+            "reason": "Current replay identity/opaque preservation is evidenced; all published family producers and final public consumer closure are not established by local fixtures. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.7",
+            "criterion": "AIR-012",
+            "before": "open",
+            "after": "open",
+            "reason": "Current association, missing-result and unknown-effect repairs have regression proof; complete published public-path closure remains final assembled work. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.7",
+            "criterion": "AIR-013",
+            "before": "open",
+            "after": "open",
+            "reason": "Current failed/Length projection and real-session facts have proof; final full adapter/public-path failure projection is not certified here. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.7",
+            "criterion": "AIR-014",
+            "before": "open",
+            "after": "open",
+            "reason": "Current image preservation and typed rejection are retained; complete published model/wire media combinations remain unverified. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.7",
+            "criterion": "AIR-038",
+            "before": "open",
+            "after": "open",
+            "reason": "Constructed opaque history/current producers cannot prove signed/encrypted/thoughtSignature/reasoning capture and continuation for every published family. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.7",
+            "criterion": "P20-S07",
+            "before": "open",
+            "after": "met",
+            "reason": "Proposed local-slice state reconciliation: the exact historical DoD slice and unchanged/current regression inputs have evidence; this is not closure of its broader source V/AIR criteria."
+          },
+          {
+            "task": "20.7",
+            "criterion": "DEL-03",
+            "before": "open",
+            "after": "open",
+            "reason": "The local Context/replay mechanisms do not alone close the complete manual-loop/model-switch/serialization path across the completed SDK. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.7",
+            "criterion": "V-15",
+            "before": "open",
+            "after": "open",
+            "reason": "Retain local raw/normalization/replay and host non-execution regressions; full SDK validation/projection error matrix remains open, with host-only execution policy excluded. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.10",
+            "criterion": "V-35",
+            "before": "open",
+            "after": "open",
+            "reason": "Keep complete public normalizer/dialect corpus acceptance open; current passing public and Agent regressions are bounded proof, not full keyword/format/ref coverage. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.10",
+            "criterion": "AIR-024",
+            "before": "open",
+            "after": "open",
+            "reason": "Synchronize RDF-21 data profile, retain current validator fixes, and leave complete source-dialect/format/ref/public-utility acceptance open. Full assembled owner: 20.57; retain original source text and exclude host-only obligations."
+          },
+          {
+            "task": "20.10",
+            "criterion": "P20-S10",
+            "before": "open",
+            "after": "met",
+            "reason": "Proposed local-slice state reconciliation: the exact historical DoD slice and unchanged/current regression inputs have evidence; this is not closure of its broader source V/AIR criteria."
+          }
+        ],
+        "full_source_closure_handoffs": [
+          {
+            "criterion": "V-06",
+            "local_task": "20.6",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "V-31",
+            "local_task": "20.6",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "AIR-008",
+            "local_task": "20.6",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "AIR-011",
+            "local_task": "20.6",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "AIR-020",
+            "local_task": "20.6",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "V-07",
+            "local_task": "20.7",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "V-08",
+            "local_task": "20.7",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "AIR-010",
+            "local_task": "20.7",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "AIR-012",
+            "local_task": "20.7",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "AIR-013",
+            "local_task": "20.7",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "AIR-014",
+            "local_task": "20.7",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "AIR-038",
+            "local_task": "20.7",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "DEL-03",
+            "local_task": "20.7",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "V-15",
+            "local_task": "20.7",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "V-35",
+            "local_task": "20.10",
+            "full_owner": "20.57"
+          },
+          {
+            "criterion": "AIR-024",
+            "local_task": "20.10",
+            "full_owner": "20.57"
+          }
+        ],
+        "test_disposition": [
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-agent/tests/compaction.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-agent/tests/event_public_boundary.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-agent/tests/image_tool_results.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-agent/tests/preparation_transaction.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-agent/tests/provider_public_safety.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-agent/tests/thinking_session.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-agent/tests/tool_authority.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-agent/tests/tool_event_redaction.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-agent/tests/tool_validation.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/anthropic_fixtures.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/api_mapped_provider.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/azure_openai_fixtures.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/bedrock_fixtures.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/custom_provider_registration.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/data/schema-expected.json",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/gemini_fixtures.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/gemini_lifecycle.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/image_provider_serialization.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/mistral_fixtures.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/model_wire_metadata.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/oauth_wire_shape.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/openai_chat_fixtures.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/openai_codex_responses.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/openai_compat_lifecycle.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/openai_responses_fixtures.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/openai_responses_lifecycle.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/openrouter_fixtures.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/output_content_image.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/per_request_auth.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/phase14_remediation.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-ai/tests/anthropic_fixtures.rs, crates/opi-ai/tests/openai_chat_fixtures.rs, crates/opi-ai/tests/model_wire_metadata.rs, crates/opi-ai/tests/api_mapped_provider.rs, crates/opi-ai/tests/provider_collection.rs, crates/opi-ai/tests/usage_cost.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/provider_collection.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/provider_diagnostics.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/provider_error_classes.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/provider_lifecycle.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/provider_trait.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/proxy_support.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/replay_contract.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/request_enrichment.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/retry_backoff.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/schema_engine.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/schema_public.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/stream_events.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/test_support_tests.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/tool_result_no_leak.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/tool_result_wire.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/transcript_contract.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-ai/tests/vertex_fixtures.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/anthropic_cache_markers.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/custom_provider_map.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/custom_provider_registration.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/extension_mapped_catalog.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/list_models.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/oauth_auth.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/phase17_failure_rollback.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/runtime_failure_recovery.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/phase17_provider_runtime.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/provider_runtime.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/provider_factory.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/session_export.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/session_runtime.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "7a83f48",
+            "action": "add",
+            "test": "scripts/pi-sdk-conformance/test_package_proof.py",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-agent/tests/agent_wrapper.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-agent/tests/phase17_prepare_call.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-agent/tests/retry_agent.rs, crates/opi-agent/tests/agent_wrapper.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-agent/tests/retry_agent.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-ai/tests/anthropic_fixtures.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-ai/tests/api_mapped_provider.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-ai/tests/model_wire_metadata.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-ai/tests/openai_chat_fixtures.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-ai/tests/phase14_remediation.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-ai/tests/anthropic_fixtures.rs, crates/opi-ai/tests/openai_chat_fixtures.rs, crates/opi-ai/tests/model_wire_metadata.rs, crates/opi-ai/tests/api_mapped_provider.rs, crates/opi-ai/tests/provider_collection.rs, crates/opi-ai/tests/usage_cost.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-ai/tests/provider_collection.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-ai/tests/usage_cost.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "add",
+            "test": "crates/opi-coding-agent/tests/architecture_guards.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "add",
+            "test": "crates/opi-coding-agent/tests/ci_contract.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/common/phase14_auth_runtime.rs -> crates/opi-coding-agent/tests/common/auth_runtime.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/common/auth_runtime.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/common/phase17.rs -> crates/opi-coding-agent/tests/common/runtime_evidence.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/common/runtime_evidence.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/phase17_api_audit.rs -> crates/opi-coding-agent/tests/common/source_audit.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/common/source_audit.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/phase16_crate_boundaries.rs -> crates/opi-coding-agent/tests/crate_boundaries.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/crate_boundaries.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/phase17_cross_mode.rs -> crates/opi-coding-agent/tests/cross_mode_runtime.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/cross_mode_runtime.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/phase17_artifact_truthfulness.rs -> crates/opi-coding-agent/tests/evidence_artifacts.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/evidence_artifacts.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/interactive_auth.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/interactive_tui_auth.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/phase17_product_evidence.rs -> crates/opi-coding-agent/tests/product_evidence.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/product_evidence.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/phase17_provider_runtime.rs -> crates/opi-coding-agent/tests/provider_runtime.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/provider_runtime.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/phase17_failure_rollback.rs -> crates/opi-coding-agent/tests/runtime_failure_recovery.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/runtime_failure_recovery.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/phase17_legacy_migration.rs -> crates/opi-coding-agent/tests/session_migration.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/session_migration.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "add",
+            "test": "crates/opi-coding-agent/tests/test_hermeticity.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/phase17_tool_authority.rs -> crates/opi-coding-agent/tests/tool_authority.rs",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": "crates/opi-coding-agent/tests/tool_authority.rs",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891",
+            "action": "update",
+            "test": "scripts/test_opi_doc_check.py",
+            "interface": "existing behavior-owned public regression seam",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891 redundant test",
+            "action": "delete",
+            "test": "phase17_auth_failure_does_not_silently_fallback",
+            "interface": "route/auth non-dispatch or legacy-session replay",
+            "replacement": "provider_runtime.rs::phase17_route_and_auth_failures_do_not_dispatch_model_http",
+            "slim_candidate": null
+          },
+          {
+            "subject": "13e1891 redundant test",
+            "action": "delete",
+            "test": "phase17_legacy_bare_model_normalizes_to_unique_dispatchable_route",
+            "interface": "route/auth non-dispatch or legacy-session replay",
+            "replacement": "session_migration.rs::phase17_legacy_session_fixture_byte_identical_after_resume_normalize_fork",
+            "slim_candidate": null
+          }
+        ],
+        "proof_limits": "Prior executions are attributed, not rerun. The 20.8 revised DoD defaults to failing; original footer fields are historical. Historical passing dependent tasks retain their shipped local verdict, not proof of the new dependency contract. 20.11/20.34/20.57 remain failing/open.",
+        "plan_review": {
+          "verdict": "READY",
+          "reviewer": "/root/plan_p2_fresh_review",
+          "independence": "fresh-context-same-family",
+          "fallback": "No callable Workflow runtime; one fresh reviewer applied all ten lenses with adversarial rejection per verify-engine.",
+          "fixed_input": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-ledger-plan-3mq03s16\\p2-input-v1.json",
+          "fixed_input_sha256": "ff255a134ba9d75b81001e577e992aa6e2c33dd74287b32bbc73eac31852cc08",
+          "reviewed_task_array_sha256": "660db4ca63fd5dfcea2c79c5d7a09d2d0814ac16ac348ec06109f4592f438b2d",
+          "report": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-ledger-plan-3mq03s16\\p2-review-final.json",
+          "report_sha256": "4335ab7366b2cbc49d0a2ae3ca25b3f536d80f7dce8e294611c45cf568cbe49a",
+          "task_graph_edited_after_review": false,
+          "canonical_installed": false
+        }
+      }
+    },
+    {
+      "timestamp": "2026-10-19T02:58:40+08:00",
+      "summary": "P.4 whole-graph confirmation received from the user (confirm-all). Install the reviewed reconciliation write-only; no commit or task execution is authorized. The revised 20.8 remains failing, the three local scenario reconciliations are accepted, and complete 20.11/20.34/20.57 acceptance remains open.",
+      "gate_results": {
+        "graph_confirmation": {
+          "response": "confirm-all",
+          "approved_draft_sha256": "a03ba1529cefe75f000d208fb7906c25477dd85aa2f03e37f0e29bfae31e7237",
+          "checkpoint_choice": "write-only (standing user instruction: no commit)",
+          "review_verdict": "READY",
+          "reviewed_task_array_sha256": "660db4ca63fd5dfcea2c79c5d7a09d2d0814ac16ac348ec06109f4592f438b2d"
+        },
+        "test_disposition": [
+          {
+            "subject": "confirmed plan installation",
+            "action": "none",
+            "test": "none",
+            "interface": "canonical implementation ledger",
+            "replacement": null,
+            "slim_candidate": null
+          }
+        ]
+      }
+    }
+  ],
   "verify_runs": [
     {
       "stage": "plan",
@@ -13373,68 +15354,14 @@
       "criterion_id": null
     },
     {
-      "timestamp": "2026-10-17T04:46:45+08:00",
-      "task": "20.2",
-      "stage": "exec",
-      "mode": "manual-7-lens (workflow runtime unavailable)",
+      "stage": "plan",
       "wf_ref": null,
-      "result": "no must-fix findings; lenses L-D1..L-D7 audited against commit b2ff2f398b8d2416f0284ac7a77731338cf0a436 (DoD clause-by-clause, non-vacuous tests, production call sites via agent_loop/run_provider_call/drain_to_completion, truthful evidence, non-goals excluded incl. no deferred-fetch scope, dependency rules unchanged, P20-FINAL locality with closure test and closed legacy producer writes)"
-    },
-    {
-      "timestamp": "2026-10-17T09:44:20+08:00",
-      "task": "20.3",
-      "stage": "exec",
-      "mode": "manual-7-lens (workflow runtime unavailable)",
-      "wf_ref": null,
-      "result": "no must-fix findings; lenses L-D1..L-D7 audited against commit bd8bf84f4ac9e1de8e62c8b1262925fd466bc511 (DoD clause-by-clause incl. frozen binding/lazy auth/portability/upsert/mismatch/survival/catalog-absence/ApiId identity, non-vacuous adapter-observed assertions, production call sites via agent_loop and provider_factory through passing workspace suites, truthful evidence, non-goals excluded, dependency manifests unchanged, single-owner locality with deleted parallel facade)"
-    },
-    {
-      "timestamp": "2026-10-17T17:22:23+08:00",
-      "task": "20.5",
-      "stage": "exec",
-      "mode": "manual-7-lens (workflow runtime unavailable)",
-      "wf_ref": null,
-      "result": "no must-fix findings after closing the connect-barrier gap; lenses L-D1..L-D7 audited against commit 5489861037a3cd72ab8a1c202aa0c362278d9581 (DoD clause-by-clause incl. every-byte legal fixtures, TextDecoder-replacement parity, keepalive/large-event acceptance, AWS CRC/checked-arithmetic preservation, five-site final arguments with owned raw + arguments_error, provisional-never-executable, and deterministic connect/response/read/backpressure/drop barriers with timeout guards only)"
-    },
-    {
-      "timestamp": "2026-10-17T20:23:55+08:00",
-      "task": "20.8",
-      "stage": "exec",
-      "mode": "manual-7-lens (workflow runtime unavailable)",
-      "wf_ref": null,
-      "result": "no must-fix findings; L-D1 clause-by-clause against commit 57eff804b54998b3b0b3aa729414d5e91ca2ed45 including exact-archive pins, deterministic pinned-hash Unicode-16 generation, per-member namespace transform integrity, ordinary-consumer proof without root patch/path deps/lockfile/generator, explicit feature/native/unsafe/MSRV review, OPEN publication stop, and substrate-only scope"
-    },
-    {
-      "timestamp": "2026-10-18T00:44:07+08:00",
-      "task": "20.9",
-      "stage": "exec",
-      "mode": "manual-7-lens (workflow runtime unavailable)",
-      "wf_ref": null,
-      "result": "no must-fix findings; L-D1 clause-by-clause against commit 98b5c900b963bb42cc4f4a50a1d1bd7f9b8cb9c0 including finite IR, 42 mechanisms, 21 formats, structural inert guards, JS integer-index enumeration, full ref frames, fallible evaluated state, explicit work stack, productive/no-progress recursion distinction, and the no-I/O/no-source-free-limits constraints; L-D7 noted the task_owned_paths append timing deviation, disclosed in the C.1a inference note"
-    },
-    {
-      "timestamp": "2026-10-18T03:52:10+08:00",
-      "task": "20.10",
-      "stage": "exec",
-      "mode": "manual-7-lens (workflow runtime unavailable)",
-      "wf_ref": null,
-      "result": "no must-fix findings; L-D1 clause-by-clause against commit f47b5b73bfc9e6b13cf1a68d00fb65c6ba093edd covering the DoD's clone-before-normalize, JS-corpus conversions (frozen 44-case battery from recorded public_pi outputs), final original-schema check with the RDF-09 fix, precise integers, arguments_error-before-coercion, redacted diagnostics, generation-owned IR (OnceLock on the declaration), blocking-pool cancellation without hard-kill claims, and agent consumption with hooks/final-authorizer policy preserved; L-D7 confirmed the authority.rs C.1a append was executed before the edit at B.3 with recorded evidence"
-    },
-    {
-      "timestamp": "2026-10-18T13:22:12+08:00",
-      "task": "20.6",
-      "stage": "exec",
-      "mode": "manual-7-lens (workflow runtime unavailable)",
-      "wf_ref": null,
-      "result": "no must-fix findings; L-D1 clause-by-clause against commit 41559c603ee0d4f152578e5056b0b131e8039f70 covering the DoD's serializable chronology, shorthand normalization, ordered body/sections/tools with by-value redefine and dedup, validated installation, canonical-raw preservation, the same-compiling-cutover migration of independent system/tools readers (adapters, mocks, Agent/summary callers) with session v1 readers/v2 writer and host authorization retained, and native/collapse projection for current migrated adapters; L-D7 confirmed via a python fnmatch audit that all 83 changed paths are owned, including both C.1a appends executed before edits with compiler evidence"
-    },
-    {
-      "timestamp": "2026-10-18T15:36:12+08:00",
-      "task": "20.7",
-      "stage": "exec",
-      "mode": "manual-7-lens (workflow runtime unavailable)",
-      "wf_ref": null,
-      "result": "no must-fix findings; L-D1 clause-by-clause against commit 4d660c6f7bf11ce6187976032c56df1d30dc9e45 covering association rejection, request-local ResultUnavailable/UnknownEffect closure with zero execution, Error/Aborted/Length projections with native/collapse/Strict distinction, Pi-1.3 cross-identity thinking drop with signed-empty/terminal-only data and Responses dual-ID round trip, and opaque preservation through the six migrated adapters; L-D7 confirmed via python fnmatch audit after the recorded C.1a append of 36 execution-discovered paths"
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 5,
+      "ran_at": "2026-10-19T02:57:14+08:00",
+      "task_id": null,
+      "criterion_id": null
     }
   ]
 }
