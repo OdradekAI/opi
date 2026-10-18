@@ -1905,7 +1905,7 @@
       "definition_of_done": "Public manual tool loop/model change preserves originals and block-bound opaque metadata through serialization. Batch-position/source-ID pairing rejects ambiguity/orphans, closes missing results request-locally as ResultUnavailable/UnknownEffect, never executes tools. Error/Aborted/Length projections retain actual effects and distinguish native/collapse/Strict. Cross provider/API/model drops all thinking per Pi1.3, signed-empty/terminal-only data and Responses dual IDs roundtrip for same identity. Local scope: canonical replay and opaque preservation through current migrated adapters. Complete V-32, including actual effort-stamp capture through terminal/Serde and the next same-identity request, closes at 20.34 after 20.37 and the other completed protocol adapters.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -2132,6 +2132,17 @@
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
+        "crates/opi-agent/src/event.rs",
+        "crates/opi-agent/tests/agent_loop_semantics.rs",
+        "crates/opi-agent/tests/agent_wrapper.rs",
+        "crates/opi-agent/tests/compaction.rs",
+        "crates/opi-agent/tests/evidence_runtime.rs",
+        "crates/opi-agent/tests/hooks_queues.rs",
+        "crates/opi-agent/tests/session_branching.rs",
+        "crates/opi-agent/tests/session_context.rs",
+        "crates/opi-agent/tests/session_contract.rs",
+        "crates/opi-agent/tests/thinking_session.rs",
+        "crates/opi-agent/tests/tool_validation.rs",
         "crates/opi-ai/README.md",
         "crates/opi-ai/README.zh.md",
         "crates/opi-ai/src/anthropic.rs",
@@ -2150,16 +2161,146 @@
         "crates/opi-ai/src/provider.rs",
         "crates/opi-ai/src/provider_collection.rs",
         "crates/opi-ai/src/replay.rs",
+        "crates/opi-ai/src/stream.rs",
         "crates/opi-ai/src/test_support.rs",
         "crates/opi-ai/src/transcript.rs",
         "crates/opi-ai/src/vertex.rs",
+        "crates/opi-ai/tests/anthropic_fixtures.rs",
+        "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs",
+        "crates/opi-ai/tests/api_mapped_provider.rs",
+        "crates/opi-ai/tests/azure_openai_fixtures.rs",
+        "crates/opi-ai/tests/bedrock_fixtures.rs",
+        "crates/opi-ai/tests/context_budget.rs",
+        "crates/opi-ai/tests/gemini_fixtures.rs",
+        "crates/opi-ai/tests/mistral_fixtures.rs",
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
+        "crates/opi-ai/tests/openai_codex_responses.rs",
+        "crates/opi-ai/tests/openai_responses_fixtures.rs",
+        "crates/opi-ai/tests/openrouter_fixtures.rs",
+        "crates/opi-ai/tests/phase14_remediation.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/provider_trait.rs",
         "crates/opi-ai/tests/replay_contract.rs",
-        "crates/opi-ai/tests/schema_public.rs"
+        "crates/opi-ai/tests/schema_public.rs",
+        "crates/opi-ai/tests/stream_events.rs",
+        "crates/opi-ai/tests/tool_result_no_leak.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs",
+        "crates/opi-ai/tests/transcript_contract.rs",
+        "crates/opi-ai/tests/vertex_fixtures.rs",
+        "crates/opi-coding-agent/tests/anthropic_cache_markers.rs",
+        "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+        "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+        "crates/opi-coding-agent/tests/session_export.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "4d660c6f7bf11ce6187976032c56df1d30dc9e45",
+      "evidence": {
+        "Opi-Task": "20.7",
+        "Opi-DoD-SHA256": "c6d1359b7e97c2b15b319372f05935ba96384c05f0a9faf30713bc3cfd45fd46",
+        "Opi-Verification": "workspace; smoke full PASSED (opi-doc-check, fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets -> 237 test targets ok, cargo test --workspace --doc -> 8 crates ok, rustdoc -D warnings); behavioral: cargo test -p opi-ai --test replay_contract -> 10 passed (P20 closure battery); cargo test -p opi-ai --lib -> 171 passed incl. 15 replay unit tests; adapter fixture suites green through the projected path; credential_store mutation_lock_times_out_under_contention observed flaky once under load, passes isolated and in the full rerun",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; all DoD clauses mapped (association rejects ambiguity/orphans, request-local ResultUnavailable/UnknownEffect closure never executing tools, Error/Aborted/Length projections retaining actual effects with native/collapse/Strict distinguished, cross provider/API/model thinking drop per Pi1.3 with signed-empty/terminal-only data and Responses dual IDs round-tripping for same identity, opaque preservation through current migrated adapters); one C.1a append with compiler/test evidence recorded in the ledger before the task commit (36 paths; E0063/E0608 breaks plus association-valid fixtures); AIR-038 per-wire encrypted-reasoning parity and V-32 effort stamps close at 20.34 per the acceptance partition; host execution/authorization/retry/session policy untouched; workflow runtime unavailable, wf_ref=null (recorded in verify_runs)",
+        "Opi-Acceptance": "V-07/V-08/V-15 SDK-active sub-boundaries and AIR-010/012/013/014 delivered for this slice (replay_contract battery + real-adapter wire proof); host-impact clauses (AIR-009/041, V-06 implementation revisions, V-16 full corpus) and V-32 remain with their owners"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-18T13:33:40+08:00",
+          "attempt": 1,
+          "summary": "B.1 contract research complete; B.2 authorization pending. Pinned sources read in full: .repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts (256 lines: same-model = provider+api+requested-model; cross drops ALL thinking never text; same keeps redacted/signed incl. empty, drops blank unsigned; cross toolCall drops thoughtSignature + adapter ID normalizer maps old->new incl. results; second pass: orphaned calls get synthetic error 'No result provided' results, system messages between call/results held until after results, Error/Aborted assistants skipped entirely, user turn closes batch) and openai-responses-shared.ts dual-ID mechanism (canonical id packed 'call_id|item_id', item ids fc_-prefixed, serializer splits, cross-model drops item id to avoid pairing validation). Registered replay-contracts.md (151 lines) RP matrix mapped. Current-code anchors: AssistantMessage{api,provider,model,response_model} has NO wire field (ApiKind conflates Chat/Responses/Codex; R01 forbids ApiKind-only continuation approval); anthropic.rs serializer converts foreign signed readable thinking to text and keeps foreign unsigned thinking (both contradict Pi1.3 drop-all), fabricates {} for malformed object args, degrades tool-result images to '[image: mime]' text; chat nulls content when tool_calls present and re-encodes args to '{}'; responses writes same id to id+call_id and parser keeps only one; gemini args null fallback; bedrock readable->text ignores signature. CONTRACT: (1) new crates/opi-ai/src/replay.rs - ReplayRoute{wire,provider,model,supports_images} + ReplayProjection{NativeOrCollapse default, Strict typed error before request build} + project_replay(&[Message],route,projection)->ReplayOutput{messages,facts}; association validation typed-fails before any auth/network: same-batch duplicate call ID, duplicate result, orphan result, result/call name mismatch; closed batches may reuse IDs; system between call and results held after results (batch transparent); identity = exact wire+provider+requested model with legacy-unknown never same (fail-closed); thinking: cross drops all incl. signed/redacted (canary: opaque never leaks to wire), same keeps redacted always + signed/empty-signed + drops blank unsigned; Error/Aborted assistants omitted from wire with linked non-execution results closed alongside (canonical preserved, facts recorded); Length assistants kept with expressible pairs; missing results close request-locally as synthetic error result expressing ResultUnavailable+UnknownEffect (never NotExecuted, never execution, canonical untouched); malformed proposals (arguments_error): raw text on string-arg wires (chat/responses), explicit named failure-context Text replacing the unrepresentable pair on object-arg wires (anthropic/bedrock/gemini; no {}/null fabrication); per-wire ID constraints legalized request-locally with stable bijective mapping synchronized across call/result (canonical untouched); image policy: known text-only stays typed preflight rejection (validate_request_for_model), image-capable anthropic/chat get real tool-result image blocks preserving order/error flag, anthropic error-result images split after the turn's results (pinned splitErrorToolResultImages), gemini/responses keep explicit text placeholder + facts until AIR-038 parity, details never serialized, URLs passed through never downloaded. (2) AssistantMessage gains #[serde(default)] wire: Option<WireApi> (legacy None never same-route); all parser/empty_assistant_message/test_support constructors set it. (3) Responses dual-ID roundtrip: parser packs call_id|fc_item_id, serializer splits, cross drops item part, results split to call part. (4) all six serializers + profiles consume project_replay at request-build head; chat keeps text alongside tool_calls; chat/responses send raw argument strings. (5) tests/replay_contract.rs battery covering V-07/V-08/AIR-010/012/013/014/038-slice/P20-S07/DEL-03/V-15 SDK-active clauses; update anthropic_thinking_roundtrip foreign test (drop not text) and anthropic.rs 1523/1539 {} fabrication unit tests (failure context); bilingual READMEs + CHANGELOG. Effort-stamp/V-32 full closes at 20.34 per DoD. Expected: multiple C iterations within cap 5 (six-adapter cutover + test migration).",
+          "gate_results": {
+            "phase": "B.1",
+            "contract": "recorded in this note",
+            "authorization": "PENDING B.2"
+          }
+        },
+        {
+          "timestamp": "2026-10-18T13:40:49+08:00",
+          "attempt": 1,
+          "summary": "B.2 authorized by user (execute per B.1 contract, task commit + separate ledger checkpoint, no push/publish). B.3: status -> in_progress, start HEAD 7fd0c61.",
+          "gate_results": {
+            "phase": "B.3",
+            "authorization": "granted"
+          }
+        },
+        {
+          "timestamp": "2026-10-18T15:34:08+08:00",
+          "attempt": 1,
+          "summary": "C.1a append (execution-discovered, with compiler/test evidence, appended before the task commit): 37 paths added to task_owned_paths. Evidence: the AIR-020-scoped AssistantMessage.wire field and the build_request_body -> Result cutover broke every in-scope constructor/caller in these files (E0063 missing field wire; E0608 indexing Result), and the association-validity requirement (AIR-012) required pairing fixture ToolResults with their batch calls in tool_result_wire/bedrock_fixtures/openai_chat_fixtures/tool_result_no_leak/github_copilot_provider (otherwise the new typed orphan-result failure fires). crates/opi-agent/src/event.rs redact_assistant_message clones the new provenance field; crates/opi-ai/src/stream.rs setup_failure_message synthesizes wire:None (pre-wire failure, fail-closed by design); anthropic_thinking_roundtrip updated to the Pi-1.3 cross-identity drop-all semantics; openai_responses_fixtures updated to dual-ID packed ids; transcript_contract gained .unwrap() on the now-Result body builder. All edits are within the mechanical cutover of this task; no unrelated behavior changed.",
+          "gate_results": {
+            "phase": "C.1a",
+            "paths_added": 36
+          }
+        },
+        {
+          "timestamp": "2026-10-18T15:36:12+08:00",
+          "attempt": 1,
+          "summary": "DEL-03 replay slice delivered in commit 4d660c6f7bf11ce6187976032c56df1d30dc9e45: (1) crates/opi-ai/src/replay.rs ports the pinned Pi 1.3.0 transform-messages.ts (256 lines, read in full) plus the reviewed RP-matrix hardening - ReplayRoute{wire,provider,model,supports_images}, ReplayProjection{NativeOrCollapse default, Strict typed error before request build}, ReplayFacts/ReplayLoss recording every departure; association by batch position+source ID with typed failures for same-batch duplicate call, duplicate result, orphan result and name mismatch, closed batches reusable (fc_0), system entries batch-transparent (held until after the pair); missing results closed request-locally as synthetic error results expressing ResultUnavailable+UnknownEffect (never NotExecuted, never execution, canonical untouched - RP-09); Error/Aborted turns omitted with their linked non-execution results as a closed unit, Length turns kept with expressible pairs (RP-04/05); identity = exact wire+provider+requested model with cross-identity dropping ALL thinking never converting to visible text (Pi 1.3 semantics, replacing the prior anthropic signed-readable->text conversion and bedrock readable->text for foreign history) and same-identity keeping redacted/signed incl. signed-empty while dropping blank unsigned (RP-02/03); malformed proposals raw on string-arg wires (chat/responses incl. legacy unmarked), explicit named failure contexts on object-arg wires (anthropic/bedrock/gemini with parse-check) - no {}/null fabrication (RP-08); request-local bijective wire-ID legalization (charset/length, fnv1a64 suffix, synchronized call/result, canonical untouched - RP-07); image association/order/failure-flag preserved, non-image routes get pi's explicit text placeholders (one per run), anthropic error-result images split after the turn's results with caption (pinned splitErrorToolResultImages #10794), details never serialized, URLs passed through; 15 unit tests inline. (2) AssistantMessage.wire: Option<WireApi> serde-defaulted (legacy None never same-identity, fail-closed per R01's ApiKind conflation); all parsers/empty_assistant_message constructors + stream setup_failure_message + test_support updated; Chat/Responses/Codex/Gemini/Vertex/Azure/Bedrock now store the requested model in model with reported models in response_model (Anthropic parity, RP-02 identity separation). (3) All six provider body builders return Result<Value,ProviderError> and consume project_replay at the head (ReplayError -> ProviderError::Config sanitized); stream_prepared surfaces association failures as typed error events with zero network; chat keeps turn text alongside tool_calls and sends raw argument strings; responses parser packs call_id|fc_item_id (fc_-prefixed, digest for foreign shapes) and the serializer restores both ids same-identity, omits item id foreign, items follow canonical block order; anthropic emits real tool-result image blocks on image-capable routes; serializers' parse-expect invariants documented (replay guarantees complete objects on object wires). (4) tests/replay_contract.rs closure battery (10 tests) drives real adapter bodies: association matrix, request-local closure with canonical untouchedness, failed-turn omission, Length retention, cross-identity canaries, same-identity signed-empty/redacted, dual-ID round trip + foreign item drop, malformed split by wire shape, synchronized legalization, image association/split/details non-leak, typed pre-network failure via stream_prepared. (5) bilingual READMEs (new Canonical Replay Projection section) + CHANGELOG Added/Breaking entries; doc-check PASS; tool_result_wire module baseline gains replay deliberately (lib.rs alphabetized). C.1a: one append of 36 execution-discovered paths with compiler/test evidence (E0063 missing wire, E0608 indexing Result, association-valid fixtures), recorded before the task commit. Environment: credential_store mutation_lock contention test observed flaky once under parallel load, passed isolated and in the full rerun (disclosed, not task-caused); no other incidents.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.sh full",
+            "d0_scenarios": "PASS: replay_contract 10/10; opi-ai lib 171/171 incl. 15 replay unit tests; workspace --all-targets 237 targets ok; --doc 8 crates ok",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7), no must-fix; L-D7 locality re-audited after the C.1a append: all changed paths owned",
+            "d3_gap_checks": "PASS: declared non-goals held (no execution/authorization/hook/retry/session changes); AIR-038 per-wire encrypted-reasoning parity, Anthropic inline-tools/by-value tool addition, sampling/onPayload and V-32 effort stamps stay with 20.34/20.35+; divergences documented (Pi-1.3 drop-all vs prior text conversion, packed dual-ID string, string-arg vs object-arg representability); flaky credential_store contention test disclosed",
+            "test_disposition": [
+              {
+                "subject": "P20 replay closure",
+                "action": "add",
+                "test": "crates/opi-ai/tests/replay_contract.rs (10 tests) + 15 replay unit tests in replay.rs",
+                "interface": "opi_ai::replay (project_replay, ReplayRoute, ReplayProjection, ReplayError/ReplayLoss, same_identity, supports_images_in_catalog)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "cross-identity thinking semantics",
+                "action": "update",
+                "test": "anthropic_thinking_roundtrip foreign-route test now expects drop-all (Pi 1.3) instead of signed-readable->text; bedrock foreign readable dropped",
+                "interface": "replay identity rules",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "{} fabrication exits",
+                "action": "delete",
+                "test": "anthropic serialize_tool_call_malformed_args_defaults_to_empty_object and serialize_tool_call_non_object_json_defaults_to_empty_object replaced by malformed_args_become_failure_context_not_empty_object + non_object_json_args_become_failure_contexts (equal-or-stronger failure-context proof)",
+                "interface": "anthropic serializer + replay RP-08",
+                "replacement": "failure-context tests",
+                "slim_candidate": null
+              },
+              {
+                "subject": "Responses dual-ID fixtures",
+                "action": "update",
+                "test": "openai_responses_fixtures id assertions updated to packed call_id|fc_item_id",
+                "interface": "responses parser packing",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "association-valid fixtures",
+                "action": "update",
+                "test": "tool_result_wire/tool_result_no_leak/bedrock_fixtures/openai_chat_fixtures/github_copilot_provider fixtures pair results with their batch calls; anthropic cache-marker test history closed",
+                "interface": "typed orphan-result failure",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "module-set baseline",
+                "action": "update",
+                "test": "tool_result_wire baseline gains replay (lib.rs alphabetized registry/replay/retry)",
+                "interface": "lib.rs public module set",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "all other suites",
+                "action": "retain",
+                "test": "green in the workspace run",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ],
+      "started_at_commit": "7fd0c61"
     },
     {
       "id": "20.8",
@@ -13286,6 +13427,14 @@
       "mode": "manual-7-lens (workflow runtime unavailable)",
       "wf_ref": null,
       "result": "no must-fix findings; L-D1 clause-by-clause against commit 41559c603ee0d4f152578e5056b0b131e8039f70 covering the DoD's serializable chronology, shorthand normalization, ordered body/sections/tools with by-value redefine and dedup, validated installation, canonical-raw preservation, the same-compiling-cutover migration of independent system/tools readers (adapters, mocks, Agent/summary callers) with session v1 readers/v2 writer and host authorization retained, and native/collapse projection for current migrated adapters; L-D7 confirmed via a python fnmatch audit that all 83 changed paths are owned, including both C.1a appends executed before edits with compiler evidence"
+    },
+    {
+      "timestamp": "2026-10-18T15:36:12+08:00",
+      "task": "20.7",
+      "stage": "exec",
+      "mode": "manual-7-lens (workflow runtime unavailable)",
+      "wf_ref": null,
+      "result": "no must-fix findings; L-D1 clause-by-clause against commit 4d660c6f7bf11ce6187976032c56df1d30dc9e45 covering association rejection, request-local ResultUnavailable/UnknownEffect closure with zero execution, Error/Aborted/Length projections with native/collapse/Strict distinction, Pi-1.3 cross-identity thinking drop with signed-empty/terminal-only data and Responses dual-ID round trip, and opaque preservation through the six migrated adapters; L-D7 confirmed via python fnmatch audit after the recorded C.1a append of 36 execution-discovered paths"
     }
   ]
 }
