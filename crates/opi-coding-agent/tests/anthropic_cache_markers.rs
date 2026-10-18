@@ -119,7 +119,8 @@ fn request(model: &str, cache_retention: CacheRetention) -> Request {
                     input_schema: json!({"type": "object"}),
                 },
             ],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(64),
         temperature: None,
         thinking: ThinkingConfig::default(),

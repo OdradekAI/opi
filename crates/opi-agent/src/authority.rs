@@ -84,8 +84,8 @@ pub enum ToolOrigin {
 ///
 /// Immutability is a usage guarantee: the [`ToolRegistry`] and the Agent hold
 /// registrations behind shared (non-`&mut`) handles. A registration is built
-/// once at trusted assembly and bound to the authorizer at construction; there
-/// is no post-construction registration path.
+/// at trusted assembly and frozen when installed in the registry; there is no
+/// post-installation registration mutation path.
 pub struct RegisteredTool {
     /// Trusted-assembly-owned registration identifier.
     pub registration_id: RegistrationId,
@@ -99,8 +99,9 @@ pub struct RegisteredTool {
     pub definition: ToolDef,
     /// The tool implementation invoked only after a current `Allow`.
     pub implementation: Arc<dyn Tool>,
-    /// Generation-owned schema IR: compiled lazily once per registration
-    /// from `definition.input_schema`. A replacement registry builds new
+    /// Generation-owned schema IR: compiled lazily from the declaration frozen
+    /// at registry installation. Assembly-time previews are discarded on
+    /// installation. A replacement registry builds new
     /// registrations, so in-flight calls keep their generation's compiled
     /// schemas alive through the shared Arc while new calls recompile
     /// against the new declaration (readiness-schema annex).
@@ -108,7 +109,7 @@ pub struct RegisteredTool {
 }
 
 impl RegisteredTool {
-    /// Build an immutable registration.
+    /// Build a registration for installation in an immutable registry.
     pub fn new(
         registration_id: RegistrationId,
         provider_visible_name: String,
@@ -158,11 +159,15 @@ impl ToolRegistry {
     pub fn from_tools(tools: Vec<RegisteredTool>) -> Result<Self, AuthorityError> {
         let mut registered: Vec<Arc<RegisteredTool>> = Vec::with_capacity(tools.len());
         let mut index: HashMap<String, usize> = HashMap::new();
-        for tool in tools {
+        for mut tool in tools {
             let name = tool.provider_visible_name.clone();
             if index.contains_key(&name) {
                 return Err(AuthorityError::DuplicateRegistration { name });
             }
+            // Trusted assembly may have changed the public definition after a
+            // schema preview. The immutable generation must compile the final
+            // installed declaration, never retain that earlier preview's IR.
+            tool.schema_validation = std::sync::OnceLock::new();
             index.insert(name, registered.len());
             registered.push(Arc::new(tool));
         }
@@ -456,6 +461,36 @@ mod tests {
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(names, vec!["read", "shell", "write"]);
         assert_eq!(registry.len(), 3);
+    }
+
+    #[test]
+    fn registry_recompiles_the_final_declaration_after_assembly_mutation() {
+        let mut tool = registered(
+            "read",
+            CapabilityIdentity::new("acme.documents.read").unwrap(),
+        );
+        tool.definition.input_schema = serde_json::json!(true);
+        let assembly_schema = Arc::clone(tool.schema_validation());
+        assert!(assembly_schema.validate(&serde_json::Value::Null).is_ok());
+        tool.definition.input_schema = serde_json::json!(false);
+
+        let registry = ToolRegistry::from_tools(vec![tool]).unwrap();
+        let installed = registry.get("read").unwrap();
+        assert_eq!(
+            registry.definitions()[0].input_schema,
+            serde_json::json!(false)
+        );
+        assert!(
+            installed
+                .schema_validation()
+                .validate(&serde_json::Value::Null)
+                .is_err()
+        );
+        assert!(assembly_schema.validate(&serde_json::Value::Null).is_ok());
+        assert!(Arc::ptr_eq(
+            installed.schema_validation(),
+            installed.schema_validation()
+        ));
     }
 
     #[test]

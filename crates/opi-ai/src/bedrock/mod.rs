@@ -188,7 +188,7 @@ impl BedrockProvider {
                         stream_events.extend(mapper.process(bedrock_event));
                     }
                     Err(e) => {
-                        stream_events.push(Err(e));
+                        stream_events.push(Err(mapper.failure(e)));
                     }
                 }
             }
@@ -274,31 +274,45 @@ impl Provider for BedrockProvider {
 
         let http_client = self.client.client().clone();
 
+        let snapshot = crate::stream::ProducerSnapshot::default();
+        let producer_snapshot = snapshot.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let producer_cancel = cancel.clone();
 
+        let tx_closed = tx.clone();
         tokio::spawn(async move {
-            let result = Self::stream_http(
-                http_client,
-                credentials,
-                base_url,
-                &model_id,
-                &body,
-                producer_cancel.clone(),
-                timeout,
-                extra_headers,
-                &tx,
-            )
-            .await;
-            match result {
-                Ok(()) | Err(ProviderError::Cancelled) => {}
-                Err(error) => {
-                    let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+            let run = async {
+                let result = Self::stream_http(
+                    http_client,
+                    credentials,
+                    base_url,
+                    &model_id,
+                    &body,
+                    producer_cancel.clone(),
+                    timeout,
+                    extra_headers,
+                    producer_snapshot,
+                    &tx,
+                )
+                .await;
+                match result {
+                    Ok(()) | Err(ProviderError::Cancelled) => {}
+                    Err(error) => {
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                    }
                 }
+            };
+            tokio::select! {
+                biased;
+                _ = producer_cancel.cancelled() => (),
+                _ = tx_closed.closed() => (),
+                _ = run => (),
             }
         });
 
-        Box::pin(CancelAwareReceiverStream::new(rx, cancel))
+        Box::pin(CancelAwareReceiverStream::with_snapshot(
+            rx, cancel, snapshot,
+        ))
     }
 }
 
@@ -317,6 +331,7 @@ impl BedrockProvider {
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
         extra_headers: Vec<(String, String)>,
+        snapshot: crate::stream::ProducerSnapshot,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let path = format!("/model/{model_id}/converse-stream");
@@ -418,98 +433,105 @@ impl BedrockProvider {
         let mut buffer: Vec<u8> = Vec::new();
         let mut mapper = BedrockMapper::new(model_id);
 
-        loop {
-            let chunk = tokio::select! {
-                biased;
-                _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
-                chunk = byte_stream.next() => match chunk {
-                    Some(c) => c,
-                    None => break,
-                },
-            };
+        mapper.set_snapshot(snapshot);
+        let result: Result<(), ProviderError> = async {
+            loop {
+                let chunk = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => return Err(mapper.failure(ProviderError::Cancelled)),
+                    chunk = byte_stream.next() => match chunk {
+                        Some(c) => c,
+                        None => break,
+                    },
+                };
 
-            let chunk = chunk.map_err(|error: reqwest::Error| {
-                if error.is_timeout() {
-                    ProviderError::Timeout
-                } else {
-                    ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
-                }
-            })?;
-            buffer.extend_from_slice(&chunk);
+                let chunk = chunk.map_err(|error: reqwest::Error| {
+                    if error.is_timeout() {
+                        ProviderError::Timeout
+                    } else {
+                        ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                            error.to_string(),
+                        ))
+                    }
+                })?;
+                buffer.extend_from_slice(&chunk);
 
-            let frames = match event_stream::parse_frames(&mut buffer) {
-                Ok(frames) => frames,
-                Err(_) => {
-                    let _ = send_or_cancel(
-                        &cancel,
-                        tx,
-                        Err(ProviderError::StreamError(
-                            ProviderErrorSummary::attested_static(
-                                "Bedrock stream contains a malformed complete frame",
-                            ),
-                        )),
-                    )
-                    .await?;
-                    return Ok(());
-                }
-            };
-            for frame in frames {
-                // Payloads decode with replacement semantics (AIR-006): an invalid
-                // byte becomes U+FFFD instead of silently dropping the
-                // event text.
-                let payload = String::from_utf8_lossy(&frame.payload);
-                let payload_str = payload.as_ref();
-                for event in parse_bedrock_event(&frame.event_type, payload_str) {
-                    match event {
-                        Ok(bedrock_event) => {
-                            for item in mapper.process(bedrock_event) {
-                                if !send_or_cancel(&cancel, tx, item).await? {
-                                    return Ok(());
+                let frames = match event_stream::parse_frames(&mut buffer) {
+                    Ok(frames) => frames,
+                    Err(_) => {
+                        let _ = send_or_cancel(
+                            &cancel,
+                            tx,
+                            Err(mapper.failure(ProviderError::StreamError(
+                                ProviderErrorSummary::attested_static(
+                                    "Bedrock stream contains a malformed complete frame",
+                                ),
+                            ))),
+                        )
+                        .await?;
+                        return Ok(());
+                    }
+                };
+                for frame in frames {
+                    // Payloads decode with replacement semantics (AIR-006): an invalid
+                    // byte becomes U+FFFD instead of silently dropping the
+                    // event text.
+                    let payload = String::from_utf8_lossy(&frame.payload);
+                    let payload_str = payload.as_ref();
+                    for event in parse_bedrock_event(&frame.event_type, payload_str) {
+                        match event {
+                            Ok(bedrock_event) => {
+                                for item in mapper.process(bedrock_event) {
+                                    if !send_or_cancel(&cancel, tx, item).await? {
+                                        return Ok(());
+                                    }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            if !send_or_cancel(&cancel, tx, Err(e)).await? {
-                                return Ok(());
+                            Err(e) => {
+                                if !send_or_cancel(&cancel, tx, Err(mapper.failure(e))).await? {
+                                    return Ok(());
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        if !buffer.is_empty() {
-            let _ = send_or_cancel(
-                &cancel,
-                tx,
-                Err(ProviderError::StreamError(
-                    ProviderErrorSummary::attested_static(
-                        "Bedrock stream ended with an incomplete frame",
-                    ),
-                )),
-            )
-            .await?;
-            return Ok(());
-        }
+            if !buffer.is_empty() {
+                let _ = send_or_cancel(
+                    &cancel,
+                    tx,
+                    Err(mapper.failure(ProviderError::StreamError(
+                        ProviderErrorSummary::attested_static(
+                            "Bedrock stream ended with an incomplete frame",
+                        ),
+                    ))),
+                )
+                .await?;
+                return Ok(());
+            }
 
-        if let Some(pending) = mapper.flush_pending() {
-            let _ = send_or_cancel(&cancel, tx, Ok(pending)).await?;
-        }
+            if let Some(pending) = mapper.flush_pending() {
+                let _ = send_or_cancel(&cancel, tx, Ok(pending)).await?;
+            }
 
-        if !mapper.saw_done {
-            let _ = send_or_cancel(
-                &cancel,
-                tx,
-                Err(ProviderError::StreamError(
-                    ProviderErrorSummary::attested_static(
-                        "Bedrock stream ended without terminal event",
-                    ),
-                )),
-            )
-            .await?;
-        }
+            if !mapper.saw_done {
+                let _ = send_or_cancel(
+                    &cancel,
+                    tx,
+                    Err(mapper.failure(ProviderError::StreamError(
+                        ProviderErrorSummary::attested_static(
+                            "Bedrock stream ended without terminal event",
+                        ),
+                    ))),
+                )
+                .await?;
+            }
 
-        Ok(())
+            Ok(())
+        }
+        .await;
+        result.map_err(|cause| mapper.failure(cause))
     }
 }
 
@@ -758,6 +780,7 @@ fn map_bedrock_stop_reason(raw: &str) -> StopReason {
 // ---------------------------------------------------------------------------
 
 struct BedrockMapper {
+    snapshot: crate::stream::ProducerSnapshot,
     partial: AssistantMessage,
     blocks: Vec<BlockState>,
     saw_done: bool,
@@ -779,8 +802,24 @@ enum BlockState {
 }
 
 impl BedrockMapper {
+    pub(crate) fn set_snapshot(&mut self, snapshot: crate::stream::ProducerSnapshot) {
+        self.snapshot = snapshot;
+        self.snapshot.record(&self.partial);
+    }
+
+    fn process(&mut self, event: BedrockEvent) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        let events = self.process_inner(event);
+        self.snapshot.record(&self.partial);
+        events
+    }
+
+    pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
+        cause.with_partial(self.partial.clone())
+    }
+
     fn new(model: &str) -> Self {
         Self {
+            snapshot: crate::stream::ProducerSnapshot::default(),
             partial: empty_assistant_message(model),
             blocks: Vec::new(),
             saw_done: false,
@@ -807,7 +846,10 @@ impl BedrockMapper {
         self.pending_done.take()
     }
 
-    fn process(&mut self, event: BedrockEvent) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+    fn process_inner(
+        &mut self,
+        event: BedrockEvent,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
         // Allow Metadata through even after saw_done
         if self.saw_done && !matches!(event, BedrockEvent::Metadata { .. }) {
             return Vec::new();
@@ -951,6 +993,14 @@ impl BedrockMapper {
             BedrockEvent::Metadata { usage } => {
                 self.usage = usage;
                 self.usage_reported = true;
+                self.partial.usage = Usage::reported(
+                    self.usage.input_tokens,
+                    self.usage.output_tokens,
+                    self.usage.cache_read_tokens,
+                    self.usage.cache_write_tokens,
+                    None,
+                    None,
+                );
                 // Flush pending Done with updated usage
                 if let Some(AssistantStreamEvent::Done { message, .. }) = &mut self.pending_done {
                     message.usage = Usage::reported(
@@ -965,14 +1015,12 @@ impl BedrockMapper {
                 self.pending_done.take().into_iter().map(Ok).collect()
             }
             BedrockEvent::Exception => {
-                // Current producers stop the dual terminal format: an in-band
-                // provider error event is a stream failure whose bounded
-                // diagnostic rides the typed cause; the accumulated partial is
-                // preserved by the public seam (ChatStream/CallFailure).
+                // Preserve state that did not produce a public event (usage,
+                // opaque content or signatures), alongside the typed cause.
                 self.saw_done = true;
-                vec![Err(ProviderError::StreamError(
+                vec![Err(self.failure(ProviderError::StreamError(
                     ProviderErrorSummary::attested_static("Bedrock returned a streaming error"),
-                ))]
+                )))]
             }
         }
     }

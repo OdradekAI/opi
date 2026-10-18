@@ -560,7 +560,7 @@ async fn reasoning_malformed_subset_stops_production_stream_with_non_retryable_e
         .filter_map(|result| result.as_ref().err())
         .collect();
     assert_eq!(errors.len(), 1, "invalid usage must emit one error");
-    assert!(matches!(errors[0], ProviderError::StreamError(_)));
+    assert!(errors[0].category() == opi_ai::provider::ProviderErrorCategory::Stream);
     assert_eq!(
         errors[0].to_string(),
         "stream error: reasoning_tokens (800) exceeds completion_tokens (500)"
@@ -568,7 +568,7 @@ async fn reasoning_malformed_subset_stops_production_stream_with_non_retryable_e
     assert!(!errors[0].is_retryable());
     assert!(matches!(
         results.last(),
-        Some(Err(ProviderError::StreamError(_)))
+        Some(Err(cause)) if cause.category() == opi_ai::provider::ProviderErrorCategory::Stream
     ));
     assert!(
         !results.iter().any(|result| matches!(
@@ -680,7 +680,8 @@ fn error_event_maps_to_stream_error() {
     // Current producers stop the dual terminal format: the in-band error
     // event is a stream failure with a bounded typed cause.
     match &items[0] {
-        Err(ProviderError::StreamError(summary)) => {
+        Err(cause) if cause.category() == opi_ai::provider::ProviderErrorCategory::Stream => {
+            let summary = cause.to_string();
             assert!(
                 summary.contains("openai chat stream error"),
                 "cause must be the neutral literal, got: {summary}"
@@ -953,7 +954,8 @@ fn make_test_request() -> Request {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(4096),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1102,7 +1104,8 @@ fn make_tool_request() -> Request {
                 description: "list a directory".into(),
                 input_schema: serde_json::json!({"type":"object","properties":{}}),
             }],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1306,6 +1309,7 @@ fn make_tool_result_request() -> Request {
                     timestamp_ms: 0,
                 }),
                 Message::ToolResult(ToolResultMessage {
+                    not_executed: None,
                     tool_call_id: "call_1".into(),
                     tool_name: "list_dir".into(),
                     content: vec![OutputContent::Text {
@@ -1318,7 +1322,8 @@ fn make_tool_result_request() -> Request {
                 }),
             ],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1405,7 +1410,8 @@ fn validate_rejects_image_on_text_only_openai_compatible_profile() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1607,7 +1613,8 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1677,7 +1684,8 @@ async fn profile_extra_headers_reach_the_http_wire() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1731,7 +1739,8 @@ async fn stream_cancellation_aborts_before_completion() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1758,7 +1767,9 @@ async fn stream_cancellation_aborts_before_completion() {
         .await
         .expect("stream must surface cancellation before the delayed terminal fixture completes");
     match next {
-        Some(Err(ProviderError::Cancelled)) => { /* typed cancellation, as contracted */ }
+        Some(Err(cause))
+            if cause.category() == opi_ai::provider::ProviderErrorCategory::Cancelled =>
+        { /* typed cancellation, as contracted */ }
         other => {
             panic!("expected Err(ProviderError::Cancelled) on cancellation, got: {other:?}")
         }
@@ -1800,7 +1811,8 @@ async fn chat_final_tool_call(arguments: &str) -> AssistantStreamEvent {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),

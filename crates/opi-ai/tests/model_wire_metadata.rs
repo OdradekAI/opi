@@ -171,7 +171,8 @@ fn unsupported_thinking_request(provider_id: &str, model_id: &str) -> Request {
             system_prompt: None,
             messages: Vec::new(),
             tools: Vec::new(),
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig {

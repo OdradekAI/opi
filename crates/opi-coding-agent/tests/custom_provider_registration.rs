@@ -235,7 +235,8 @@ async fn extension_provider_streams_without_network() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: opi_ai::provider::ThinkingConfig::default(),

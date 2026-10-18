@@ -186,7 +186,8 @@ fn gemini_request_body_uses_contents_field() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -243,7 +244,8 @@ fn gemini_request_body_strips_provider_prefix() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -353,9 +355,9 @@ async fn gemini_error_event_routing() {
     // Current producers stop the dual terminal format: the error event
     // routes to a typed stream failure, not an Error event.
     assert!(
-        items
-            .iter()
-            .any(|e| matches!(e, Err(ProviderError::StreamError(_)))),
+        items.iter().any(|e| e.as_ref().is_err_and(
+            |cause| cause.category() == opi_ai::provider::ProviderErrorCategory::Stream
+        )),
         "should have a typed stream failure"
     );
     assert!(
@@ -647,7 +649,8 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -790,7 +793,8 @@ fn gemini_http_request() -> Request {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -941,7 +945,7 @@ async fn assert_gemini_cancelled(stall_point: GeminiStallPoint) {
     assert!(
         matches!(
             remaining.as_slice(),
-            [Err(opi_ai::provider::ProviderError::Cancelled)]
+            [Err(cause)] if cause.category() == opi_ai::provider::ProviderErrorCategory::Cancelled
         ),
         "Gemini cancellation must yield exactly one typed error, got {remaining:?}"
     );

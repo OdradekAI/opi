@@ -167,7 +167,8 @@ async fn mock_provider_returns_error_response() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),

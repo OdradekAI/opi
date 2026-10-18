@@ -82,25 +82,29 @@ impl AgentProviderFailure {
 
     /// Redaction-safe public summary carried by variants that own one.
     pub fn summary(&self) -> Option<&ProviderErrorSummary> {
-        match &self.error {
-            ProviderError::RequestFailed(summary)
-            | ProviderError::StreamError(summary)
-            | ProviderError::AuthFailed(summary)
-            | ProviderError::Network(summary)
-            | ProviderError::Config(summary)
-            | ProviderError::ProviderSide(summary)
-            | ProviderError::UnsupportedCapability(summary) => Some(summary),
-            ProviderError::RateLimited { .. }
-            | ProviderError::Timeout
-            | ProviderError::CredentialNeeded { .. }
-            | ProviderError::CredentialRevoked { .. }
-            | ProviderError::AccountIdMissing { .. }
-            | ProviderError::LoginCancelled { .. }
-            | ProviderError::UnknownModel { .. }
-            | ProviderError::MissingWireRoute { .. }
-            | ProviderError::WireCompatMismatch { .. }
-            | ProviderError::Cancelled => None,
+        fn error_summary(error: &ProviderError) -> Option<&ProviderErrorSummary> {
+            match error {
+                ProviderError::StreamFailure(failure) => error_summary(failure.cause()),
+                ProviderError::RequestFailed(summary)
+                | ProviderError::StreamError(summary)
+                | ProviderError::AuthFailed(summary)
+                | ProviderError::Network(summary)
+                | ProviderError::Config(summary)
+                | ProviderError::ProviderSide(summary)
+                | ProviderError::UnsupportedCapability(summary) => Some(summary),
+                ProviderError::RateLimited { .. }
+                | ProviderError::Timeout
+                | ProviderError::CredentialNeeded { .. }
+                | ProviderError::CredentialRevoked { .. }
+                | ProviderError::AccountIdMissing { .. }
+                | ProviderError::LoginCancelled { .. }
+                | ProviderError::UnknownModel { .. }
+                | ProviderError::MissingWireRoute { .. }
+                | ProviderError::WireCompatMismatch { .. }
+                | ProviderError::Cancelled => None,
+            }
         }
+        error_summary(&self.error)
     }
 
     /// Retained provider failure with its safe typed metadata intact.

@@ -1,0 +1,13 @@
+{
+  "contract": "Supported crates.io backend data; no fixed Unicode release. See the registered Rust differences and Schema readiness source.",
+  "leaf_overrides": {
+    "url-23": {
+      "result": true,
+      "reason": "Upstream IDNA accepts the new Beria Erfe character in a raw domain; the frozen Node/Unicode16 observation remains false."
+    },
+    "url-28": {
+      "result": true,
+      "reason": "The percent-encoded spelling receives the same upstream IDNA mapping; the frozen Node/Unicode16 observation remains false."
+    }
+  }
+}

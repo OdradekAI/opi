@@ -10,13 +10,15 @@
 //! unresolved reference is not an error — the `$ref` leaf evaluates `false`.
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use serde_json::Value;
-use url::Url;
 
 use super::SchemaError;
 use super::guards;
 use super::js::js_keys;
+use super::proof::{Orbit, ProofContext, ReferenceUrl as Url};
+use super::pump::Equality;
 
 const DEFAULT_BASE: &str = "https://json-schema.org";
 
@@ -28,9 +30,9 @@ pub(crate) struct StackFrame<'a> {
     pub(crate) root: &'a Value,
     pub(crate) ids: Vec<&'a Value>,
     pub(crate) lexical_schema: &'a Value,
-    pub(crate) lexical_base: String,
-    pub(crate) reference_base: String,
-    pub(crate) resource_base: String,
+    pub(crate) lexical_base: Url,
+    pub(crate) reference_base: Url,
+    pub(crate) resource_base: Url,
     pub(crate) recursive_anchors: Vec<&'a Value>,
     pub(crate) dynamic_anchors: Vec<&'a Value>,
     pub(crate) in_retrieved_frame: bool,
@@ -45,7 +47,7 @@ pub(crate) struct RefResolution<'a> {
 
 pub(crate) struct RetrievedResource<'a> {
     pub(crate) target: &'a Value,
-    pub(crate) base: String,
+    pub(crate) base: Url,
     pub(crate) root: &'a Value,
 }
 
@@ -54,14 +56,16 @@ pub(crate) struct ResolvedResource<'a> {
     pub(crate) resource: &'a Value,
 }
 
+#[derive(Clone)]
 struct RetrievedFrameEntry<'a> {
     root: &'a Value,
-    base: String,
+    base: Url,
     id_depth: usize,
     resource_depth: usize,
 }
 
 /// Traversal stack (source `Stack`).
+#[derive(Clone)]
 pub(crate) struct RefStack<'a> {
     context: &'a serde_json::Map<String, Value>,
     schema: &'a Value,
@@ -72,10 +76,11 @@ pub(crate) struct RefStack<'a> {
     dynamic_anchors: Vec<&'a Value>,
     retrieved_resources: HashMap<*const Value, RetrievedFrameEntry<'a>>,
     retrieved_frames: Vec<RetrievedFrameEntry<'a>>,
-    /// The source clones frame records; this port stores frame snapshots
-    /// keyed by insertion order and pops symmetrically.
+    /// The source Map retains one record per target; re-registration can
+    /// replace that record after applying another resource-stack effect.
     resolved_resources: Vec<(*const Value, &'a Value)>,
     pending_resource: bool,
+    proof: Option<Rc<StackProof<'a>>>,
 }
 
 impl<'a> RefStack<'a> {
@@ -92,23 +97,28 @@ impl<'a> RefStack<'a> {
             retrieved_frames: Vec::new(),
             resolved_resources: Vec::new(),
             pending_resource: true,
+            proof: None,
         }
     }
 
-    fn lexical_base_url(&self) -> Result<String, SchemaError> {
-        self.build_base(&self.ids)
+    pub(crate) fn lexical_base_url(&self) -> Result<String, SchemaError> {
+        self.lexical_url().map(|url| url.to_string())
+    }
+
+    pub(crate) fn lexical_url(&self) -> Result<Url, SchemaError> {
+        self.base_url(false)
     }
 
     /// Source `_Stack_BuildBase`: resolve the scoped `$id` chain over the
     /// current retrieved frame's base (or the default base).
-    fn build_base(&self, stack: &[&'a Value]) -> Result<String, SchemaError> {
+    fn build_base(&self, stack: &[&'a Value]) -> Result<Url, SchemaError> {
         let frame = self.retrieved_frames.last();
         let mut url = match frame {
-            Some(frame) => parse_url(&frame.base)?,
+            Some(frame) => frame.base.clone(),
             None => parse_url(DEFAULT_BASE)?,
         };
         let scoped: &[&'a Value] = match frame {
-            Some(frame) => &stack[frame.id_depth..],
+            Some(frame) => stack.get(frame.id_depth..).unwrap_or_default(),
             None => stack,
         };
         for schema in scoped {
@@ -116,26 +126,43 @@ impl<'a> RefStack<'a> {
                 url = join_url(&url, id)?;
             }
         }
-        Ok(url.to_string())
+        Ok(url)
     }
 
-    fn resource_base_url(&self) -> Result<String, SchemaError> {
+    fn resource_base_url(&self) -> Result<Url, SchemaError> {
+        self.base_url(true)
+    }
+
+    fn base_url(&self, resource: bool) -> Result<Url, SchemaError> {
+        if let Some(proof) = &self.proof {
+            if let Some(orbit) = proof.base(self, resource) {
+                return Ok(Url::proven(orbit, proof.context.clone()));
+            }
+            proof.context.fail();
+        }
+        let stack = if resource {
+            &self.resource_ids
+        } else {
+            &self.ids
+        };
         let frame = self.retrieved_frames.last();
         match frame {
-            Some(frame) => {
-                let mut url = parse_url(&frame.base)?;
-                for schema in &self.resource_ids[frame.resource_depth..] {
+            Some(frame) if resource => {
+                let mut url = frame.base.clone();
+                // Source Array.slice returns empty when an older resolved
+                // record has consumed IDs below the retrieved frame depth.
+                for schema in stack.get(frame.resource_depth..).unwrap_or_default() {
                     if let Some(id) = guards::get_str(schema, "$id") {
                         url = join_url(&url, id)?;
                     }
                 }
-                Ok(url.to_string())
+                Ok(url)
             }
-            None => self.build_base(&self.resource_ids),
+            _ => self.build_base(stack),
         }
     }
 
-    fn reference_base_url(&self) -> Result<String, SchemaError> {
+    fn reference_base_url(&self) -> Result<Url, SchemaError> {
         if !self.retrieved_frames.is_empty() {
             return self.resource_base_url();
         }
@@ -143,7 +170,7 @@ impl<'a> RefStack<'a> {
             && let Some(id) = guards::get_str(lexical, "$id")
             && !has_scheme(id)
         {
-            return self.lexical_base_url();
+            return self.lexical_url();
         }
         self.resource_base_url()
     }
@@ -168,53 +195,13 @@ impl<'a> RefStack<'a> {
             root: self.schema,
             ids: self.ids.clone(),
             lexical_schema: self.lexical_schema(),
-            lexical_base: self.lexical_base_url()?,
+            lexical_base: self.lexical_url()?,
             reference_base: self.reference_base_url()?,
             resource_base: self.resource_base_url()?,
             recursive_anchors: self.recursive_anchors.clone(),
             dynamic_anchors: self.dynamic_anchors.clone(),
             in_retrieved_frame: !self.retrieved_frames.is_empty(),
         })
-    }
-
-    /// Hash the live reference-frame state into `state` (used for the
-    /// evaluator's no-progress detection).
-    pub(crate) fn fingerprint(&self, state: &mut u64) {
-        fn mix_ptrs(state: &mut u64, ptrs: &[&Value]) {
-            for ptr in ptrs {
-                let addr = *ptr as *const Value as usize;
-                *state ^= (addr as u64).wrapping_mul(1_099_511_628_211);
-                *state = state.rotate_left(7);
-            }
-        }
-        fn mix_u64(state: &mut u64, value: u64) {
-            *state ^= value.wrapping_mul(1_099_511_628_211);
-            *state = state.rotate_left(7);
-        }
-        fn mix_str(state: &mut u64, text: &str) {
-            for byte in text.as_bytes() {
-                *state ^= u64::from(*byte);
-                *state = state.wrapping_mul(1_099_511_628_211);
-            }
-        }
-        mix_ptrs(state, &self.ids);
-        mix_ptrs(state, &self.resource_ids);
-        mix_ptrs(state, &self.anchors);
-        mix_ptrs(state, &self.recursive_anchors);
-        mix_ptrs(state, &self.dynamic_anchors);
-        mix_u64(state, self.retrieved_frames.len() as u64);
-        for frame in &self.retrieved_frames {
-            mix_u64(state, frame.root as *const Value as u64);
-            mix_u64(state, frame.id_depth as u64);
-            mix_u64(state, frame.resource_depth as u64);
-            mix_str(state, &frame.base);
-        }
-        mix_u64(state, self.resolved_resources.len() as u64);
-        for (target, resource) in &self.resolved_resources {
-            mix_u64(state, *target as u64);
-            mix_u64(state, *resource as *const Value as u64);
-        }
-        mix_u64(state, u64::from(self.pending_resource));
     }
 
     // ------------------------------------------------------------------
@@ -246,6 +233,7 @@ impl<'a> RefStack<'a> {
             };
             self.retrieved_frames.push(snapshot);
         }
+        self.check_proof_prefix();
     }
 
     pub(crate) fn pop(&mut self, schema: &'a Value) {
@@ -271,6 +259,7 @@ impl<'a> RefStack<'a> {
             self.retrieved_frames.pop();
         }
         self.exit_resolved_resource(schema as *const Value);
+        self.check_proof_prefix();
     }
 
     // ------------------------------------------------------------------
@@ -289,8 +278,10 @@ impl<'a> RefStack<'a> {
 
     fn unregister_resource(&mut self, schema: &'a Value) {
         self.ids.pop();
-        let is_resource =
-            !self.resource_ids.is_empty() && self.resource_ids.last().copied() == Some(schema);
+        let is_resource = self
+            .resource_ids
+            .last()
+            .is_some_and(|last| std::ptr::eq(*last, schema));
         if is_resource {
             self.resource_ids.pop();
         }
@@ -345,8 +336,18 @@ impl<'a> RefStack<'a> {
 
     fn enter_resolved_resource(&mut self, target: &'a Value, resource: &'a Value) {
         self.register_resource(resource);
-        self.resolved_resources
-            .push((target as *const Value, resource));
+        // Source Map.set replaces the record without undoing the preceding
+        // registration. A later Pop consumes that target's sole record once.
+        if let Some((_, current)) = self
+            .resolved_resources
+            .iter_mut()
+            .find(|(key, _)| std::ptr::eq(*key, target))
+        {
+            *current = resource;
+        } else {
+            self.resolved_resources
+                .push((target as *const Value, resource));
+        }
     }
 
     fn exit_resolved_resource(&mut self, target: *const Value) {
@@ -419,6 +420,372 @@ impl<'a> RefStack<'a> {
             );
         }
     }
+
+    pub(crate) fn proof_replay(&self, next: &Self, context: Rc<ProofContext>) -> Option<Self> {
+        let proof = Rc::new(StackProof::new(self, next, context.clone())?);
+        let mut replay = self.clone();
+        replay.proof = Some(proof);
+        for (key, entry) in &mut replay.retrieved_resources {
+            let other = next.retrieved_resources.get(key)?;
+            let orbit = Orbit::between(entry.base.actual(), other.base.actual(), &context.pump)?;
+            entry.base = Url::proven(orbit, context.clone());
+        }
+        Some(replay)
+    }
+
+    pub(crate) fn proof_closed(&self) -> bool {
+        self.proof.as_ref().is_some_and(|proof| proof.closed(self))
+    }
+
+    fn check_proof_prefix(&self) {
+        if let Some(proof) = &self.proof
+            && !proof.prefix_intact(self)
+        {
+            proof.context.fail();
+        }
+    }
+}
+
+/// Symbolic stack at iteration n: the protected prefix followed by n copies
+/// of the observed extension and the current iteration's ordinary suffix.
+/// Replay may only change the suffix. URL folds prove the effect of repeating
+/// an ID word; retrieved bases carry their own exact path orbits.
+struct StackProof<'a> {
+    before: RefStack<'a>,
+    after: RefStack<'a>,
+    lexical: Orbit,
+    resource: Orbit,
+    context: Rc<ProofContext>,
+}
+
+fn same_nodes(left: &[&Value], right: &[&Value]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(left, right)| std::ptr::eq(*left, *right))
+}
+
+fn node_extension<'a>(before: &[&'a Value], after: &[&'a Value]) -> Option<Vec<&'a Value>> {
+    if after.len() < before.len() || !same_nodes(before, &after[..before.len()]) {
+        return None;
+    }
+    let extension = &after[before.len()..];
+    // Presence and first-anchor lookup cannot change in any repeated block.
+    if extension
+        .iter()
+        .any(|node| !before.iter().any(|old| std::ptr::eq(*old, *node)))
+    {
+        return None;
+    }
+    Some(extension.to_vec())
+}
+
+fn same_frame(left: &RetrievedFrameEntry<'_>, right: &RetrievedFrameEntry<'_>) -> bool {
+    std::ptr::eq(left.root, right.root)
+        && left.base.actual() == right.base.actual()
+        && left.id_depth == right.id_depth
+        && left.resource_depth == right.resource_depth
+}
+
+fn fold_ids(mut orbit: Orbit, ids: &[&Value]) -> Option<Orbit> {
+    for schema in ids {
+        orbit = orbit.join(guards::get_str(schema, "$id")?)?;
+    }
+    Some(orbit)
+}
+
+fn repeated_ids(
+    initial: Orbit,
+    prefix: &[&Value],
+    extension: &[&Value],
+    preferred: &super::pump::PathPump,
+) -> Option<Orbit> {
+    let initial = fold_ids(initial, prefix)?;
+    if extension.is_empty() {
+        return Some(initial);
+    }
+    if initial.pump.is_some() {
+        return None;
+    }
+    let once = fold_ids(initial.clone(), extension)?;
+    if once.value == initial.value {
+        // An exact fixed point is invariant under any further repetitions.
+        return Some(initial);
+    }
+    let growing = Orbit::between(&initial.value, &once.value, preferred)?;
+    let next = fold_ids(growing.clone(), extension)?;
+    next.equivalent(&growing.next()?).then_some(growing)
+}
+
+impl<'a> StackProof<'a> {
+    fn new(before: &RefStack<'a>, after: &RefStack<'a>, context: Rc<ProofContext>) -> Option<Self> {
+        if !before.context.is_empty()
+            || before.proof.is_some()
+            || after.proof.is_some()
+            || before.pending_resource != after.pending_resource
+            || !std::ptr::eq(before.schema, after.schema)
+            || !std::ptr::eq(before.lexical_schema(), after.lexical_schema())
+        {
+            return None;
+        }
+        let ids = node_extension(&before.ids, &after.ids)?;
+        let resource_ids = node_extension(&before.resource_ids, &after.resource_ids)?;
+        node_extension(&before.anchors, &after.anchors)?;
+        node_extension(&before.recursive_anchors, &after.recursive_anchors)?;
+        node_extension(&before.dynamic_anchors, &after.dynamic_anchors)?;
+        if before.ids.last().map(|node| *node as *const Value)
+            != after.ids.last().map(|node| *node as *const Value)
+            || before.resource_ids.last().map(|node| *node as *const Value)
+                != after.resource_ids.last().map(|node| *node as *const Value)
+            || before.retrieved_resources.len() != after.retrieved_resources.len()
+            || before.resolved_resources.len() != after.resolved_resources.len()
+            || before.retrieved_frames.len() > after.retrieved_frames.len()
+            || !before
+                .retrieved_frames
+                .iter()
+                .zip(&after.retrieved_frames)
+                .all(|(a, b)| same_frame(a, b))
+        {
+            return None;
+        }
+        for (key, entry) in &before.retrieved_resources {
+            let other = after.retrieved_resources.get(key)?;
+            if !std::ptr::eq(entry.root, other.root) {
+                return None;
+            }
+            Orbit::between(entry.base.actual(), other.base.actual(), &context.pump)?;
+        }
+        if before.resolved_resources.iter().any(|(key, resource)| {
+            !after
+                .resolved_resources
+                .iter()
+                .any(|(other_key, other)| key == other_key && std::ptr::eq(*resource, *other))
+        }) {
+            return None;
+        }
+        let lexical = Self::initial_base(before, after, false, &ids, &context)?;
+        let resource = Self::initial_base(before, after, true, &resource_ids, &context)?;
+        Some(Self {
+            before: before.clone(),
+            after: after.clone(),
+            lexical,
+            resource,
+            context,
+        })
+    }
+
+    fn initial_base(
+        before: &RefStack<'a>,
+        after: &RefStack<'a>,
+        resource: bool,
+        extension: &[&Value],
+        context: &ProofContext,
+    ) -> Option<Orbit> {
+        let ids = if resource {
+            &before.resource_ids
+        } else {
+            &before.ids
+        };
+        let next_ids = if resource {
+            &after.resource_ids
+        } else {
+            &after.ids
+        };
+        let (initial, prefix) = match (
+            before.retrieved_frames.last(),
+            after.retrieved_frames.last(),
+        ) {
+            (None, None) => (
+                Orbit::fixed(url::Url::parse(DEFAULT_BASE).ok()?),
+                ids.as_slice(),
+            ),
+            (Some(frame), Some(next))
+                if before.retrieved_frames.len() == after.retrieved_frames.len() =>
+            {
+                if !same_frame(frame, next) {
+                    return None;
+                }
+                let depth = if resource {
+                    frame.resource_depth
+                } else {
+                    frame.id_depth
+                };
+                (Orbit::fixed(frame.base.actual().clone()), ids.get(depth..)?)
+            }
+            (Some(frame), Some(next)) => {
+                let depth = if resource {
+                    frame.resource_depth
+                } else {
+                    frame.id_depth
+                };
+                let next_depth = if resource {
+                    next.resource_depth
+                } else {
+                    next.id_depth
+                };
+                if !std::ptr::eq(frame.root, next.root)
+                    || next_depth != depth.checked_add(extension.len())?
+                    || !same_nodes(ids.get(depth..)?, next_ids.get(next_depth..)?)
+                {
+                    return None;
+                }
+                let initial =
+                    Orbit::between(frame.base.actual(), next.base.actual(), &context.pump)?;
+                let result = fold_ids(initial, ids.get(depth..)?)?;
+                return Self::verify_base(before, after, resource, result);
+            }
+            _ => return None,
+        };
+        let result = repeated_ids(initial, prefix, extension, &context.pump)?;
+        Self::verify_base(before, after, resource, result)
+    }
+
+    fn verify_base(
+        before: &RefStack<'a>,
+        after: &RefStack<'a>,
+        resource: bool,
+        result: Orbit,
+    ) -> Option<Orbit> {
+        (before.base_url(resource).ok()?.actual() == &result.value
+            && after.base_url(resource).ok()?.actual() == &result.next()?.value)
+            .then_some(result)
+    }
+
+    fn prefix_intact(&self, current: &RefStack<'a>) -> bool {
+        for (prefix, stack) in [
+            (&self.before.ids, &current.ids),
+            (&self.before.resource_ids, &current.resource_ids),
+            (&self.before.anchors, &current.anchors),
+            (&self.before.recursive_anchors, &current.recursive_anchors),
+            (&self.before.dynamic_anchors, &current.dynamic_anchors),
+        ] {
+            if stack.len() < prefix.len() || !same_nodes(prefix, &stack[..prefix.len()]) {
+                return false;
+            }
+        }
+        current.retrieved_frames.len() >= self.before.retrieved_frames.len()
+            && self
+                .before
+                .retrieved_frames
+                .iter()
+                .zip(&current.retrieved_frames)
+                .all(|(a, b)| same_frame(a, b))
+    }
+
+    fn base(&self, current: &RefStack<'a>, resource: bool) -> Option<Orbit> {
+        if !self.prefix_intact(current) {
+            return None;
+        }
+        let ids = if resource {
+            &current.resource_ids
+        } else {
+            &current.ids
+        };
+        if current.retrieved_frames.len() > self.before.retrieved_frames.len() {
+            let frame = current.retrieved_frames.last()?;
+            let depth = if resource {
+                frame.resource_depth
+            } else {
+                frame.id_depth
+            };
+            let prefix_length = if resource {
+                self.before.resource_ids.len()
+            } else {
+                self.before.ids.len()
+            };
+            if depth < prefix_length {
+                return None;
+            }
+            return fold_ids(frame.base.orbit.clone()?, ids.get(depth..)?);
+        }
+        let (initial, depth) = if resource {
+            (self.resource.clone(), self.before.resource_ids.len())
+        } else {
+            (self.lexical.clone(), self.before.ids.len())
+        };
+        fold_ids(initial, ids.get(depth..)?)
+    }
+
+    fn closed(&self, current: &RefStack<'a>) -> bool {
+        if self.context.failed()
+            || !self.prefix_intact(current)
+            || current.pending_resource != self.before.pending_resource
+            || !same_nodes(&current.ids, &self.after.ids)
+            || !same_nodes(&current.resource_ids, &self.after.resource_ids)
+            || !same_nodes(&current.anchors, &self.after.anchors)
+            || !same_nodes(&current.recursive_anchors, &self.after.recursive_anchors)
+            || !same_nodes(&current.dynamic_anchors, &self.after.dynamic_anchors)
+            || current.retrieved_frames.len() != self.after.retrieved_frames.len()
+            || current.retrieved_resources.len() != self.before.retrieved_resources.len()
+            || current.resolved_resources.len() != self.before.resolved_resources.len()
+        {
+            return false;
+        }
+        for (key, old) in &self.before.retrieved_resources {
+            let Some(expected) = self.after.retrieved_resources.get(key) else {
+                return false;
+            };
+            let Some(actual) = current.retrieved_resources.get(key) else {
+                return false;
+            };
+            let Some(next) = Orbit::between(
+                old.base.actual(),
+                expected.base.actual(),
+                &self.context.pump,
+            )
+            .and_then(|orbit| orbit.next()) else {
+                return false;
+            };
+            if !std::ptr::eq(actual.root, old.root)
+                || !actual
+                    .base
+                    .orbit
+                    .as_ref()
+                    .is_some_and(|orbit| orbit.equivalent(&next))
+            {
+                return false;
+            }
+        }
+        if current.resolved_resources.iter().any(|(key, resource)| {
+            !self
+                .before
+                .resolved_resources
+                .iter()
+                .any(|(other_key, other)| key == other_key && std::ptr::eq(*resource, *other))
+        }) {
+            return false;
+        }
+        if current.retrieved_frames.len() > self.before.retrieved_frames.len() {
+            let Some(old) = self.before.retrieved_frames.last() else {
+                return false;
+            };
+            let Some(next) = current.retrieved_frames.last() else {
+                return false;
+            };
+            let Some(expected) = self.after.retrieved_frames.last() else {
+                return false;
+            };
+            let Some(orbit) = Orbit::between(
+                old.base.actual(),
+                expected.base.actual(),
+                &self.context.pump,
+            )
+            .and_then(|orbit| orbit.next()) else {
+                return false;
+            };
+            if !same_frame(next, expected)
+                || !next
+                    .base
+                    .orbit
+                    .as_ref()
+                    .is_some_and(|actual| actual.equivalent(&orbit))
+            {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 // ------------------------------------------------------------------
@@ -426,15 +793,11 @@ impl<'a> RefStack<'a> {
 // ------------------------------------------------------------------
 
 fn parse_url(text: &str) -> Result<Url, SchemaError> {
-    Url::parse(text).map_err(|e| SchemaError::Uri {
-        detail: e.to_string(),
-    })
+    Url::parse(text)
 }
 
 fn join_url(base: &Url, input: &str) -> Result<Url, SchemaError> {
-    base.join(input).map_err(|e| SchemaError::Uri {
-        detail: e.to_string(),
-    })
+    base.join(input)
 }
 
 fn has_scheme(id: &str) -> bool {
@@ -459,10 +822,8 @@ fn js_hash(url: &Url) -> String {
 }
 
 /// `CanonicalHref`: the URL serialized without its fragment.
-fn canonical_href(url: &Url) -> String {
-    let mut clone = url.clone();
-    clone.set_fragment(None);
-    clone.to_string()
+fn canonical_href(url: &Url) -> Url {
+    url.without_fragment()
 }
 
 /// Source `FindDynamicAnchor`: first schema carrying the named
@@ -493,9 +854,9 @@ fn find_dynamic_anchor<'a>(schema: &'a Value, name: &str) -> Option<&'a Value> {
 }
 
 /// Source `FindBase`: first-match search for the base URL of `target`.
-fn find_base<'a>(schema: &'a Value, base: &Url, target: &'a Value) -> Option<String> {
+fn find_base<'a>(schema: &'a Value, base: &Url, target: &'a Value) -> Option<Url> {
     if std::ptr::eq(schema, target) {
-        return Some(base.to_string());
+        return Some(base.clone());
     }
     let next_base: Url = if schema.is_object() && guards::is_id(schema) {
         let id = guards::get_str(schema, "$id")?;
@@ -614,8 +975,8 @@ fn match_id<'a>(schema: &'a Value, base: &Url, reference: &Url) -> Option<&'a Va
     if id == js_hash(reference) {
         return Some(schema);
     }
-    let absolute = base.join(reference.as_str()).ok()?;
-    if base.path() == absolute.path() {
+    let absolute = base.join_url(reference).ok()?;
+    if base.equal(&absolute, Equality::Path) {
         return if js_hash(reference).starts_with('#') {
             match_hash(schema, reference)
         } else {
@@ -628,7 +989,7 @@ fn match_id<'a>(schema: &'a Value, base: &Url, reference: &Url) -> Option<&'a Va
 fn match_anchor<'a>(schema: &'a Value, base: &Url, reference: &Url) -> Option<&'a Value> {
     let anchor = guards::get_str(schema, "$anchor")?;
     let absolute_anchor = base.join(&format!("#{anchor}")).ok()?;
-    if absolute_anchor.as_str() == reference.as_str() {
+    if absolute_anchor.equal(reference, Equality::Full) {
         Some(schema)
     } else {
         None
@@ -638,7 +999,7 @@ fn match_anchor<'a>(schema: &'a Value, base: &Url, reference: &Url) -> Option<&'
 fn match_dynamic_anchor<'a>(schema: &'a Value, base: &Url, reference: &Url) -> Option<&'a Value> {
     let anchor = guards::get_str(schema, "$dynamicAnchor")?;
     let absolute_anchor = base.join(&format!("#{anchor}")).ok()?;
-    if absolute_anchor.as_str() == reference.as_str() {
+    if absolute_anchor.equal(reference, Equality::Full) {
         Some(schema)
     } else {
         None
@@ -729,15 +1090,30 @@ fn from_value<'a>(schema: &'a Value, base: &Url, reference: &Url) -> Option<&'a 
 // Ref entry points
 // ------------------------------------------------------------------
 
+#[derive(Clone, Copy)]
+enum Reference<'a> {
+    Literal(&'a str),
+    Parsed(&'a Url),
+}
+
+impl Reference<'_> {
+    fn text(&self) -> &str {
+        match self {
+            Self::Literal(text) => text,
+            Self::Parsed(url) => url.as_str(),
+        }
+    }
+}
+
 /// Source `Ref(remotes, schema, base, ref, applySchemaId=false)`.
 fn resolve_reference<'a>(
     context: &'a serde_json::Map<String, Value>,
     schema: &'a Value,
-    base: &str,
-    reference: &str,
+    base: &Url,
+    reference: Reference<'_>,
     apply_schema_id: bool,
 ) -> Result<Option<&'a Value>, SchemaError> {
-    let initial_base = parse_url(base_or_dot(base))?;
+    let initial_base = base.clone();
     let resolved_base = if apply_schema_id && guards::is_id(schema) {
         guards::get_str(schema, "$id")
             .map(|id| join_url(&initial_base, id))
@@ -746,9 +1122,12 @@ fn resolve_reference<'a>(
     } else {
         initial_base
     };
-    let initial_ref = join_url(&resolved_base, reference)?;
+    let initial_ref = match reference {
+        Reference::Literal(text) => join_url(&resolved_base, text)?,
+        Reference::Parsed(url) => resolved_base.join_url(url)?,
+    };
     // Phase 1: context lookup by the raw reference string.
-    if let Some(remote) = context.get(reference) {
+    if let Some(remote) = context.get(reference.text()) {
         return Ok(Some(remote));
     }
     // Phase 2: local tree search.
@@ -757,13 +1136,13 @@ fn resolve_reference<'a>(
     }
     // Phase 3: remote document in context.
     let canonical = canonical_href(&initial_ref);
-    if canonical == canonical_href(&resolved_base) {
+    if canonical.equal(&canonical_href(&resolved_base), Equality::Full) {
         return Ok(None);
     }
-    let Some(remote_schema) = context.get(&canonical) else {
+    let Some(remote_schema) = context.get(canonical.as_str()) else {
         return Ok(None);
     };
-    let canonical_url = parse_url(&canonical)?;
+    let canonical_url = canonical;
     let remote_base = if remote_schema.is_object() && guards::is_id(remote_schema) {
         let id = guards::get_str(remote_schema, "$id").unwrap_or_default();
         join_url(&canonical_url, id)?
@@ -774,10 +1153,6 @@ fn resolve_reference<'a>(
         return Ok(Some(remote_schema));
     }
     Ok(from_value(remote_schema, &remote_base, &initial_ref))
-}
-
-fn base_or_dot(base: &str) -> &str {
-    if base.is_empty() { "." } else { base }
 }
 
 /// Source `ResolveRef`.
@@ -799,7 +1174,7 @@ fn resolve_ref<'a>(
         frame.context,
         ref_root,
         &frame.reference_base,
-        reference,
+        Reference::Literal(reference),
         false,
     )?;
     let Some(schema) = schema else {
@@ -817,10 +1192,9 @@ fn resolve_ref<'a>(
             resolved_resource: None,
         });
     }
-    let reference_url =
-        parse_url(&frame.reference_base).and_then(|base| join_url(&base, reference))?;
+    let reference_url = join_url(&frame.reference_base, reference)?;
     let canonical = canonical_href(&reference_url);
-    let is_remote = canonical != frame.resource_base;
+    let is_remote = !canonical.equal(&frame.resource_base, Equality::Full);
 
     // FindRetrievedResource: remote frame first, then legacy same-document.
     let retrieved = if is_remote {
@@ -846,16 +1220,16 @@ fn resolve_ref<'a>(
 /// Source `RemoteRetrievedResource`.
 fn remote_retrieved_resource<'a>(
     context: &'a serde_json::Map<String, Value>,
-    canonical: &str,
+    canonical: &Url,
     schema: &'a Value,
 ) -> Option<RetrievedResource<'a>> {
-    let remote_root = context.get(canonical)?;
+    let remote_root = context.get(canonical.as_str())?;
     if !remote_root.is_object() {
         return None;
     }
     Some(RetrievedResource {
         target: schema,
-        base: canonical.to_string(),
+        base: canonical.clone(),
         root: remote_root,
     })
 }
@@ -877,9 +1251,9 @@ fn legacy_retrieved_resource<'a>(
     {
         return None;
     }
-    let reference_base = parse_url(&frame.reference_base).ok()?;
+    let reference_base = frame.reference_base.clone();
     let target_base = find_base(frame.lexical_schema, &reference_base, schema)?;
-    if target_base == frame.reference_base {
+    if target_base.equal(&frame.reference_base, Equality::Full) {
         return None;
     }
     Some(RetrievedResource {
@@ -892,19 +1266,14 @@ fn legacy_retrieved_resource<'a>(
 /// Source `FindResolvedResource`.
 fn find_resolved_resource<'a>(
     frame: &StackFrame<'a>,
-    canonical: &str,
+    canonical: &Url,
     schema: &'a Value,
 ) -> Option<ResolvedResource<'a>> {
     if guards::is_id(schema) {
         return None;
     }
-    let reference_base = parse_url(&frame.reference_base).ok()?;
-    let resource = resource(
-        frame.context,
-        frame.root,
-        reference_base.as_ref(),
-        canonical,
-    )?;
+    let reference_base = frame.reference_base.clone();
+    let resource = resource(frame.context, frame.root, &reference_base, canonical)?;
     if frame.ids.iter().any(|id| std::ptr::eq(*id, resource)) {
         return None;
     }
@@ -918,10 +1287,10 @@ fn find_resolved_resource<'a>(
 fn resource<'a>(
     context: &'a serde_json::Map<String, Value>,
     schema: &'a Value,
-    base: &str,
-    reference: &str,
+    base: &Url,
+    reference: &Url,
 ) -> Option<&'a Value> {
-    let result = resolve_reference(context, schema, base, reference, false)
+    let result = resolve_reference(context, schema, base, Reference::Parsed(reference), false)
         .ok()
         .flatten()?;
     if result.is_object() && guards::is_id(result) {
@@ -949,7 +1318,7 @@ fn resolve_recursive_ref<'a>(
         frame.context,
         ref_root,
         &frame.lexical_base,
-        recursive_ref,
+        Reference::Literal(recursive_ref),
         false,
     )
 }
@@ -959,7 +1328,7 @@ fn resolve_dynamic_ref<'a>(
     frame: &StackFrame<'a>,
     dynamic_ref: &str,
 ) -> Result<Option<&'a Value>, SchemaError> {
-    let initial_base = parse_url(base_or_dot(&frame.lexical_base))?;
+    let initial_base = frame.lexical_base.clone();
     let fragment_root = if dynamic_ref.starts_with('#') {
         frame.lexical_schema
     } else {
@@ -969,7 +1338,7 @@ fn resolve_dynamic_ref<'a>(
         frame.context,
         fragment_root,
         &frame.lexical_base,
-        dynamic_ref,
+        Reference::Literal(dynamic_ref),
         false,
     )?;
     let Some(fragment_target) = fragment_target else {

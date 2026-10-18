@@ -4,7 +4,8 @@ use std::sync::{Arc, Mutex};
 use futures_util::StreamExt;
 use opi_ai::ModelsError;
 use opi_ai::message::{
-    AssistantContent, InputContent, Message, ToolCall, ToolResultMessage, UserMessage,
+    AssistantContent, InputContent, Message, ToolCall, ToolNotExecutedReason, ToolResultMessage,
+    UserMessage,
 };
 use opi_ai::provider::{CacheRetention, ProviderError, Request};
 use serde_json::json;
@@ -471,9 +472,29 @@ async fn run_operation(
             messages: llm_messages,
             tools: tool_defs,
         };
+        if cancel.is_cancelled() {
+            fail_before_dispatch!(AgentError::Cancelled);
+        }
+        // Schema admission can be CPU-bound. Cancellation discards this owned
+        // job's result; it does not claim to synchronously stop the compiler.
+        let normalization = tokio::task::spawn_blocking(move || {
+            opi_ai::transcript::normalize_context(context_input)
+        });
+        let normalized = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => { fail_before_dispatch!(AgentError::Cancelled); }
+            result = normalization => match result {
+                Ok(result) => result,
+                Err(_) => { fail_before_dispatch!(AgentError::Hook("context normalization worker failed".into())); }
+            },
+        };
+        let normalized_context = match normalized {
+            Ok(context) => context,
+            Err(error) => fail_before_dispatch!(AgentError::from(ProviderError::from(error))),
+        };
         let request = Request {
             model: state.model_selection.to_spec(),
-            context: opi_ai::transcript::normalize_context(context_input),
+            context: normalized_context,
             max_tokens: state.inference.max_tokens,
             temperature: state.inference.temperature,
             thinking: state.inference.thinking.clone(),
@@ -712,12 +733,13 @@ async fn run_operation(
                                                 args: parsed.args_for_event.clone(),
                                             },
                                         );
-                                        let executed = ExecutedTool::ordinary(error_text_result(
-                                            format!(
+                                        let executed = ExecutedTool::not_executed(
+                                            error_text_result(format!(
                                                 "Tool call \"{}\" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.",
                                                 parsed.tool_call.name,
-                                            ),
-                                        ));
+                                            )),
+                                            ToolNotExecutedReason::OutputLimit,
+                                        );
                                         let mut completion = ToolCompletion {
                                             events: &events,
                                             evidence_sink: &evidence_sink,
@@ -778,6 +800,7 @@ async fn run_operation(
                                                     &parsed.tool_call.id,
                                                     &parsed.tool_call.name,
                                                     args,
+                                                    parsed.tool_call.arguments_error.as_deref(),
                                                     run,
                                                     turn,
                                                     tool_call_ids[tool_index],
@@ -808,12 +831,13 @@ async fn run_operation(
                                                     }
                                                 }
                                             }
-                                            Err(parse_error) => ExecutedTool::ordinary(
+                                            Err(parse_error) => ExecutedTool::not_executed(
                                                 malformed_tool_arguments_result(
                                                     &parsed.tool_call.name,
                                                     parse_error,
                                                     &diagnostic_sink,
                                                 ),
+                                                ToolNotExecutedReason::InvalidJson,
                                             ),
                                         };
 
@@ -899,6 +923,7 @@ async fn run_operation(
                                                     &parsed.tool_call.id,
                                                     &parsed.tool_call.name,
                                                     args,
+                                                    parsed.tool_call.arguments_error.as_deref(),
                                                     run,
                                                     turn,
                                                     tool_call_ids[tool_index],
@@ -935,6 +960,7 @@ async fn run_operation(
                                                     parse_error,
                                                     &diagnostic_sink,
                                                 ),
+                                                ToolNotExecutedReason::InvalidJson,
                                             ),
                                         };
                                         preflights.push(preflight);
@@ -980,8 +1006,8 @@ async fn run_operation(
                                                             )
                                                             .await
                                                         }
-                                                        ToolPreflight::Rejected(result) => {
-                                                            ExecutedTool::ordinary(result)
+                                                        ToolPreflight::Rejected(result, reason) => {
+                                                            ExecutedTool::not_executed(result, reason)
                                                         }
                                                         ToolPreflight::BatchInvalid(_) => {
                                                             unreachable!(
@@ -997,17 +1023,18 @@ async fn run_operation(
                                         preflights
                                             .into_iter()
                                             .map(|preflight| match preflight {
-                                                ToolPreflight::Ready(_) => ExecutedTool::ordinary(
+                                                ToolPreflight::Ready(_) => ExecutedTool::not_executed(
                                                     denial_result(
                                                         "parallel_preflight_aborted",
                                                         "parallel tool batch failed preflight; execution denied",
                                                     ),
+                                                    ToolNotExecutedReason::InterruptedBeforeExecution,
                                                 ),
-                                                ToolPreflight::Rejected(result) => {
-                                                    ExecutedTool::ordinary(result)
+                                                ToolPreflight::Rejected(result, reason) => {
+                                                    ExecutedTool::not_executed(result, reason)
                                                 }
                                                 ToolPreflight::BatchInvalid(result) => {
-                                                    ExecutedTool::ordinary(result)
+                                                    ExecutedTool::not_executed(result, ToolNotExecutedReason::InterruptedBeforeExecution)
                                                 }
                                             })
                                             .collect()
@@ -1876,6 +1903,7 @@ fn skipped_after_terminal_result(tool_call: &ToolCall) -> ToolResultMessage {
         }],
         details: None,
         is_error: true,
+        not_executed: Some(ToolNotExecutedReason::InterruptedBeforeExecution),
         truncated: false,
         timestamp_ms: opi_ai::time::now_ms(),
     }
@@ -2147,10 +2175,11 @@ struct ExecutedTool {
     result: ToolResult,
     outcome: crate::evidence::ToolExecutionOutcome,
     terminal_error: Option<AgentError>,
+    not_executed: Option<ToolNotExecutedReason>,
 }
 
 impl ExecutedTool {
-    fn ordinary(result: ToolResult) -> Self {
+    fn not_executed(result: ToolResult, reason: ToolNotExecutedReason) -> Self {
         let outcome = if result.is_error {
             crate::evidence::ToolExecutionOutcome::Failed
         } else {
@@ -2160,6 +2189,7 @@ impl ExecutedTool {
             result,
             outcome,
             terminal_error: None,
+            not_executed: Some(reason),
         }
     }
 }
@@ -2214,6 +2244,7 @@ fn complete_tool_call(
         result,
         outcome,
         terminal_error,
+        not_executed,
     } = executed;
     let had_terminal_error = terminal_error.is_some();
     if let Some(error) = terminal_error {
@@ -2242,6 +2273,7 @@ fn complete_tool_call(
         content: result.content,
         details: result.details,
         is_error,
+        not_executed,
         truncated,
         timestamp_ms: opi_ai::time::now_ms(),
     };
@@ -2270,7 +2302,7 @@ fn complete_tool_call(
 
 enum ToolPreflight {
     Ready(PreparedToolExecution),
-    Rejected(ToolResult),
+    Rejected(ToolResult, ToolNotExecutedReason),
     BatchInvalid(ToolResult),
 }
 
@@ -2279,6 +2311,7 @@ async fn preflight_tool(
     call_id: &str,
     tool_name: &str,
     args: &serde_json::Value,
+    arguments_error: Option<&str>,
     run_id: crate::evidence::RunId,
     evidence_turn_id: crate::evidence::TurnId,
     evidence_call_id: crate::evidence::CallId,
@@ -2304,9 +2337,10 @@ async fn preflight_tool(
                 sink,
                 tool_diagnostic(CODE_TOOL_UNKNOWN, tool_name, "unknown tool requested"),
             );
-            return Ok(ToolPreflight::Rejected(error_text_result(format!(
-                "unknown tool: {tool_name}"
-            ))));
+            return Ok(ToolPreflight::Rejected(
+                error_text_result(format!("unknown tool: {tool_name}")),
+                ToolNotExecutedReason::NotActive,
+            ));
         }
     };
 
@@ -2336,8 +2370,28 @@ async fn preflight_tool(
                     "tool call denied by hook",
                 ),
             );
-            return Ok(ToolPreflight::Rejected(error_text_result(reason)));
+            return Ok(ToolPreflight::Rejected(
+                error_text_result(reason),
+                ToolNotExecutedReason::NotActive,
+            ));
         }
+    }
+
+    // The transport's final-parse disposition rejects before coercion while
+    // preserving the existing raw-proposal observation hook above.
+    if arguments_error.is_some() {
+        observe(
+            sink,
+            tool_diagnostic(
+                CODE_TOOL_VALIDATION_FAILED,
+                tool_name,
+                "tool arguments failed final parsing",
+            ),
+        );
+        return Ok(ToolPreflight::Rejected(
+            error_text_result("tool arguments failed final parsing".to_owned()),
+            ToolNotExecutedReason::InvalidJson,
+        ));
     }
 
     // 3. Validate the FINAL arguments against the registered schema (AUT-002).
@@ -2375,9 +2429,10 @@ async fn preflight_tool(
                         "tool arguments failed schema validation",
                     ),
                 );
-                return Ok(ToolPreflight::Rejected(ToolResult::from_validation_error(
-                    err,
-                )));
+                return Ok(ToolPreflight::Rejected(
+                    ToolResult::from_validation_error(err),
+                    ToolNotExecutedReason::SchemaValidationFailed,
+                ));
             }
         }
     };
@@ -2412,7 +2467,7 @@ async fn preflight_tool(
                 "no trusted authorizer bound; execution denied",
             );
             return Ok(if authorization_recorded {
-                ToolPreflight::Rejected(result)
+                ToolPreflight::Rejected(result, ToolNotExecutedReason::NotActive)
             } else {
                 ToolPreflight::BatchInvalid(result)
             });
@@ -2517,7 +2572,7 @@ async fn preflight_tool(
             if *scope == AuthorizationRejectionScope::Batch {
                 ToolPreflight::BatchInvalid(result)
             } else {
-                ToolPreflight::Rejected(result)
+                ToolPreflight::Rejected(result, ToolNotExecutedReason::NotActive)
             }
         }
     })
@@ -2603,6 +2658,7 @@ async fn execute_prepared_tool(
                 result: final_result,
                 outcome,
                 terminal_error: None,
+                not_executed: None,
             }
         }
         Err(e) => {
@@ -2655,6 +2711,7 @@ async fn execute_prepared_tool(
                 }),
                 outcome,
                 terminal_error,
+                not_executed: None,
             }
         }
     }
@@ -2665,6 +2722,7 @@ async fn execute_tool(
     call_id: &str,
     tool_name: &str,
     args: &serde_json::Value,
+    arguments_error: Option<&str>,
     run_id: crate::evidence::RunId,
     evidence_turn_id: crate::evidence::TurnId,
     evidence_call_id: crate::evidence::CallId,
@@ -2682,6 +2740,7 @@ async fn execute_tool(
         call_id,
         tool_name,
         args,
+        arguments_error,
         run_id,
         evidence_turn_id,
         evidence_call_id,
@@ -2703,8 +2762,10 @@ async fn execute_tool(
         ToolPreflight::Ready(prepared) => {
             execute_prepared_tool(call_id, tool_name, prepared, registry, hooks, cancel, sink).await
         }
-        ToolPreflight::Rejected(result) => ExecutedTool::ordinary(result),
-        ToolPreflight::BatchInvalid(result) => ExecutedTool::ordinary(result),
+        ToolPreflight::Rejected(result, reason) => ExecutedTool::not_executed(result, reason),
+        ToolPreflight::BatchInvalid(result) => {
+            ExecutedTool::not_executed(result, ToolNotExecutedReason::InterruptedBeforeExecution)
+        }
     })
 }
 

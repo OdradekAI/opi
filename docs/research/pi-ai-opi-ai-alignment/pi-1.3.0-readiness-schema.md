@@ -2,15 +2,17 @@
 
 > 2026-10-16。本文是非规范性设计附件；**设计 READY** 指关键机制已有可执行依据、选型和维护责任已确定，不代表 opi-ai 实施、公开 consumer、完整差分或平台验收 PASS。产品代码、根 Cargo、产品测试、CI、实施账本均未改变。中文附件无既有英文 counterpart，由双语 spec 引用。历史 [85／276 差分](pi-1.3.0-schema-ws-offline-validation.md)保留原输入，不覆盖原始结果。
 
+> 2026-10-19 取代记录：用户批准取消固定 Unicode16，使用 crates.io 上游依赖，并退役 vendor 数据生成／闭包／发布专属义务。本文 §§1/3/4 与双语 spec 同步现行选择；§2 的输入、执行数字和原始资产固定于 2026-10-16，保持不变。允许差异由 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile) 定义。该修订不验收 20.11、20.34 或 20.57，不记录实施账本进度。
+
 ## 1. 确定选择及替代项
 
-选择 **opi-ai 私有、仅 JSON 的 TypeBox 方言 IR／解释器，加 `regress 0.12.0` 的受控 Unicode 16 数据维护分叉**。不再把 `jsonschema 0.28.3` 放在工具参数验证的默认执行路径。`jsonschema` 可继续服务其他现有用途；本附件不授权删除产品依赖或代码。这里的方言是固定 Pi 实际调用 TypeBox 的语义集合，不宣称另一个标准 JSON Schema draft，也不执行 JavaScript、TypeBox 私有 symbol／回调或任意宿主代码。
+选择 **opi-ai 私有、仅 JSON 的 TypeBox 方言 IR／解释器，加 crates.io 原版 `regress 0.12.0` 与 `url 2.5.8`**。Unicode／IDNA 数据跟随声明支持的上游 profile，不再维护 Unicode16 分叉，也不改成永久固定 Unicode17。不再把 `jsonschema 0.28.3` 放在工具参数验证的默认执行路径。`jsonschema` 可继续服务其他现有用途；本附件不授权删除产品依赖或代码。这里的方言是固定 Pi 实际调用 TypeBox 的语义集合，另有 RDF-21 明示数据差异；不宣称另一个标准 JSON Schema draft，也不执行 JavaScript、TypeBox 私有 symbol／回调或任意宿主代码。
 
 | 路线 | 决定与依据 |
 |---|---|
 | `jsonschema 0.28.3` + 少数公开 hooks／换 draft | 淘汰为本边界的完整后端。先前实测证明 mandatory metaschema 在 hook 前拒绝、mixed items/prefixItems 不可由单 draft 表达、ref 与长度／数值不同；fancy-regex 运行错误在 not/if/patternProperties 中可产生假成功。若更换多数 applicator／ref，实际上已经拥有第二解释器，不能再称小型 leaf 适配。 |
-| 未修改的 `regress 0.12.0` + 私有方言 | 淘汰其未适配版本。实际原生执行发现 Unicode 17 属性名字／新增 Letter 的接受集超过固定 Node 的 Unicode 16；不能把“ECMAScript regex”标签当精确版本证明。较早 0.11.0 的源码仍有 Unicode 17，0.10.4 源码为 15.1，二者仅做源码比较，未声称分别完成本轮运行。 |
-| 私有方言 + `regress 0.12.0` 算法 + 官方 Unicode 16 生成数据 | **选定**。官方生成器真实重建、重复一致；更换一个运行时生成表，算法不改。关键旧反例、Unicode 正反控制和显式 fallible 分支机制已运行。把版本／数据／维护责任作为后端身份，不能仍标为“未修改 crates.io 0.12.0”。 |
+| 未修改的 `regress 0.12.0` + 私有方言 | **现行选择**。其 Unicode17 新属性名字／新增 Letter 超过固定 Node Unicode16 的结果按 RDF-21 接受，不能改写为旧运行时逐字符等价。保持 `default-features=false` 与 `std,utf16,prohibit-unsafe`；普通 consumer 的 feature union 另验。较早 0.11.0／0.10.4 的源码比较仍只是历史证据。 |
+| 私有方言 + `regress 0.12.0` 算法 + 官方 Unicode16 生成数据 | **已退役选择**。§2 保留真实重建、重复一致、正反控制和合成 fallible 分支结果；不再要求交付该分叉、生成器或独立 registry family。原实验没有被改写成上游数据 profile 的证明。 |
 
 这是为未来获准入的实施确定内部机制；没有新公开 validator trait、插件框架、Opi 领域 crate、JS runtime、schema I/O、配额或 Unsupported 降级。完整验收未通过时，对应 V 继续 OPEN，不能从本文的 READY 推导产品准入。
 
@@ -63,11 +65,11 @@ IR evaluator 返回独立的 `Result<Valid/Invalid + evaluated facts, SchemaErro
 
 长度逐项移植 TypeBox guard/string 的 fast path 与有限组合范围／ZWJ／regional pair 规则，不用 unicode scalar count、ICU 或一般 UAX29 替代。研究代码的简化 cluster helper只覆盖本轮有效非负整数边界，不能直接作为所有 fractional/negative guards 的最终实现。multipleOf 采用固定源的 binary64／`1e-10` tolerance 及整数 shortcut；**这个数是 TypeBox 算法常量，不是 Rust 新工作预算**，不扩展到其他数值比较。
 
-21 默认 formats 逐一按固定 `format/*.mjs` 的算法移植，unknown format 同源为 inert。`regex` 复用同一 Unicode16 ECMA parser；`url` 对应源的 WHATWG `URL.canParse`，采用 **url2.5.8／idna1.1.0／idna_adapter1.2.1／ICU4X2.0.0** 的同ICU77数据profile；包含normalizer/properties及data、collections/locale_core/provider，writeable0.6.3显式alloc。不沿用产品当前ICU2.2图。叶实测已有literal/percent-encoded Unicode17域名负例、16域名正例与Unicode17路径正例，避免泛拒Unicode17整个URL。其他 URI/IRI/pointer/date/time/hostname/ip/email/uuid/duration 保留各自源算法，不能用同名标准库替换后声称同接受集。固定默认 registry 与外部直接修改 TypeBox 全局 registry 不混称；Pi root 未导出 Format，全局依赖对象的宿主污染不自动变成 Opi 全局可变 registry API。
+21 默认 formats 逐一按固定 `format/*.mjs` 的算法移植，unknown format 同源为 inert。`regex` 复用同一 ECMA parser 与声明支持的上游 Unicode 数据；`url` 使用 crates.io **url2.5.8／idna1.1.0**。本次 workspace 迁移图为 **idna_adapter1.2.2／ICU normalizer、properties 及 data2.2.0**；独立 consumer 另按真实解析图记录（本轮为 ICU2.3.0、provider2.3.1），不承诺把所有 caller 锁在同一数据版本。RDF-21 允许新脚本、Letter、大小写及 IDNA 数据传播到 pattern、property key、regex/IDN/URL/IRI format 和内存资源 identity；保留旧字符、合法路径、非法 IDNA 控制。`uri`／`uri-reference` 与 URL／IRI 各有来源算法，不能强行统一接受集。其他 pointer/date/time/hostname/ip/email/uuid/duration 算法不因数据升级而豁免。固定默认 registry 与外部直接修改 TypeBox 全局 registry 不混称；Pi root 未导出 Format，全局依赖对象的宿主污染不自动变成 Opi 全局可变 registry API。
 
-**固定独立consumer的依赖身份与交付物：**idna1.1.0只提供固定Adapter构造，未提供可注入DataProvider的入口；不能声称用它完成公开provider注入，也不能用workspace锁或library里的`[patch]`固定外部consumer。选择 **registry可解析的受控vendor family发布包**，作为opi-ai内部使用的第三方后端依赖：url/idna/adapter及上述7项ICU包的package身份和内部依赖引用统一命名空间化，算法文件逐archive member不变，带独立source／manifest变换／数据与许可清单；原图和新图的公开类型不交叉。每包使用精确版本和可审查registry source/checksum；发布opi-ai前，全部依赖必须已在目标registry可解析，普通consumer不需要root patch、TEMP path或单独下载源码。研究名称`pi-schema-private-*`仅为证明用package身份；最终registry名称与版本在实施／发布配置中固定，不新增Opi领域API／公共后端trait。
+**普通独立 consumer 的依赖与交付物：**采用 crates.io 的普通 package 身份，不再分发 `opi-vendor-*` 或研究中的 `pi-schema-private-*` family；移除产品 `third_party/unicode16-ecma-url`。root Cargo.lock 只固定 workspace 构建，library 的 lock／`[patch]` 不能固定每个外部 consumer；也不声称 idna1.1.0 提供可注入 DataProvider 的 public constructor。普通 consumer 不需 root patch、临时 registry 或单独取得 vendor 源码。每次升级记录真实版本／source／checksum、有效 features 与数据差异；外部 consumer 验证必须包含实际 opi-ai 公共入口和正常依赖 feature union。
 
-这个选择明确承担 **10个维护后端包**的分发、版本、许可／NOTICE、漏洞修复与升级回归责任；它不是零成本叶适配，不以未验证的source-module内联替代发布方案。本轮不发布任何包。实测同图冲突已经证明身份机制可编译，最终registry产物／crate packaging／workspace外consumer仍由V-58实际证明，保持OPEN；这属于已确定交付路线的实施／release门禁，而不是“以后再决定怎样发包”。
+vendor manifest 重命名、Unicode16 生成确定性、源字节闭包和双 family 共存不再是活跃产品门禁；原结果与来源摘要仍保留为历史证据，删除其唯一输入后不继续声称旧分叉可从当前树完整离线重放。通用 conformance、Number／URL 正反控制、真实公共 SDK 外部 consumer 及实际包资源验证继续保留。完整 registry 产物／crate packaging／平台与全部公共面仍由 V-58 和 task 20.57 验收，不能用本次 Schema 子集 smoke 提前关闭。本轮不 publish。
 
 normalizer 是单独私有阶段，按原 Pi validation 与实际 Value.Convert 路径 clone-before-normalize，先保留 raw 和 parse provenance，再 optional-null、已有 JSON type、allOf 顺序、anyOf/oneOf 原值优先与 clone-per-arm、有限 ECMAScript Number/String coercion、properties/items 递归，最后原 schema full check。它与 evaluator 共用只读 IR 的子 schema check，不保留两个验证接受集。Number词法采用私有ECMAScript StringNumericLiteral分类，ECMA whitespace及decimal/hex/bin/oct／符号/exponent分别处理，再用成熟binary64转换，不把Rust parse接受集当成JS Number词法；拒绝非有限coercion结果。String固定采用 **ryu-js1.0.2** 的safe Buffer API处理binary64 shortest/exponent阈值/负零，不另造float算法。该crate为纯Rust，无C/build.rs，但内部包含unsafe；调用隔离在leaf，需按原版本source／锁图审查，不能宣称整个依赖树无unsafe。RDF-09 correctness fix、整数精度与字节不互换说明继续有效。
 
@@ -75,12 +77,12 @@ normalizer 是单独私有阶段，按原 Pi validation 与实际 Value.Convert 
 
 IR／regex 编译结果由工具声明 generation 的 owned Arc 持有，原 trusted schema 不改变；替换声明的新调用获得新 IR，已创建调用保留旧 generation。内部 cache 只作复用和可淘汰存储，不以 cache miss／tuning number 拒绝有效 schema。耗 CPU 阶段置于阻塞执行单元，任务并发由运行时调度；取消可以阻止后续阶段／丢弃结果，不能把 sync regex 说成可被 Future drop 硬杀。无额外固定 schema、regex fuel、queue、work 或错误数上限。
 
-Unicode 数据维护分叉放在受控私有依赖来源，不把改动藏进 upstream version。记录上游 archive、commit、许可、数据来源与生成器 SHA；生成期工具不进入产品 build.rs／运行依赖。回补上游修复或升级时，先重新固定 Pi 运行时 Unicode 版本，再重生表／配套 tests／运行语料，审查算法 diff，禁止 Cargo semver 自动静默替换这个 backend identity。若未来 Pi runtime 数据版本变化，升级这个明确输入即可，不再发明另一个 regex engine。
+Unicode 数据随受支持的普通上游依赖维护；升级先审 registry archive／checksum、manifest、features、build.rs/native/proc-macro 闭包和算法 diff，再重放数据差异与保留语义回归。本轮实际图中的 ICU data2.2／2.3 上游仍含 build.rs，并可读取 ICU4X_DATA_DIR；不能把退出本地生成器说成依赖树零构建脚本。Opi 自身关闭 regress 默认 features；consumer feature union 可能包含可选 PikeVM 代码，不能担保整个下游图不含该代码。固定0.12.0 的正常 Regex API 仍使用 BacktrackExecutor，需真实 consumer 验证 backref／lookbehind、非法 regex admission 和无进展递归。无新开关、兼容后端或生成器进入产品。
 
 ## 4. 实施门禁和仍 OPEN 的验收
 
-设计不再等待“某个通用 engine 会支持 TypeBox”的假设；采用方言所有者明确、机制有限、数据可重生的路线。代价是维护整个 JSON 方言 evaluator／resolver／formats 和 Pi normalizer，而不是只维护几个 hooks；源规模、差分回归和依赖维护责任均显式记录，不能再称小 leaf adapter。不开产品新公共框架，也不扩大 SDK 权限。
+设计不再等待“某个通用 engine 会支持 TypeBox”的假设；采用方言所有者明确、机制有限、数据 profile 显式登记的路线。代价是维护整个 JSON 方言 evaluator／resolver／formats 和 Pi normalizer，而不是只维护几个 hooks；源规模、差分回归和普通上游依赖维护责任均显式记录，不能再称小 leaf adapter。不开产品新公共框架，也不扩大 SDK 权限。
 
 对应 V-11/34/35/39/41/58 保持实施 OPEN：完整 21-format corpus／registry边界、所有42 JSON机制、full resolver／evaluated scope、真实 Rust normalization、source malformed guards、完整 syntax／Unicode／UTF16 差分、公开 consumer、取消／cache／generation、MSRV／三平台和供应链审查。把原 85cases 与本轮新增输入转成回归起点，新增边界／生成语料；不会拿 64／64 作为这些 V 的通过记录。
 
-`固定输入 → verify: archive/Node/TypeBox/source/lock pins`；`官方生成 → verify: 两次 table/tests 相同`；`native differential → verify: 全部 case/退出码/原始流`；`产品实施 → verify: 上述 V + 独立复审`。研究测试影响 **add**；产品测试影响 **none**。未提交或推送。
+`固定输入 → verify: registry/Node/TypeBox/source/lock pins`；`上游数据迁移 → verify: RDF-21 正反控制、真实依赖图与 feature union`；`native differential → verify: 全部 case/退出码/原始流及允许差异`；`产品实施 → verify: 上述 V + 独立复审`。原研究测试影响 **add**、产品 **none** 的记录仅属 §2 历史窗口；本次实施记录实际 add/update/delete/retain 与命令结果。退役 vendor 专属门禁不能删除通用 conformance／外部 consumer；20.11、20.34、20.57 的完整验收仍 OPEN，不修改账本、不提交。

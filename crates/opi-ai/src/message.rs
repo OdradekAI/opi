@@ -56,9 +56,27 @@ pub struct ToolResultMessage {
     pub content: Vec<OutputContent>,
     pub details: Option<serde_json::Value>,
     pub is_error: bool,
+    /// Known non-execution recorded by the caller's trusted execution boundary.
+    /// Absence leaves execution effects unknown; neither `is_error` nor result
+    /// text establishes this fact. This record grants no execution permission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_executed: Option<ToolNotExecutedReason>,
     #[serde(default)]
     pub truncated: bool,
     pub timestamp_ms: i64,
+}
+
+/// Closed reasons a trusted caller may record before a tool has launched.
+/// These facts survive canonical serialization and never originate in model text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolNotExecutedReason {
+    InvalidJson,
+    NonObjectArguments,
+    SchemaValidationFailed,
+    OutputLimit,
+    InterruptedBeforeExecution,
+    NotActive,
 }
 
 /// Supported image media types for user-supplied images.

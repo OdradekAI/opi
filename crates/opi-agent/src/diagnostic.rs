@@ -658,6 +658,7 @@ impl From<&opi_ai::provider::ProviderError> for Diagnostic {
     fn from(error: &opi_ai::provider::ProviderError) -> Self {
         use opi_ai::provider::ProviderError;
         match error {
+            ProviderError::StreamFailure(failure) => Self::from(failure.cause()),
             ProviderError::RateLimited { retry_after_ms } => Diagnostic::new(
                 Severity::Warning,
                 code::CODE_PROVIDER_RATE_LIMITED,

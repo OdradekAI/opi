@@ -143,14 +143,30 @@ pub struct Context {
 /// Normalized request context passed to providers and API implementations.
 ///
 /// The prompt and tool declarations live in the transcript's system messages,
-/// never in independent runtime fields. Only [`normalize_context`] constructs
-/// this type, so a raw [`Context`] cannot reach provider code by accident;
-/// deserialization of a stored transcript re-enters through the transparent
-/// message list.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// never in independent runtime fields. Construction through
+/// [`normalize_context`] and deserialization of the transparent message list
+/// both validate declaration batches before installing them.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct TranscriptContext {
     messages: Vec<Message>,
+}
+
+impl<'de> Deserialize<'de> for TranscriptContext {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let messages = Vec::<Message>::deserialize(deserializer)?;
+        validate_messages(&messages).map_err(serde::de::Error::custom)?;
+        Ok(Self { messages })
+    }
+}
+
+fn validate_messages(messages: &[Message]) -> Result<(), TranscriptError> {
+    for message in messages {
+        if let Message::System(system) = message {
+            validate_tool_batch(&system.tools_added)?;
+        }
+    }
+    Ok(())
 }
 
 impl TranscriptContext {
@@ -194,6 +210,14 @@ pub enum TranscriptError {
     InvalidDeclaration(#[from] ToolDeclarationError),
 }
 
+impl From<TranscriptError> for crate::provider::ProviderError {
+    fn from(error: TranscriptError) -> Self {
+        Self::Config(crate::provider::ProviderErrorSummary::sanitized(
+            error.to_string(),
+        ))
+    }
+}
+
 /// Errors from tool declaration validation.
 #[derive(Debug, Error, PartialEq)]
 pub enum ToolDeclarationError {
@@ -234,16 +258,21 @@ pub fn create_initial_system_message(
 }
 
 /// Fold [`Context::system_prompt`] and [`Context::tools`] into a leading
-/// system message. This is the only entry point that produces a
-/// [`TranscriptContext`]; every provider-facing function expects the result.
-pub fn normalize_context(context: Context) -> TranscriptContext {
+/// system message. Every provider-facing function expects the resulting
+/// [`TranscriptContext`].
+///
+/// Returns an error before installation if the shorthand tools or any embedded
+/// system message contains an invalid or ambiguous declaration batch.
+pub fn normalize_context(context: Context) -> Result<TranscriptContext, TranscriptError> {
+    validate_tool_batch(&context.tools)?;
+    validate_messages(&context.messages)?;
     let initial_message =
         create_initial_system_message(context.system_prompt.as_deref(), &context.tools);
     let mut messages = context.messages;
     if let Some(message) = initial_message {
         messages.insert(0, Message::System(message));
     }
-    TranscriptContext { messages }
+    Ok(TranscriptContext { messages })
 }
 
 fn as_system_message(message: &Message) -> Option<&SystemMessage> {
@@ -694,7 +723,7 @@ mod tests {
             })],
             tools: vec![tool("t", "d")],
         };
-        let normalized = normalize_context(context.clone());
+        let normalized = normalize_context(context.clone()).expect("valid context declarations");
         let head = get_initial_system_message(normalized.messages()).unwrap();
         assert_eq!(head.content, "prompt");
         assert_eq!(head.tools_added.len(), 1);
@@ -703,13 +732,14 @@ mod tests {
         let again = normalize_context(Context {
             messages: normalized.messages().to_vec(),
             ..Context::default()
-        });
+        })
+        .expect("valid context declarations");
         assert_eq!(again, normalized);
     }
 
     #[test]
     fn empty_shorthand_stays_empty() {
-        let normalized = normalize_context(Context::default());
+        let normalized = normalize_context(Context::default()).expect("valid context declarations");
         assert!(normalized.messages().is_empty());
         assert!(get_current_system_message(normalized.messages()).is_none());
     }
@@ -719,7 +749,8 @@ mod tests {
         let normalized = normalize_context(Context {
             tools: vec![tool("t", "d")],
             ..Context::default()
-        });
+        })
+        .expect("valid context declarations");
         let head = get_initial_system_message(normalized.messages()).unwrap();
         assert_eq!(head.content, "");
         assert_eq!(get_current_tools(normalized.messages()).len(), 1);
@@ -731,7 +762,8 @@ mod tests {
             system_prompt: Some("base".to_owned()),
             tools: vec![tool("a", "first"), tool("b", "keep")],
             ..Context::default()
-        });
+        })
+        .expect("valid context declarations");
         transcript
             .append_system_change(SystemMessage {
                 content: "more".to_owned(),
@@ -825,7 +857,8 @@ mod tests {
             system_prompt: Some("base".to_owned()),
             messages: vec![user],
             ..Context::default()
-        });
+        })
+        .expect("valid context declarations");
         transcript
             .append_system_change(SystemMessage {
                 content: "later".to_owned(),
@@ -848,7 +881,8 @@ mod tests {
         let mut transcript = normalize_context(Context {
             system_prompt: Some("base".to_owned()),
             ..Context::default()
-        });
+        })
+        .expect("valid context declarations");
         transcript
             .append_system_change(SystemMessage {
                 content: "later".to_owned(),
@@ -879,7 +913,8 @@ mod tests {
             system_prompt: Some("base".to_owned()),
             tools: vec![tool("t", "d")],
             ..Context::default()
-        });
+        })
+        .expect("valid context declarations");
         let collapsed = collapse_system_messages(&transcript);
         assert_eq!(collapsed, transcript);
     }
@@ -916,7 +951,8 @@ mod tests {
         let mut transcript = normalize_context(Context {
             tools: vec![tool("a", "1"), tool("b", "2")],
             ..Context::default()
-        });
+        })
+        .expect("valid context declarations");
         transcript
             .append_system_change(SystemMessage {
                 tools_added: vec![tool("c", "3"), tool("a", "1-again")],
@@ -935,7 +971,8 @@ mod tests {
         let mut transcript = normalize_context(Context {
             tools: vec![tool("a", "1")],
             ..Context::default()
-        });
+        })
+        .expect("valid context declarations");
         assert!(!has_non_additive_tool_changes(transcript.messages()));
         transcript
             .append_system_change(SystemMessage {
@@ -954,7 +991,8 @@ mod tests {
         let mut transcript = normalize_context(Context {
             tools: vec![tool("a", "1")],
             ..Context::default()
-        });
+        })
+        .expect("valid context declarations");
         transcript
             .append_system_change(SystemMessage {
                 tools_added: vec![tool("b", "2")],
@@ -999,7 +1037,8 @@ mod tests {
             validate_tool_batch(&dup),
             Err(ToolDeclarationError::DuplicateName { .. })
         ));
-        let mut transcript = normalize_context(Context::default());
+        let mut transcript =
+            normalize_context(Context::default()).expect("valid context declarations");
         let before = transcript.messages().len();
         assert!(
             transcript
@@ -1040,7 +1079,8 @@ mod tests {
         let mut transcript = normalize_context(Context {
             system_prompt: Some("base".to_owned()),
             ..Context::default()
-        });
+        })
+        .expect("valid context declarations");
         transcript
             .append_system_change(SystemMessage {
                 content: "later".to_owned(),
@@ -1058,7 +1098,8 @@ mod tests {
         let transcript = normalize_context(Context {
             system_prompt: Some("p".to_owned()),
             ..Context::default()
-        });
+        })
+        .expect("valid context declarations");
         let json = serde_json::to_string(&transcript).unwrap();
         let back: TranscriptContext = serde_json::from_str(&json).unwrap();
         assert_eq!(back, transcript);

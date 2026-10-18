@@ -8,11 +8,13 @@
 
 > 后续专项核查以 Opi `a37ed70` 为输入，见[逐项源码／验证／可行方案](pi-1.3.0-backend-gap-audit.md)和[独立复审](pi-1.3.0-backend-gap-review.md)。本页五项合同继续适用，但 Schema/WS 等选型必须先过专项接受集和机制可达性检查；七组覆盖缺口全部 OPEN。旧轮验证只证明当时文档。
 
+> 2026-10-19：用户批准的 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile) 仅取代本页 Schema 的固定 Unicode16／vendor 数据选择；其他受控后端与供应链门禁不变，旧源码／研究运行结果保留原窗口。完整 task 20.11、20.34、20.57 仍 OPEN。
+
 ## 1. 选择原则与适用层
 
 保留一个 Models、一个 frozen call、一个 acquisition owner、一个最终 collector。所选后端负责明确的协议机制；来源优先级、取消、预算、cache publication 和资源所有权仍在 opi-ai。不能因为引入成熟库，就委托它自行发现另一身份、重试、代理、重定向、启动进程或换一个全局 runtime。
 
-本页中的类型／签名是待实施的 interface 合同，不是可复制即编译的示例。保持 67 AIR／59 V追踪身份（AIR-060／V-52退役）与 RDF-01–20，不建立第二矩阵或实施账本。正式 opi-spec §8.1、PRIN-002、GATE-002 保留；本页不准入新能力、不豁免单 image adapter 的 placement 证据。
+本页中的类型／签名是待实施的 interface 合同，不是可复制即编译的示例。保持 67 AIR／59 V 追踪身份（AIR-060／V-52 退役）；RDF-01–21 只登记差异，不建立第二矩阵或实施账本。正式 opi-spec §8.1、PRIN-002、GATE-002 保留；本页不准入新能力、不豁免单 image adapter 的 placement 证据。
 
 ## 2. 五项工程合同：来源先于默认值
 
@@ -49,17 +51,17 @@
 
 ### 2.4 Schema：确定 source-defined JSON 方言与数据 profile
 
-选定私有、JSON-only TypeBox 方言 IR/evaluator＋regress0.12.0 算法的 Unicode16 数据维护分叉；jsonschema0.28.3 退出工具参数默认验证路径，不授权删除其其他产品用途。依据与成本在[Schema设计](pi-1.3.0-readiness-schema.md)：原版62/64、固定数据64/64，11个合成 fallible 分支控制、官方生成器重复一致；不把有限研究当完整 SDK 验收。
+选定私有、JSON-only TypeBox 方言 IR/evaluator，使用 crates.io 原版 regress0.12.0 与 url2.5.8 的受支持上游数据 profile（RDF-21）；jsonschema0.28.3 退出工具参数默认验证路径，不授权删除其其他产品用途。[Schema 设计](pi-1.3.0-readiness-schema.md)保留原版62/64、固定数据64/64、11个合成 fallible 分支控制与生成器重复一致的历史结果，不把这些有限研究当现行 profile 或完整 SDK 验收。
 
 | 方面 | 确定合同／保留义务 |
 |---|---|
 | admission／keywords | 以固定 TypeBox 结构 guard 识别，inert 的坏形状字段不先遭标准 metaschema 拒绝；mixed items/prefixItems、ref siblings、各 applicator/evaluated 状态按原路径。非法被识别 regex 的 compile 错误不被延期忽略 |
 | formats／数值／长度 | 移植21个默认format；unknown同源inert、近似grapheme与binary64规则保留；不以标准draft、UAX29、通用正则或同名validator替代。严格wire副本与local validation分离 |
-| regex／错误 | 固定Unicode16生成数据和ECMA算法；Result在实际访问的分支传播，不以全pattern guard拒绝未访问分支，不把执行错误变成not/if等的成功。无默认fuel／work／shape／depth配额 |
+| regex／错误 | ECMA 算法及 RDF-21 上游数据 profile；regress 关闭默认 features，启用 std/utf16/prohibit-unsafe。Result 在实际访问的分支传播，不以全 pattern guard 拒绝未访问分支，不把执行错误变成 not/if 等的成功。无默认 fuel／work／shape／depth 配额 |
 | ordered JSON／refs | serde_json preserve_order＋JS integer-index枚举；内存URI identity／dynamic/ref frame按源，零schema网络或文件检索。显式work stack，无进展循环typed非成功，不泛拒生产性递归 |
-| JS leaves／发布 | ryu-js1.0.2 safe Buffer；url2.5.8/idna1.1.0/adapter1.2.1/ICU4X2.0.0数据profile。10个受控namespace后端包按registry可解析分发；不能靠library lock或consumer root patch。43/43叶及普通ICU2.2共图隔离已测，产品发布未验收 |
+| JS leaves／发布 | ryu-js1.0.2 safe Buffer；普通 url2.5.8/idna1.1.0，本次迁移图为 adapter1.2.2/ICU2.2.0。不再分发10包 Unicode16 namespace family，不靠 library lock 或 consumer root patch 固定所有 caller。保留普通 conformance／实际外部 consumer 和 feature union；最终完整包／平台验收仍 OPEN |
 | normalizer／语言差异 | clone-before-normalize、原值优先union、JS Number/String、optional-null、原schema最终check；保留raw、精确整数及root漏洞修正。UTF8 String不表示孤立UTF16 surrogate，typed失败且保留raw，不替换后伪成功 |
-| ownership／调度 | IR/regex按声明generation owned共享，cache可淘汰不拒合法输入；耗CPU工作在owned执行单元，取消不假称硬杀同步引擎。生成期工具不进入产品build.rs；固定补丁／数据／许可和升级回归 |
+| ownership／调度 | IR/regex 按声明 generation owned 共享，cache 可淘汰不拒合法输入；耗 CPU 工作在 owned 执行单元，取消不假称硬杀同步引擎。无产品 Unicode16 生成器；审查上游 build.rs／数据／许可和升级回归 |
 
 维护范围明确是完整JSON方言、resolver、formats与Pi normalizer，不能再称几个leaf hook。64case只验证关键可表达子集，完整42个JSON机制、所有formats/refs/normalizer、公开consumer、cache/cancel/MSRV/平台仍 V-11/34/35/39/41/58 **OPEN**。原metaschema／fancy-regex失败证据在历史报告保留；本设计不调用其private bypass。
 
@@ -191,7 +193,7 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 
 | 组 | 当前设计／实际机制证据 | 仍OPEN的产品验收 |
 |---|---|---|
-| Schema | 私有source dialect＋固定Unicode16 regress数据；64/64、11合成错误控制、43/43叶与10包namespace同图，维护／registry分发明确 | 全normalizer/formats/refs/evaluated/UTF16边界、publicutility/consumer/cache/cancel；V-11/34/35/39/41/58 |
+| Schema | 私有 source dialect＋RDF-21 普通上游数据 profile；旧64/64、11合成错误控制、43/43叶与10包 namespace 同图保留历史身份，不追认为新图验证 | 全 normalizer/formats/refs/evaluated/UTF16 边界、public utility/consumer/cache/cancel；V-11/34/35/39/41/58 |
 | WS | ownedUpgrade＋受控Ratchet PMD/message/RSV/length/storage；旧80观察与后续纯内存修正分开；具体修复证明见WS报告，不靠SSE关闭 | fullprovider/continuation/pool/proxy/TLS/cleanup/multiplatform及新patch网络组装；V-02/30/49/58 |
 | HTTP/proxy/H2/redirect | sourceowner＋受控Hyper动态storage，20headers对照、redirect逐leg及16proxy source观察；显式ALPN有实测 | 完整head/trailer patch、CL/TE/EOF/取消、所有source/proxy组合与publicdriver；V-01/05/09/29/30/51/55/58 |
 | TLS/trust/crypto | 实例rustls/commonring＋privateEVP补齐signer/verification/KX，reference bundle/scopedroots；11RSA/privatepoison、TLS正常负例、P521/e3差异有实际来源 | 全算法/chain/source与协商优先级、Rust FFI安全、构建供应链/平台/真实服务；V-09/49/55/58 |
@@ -203,8 +205,8 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 
 ## 6. 维护与发布身份
 
-修改过的regress数据、Ratchet、Hyper以及Unicode16 URL/IDNA/ICU family都必须使用受控、可被普通consumer解析的独立后端package身份与精确版本/source/checksum；不把产品lock或consumer root patch当发布方案，不标成未经修改upstream crate。URL的10包namespace机制已实际与普通ICU2.2共图；其他最终registry产物/packaging仍由V-58验，不在本轮publish。它们是私有第三方后端依赖，不新增Opi领域API、公共trait或根workspace拓扑。
+修改过的 Ratchet、Hyper 继续使用受控、可被普通 consumer 解析的独立后端 package 身份与精确 version/source/checksum；不把产品 lock 或 consumer root patch 当发布方案，不标成未经修改 upstream crate。Schema 的 regress／URL/IDNA/ICU 改用普通 crates.io package，不再承担 Unicode16 分叉或 namespace family 发布义务。旧 URL10包共图结果保留历史身份；通用 conformance、外部 consumer 及最终完整 registry／packaging 仍由 V-58 验，不在本轮 publish。不新增 Opi 领域 API、公共 trait 或根 workspace 拓扑。
 
 后端namespace必须覆盖真正消费修正的最小类型依赖闭包：HTTP为reqwest→hyper-util/Hyper及仍引用这些类型的hyper-rustls/TLS glue等实际路径；WS为相互交换extension/frame类型的Ratchet core/ext/deflate。逐边固定package别名/版本/source/checksum，证明SDK driver实际链接修正版，不只增加一个未被使用的私有Hyper或混合两套类型。未改的通用http/bytes/rustls等类型能共享时不无端复制；完整闭包由实际metadata/反向feature树和externalconsumer验收，不能预先用猜测包数当完成。公共SDK／custom transport边界不泄漏私有backend类型，正常caller显式提供的标准client/transport按其已有合同接入一次，不加第二router/driver/retry；本机默认路径不靠caller rootpatch修补。
 
-regress数据重生工具只在维护期；ryu-js safe API内部有unsafe；Ratchet deflate强制zlib带C/build.rs；privateOpenSSL EVP扩大到source-required签名/verification/KX，包含受限unsafe/native构建责任。保留许可/NOTICE、最小diff、补丁前后源SHA、生成数据及source版本；上游升级先重放语料并审算法diff。不得在实现时静默扩大为另一个通用引擎，或换更窄后端后仍声称同目标。产品root graph、MSRV、三平台以及供应链/FFI审查继续OPEN。
+Unicode16 数据重生／闭包专属工具退役；普通 ICU2.2 data 仍含上游 build.rs，须审 ICU4X_DATA_DIR 等构建输入，不能称依赖树零 build script。ryu-js safe API 内部有 unsafe；Ratchet deflate 强制 zlib 带 C/build.rs；private OpenSSL EVP 扩大到 source-required 签名/verification/KX，包含受限 unsafe/native 构建责任。保留适用的许可／NOTICE、最小 diff、补丁前后源 SHA、数据及 source 版本；上游升级先重放语料并审算法 diff。不得静默扩大为另一个通用引擎，或换更窄后端后仍声称同目标。产品 root graph、MSRV、三平台以及供应链/FFI 审查继续 OPEN。

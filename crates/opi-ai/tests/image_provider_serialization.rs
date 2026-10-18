@@ -82,7 +82,8 @@ fn make_request(messages: Vec<Message>) -> Request {
             system_prompt: None,
             messages,
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

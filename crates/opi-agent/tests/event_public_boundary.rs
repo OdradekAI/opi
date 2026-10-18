@@ -38,6 +38,7 @@ fn tool_result_text_event(text: &str) -> AgentEvent {
             timestamp_ms: 0,
         })),
         tool_results: vec![ToolResultMessage {
+            not_executed: None,
             tool_call_id: "call-1".to_owned(),
             tool_name: "read".to_owned(),
             content: vec![OutputContent::Text {

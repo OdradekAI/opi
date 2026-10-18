@@ -61,7 +61,8 @@ fn sample_request(model: &str) -> Request {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),

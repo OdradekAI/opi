@@ -273,7 +273,8 @@ async fn stream_from_custom_provider() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: opi_ai::provider::ThinkingConfig::default(),
@@ -667,7 +668,8 @@ fn models_request() -> Request {
             system_prompt: Some("be terse".into()),
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1025,6 +1027,98 @@ async fn models_old_call_survives_provider_mutation() {
         .await
         .unwrap();
     assert_eq!(assistant_text(&message), "after-mutation");
+}
+
+#[tokio::test]
+async fn models_completion_entries_capture_owned_binding_before_first_poll() {
+    fn owned<F: std::future::Future + Send + 'static>(future: F) -> F {
+        future
+    }
+
+    let mut models = Models::new();
+    let observed: Observed = Arc::default();
+    let record_info = echo_record_info(2_048);
+    let reads = counting_resolver();
+    let handle = models
+        .register_chat_api(
+            Arc::new(EchoChatApi {
+                api: ApiId::new("custom-chat-v1"),
+                provider_id: "custom".into(),
+                record: record_info.clone(),
+                text: "before-mutation".into(),
+                observed: observed.clone(),
+            }),
+            reads.clone() as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let record = ChatModelRecord::new("custom", record_info.clone());
+    let native = owned(models.complete(
+        record.clone(),
+        models_request(),
+        handle.options(EchoOptions {
+            label: "native".into(),
+        }),
+    ));
+    let simple =
+        owned(models.complete_simple(record.clone(), models_request(), SimpleOptions::default()));
+    let direct = owned(models.complete_direct(
+        record.clone(),
+        models_request(),
+        handle.options(EchoOptions {
+            label: "direct".into(),
+        }),
+        ResolvedAuth {
+            scheme: AuthScheme::Bearer,
+            secret: SecretString::from("direct-secret"),
+            base_url: None,
+            account_id: None,
+            provenance: opi_ai::AuthProvenance::default(),
+        },
+    ));
+    assert_eq!(reads.calls.load(Ordering::SeqCst), 0);
+    assert!(observed.lock().unwrap().is_empty());
+
+    let replacement_reads = counting_resolver();
+    models
+        .register_chat_api(
+            Arc::new(EchoChatApi {
+                api: ApiId::new("custom-chat-v1"),
+                provider_id: "custom".into(),
+                record: record_info,
+                text: "after-mutation".into(),
+                observed: Arc::default(),
+            }),
+            replacement_reads.clone() as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let fresh = owned(models.complete_simple(record, models_request(), SimpleOptions::default()));
+    drop(models);
+
+    for future in [
+        tokio::spawn(native),
+        tokio::spawn(simple),
+        tokio::spawn(direct),
+    ] {
+        assert_eq!(
+            assistant_text(&future.await.unwrap().unwrap()),
+            "before-mutation"
+        );
+    }
+    assert_eq!(
+        assistant_text(&tokio::spawn(fresh).await.unwrap().unwrap()),
+        "after-mutation"
+    );
+    assert_eq!(reads.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(replacement_reads.calls.load(Ordering::SeqCst), 1);
+    let calls = observed.lock().unwrap();
+    assert_eq!(calls.len(), 3);
+    let direct = calls
+        .iter()
+        .find(|call| call.options_label == "direct")
+        .unwrap();
+    assert_eq!(direct.auth_secret, "direct-secret");
 }
 
 #[tokio::test]

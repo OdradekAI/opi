@@ -20,6 +20,16 @@ active SDK 验收优先越过 Models/native/simple/complete/result、公开直�
 
 明确采纳[后端附件](pi-1.3.0-rust-backends.md)；下表细化既有V，不建立第二矩阵/进度或已执行结果。原41+7文件处置保留；未来add/update在对应binary/filter落地，现有有效行为retain，只有replacement proof后delete。本轮测试影响none。
 
+2026-10-19 的 Schema 数据合同由 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile) 取代固定 Unicode16／vendor 路线；不改写下文历史运行窗口的 `none` 或旧接受集。下列判据补充既有 V，不计作执行通过：
+
+| 既有 V | 当前数据迁移判据与测试处置 |
+|---|---|
+| V-11/35/39 | **update** Opi corpus 的新 Script／Letter 期望，保留 Pi 历史 oracle；**add** pattern／property key／regex/IDN/URL/IRI 格式的上游数据正反控制，以及可编译新脚本子 schema 的 optional-null／required-null。**retain** 真正子编译失败保留 optional null、union 错误、guard/inert、精确整数与原 schema 最终校验；数据迁移不授权新拒绝上限或漏检剪枝。 |
+| V-34/41 | **add** 原文／percent／IDNA 后规范 ACE 的内存资源 ref 正反例、序列化往返后的后续验证与真实 Agent normalized 授权／执行；**retain** resource frame、相对 ref admission 顺序／终止性、迟到 Regex、合法 reset／正常递归和 raw 不变。local Schema 接受新字符不证明 strict wire／grammar 等价或供应商接受，也不改写已有会话结果。 |
+| V-42/58 | **retain/update** 通用 conformance 与 workspace 外真实 opi-ai consumer，验证普通 crates.io 解析图、来源／checksums、features union、公共 Schema 与 Number／URL 控制。**delete/retire** vendor manifest 重命名、生成确定性、源字节闭包和双 family 专属活跃门禁；保留原结果，不把当前树缺失的旧输入称为可完整离线重放。Schema 子集包 smoke 不等于完整 SDK／registry／MSRV／平台验收。 |
+
+完整 V-34/35/41/58 及 tasks **20.11、20.34、20.57 仍 OPEN**；本次结果只覆盖明确运行的 task 子集，不修改实施账本或另设进度表。
+
 | 处置 | 既有 V | 必须新增到同组的机械判据 |
 |---|---|---|
 | R-01 调度与接受集 | V-02/04/05/25/40/41 | 对照Pi事件/帧正例，超过旧草案阈值仍可通过：大SSE event、single/fragment WS、完整context outgoing、大tool/opaque/partial；不新增默认bytes/count/depth拒绝。现queue64仅背压、合法大event不能因credit失败；单terminal独立交付完整partial/已知usage，满queue/cancel/小policy并发有task/socket barrier。RFC control/prelude/CRC/真实malformed JSON保留；Pi TextDecoder replacement跨chunks对应。caller显式policy测B−1/B/B+1/overflow/省略；backend不可配置约束单列gap，不归一化 |

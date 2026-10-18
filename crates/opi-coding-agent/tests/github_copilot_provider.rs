@@ -308,7 +308,8 @@ fn request(model: &str) -> Request {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -532,13 +533,15 @@ async fn github_copilot_initiator_tracks_last_user_or_agent_message() {
     assistant.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
         messages: assistant_messages,
         ..Default::default()
-    });
+    })
+    .expect("valid context declarations");
     let _ = drain(&collection, assistant).await;
 
     let mut tool = request("gpt-5.4");
     let mut tool_messages = tool.context.into_messages();
     tool_messages.push(call_assistant("call-1", "read"));
     tool_messages.push(Message::ToolResult(ToolResultMessage {
+        not_executed: None,
         tool_call_id: "call-1".into(),
         tool_name: "read".into(),
         content: vec![OutputContent::Text {
@@ -552,7 +555,8 @@ async fn github_copilot_initiator_tracks_last_user_or_agent_message() {
     tool.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
         messages: tool_messages,
         ..Default::default()
-    });
+    })
+    .expect("valid context declarations");
     let _ = drain(&collection, tool).await;
 
     let requests = server.received_requests().await.unwrap();
@@ -599,12 +603,14 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
             timestamp_ms: 0,
         })],
         tools: vec![],
-    });
+    })
+    .expect("valid context declarations");
     let _ = drain(&collection, user_image).await;
     let mut tool_image = request("gpt-5.4");
     let mut tool_image_messages = tool_image.context.into_messages();
     tool_image_messages.push(call_assistant("call-image", "screenshot"));
     tool_image_messages.push(Message::ToolResult(ToolResultMessage {
+        not_executed: None,
         tool_call_id: "call-image".into(),
         tool_name: "screenshot".into(),
         content: vec![OutputContent::Image {
@@ -621,7 +627,8 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
     tool_image.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
         messages: tool_image_messages,
         ..Default::default()
-    });
+    })
+    .expect("valid context declarations");
     let _ = drain(&collection, tool_image).await;
 
     let requests = server.received_requests().await.unwrap();
@@ -673,7 +680,8 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        });
+        })
+        .expect("valid context declarations");
     let _ = drain(&anthropic_collection, anthropic_user_image).await;
     let anthropic_requests = anthropic_server.received_requests().await.unwrap();
     assert_eq!(anthropic_requests.len(), 1);

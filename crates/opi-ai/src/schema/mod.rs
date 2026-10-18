@@ -10,19 +10,16 @@
 //! normalizer/validator seam built on this engine, and the strict/grammar
 //! wire projection is task 20.11.
 //!
-//! Backend identities: regex leaves compile with `regress` 0.12.0 (the
-//! research-pinned feature profile); the Unicode-16 data identity of the
-//! regex engine is the registry-published `opi-vendor-regress` dependency
-//! resolved at packaging time (tasks 20.8/20.57), not a workspace
-//! substitution. URL-family formats use the WHATWG `url` implementation.
+//! Regex and URL/IDNA data follow the supported upstream crates.io dependency
+//! profile (RDF-21), rather than a fixed Unicode release or Node runtime.
+//! Dependency upgrades record the resolved versions, features and data changes;
+//! they do not waive the dialect's algorithms or typed failure contracts.
+//! Complete conformance and final distribution acceptance remain separate gates.
 //!
-//! Known acceptance-set boundaries (documented, not hidden): structurally
-//! selected invalid regexes fail admission even in branches the upstream
-//! would never visit; URL parsing divergences between the `url` crate and
-//! the WHATWG reference parser follow the `url` crate; exact Unicode-16
-//! agreement of `\p{...}` classes and IDN domains is proven at packaging
-//! time with the vendor family, not by the workspace's stock backend.
+//! Structural schema edges select regex admission. Annotation discovery for
+//! references never makes an unreferenced annotation a validation schema.
 
+mod admission;
 mod ecma_number;
 mod eval;
 mod format_patterns;
@@ -33,6 +30,8 @@ mod hashing;
 mod ir;
 pub(crate) mod js;
 mod normalize;
+mod proof;
+mod pump;
 mod punycode;
 mod refs;
 
@@ -45,6 +44,10 @@ use serde_json::Value;
 /// failure and no-progress recursion from ordinary non-matches.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SchemaError {
+    /// A root or selected reference target is a primitive the source compiler
+    /// cannot build. Arrays retain the source's inert JSON-dialect behavior.
+    #[error("invalid schema node at `{path}`")]
+    InvalidSchema { path: String },
     /// A structurally-selected regex leaf failed to compile at admission.
     /// `path` is the JSON-pointer location of the leaf.
     #[error("schema regex at `{path}` failed to compile: {message}")]
@@ -53,10 +56,10 @@ pub enum SchemaError {
     /// upstream throws for these).
     #[error("schema URI operation failed: {detail}")]
     Uri { detail: String },
-    /// The same schema node, instance location and reference frame was
-    /// re-entered without progress; the upstream would overflow the
-    /// JavaScript stack here.
-    #[error("no-progress recursion in schema evaluation")]
+    /// Admission proved an infinitely repeated compiler prefix, or evaluation
+    /// re-entered the same compiled node and instance without progress. The
+    /// upstream would exhaust the JavaScript stack rather than return a value.
+    #[error("no-progress recursion in schema admission or evaluation")]
     NoProgress,
     /// An internal evaluator invariant was violated (a bug, not a schema
     /// property).
@@ -86,9 +89,10 @@ pub use normalize::{
 
 /// Admit a trusted schema document into the dialect IR.
 ///
-/// Fails closed on structurally-selected invalid regex leaves (see the
-/// module documentation for the divergence from the upstream's lazy
-/// compile).
+/// Rejects selected invalid regexes and unbuildable primitive schema nodes.
+/// Infinitely growing reference compilation is rejected only after proving a
+/// repeating compiler prefix. Annotation data becomes a schema only when
+/// selected by a structural edge or reference.
 pub fn compile(schema: Value) -> Result<CompiledSchema, SchemaError> {
     Ok(CompiledSchema {
         inner: Arc::new(ir::compile(schema)?),

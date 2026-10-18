@@ -50,6 +50,7 @@ fn request_with_truncated_tool_result() -> Request {
                     timestamp_ms: 0,
                 }),
                 Message::ToolResult(ToolResultMessage {
+                    not_executed: None,
                     tool_call_id: "tc-1".into(),
                     tool_name: "tool".into(),
                     content: vec![OutputContent::Text {
@@ -62,7 +63,8 @@ fn request_with_truncated_tool_result() -> Request {
                 }),
             ],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(128),
         temperature: None,
         thinking: ThinkingConfig::default(),

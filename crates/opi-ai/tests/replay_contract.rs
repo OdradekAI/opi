@@ -16,7 +16,7 @@ use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::bedrock::BedrockProvider;
 use opi_ai::message::{
     AssistantContent, AssistantMessage, InputContent, MediaType, Message, OutputContent, ToolCall,
-    ToolResultMessage, UserMessage,
+    ToolNotExecutedReason, ToolResultMessage, UserMessage,
 };
 use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::openai_responses::OpenAiResponsesProvider;
@@ -67,9 +67,19 @@ fn result(id: &str, name: &str, text: &str) -> Message {
         content: vec![OutputContent::Text { text: text.into() }],
         details: None,
         is_error: false,
+        not_executed: None,
         truncated: false,
         timestamp_ms: 0,
     })
+}
+
+fn not_executed_result(id: &str, name: &str, reason: ToolNotExecutedReason) -> Message {
+    let mut message = result(id, name, "private execution-boundary diagnostic");
+    if let Message::ToolResult(result) = &mut message {
+        result.is_error = true;
+        result.not_executed = Some(reason);
+    }
+    message
 }
 
 fn request(model: &str, messages: Vec<Message>) -> Request {
@@ -79,7 +89,8 @@ fn request(model: &str, messages: Vec<Message>) -> Request {
             system_prompt: None,
             messages,
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(64),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -203,13 +214,14 @@ fn missing_results_close_request_locally_with_unknown_effect() {
         assistant(vec![call("tc_9", "read")], StopReason::ToolUse),
         user("next turn"),
     ];
-    let canonical = serde_json::to_string(&opi_ai::transcript::normalize_context(
-        opi_ai::transcript::Context {
+    let canonical = serde_json::to_string(
+        &opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
             messages: messages.clone(),
             tools: vec![],
-        },
-    ))
+        })
+        .expect("valid context declarations"),
+    )
     .unwrap();
     let body = anthropic()
         .build_request_body(&request(
@@ -240,13 +252,14 @@ fn missing_results_close_request_locally_with_unknown_effect() {
 
     // The canonical history is byte-identical after projection (the
     // projection cannot mutate a borrowed chronology).
-    let replayed = serde_json::to_string(&opi_ai::transcript::normalize_context(
-        opi_ai::transcript::Context {
+    let replayed = serde_json::to_string(
+        &opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
             messages,
             tools: vec![],
-        },
-    ))
+        })
+        .expect("valid context declarations"),
+    )
     .unwrap();
     assert_eq!(canonical, replayed);
 }
@@ -261,7 +274,11 @@ fn failed_turns_omit_with_linked_results_and_length_keeps_pairs() {
         let messages = vec![
             user("q"),
             assistant(vec![call("f_1", "read")], stop_reason),
-            result("f_1", "read", "not executed record"),
+            not_executed_result(
+                "f_1",
+                "read",
+                ToolNotExecutedReason::InterruptedBeforeExecution,
+            ),
             assistant(
                 vec![AssistantContent::Text {
                     text: "recovered".into(),
@@ -290,6 +307,149 @@ fn failed_turns_omit_with_linked_results_and_length_keeps_pairs() {
         .build_request_body(&request("anthropic:claude-sonnet-4-5-20250514", messages))
         .unwrap();
     assert!(body.to_string().contains("len_1"), "Length pair kept");
+}
+
+/// AIR-012/013 and RP-04/09: omitting a failed proposal cannot erase the
+/// unknown effect of a missing result. It is ordinary user context, since
+/// there is no wire call to which a synthetic tool result could attach.
+#[test]
+fn failed_turn_missing_results_keep_unknown_effect_across_batch_boundaries() {
+    use opi_ai::replay::{ReplayError, ReplayLoss, ReplayProjection, ReplayRoute, project_replay};
+    use opi_ai::transcript::SystemMessage;
+
+    let route = ReplayRoute {
+        wire: opi_ai::model_info::WireApi::AnthropicMessages,
+        provider: "anthropic".into(),
+        model: "claude-sonnet-4-5-20250514".into(),
+        supports_images: true,
+    };
+    for stop_reason in [StopReason::Error, StopReason::Aborted] {
+        for boundary in ["end", "user", "assistant", "system", "partial"] {
+            let mut missing = call("private-missing-id", "read");
+            if let AssistantContent::ToolCall { tool_call } = &mut missing {
+                tool_call.arguments = "private-raw-arguments".into();
+                tool_call.arguments_error = Some("private-parse-error".into());
+            }
+            let mut calls = vec![missing];
+            if boundary == "partial" {
+                calls.insert(0, call("private-known-id", "read"));
+            }
+            let mut messages = vec![user("q"), assistant(calls, stop_reason)];
+            if boundary == "partial" {
+                messages.push(not_executed_result(
+                    "private-known-id",
+                    "read",
+                    ToolNotExecutedReason::InterruptedBeforeExecution,
+                ));
+            }
+            if matches!(boundary, "system" | "partial") {
+                messages.push(Message::System(SystemMessage {
+                    content: "updated instructions".into(),
+                    ..Default::default()
+                }));
+            }
+            match boundary {
+                "user" | "partial" => messages.push(user("continue")),
+                "assistant" => messages.push(assistant(
+                    vec![AssistantContent::Text {
+                        text: "recovered".into(),
+                    }],
+                    StopReason::Stop,
+                )),
+                _ => {}
+            }
+            let mut req = request("anthropic:claude-sonnet-4-5-20250514", messages);
+            let canonical = serde_json::to_string(&req.context).unwrap();
+            req.context = serde_json::from_str(&canonical).unwrap();
+            let out = project_replay(
+                req.context.messages(),
+                &route,
+                ReplayProjection::NativeOrCollapse,
+            )
+            .unwrap();
+            let missing_ids: Vec<_> = out
+                .facts
+                .losses
+                .iter()
+                .filter_map(|loss| match loss {
+                    ReplayLoss::SynthesizedMissingResult { tool_call_id } => {
+                        Some(tool_call_id.as_str())
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                missing_ids,
+                ["private-missing-id"],
+                "{stop_reason:?}/{boundary}: only the missing result needs closure"
+            );
+            let failure_position = out
+                .messages
+                .iter()
+                .position(|message| match message {
+                    Message::User(user) => user.content.iter().any(|content| {
+                        matches!(content, InputContent::Text { text } if text.contains("Result unavailable") && text.contains("execution effect is unknown"))
+                    }),
+                    _ => false,
+                })
+                .expect("failed missing result remains as ordinary User failure context");
+            assert!(out.messages.iter().all(|message| {
+                !matches!(message, Message::ToolResult(_))
+                    && !matches!(message, Message::Assistant(assistant) if assistant.content.iter().any(|block| matches!(block, AssistantContent::ToolCall { .. })))
+            }));
+            if let Some(system_position) = out
+                .messages
+                .iter()
+                .position(|message| matches!(message, Message::System(_)))
+            {
+                assert!(
+                    failure_position < system_position,
+                    "system stays batch-transparent"
+                );
+            }
+            let ReplayError::StrictLoss(losses) =
+                project_replay(req.context.messages(), &route, ReplayProjection::Strict)
+                    .expect_err("Strict rejects both omission and missing-result synthesis")
+            else {
+                panic!("expected StrictLoss");
+            };
+            assert!(
+                losses
+                    .iter()
+                    .any(|loss| matches!(loss, ReplayLoss::OmittedFailedAssistant { .. }))
+            );
+            assert_eq!(
+                losses.iter().filter(|loss| matches!(loss, ReplayLoss::SynthesizedMissingResult { tool_call_id } if tool_call_id == "private-missing-id")).count(),
+                1
+            );
+            let anthropic_body = anthropic().build_request_body(&req).unwrap();
+            let chat_body = OpenAiChatProvider::new(None)
+                .build_request_body(&req)
+                .unwrap();
+            for body in [anthropic_body, chat_body] {
+                let serialized = body.to_string();
+                assert!(serialized.contains("Result unavailable"));
+                assert!(serialized.contains("execution effect is unknown"));
+                for private in [
+                    "private-missing-id",
+                    "private-known-id",
+                    "private-raw-arguments",
+                    "private-parse-error",
+                    "private execution-boundary diagnostic",
+                    "tool_use",
+                    "tool_calls",
+                    "not-executed",
+                    "not executed",
+                ] {
+                    assert!(
+                        !serialized.contains(private),
+                        "{stop_reason:?}/{boundary}: {private}"
+                    );
+                }
+            }
+            assert_eq!(serde_json::to_string(&req.context).unwrap(), canonical);
+        }
+    }
 }
 
 /// AIR-010/V-07: cross provider/API/model drops every thinking block -
@@ -486,7 +646,7 @@ fn malformed_proposals_split_by_wire_argument_shape() {
     let anthropic_history = vec![
         user("q"),
         assistant(vec![malformed()], StopReason::ToolUse),
-        result("tc_bad", "read", "error result"),
+        not_executed_result("tc_bad", "read", ToolNotExecutedReason::InvalidJson),
     ];
     let body = anthropic()
         .build_request_body(&request(
@@ -495,7 +655,7 @@ fn malformed_proposals_split_by_wire_argument_shape() {
         ))
         .unwrap();
     let serialized = body.to_string();
-    assert!(serialized.contains("[tool proposal not replayed]"));
+    assert!(serialized.contains("[opi:tool-call-not-executed:v1]"));
     assert!(!serialized.contains("broken"));
     assert!(
         !serialized.contains("tool_result"),
@@ -564,6 +724,7 @@ fn tool_result_images_preserve_association_order_and_failure_flag() {
             ],
             details: Some(json!({"secret": "private-detail"})),
             is_error: false,
+            not_executed: None,
             truncated: false,
             timestamp_ms: 0,
         }),
@@ -590,6 +751,7 @@ fn tool_result_images_preserve_association_order_and_failure_flag() {
             content: vec![image()],
             details: None,
             is_error: true,
+            not_executed: None,
             truncated: false,
             timestamp_ms: 0,
         }),
@@ -705,4 +867,270 @@ async fn association_failure_surfaces_typed_before_network() {
     }
     // No further events: nothing was dispatched.
     assert!(stream.next().await.is_none());
+}
+
+#[test]
+fn failed_turns_reject_results_without_non_execution_facts() {
+    for stop_reason in [StopReason::Error, StopReason::Aborted] {
+        for (is_error, not_executed) in [
+            (false, None),
+            (true, None),
+            (
+                false,
+                Some(ToolNotExecutedReason::InterruptedBeforeExecution),
+            ),
+        ] {
+            let mut recorded = result("failed", "read", "tool changed external state");
+            if let Message::ToolResult(result) = &mut recorded {
+                result.is_error = is_error;
+                result.not_executed = not_executed;
+            }
+            let error = anthropic()
+                .build_request_body(&request(
+                    "anthropic:claude-sonnet-4-5-20250514",
+                    vec![
+                        user("q"),
+                        assistant(vec![call("failed", "read")], stop_reason),
+                        recorded,
+                    ],
+                ))
+                .expect_err("failed assistant projection must not erase possible effects");
+            assert!(matches!(error, ProviderError::Config(_)));
+        }
+    }
+}
+
+#[test]
+fn malformed_object_wire_does_not_infer_non_execution_from_error_text() {
+    let malformed = AssistantContent::ToolCall {
+        tool_call: ToolCall {
+            id: "malformed".into(),
+            name: "read".into(),
+            arguments: "[1]".into(),
+            arguments_error: Some("sensitive parse diagnostic".into()),
+        },
+    };
+    let mut recorded = result("malformed", "read", "was not executed");
+    if let Message::ToolResult(result) = &mut recorded {
+        result.is_error = true;
+    }
+    let error = anthropic()
+        .build_request_body(&request(
+            "anthropic:claude-sonnet-4-5-20250514",
+            vec![
+                user("q"),
+                assistant(vec![malformed], StopReason::ToolUse),
+                recorded,
+            ],
+        ))
+        .expect_err("ordinary error text cannot supply a non-execution fact");
+    assert!(matches!(error, ProviderError::Config(_)));
+}
+
+#[test]
+fn legalized_wire_ids_remain_bijective_when_a_source_id_matches_a_generated_id() {
+    let messages = vec![
+        user("q"),
+        assistant(
+            vec![call("x/y", "read"), call("x-y_becfa9197f2d6333", "read")],
+            StopReason::ToolUse,
+        ),
+        result("x/y", "read", "first"),
+        result("x-y_becfa9197f2d6333", "read", "second"),
+    ];
+    let req = request("anthropic:claude-sonnet-4-5-20250514", messages);
+    let canonical = serde_json::to_value(&req.context).unwrap();
+    let first = anthropic().build_request_body(&req).unwrap();
+    let second = anthropic().build_request_body(&req).unwrap();
+    assert_eq!(first, second, "retry mapping is stable");
+    let blocks = first["messages"][1]["content"].as_array().unwrap();
+    let ids: Vec<_> = blocks
+        .iter()
+        .filter_map(|block| block["id"].as_str())
+        .collect();
+    assert_eq!(ids.len(), 2);
+    assert_ne!(
+        ids[0], ids[1],
+        "different source calls keep different wire IDs"
+    );
+    let results: Vec<_> = first["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|message| message["content"].as_array().unwrap())
+        .filter(|block| block["type"] == "tool_result")
+        .collect();
+    assert_eq!(results[0]["tool_use_id"], ids[0]);
+    assert_eq!(results[1]["tool_use_id"], ids[1]);
+    assert_eq!(serde_json::to_value(&req.context).unwrap(), canonical);
+}
+
+#[test]
+fn omitted_batches_still_validate_association() {
+    for stop_reason in [StopReason::Error, StopReason::Aborted, StopReason::ToolUse] {
+        let proposal = || {
+            let mut proposal = call("x", "read");
+            if stop_reason == StopReason::ToolUse
+                && let AssistantContent::ToolCall { tool_call } = &mut proposal
+            {
+                tool_call.arguments = "[1]".into();
+                tool_call.arguments_error = Some("non-object".into());
+            }
+            proposal
+        };
+        let trusted = || not_executed_result("x", "read", ToolNotExecutedReason::InvalidJson);
+        for (calls, results, expected) in [
+            (
+                vec![proposal(), proposal()],
+                vec![],
+                "duplicate tool call id",
+            ),
+            (
+                vec![proposal()],
+                vec![trusted(), trusted()],
+                "duplicate tool result",
+            ),
+            (
+                vec![proposal()],
+                vec![not_executed_result(
+                    "x",
+                    "other",
+                    ToolNotExecutedReason::InvalidJson,
+                )],
+                "names",
+            ),
+            (
+                vec![proposal()],
+                vec![not_executed_result(
+                    "orphan",
+                    "read",
+                    ToolNotExecutedReason::InvalidJson,
+                )],
+                "does not belong",
+            ),
+        ] {
+            let mut messages = vec![user("q"), assistant(calls, stop_reason)];
+            messages.extend(results);
+            let error = anthropic()
+                .build_request_body(&request("anthropic:claude-sonnet-4-5-20250514", messages))
+                .expect_err("omission cannot bypass association checks");
+            assert!(matches!(error, ProviderError::Config(_)));
+            assert!(
+                error.to_string().contains(expected),
+                "{stop_reason:?}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn malformed_non_execution_context_is_one_sanitized_user_block_after_serde() {
+    let malformed = |id: &str, arguments: &str| AssistantContent::ToolCall {
+        tool_call: ToolCall {
+            id: id.into(),
+            name: "read\"\n".into(),
+            arguments: arguments.into(),
+            arguments_error: Some("private-error-canary".into()),
+        },
+    };
+    let req = request(
+        "anthropic:claude-sonnet-4-5-20250514",
+        vec![
+            user("canonical input"),
+            assistant(
+                vec![
+                    malformed("private-id-canary-a", "{\"private-argument-canary"),
+                    call("valid", "read"),
+                    malformed("private-id-canary-b", "[1]"),
+                ],
+                StopReason::ToolUse,
+            ),
+            not_executed_result(
+                "private-id-canary-a",
+                "read\"\n",
+                ToolNotExecutedReason::InvalidJson,
+            ),
+            result("valid", "read", "real recorded result"),
+            not_executed_result(
+                "private-id-canary-b",
+                "read\"\n",
+                ToolNotExecutedReason::NonObjectArguments,
+            ),
+        ],
+    );
+    let encoded = serde_json::to_string(&req.context).unwrap();
+    let mut restored = req.clone();
+    restored.context = serde_json::from_str(&encoded).unwrap();
+    let body = anthropic().build_request_body(&restored).unwrap();
+    let encoded_body = body.to_string();
+    for private in [
+        "private-error-canary",
+        "private-argument-canary",
+        "private-id-canary",
+        "private execution-boundary diagnostic",
+    ] {
+        assert!(!encoded_body.contains(private), "{private}");
+    }
+    let contexts: Vec<_> = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|message| {
+            message["content"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(move |block| {
+                    block["text"]
+                        .as_str()
+                        .filter(|text| text.starts_with("[opi:tool-call-not-executed:v1]"))
+                        .map(|text| (&message["role"], text))
+                })
+        })
+        .collect();
+    assert_eq!(contexts.len(), 1);
+    assert_eq!(contexts[0].0, "user");
+    let payload: serde_json::Value =
+        serde_json::from_str(contexts[0].1.split_once(' ').unwrap().1).unwrap();
+    assert_eq!(
+        payload,
+        json!({"calls": [
+            {"batch_call":0,"tool_name":"read\"\n","reason_code":"invalid_json"},
+            {"batch_call":2,"tool_name":"read\"\n","reason_code":"non_object_arguments"}
+        ]})
+    );
+    assert!(encoded_body.contains("real recorded result"));
+    assert!(encoded_body.contains("tool_use_id"));
+    assert_eq!(serde_json::to_string(&req.context).unwrap(), encoded);
+}
+
+#[test]
+fn malformed_missing_result_keeps_unknown_effect_distinct_from_non_execution() {
+    let mut malformed = call("missing", "read");
+    if let AssistantContent::ToolCall { tool_call } = &mut malformed {
+        tool_call.arguments = "null".into();
+        tool_call.arguments_error = Some("private diagnostic".into());
+    }
+    let req = request(
+        "anthropic:claude-sonnet-4-5-20250514",
+        vec![user("q"), assistant(vec![malformed], StopReason::ToolUse)],
+    );
+    let body = anthropic().build_request_body(&req).unwrap().to_string();
+    assert!(body.contains("Result unavailable"));
+    assert!(body.contains("execution effect is unknown"));
+    assert!(!body.contains("not-executed"));
+    assert!(!body.contains("not executed"));
+    assert!(!body.contains("private diagnostic"));
+    assert!(!body.contains("tool_use"));
+}
+
+#[test]
+fn legacy_result_serde_has_no_non_execution_fact() {
+    let message = result("legacy", "read", "was not executed");
+    let mut encoded = serde_json::to_value(message).unwrap();
+    encoded.as_object_mut().unwrap().remove("not_executed");
+    let Message::ToolResult(restored) = serde_json::from_value::<Message>(encoded).unwrap() else {
+        panic!("tool result expected");
+    };
+    assert_eq!(restored.not_executed, None);
 }

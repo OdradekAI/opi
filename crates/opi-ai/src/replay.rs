@@ -29,10 +29,11 @@
 //!   messages between a call and its results are transparent to the
 //!   batch and are emitted after them.
 //! - A call with an unambiguous missing result is closed request-locally
-//!   with a synthetic error result stating the result is unavailable and
-//!   the execution effect is unknown. It never claims the tool was not
-//!   executed and never re-executes it; only a trusted Agent path records
-//!   known non-execution (AIR-012/RP-09).
+//!   with an error stating the result is unavailable and the execution
+//!   effect is unknown. When the failed call view is omitted, ordinary
+//!   user-role failure context carries the error without an orphan tool
+//!   result. It never claims the tool was not executed and never re-executes
+//!   it; only a trusted Agent path records known non-execution (AIR-012/RP-09).
 //! - Failed assistant turns (`StopReason::Error`/`Aborted`) and their
 //!   linked non-execution results are omitted from the wire as a closed
 //!   unit; the canonical history keeps them (AIR-013/RP-04). `Length`
@@ -40,8 +41,11 @@
 //!   grants execution permission anywhere in this projection.
 //! - A malformed proposal (`ToolCall::arguments_error`) is replayed as its
 //!   raw text when the wire accepts string arguments, and replaced by an
-//!   explicit named failure context when the wire only accepts objects -
-//!   never as `{}`, `null` or a fabricated successful call (RP-08).
+//!   explicit user-role failure context when the wire only accepts objects.
+//!   Only a trusted `not_executed` fact permits that claim; absent results
+//!   remain unavailable with unknown effects, and recorded possible effects
+//!   cause a typed error. Raw errors, arguments and result details never enter
+//!   the failure context (RP-08).
 //! - Wire IDs are legalized request-locally (charset and length limits)
 //!   with a stable bijective mapping applied synchronously to calls and
 //!   results; the canonical IDs and any execution/evidence identity are
@@ -55,7 +59,7 @@
 
 use crate::message::{
     AssistantContent, AssistantMessage, InputContent, Message, OutputContent, ToolCall,
-    ToolResultMessage,
+    ToolNotExecutedReason, ToolResultMessage, UserMessage,
 };
 use crate::model_info::WireApi;
 use crate::stream::StopReason;
@@ -104,8 +108,8 @@ pub enum ReplayLoss {
         stop_reason: StopReason,
         tool_call_ids: Vec<String>,
     },
-    /// A missing result closed with a synthetic request-local error
-    /// result (result unavailable, execution effect unknown).
+    /// A missing result closed with a request-local error result or ordinary
+    /// failure context (result unavailable, execution effect unknown).
     SynthesizedMissingResult { tool_call_id: String },
     /// An unrepresentable malformed proposal replaced by an explicit
     /// failure context.
@@ -130,7 +134,7 @@ impl ReplayLoss {
                 stop_reason.as_str()
             ),
             Self::SynthesizedMissingResult { tool_call_id } => format!(
-                "synthesized a request-local result for missing result of tool call {tool_call_id:?}"
+                "closed the missing result of tool call {tool_call_id:?} request-locally with unknown execution effect"
             ),
             Self::MalformedFailureContext { tool_call_id } => format!(
                 "replaced malformed tool call {tool_call_id:?} with an explicit failure context"
@@ -165,6 +169,10 @@ pub enum ReplayError {
         call_name: String,
         result_name: String,
     },
+    #[error(
+        "tool result {tool_call_id:?} cannot be omitted without a trusted non-execution error fact"
+    )]
+    MissingNonExecutionFact { tool_call_id: String },
     #[error(
         "strict replay projection rejected lossy transforms before any request was built: {}",
         .0.iter().map(|l| l.describe()).collect::<Vec<_>>().join("; ")
@@ -252,8 +260,7 @@ fn wire_id_constraints(wire: WireApi) -> Option<(usize, bool)> {
     }
 }
 
-/// FNV-1a 64-bit: stable, dependency-free digest for collision-safe ID
-/// suffixes.
+/// FNV-1a 64-bit: stable, dependency-free digest for readable ID suffixes.
 fn fnv1a64(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for byte in bytes {
@@ -264,10 +271,9 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 }
 
 /// Legalize one wire ID under the route's constraints. The mapping is a
-/// pure function of the input: identical canonical IDs always map to the
-/// identical wire ID (retry stability), and the hash suffix keeps the
-/// mapping injective for realistic inputs. Empty input maps to a
-/// synthesized non-empty ID rather than being passed through.
+/// preferred spelling; the request-local allocation table resolves actual
+/// collisions, including legal source IDs that match a generated spelling.
+/// Empty input maps to a synthesized non-empty ID rather than being passed through.
 fn legalize_wire_id(id: &str, constraints: Option<(usize, bool)>) -> String {
     let Some((max_len, restricted_charset)) = constraints else {
         return if id.is_empty() {
@@ -293,8 +299,7 @@ fn legalize_wire_id(id: &str, constraints: Option<(usize, bool)>) -> String {
         return sanitized;
     }
     // Reserve room for a 17-char hash suffix ("_" + 16 hex digits) inside
-    // the limit; the digest covers the full original ID so distinct
-    // originals cannot collide after truncation.
+    // the limit. The request-local allocation table handles hash collisions.
     let budget = max_len.saturating_sub(17).max(1);
     let prefix: String = sanitized.chars().take(budget).collect();
     format!("{prefix}_{:016x}", fnv1a64(id.as_bytes()))
@@ -308,28 +313,47 @@ struct BatchCall {
     /// objects: the call is not emitted and its result is consumed by the
     /// failure context.
     unrepresentable: bool,
+    not_executed: Option<ToolNotExecutedReason>,
 }
 
 struct ReplayState<'a> {
     route: &'a ReplayRoute,
     projection: ReplayProjection,
     id_constraints: Option<(usize, bool)>,
+    wire_ids: std::collections::BTreeMap<String, String>,
+    used_wire_ids: std::collections::BTreeSet<String>,
     out: Vec<Message>,
     facts: ReplayFacts,
     strict_losses: Vec<ReplayLoss>,
     open_batch: Vec<BatchCall>,
     answered: Vec<String>,
     held_systems: Vec<Message>,
-    /// Call IDs of the most recently omitted failed assistant turn: their
-    /// linked results are consumed by the omission closure until the next
-    /// batch boundary.
-    failed_batch_ids: Vec<String>,
+    /// An omitted failed turn still owns a normal association batch.
+    failed_batch: bool,
     timestamp_ms: i64,
 }
 
 impl<'a> ReplayState<'a> {
     fn legalize(&mut self, id: &str) -> String {
-        let legalized = legalize_wire_id(id, self.id_constraints);
+        if let Some(allocated) = self.wire_ids.get(id) {
+            return allocated.clone();
+        }
+        let preferred = legalize_wire_id(id, self.id_constraints);
+        let mut legalized = preferred.clone();
+        let mut collision = 0usize;
+        while self.used_wire_ids.contains(&legalized) {
+            collision += 1;
+            let suffix = format!("_{collision}");
+            let budget = self.id_constraints.map_or(preferred.len(), |(max_len, _)| {
+                max_len.saturating_sub(suffix.len())
+            });
+            legalized = format!(
+                "{}{suffix}",
+                preferred.chars().take(budget).collect::<String>()
+            );
+        }
+        self.used_wire_ids.insert(legalized.clone());
+        self.wire_ids.insert(id.to_owned(), legalized.clone());
         if legalized != id {
             self.facts.record(ReplayLoss::WireIdRemap {
                 from: id.to_owned(),
@@ -351,38 +375,89 @@ impl<'a> ReplayState<'a> {
 
     fn close_batch(&mut self) {
         let batch = std::mem::take(&mut self.open_batch);
-        if !batch.is_empty() {
-            for call in &batch {
-                if call.unrepresentable || self.answered.contains(&call.tool_call.id) {
-                    continue;
-                }
-                self.strict(ReplayLoss::SynthesizedMissingResult {
-                    tool_call_id: call.tool_call.id.clone(),
-                });
-                self.facts.record(ReplayLoss::SynthesizedMissingResult {
-                    tool_call_id: call.tool_call.id.clone(),
-                });
-                let wire_id = self.legalize(&call.tool_call.id);
-                self.out.push(Message::ToolResult(ToolResultMessage {
-                    tool_call_id: wire_id,
-                    tool_name: call.tool_call.name.clone(),
-                    content: vec![OutputContent::Text {
-                        text: format!(
-                            "Result unavailable: no result was recorded for tool call '{}' \
-                             ('{}'); this request did not execute the tool and its \
-                             execution effect is unknown.",
-                            call.tool_call.id, call.tool_call.name
-                        ),
-                    }],
-                    details: None,
-                    is_error: true,
-                    truncated: false,
-                    timestamp_ms: self.timestamp_ms,
-                }));
+        let mut malformed_non_execution = Vec::new();
+        let mut omitted_unavailable = Vec::new();
+        for (index, call) in batch.iter().enumerate() {
+            if self.failed_batch && self.answered.contains(&call.tool_call.id) {
+                // A result is answered here only after its trusted
+                // non-execution fact has passed the association checks.
+                continue;
             }
+            if self.failed_batch || call.unrepresentable {
+                if let Some(reason) = call.not_executed {
+                    malformed_non_execution.push(serde_json::json!({
+                        "batch_call": index,
+                        "tool_name": call.tool_call.name,
+                        "reason_code": reason,
+                    }));
+                } else {
+                    omitted_unavailable.push(serde_json::json!({
+                        "batch_call": index,
+                        "tool_name": call.tool_call.name,
+                    }));
+                    self.strict(ReplayLoss::SynthesizedMissingResult {
+                        tool_call_id: call.tool_call.id.clone(),
+                    });
+                    self.facts.record(ReplayLoss::SynthesizedMissingResult {
+                        tool_call_id: call.tool_call.id.clone(),
+                    });
+                }
+                continue;
+            }
+            if self.answered.contains(&call.tool_call.id) {
+                continue;
+            }
+            self.strict(ReplayLoss::SynthesizedMissingResult {
+                tool_call_id: call.tool_call.id.clone(),
+            });
+            self.facts.record(ReplayLoss::SynthesizedMissingResult {
+                tool_call_id: call.tool_call.id.clone(),
+            });
+            let wire_id = self.legalize(&call.tool_call.id);
+            self.out.push(Message::ToolResult(ToolResultMessage {
+                tool_call_id: wire_id,
+                tool_name: call.tool_call.name.clone(),
+                content: vec![OutputContent::Text {
+                    text: format!(
+                        "Result unavailable: no result was recorded for tool call '{}' \
+                         ('{}'); this request did not execute the tool and its \
+                         execution effect is unknown.",
+                        call.tool_call.id, call.tool_call.name
+                    ),
+                }],
+                details: None,
+                is_error: true,
+                not_executed: None,
+                truncated: false,
+                timestamp_ms: self.timestamp_ms,
+            }));
+        }
+        let mut failure_content = Vec::new();
+        if !malformed_non_execution.is_empty() {
+            failure_content.push(InputContent::Text {
+                text: format!(
+                    "{MALFORMED_PROPOSAL_NOTE_PREFIX} {}",
+                    serde_json::json!({ "calls": malformed_non_execution })
+                ),
+            });
+        }
+        if !omitted_unavailable.is_empty() {
+            failure_content.push(InputContent::Text {
+                text: format!(
+                    "Result unavailable: omitted tool proposals have no recorded results; \
+                     their execution effect is unknown. {}",
+                    serde_json::json!({ "calls": omitted_unavailable })
+                ),
+            });
+        }
+        if !failure_content.is_empty() {
+            self.out.push(Message::User(UserMessage {
+                content: failure_content,
+                timestamp_ms: self.timestamp_ms,
+            }));
         }
         self.answered.clear();
-        self.failed_batch_ids.clear();
+        self.failed_batch = false;
         self.out.append(&mut self.held_systems);
     }
 
@@ -438,26 +513,12 @@ impl<'a> ReplayState<'a> {
                             )
                             .is_err());
                     if unrepresentable {
-                        let wire_id = self.legalize(&tool_call.id);
                         self.strict(ReplayLoss::MalformedFailureContext {
                             tool_call_id: tool_call.id.clone(),
                         });
                         self.facts.record(ReplayLoss::MalformedFailureContext {
                             tool_call_id: tool_call.id.clone(),
                         });
-                        let note = format!(
-                            "[tool proposal not replayed] tool '{}' (call id '{}') proposed \
-                             malformed arguments that this wire cannot represent; the proposal \
-                             was not executed and its recorded result is omitted from this \
-                             request. Parse failure: {}",
-                            tool_call.name,
-                            wire_id,
-                            tool_call
-                                .arguments_error
-                                .as_deref()
-                                .unwrap_or("malformed arguments")
-                        );
-                        content.push(AssistantContent::Text { text: note });
                     } else {
                         let mut projected = tool_call.clone();
                         projected.id = self.legalize(&tool_call.id);
@@ -468,6 +529,7 @@ impl<'a> ReplayState<'a> {
                     calls.push(BatchCall {
                         tool_call: tool_call.clone(),
                         unrepresentable,
+                        not_executed: None,
                     });
                 }
             }
@@ -495,7 +557,9 @@ impl<'a> ReplayState<'a> {
         self.answered.clear();
         let mut projected = assistant.clone();
         projected.content = content;
-        self.out.push(Message::Assistant(projected));
+        if !projected.content.is_empty() {
+            self.out.push(Message::Assistant(projected));
+        }
         Ok(())
     }
 }
@@ -566,13 +630,15 @@ pub fn project_replay(
         route,
         projection,
         id_constraints: wire_id_constraints(route.wire),
+        wire_ids: std::collections::BTreeMap::new(),
+        used_wire_ids: std::collections::BTreeSet::new(),
         out: Vec::new(),
         facts: ReplayFacts::default(),
         strict_losses: Vec::new(),
         open_batch: Vec::new(),
         answered: Vec::new(),
         held_systems: Vec::new(),
-        failed_batch_ids: Vec::new(),
+        failed_batch: false,
         timestamp_ms: 0,
     };
 
@@ -582,16 +648,22 @@ pub fn project_replay(
                 state.close_batch();
                 match assistant.stop_reason {
                     StopReason::Error | StopReason::Aborted => {
-                        let tool_call_ids: Vec<String> = assistant
-                            .content
-                            .iter()
-                            .filter_map(|block| match block {
-                                AssistantContent::ToolCall { tool_call } => {
-                                    Some(tool_call.id.clone())
+                        let mut tool_call_ids = Vec::new();
+                        for block in &assistant.content {
+                            if let AssistantContent::ToolCall { tool_call } = block {
+                                if tool_call_ids.contains(&tool_call.id) {
+                                    return Err(ReplayError::DuplicateCallInBatch {
+                                        tool_call_id: tool_call.id.clone(),
+                                    });
                                 }
-                                _ => None,
-                            })
-                            .collect();
+                                tool_call_ids.push(tool_call.id.clone());
+                                state.open_batch.push(BatchCall {
+                                    tool_call: tool_call.clone(),
+                                    unrepresentable: false,
+                                    not_executed: None,
+                                });
+                            }
+                        }
                         state.strict(ReplayLoss::OmittedFailedAssistant {
                             stop_reason: assistant.stop_reason,
                             tool_call_ids: tool_call_ids.clone(),
@@ -600,29 +672,15 @@ pub fn project_replay(
                             stop_reason: assistant.stop_reason,
                             tool_call_ids: tool_call_ids.clone(),
                         });
-                        state.failed_batch_ids = tool_call_ids;
+                        state.failed_batch = true;
                     }
                     _ => state.push_assistant(assistant)?,
                 }
             }
             Message::ToolResult(result) => {
-                if state.failed_batch_ids.contains(&result.tool_call_id) {
-                    // Linked non-execution result of an omitted failed
-                    // turn: consumed by the omission closure (AIR-013).
-                    continue;
-                }
-                if state
-                    .open_batch
-                    .iter()
-                    .any(|c| c.unrepresentable && c.tool_call.id == result.tool_call_id)
-                {
-                    // Consumed by the explicit failure context that
-                    // replaced the malformed proposal.
-                    continue;
-                }
                 let call = state
                     .open_batch
-                    .iter()
+                    .iter_mut()
                     .find(|c| c.tool_call.id == result.tool_call_id)
                     .ok_or_else(|| ReplayError::OrphanResult {
                         tool_call_id: result.tool_call_id.clone(),
@@ -640,6 +698,15 @@ pub fn project_replay(
                     });
                 }
                 state.answered.push(result.tool_call_id.clone());
+                if state.failed_batch || call.unrepresentable {
+                    if result.not_executed.is_none() || !result.is_error {
+                        return Err(ReplayError::MissingNonExecutionFact {
+                            tool_call_id: result.tool_call_id.clone(),
+                        });
+                    }
+                    call.not_executed = result.not_executed;
+                    continue;
+                }
                 let mut projected = result.clone();
                 projected.tool_call_id = state.legalize(&result.tool_call_id);
                 if !state.route.supports_images {
@@ -710,7 +777,7 @@ pub fn project_replay(
 
 /// Explicit failure-context marker prefix for unrepresentable malformed
 /// proposals. Adapters and tests can recognize projected failure notes.
-pub const MALFORMED_PROPOSAL_NOTE_PREFIX: &str = "[tool proposal not replayed]";
+pub const MALFORMED_PROPOSAL_NOTE_PREFIX: &str = "[opi:tool-call-not-executed:v1]";
 
 #[cfg(test)]
 mod tests {
@@ -769,9 +836,19 @@ mod tests {
             content: vec![OutputContent::Text { text: "ok".into() }],
             details: None,
             is_error: false,
+            not_executed: None,
             truncated: false,
             timestamp_ms: 0,
         })
+    }
+
+    fn not_executed_result(id: &str, name: &str) -> Message {
+        let mut message = result(id, name);
+        if let Message::ToolResult(result) = &mut message {
+            result.is_error = true;
+            result.not_executed = Some(ToolNotExecutedReason::InvalidJson);
+        }
+        message
     }
 
     #[test]
@@ -1077,7 +1154,7 @@ mod tests {
             let messages = vec![
                 user("q"),
                 Message::Assistant(assistant(vec![call("x", "a")], stop_reason)),
-                result("x", "a"),
+                not_executed_result("x", "a"),
                 Message::Assistant(assistant(
                     vec![AssistantContent::Text {
                         text: "recovered".into(),
@@ -1169,7 +1246,7 @@ mod tests {
             &[
                 user("q"),
                 Message::Assistant(assistant(vec![malformed()], StopReason::ToolUse)),
-                result("x", "a"),
+                not_executed_result("x", "a"),
             ],
             &route(WireApi::AnthropicMessages),
             ReplayProjection::NativeOrCollapse,
@@ -1189,8 +1266,8 @@ mod tests {
             .iter()
             .any(|l| matches!(l, ReplayLoss::MalformedFailureContext { tool_call_id } if tool_call_id == "x")));
 
-        // A missing result for an unrepresentable call synthesizes
-        // nothing: there is no wire call left to answer.
+        // A missing result for an unrepresentable call gets an unknown-effect
+        // context rather than a fabricated structured call/result pair.
         let out = project_replay(
             &[
                 user("q"),
@@ -1245,7 +1322,8 @@ mod tests {
                 .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
         );
         assert!(call_id.len() <= 64);
-        // Distinct originals map to distinct wire IDs (injective).
+        // Ordinary distinct originals choose different preferred spellings;
+        // the request-local allocator also resolves actual collisions.
         let second = legalize_wire_id("call|with|pipes and spaces!x", Some((64, true)));
         assert_ne!(call_id, second);
         // Unconstrained wires pass IDs through untouched.
@@ -1315,6 +1393,74 @@ mod tests {
         let first = project_replay(&messages, &route, ReplayProjection::NativeOrCollapse).unwrap();
         let second = project_replay(&messages, &route, ReplayProjection::NativeOrCollapse).unwrap();
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn wire_id_allocator_resolves_collision_chains_and_retains_reused_ids() {
+        let original = format!("{}/", "a".repeat(80));
+        let preferred = legalize_wire_id(&original, Some((64, true)));
+        let next_collision = format!("{}_1", &preferred[..62]);
+        let source_ids = [&original, &preferred, &next_collision];
+        let mut messages = vec![
+            user("q"),
+            Message::Assistant(assistant(
+                source_ids.iter().map(|id| call(id, "a")).collect(),
+                StopReason::ToolUse,
+            )),
+        ];
+        messages.extend(source_ids.iter().map(|id| result(id, "a")));
+        messages.push(Message::Assistant(assistant(
+            vec![call(&original, "a")],
+            StopReason::ToolUse,
+        )));
+        messages.push(result(&original, "a"));
+        let out = project_replay(
+            &messages,
+            &route(WireApi::AnthropicMessages),
+            ReplayProjection::NativeOrCollapse,
+        )
+        .unwrap();
+        let calls: Vec<_> = out
+            .messages
+            .iter()
+            .filter_map(|message| match message {
+                Message::Assistant(assistant) => {
+                    Some(assistant.content.iter().filter_map(|block| match block {
+                        AssistantContent::ToolCall { tool_call } => Some(tool_call.id.clone()),
+                        _ => None,
+                    }))
+                }
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let results: Vec<_> = out
+            .messages
+            .iter()
+            .filter_map(|message| match message {
+                Message::ToolResult(result) => Some(result.tool_call_id.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(calls, results);
+        assert_eq!(calls.len(), 4);
+        assert_eq!(
+            calls[0], calls[3],
+            "closed batches may reuse the same source ID"
+        );
+        assert_eq!(
+            calls[..3]
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            3
+        );
+        assert!(calls.iter().all(|id| {
+            id.len() <= 64
+                && id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        }));
     }
 
     #[test]

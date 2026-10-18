@@ -5,7 +5,8 @@
 //! the exact function preserves the upstream acceptance set including its
 //! collision behavior. Object keys hash in JavaScript `Array#sort()` order
 //! (UTF-16 code-unit order), and numbers hash their little-endian binary64
-//! bytes.
+//! bytes. Native integers that binary64 cannot represent exactly use a
+//! separate integer marker and exact bytes (RDF-09).
 
 use serde_json::Value;
 
@@ -19,6 +20,7 @@ const MARK_NULL: u8 = 6;
 const MARK_NUMBER: u8 = 7;
 const MARK_OBJECT: u8 = 8;
 const MARK_STRING: u8 = 10;
+const MARK_EXACT_INTEGER: u8 = 11;
 
 fn op(state: &mut u64, byte: u8) {
     *state ^= u64::from(byte);
@@ -59,7 +61,19 @@ fn hash_value(state: &mut u64, value: &Value) {
             }
         }
         Value::String(text) => hash_string(state, text),
-        Value::Number(n) => hash_number(state, n.as_f64().unwrap_or(f64::NAN)),
+        Value::Number(n) => {
+            let float = n.as_f64().unwrap_or(f64::NAN);
+            if let Some(integer) = super::js::integer_value(n)
+                && float as i128 != integer
+            {
+                op(state, MARK_EXACT_INTEGER);
+                for byte in integer.to_le_bytes() {
+                    op(state, byte);
+                }
+            } else {
+                hash_number(state, float);
+            }
+        }
         Value::Bool(b) => {
             op(state, MARK_BOOLEAN);
             op(state, u8::from(*b));
@@ -131,5 +145,30 @@ mod tests {
         assert!(!unique_items(&[json!(1), json!(1.0)]));
         assert!(!unique_items(&[json!({"a": 1}), json!({"a": 1})]));
         assert!(unique_items(&[json!({"a": 1}), json!({"a": 2})]));
+    }
+
+    #[test]
+    fn unique_items_retains_exact_integers_beyond_binary64() {
+        for (first, second) in [
+            (json!(9007199254740992u64), json!(9007199254740993u64)),
+            (json!(9007199254740993u64), json!(9007199254740992.0)),
+            (json!(-9007199254740993i64), json!(-9007199254740992.0)),
+            (json!(u64::MAX), json!(18446744073709551616.0)),
+            (json!(i64::MAX), json!(9223372036854775808.0)),
+        ] {
+            assert!(
+                unique_items(&[first.clone(), second.clone()]),
+                "{first} / {second}"
+            );
+            assert!(!unique_items(&[first.clone(), first]));
+        }
+        assert!(unique_items(&[
+            json!({"nested": [9007199254740992u64]}),
+            json!({"nested": [9007199254740993u64]})
+        ]));
+        assert!(!unique_items(&[
+            json!(i64::MIN),
+            json!(-9223372036854775808.0)
+        ]));
     }
 }

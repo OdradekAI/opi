@@ -8,6 +8,7 @@ use opi_ai::message::{ImageSource, MediaType, Message, OutputContent, ToolResult
 
 fn image_tool_result_msg() -> Message {
     Message::ToolResult(ToolResultMessage {
+        not_executed: None,
         tool_call_id: "call_img_1".into(),
         tool_name: "screenshot".into(),
         content: vec![
@@ -30,6 +31,7 @@ fn image_tool_result_msg() -> Message {
 
 fn image_bytes_tool_result_msg() -> Message {
     Message::ToolResult(ToolResultMessage {
+        not_executed: None,
         tool_call_id: "call_img_2".into(),
         tool_name: "capture".into(),
         content: vec![OutputContent::Image {
@@ -132,6 +134,7 @@ fn session_entry_json_shape_image_tool_result() {
 #[test]
 fn tool_result_with_image_url_source() {
     let msg = Message::ToolResult(ToolResultMessage {
+        not_executed: None,
         tool_call_id: "call_3".into(),
         tool_name: "web_capture".into(),
         content: vec![OutputContent::Image {
@@ -160,6 +163,7 @@ fn tool_result_with_image_url_source() {
 #[test]
 fn tool_result_image_stable_json_shape() {
     let msg = Message::ToolResult(ToolResultMessage {
+        not_executed: None,
         tool_call_id: "call_stable".into(),
         tool_name: "snapshot".into(),
         content: vec![OutputContent::Image {

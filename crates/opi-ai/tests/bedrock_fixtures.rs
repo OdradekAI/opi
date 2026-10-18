@@ -69,7 +69,8 @@ fn text_stream_request() -> Request {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: Default::default(),
@@ -103,7 +104,8 @@ fn tool_call_request() -> Request {
                     "required": ["path"]
                 }),
             }],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: Default::default(),
@@ -270,7 +272,7 @@ async fn crc_invalid_complete_frame_emits_one_error_and_stops() {
         .await;
 
     assert!(
-        matches!(results.as_slice(), [Err(ProviderError::StreamError(_))]),
+        matches!(results.as_slice(), [Err(cause)] if cause.category() == opi_ai::provider::ProviderErrorCategory::Stream),
         "a CRC-invalid complete frame must produce exactly one terminal stream error: {results:?}"
     );
 }
@@ -299,9 +301,9 @@ async fn exception_frame_does_not_expose_upstream_message() {
     // Current producers stop the dual terminal format: the exception frame is
     // a typed stream failure and never yields an Error event.
     assert!(
-        items
-            .iter()
-            .any(|item| matches!(item, Err(ProviderError::StreamError(_))))
+        items.iter().any(|item| item.as_ref().is_err_and(
+            |cause| cause.category() == opi_ai::provider::ProviderErrorCategory::Stream
+        ))
     );
     assert!(
         !items
@@ -623,7 +625,8 @@ async fn url_image_rejected_with_clear_error() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: Default::default(),
@@ -683,6 +686,7 @@ fn tool_result_image_placeholder_preserves_media_type() {
             // The result pairs with its batch's call (AIR-012).
             assistant_call("tool-1", "screenshot"),
             Message::ToolResult(ToolResultMessage {
+                not_executed: None,
                 tool_call_id: "tool-1".into(),
                 tool_name: "screenshot".into(),
                 content: vec![OutputContent::Image {
@@ -698,7 +702,8 @@ fn tool_result_image_placeholder_preserves_media_type() {
             }),
         ],
         tools: vec![],
-    });
+    })
+    .expect("valid context declarations");
 
     let body = provider.build_converse_body(&request).unwrap();
     let text = body["messages"][1]["content"][0]["toolResult"]["content"][0]["text"]
@@ -1005,7 +1010,8 @@ fn lifecycle_text_request() -> Request {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: Default::default(),
@@ -1111,7 +1117,7 @@ async fn assert_bedrock_cancelled(stall_point: BedrockStallPoint) {
     .await
     .expect("Bedrock cancellation must terminate without waiting for HTTP");
     assert!(
-        matches!(remaining.as_slice(), [Err(ProviderError::Cancelled)]),
+        matches!(remaining.as_slice(), [Err(cause)] if cause.category() == opi_ai::provider::ProviderErrorCategory::Cancelled),
         "Bedrock cancellation must yield exactly one typed error, got {remaining:?}"
     );
 }
@@ -1275,7 +1281,9 @@ async fn terminal_stream_with_truncated_trailer_fails_closed() {
     assert_eq!(
         events
             .iter()
-            .filter(|event| matches!(event, Err(ProviderError::StreamError(_))))
+            .filter(|event| event.as_ref().is_err_and(
+                |cause| cause.category() == opi_ai::provider::ProviderErrorCategory::Stream
+            ))
             .count(),
         1,
         "truncated Bedrock trailer must produce exactly one StreamError: {events:?}"

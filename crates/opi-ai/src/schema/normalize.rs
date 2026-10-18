@@ -134,12 +134,13 @@ struct SubValidators {
 }
 
 impl SubValidators {
-    fn check(&mut self, schema: &Value, value: &Value) -> Result<bool, SchemaError> {
+    fn check(&mut self, schema: &Value, value: &Value) -> Result<Option<bool>, SchemaError> {
         match self.get(schema) {
-            Some(compiled) => compiled.check(value),
-            // Upstream: a failed sub-compile yields `undefined`, and every
-            // `validator?.Check(...)` observation on it is "not a match".
-            None => Ok(false),
+            Some(compiled) => compiled.check(value).map(Some),
+            // Optional-null deletion requires an explicit false; union
+            // selection requires an explicit true. A failed sub-compile
+            // supplies neither, matching upstream optional chaining.
+            None => Ok(None),
         }
     }
 
@@ -206,7 +207,7 @@ fn normalize_optional_nulls(
         let delete = entry.is_null()
             && !required.contains(key.as_str())
             && !is_ref
-            && !subs.check(property_schema, &Value::Null)?;
+            && subs.check(property_schema, &Value::Null)? == Some(false);
         if delete {
             value
                 .as_object_mut()
@@ -278,14 +279,14 @@ fn coerce_with_union_schema(
 ) -> Result<Value, SchemaError> {
     // Original value first: an arm that already matches wins unchanged.
     for arm in schemas {
-        if subs.check(arm, &value)? {
+        if subs.check(arm, &value)? == Some(true) {
             return Ok(value);
         }
     }
     // Clone-per-arm coercion, first arm whose coerced candidate checks wins.
     for arm in schemas {
         let candidate = coerce_with_json_schema(value.clone(), arm, subs)?;
-        if subs.check(arm, &candidate)? {
+        if subs.check(arm, &candidate)? == Some(true) {
             return Ok(candidate);
         }
     }

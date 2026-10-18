@@ -32,7 +32,8 @@ fn minimal_request(model: &str) -> Request {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1710,7 +1711,8 @@ mod phase17 {
                     timestamp_ms: 1,
                 })],
                 tools: vec![],
-            });
+            })
+            .expect("valid context declarations");
             request.max_tokens = explicit;
             request.thinking = ThinkingConfig {
                 enabled: true,
@@ -1735,7 +1737,8 @@ mod phase17 {
                 timestamp_ms: 1,
             })],
             tools: vec![],
-        });
+        })
+        .expect("valid context declarations");
         let prepared = collection
             .prepare_call("budget:wide", exhausted)
             .await
@@ -2647,7 +2650,8 @@ mod phase17 {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        });
+        })
+        .expect("valid context declarations");
         request
     }
 

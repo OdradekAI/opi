@@ -748,7 +748,8 @@ async fn stored_only_credential_lists_models_through_async_orchestration() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

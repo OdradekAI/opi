@@ -4,10 +4,13 @@
 //! `docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md`)
 //! evaluates over already-parsed JavaScript values. This module reproduces the
 //! exact JavaScript semantics the dialect depends on: property-key
-//! enumeration order, number equality/comparison over binary64, and deep
-//! structural equality. It is deliberately not a general JSON utility layer.
+//! enumeration order, binary64 float semantics, and deep structural equality.
+//! Native Rust integers retain their exact value (RDF-09). It is deliberately
+//! not a general JSON utility layer.
 
-use serde_json::Value;
+use std::cmp::Ordering;
+
+use serde_json::{Number, Value};
 
 /// Maximum array-index property key: JS array indices cover `0..=2^32-2`.
 const MAX_ARRAY_INDEX: u64 = 4_294_967_294;
@@ -83,15 +86,46 @@ pub(crate) fn type_matches(name: &str, value: &Value) -> bool {
     }
 }
 
-/// JavaScript `===`-based structural equality over JSON values.
+/// The exact value of a native signed or unsigned JSON integer.
+pub(crate) fn integer_value(number: &Number) -> Option<i128> {
+    number
+        .as_i64()
+        .map(i128::from)
+        .or_else(|| number.as_u64().map(i128::from))
+}
+
+/// Compare a native JSON integer with a finite binary64 value without rounding
+/// the integer. The integer fits in 64 bits, so saturation of an out-of-range
+/// float-to-i128 conversion cannot compare equal to it.
+fn integer_float_cmp(integer: i128, float: f64) -> Ordering {
+    match integer.cmp(&(float as i128)) {
+        Ordering::Equal if float.fract() > 0.0 => Ordering::Less,
+        Ordering::Equal if float.fract() < 0.0 => Ordering::Greater,
+        ordering => ordering,
+    }
+}
+
+/// Numeric ordering with exact native integers and binary64 float values.
+pub(crate) fn number_cmp(left: &Number, right: &Number) -> Option<Ordering> {
+    match (integer_value(left), integer_value(right)) {
+        (Some(left), Some(right)) => Some(left.cmp(&right)),
+        (Some(left), None) => right.as_f64().map(|right| integer_float_cmp(left, right)),
+        (None, Some(right)) => left
+            .as_f64()
+            .map(|left| integer_float_cmp(right, left).reverse()),
+        (None, None) => left.as_f64()?.partial_cmp(&right.as_f64()?),
+    }
+}
+
+/// JavaScript `===`-based structural equality over JSON values, with the
+/// RDF-09 native integer representation difference.
 ///
-/// Numbers compare through their binary64 view: `1` and `1.0` are the same
-/// JavaScript number, and integers beyond `2^53` compare equal when the
-/// JavaScript parse of both would produce the same binary64. `-0.0` equals
-/// `0.0` (`===` semantics, not `Object.is`).
+/// `1` and `1.0` denote the same value. Native integers beyond `2^53` remain
+/// distinct from neighboring integers and rounded floats. `-0.0` equals `0.0`
+/// (`===` semantics, not `Object.is`).
 pub(crate) fn js_deep_equal(left: &Value, right: &Value) -> bool {
     match (left, right) {
-        (Value::Number(a), Value::Number(b)) => a.as_f64() == b.as_f64(),
+        (Value::Number(a), Value::Number(b)) => number_cmp(a, b) == Some(Ordering::Equal),
         (Value::String(a), Value::String(b)) => a == b,
         (Value::Bool(a), Value::Bool(b)) => a == b,
         (Value::Null, Value::Null) => true,
@@ -146,11 +180,40 @@ mod tests {
     }
 
     #[test]
-    fn deep_equal_compares_numbers_through_binary64() {
+    fn deep_equal_retains_exact_integers_and_numeric_spelling() {
         assert!(js_deep_equal(&json!(1), &json!(1.0)));
-        assert!(js_deep_equal(
+        assert!(!js_deep_equal(
             &json!(9007199254740993u64),
             &json!(9007199254740992u64)
+        ));
+        for (integer, float, equal) in [
+            (json!(9007199254740993u64), json!(9007199254740992.0), false),
+            (
+                json!(-9007199254740993i64),
+                json!(-9007199254740992.0),
+                false,
+            ),
+            (json!(u64::MAX), json!(18446744073709551616.0), false),
+            (json!(i64::MIN), json!(-9223372036854775808.0), true),
+            (json!(i64::MAX), json!(9223372036854775808.0), false),
+            (json!(0), json!(-0.0), true),
+            (json!(0), json!(0.5), false),
+            (json!(0), json!(-0.5), false),
+        ] {
+            assert_eq!(
+                js_deep_equal(&integer, &float),
+                equal,
+                "{integer} / {float}"
+            );
+            assert_eq!(
+                js_deep_equal(&float, &integer),
+                equal,
+                "{float} / {integer}"
+            );
+        }
+        assert!(!js_deep_equal(
+            &json!({"nested": [9007199254740993u64]}),
+            &json!({"nested": [9007199254740992u64]})
         ));
         assert!(!js_deep_equal(&json!(1), &json!(2)));
         assert!(!js_deep_equal(&json!("1"), &json!(1)));

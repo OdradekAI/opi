@@ -353,7 +353,8 @@ fn image_request(model: &str) -> Request {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -415,7 +416,8 @@ fn validate_rejects_unsupported_thinking_on_chat_wire_before_request() {
             timestamp_ms: 0,
         })],
         tools: vec![],
-    });
+    })
+    .expect("valid context declarations");
     let err = validate_request_capabilities(&provider, &request)
         .expect_err("unsupported thinking must be rejected before request construction");
     assert!(

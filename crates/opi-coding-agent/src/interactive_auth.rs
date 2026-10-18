@@ -262,6 +262,7 @@ pub async fn dispatch_auth_command<T: LoginTerminalControl>(
 
 fn present_provider_error(error: &ProviderError) -> String {
     match error {
+        ProviderError::StreamFailure(failure) => return present_provider_error(failure.cause()),
         ProviderError::RateLimited { .. } => "authentication was rate limited",
         ProviderError::Timeout => "authentication timed out",
         ProviderError::RequestFailed(_) | ProviderError::UnknownModel { .. } => {

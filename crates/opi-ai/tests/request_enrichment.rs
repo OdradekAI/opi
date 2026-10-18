@@ -55,7 +55,8 @@ fn request_new_scalars_default_to_none_empty() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -84,7 +85,8 @@ fn request_scalars_carry_explicit_values() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -589,7 +591,8 @@ fn make_anthropic_request(cancel: CancellationToken, timeout: Option<Duration>) 
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -613,7 +616,8 @@ fn make_openai_chat_request(cancel: CancellationToken, session_id: Option<String
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

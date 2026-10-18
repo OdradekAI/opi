@@ -51,7 +51,8 @@ fn request(messages: Vec<Message>) -> Request {
                 description: "Read a local fixture".into(),
                 input_schema: json!({"type":"object","properties":{"path":{"type":"string"}}}),
             }],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(4096),
         temperature: None,
         thinking: ThinkingConfig {
@@ -130,6 +131,7 @@ async fn signed_and_redacted_thinking_survive_http_storage_and_tool_continuation
         let continuation = request(vec![
             restored,
             Message::ToolResult(ToolResultMessage {
+                not_executed: None,
                 tool_call_id: "tool-1".into(),
                 tool_name: "read".into(),
                 content: vec![OutputContent::Text {

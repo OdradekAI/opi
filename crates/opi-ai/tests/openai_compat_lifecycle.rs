@@ -27,7 +27,8 @@ mod openai_chat_profile {
                     timestamp_ms: 0,
                 })],
                 tools: vec![],
-            }),
+            })
+            .expect("valid context declarations"),
             max_tokens: None,
             temperature: None,
             thinking: ThinkingConfig::default(),
@@ -220,7 +221,10 @@ mod openai_chat_profile {
                         break;
                     }
                 }
-                Err(ProviderError::StreamError(msg)) if msg.contains("terminal event") => {
+                Err(msg)
+                    if msg.category() == opi_ai::provider::ProviderErrorCategory::Stream
+                        && msg.to_string().contains("terminal event") =>
+                {
                     saw_stream_error = true;
                     break;
                 }
@@ -331,7 +335,8 @@ mod mistral_profile {
                     timestamp_ms: 0,
                 })],
                 tools: vec![],
-            }),
+            })
+            .expect("valid context declarations"),
             max_tokens: None,
             temperature: None,
             thinking: ThinkingConfig::default(),
@@ -529,7 +534,10 @@ mod mistral_profile {
                         break;
                     }
                 }
-                Err(ProviderError::StreamError(msg)) if msg.contains("terminal event") => {
+                Err(msg)
+                    if msg.category() == opi_ai::provider::ProviderErrorCategory::Stream
+                        && msg.to_string().contains("terminal event") =>
+                {
                     saw_stream_error = true;
                     break;
                 }
@@ -566,7 +574,8 @@ mod openrouter_profile {
                     timestamp_ms: 0,
                 })],
                 tools: vec![],
-            }),
+            })
+            .expect("valid context declarations"),
             max_tokens: None,
             temperature: None,
             thinking: ThinkingConfig::default(),
@@ -773,7 +782,10 @@ mod openrouter_profile {
                         break;
                     }
                 }
-                Err(ProviderError::StreamError(msg)) if msg.contains("terminal event") => {
+                Err(msg)
+                    if msg.category() == opi_ai::provider::ProviderErrorCategory::Stream
+                        && msg.to_string().contains("terminal event") =>
+                {
                     saw_stream_error = true;
                     break;
                 }

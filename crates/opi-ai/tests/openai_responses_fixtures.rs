@@ -89,7 +89,8 @@ fn responses_request_body_uses_input_field() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -136,7 +137,8 @@ fn responses_request_body_strips_provider_prefix() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -177,7 +179,8 @@ fn responses_tool_request() -> Request {
                 description: "list a directory".into(),
                 input_schema: serde_json::json!({"type":"object","properties":{}}),
             }],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -533,9 +536,9 @@ async fn responses_error_event_routing() {
     // Current producers stop the dual terminal format: the error event
     // routes to a typed stream failure, not an Error event.
     assert!(
-        items
-            .iter()
-            .any(|e| matches!(e, Err(ProviderError::StreamError(_)))),
+        items.iter().any(|e| e.as_ref().is_err_and(
+            |cause| cause.category() == opi_ai::provider::ProviderErrorCategory::Stream
+        )),
         "should have a typed stream failure"
     );
     assert!(
@@ -752,7 +755,7 @@ async fn responses_reasoning_malformed_subset_stops_production_stream_with_non_r
         .filter_map(|result| result.as_ref().err())
         .collect();
     assert_eq!(errors.len(), 1, "invalid usage must emit one error");
-    assert!(matches!(errors[0], ProviderError::StreamError(_)));
+    assert!(errors[0].category() == opi_ai::provider::ProviderErrorCategory::Stream);
     assert_eq!(
         errors[0].to_string(),
         "stream error: reasoning_tokens (800) exceeds output_tokens (500)"
@@ -760,7 +763,7 @@ async fn responses_reasoning_malformed_subset_stops_production_stream_with_non_r
     assert!(!errors[0].is_retryable());
     assert!(matches!(
         results.last(),
-        Some(Err(ProviderError::StreamError(_)))
+        Some(Err(cause)) if cause.category() == opi_ai::provider::ProviderErrorCategory::Stream
     ));
     assert!(
         !results.iter().any(|result| matches!(
@@ -1232,7 +1235,8 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1302,7 +1306,8 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),

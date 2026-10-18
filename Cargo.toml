@@ -46,10 +46,9 @@ thiserror = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 url = "2.5.8"
 
-# private schema dialect backend identities (see docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md)
-# regress: research-pinned feature profile, no PikeVM backend; the Unicode-16 data fork is the
-# registry-published opi-vendor-regress identity resolved at packaging time (task 20.8/20.57).
-regress = { version = "0.12.0", default-features = false, features = ["std", "utf16", "prohibit-unsafe"] }
+# Private schema dialect: upstream data profile, recorded under RDF-21.
+# Preserve the selected ECMAScript API/features; consumers may unify features.
+regress = { version = "=0.12.0", default-features = false, features = ["std", "utf16", "prohibit-unsafe"] }
 unicode-normalization = "0.1.26"
 # ECMAScript Number::toString for schema-argument string coercion; annex-pinned
 # exact version (pure Rust, no build script, crate-internal unsafe only).

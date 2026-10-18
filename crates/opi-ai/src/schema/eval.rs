@@ -15,11 +15,11 @@
 //!   `_context.mjs`); `contains`/`minContains` record matched indices.
 //!
 //! Traversal uses heap frames so schema depth cannot exhaust the Rust call
-//! stack. Re-entering the exact `(schema node, instance location, reference
-//! frame)` state that is still active on the current path is a typed
-//! `NoProgress` failure — productive recursion (instance descent or frame
-//! change) continues, matching the upstream's RangeError boundary without
-//! crashing. There are no depth, node, arm or error-count limits and no I/O.
+//! stack. References follow bindings frozen during compilation. Re-entering
+//! the exact `(compiled plan, instance location)` state that is still active
+//! on the current path is a typed `NoProgress` failure — productive recursion
+//! through instance descent continues without exhausting the Rust call stack.
+//! There are no depth, node, arm or error-count limits and no I/O.
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -31,19 +31,8 @@ use super::formats;
 use super::grapheme;
 use super::guards;
 use super::hashing;
-use super::ir::{Compiled, NodeRegexes};
-use super::js::{js_deep_equal, js_keys, type_matches};
-use super::refs::RefStack;
-
-const FNV_OFFSET: u64 = 14_695_981_039_346_656_037;
-const FNV_PRIME: u64 = 1_099_511_628_211;
-
-fn hash_mix(state: &mut u64, bytes: &[u8]) {
-    for byte in bytes {
-        *state ^= u64::from(*byte);
-        *state = state.wrapping_mul(FNV_PRIME);
-    }
-}
+use super::ir::{Compiled, NodeRegexes, PlanId, RefBinding, RegexSlot};
+use super::js::{integer_value, js_deep_equal, js_keys, number_cmp, type_matches};
 
 #[derive(Default, Clone)]
 struct CtxFrame {
@@ -64,6 +53,9 @@ enum Input {
     Child(bool),
 }
 
+// This transient result moves a frame directly into the evaluator's work
+// vector; boxing it would allocate on every child transition.
+#[allow(clippy::large_enum_variant)]
 enum Step<'a> {
     Done(bool),
     Child(Frame<'a>),
@@ -101,6 +93,7 @@ fn index_pointer(base: &str, idx: usize) -> String {
 
 /// Keyword pipeline for one schema node.
 struct NodeFrame<'a> {
+    plan: PlanId,
     schema: &'a Value,
     value: ValueRef<'a>,
     /// JSON pointer of this node's instance location ("" is the root);
@@ -108,7 +101,7 @@ struct NodeFrame<'a> {
     path: String,
     stages: Vec<Stage<'a>>,
     stage_idx: usize,
-    visit_key: Option<u64>,
+    visit_key: Option<VisitKey>,
     ctx_pushed: bool,
     /// Container-child nodes push an evaluated-facts frame (upstream
     /// `BuildSchemaPushStack` sites: properties, items, prefixItems,
@@ -144,6 +137,7 @@ enum Stage<'a> {
         schema: &'a Value,
     },
     Dependencies {
+        keyword: &'static str,
         entries: Vec<(&'a str, &'a Value)>,
         empty_shortcut: bool,
     },
@@ -210,6 +204,8 @@ enum ArmKind {
 }
 
 struct ArmsFrame<'a> {
+    plan: PlanId,
+    keyword: &'static str,
     /// Instance pointer of the arms' location (failure reporting only).
     base_path: String,
     kind: ArmKind,
@@ -224,6 +220,7 @@ struct ArmsFrame<'a> {
 }
 
 struct RefFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the reference's location (failure reporting only).
     base_path: String,
     target: &'a Value,
@@ -232,6 +229,7 @@ struct RefFrame<'a> {
 }
 
 struct ContainsFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the containing array (failure reporting only).
     base_path: String,
     schema: &'a Value,
@@ -242,6 +240,7 @@ struct ContainsFrame<'a> {
 }
 
 struct MinContainsFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the containing array (failure reporting only).
     base_path: String,
     schema: &'a Value,
@@ -253,6 +252,7 @@ struct MinContainsFrame<'a> {
 }
 
 struct MaxContainsFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the containing array (failure reporting only).
     base_path: String,
     schema: &'a Value,
@@ -263,6 +263,7 @@ struct MaxContainsFrame<'a> {
 }
 
 struct ItemsSizedFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the array (failure reporting only).
     base_path: String,
     items: &'a [Value],
@@ -271,6 +272,7 @@ struct ItemsSizedFrame<'a> {
 }
 
 struct ItemsUnsizedFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the array (failure reporting only).
     base_path: String,
     schema: &'a Value,
@@ -279,6 +281,7 @@ struct ItemsUnsizedFrame<'a> {
 }
 
 struct AdditionalItemsFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the array (failure reporting only).
     base_path: String,
     schema: &'a Value,
@@ -288,6 +291,7 @@ struct AdditionalItemsFrame<'a> {
 }
 
 struct PrefixItemsFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the array (failure reporting only).
     base_path: String,
     items: &'a [Value],
@@ -296,6 +300,7 @@ struct PrefixItemsFrame<'a> {
 }
 
 struct PropertiesFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the object (failure reporting only).
     base_path: String,
     entries: Vec<(&'a str, &'a Value)>,
@@ -304,6 +309,7 @@ struct PropertiesFrame<'a> {
 }
 
 struct PatternPropertiesFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the object (failure reporting only).
     base_path: String,
     patterns: &'a Vec<(String, regress::Regex)>,
@@ -315,6 +321,7 @@ struct PatternPropertiesFrame<'a> {
 }
 
 struct AdditionalPropsFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the object (failure reporting only).
     base_path: String,
     node: &'a Value,
@@ -325,6 +332,7 @@ struct AdditionalPropsFrame<'a> {
 }
 
 struct PropertyNamesFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the object (failure reporting only; name-string
     /// children report at the object location, matching the upstream).
     base_path: String,
@@ -334,6 +342,8 @@ struct PropertyNamesFrame<'a> {
 }
 
 struct DepsFrame<'a> {
+    plan: PlanId,
+    keyword: &'static str,
     /// Instance pointer of the object (failure reporting only).
     base_path: String,
     entries: Vec<(&'a str, &'a Value)>,
@@ -342,6 +352,7 @@ struct DepsFrame<'a> {
 }
 
 struct IfThenElseFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the condition's location (failure reporting only).
     base_path: String,
     schema: &'a Value,
@@ -355,6 +366,7 @@ enum IfPhase {
 }
 
 struct UnevaluatedItemsFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the array (failure reporting only).
     base_path: String,
     schema: &'a Value,
@@ -363,6 +375,7 @@ struct UnevaluatedItemsFrame<'a> {
 }
 
 struct UnevaluatedPropsFrame<'a> {
+    plan: PlanId,
     /// Instance pointer of the object (failure reporting only).
     base_path: String,
     schema: &'a Value,
@@ -399,12 +412,11 @@ enum Frame<'a> {
 pub(crate) struct Evaluator<'a> {
     /// First observed failure (observation only; verdicts are unchanged).
     pub(crate) first_failure: Option<FailureSite>,
-    root: &'a Value,
-    stack: RefStack<'a>,
+    compiled: &'a Compiled,
     reducer: bool,
-    regexes: &'a HashMap<*const Value, NodeRegexes>,
+    regexes: &'a HashMap<*const Value, RegexSlot>,
     ctx: Vec<CtxFrame>,
-    active: HashMap<u64, usize>,
+    active: HashSet<VisitKey>,
     work: Vec<Frame<'a>>,
 }
 
@@ -416,20 +428,20 @@ impl<'a> Evaluator<'a> {
         }
         Self {
             first_failure: None,
-            root: &compiled.schema,
-            stack: RefStack::new(empty_remotes(), &compiled.schema),
+            compiled,
             reducer: compiled.reducer,
             regexes: &compiled.regexes,
             ctx,
-            active: HashMap::new(),
+            active: HashSet::new(),
             work: Vec::new(),
         }
     }
 
     pub(crate) fn run(&mut self, value: &'a Value) -> Result<bool, SchemaError> {
-        let root_schema = self.root;
+        let plan = self.compiled.root_plan;
         self.work.push(Frame::Node(NodeFrame {
-            schema: root_schema,
+            plan,
+            schema: self.compiled.schema_for_plan(plan)?,
             value: Cow::Borrowed(value),
             path: String::new(),
             stages: Vec::new(),
@@ -498,51 +510,44 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn visit_key(&self, schema: &Value, value: &ValueRef<'_>) -> u64 {
-        let mut state = FNV_OFFSET;
-        hash_mix(&mut state, &(schema as *const Value as usize).to_le_bytes());
-        match value {
-            Cow::Borrowed(v) => {
-                hash_mix(&mut state, &(*v as *const Value as usize).to_le_bytes());
-            }
-            Cow::Owned(v) => {
-                // Synthetic values (validated object keys) use content
-                // identity so repeated key strings collapse like upstream
-                // value identity would.
-                hash_mix(&mut state, v.to_string().as_bytes());
-            }
-        }
-        self.stack.fingerprint(&mut state);
-        state
+    fn visit_key(&self, plan: PlanId, value: &ValueRef<'_>) -> VisitKey {
+        let value = match value {
+            Cow::Borrowed(value) => ValueIdentity::Borrowed(*value as *const Value as usize),
+            // Synthetic object keys use content identity, as repeated key
+            // strings denote the same primitive value in the source engine.
+            Cow::Owned(value) => ValueIdentity::Synthetic(value.to_string()),
+        };
+        VisitKey { plan, value }
     }
 
-    fn enter_visit(&mut self, key: u64) -> Result<(), SchemaError> {
-        let count = self.active.entry(key).or_insert(0);
-        *count += 1;
-        if *count > 1 {
+    fn enter_visit(&mut self, key: &VisitKey) -> Result<(), SchemaError> {
+        if !self.active.insert(key.clone()) {
             return Err(SchemaError::NoProgress);
         }
         Ok(())
     }
 
-    fn exit_visit(&mut self, key: u64) {
-        if let Some(count) = self.active.get_mut(&key) {
-            *count -= 1;
-            if *count == 0 {
-                self.active.remove(&key);
-            }
-        }
+    fn exit_visit(&mut self, key: &VisitKey) {
+        self.active.remove(key);
     }
 
     fn node_regexes(&self, node: &Value) -> Option<&'a NodeRegexes> {
-        self.regexes.get(&(node as *const Value))
+        self.regexes
+            .get(&(node as *const Value))
+            .and_then(RegexSlot::get)
     }
 }
 
-fn empty_remotes() -> &'static serde_json::Map<String, Value> {
-    static EMPTY: std::sync::OnceLock<Box<serde_json::Map<String, Value>>> =
-        std::sync::OnceLock::new();
-    EMPTY.get_or_init(Box::default)
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct VisitKey {
+    plan: PlanId,
+    value: ValueIdentity,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum ValueIdentity {
+    Borrowed(usize),
+    Synthetic(String),
 }
 
 // ------------------------------------------------------------------
@@ -563,8 +568,35 @@ fn is_multiple_of(dividend: f64, divisor: f64) -> bool {
         < tolerance
 }
 
+fn integer_or_integral_float(number: &serde_json::Number) -> Option<i128> {
+    integer_value(number).or_else(|| {
+        let float = number.as_f64()?;
+        (float.fract() == 0.0 && float >= i128::MIN as f64 && float < -(i128::MIN as f64))
+            .then_some(float as i128)
+    })
+}
+
+fn number_is_multiple_of(dividend: &serde_json::Number, divisor: &serde_json::Number) -> bool {
+    // Preserve native integer remainders instead of acquiring JavaScript's
+    // parse-time rounding. Integral float spellings denote the same values;
+    // pure floats retain the source tolerance and reciprocal shortcut below.
+    if (integer_value(dividend).is_some() || integer_value(divisor).is_some())
+        && let (Some(dividend), Some(divisor)) = (
+            integer_or_integral_float(dividend),
+            integer_or_integral_float(divisor),
+        )
+    {
+        return divisor != 0 && (divisor == -1 || dividend % divisor == 0);
+    }
+    is_multiple_of(
+        dividend.as_f64().unwrap_or(f64::NAN),
+        divisor.as_f64().unwrap_or(f64::NAN),
+    )
+}
+
 fn covered_key(ev: &Evaluator<'_>, node: &Value, key: &str) -> bool {
-    if let Some(props) = guards::get(node, "properties").and_then(Value::as_object)
+    if guards::is_properties(node)
+        && let Some(props) = guards::get(node, "properties").and_then(Value::as_object)
         && props.contains_key(key)
     {
         return true;
@@ -599,6 +631,7 @@ fn build_stages<'a>(ev: &Evaluator<'a>, schema: &'a Value, value: &Value) -> Vec
         }
         if guards::is_dependencies(schema) {
             stages.push(Stage::Dependencies {
+                keyword: "dependencies",
                 entries: dep_entries(guards::get(schema, "dependencies").unwrap()),
                 empty_shortcut: true,
             });
@@ -608,6 +641,7 @@ fn build_stages<'a>(ev: &Evaluator<'a>, schema: &'a Value, value: &Value) -> Vec
         }
         if guards::is_dependent_schemas(schema) {
             stages.push(Stage::Dependencies {
+                keyword: "dependentSchemas",
                 entries: dep_entries(guards::get(schema, "dependentSchemas").unwrap()),
                 empty_shortcut: true,
             });
@@ -638,7 +672,10 @@ fn build_stages<'a>(ev: &Evaluator<'a>, schema: &'a Value, value: &Value) -> Vec
     }
     if let Some(array) = value.as_array() {
         let _ = array;
-        if guards::is_additional_items(schema) && guards::is_items_sized(schema) {
+        if guards::is_additional_items(schema)
+            && guards::is_items(schema)
+            && guards::is_items_sized(schema)
+        {
             stages.push(Stage::AdditionalItems {
                 schema: guards::get(schema, "additionalItems").unwrap(),
                 items_len: guards::get(schema, "items")
@@ -811,12 +848,14 @@ fn pattern_list<'a>(ev: &Evaluator<'a>, node: &'a Value) -> &'a Vec<(String, reg
 // ------------------------------------------------------------------
 
 fn node_child<'a>(
+    plan: PlanId,
     schema: &'a Value,
     value: ValueRef<'a>,
     ctx_push: bool,
     path: String,
 ) -> Frame<'a> {
     Frame::Node(NodeFrame {
+        plan,
         schema,
         value,
         path,
@@ -921,31 +960,30 @@ fn eval_leaf(ev: &Evaluator<'_>, stage: &Stage<'_>, schema: &Value, value: &Valu
                 .map(|regex| regex.find(text).is_some())
                 .unwrap_or(true)
         }
-        Stage::ExclusiveMaximumLeaf => {
-            let n = value.as_f64().unwrap_or(f64::NAN);
-            let limit = guards::get_f64(schema, "exclusiveMaximum").unwrap_or(f64::NAN);
-            n < limit
-        }
-        Stage::ExclusiveMinimumLeaf => {
-            let n = value.as_f64().unwrap_or(f64::NAN);
-            let limit = guards::get_f64(schema, "exclusiveMinimum").unwrap_or(f64::NAN);
-            n > limit
-        }
-        Stage::MaximumLeaf => {
-            let n = value.as_f64().unwrap_or(f64::NAN);
-            let limit = guards::get_f64(schema, "maximum").unwrap_or(f64::NAN);
-            n <= limit
-        }
-        Stage::MinimumLeaf => {
-            let n = value.as_f64().unwrap_or(f64::NAN);
-            let limit = guards::get_f64(schema, "minimum").unwrap_or(f64::NAN);
-            n >= limit
-        }
-        Stage::MultipleOfLeaf => {
-            let n = value.as_f64().unwrap_or(f64::NAN);
-            let divisor = guards::get_f64(schema, "multipleOf").unwrap_or(f64::NAN);
-            is_multiple_of(n, divisor)
-        }
+        Stage::ExclusiveMaximumLeaf => value
+            .as_number()
+            .zip(guards::get(schema, "exclusiveMaximum").and_then(Value::as_number))
+            .and_then(|(number, limit)| number_cmp(number, limit))
+            .is_some_and(std::cmp::Ordering::is_lt),
+        Stage::ExclusiveMinimumLeaf => value
+            .as_number()
+            .zip(guards::get(schema, "exclusiveMinimum").and_then(Value::as_number))
+            .and_then(|(number, limit)| number_cmp(number, limit))
+            .is_some_and(std::cmp::Ordering::is_gt),
+        Stage::MaximumLeaf => value
+            .as_number()
+            .zip(guards::get(schema, "maximum").and_then(Value::as_number))
+            .and_then(|(number, limit)| number_cmp(number, limit))
+            .is_some_and(std::cmp::Ordering::is_le),
+        Stage::MinimumLeaf => value
+            .as_number()
+            .zip(guards::get(schema, "minimum").and_then(Value::as_number))
+            .and_then(|(number, limit)| number_cmp(number, limit))
+            .is_some_and(std::cmp::Ordering::is_ge),
+        Stage::MultipleOfLeaf => value
+            .as_number()
+            .zip(guards::get(schema, "multipleOf").and_then(Value::as_number))
+            .is_some_and(|(number, divisor)| number_is_multiple_of(number, divisor)),
         Stage::ConstLeaf => {
             let Some(expected) = guards::get(schema, "const") else {
                 return true;
@@ -1032,12 +1070,14 @@ impl<'a> NodeFrame<'a> {
     }
 
     fn enter(&mut self, ev: &mut Evaluator<'a>) -> Result<Step<'a>, SchemaError> {
+        if let Some(slot) = ev.regexes.get(&(self.schema as *const Value)) {
+            slot.admit(self.schema)?;
+        }
         if let Value::Bool(result) = self.schema {
             return Ok(Step::Done(*result));
         }
-        ev.stack.push(self.schema);
-        let key = ev.visit_key(self.schema, &self.value);
-        ev.enter_visit(key)?;
+        let key = ev.visit_key(self.plan, &self.value);
+        ev.enter_visit(&key)?;
         self.visit_key = Some(key);
         if self.ctx_push && ev.reducer {
             ev.ctx.push(CtxFrame::default());
@@ -1052,9 +1092,8 @@ impl<'a> NodeFrame<'a> {
             ev.ctx.pop();
         }
         if let Some(key) = self.visit_key.take() {
-            ev.exit_visit(key);
+            ev.exit_visit(&key);
         }
-        ev.stack.pop(self.schema);
         Step::Done(valid)
     }
 
@@ -1096,6 +1135,7 @@ impl<'a> NodeFrame<'a> {
                             ));
                         };
                         return Ok(Step::Child(Frame::AdditionalProps(AdditionalPropsFrame {
+                            plan: self.plan,
                             base_path: self.path.clone(),
                             node,
                             schema,
@@ -1106,6 +1146,7 @@ impl<'a> NodeFrame<'a> {
                     }
                 }
                 Stage::Dependencies {
+                    keyword,
                     entries,
                     empty_shortcut,
                 } => {
@@ -1115,6 +1156,8 @@ impl<'a> NodeFrame<'a> {
                         // shortcut: empty object passes
                     } else {
                         return Ok(Step::Child(Frame::Deps(DepsFrame {
+                            plan: self.plan,
+                            keyword,
                             base_path: self.path.clone(),
                             entries: entries.clone(),
                             value: self.value.clone(),
@@ -1136,6 +1179,7 @@ impl<'a> NodeFrame<'a> {
                     };
                     return Ok(Step::Child(Frame::PatternProperties(
                         PatternPropertiesFrame {
+                            plan: self.plan,
                             base_path: self.path.clone(),
                             patterns,
                             pattern_map,
@@ -1152,6 +1196,7 @@ impl<'a> NodeFrame<'a> {
                         return Err(SchemaError::Internal("properties stage without object"));
                     };
                     return Ok(Step::Child(Frame::Properties(PropertiesFrame {
+                        plan: self.plan,
                         base_path: self.path.clone(),
                         entries: entries.clone(),
                         map,
@@ -1160,6 +1205,7 @@ impl<'a> NodeFrame<'a> {
                 }
                 Stage::PropertyNames { schema, keys } => {
                     return Ok(Step::Child(Frame::PropertyNames(PropertyNamesFrame {
+                        plan: self.plan,
                         base_path: self.path.clone(),
                         schema,
                         keys: keys.clone(),
@@ -1172,6 +1218,7 @@ impl<'a> NodeFrame<'a> {
                         return Err(SchemaError::Internal("additionalItems stage without array"));
                     };
                     return Ok(Step::Child(Frame::AdditionalItems(AdditionalItemsFrame {
+                        plan: self.plan,
                         base_path: self.path.clone(),
                         schema,
                         array,
@@ -1191,6 +1238,7 @@ impl<'a> NodeFrame<'a> {
                         // inert: minContains === 0 disables contains
                     } else {
                         return Ok(Step::Child(Frame::Contains(ContainsFrame {
+                            plan: self.plan,
                             base_path: self.path.clone(),
                             schema,
                             array,
@@ -1210,6 +1258,7 @@ impl<'a> NodeFrame<'a> {
                             .and_then(Value::as_array)
                             .unwrap();
                         return Ok(Step::Child(Frame::ItemsSized(ItemsSizedFrame {
+                            plan: self.plan,
                             base_path: self.path.clone(),
                             items,
                             array,
@@ -1225,6 +1274,7 @@ impl<'a> NodeFrame<'a> {
                     };
                     let schema = guards::get(node, "items").unwrap();
                     return Ok(Step::Child(Frame::ItemsUnsized(ItemsUnsizedFrame {
+                        plan: self.plan,
                         base_path: self.path.clone(),
                         schema,
                         array,
@@ -1237,6 +1287,7 @@ impl<'a> NodeFrame<'a> {
                         return Err(SchemaError::Internal("minContains stage without array"));
                     };
                     return Ok(Step::Child(Frame::MinContains(MinContainsFrame {
+                        plan: self.plan,
                         base_path: self.path.clone(),
                         schema,
                         array,
@@ -1252,6 +1303,7 @@ impl<'a> NodeFrame<'a> {
                         return Err(SchemaError::Internal("maxContains stage without array"));
                     };
                     return Ok(Step::Child(Frame::MaxContains(MaxContainsFrame {
+                        plan: self.plan,
                         base_path: self.path.clone(),
                         schema,
                         array,
@@ -1267,6 +1319,7 @@ impl<'a> NodeFrame<'a> {
                     };
                     if !array.is_empty() {
                         return Ok(Step::Child(Frame::PrefixItems(PrefixItemsFrame {
+                            plan: self.plan,
                             base_path: self.path.clone(),
                             items,
                             array,
@@ -1276,86 +1329,50 @@ impl<'a> NodeFrame<'a> {
                 }
                 Stage::IfThenElse { schema } => {
                     return Ok(Step::Child(Frame::IfThenElse(IfThenElseFrame {
+                        plan: self.plan,
                         base_path: self.path.clone(),
                         schema,
                         value: self.value.clone(),
                         phase: IfPhase::Condition,
                     })));
                 }
-                Stage::ResolveRef => {
-                    let reference = guards::get_str(self.schema, "$ref").unwrap_or_default();
-                    let target = ev.stack.apply_ref(reference)?;
-                    match target {
-                        None => {
-                            ev.note_failure(&self.path, "$ref", "unresolved reference".to_owned());
+                Stage::ResolveRef | Stage::ResolveRecursiveRef | Stage::ResolveDynamicRef => {
+                    let (index, keyword) = match &stage {
+                        Stage::ResolveRef => (0, "$ref"),
+                        Stage::ResolveRecursiveRef => (1, "$recursiveRef"),
+                        Stage::ResolveDynamicRef => (2, "$dynamicRef"),
+                        _ => unreachable!("only reference stages reach reference dispatch"),
+                    };
+                    let plan = match &ev.compiled.plan_nodes[self.plan].refs[index] {
+                        RefBinding::Unresolved => {
+                            ev.note_failure(&self.path, keyword, "unresolved reference".to_owned());
                             return Ok(self.finish(ev, false));
                         }
-                        Some(target) => {
-                            if ev.reducer {
-                                return Ok(Step::Child(Frame::Ref(RefFrame {
-                                    base_path: self.path.clone(),
-                                    target,
-                                    value: self.value.clone(),
-                                    saved_ctx: Vec::new(),
-                                })));
-                            }
-                            return Ok(Step::Child(node_child(
-                                target,
-                                self.value.clone(),
-                                false,
-                                self.path.clone(),
-                            )));
-                        }
+                        RefBinding::Error(error) => return Err(error.clone()),
+                        RefBinding::Target(plan) => *plan,
+                    };
+                    let target = ev.compiled.schema_for_plan(plan)?;
+                    if index == 0 && ev.reducer {
+                        return Ok(Step::Child(Frame::Ref(RefFrame {
+                            plan,
+                            base_path: self.path.clone(),
+                            target,
+                            value: self.value.clone(),
+                            saved_ctx: Vec::new(),
+                        })));
                     }
-                }
-                Stage::ResolveRecursiveRef => {
-                    let reference =
-                        guards::get_str(self.schema, "$recursiveRef").unwrap_or_default();
-                    let target = ev.stack.apply_recursive_ref(reference)?;
-                    match target {
-                        None => {
-                            ev.note_failure(
-                                &self.path,
-                                "$recursiveRef",
-                                "unresolved reference".to_owned(),
-                            );
-                            return Ok(self.finish(ev, false));
-                        }
-                        Some(target) => {
-                            return Ok(Step::Child(node_child(
-                                target,
-                                self.value.clone(),
-                                false,
-                                self.path.clone(),
-                            )));
-                        }
-                    }
-                }
-                Stage::ResolveDynamicRef => {
-                    let reference = guards::get_str(self.schema, "$dynamicRef").unwrap_or_default();
-                    let target = ev.stack.apply_dynamic_ref(reference)?;
-                    match target {
-                        None => {
-                            ev.note_failure(
-                                &self.path,
-                                "$dynamicRef",
-                                "unresolved reference".to_owned(),
-                            );
-                            return Ok(self.finish(ev, false));
-                        }
-                        Some(target) => {
-                            return Ok(Step::Child(node_child(
-                                target,
-                                self.value.clone(),
-                                false,
-                                self.path.clone(),
-                            )));
-                        }
-                    }
+                    return Ok(Step::Child(node_child(
+                        plan,
+                        target,
+                        self.value.clone(),
+                        false,
+                        self.path.clone(),
+                    )));
                 }
                 Stage::Not => {
                     let inner = guards::get(self.schema, "not").unwrap();
                     return Ok(Step::Child(Frame::Arms(ArmsFrame {
+                        plan: self.plan,
                         base_path: self.path.clone(),
                         kind: ArmKind::AllOf,
                         arms: std::slice::from_ref(inner),
@@ -1364,11 +1381,13 @@ impl<'a> NodeFrame<'a> {
                         passed: 0,
                         passed_facts: Vec::new(),
                         saved_ctx: None,
+                        keyword: "not",
                         not_mode: true,
                     })));
                 }
                 Stage::Arms { kind, arms } => {
                     return Ok(Step::Child(Frame::Arms(ArmsFrame {
+                        plan: self.plan,
                         base_path: self.path.clone(),
                         kind: *kind,
                         arms,
@@ -1377,6 +1396,11 @@ impl<'a> NodeFrame<'a> {
                         passed: 0,
                         passed_facts: Vec::new(),
                         saved_ctx: None,
+                        keyword: match kind {
+                            ArmKind::AllOf => "allOf",
+                            ArmKind::AnyOf => "anyOf",
+                            ArmKind::OneOf => "oneOf",
+                        },
                         not_mode: false,
                     })));
                 }
@@ -1389,6 +1413,7 @@ impl<'a> NodeFrame<'a> {
                     };
                     return Ok(Step::Child(Frame::UnevaluatedItems(
                         UnevaluatedItemsFrame {
+                            plan: self.plan,
                             base_path: self.path.clone(),
                             schema,
                             array,
@@ -1405,6 +1430,7 @@ impl<'a> NodeFrame<'a> {
                     };
                     return Ok(Step::Child(Frame::UnevaluatedProps(
                         UnevaluatedPropsFrame {
+                            plan: self.plan,
                             base_path: self.path.clone(),
                             schema,
                             value_map: map,
@@ -1491,6 +1517,7 @@ impl<'a> ArmsFrame<'a> {
                 ev.ctx = vec![CtxFrame::default()];
             }
             return Ok(Step::Child(node_child(
+                ev.compiled.child_plan(self.plan, self.keyword, arm)?,
                 arm,
                 self.value.clone(),
                 false,
@@ -1587,6 +1614,7 @@ impl<'a> RefFrame<'a> {
                 self.saved_ctx = std::mem::take(&mut ev.ctx);
                 ev.ctx = vec![CtxFrame::default()];
                 Ok(Step::Child(node_child(
+                    self.plan,
                     self.target,
                     self.value.clone(),
                     false,
@@ -1619,6 +1647,7 @@ impl<'a> ContainsFrame<'a> {
                     return Ok(Step::Done(false));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled.child_plan(self.plan, "contains", self.schema)?,
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
@@ -1648,6 +1677,7 @@ impl<'a> ContainsFrame<'a> {
                     return Ok(Step::Done(self.matched));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled.child_plan(self.plan, "contains", self.schema)?,
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
@@ -1674,6 +1704,8 @@ impl<'a> MinContainsFrame<'a> {
                     return Ok(Step::Done(ok));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled
+                        .child_plan(self.plan, "minContains", self.schema)?,
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
@@ -1700,6 +1732,8 @@ impl<'a> MinContainsFrame<'a> {
                     return Ok(Step::Done(ok));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled
+                        .child_plan(self.plan, "minContains", self.schema)?,
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
@@ -1718,6 +1752,8 @@ impl<'a> MaxContainsFrame<'a> {
                     return Ok(Step::Done((self.count as f64) <= self.limit));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled
+                        .child_plan(self.plan, "maxContains", self.schema)?,
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
@@ -1741,6 +1777,8 @@ impl<'a> MaxContainsFrame<'a> {
                     return Ok(Step::Done(ok));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled
+                        .child_plan(self.plan, "maxContains", self.schema)?,
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     false,
@@ -1759,6 +1797,8 @@ impl<'a> ItemsSizedFrame<'a> {
                     return Ok(Step::Done(true));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled
+                        .child_plan(self.plan, "items", &self.items[self.idx])?,
                     &self.items[self.idx],
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
@@ -1775,6 +1815,8 @@ impl<'a> ItemsSizedFrame<'a> {
                     return Ok(Step::Done(true));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled
+                        .child_plan(self.plan, "items", &self.items[self.idx])?,
                     &self.items[self.idx],
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
@@ -1793,6 +1835,7 @@ impl<'a> ItemsUnsizedFrame<'a> {
                     return Ok(Step::Done(true));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled.child_plan(self.plan, "items", self.schema)?,
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
@@ -1809,6 +1852,7 @@ impl<'a> ItemsUnsizedFrame<'a> {
                     return Ok(Step::Done(true));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled.child_plan(self.plan, "items", self.schema)?,
                     self.schema,
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
@@ -1834,13 +1878,15 @@ impl<'a> AdditionalItemsFrame<'a> {
         }
     }
 
-    fn advance(&mut self, _ev: &mut Evaluator<'a>) -> Result<Step<'a>, SchemaError> {
+    fn advance(&mut self, ev: &mut Evaluator<'a>) -> Result<Step<'a>, SchemaError> {
         // Items covered by the tuple form were validated by the items stage.
         self.idx = self.idx.max(self.items_len);
         if self.idx >= self.array.len() {
             return Ok(Step::Done(true));
         }
         Ok(Step::Child(node_child(
+            ev.compiled
+                .child_plan(self.plan, "additionalItems", self.schema)?,
             self.schema,
             Cow::Borrowed(&self.array[self.idx]),
             true,
@@ -1857,6 +1903,8 @@ impl<'a> PrefixItemsFrame<'a> {
                     return Ok(Step::Done(true));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled
+                        .child_plan(self.plan, "prefixItems", &self.items[self.idx])?,
                     &self.items[self.idx],
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
@@ -1873,6 +1921,8 @@ impl<'a> PrefixItemsFrame<'a> {
                     return Ok(Step::Done(true));
                 }
                 Ok(Step::Child(node_child(
+                    ev.compiled
+                        .child_plan(self.plan, "prefixItems", &self.items[self.idx])?,
                     &self.items[self.idx],
                     Cow::Borrowed(&self.array[self.idx]),
                     true,
@@ -1899,7 +1949,7 @@ impl<'a> PropertiesFrame<'a> {
         }
     }
 
-    fn advance(&mut self, _ev: &mut Evaluator<'a>) -> Result<Step<'a>, SchemaError> {
+    fn advance(&mut self, ev: &mut Evaluator<'a>) -> Result<Step<'a>, SchemaError> {
         while self.idx < self.entries.len() {
             let (key, child) = self.entries[self.idx];
             if !self.map.contains_key(key) {
@@ -1909,6 +1959,7 @@ impl<'a> PropertiesFrame<'a> {
             let value = &self.map[key];
             let path = child_pointer(&self.base_path, key);
             return Ok(Step::Child(node_child(
+                ev.compiled.child_plan(self.plan, "properties", child)?,
                 child,
                 Cow::Borrowed(value),
                 true,
@@ -1935,7 +1986,7 @@ impl<'a> PatternPropertiesFrame<'a> {
         }
     }
 
-    fn advance(&mut self, _ev: &mut Evaluator<'a>) -> Result<Step<'a>, SchemaError> {
+    fn advance(&mut self, ev: &mut Evaluator<'a>) -> Result<Step<'a>, SchemaError> {
         while self.pattern_idx < self.patterns.len() {
             let (pattern, regex) = &self.patterns[self.pattern_idx];
             while self.key_idx < self.keys.len() {
@@ -1951,6 +2002,8 @@ impl<'a> PatternPropertiesFrame<'a> {
                 let value = &self.value_map[key];
                 let path = child_pointer(&self.base_path, key);
                 return Ok(Step::Child(node_child(
+                    ev.compiled
+                        .child_plan(self.plan, "patternProperties", child)?,
                     child,
                     Cow::Borrowed(value),
                     true,
@@ -1990,6 +2043,8 @@ impl<'a> AdditionalPropsFrame<'a> {
             let value = &self.value_map[key];
             let path = child_pointer(&self.base_path, key);
             return Ok(Step::Child(node_child(
+                ev.compiled
+                    .child_plan(self.plan, "additionalProperties", self.schema)?,
                 self.schema,
                 Cow::Borrowed(value),
                 true,
@@ -2001,23 +2056,25 @@ impl<'a> AdditionalPropsFrame<'a> {
 }
 
 impl<'a> PropertyNamesFrame<'a> {
-    fn step(&mut self, _ev: &mut Evaluator<'a>, input: Input) -> Result<Step<'a>, SchemaError> {
+    fn step(&mut self, ev: &mut Evaluator<'a>, input: Input) -> Result<Step<'a>, SchemaError> {
         match input {
-            Input::Start => self.advance(),
+            Input::Start => self.advance(ev),
             Input::Child(result) => {
                 if !result {
                     return Ok(Step::Done(false));
                 }
                 self.idx += 1;
-                self.advance()
+                self.advance(ev)
             }
         }
     }
 
-    fn advance(&mut self) -> Result<Step<'a>, SchemaError> {
+    fn advance(&mut self, ev: &mut Evaluator<'a>) -> Result<Step<'a>, SchemaError> {
         if self.idx < self.keys.len() {
             let key = self.keys[self.idx].clone();
             return Ok(Step::Child(node_child(
+                ev.compiled
+                    .child_plan(self.plan, "propertyNames", self.schema)?,
                 self.schema,
                 Cow::Owned(Value::String(key)),
                 false,
@@ -2071,6 +2128,7 @@ impl<'a> DepsFrame<'a> {
             }
             // Schema form validates the whole instance object.
             return Ok(Step::Child(node_child(
+                ev.compiled.child_plan(self.plan, self.keyword, dep)?,
                 dep,
                 self.value.clone(),
                 false,
@@ -2082,11 +2140,12 @@ impl<'a> DepsFrame<'a> {
 }
 
 impl<'a> IfThenElseFrame<'a> {
-    fn step(&mut self, _ev: &mut Evaluator<'a>, input: Input) -> Result<Step<'a>, SchemaError> {
+    fn step(&mut self, ev: &mut Evaluator<'a>, input: Input) -> Result<Step<'a>, SchemaError> {
         match (&self.phase, input) {
             (IfPhase::Condition, Input::Start) => {
                 let condition = guards::get(self.schema, "if").unwrap();
                 Ok(Step::Child(node_child(
+                    ev.compiled.child_plan(self.plan, "if", condition)?,
                     condition,
                     self.value.clone(),
                     false,
@@ -2094,19 +2153,19 @@ impl<'a> IfThenElseFrame<'a> {
                 )))
             }
             (IfPhase::Condition, Input::Child(result)) => {
-                let branch: &'a Value = if result {
-                    if guards::is_then(self.schema) {
-                        guards::get(self.schema, "then").unwrap()
-                    } else {
-                        &TRUE_SCHEMA
-                    }
-                } else if guards::is_else(self.schema) {
-                    guards::get(self.schema, "else").unwrap()
+                let keyword = if result { "then" } else { "else" };
+                let has_branch = if result {
+                    guards::is_then(self.schema)
                 } else {
-                    &TRUE_SCHEMA
+                    guards::is_else(self.schema)
                 };
+                if !has_branch {
+                    return Ok(Step::Done(true));
+                }
+                let branch = guards::get(self.schema, keyword).unwrap();
                 self.phase = IfPhase::Branch;
                 Ok(Step::Child(node_child(
+                    ev.compiled.child_plan(self.plan, keyword, branch)?,
                     branch,
                     self.value.clone(),
                     false,
@@ -2120,8 +2179,6 @@ impl<'a> IfThenElseFrame<'a> {
         }
     }
 }
-
-static TRUE_SCHEMA: Value = Value::Bool(true);
 
 impl<'a> UnevaluatedItemsFrame<'a> {
     fn step(&mut self, ev: &mut Evaluator<'a>, input: Input) -> Result<Step<'a>, SchemaError> {
@@ -2149,6 +2206,8 @@ impl<'a> UnevaluatedItemsFrame<'a> {
                 continue;
             }
             return Ok(Step::Child(node_child(
+                ev.compiled
+                    .child_plan(self.plan, "unevaluatedItems", self.schema)?,
                 self.schema,
                 Cow::Borrowed(&self.array[self.idx]),
                 false,
@@ -2186,6 +2245,8 @@ impl<'a> UnevaluatedPropsFrame<'a> {
             let value = &self.value_map[key];
             let path = child_pointer(&self.base_path, key);
             return Ok(Step::Child(node_child(
+                ev.compiled
+                    .child_plan(self.plan, "unevaluatedProperties", self.schema)?,
                 self.schema,
                 Cow::Borrowed(value),
                 false,
@@ -2193,5 +2254,94 @@ impl<'a> UnevaluatedPropsFrame<'a> {
             )));
         }
         Ok(Step::Done(true))
+    }
+}
+
+#[cfg(test)]
+mod numeric_tests {
+    use serde_json::json;
+
+    #[test]
+    fn mixed_integer_float_bounds_do_not_round_native_integers() {
+        for (schema, value, expected) in [
+            (
+                json!({"minimum": 9007199254740993u64}),
+                json!(9007199254740992.0),
+                false,
+            ),
+            (
+                json!({"exclusiveMinimum": 9007199254740992.0}),
+                json!(9007199254740993u64),
+                true,
+            ),
+            (
+                json!({"exclusiveMaximum": 9007199254740993u64}),
+                json!(9007199254740992.0),
+                true,
+            ),
+            (
+                json!({"maximum": u64::MAX}),
+                json!(18446744073709551616.0),
+                false,
+            ),
+            (
+                json!({"exclusiveMaximum": 18446744073709551616.0}),
+                json!(u64::MAX),
+                true,
+            ),
+            (
+                json!({"maximum": i64::MAX}),
+                json!(9223372036854775808.0),
+                false,
+            ),
+            (
+                json!({"minimum": i64::MIN + 1}),
+                json!(-9223372036854775808.0),
+                false,
+            ),
+            (
+                json!({"maximum": -9007199254740993i64}),
+                json!(-9007199254740992.0),
+                false,
+            ),
+            (json!({"minimum": 0.5}), json!(0), false),
+            (json!({"maximum": -0.5}), json!(0), false),
+            (json!({"maximum": 1e40}), json!(u64::MAX), true),
+            (json!({"minimum": -1e40}), json!(i64::MIN), true),
+        ] {
+            let compiled = super::super::compile(schema.clone()).unwrap();
+            assert_eq!(
+                compiled.check(&value).unwrap(),
+                expected,
+                "{schema} / {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn multiple_of_retains_native_integer_remainders() {
+        for (divisor, value, expected) in [
+            (json!(2), json!(9007199254740993u64), false),
+            (json!(3), json!(9007199254740993u64), true),
+            (
+                json!(9007199254740993u64),
+                json!(9007199254740992u64),
+                false,
+            ),
+            (json!(2.0), json!(9007199254740993u64), false),
+            (json!(9007199254740993u64), json!(9007199254740992.0), false),
+            (json!(-3), json!(-9007199254740993i64), true),
+            (json!(0), json!(0), false),
+            (json!(0.1), json!(0.3), true),
+            (json!(0.5), json!(9007199254740993u64), true),
+        ] {
+            let schema = json!({"multipleOf": divisor});
+            let compiled = super::super::compile(schema.clone()).unwrap();
+            assert_eq!(
+                compiled.check(&value).unwrap(),
+                expected,
+                "{schema} / {value}"
+            );
+        }
     }
 }

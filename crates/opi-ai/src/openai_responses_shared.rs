@@ -392,6 +392,7 @@ struct ToolCallState {
 
 /// Stateful conversion from Responses events to opi stream events.
 pub(crate) struct ResponsesMapper {
+    snapshot: crate::stream::ProducerSnapshot,
     partial: AssistantMessage,
     pub(crate) saw_done: bool,
     text_started: bool,
@@ -400,8 +401,27 @@ pub(crate) struct ResponsesMapper {
 }
 
 impl ResponsesMapper {
+    pub(crate) fn set_snapshot(&mut self, snapshot: crate::stream::ProducerSnapshot) {
+        self.snapshot = snapshot;
+        self.snapshot.record(&self.partial);
+    }
+
+    pub(crate) fn process(
+        &mut self,
+        event: ResponsesEvent,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        let events = self.process_inner(event);
+        self.snapshot.record(&self.partial);
+        events
+    }
+
+    pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
+        cause.with_partial(self.partial.clone())
+    }
+
     pub(crate) fn new(provider: &str, wire: crate::model_info::WireApi, model: &str) -> Self {
         Self {
+            snapshot: crate::stream::ProducerSnapshot::default(),
             partial: empty_assistant_message(provider, wire, model),
             saw_done: false,
             text_started: false,
@@ -410,7 +430,7 @@ impl ResponsesMapper {
         }
     }
 
-    pub(crate) fn process(
+    fn process_inner(
         &mut self,
         event: ResponsesEvent,
     ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
@@ -606,14 +626,12 @@ impl ResponsesMapper {
                 events
             }
             ResponsesEvent::Error { message: _ } => {
-                // Current producers stop the dual terminal format: an in-band
-                // provider error event is a stream failure whose bounded
-                // diagnostic rides the typed cause; the accumulated partial is
-                // preserved by the public seam (ChatStream/CallFailure).
+                // Preserve state that did not produce a public event (usage,
+                // opaque content or signatures), alongside the typed cause.
                 self.saw_done = true;
-                vec![Err(ProviderError::StreamError(
+                vec![Err(self.failure(ProviderError::StreamError(
                     ProviderErrorSummary::attested_static(OPENAI_RESPONSES_STREAM_ERROR),
-                ))]
+                )))]
             }
         }
     }

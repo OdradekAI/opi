@@ -119,7 +119,8 @@ fn request_for(model_spec: &str) -> Request {
             system_prompt: None,
             messages: Vec::new(),
             tools: Vec::new(),
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: opi_ai::provider::ThinkingConfig::default(),

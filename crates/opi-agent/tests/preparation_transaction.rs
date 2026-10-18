@@ -364,7 +364,8 @@ impl SummaryHooks {
                             _ => unreachable!(),
                         }],
                         tools: vec![],
-                    }),
+                    })
+                    .expect("valid context declarations"),
                     max_tokens: Some(256),
                     temperature: None,
                     thinking: Default::default(),

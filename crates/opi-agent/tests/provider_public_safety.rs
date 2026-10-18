@@ -106,7 +106,8 @@ fn request(model: &str) -> Request {
             system_prompt: None,
             messages: Vec::new(),
             tools: Vec::new(),
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -256,6 +257,7 @@ async fn real_loop_failure_records_one_typed_diagnostic_and_proxy_frames_it_as_j
 
 fn provider_metadata(error: &ProviderError) -> serde_json::Value {
     match error {
+        ProviderError::StreamFailure(failure) => provider_metadata(failure.cause()),
         ProviderError::RateLimited { retry_after_ms } => {
             serde_json::json!({ "variant": "rate_limited", "retry_after_ms": retry_after_ms })
         }
@@ -336,6 +338,7 @@ fn provider_metadata(error: &ProviderError) -> serde_json::Value {
 
 fn provider_summary(error: &ProviderError) -> Option<&ProviderErrorSummary> {
     match error {
+        ProviderError::StreamFailure(failure) => provider_summary(failure.cause()),
         ProviderError::RequestFailed(summary)
         | ProviderError::StreamError(summary)
         | ProviderError::AuthFailed(summary)

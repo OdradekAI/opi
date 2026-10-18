@@ -175,7 +175,8 @@ fn minimal_request(model: &str) -> Request {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -2054,7 +2055,8 @@ max_tokens_field = "max_completion_tokens"
     request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
         system_prompt: Some("sys".into()),
         ..Default::default()
-    });
+    })
+    .expect("valid context declarations");
     request.max_tokens = Some(1024);
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {

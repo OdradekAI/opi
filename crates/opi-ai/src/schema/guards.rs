@@ -99,12 +99,8 @@ pub(crate) fn is_dependent_required(schema: &Value) -> bool {
 }
 schema_guard_object!(is_dependent_schemas, "dependentSchemas");
 
-pub(crate) fn is_pattern_properties(schema: &Value) -> bool {
-    key(schema, "patternProperties").is_some_and(Value::is_object)
-}
-pub(crate) fn is_properties(schema: &Value) -> bool {
-    key(schema, "properties").is_some_and(Value::is_object)
-}
+schema_guard_object!(is_pattern_properties, "patternProperties");
+schema_guard_object!(is_properties, "properties");
 pub(crate) fn is_property_names(schema: &Value) -> bool {
     key(schema, "propertyNames").is_some_and(|value| value.is_object() || is_schema(value))
 }

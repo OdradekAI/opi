@@ -481,6 +481,10 @@ impl PartialEq<&str> for ProviderErrorSummary {
 /// timeout".
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ProviderError {
+    /// Adapter-owned canonical state at failure, consumed by `ChatStream`.
+    #[doc(hidden)]
+    #[error("{0}")]
+    StreamFailure(Box<ProviderStreamFailure>),
     #[error("rate limited")]
     RateLimited { retry_after_ms: Option<u64> },
     #[error("request timed out")]
@@ -541,11 +545,61 @@ pub enum ProviderError {
     Cancelled,
 }
 
+/// Internal transport for a mapper's latest state and its redacted cause.
+///
+/// The fields and constructor are private: this is carried through the
+/// prepared-provider seam and unpacked before a public `CallFailure` is
+/// delivered. Its diagnostic formatting exposes only the typed cause.
+#[doc(hidden)]
+#[derive(Clone, PartialEq)]
+pub struct ProviderStreamFailure {
+    message: crate::message::AssistantMessage,
+    cause: ProviderError,
+}
+
+impl ProviderStreamFailure {
+    /// The original typed classification, without the adapter-state envelope.
+    pub fn cause(&self) -> &ProviderError {
+        &self.cause
+    }
+}
+
+impl std::fmt::Display for ProviderStreamFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.cause.fmt(formatter)
+    }
+}
+
+impl std::fmt::Debug for ProviderStreamFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.cause, formatter)
+    }
+}
+
 impl ProviderError {
+    pub(crate) fn with_partial(self, message: crate::message::AssistantMessage) -> Self {
+        match self {
+            Self::StreamFailure(_) => self,
+            cause => Self::StreamFailure(Box::new(ProviderStreamFailure { message, cause })),
+        }
+    }
+
+    pub(crate) fn into_stream_parts(
+        self,
+    ) -> (Option<crate::message::AssistantMessage>, ProviderError) {
+        match self {
+            Self::StreamFailure(failure) => (Some(failure.message), failure.cause),
+            cause => (None, cause),
+        }
+    }
+
     /// Whether this error is retryable (rate-limited, timeout, or transient
     /// network failure). Retry timing/backoff behavior is owned by the agent
     /// runtime; this is the taxonomy-layer retryability signal.
     pub fn is_retryable(&self) -> bool {
+        if let Self::StreamFailure(failure) = self {
+            return failure.cause.is_retryable();
+        }
         matches!(
             self,
             ProviderError::RateLimited { .. } | ProviderError::Timeout | ProviderError::Network(_)
@@ -560,6 +614,7 @@ impl ProviderError {
     /// diagnostic `code`/`severity`/`source` triple.
     pub fn category(&self) -> ProviderErrorCategory {
         match self {
+            ProviderError::StreamFailure(failure) => failure.cause.category(),
             ProviderError::AuthFailed(_)
             | ProviderError::CredentialNeeded { .. }
             | ProviderError::CredentialRevoked { .. }
@@ -583,10 +638,11 @@ impl ProviderError {
 
     /// Server-advised delay before retrying, in milliseconds.
     ///
-    /// Only [`ProviderError::RateLimited`] carries a `retry_after_ms` today;
-    /// every other variant returns `None`.
+    /// A [`ProviderError::RateLimited`] cause carries `retry_after_ms`;
+    /// an adapter-state envelope preserves that delay unchanged.
     pub fn retry_after_ms(&self) -> Option<u64> {
         match self {
+            ProviderError::StreamFailure(failure) => failure.cause.retry_after_ms(),
             ProviderError::RateLimited { retry_after_ms } => *retry_after_ms,
             _ => None,
         }

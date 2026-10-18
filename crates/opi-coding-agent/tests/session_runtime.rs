@@ -614,6 +614,7 @@ fn session_coordinator_redacts_tool_result_details_but_keeps_content() {
     .unwrap();
 
     let messages = vec![AgentMessage::Llm(Message::ToolResult(ToolResultMessage {
+        not_executed: None,
         tool_call_id: "tc-redact".into(),
         tool_name: "bash".into(),
         content: vec![OutputContent::Text {
@@ -659,6 +660,574 @@ fn session_coordinator_redacts_tool_result_details_but_keeps_content() {
             .unwrap()
             .contains("OPI_SESSION_COMMAND_SECRET_CANARY")
     );
+}
+
+fn historical_tool_pair(
+    id: &str,
+    arguments: String,
+    stop_reason: opi_ai::stream::StopReason,
+    not_executed: Option<opi_ai::message::ToolNotExecutedReason>,
+    is_error: bool,
+) -> [AgentMessage; 2] {
+    let mut assistant = test_support::base_assistant();
+    assistant.stop_reason = stop_reason;
+    assistant.content.push(AssistantContent::ToolCall {
+        tool_call: ToolCall {
+            id: id.into(),
+            name: "write".into(),
+            arguments,
+            arguments_error: None,
+        },
+    });
+    [
+        AgentMessage::Llm(Message::Assistant(assistant)),
+        AgentMessage::Llm(Message::ToolResult(ToolResultMessage {
+            tool_call_id: id.into(),
+            tool_name: "write".into(),
+            content: vec![OutputContent::Text {
+                text: format!("result-{id}"),
+            }],
+            details: Some(serde_json::json!({
+                "command": "OPI_SESSION_PRIVATE_DETAIL_CANARY",
+                "cwd": "C:\\private\\workspace",
+                "exit_code": 1,
+            })),
+            is_error,
+            not_executed,
+            truncated: false,
+            timestamp_ms: 0,
+        })),
+    ]
+}
+
+#[tokio::test]
+async fn session_restore_preserves_non_execution_facts_through_harness_and_wire() {
+    use opi_ai::message::ToolNotExecutedReason as Reason;
+    use opi_ai::stream::StopReason;
+    use opi_coding_agent::harness::ResumeInfo;
+
+    let dir = tempfile::tempdir().unwrap();
+    let side_effect_path = dir.path().join("historical-write-must-not-execute");
+    let arguments = serde_json::json!({
+        "path": side_effect_path,
+        "content": "historical write was executed",
+    })
+    .to_string();
+    let cases = [
+        (
+            "invalid-json",
+            StopReason::ToolUse,
+            Some(Reason::InvalidJson),
+        ),
+        (
+            "non-object",
+            StopReason::ToolUse,
+            Some(Reason::NonObjectArguments),
+        ),
+        (
+            "schema-invalid",
+            StopReason::ToolUse,
+            Some(Reason::SchemaValidationFailed),
+        ),
+        (
+            "output-limit",
+            StopReason::Length,
+            Some(Reason::OutputLimit),
+        ),
+        (
+            "failed-error",
+            StopReason::Error,
+            Some(Reason::InterruptedBeforeExecution),
+        ),
+        (
+            "failed-aborted",
+            StopReason::Aborted,
+            Some(Reason::NotActive),
+        ),
+        ("executed-success", StopReason::ToolUse, None),
+        ("executed-error", StopReason::ToolUse, None),
+    ];
+    let mut messages = vec![AgentMessage::Llm(Message::User(UserMessage {
+        content: vec![InputContent::Text {
+            text: "original request".into(),
+        }],
+        timestamp_ms: 0,
+    }))];
+    for (id, stop_reason, reason) in cases {
+        let raw = match id {
+            "invalid-json" => "{".into(),
+            "non-object" => "[]".into(),
+            _ => arguments.clone(),
+        };
+        messages.extend(historical_tool_pair(
+            id,
+            raw,
+            stop_reason,
+            reason,
+            id != "executed-success",
+        ));
+    }
+    let mut coordinator = SessionCoordinator::new_for_test(
+        dir.path(),
+        dir.path().to_str().unwrap(),
+        opi_agent::compaction::CompactionConfig {
+            enabled: false,
+            ..Default::default()
+        },
+        "mock:mock-model",
+    )
+    .unwrap();
+    coordinator
+        .on_turn_end(&messages, &Default::default(), 0)
+        .unwrap();
+    let session_path = coordinator.session_path().to_path_buf();
+    let session_id = coordinator.session_id().to_owned();
+    drop(coordinator);
+
+    let (_, entries, recovery) = SessionReader::read_with_recovery(&session_path).unwrap();
+    assert!(recovery.is_clean());
+    let restored_facts = entries
+        .iter()
+        .filter_map(|entry| match entry {
+            SessionEntry::Message(MessageEntry {
+                message: Message::ToolResult(result),
+                ..
+            }) => Some((result.tool_call_id.as_str(), result.not_executed)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let expected_facts = cases
+        .iter()
+        .map(|(id, _, reason)| (*id, *reason))
+        .collect::<Vec<_>>();
+    assert_eq!(restored_facts, expected_facts, "durable execution facts");
+    let raw_session = std::fs::read_to_string(&session_path).unwrap();
+    assert!(!raw_session.contains("OPI_SESSION_PRIVATE_DETAIL_CANARY"));
+    assert!(raw_session.contains("[REDACTED]"));
+
+    let reconstructed = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+    let provider = MockProvider::new("mock", vec![test_support::text_response("continued")]);
+    let calls = provider.call_log_handle();
+    let mut config = OpiConfig::default();
+    config.compaction.enabled = false;
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        config,
+        dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .global_config_dir(dir.path().join("isolated-config"))
+    .initial_messages(reconstructed.messages)
+    .resume(ResumeInfo {
+        path: session_path,
+        session_id,
+        entries,
+        original_cwd: dir.path().to_path_buf(),
+        diagnostics: reconstructed.diagnostics,
+        recorded_model: reconstructed.model,
+        recorded_thinking: reconstructed.thinking_level,
+    })
+    .build();
+    let executions = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed_executions = executions.clone();
+    harness.subscribe(Box::new(move |event| {
+        if matches!(
+            event,
+            opi_agent::event::AgentEvent::ToolExecutionStart { .. }
+        ) {
+            observed_executions.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }));
+    harness.prompt("continue after restoring").await.unwrap();
+    assert_eq!(executions.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(!side_effect_path.exists(), "history never executes a write");
+
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 1, "resume makes only the requested new call");
+    let request = &calls[0];
+    let canonical = serde_json::to_value(&request.context).unwrap();
+    let anthropic_body =
+        opi_ai::anthropic::AnthropicProvider::new(Some("http://127.0.0.1:9".into()))
+            .build_request_body(request)
+            .expect("restored facts permit object-wire recovery");
+    let chat_body = opi_ai::openai_chat::OpenAiChatProvider::new(Some("http://127.0.0.1:9".into()))
+        .build_request_body(request)
+        .expect("restored facts permit string-wire recovery");
+    let anthropic_text = anthropic_body.to_string();
+    assert!(anthropic_text.contains("[opi:tool-call-not-executed:v1]"));
+    assert!(anthropic_text.contains("invalid_json"));
+    assert!(anthropic_text.contains("non_object_arguments"));
+    for body in [anthropic_body, chat_body] {
+        let text = body.to_string();
+        assert!(!text.contains("failed-error"), "{text}");
+        assert!(!text.contains("failed-aborted"), "{text}");
+        assert!(text.contains("output-limit"), "expressible Length pair");
+        assert!(text.contains("result-executed-success"), "{text}");
+        assert!(text.contains("result-executed-error"), "{text}");
+        assert!(text.contains("continue after restoring"), "{text}");
+        assert!(!text.contains("OPI_SESSION_PRIVATE_DETAIL_CANARY"));
+    }
+    assert_eq!(serde_json::to_value(&request.context).unwrap(), canonical);
+}
+
+#[test]
+fn session_restore_does_not_infer_non_execution_for_historical_error_result() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut coordinator = SessionCoordinator::new_for_test(
+        dir.path(),
+        "/test",
+        opi_agent::compaction::CompactionConfig::default(),
+        "mock:mock-model",
+    )
+    .unwrap();
+    let messages = historical_tool_pair(
+        "legacy-unknown",
+        "{}".into(),
+        opi_ai::stream::StopReason::Error,
+        None,
+        true,
+    );
+    coordinator
+        .on_turn_end(&messages, &Default::default(), 0)
+        .unwrap();
+    let (_, entries, recovery) =
+        SessionReader::read_with_recovery(coordinator.session_path()).unwrap();
+    let reconstructed = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+    let restored = reconstructed
+        .messages
+        .into_iter()
+        .filter_map(|message| match message {
+            AgentMessage::Llm(message) => Some(message),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let Message::ToolResult(result) = &restored[1] else {
+        panic!("restored tool result");
+    };
+    assert_eq!(result.not_executed, None, "is_error cannot imply a fact");
+    assert!(
+        serde_json::to_value(result)
+            .unwrap()
+            .get("not_executed")
+            .is_none()
+    );
+    let error = opi_ai::replay::project_replay(
+        &restored,
+        &opi_ai::replay::ReplayRoute {
+            wire: opi_ai::WireApi::AnthropicMessages,
+            provider: "anthropic".into(),
+            model: "claude-sonnet-4".into(),
+            supports_images: false,
+        },
+        opi_ai::replay::ReplayProjection::NativeOrCollapse,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        opi_ai::replay::ReplayError::MissingNonExecutionFact { tool_call_id }
+            if tool_call_id == "legacy-unknown"
+    ));
+}
+
+#[tokio::test]
+async fn session_restore_recompiles_unicode_declaration_for_authorized_next_call() {
+    use std::future::Future;
+    use std::pin::Pin;
+
+    use opi_agent::authority::{
+        AuthorizationDecision, AuthorizationError, CapabilityIdentity, RegisteredTool,
+        RegistrationId, ToolAuthorizationRequest, ToolAuthorizer, ToolOrigin, ToolRegistry,
+    };
+    use opi_agent::evidence::{PermissionReference, PermissionScope, PolicyReference};
+    use opi_agent::loop_types::{
+        AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+    };
+    use opi_agent::tool::{Tool, ToolError, ToolResult};
+    use opi_ai::message::ToolDef;
+    use serde_json::{Value, json};
+    use tokio_util::sync::CancellationToken;
+
+    struct RestoredTool {
+        definition: ToolDef,
+        executions: Arc<Mutex<Vec<(String, Value)>>>,
+    }
+
+    impl Tool for RestoredTool {
+        fn definition(&self) -> ToolDef {
+            self.definition.clone()
+        }
+
+        fn execute(
+            &self,
+            call_id: &str,
+            arguments: Value,
+            _: CancellationToken,
+            _: Option<opi_agent::tool::UpdateCallback>,
+        ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
+            self.executions
+                .lock()
+                .unwrap()
+                .push((call_id.to_owned(), arguments));
+            Box::pin(async {
+                Ok(ToolResult {
+                    content: vec![OutputContent::Text { text: "ok".into() }],
+                    details: None,
+                    is_error: false,
+                    terminate: false,
+                    truncated: false,
+                    diagnostics: vec![],
+                })
+            })
+        }
+    }
+
+    struct RestoredAuthorizer {
+        arguments: Arc<Mutex<Vec<Value>>>,
+    }
+
+    impl ToolAuthorizer for RestoredAuthorizer {
+        fn authorize(
+            &self,
+            request: ToolAuthorizationRequest,
+            _: CancellationToken,
+        ) -> Pin<Box<dyn Future<Output = Result<AuthorizationDecision, AuthorizationError>> + Send>>
+        {
+            self.arguments
+                .lock()
+                .unwrap()
+                .push(request.arguments.clone());
+            Box::pin(async move {
+                Ok(AuthorizationDecision::Allow {
+                    policy_ref: PolicyReference::new("session-test-policy").unwrap(),
+                    permission_ref: PermissionReference::new("session-test-permission").unwrap(),
+                    permission_scope: PermissionScope::new("session-test-scope").unwrap(),
+                    scoped_grant_ref: None,
+                    registration_id: request.registration_id,
+                    capability: request.capability,
+                    evidence_health_generation: request.evidence_health.generation(),
+                })
+            })
+        }
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let compaction = opi_agent::compaction::CompactionConfig {
+        enabled: false,
+        ..Default::default()
+    };
+    let declaration = ToolDef {
+        name: "unicode_restore".into(),
+        description: "Capture restored Unicode arguments.".into(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "value": {"type": "string", "pattern": "^\\p{Script=Beria_Erfe}$"},
+                "count": {"type": "integer"}
+            },
+            "required": ["value", "count"],
+            "additionalProperties": false
+        }),
+    };
+    let character = '\u{16ea0}'.to_string();
+    let historical_raw = json!({"value": character, "count": "7"}).to_string();
+    let next_raw = json!({"value": character, "count": "8"}).to_string();
+    let normalized = json!({"value": character, "count": 8});
+    let mut historical = test_support::base_assistant();
+    historical.stop_reason = opi_ai::stream::StopReason::ToolUse;
+    historical.content.push(AssistantContent::ToolCall {
+        tool_call: ToolCall {
+            id: "historical-unicode".into(),
+            name: declaration.name.clone(),
+            arguments: historical_raw.clone(),
+            arguments_error: None,
+        },
+    });
+    let messages = vec![
+        AgentMessage::Llm(Message::System(opi_ai::transcript::SystemMessage {
+            tools_added: vec![declaration.clone()],
+            ..Default::default()
+        })),
+        AgentMessage::Llm(Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "historical request".into(),
+            }],
+            timestamp_ms: 0,
+        })),
+        AgentMessage::Llm(Message::Assistant(historical)),
+        AgentMessage::Llm(Message::ToolResult(ToolResultMessage {
+            tool_call_id: "historical-unicode".into(),
+            tool_name: declaration.name.clone(),
+            content: vec![OutputContent::Text {
+                text: "historical result".into(),
+            }],
+            details: None,
+            is_error: false,
+            not_executed: None,
+            truncated: false,
+            timestamp_ms: 0,
+        })),
+    ];
+    let (session_path, session_id) = {
+        let mut coordinator = SessionCoordinator::new_for_test(
+            dir.path(),
+            dir.path().to_str().unwrap(),
+            compaction.clone(),
+            "mock:mock-model",
+        )
+        .unwrap();
+        coordinator
+            .on_turn_end(&messages, &Default::default(), 0)
+            .unwrap();
+        (
+            coordinator.session_path().to_path_buf(),
+            coordinator.session_id().to_owned(),
+        )
+    };
+    let (_, entries, recovery) = SessionReader::read_with_recovery(&session_path).unwrap();
+    assert!(recovery.is_clean());
+    let restored = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+    let llm_messages = restored
+        .messages
+        .iter()
+        .filter_map(|message| match message {
+            AgentMessage::Llm(message) => Some(message.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let declarations = opi_ai::transcript::get_current_tools(&llm_messages);
+    assert_eq!(declarations.as_slice(), std::slice::from_ref(&declaration));
+    let prior_count = restored.messages.len();
+    let mut coordinator = SessionCoordinator::open_existing(
+        session_path.clone(),
+        session_id.clone(),
+        &entries,
+        prior_count,
+        compaction,
+        "mock:mock-model",
+    )
+    .unwrap();
+    let executions = Arc::new(Mutex::new(Vec::new()));
+    let authorized = Arc::new(Mutex::new(Vec::new()));
+    // The fixture's trusted assembly explicitly installs a fresh registration
+    // and authorizer. Stored declarations and historical calls grant no tool
+    // authority; only this current registration can reach the implementation.
+    let restored_definition = declarations.into_iter().next().unwrap();
+    let registry = ToolRegistry::from_tools(vec![RegisteredTool::new(
+        RegistrationId::new("restored-unicode-registration"),
+        declaration.name.clone(),
+        ToolOrigin::Embedder {
+            embedder_id: "session-test".into(),
+        },
+        CapabilityIdentity::new("opi.workspace.read").unwrap(),
+        restored_definition.clone(),
+        Arc::new(RestoredTool {
+            definition: restored_definition,
+            executions: executions.clone(),
+        }),
+    )])
+    .unwrap();
+    let provider = MockProvider::new(
+        "mock",
+        vec![
+            test_support::tool_call_response("next-unicode", &declaration.name, &next_raw),
+            test_support::text_response("done"),
+        ],
+    );
+    let calls = provider.call_log_handle();
+    let mut restored_messages = restored.messages;
+    restored_messages.push(AgentMessage::Llm(Message::User(UserMessage {
+        content: vec![InputContent::Text {
+            text: "next request".into(),
+        }],
+        timestamp_ms: 0,
+    })));
+    let context = AgentLoopContext {
+        collection: Arc::new(test_support::single_route_collection(Box::new(provider))),
+        registry: Arc::new(registry),
+        authorizer: Some(Arc::new(RestoredAuthorizer {
+            arguments: authorized.clone(),
+        })),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
+        evidence_sink: None,
+        state: NextTurnState::new(
+            restored_messages,
+            ModelSelection::new("mock", "mock-model"),
+            InferenceConfig::default(),
+        ),
+        system: None,
+        steering_queue: None,
+        follow_up_queue: None,
+        diagnostic_sink: None,
+        session_id: Some(session_id.clone()),
+    };
+    let state = opi_agent::agent_loop(
+        context,
+        AgentLoopConfig::default(),
+        &opi_coding_agent::harness::CodingAgentHooks,
+        Box::new(|_| {}),
+        CancellationToken::new(),
+    )
+    .await
+    .into_execution_result()
+    .expect("restored declaration admits and normalizes the next call");
+    assert_eq!(
+        authorized.lock().unwrap().as_slice(),
+        std::slice::from_ref(&normalized)
+    );
+    assert_eq!(
+        executions.lock().unwrap().as_slice(),
+        &[("next-unicode".to_owned(), normalized)]
+    );
+    {
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            opi_ai::transcript::get_current_tools(calls[0].context.messages()).as_slice(),
+            std::slice::from_ref(&declaration)
+        );
+    }
+    coordinator
+        .on_turn_end(
+            &state.context[prior_count..],
+            &Default::default(),
+            prior_count,
+        )
+        .unwrap();
+    drop(coordinator);
+    let (header, entries, recovery) = SessionReader::read_with_recovery(&session_path).unwrap();
+    assert_eq!(header.id, session_id);
+    assert!(recovery.is_clean());
+    let retained = entries
+        .iter()
+        .filter_map(|entry| match entry {
+            SessionEntry::Message(MessageEntry {
+                message: Message::Assistant(assistant),
+                ..
+            }) => Some(assistant),
+            _ => None,
+        })
+        .flat_map(|assistant| &assistant.content)
+        .filter_map(|content| match content {
+            AssistantContent::ToolCall { tool_call } => {
+                Some((tool_call.id.as_str(), tool_call.arguments.as_str()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        retained,
+        [
+            ("historical-unicode", historical_raw.as_str()),
+            ("next-unicode", next_raw.as_str())
+        ]
+    );
+    assert!(entries.iter().any(|entry| matches!(
+        entry,
+        SessionEntry::Message(MessageEntry {
+            message: Message::ToolResult(result), ..
+        }) if result.tool_call_id == "next-unicode" && !result.is_error && result.not_executed.is_none()
+    )));
 }
 
 #[test]

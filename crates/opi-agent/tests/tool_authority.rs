@@ -12,7 +12,7 @@
 mod common;
 
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures_util::stream;
@@ -283,6 +283,103 @@ async fn permissive_authorizer_executes_once() {
         1,
         "a current Allow reaches Tool::execute exactly once"
     );
+}
+
+#[tokio::test]
+async fn final_installed_schema_rejects_calls_after_assembly_cache_was_warmed() {
+    let count = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let mut registrations = recording_registry(count.clone());
+    let tool = &mut registrations[0];
+    assert!(
+        tool.schema_validation()
+            .validate(&serde_json::json!({}))
+            .is_ok()
+    );
+    tool.definition.input_schema = serde_json::json!(false);
+    let mut agent = make_agent(
+        vec![
+            tool_call_response("c1", "mytool", "{}"),
+            text_response("done"),
+        ],
+        registrations,
+        Some(Arc::new(CapturingAuthorizer {
+            requests: requests.clone(),
+        })),
+    );
+
+    agent.prompt("go").await.into_execution_result().unwrap();
+
+    assert_eq!(RecordingTool::count_of(&count), 0);
+    assert!(
+        requests.lock().unwrap().is_empty(),
+        "invalid arguments must not reach authorization"
+    );
+}
+
+#[tokio::test]
+async fn invalid_initial_or_stored_declarations_fail_before_auth_and_dispatch() {
+    for embedded in [false, true] {
+        let auth_calls = Arc::new(AtomicU32::new(0));
+        let tool_calls = Arc::new(AtomicUsize::new(0));
+        let mut registrations = recording_registry(tool_calls.clone());
+        let mut invalid = registrations[0].definition.clone();
+        invalid.input_schema = serde_json::json!({"pattern":"["});
+        if !embedded {
+            registrations[0].definition = invalid.clone();
+        }
+        let provider = opi_ai::test_support::MockProvider::new("mock", vec![]);
+        let provider_calls = provider.call_log_handle();
+        let mut models = opi_ai::Models::new();
+        models
+            .register_route(
+                Box::new(provider),
+                Arc::new(opi_ai::test_support::CountingAuthResolver::new(
+                    auth_calls.clone(),
+                )),
+                opi_ai::AuthProvenanceSource::Static,
+                opi_ai::CompatMetadata::default(),
+            )
+            .unwrap();
+        let mut agent = Agent::new(
+            Arc::new(models),
+            registrations,
+            Some(common::permissive_authorizer()),
+            "mock:mock-model".into(),
+            None,
+            InferenceConfig::default(),
+            AgentLoopConfig::default(),
+            Box::new(TestHooks),
+        )
+        .unwrap();
+        if embedded {
+            agent
+                .replace_state(NextTurnState::new(
+                    vec![AgentMessage::Llm(Message::System(
+                        opi_ai::transcript::SystemMessage {
+                            content: String::new(),
+                            sections: vec![],
+                            tools_added: vec![invalid],
+                            tools_removed: vec![],
+                            timestamp_ms: 0,
+                        },
+                    ))],
+                    ModelSelection::new("mock", "mock-model"),
+                    InferenceConfig::default(),
+                ))
+                .unwrap();
+        }
+        let result = agent.prompt("go").await;
+        assert!(
+            matches!(result.error(), Some(AgentError::Provider(failure))
+            if matches!(failure.provider_error(), ProviderError::Config(_))),
+            "declaration admission must fail as typed configuration error: {:?}",
+            result.error()
+        );
+        assert_eq!(auth_calls.load(Ordering::SeqCst), 0);
+        assert!(provider_calls.lock().unwrap().is_empty());
+        assert_eq!(tool_calls.load(Ordering::SeqCst), 0);
+    }
 }
 
 #[tokio::test]

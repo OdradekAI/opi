@@ -10,7 +10,7 @@
 | 双语 Phase 来源／责任／完成条件 | [English spec](spec-draft.md)、[中文spec](spec-draft.zh.md)：Phase 20 条款映射、分解、风险／回滚／平台及精确章节采纳；67 AIR身份＝57 active SDK＋9 host-impact＋1 retired；没有实施证明 |
 | 本次逐项升级 | [1.2.0→1.3.0复核](pi-1.3.0-upgrade-review.md)、[固定来源与全路径摘要](pi-1.3.0-source-evidence.json)：AI47与telemetry2变化路径全部处置；本地身份不等于已验证上游tag |
 | 当前全部公开能力 | [Pi1.3.0 SDK合同](pi-1.3.0-sdk-contracts.md)：10 chat、1 image、4 classifier、42 factories、9 OAuth；profile复用wire仍须独立证明 |
-| Rust调用体验与差异 | [RDF-01–20](pi-1.3.0-rust-differences.md)：owned/lazy/Result/knownness/tracing/platform与真实能力缺口分别说明 |
+| Rust调用体验与差异 | [RDF-01–21](pi-1.3.0-rust-differences.md)：owned/lazy/Result/knownness/tracing/platform、获批上游 Unicode／IDNA 数据 profile 与真实能力缺口分别说明 |
 | 本轮确定后端与维护成本 | [Schema](pi-1.3.0-readiness-schema.md)、[WS](pi-1.3.0-readiness-ws.md)、[HTTP/TLS/auth](pi-1.3.0-readiness-transport-auth.md)、[telemetry/交付输入](pi-1.3.0-readiness-runtime.md)；source/data/namespace/native/unsafe边界明示，不靠consumer rootpatch |
 | Rust机制与OPEN后端缺口 | [后端／五项合同及缺口表](pi-1.3.0-rust-backends.md)、[专项源码核查](pi-1.3.0-backend-gap-audit.md)、[Schema／WS离线实测](pi-1.3.0-schema-ws-offline-validation.md)：实测反例、候选判定与未证项；七组均OPEN |
 | 唯一验收与测试迁移 | [验收矩阵](acceptance-matrix.md)：59 V身份＝54 active SDK＋4 host-impact＋1 retired；Pi174 test files不是执行通过，Rust41 integration＋7 source-test处置保留 |
@@ -19,6 +19,8 @@
 | 版本、规划与决策 | [tracking与后续模板](upstream-tracking.md)、[decisions历史与本次替代关系](decisions.md)；不建立第二实施账本或自动监控 |
 
 当前行为修订集中在：退出compact frames；跨模型thinking全部drop；最终工具参数保留arguments_error而非执行可解析前缀；Responses/Anthropic effort与off；error-tool images、Chat同chunk次序、Kimi/OpenCode路由和模型metadata。telemetry实现／测试／README未变，内部依赖精确pin不代表新增instrumentation。所有source默认／backend默认／Rust差异按具体消费路径区分，不因库升级增加无依据限制。
+
+2026-10-19 用户批准的 Schema 修订见 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile)：取消固定 Unicode16 与 vendor 分发，采用 crates.io regress0.12.0／url2.5.8 的受支持上游数据。同步保留方言、admission/ref、normalizer、typed 失败、授权和零 schema I/O 合同；通用 conformance／外部 consumer 继续验证。下文旧研究窗口及 frozen 输入、Node oracle 和执行数字不改写。20.11、20.34、20.57 的完整验收仍 OPEN；具体实施证据由实际命令交接，不在本目录建立进度账本。
 
 两快照仍缺hydrated provider JSON。前置源码轮未执行运行实验；后续[最小离线差分](pi-1.3.0-schema-ws-offline-validation.md)实际执行了固定Node／Bun、Pi公开validation utility、原生Schema引擎和WS loopback／确定性reader／codec实验。实验在TEMP执行，可重跑脚本与原始结果留存为研究资产；没有改产品代码、根Cargo、产品测试或CI，没有hydrate/live/OAuth。受控实验离线或仅127.0.0.1；准备阶段补取两个官方归档。另一次未关闭Bun自动解析的导入诊断生成了缓存，已记录／隔离并废弃该诊断，其联网与解析范围未知，不计作离线证据；正式WS已用--no-install重跑。Schema／WS等七组仍OPEN，不能借typed Unsupported、可覆盖cap或SSE fallback关闭；当前opi-ai调用体验仍未被证明与Pi等价。
 

@@ -174,7 +174,7 @@ SDK 无会话前提。它不要求 Agent authorizer、durable 事务、子会话
 | AIR-021 | SDK/调用方；范围明确的 0.x 迁移 | MUST 以可执行模型/鉴权/错误契约替代并淘汰 Config/ProviderConfig/config::Error/Result 和 Model/ProviderKind 外壳；SDK 构造不得依赖产品配置。保留 ApiKind/持久化消费者。迁移导出/文档/示例；删除仅测试构造器的测试，保留行为。不默认提供永久 shim。 | O-003/SP-16; D-02/08/21; V-10/20 |
 | AIR-022 | Compat normalizer/config/parser；准备/迁移 | MUST 实现实际 Chat store 省略/false、依赖 reasoning 的 developer role、effort 格式/门控/off，以及 tool→user assistant bridge。使用最终 endpoint 推断，以唯一字段优先级解析，显式 false 与未设置不同。仅淘汰重复的静态 reasoning_effort；supports/bridge 名称只有在等价替代行为和调用方迁移完成后才能退出。已淘汰键在鉴权/HTTP 前报错，不能被 serde 忽略。 | SP-01–04/17/18; D-21/26; V-11/20 |
 | AIR-023 | SDK Bedrock/source resolvers；选择 auth | MUST 独立于 coding-agent 提供可复用 SigV4/Bearer/profile/default-chain 和显式 custom-endpoint proxy-placeholder 来源，注入 source/HTTP/process/clock。保留来源限定的优先级、完整来源失败关闭、秘密安全和进程清理。现 opi process10s/64KiB 不是 Pi 默认，本次撤回其 SDK parity 默认地位；按固定来源机制对应，或明确 caller policy/backend 缺口。实现 full-chain/expiry fixtures；选定服务401/403后不重找身份。TUI/keychain 归宿主 adapter。 | SP-05–08 and verified AWS annex; V-09/20/55 |
-| AIR-024 | SDK 参数 validator/error/usage producers；规范化或报告 | MUST 公开先 clone 再 normalize 与原 schema 全量验证，保留 raw 和 typed 脱敏失败。采用已采纳设计中的私有 JSON-only TypeBox 方言 evaluator 与固定 Unicode16 regex 数据；jsonschema0.28.3 退出本默认路径。这是已选设计，不是已证明 SDK 等价。dialect/keyword/format/ref/regex 行为须来自固定 Pi 路径及差分语料；不增加虚构 schema 容量/work/branch 拒绝、全 pattern guard 或隐式 schema HTTP/file I/O。backend 不支持的语义保持覆盖缺口，不得伪成功。Strict wire 不是本地验证或权限；usage knownness/cost 保持区分。 | TP-12–16/O-011/P17; V-12–15/35 |
+| AIR-024 | SDK 参数 validator/error/usage producers；规范化或报告 | MUST 公开先 clone 再 normalize 与原 schema 全量验证，保留 raw 和 typed 脱敏失败。采用私有 JSON-only TypeBox 方言 evaluator 与受支持的 crates.io regress/URL/IDNA 数据 profile（RDF-21）；jsonschema0.28.3 退出本默认路径。这是已选设计，不是已证明 SDK 等价。dialect/keyword/format/ref/regex 算法须来自固定 Pi 路径及差分语料；允许的 Unicode 数据差异单独登记。不增加虚构 schema 容量/work/branch 拒绝、全 pattern guard 或隐式 schema HTTP/file I/O。backend 不支持的语义保持覆盖缺口，不得伪成功。Strict wire 不是本地验证或权限；usage knownness/cost 保持区分。 | TP-12–16/O-011/P17; V-12–15/35 |
 | AIR-025 | Catalog/collection；操作查找 | 身份 MUST 使用封闭的 Chat/Image/Classifier 加 Provider+模型，并具有类型化操作元数据。Chat 查找只返回 chat；image/classifier 不虚构 chat 限制。共享现有 catalog/auth/preparation，不另建平行 ImagesModels/单例/通用 JSON 执行。显式 SDK 注册、内置记录和经验证的动态记录都是合法来源。错误类型/路由在鉴权/HTTP 前失败。 | SP-09/EVO-009; D-13/23; V-21 |
 | AIR-026 | Typed operation runtime；generate/classify | MUST 冻结 request/model/auth 和按协议限定的 payload/options。Image 默认额外 HTTP retry0；共享 classifier helper2，保留协议排除/算法。callback/已解析结果无效不获得隐藏 retry。取消及显式或有来源的 deadline 保留唯一结果/已知计量。保持来源 timeout 范围，包括 headers 与 response body 区别；可选 caller 资源政策不变成包级默认限制。 | Current SDK contracts; V-22/50/51 |
 | AIR-027 | OpenRouter image adapter；生成 | MUST 复现固定 OpenRouter 非流式 Chat image adapter 的输入、第一个 choice 解析、text/images 顺序、data URL 识别及坏 entry 处置。返回 owned 原始 encoded media/MIME 及可选 decoded bytes/status，不 URL fetch、像素解码、写文件或切换独立 API。默认不要求至少一图、container signature 匹配、四 MIME allowlist 或比 Pi 更严格的 base64。text-only/空 images 与非匹配 entry 的跳过按真实源码；更严格媒体校验仅为显式 caller policy，不称 parity。 | SP-10/SE-08; D-13/25; V-23 |
@@ -445,11 +445,11 @@ AWS 选定来源表和精确依赖证据见 [SDK 附录 A–D](sdk-target-propos
 | TLS／ADC签名 | rustls0.23.40/ring0.17.14，实例 trust/mTLS 与显式 ALPN；native默认取固定Node参考CA bundle，scoped extra/explicit roots归source，host roots显式选择；ADC RS256 与来源要求的 TLS signing/verification/KX 通过私有 OpenSSL3 LibCtx、内建 default provider 和仅内存 EVP C API，由窄 safe Rust owner 包裹，并接 rustls 的公共 signer/WebPKI/KX seam。ring-only 签名退出；无全局 config/provider 修改或 passphrase UI |
 | WS | owned 严格 Upgrade、动态 headers/tail＋ratchet_core/ext/deflate1.2.1、公共 PMD message-state 适配与固定有限的 frame RSV/length/checked-storage 修正。TW/TTW0.28.0 退出完整目标，不靠 fallback 或 backend cap 关闭覆盖 |
 | AWS／ADC来源协议 | owned sources、source-specific retry/redirect 与完整 modes；保留 Smithy Query/XML0.62.1、xmlparser0.13.5、p2560.13.2/sha1 0.10.6 和现 hmac/sha2。无虚构总 send/depth/body 配额，不以 standard-only 替代 |
-| Schema | 私有 TypeBox JSON 方言 IR/evaluator＋regress0.12.0 算法及可重建 Unicode16 数据、serde_json preserve_order 与显式 JS key 枚举；采用私有 Unicode16 URL/IDNA/ICU family 身份与 ryu-js1.0.2，Pi normalizer 和 strict wire projection 分离。无 JS runtime、metaschema 收面、隐式 schema I/O 或猜测 work/fuel cap |
+| Schema | 私有 TypeBox JSON 方言 IR/evaluator、crates.io regress0.12.0（`default-features=false`，`std,utf16,prohibit-unsafe`）及 url2.5.8，采用受支持的上游 Unicode/IDNA 数据（RDF-21）；serde_json preserve_order、显式 JS key 枚举与 ryu-js1.0.2。Pi normalizer 和 strict wire projection 分离。无 JS runtime、metaschema 收面、隐式 schema I/O 或猜测 work/fuel cap |
 | Telemetry | tracing0.1.44/tracing-core0.1.36；owned Span＋源 Dispatch、安全私有 pinned poll/drop wrapper，含 producer。不采 ambient、不拆新 crate/domain schema 或 exporter |
 | Cargo／catalog | root 管理精确产品 graph 与 native/patch 来源；版本化真实 catalog 输入，经 schema/身份/hash 验证后原子发布。研究 lock／人工记录不替代产品／平台／artifact 验收 |
 
-[后端专项核查](pi-1.3.0-backend-gap-audit.md)与首轮离线报告保留原始反例。当前[设计就绪决定](pi-1.3.0-design-readiness.md)及新机制报告选定上述有限修正；精确版本、patch、源码及数据身份是设计的一部分，不能替换为未经修改的上游 crate。七组实施／覆盖仍全部 OPEN。正式准入、产品 graph、完整公开 conformance 与 native 平台交付分别保留门禁。
+[后端专项核查](pi-1.3.0-backend-gap-audit.md)与首轮离线报告保留原始反例。[设计就绪决定](pi-1.3.0-design-readiness.md)及机制报告选定上述有限修正；版本、patch、源码及数据身份是设计的一部分。Schema 选择已由 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile) 中获批的上游数据 profile 取代；这不授权把其他受控后端换成未经修改的上游 crate。七组完整实施／覆盖仍全部 OPEN。正式准入、产品 graph、完整公开 conformance 与 native 平台交付分别保留门禁。
 
 #### 流调度与可接受数据
 
@@ -475,7 +475,7 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 
 撤回 schema256KiB/16384 nodes/256 targets、instance8MiB/262144 nodes/depth64/pattern4KiB、work1000000、cache128/32MiB、jobs4/queue16/errors32。fancy-regex1000000 backtracks 是 backend 默认，不是 Pi fuel 或已证安全默认。撤回 cross-product regex 预检/canonical-key 重写：可能拒绝无关分支或改变约束。候选引擎 format、ECMA regex、keyword/ref/recursion 及吞 regex error 的缺口须 branch-correct 差分证明或重选 backend；不得伪成功或 blanket fail-closed parity。内部有界调度/淘汰不能仅为 tuning 数字拒绝合法 schema；同步取消不是 hard-kill。
 
-选定的私有 evaluator 拥有 TypeBox 结构 guard、mixed applicator、ref/dynamic/evaluated 状态、来源 string/number/format 规则与 fallible 分支结果；不绕过引擎私有 admission，也不降低为标准 draft。ordered JSON 视图保留 JS integer-index 枚举。固定 regress 算法＋生成的 Unicode16 数据消除已测的新属性差分。完整 normalization 和所有 formats/refs 仍需实施测试，不是未定选型。Rust UTF-8 公共字符串不表示孤立 UTF-16 surrogate／非 JSON runtime 值；保留 raw，返回 typed conversion failure，不替换或伪成功（RDF-09）。root-conversion 正确性修正继续明示。
+选定的私有 evaluator 拥有 TypeBox 结构 guard、mixed applicator、ref/dynamic/evaluated 状态、来源 string/number/format 规则与 fallible 分支结果；不绕过引擎私有 admission，也不降低为标准 draft。ordered JSON 视图保留 JS integer-index 枚举。Unicode 属性、脚本、大小写映射和 IDNA 数据随声明支持的上游依赖 profile，不承诺固定 Unicode16 或永久 Unicode17。RDF-21 允许已登记的数据驱动 regex 编译／匹配、format 和内存 URI identity 差异；不豁免 regex 语法、算法、admission 顺序、resource frame、无进展终止、normalization 或授权要求。每次升级记录 graph、有效 features、registry checksum、差异与回归。workspace lock 不固定所有库消费者的解析图；须测试普通外部消费者，包含 feature union。完整 normalization 和所有 formats/refs 仍需实施测试，不是未定选型。Rust UTF-8 公共字符串不表示孤立 UTF-16 surrogate／非 JSON runtime 值；保留 raw，返回 typed conversion failure，不替换或伪成功（RDF-09）。root-conversion 正确性修正继续明示。
 
 #### Custom API 类型与所有权 seam
 
@@ -529,7 +529,7 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 |---|---|
 | Rust后端选型与五项合同 | [当前后端附件](pi-1.3.0-rust-backends.md)；字节预算、mutation屏障、redirect/retry/proxy/TLS、Schema与typed custom API；选定版本不构成编译/准入证明 |
 | 当前完整 capability/default/protocol/flow 映射 | [Pi 1.3.0 SDK contracts](pi-1.3.0-sdk-contracts.md)；有源码支持的精确公开行为与明确 utility/platform 替代 |
-| Rust 差异、caller 影响和证明 | [RDF-01–20](pi-1.3.0-rust-differences.md)；语言／资源／正确性／平台差异与真实覆盖缺口的区分 |
+| Rust 差异、caller 影响和证明 | [RDF-01–21](pi-1.3.0-rust-differences.md)；语言／资源／正确性／平台／数据 profile 差异与真实覆盖缺口的区分 |
 | 唯一机械验收和测试迁移 | [V-01–59](acceptance-matrix.md)；54 组 SDK、4 组仅宿主影响、1 组退役，以及 41 integration+7 source-file 处置；均不是已执行验收结果 |
 | 当前输入／修订和独立评审 | [参数baseline](pi-1.2.0-parameter-revision-baseline.json)、[参数复审](pi-1.2.0-parameter-revision-review.md)、[README](README.md) |
 | 审查发现与补核范围 | [版本审查](pi-1.2.0-review.md)、[五问补核](pi-1.2.0-followup.md)；发现仅适用于各自固定的修订前输入 |
@@ -544,6 +544,6 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 
 ### 已执行研究与后端选型边界
 
-首轮[离线报告](pi-1.3.0-schema-ws-offline-validation.md)排除了未经适配的 Schema 与无 PMD WS 组合。后续[设计决定](pi-1.3.0-design-readiness.md)选定私有 source-defined JSON evaluator／生成 Unicode16 regex 数据，以及 owned Upgrade／明确适配及 patch 的 Ratchet PMD。正反例、原始失败与维护边界均保留；有限用例不证明完整等价。 后续WS长度/storage修正通过十四项纯内存测试（含十二个旧codec fixture）；不执行socket/请求，旧八十项网络观察仍固定旧patch。
+首轮[离线报告](pi-1.3.0-schema-ws-offline-validation.md)在其原等价目标下排除了未经适配的 Schema 与无 PMD WS 组合。后续[设计决定](pi-1.3.0-design-readiness.md)曾选定私有 source-defined JSON evaluator／生成 Unicode16 regex 数据，以及 owned Upgrade／明确适配及 patch 的 Ratchet PMD。当前 Schema 数据选择由 RDF-21 取代；固定 Node 观察与旧分叉结果仍是历史证据。正反例、原始失败与维护边界均保留；有限用例不证明完整等价。后续 WS 长度/storage 修正通过十四项纯内存测试（含十二个旧 codec fixture）；不执行 socket/请求，旧八十项网络观察仍固定旧 patch。本次数据迁移不完成 20.11、20.34 或 20.57。
 
 Transport/auth 实验区分 runtime redirect、ALPN、TLS 负例、metadata 作用域及参考更广的 RSA 输入集。选定的 OpenSSL 私有 context 不收窄为 ring key，也不修改全局配置。安全 tracing wrapper 和原目录 helper 已有隔离执行证据。产品代码／测试／依赖未变；七组实施／验收仍全部 OPEN。旧报告／复审／hash 保留原输入。

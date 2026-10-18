@@ -261,6 +261,7 @@ struct ToolCallState {
 }
 
 pub(crate) struct GeminiMapper {
+    snapshot: crate::stream::ProducerSnapshot,
     partial: AssistantMessage,
     saw_done: bool,
     text_started: bool,
@@ -268,8 +269,27 @@ pub(crate) struct GeminiMapper {
 }
 
 impl GeminiMapper {
+    pub(crate) fn set_snapshot(&mut self, snapshot: crate::stream::ProducerSnapshot) {
+        self.snapshot = snapshot;
+        self.snapshot.record(&self.partial);
+    }
+
+    pub(crate) fn process(
+        &mut self,
+        event: GeminiEvent,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        let events = self.process_inner(event);
+        self.snapshot.record(&self.partial);
+        events
+    }
+
+    pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
+        cause.with_partial(self.partial.clone())
+    }
+
     pub(crate) fn new(provider: &str, wire: crate::model_info::WireApi, model: &str) -> Self {
         Self {
+            snapshot: crate::stream::ProducerSnapshot::default(),
             partial: empty_assistant_message(provider, wire, model),
             saw_done: false,
             text_started: false,
@@ -277,7 +297,7 @@ impl GeminiMapper {
         }
     }
 
-    pub(crate) fn process(
+    fn process_inner(
         &mut self,
         event: GeminiEvent,
     ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
@@ -421,14 +441,12 @@ impl GeminiMapper {
                 events
             }
             GeminiEvent::Error { message: _ } => {
-                // Current producers stop the dual terminal format: an in-band
-                // provider error event is a stream failure whose bounded
-                // diagnostic rides the typed cause; the accumulated partial is
-                // preserved by the public seam (ChatStream/CallFailure).
+                // Preserve state that did not produce a public event (usage,
+                // opaque content or signatures), alongside the typed cause.
                 self.saw_done = true;
-                vec![Err(ProviderError::StreamError(
+                vec![Err(self.failure(ProviderError::StreamError(
                     ProviderErrorSummary::attested_static(UPSTREAM_STREAM_ERROR),
-                ))]
+                )))]
             }
         }
     }
@@ -733,9 +751,9 @@ impl GeminiProvider {
                         stream_events.extend(mapper.process(event));
                     }
                     ParsedEvent::Malformed => {
-                        stream_events.push(Err(ProviderError::StreamError(
+                        stream_events.push(Err(mapper.failure(ProviderError::StreamError(
                             ProviderErrorSummary::attested_static(MALFORMED_STREAM_FRAME),
-                        )));
+                        ))));
                     }
                 }
             }
@@ -756,6 +774,7 @@ impl GeminiProvider {
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
         extra_headers: Vec<(String, String)>,
+        snapshot: crate::stream::ProducerSnapshot,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let url = format!("{base_url}/v1beta/models/{model_id}:streamGenerateContent?alt=sse");
@@ -805,60 +824,67 @@ impl GeminiProvider {
             &model_id,
         );
 
-        loop {
-            let chunk = tokio::select! {
-                biased;
-                _ = cancel.cancelled() => {
-                    return Err(ProviderError::Cancelled);
-                }
-                chunk = byte_stream.next() => {
-                    match chunk {
-                        Some(c) => c,
-                        None => break,
+        mapper.set_snapshot(snapshot);
+        let result: Result<(), ProviderError> = async {
+            loop {
+                let chunk = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => {
+                        return Err(mapper.failure(ProviderError::Cancelled));
                     }
-                }
-            };
+                    chunk = byte_stream.next() => {
+                        match chunk {
+                            Some(c) => c,
+                            None => break,
+                        }
+                    }
+                };
 
-            let chunk = chunk.map_err(|error| {
-                if error.is_timeout() {
-                    ProviderError::Timeout
-                } else {
-                    ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
-                }
-            })?;
-            buffer.push_str(&decoder.push(&chunk));
+                let chunk = chunk.map_err(|error| {
+                    if error.is_timeout() {
+                        ProviderError::Timeout
+                    } else {
+                        ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                            error.to_string(),
+                        ))
+                    }
+                })?;
+                buffer.push_str(&decoder.push(&chunk));
 
-            for parsed in drain_sse_data(&mut buffer) {
-                match parsed {
-                    ParsedEvent::Valid(event) => {
-                        for item in mapper.process(event) {
-                            if !send_or_cancel(&cancel, tx, item).await? {
+                for parsed in drain_sse_data(&mut buffer) {
+                    match parsed {
+                        ParsedEvent::Valid(event) => {
+                            for item in mapper.process(event) {
+                                if !send_or_cancel(&cancel, tx, item).await? {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        ParsedEvent::Malformed => {
+                            let err = ProviderError::StreamError(
+                                ProviderErrorSummary::attested_static(MALFORMED_STREAM_FRAME),
+                            );
+                            if !send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await? {
                                 return Ok(());
                             }
                         }
                     }
-                    ParsedEvent::Malformed => {
-                        let err = ProviderError::StreamError(
-                            ProviderErrorSummary::attested_static(MALFORMED_STREAM_FRAME),
-                        );
-                        if !send_or_cancel(&cancel, tx, Err(err)).await? {
-                            return Ok(());
-                        }
-                    }
                 }
             }
-        }
 
-        let eof_tail = decoder.finish();
-        buffer.push_str(&eof_tail);
-        if !mapper.saw_done {
-            let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                "stream ended without a terminal event",
-            ));
-            let _ = send_or_cancel(&cancel, tx, Err(err)).await?;
-        }
+            let eof_tail = decoder.finish();
+            buffer.push_str(&eof_tail);
+            if !mapper.saw_done {
+                let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                    "stream ended without a terminal event",
+                ));
+                let _ = send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await?;
+            }
 
-        Ok(())
+            Ok(())
+        }
+        .await;
+        result.map_err(|cause| mapper.failure(cause))
     }
 }
 
@@ -944,31 +970,45 @@ impl Provider for GeminiProvider {
         let extra_headers = request.extra_headers;
         let http_client = self.client.client().clone();
 
+        let snapshot = crate::stream::ProducerSnapshot::default();
+        let producer_snapshot = snapshot.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let producer_cancel = cancel.clone();
 
+        let tx_closed = tx.clone();
         tokio::spawn(async move {
-            let result = Self::stream_http(
-                http_client,
-                api_key,
-                base_url,
-                model_id,
-                &body,
-                producer_cancel.clone(),
-                timeout,
-                extra_headers,
-                &tx,
-            )
-            .await;
-            match result {
-                Ok(()) | Err(ProviderError::Cancelled) => {}
-                Err(error) => {
-                    let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+            let run = async {
+                let result = Self::stream_http(
+                    http_client,
+                    api_key,
+                    base_url,
+                    model_id,
+                    &body,
+                    producer_cancel.clone(),
+                    timeout,
+                    extra_headers,
+                    producer_snapshot,
+                    &tx,
+                )
+                .await;
+                match result {
+                    Ok(()) | Err(ProviderError::Cancelled) => {}
+                    Err(error) => {
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                    }
                 }
+            };
+            tokio::select! {
+                biased;
+                _ = producer_cancel.cancelled() => (),
+                _ = tx_closed.closed() => (),
+                _ = run => (),
             }
         });
 
-        Box::pin(CancelAwareReceiverStream::new(rx, cancel))
+        Box::pin(CancelAwareReceiverStream::with_snapshot(
+            rx, cancel, snapshot,
+        ))
     }
 
     fn id(&self) -> &str {

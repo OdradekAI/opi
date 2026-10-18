@@ -1157,6 +1157,7 @@ fn message_for_session(message: &Message) -> Message {
             Message::Assistant(persisted)
         }
         Message::ToolResult(tool_result) => Message::ToolResult(ToolResultMessage {
+            not_executed: tool_result.not_executed,
             tool_call_id: tool_result.tool_call_id.clone(),
             tool_name: tool_result.tool_name.clone(),
             content: tool_result.content.clone(),
@@ -1353,6 +1354,124 @@ mod tests {
                 timestamp_ms: 0,
             },
         ))
+    }
+
+    #[test]
+    fn prepared_compaction_preserves_non_execution_facts_on_disk_and_resume() {
+        use opi_agent::message::AgentMessage;
+        use opi_agent::session::{MessageEntry, SessionEntry, SessionReader};
+        use opi_ai::message::{
+            AssistantContent, Message, OutputContent, ToolCall, ToolNotExecutedReason,
+            ToolResultMessage,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut coordinator = super::SessionCoordinator::new_for_test(
+            dir.path(),
+            "/test",
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .unwrap();
+        let mut assistant = opi_ai::test_support::base_assistant();
+        assistant.stop_reason = opi_ai::stream::StopReason::ToolUse;
+        assistant.content.push(AssistantContent::ToolCall {
+            tool_call: ToolCall {
+                id: "compaction-invalid".into(),
+                name: "write".into(),
+                arguments: "{".into(),
+                arguments_error: None,
+            },
+        });
+        let context = vec![
+            user_message("older request"),
+            user_message(&"retained request ".repeat(10_000)),
+            AgentMessage::Llm(Message::Assistant(assistant)),
+            AgentMessage::Llm(Message::ToolResult(ToolResultMessage {
+                tool_call_id: "compaction-invalid".into(),
+                tool_name: "write".into(),
+                content: vec![OutputContent::Text {
+                    text: "invalid arguments".into(),
+                }],
+                details: Some(serde_json::json!({
+                    "command": "OPI_PREPARED_SESSION_PRIVATE_CANARY",
+                })),
+                is_error: true,
+                not_executed: Some(ToolNotExecutedReason::InvalidJson),
+                truncated: false,
+                timestamp_ms: 0,
+            })),
+        ];
+        let prepared = coordinator
+            .prepare_compaction(&context, 0, true, 40_000)
+            .unwrap()
+            .expect("the older request precedes the retained tail");
+        coordinator
+            .commit_compaction(
+                prepared,
+                "older request summary",
+                &opi_ai::test_support::base_assistant(),
+                opi_agent::session_event::CompactionReason::Threshold,
+            )
+            .unwrap();
+        let path = coordinator.session_path().to_path_buf();
+        let session_id = coordinator.session_id().to_owned();
+        drop(coordinator);
+        let (_, entries, recovery) = SessionReader::read_with_recovery(&path).unwrap();
+        assert!(recovery.is_clean());
+        let result = entries
+            .iter()
+            .find_map(|entry| match entry {
+                SessionEntry::Message(MessageEntry {
+                    message: Message::ToolResult(result),
+                    ..
+                }) => Some(result),
+                _ => None,
+            })
+            .expect("prepared result was committed");
+        assert_eq!(
+            result.not_executed,
+            Some(ToolNotExecutedReason::InvalidJson)
+        );
+        assert_eq!(result.details.as_ref().unwrap()["command"], "[REDACTED]");
+        assert!(
+            !std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("OPI_PREPARED_SESSION_PRIVATE_CANARY")
+        );
+
+        let restored = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+        let reopened = super::SessionCoordinator::open_existing(
+            path,
+            session_id,
+            &entries,
+            restored.messages.len(),
+            opi_agent::compaction::CompactionConfig::default(),
+            "test:model",
+        )
+        .unwrap();
+        for messages in [
+            restored.messages,
+            reopened
+                .compaction_entries()
+                .iter()
+                .map(|entry| entry.message.clone())
+                .collect::<Vec<_>>(),
+        ] {
+            assert!(matches!(
+                messages.first(),
+                Some(AgentMessage::CompactionSummary(_))
+            ));
+            let result = messages.iter().find_map(|message| match message {
+                AgentMessage::Llm(Message::ToolResult(result)) => Some(result),
+                _ => None,
+            });
+            assert_eq!(
+                result.expect("retained tool result").not_executed,
+                Some(ToolNotExecutedReason::InvalidJson),
+                "both durable context reconstruction and reopened compaction retain facts"
+            );
+        }
     }
 
     #[test]

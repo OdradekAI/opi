@@ -196,6 +196,10 @@ transcript 接缝（`opi_ai::transcript::normalize_context`）构造每个 provi
 请求，把便利 system prompt 与可信 registry 的工具定义折叠进唯一的 leading
 system 消息（AIR-020）；adapter 只消费归一化后的输入。
 
+初始或存储的工具声明无效时，在 provider dispatch 前失败。registry 在安装时
+冻结 schema 校验；仅可信的未执行分支写入 typed `not_executed` 事实，实际执行
+过的工具结果不会声称未执行。
+
 ## 工具结果与诊断
 
 `ToolResult` 是内置工具、自定义工具和扩展工具共享的运行时结果契约：

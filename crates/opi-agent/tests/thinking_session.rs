@@ -49,6 +49,7 @@ fn session_roundtrip_preserves_thinking_for_tool_continuation() {
     let messages = vec![
         Message::Assistant(assistant()),
         Message::ToolResult(ToolResultMessage {
+            not_executed: None,
             tool_call_id: "call-1".into(),
             tool_name: "inspect".into(),
             content: vec![OutputContent::Text {

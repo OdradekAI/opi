@@ -1,152 +1,228 @@
-//! Early ordinary external-consumer proof for the opi-vendor
-//! Unicode16/ECMA/URL closure (task 20.8, DEL-04; reused at 20.57).
-//!
-//! Battery:
-//! 1. 43 frozen leaf cases (14 ECMAScript Number::toString boundaries via
-//!    ryu-js 1.0.2 safe Buffer API, 29 WHATWG URL.canParse accept/reject via
-//!    the family `url`), compared against the frozen research expectations
-//!    (Node 24.13.0 reference, 43/43 agreement).
-//! 2. Unicode-16 ECMA regex probes: the `opi-vendor-regress` fork must
-//!    accept UCD-16 property escapes and reject UCD-17-only ones, while
-//!    stock regress 0.12.0 (ordinary crates.io dependency, same graph)
-//!    accepts the UCD-17-only ones — a live differential between the two
-//!    Unicode table generations in one dependency graph.
-//! 3. Coexistence: the ordinary url 2.5.8/idna_adapter 1.2.2/ICU 2.2 chain
-//!    and the family URL/IDNA/ICU 2.0 chain both parse the same inputs in
-//!    this single graph.
+//! Offline external consumer of the packaged public Schema seam. Frozen
+//! observations remain intact; the current data-profile overlay is explicit.
 
-use serde_json::{json, Value};
+use opi_ai::schema::{SchemaError, ToolArgumentOutcome, compile, validate_tool_arguments};
+use serde_json::{Value, json};
 
-fn leaf_cases() -> Vec<Value> {
-    let doc: Value = serde_json::from_str(include_str!("../frozen/leaf-cases.json"))
-        .expect("frozen leaf cases parse");
-    doc["cases"].as_array().expect("cases array").clone()
+fn check(schema: Value, value: Value, expected: bool) -> bool {
+    compile(schema).and_then(|schema| schema.check(&value)) == Ok(expected)
 }
 
-fn leaf_expected() -> Vec<Value> {
-    serde_json::from_str::<Vec<Value>>(include_str!("../frozen/leaf-expected.json"))
-        .expect("frozen leaf expectations parse")
-}
-
-fn unicode_probes() -> Value {
-    serde_json::from_str(include_str!("../frozen/unicode16-probes.json"))
-        .expect("frozen unicode16 probes parse")
-}
-
-fn run_leaf(value: &str, kind: &str) -> Value {
-    if kind == "number-string" {
-        let number: f64 = value.parse().expect("case value parses as f64");
-        json!(ryu_js::Buffer::new().format(number).to_string())
-    } else {
-        json!(url16::Url::parse(value).is_ok())
-    }
+fn record(checks: &mut Vec<Value>, name: &str, passed: bool) {
+    checks.push(json!({"name": name, "passed": passed}));
 }
 
 fn main() {
-    let mut report = json!({});
-    let mut pass = true;
+    let frozen: Value = serde_json::from_str(include_str!("../frozen/leaf-cases.json")).unwrap();
+    let expected: Vec<Value> =
+        serde_json::from_str(include_str!("../frozen/leaf-expected.json")).unwrap();
+    let profile: Value = serde_json::from_str(include_str!("../current-profile.json")).unwrap();
+    let scripts: Value =
+        serde_json::from_str(include_str!("../frozen/unicode16-probes.json")).unwrap();
+    let mut checks = Vec::new();
 
-    // 1. Leaf battery -----------------------------------------------------
-    let cases = leaf_cases();
-    let expected = leaf_expected();
-    assert_eq!(cases.len(), 43, "frozen leaf case count");
-    assert_eq!(expected.len(), 43, "frozen leaf expectation count");
-    let mut matched = 0usize;
-    let mut mismatches = Vec::new();
-    for (case, want) in cases.iter().zip(expected.iter()) {
-        let id = case["id"].as_str().expect("case id");
-        let value = case["value"].as_str().expect("case value");
-        let kind = case["kind"].as_str().expect("case kind");
-        let got = run_leaf(value, kind);
-        if got == want["result"] {
-            matched += 1;
+    // Exercise the public SDK for all 43 original leaf cases, rather than only
+    // proving that its leaf dependencies work in isolation.
+    let string_schema = compile(json!({"type":"string"})).unwrap();
+    let url_schema = compile(json!({"type":"string", "format":"url"})).unwrap();
+    let cases = frozen["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 43);
+    assert_eq!(expected.len(), cases.len());
+    for (case, historical) in cases.iter().zip(&expected) {
+        assert_eq!(case["id"], historical["id"]);
+        let name = case["id"].as_str().unwrap();
+        let input = case["value"].as_str().unwrap();
+        let override_value = &profile["leaf_overrides"][name]["result"];
+        let want = if override_value.is_null() {
+            &historical["result"]
         } else {
-            pass = false;
-            mismatches.push(json!({"id": id, "expected": want["result"], "actual": got}));
-        }
-    }
-    report["leaf"] = json!({"matched": matched, "total": 43, "mismatches": mismatches});
-    if matched != 43 {
-        pass = false;
-    }
-
-    // 2. Unicode 16 / Unicode 17 differential ------------------------------
-    // Script-class match probes: classes added in UCD 17 must match their
-    // code points under stock regress and not under the fork; shared
-    // scripts must match under both. Compile-acceptance alone is not a
-    // discriminator (unknown script value names compile to empty classes).
-    let probes = unicode_probes();
-    let script_probes: Vec<(String, u32, bool, bool)> = probes["script_match_probes"]
-        .as_array().expect("script probes")
-        .iter()
-        .map(|p| (
-            p["pattern"].as_str().expect("pattern").to_string(),
-            p["code_point"].as_u64().expect("code point") as u32,
-            p["stock_matches"].as_bool().expect("stock expectation"),
-            p["fork_matches"].as_bool().expect("fork expectation"),
-        ))
-        .collect();
-    let mut probe_failures = Vec::new();
-    let mut stock_agreed = 0usize;
-    let mut fork_agreed = 0usize;
-    for (pattern, cp, want_stock, want_fork) in &script_probes {
-        let sample = char::from_u32(*cp).expect("valid code point").to_string();
-        let subject = "^\\p{Script=".to_string(); // unused; pattern is complete
-        let _ = subject;
-        let stock_regex = regress::Regex::with_flags(pattern.as_str(), "u")
-            .expect("stock compiles script pattern");
-        // A UCD-17-only name may fail to compile against the UCD-16 tables;
-        // either way the fork must not match the UCD-17 code point.
-        let fork_regex = regress16::Regex::with_flags(pattern.as_str(), "u");
-        let fork_match = match &fork_regex {
-            Ok(regex) => regex.find(&sample).is_some(),
-            Err(_) => false,
+            override_value
         };
-        let stock_match = stock_regex.find(&sample).is_some();
-        if stock_match == *want_stock {
-            stock_agreed += 1;
+        let actual = if case["kind"] == "number-string" {
+            let raw = json!(input.parse::<f64>().unwrap());
+            match validate_tool_arguments(&string_schema, &raw, None).unwrap() {
+                ToolArgumentOutcome::Valid { normalized } => normalized,
+                other => panic!("number conversion failed: {other:?}"),
+            }
         } else {
-            probe_failures.push(json!({"probe": pattern, "issue": "stock disagreed"}));
-        }
-        if fork_match == *want_fork {
-            fork_agreed += 1;
-        } else {
-            probe_failures.push(json!({"probe": pattern, "issue": "fork disagreed"}));
-        }
-    }
-    // The fork must still execute ordinary case-insensitive patterns
-    // against the regenerated tables.
-    let exec = regress16::Regex::with_flags("abc", "i").expect("case-insensitive pattern compiles");
-    if exec.find("ABC").is_none() {
-        probe_failures.push(json!({"pattern": "abc/i vs ABC", "issue": "case-insensitive fold match lost"}));
-    }
-    if !probe_failures.is_empty() {
-        pass = false;
-    }
-    report["unicode16"] = json!({
-        "script_probes": script_probes.len(),
-        "stock_agreed": stock_agreed,
-        "fork_agreed": fork_agreed,
-        "failures": probe_failures,
-    });
-
-    // 3. Coexistence of the two URL/IDNA/ICU chains in one graph -----------
-    let idn = "https://\u{4f8b}\u{3048}.\u{30c6}\u{30b9}\u{30c8}/\u{30d1}\u{30b9}";
-    let family_ok = url16::Url::parse(idn).is_ok();
-    let ordinary_ok = ordinary_url::Url::parse(idn).is_ok();
-    // Touch the ordinary adapter so its presence is exercised, not just resolved.
-    let _ordinary_adapter = consumer_idna_adapter::Adapter::new();
-    report["coexistence"] = json!({
-        "family_url_unicode_domain": family_ok,
-        "ordinary_url_unicode_domain": ordinary_ok,
-    });
-    if !family_ok || !ordinary_ok {
-        pass = false;
+            json!(url_schema.check(&json!(input)).unwrap())
+        };
+        record(&mut checks, name, &actual == want);
     }
 
-    report["verdict"] = if pass { Value::from("PASS") } else { Value::from("FAIL") };
-    println!("{}", serde_json::to_string_pretty(&report).expect("report serializes"));
-    if !pass {
+    // The old corpus records both backend outcomes. Its stock expectation is
+    // the current one; fork observations are retained as historical evidence.
+    for probe in scripts["script_match_probes"].as_array().unwrap() {
+        let pattern = probe["pattern"].as_str().unwrap();
+        let sample = char::from_u32(probe["code_point"].as_u64().unwrap() as u32)
+            .unwrap()
+            .to_string();
+        let want = probe["stock_matches"].as_bool().unwrap();
+        let ordinary = regress::Regex::with_flags(pattern, "u")
+            .unwrap()
+            .find(&sample)
+            .is_some();
+        record(
+            &mut checks,
+            pattern,
+            ordinary == want
+                && check(
+                    json!({"type":"string", "pattern":pattern}),
+                    json!(sample),
+                    want,
+                ),
+        );
+    }
+
+    let letter = "\u{16ea0}";
+    record(
+        &mut checks,
+        "new-letter",
+        check(json!({"pattern":"^\\p{Letter}$"}), json!(letter), true),
+    );
+    record(
+        &mut checks,
+        "old-letter",
+        check(json!({"pattern":"^\\p{Letter}$"}), json!("a"), true),
+    );
+    record(
+        &mut checks,
+        "non-letter",
+        check(json!({"pattern":"^\\p{Letter}$"}), json!("1"), false),
+    );
+    record(
+        &mut checks,
+        "named-backref",
+        check(json!({"pattern":r"^(?<n>a)\k<n>$"}), json!("aa"), true),
+    );
+    record(
+        &mut checks,
+        "named-backref-reject",
+        check(json!({"pattern":r"^(?<n>a)\k<n>$"}), json!("ab"), false),
+    );
+    record(
+        &mut checks,
+        "lookbehind",
+        check(json!({"pattern":r"(?<=a)b"}), json!("ab"), true),
+    );
+    record(
+        &mut checks,
+        "unvisited-regex-admission",
+        matches!(
+            compile(json!({"anyOf":[true,{"pattern":"("}]})),
+            Err(SchemaError::Regex { .. })
+        ),
+    );
+    record(
+        &mut checks,
+        "inert-annotation",
+        check(json!({"metadata":{"pattern":"["}}), json!({}), true),
+    );
+    record(
+        &mut checks,
+        "no-progress",
+        matches!(
+            compile(json!({"$id":"a/", "$ref":"#"})),
+            Err(SchemaError::NoProgress)
+        ),
+    );
+
+    let admitted = compile(json!({"type":"object", "properties":{"p":{"type":"string", "pattern":"^\\p{Script=Beria_Erfe}$"}}})).unwrap();
+    let raw = json!({"p":null});
+    record(
+        &mut checks,
+        "optional-null-after-successful-compile",
+        matches!(validate_tool_arguments(&admitted, &raw, None).unwrap(), ToolArgumentOutcome::Valid { normalized } if normalized == json!({})),
+    );
+    record(&mut checks, "raw-preserved", raw == json!({"p":null}));
+    record(
+        &mut checks,
+        "parse-failure-precedes-normalization",
+        validate_tool_arguments(&admitted, &raw, Some("parse failure")).unwrap()
+            == ToolArgumentOutcome::ArgumentsError,
+    );
+    let required = compile(json!({"type":"object", "properties":{"p":{"type":"string", "pattern":"^\\p{Script=Beria_Erfe}$"}}, "required":["p"]})).unwrap();
+    record(
+        &mut checks,
+        "required-null-rejected",
+        matches!(
+            validate_tool_arguments(&required, &raw, None).unwrap(),
+            ToolArgumentOutcome::Invalid { .. }
+        ),
+    );
+    let bounded = compile(json!({"type":"integer", "minimum":5})).unwrap();
+    record(
+        &mut checks,
+        "final-original-schema-check",
+        matches!(
+            validate_tool_arguments(&bounded, &json!("3"), None).unwrap(),
+            ToolArgumentOutcome::Invalid { .. }
+        ),
+    );
+
+    let raw_id = format!("http://{letter}.example/r");
+    let ace_id = "http://xn--zs0f.example/r";
+    let percent_id = "http://%F0%96%BA%A0.example/r";
+    for (label, reference, target) in [
+        ("raw-to-ace", raw_id.as_str(), ace_id),
+        ("ace-to-raw", ace_id, raw_id.as_str()),
+        ("percent-to-ace", percent_id, ace_id),
+    ] {
+        let schema =
+            compile(json!({"$ref":reference, "metadata":{"leaf":{"$id":target,"const":3}}}))
+                .unwrap();
+        record(
+            &mut checks,
+            label,
+            schema.check(&json!(3)) == Ok(true) && schema.check(&json!(4)) == Ok(false),
+        );
+    }
+    record(
+        &mut checks,
+        "ordinary-url-canonical-idna",
+        url::Url::parse(&raw_id).unwrap().as_str() == ace_id,
+    );
+    for (label, input) in [
+        ("invalid-unmapped-ace", "http://xn--7r0f.example/"),
+        ("invalid-url", "http://["),
+        ("invalid-idna-joiner", "http://a\u{200d}.example"),
+    ] {
+        record(
+            &mut checks,
+            label,
+            url_schema.check(&json!(input)) == Ok(false) && url::Url::parse(input).is_err(),
+        );
+    }
+    for format in ["idn-hostname", "idn-email"] {
+        let value = if format == "idn-email" {
+            format!("a@{letter}.example")
+        } else {
+            format!("{letter}.example")
+        };
+        record(
+            &mut checks,
+            format,
+            check(
+                json!({"type":"string", "format":format}),
+                json!(value),
+                true,
+            ),
+        );
+    }
+
+    let failed = checks
+        .iter()
+        .filter(|check| check["passed"] != true)
+        .count();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "verdict":if failed == 0 {"PASS"} else {"FAIL"},
+            "total":checks.len(), "failed":failed, "checks":checks
+        }))
+        .unwrap()
+    );
+    if failed != 0 {
         std::process::exit(1);
     }
 }

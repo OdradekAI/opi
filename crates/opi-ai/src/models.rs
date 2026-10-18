@@ -36,6 +36,7 @@
 
 use std::any::{Any, TypeId};
 use std::collections::{BTreeMap, HashMap};
+use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -532,14 +533,15 @@ impl Models {
         ChatCall::new(binding, request, options.into_call_options())
     }
 
-    /// Native entry driven to the single final outcome.
-    pub async fn complete<O: Send + 'static>(
+    /// Native entry driven to the single final outcome. Construction freezes
+    /// the owned call; authentication starts when the returned future is polled.
+    pub fn complete<O: Send + 'static>(
         &self,
         record: ChatModelRecord,
         request: Request,
         options: NativeOptions<O>,
-    ) -> Result<AssistantMessage, CallFailure> {
-        self.stream(record, request, options).result().await
+    ) -> impl Future<Output = Result<AssistantMessage, CallFailure>> + Send + 'static + use<O> {
+        self.stream(record, request, options).result()
     }
 
     /// Neutral entry: start one chat call with common options only.
@@ -560,14 +562,15 @@ impl Models {
         ChatCall::new(binding, request, CallOptions::Simple)
     }
 
-    /// Neutral entry driven to the single final outcome.
-    pub async fn complete_simple(
+    /// Neutral entry driven to the single final outcome. Construction freezes
+    /// the owned call; authentication starts when the returned future is polled.
+    pub fn complete_simple(
         &self,
         record: ChatModelRecord,
         request: Request,
         options: SimpleOptions,
-    ) -> Result<AssistantMessage, CallFailure> {
-        self.stream_simple(record, request, options).result().await
+    ) -> impl Future<Output = Result<AssistantMessage, CallFailure>> + Send + 'static + use<> {
+        self.stream_simple(record, request, options).result()
     }
 
     /// Direct entry: one chat call on a registered adapter with injected,
@@ -587,17 +590,16 @@ impl Models {
         ChatCall::new(binding, request, options.into_call_options())
     }
 
-    /// Direct entry driven to the single final outcome.
-    pub async fn complete_direct<O: Send + 'static>(
+    /// Direct entry driven to the single final outcome. Construction freezes
+    /// the owned call and injected authentication before returning the future.
+    pub fn complete_direct<O: Send + 'static>(
         &self,
         record: ChatModelRecord,
         request: Request,
         options: NativeOptions<O>,
         auth: ResolvedAuth,
-    ) -> Result<AssistantMessage, CallFailure> {
-        self.stream_direct(record, request, options, auth)
-            .result()
-            .await
+    ) -> impl Future<Output = Result<AssistantMessage, CallFailure>> + Send + 'static + use<O> {
+        self.stream_direct(record, request, options, auth).result()
     }
 
     /// Resolve one canonical `provider:model` route, validate the request,

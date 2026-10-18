@@ -476,7 +476,8 @@ async fn cache_1h_malformed_subset_stops_production_stream_with_non_retryable_er
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -495,7 +496,7 @@ async fn cache_1h_malformed_subset_stops_production_stream_with_non_retryable_er
         .await;
     assert_eq!(results.len(), 1, "invalid usage must stop the stream");
     let error = results[0].as_ref().expect_err("expected StreamError");
-    assert!(matches!(error, ProviderError::StreamError(_)));
+    assert!(error.category() == opi_ai::provider::ProviderErrorCategory::Stream);
     assert!(!error.is_retryable());
     assert!(
         !results.iter().any(|result| matches!(
@@ -572,7 +573,8 @@ fn error_event_maps_to_stream_error() {
     // Current producers stop the dual terminal format: the in-band error
     // event is a stream failure with a bounded typed cause.
     match &stream_events[0] {
-        Err(ProviderError::StreamError(summary)) => {
+        Err(cause) if cause.category() == opi_ai::provider::ProviderErrorCategory::Stream => {
+            let summary = cause.to_string();
             assert!(
                 summary.contains("anthropic stream error"),
                 "cause must be the neutral literal, got: {summary}"
@@ -934,7 +936,8 @@ fn build_request_body_includes_thinking_when_enabled() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(4096),
         temperature: None,
         thinking: ThinkingConfig {
@@ -974,7 +977,8 @@ fn build_request_body_uses_default_budget_when_none() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(4096),
         temperature: None,
         thinking: ThinkingConfig {
@@ -1016,7 +1020,8 @@ fn build_request_body_omits_thinking_when_disabled() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(4096),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1478,7 +1483,8 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1540,7 +1546,8 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),

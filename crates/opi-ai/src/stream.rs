@@ -440,7 +440,7 @@ impl AssistantStreamEvent {
 /// format converted at the [`ChatStream`] seam.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CallFailure {
-    message: crate::message::AssistantMessage,
+    message: Box<crate::message::AssistantMessage>,
     cause: ProviderError,
 }
 
@@ -457,7 +457,7 @@ impl CallFailure {
 
     /// Split into the canonical message and the typed cause.
     pub fn into_parts(self) -> (crate::message::AssistantMessage, ProviderError) {
-        (self.message, self.cause)
+        (*self.message, self.cause)
     }
 
     /// Build a failure from the latest event-time partial (if any) and a typed
@@ -469,6 +469,8 @@ impl CallFailure {
         partial: Option<crate::message::AssistantMessage>,
         cause: ProviderError,
     ) -> Self {
+        let (producer_partial, cause) = cause.into_stream_parts();
+        let partial = producer_partial.or(partial);
         let mut message = partial.unwrap_or_else(|| setup_failure_message(&cause));
         message.stop_reason = if matches!(
             cause,
@@ -481,7 +483,10 @@ impl CallFailure {
         if message.error_message.is_none() {
             message.error_message = Some(cause.to_string());
         }
-        Self { message, cause }
+        Self {
+            message: Box::new(message),
+            cause,
+        }
     }
 
     /// Convert a legacy in-band error terminal, retaining the original facts
@@ -489,7 +494,7 @@ impl CallFailure {
     pub(crate) fn from_legacy_error_event(mut message: crate::message::AssistantMessage) -> Self {
         message.stop_reason = StopReason::Error;
         Self {
-            message,
+            message: Box::new(message),
             cause: ProviderError::StreamError(ProviderErrorSummary::redacted()),
         }
     }
@@ -644,8 +649,8 @@ impl Stream for ChatStream {
                         // Absorb: release the inner attempt; the terminal event
                         // itself is delivered exactly once.
                         this.inner = None;
-                        this.terminal = Some(outcome);
-                        Poll::Ready(Some(Ok(event)))
+                        this.terminal = Some(outcome.clone());
+                        Poll::Ready(Some(outcome.map(|_| event)))
                     }
                     AssistantStreamEvent::Error { message, .. } => {
                         // Legacy in-band error terminal (historical/mock
@@ -669,23 +674,54 @@ impl Stream for ChatStream {
     }
 }
 
-/// Crate-private provider stream wrapper that gives request cancellation
-/// priority over already-buffered transport events.
+/// Call-local canonical state, including facts that emitted no public event.
+/// Cancellation reads this snapshot before discarding buffered delivery.
+#[derive(Clone, Default)]
+pub(crate) struct ProducerSnapshot(
+    std::sync::Arc<std::sync::Mutex<Option<crate::message::AssistantMessage>>>,
+);
+
+impl ProducerSnapshot {
+    pub(crate) fn record(&self, message: &crate::message::AssistantMessage) {
+        *self.0.lock().expect("producer snapshot lock") = Some(message.clone());
+    }
+
+    fn failure(&self, cause: ProviderError) -> ProviderError {
+        match self.0.lock().expect("producer snapshot lock").clone() {
+            Some(message) => cause.with_partial(message),
+            None => cause,
+        }
+    }
+}
+
+/// Gives cancellation priority over buffered events while retaining the
+/// producer's canonical partial, then closes delivery permanently.
 pub(crate) struct CancelAwareReceiverStream {
     rx: Option<tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>>,
     cancelled: Pin<Box<WaitForCancellationFutureOwned>>,
     yielded_cancelled: bool,
+    snapshot: ProducerSnapshot,
 }
 
 impl CancelAwareReceiverStream {
+    #[cfg(test)]
     pub(crate) fn new(
         rx: tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>,
         cancel: CancellationToken,
+    ) -> Self {
+        Self::with_snapshot(rx, cancel, ProducerSnapshot::default())
+    }
+
+    pub(crate) fn with_snapshot(
+        rx: tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>,
+        cancel: CancellationToken,
+        snapshot: ProducerSnapshot,
     ) -> Self {
         Self {
             rx: Some(rx),
             cancelled: Box::pin(cancel.cancelled_owned()),
             yielded_cancelled: false,
+            snapshot,
         }
     }
 }
@@ -698,7 +734,7 @@ impl Stream for CancelAwareReceiverStream {
         if !this.yielded_cancelled && this.cancelled.as_mut().poll(cx).is_ready() {
             this.rx.take();
             this.yielded_cancelled = true;
-            return Poll::Ready(Some(Err(ProviderError::Cancelled)));
+            return Poll::Ready(Some(Err(this.snapshot.failure(ProviderError::Cancelled))));
         }
 
         match this.rx.as_mut() {
@@ -729,6 +765,55 @@ mod cancellation_tests {
 
     use super::{CancelAwareReceiverStream, send_or_cancel};
     use crate::provider::{ProviderError, ProviderErrorSummary};
+
+    #[tokio::test]
+    async fn cancellation_retains_silent_producer_state_at_the_barrier() {
+        let cancel = CancellationToken::new();
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let snapshot = super::ProducerSnapshot::default();
+        let mut mapper = crate::anthropic::AnthropicMapper::new();
+        mapper.set_snapshot(snapshot.clone());
+        // Silent facts belong to the producer even when no public snapshot
+        // was queued. A task barrier ensures they exist before cancellation.
+        let (published_tx, published_rx) = tokio::sync::oneshot::channel();
+        let producer_cancel = cancel.clone();
+        let producer = tokio::spawn(async move {
+            let _keep_sender = tx;
+            assert!(
+                mapper
+                    .process(crate::anthropic::AnthropicEvent::MessageDelta {
+                        stop_reason: None,
+                        usage: super::Usage::reported(10, 7, 0, 0, None, None),
+                    })
+                    .is_empty()
+            );
+            assert!(
+                mapper
+                    .process(crate::anthropic::AnthropicEvent::ContentBlockStart {
+                        index: 0,
+                        block_type: crate::anthropic::ContentBlockType::RedactedThinking {
+                            data: "opaque-artificial".into(),
+                        },
+                    })
+                    .is_empty()
+            );
+            published_tx.send(()).unwrap();
+            producer_cancel.cancelled().await;
+        });
+        let stream = super::ChatStream::new(Box::pin(CancelAwareReceiverStream::with_snapshot(
+            rx,
+            cancel.clone(),
+            snapshot,
+        )));
+        published_rx.await.unwrap();
+        cancel.cancel();
+        let failure = stream.result().await.expect_err("one cancellation");
+        assert_eq!(failure.message().usage.output_tokens, 7);
+        assert_eq!(failure.message().content.len(), 1);
+        assert_eq!(failure.message().stop_reason, super::StopReason::Aborted);
+        assert_eq!(failure.cause(), &ProviderError::Cancelled);
+        producer.await.unwrap();
+    }
 
     #[tokio::test]
     async fn backpressured_producer_cancels_and_buffered_events_are_discarded() {
@@ -777,6 +862,37 @@ mod cancellation_tests {
         assert!(
             stream.next().await.is_none(),
             "buffered pre-cancel events must be discarded"
+        );
+    }
+
+    #[tokio::test]
+    async fn backpressured_producer_exits_at_receiver_drop_barrier() {
+        let cancel = CancellationToken::new();
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        tx.send(Err(ProviderError::Cancelled)).await.unwrap();
+        let (blocked_tx, blocked_rx) = tokio::sync::oneshot::channel();
+        let producer = tokio::spawn(async move {
+            let mut blocked_tx = Some(blocked_tx);
+            let mut send = Box::pin(send_or_cancel(&cancel, &tx, Err(ProviderError::Cancelled)));
+            std::future::poll_fn(move |cx| {
+                let outcome = send.as_mut().poll(cx);
+                if outcome.is_pending()
+                    && let Some(signal) = blocked_tx.take()
+                {
+                    signal.send(()).unwrap();
+                }
+                outcome
+            })
+            .await
+        });
+        blocked_rx.await.unwrap();
+        drop(rx);
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), producer)
+                .await
+                .unwrap()
+                .unwrap(),
+            Ok(false)
         );
     }
 

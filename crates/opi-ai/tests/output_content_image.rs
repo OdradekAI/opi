@@ -192,6 +192,7 @@ fn tool_result_message_with_image_content_serde() {
     use opi_ai::message::{Message, ToolResultMessage};
 
     let msg = Message::ToolResult(ToolResultMessage {
+        not_executed: None,
         tool_call_id: "call_1".into(),
         tool_name: "screenshot".into(),
         content: vec![

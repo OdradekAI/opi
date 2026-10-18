@@ -714,6 +714,10 @@ async fn phase8_tool_validation_failure_contract() {
         error_result.is_error,
         "validation failure result is an error result"
     );
+    assert_eq!(
+        error_result.not_executed,
+        Some(opi_ai::message::ToolNotExecutedReason::SchemaValidationFailed)
+    );
     let text = error_result.content.iter().find_map(|c| match c {
         OutputContent::Text { text } => Some(text.clone()),
         _ => None,
@@ -894,6 +898,208 @@ async fn normalization_coerces_before_authorization_and_execution() {
 }
 
 #[tokio::test]
+async fn upstream_unicode_tool_arguments_cross_authority_once() {
+    struct UnicodeTool {
+        mode: ExecutionMode,
+        executed: Arc<Mutex<Vec<serde_json::Value>>>,
+    }
+
+    impl Tool for UnicodeTool {
+        fn definition(&self) -> ToolDef {
+            ToolDef {
+                name: "unicode_probe".into(),
+                description: "Capture validated Unicode tool arguments.".into(),
+                input_schema: json!({
+                    "$ref": "#/$defs/validated",
+                    "$defs": {
+                        "validated": {
+                            "type": "object",
+                            "properties": {
+                                "script": {"type": "string", "pattern": "^\\p{Script=Beria_Erfe}$"},
+                                "letter": {"type": "string", "pattern": "^\\p{Letter}$"},
+                                "count": {"type": "integer"},
+                                "once": {"type": ["null", "integer"]}
+                            },
+                            "required": ["script", "letter", "count"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "type": "object",
+                    "properties": {
+                        "count": {"type": "integer"},
+                        "once": {"type": "null", "const": false},
+                        "ignored": 1
+                    }
+                }),
+            }
+        }
+
+        fn execution_mode(&self) -> ExecutionMode {
+            self.mode
+        }
+
+        fn execute(
+            &self,
+            _: &str,
+            arguments: serde_json::Value,
+            _: CancellationToken,
+            _: Option<opi_agent::tool::UpdateCallback>,
+        ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
+            self.executed.lock().unwrap().push(arguments);
+            Box::pin(async {
+                Ok(ToolResult {
+                    content: vec![OutputContent::Text { text: "ok".into() }],
+                    details: None,
+                    is_error: false,
+                    terminate: false,
+                    truncated: false,
+                    diagnostics: vec![],
+                })
+            })
+        }
+    }
+
+    struct UnicodeAuthorizer {
+        authorized: Arc<Mutex<Vec<serde_json::Value>>>,
+    }
+
+    impl ToolAuthorizer for UnicodeAuthorizer {
+        fn authorize(
+            &self,
+            request: ToolAuthorizationRequest,
+            _: CancellationToken,
+        ) -> Pin<Box<dyn Future<Output = Result<AuthorizationDecision, AuthorizationError>> + Send>>
+        {
+            self.authorized
+                .lock()
+                .unwrap()
+                .push(request.arguments.clone());
+            Box::pin(async move {
+                Ok(AuthorizationDecision::Allow {
+                    policy_ref: PolicyReference::new("test-policy").unwrap(),
+                    permission_ref: PermissionReference::new("test-permission").unwrap(),
+                    permission_scope: PermissionScope::new("test-scope").unwrap(),
+                    scoped_grant_ref: None,
+                    registration_id: request.registration_id,
+                    capability: request.capability,
+                    evidence_health_generation: request.evidence_health.generation(),
+                })
+            })
+        }
+    }
+
+    let character = '\u{16ea0}';
+    let raw = format!(
+        r#"{{ "script": "{character}", "letter": "{character}", "count": "7", "once": 0 }}"#
+    );
+    let invalid =
+        format!(r#"{{ "script": "7", "letter": "{character}", "count": "7", "once": 0 }}"#);
+    let expected = json!({"script": character.to_string(), "letter": character.to_string(), "count": 7, "once": null});
+
+    for mode in [ExecutionMode::Sequential, ExecutionMode::Parallel] {
+        let executed = Arc::new(Mutex::new(Vec::new()));
+        let authorized = Arc::new(Mutex::new(Vec::new()));
+        let tool = UnicodeTool {
+            mode,
+            executed: executed.clone(),
+        };
+        // The malformed properties map is inert for final validation, while
+        // the normalizer still walks its children; $ref validates the result.
+        // The first pass changes 0 to null. A second pass would delete this
+        // optional key, so equality below detects duplicate normalization.
+        let schema = validation::ToolSchemaIr::compile(&tool.definition().input_schema);
+        assert_eq!(
+            schema
+                .validate(&serde_json::from_str(&raw).unwrap())
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            schema.validate(&expected).unwrap(),
+            json!({"script": character.to_string(), "letter": character.to_string(), "count": 7})
+        );
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![
+                opi_ai::test_support::tool_call_response("accepted", "unicode_probe", &raw),
+                opi_ai::test_support::tool_call_response("rejected", "unicode_probe", &invalid),
+                opi_ai::test_support::text_response("done"),
+            ],
+        );
+        let calls = provider.call_log_handle();
+        let context = AgentLoopContext {
+            collection: Arc::new(single_route_collection(Box::new(provider))),
+            registry: common::test_registry(vec![Box::new(tool)]),
+            authorizer: Some(Arc::new(UnicodeAuthorizer {
+                authorized: authorized.clone(),
+            })),
+            evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
+            state: NextTurnState::new(
+                Vec::new(),
+                ModelSelection::new("mock", "mock-model"),
+                InferenceConfig::default(),
+            ),
+            system: None,
+            steering_queue: None,
+            follow_up_queue: None,
+            diagnostic_sink: None,
+            session_id: None,
+            evidence_sink: None,
+        };
+        let hooks = LengthProbeHooks::default();
+        let result = opi_agent::agent_loop(
+            context,
+            AgentLoopConfig::default(),
+            &hooks,
+            Box::new(|_| {}),
+            CancellationToken::new(),
+        )
+        .await;
+
+        assert!(result.error().is_none(), "{result:?}");
+        assert_eq!(calls.lock().unwrap().len(), 3);
+        assert_eq!(
+            authorized.lock().unwrap().as_slice(),
+            std::slice::from_ref(&expected)
+        );
+        assert_eq!(
+            executed.lock().unwrap().as_slice(),
+            std::slice::from_ref(&expected)
+        );
+        assert_eq!(
+            hooks.before_args.lock().unwrap().as_slice(),
+            &[
+                serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
+                serde_json::from_str::<serde_json::Value>(&invalid).unwrap()
+            ]
+        );
+        let retained: Vec<_> = result
+            .state()
+            .context
+            .iter()
+            .filter_map(|message| match message {
+                AgentMessage::Llm(Message::Assistant(message)) => Some(message),
+                _ => None,
+            })
+            .flat_map(|message| &message.content)
+            .filter_map(|content| match content {
+                AssistantContent::ToolCall { tool_call } => Some(tool_call.arguments.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(retained, [raw.as_str(), invalid.as_str()]);
+        let completed = hooks.completed.lock().unwrap();
+        assert!(!completed[0].tool_results[0].is_error);
+        assert_eq!(completed[0].tool_results[0].not_executed, None);
+        assert!(completed[1].tool_results[0].is_error);
+        assert_eq!(
+            completed[1].tool_results[0].not_executed,
+            Some(opi_ai::message::ToolNotExecutedReason::SchemaValidationFailed)
+        );
+    }
+}
+
+#[tokio::test]
 async fn phase8_malformed_tool_arguments_do_not_execute_permissive_tool() {
     use opi_agent::diagnostic::code::CODE_TOOL_VALIDATION_FAILED;
     use opi_agent::diagnostic_sink::RecordingSink;
@@ -990,6 +1196,11 @@ async fn phase8_malformed_tool_arguments_do_not_execute_permissive_tool() {
         })
         .expect("malformed arguments produce a persisted tool result");
     assert!(error_result.is_error);
+    assert_eq!(
+        error_result.not_executed,
+        Some(opi_ai::message::ToolNotExecutedReason::InvalidJson),
+        "the parse rejection records trusted non-execution"
+    );
     assert!(error_result.content.iter().any(
         |c| matches!(c, OutputContent::Text { text } if text.contains("tool arguments were not valid JSON"))
     ));
@@ -1187,6 +1398,11 @@ async fn phase8_malformed_tool_arguments_do_not_execute_parallel_permissive_tool
         })
         .expect("malformed arguments produce a persisted tool result");
     assert!(error_result.is_error);
+    assert_eq!(
+        error_result.not_executed,
+        Some(opi_ai::message::ToolNotExecutedReason::InvalidJson),
+        "the parse rejection records trusted non-execution"
+    );
     assert!(error_result.content.iter().any(
         |c| matches!(c, OutputContent::Text { text } if text.contains("tool arguments were not valid JSON"))
     ));
@@ -1240,6 +1456,7 @@ impl Tool for LengthProbeTool {
 #[derive(Default)]
 struct LengthProbeHooks {
     before: AtomicUsize,
+    before_args: Mutex<Vec<serde_json::Value>>,
     after: AtomicUsize,
     prepare: AtomicUsize,
     completed: Mutex<Vec<ShouldStopAfterTurnContext>>,
@@ -1259,9 +1476,10 @@ impl AgentHooks for LengthProbeHooks {
 
     fn before_tool_call(
         &self,
-        _: BeforeToolCallContext,
+        context: BeforeToolCallContext,
     ) -> Pin<Box<dyn Future<Output = BeforeToolCallResult> + Send>> {
         self.before.fetch_add(1, Ordering::SeqCst);
+        self.before_args.lock().unwrap().push(context.args);
         Box::pin(async { BeforeToolCallResult::Continue })
     }
 
@@ -1344,6 +1562,94 @@ fn length_context(
     }
 }
 
+async fn check_arguments_error_rejection(mode: ExecutionMode) {
+    let raw = r#"{"value":7}"#;
+    let marker = "final argument parse failed";
+    let mut message = base_msg();
+    message.stop_reason = StopReason::ToolUse;
+    message.content.push(AssistantContent::ToolCall {
+        tool_call: ToolCall {
+            id: "marked".into(),
+            name: "length_probe".into(),
+            arguments: raw.into(),
+            arguments_error: Some(marker.into()),
+        },
+    });
+    let provider = ScriptedProvider::new(vec![
+        vec![
+            AssistantStreamEvent::Start {
+                partial: base_msg(),
+            },
+            AssistantStreamEvent::Done {
+                reason: StopReason::ToolUse,
+                message,
+            },
+        ],
+        text_response("recovered"),
+    ]);
+    let executions = Arc::new(AtomicUsize::new(0));
+    let authorizations = Arc::new(AtomicUsize::new(0));
+    let hooks = LengthProbeHooks::default();
+    let result = opi_agent::agent_loop(
+        length_context(provider, mode, executions.clone(), authorizations.clone()),
+        AgentLoopConfig::default(),
+        &hooks,
+        Box::new(|_| {}),
+        CancellationToken::new(),
+    )
+    .await;
+    assert!(result.error().is_none(), "{result:?}");
+    assert_eq!(
+        executions.load(Ordering::SeqCst),
+        0,
+        "owned arguments_error must reject a parseable proposal"
+    );
+    assert_eq!(authorizations.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        hooks.before.load(Ordering::SeqCst),
+        1,
+        "the existing proposal observer still runs"
+    );
+    assert_eq!(*hooks.before_args.lock().unwrap(), vec![json!({"value":7})]);
+    assert_eq!(hooks.after.load(Ordering::SeqCst), 0);
+    let proposal = result
+        .state()
+        .context
+        .iter()
+        .find_map(|message| match message {
+            AgentMessage::Llm(Message::Assistant(message)) => {
+                message.content.iter().find_map(|block| match block {
+                    AssistantContent::ToolCall { tool_call } => Some(tool_call),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+        .expect("the raw rejected proposal is retained");
+    assert_eq!(proposal.arguments, raw);
+    assert_eq!(proposal.arguments_error.as_deref(), Some(marker));
+    let round_trip: ToolCall =
+        serde_json::from_str(&serde_json::to_string(proposal).unwrap()).unwrap();
+    assert_eq!(&round_trip, proposal);
+    let completed = hooks.completed.lock().unwrap();
+    let rejected = &completed[0].tool_results[0];
+    assert!(rejected.is_error);
+    assert_eq!(
+        rejected.not_executed,
+        Some(opi_ai::message::ToolNotExecutedReason::InvalidJson)
+    );
+}
+
+#[tokio::test]
+async fn arguments_error_prevents_sequential_authorization_and_execution() {
+    check_arguments_error_rejection(ExecutionMode::Sequential).await;
+}
+
+#[tokio::test]
+async fn arguments_error_prevents_parallel_authorization_and_execution() {
+    check_arguments_error_rejection(ExecutionMode::Parallel).await;
+}
+
 async fn check_length_tool_batch(mode: ExecutionMode, final_arguments: &str) {
     use opi_agent::event::AgentEvent;
 
@@ -1387,6 +1693,11 @@ async fn check_length_tool_batch(mode: ExecutionMode, final_arguments: &str) {
     for (index, result) in rejected.iter().enumerate() {
         assert_eq!(result.tool_call_id, format!("partial-{index}"));
         assert!(result.is_error);
+        assert_eq!(
+            result.not_executed,
+            Some(opi_ai::message::ToolNotExecutedReason::OutputLimit),
+            "only the trusted pre-launch branch records non-execution"
+        );
         assert!(!result.truncated, "the synthetic failure text is complete");
         assert!(result.content.iter().any(|content| matches!(
             content,
@@ -1394,6 +1705,7 @@ async fn check_length_tool_batch(mode: ExecutionMode, final_arguments: &str) {
         )));
     }
     assert!(!completed[1].tool_results[0].is_error);
+    assert_eq!(completed[1].tool_results[0].not_executed, None);
     let batch_events: Vec<String> = events
         .lock()
         .unwrap()
@@ -1444,6 +1756,81 @@ async fn length_sequential_batch_rejects_earlier_valid_call_with_malformed_tail(
 #[tokio::test]
 async fn length_parallel_batch_rejects_earlier_valid_call_with_malformed_tail() {
     check_length_tool_batch(ExecutionMode::Parallel, r#"{"value":"cut"#).await;
+}
+
+#[tokio::test]
+async fn executed_error_results_never_claim_non_execution() {
+    struct EffectErrorTool {
+        mode: ExecutionMode,
+        effects: Arc<AtomicUsize>,
+    }
+
+    impl Tool for EffectErrorTool {
+        fn definition(&self) -> ToolDef {
+            ToolDef {
+                name: "effect_error".into(),
+                description: "Record a real effect before reporting failure".into(),
+                input_schema: json!({"type":"object"}),
+            }
+        }
+
+        fn execution_mode(&self) -> ExecutionMode {
+            self.mode
+        }
+
+        fn execute(
+            &self,
+            _: &str,
+            _: serde_json::Value,
+            _: CancellationToken,
+            _: Option<opi_agent::tool::UpdateCallback>,
+        ) -> Pin<Box<dyn Future<Output = Result<ToolResult, ToolError>> + Send>> {
+            self.effects.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Err(ToolError::ExecutionFailed("failed after effect".into())) })
+        }
+    }
+
+    for mode in [ExecutionMode::Sequential, ExecutionMode::Parallel] {
+        let effects = Arc::new(AtomicUsize::new(0));
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("effect", "effect_error", "{}"),
+            text_response("done"),
+        ]);
+        let mut context = length_context(
+            provider,
+            mode,
+            effects.clone(),
+            Arc::new(AtomicUsize::new(0)),
+        );
+        context.registry = common::test_registry(vec![Box::new(EffectErrorTool {
+            mode,
+            effects: effects.clone(),
+        })]);
+        let result = opi_agent::agent_loop(
+            context,
+            AgentLoopConfig::default(),
+            &LengthProbeHooks::default(),
+            Box::new(|_| {}),
+            CancellationToken::new(),
+        )
+        .await;
+        assert!(result.error().is_none(), "{result:?}");
+        assert_eq!(effects.load(Ordering::SeqCst), 1);
+        let recorded = result
+            .state()
+            .context
+            .iter()
+            .find_map(|message| match message {
+                AgentMessage::Llm(Message::ToolResult(result)) => Some(result),
+                _ => None,
+            })
+            .expect("the actual error result is retained");
+        assert!(recorded.is_error);
+        assert_eq!(
+            recorded.not_executed, None,
+            "an error after execution is not a non-execution fact"
+        );
+    }
 }
 
 #[tokio::test]

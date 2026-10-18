@@ -267,9 +267,9 @@ async fn vertex_error_event_routing() {
     // Current producers stop the dual terminal format: the error event routes
     // to a typed stream failure, not an Error event.
     assert!(
-        items
-            .iter()
-            .any(|e| matches!(e, Err(ProviderError::StreamError(_)))),
+        items.iter().any(|e| e.as_ref().is_err_and(
+            |cause| cause.category() == opi_ai::provider::ProviderErrorCategory::Stream
+        )),
         "should have a typed stream failure"
     );
     assert!(
@@ -319,7 +319,8 @@ fn vertex_request_body_uses_gemini_format() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -402,7 +403,8 @@ fn lifecycle_text_request() -> Request {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -873,7 +875,7 @@ async fn assert_vertex_cancelled(stall_point: VertexStallPoint) {
     assert!(
         matches!(
             remaining.as_slice(),
-            [Err(opi_ai::provider::ProviderError::Cancelled)]
+            [Err(cause)] if cause.category() == opi_ai::provider::ProviderErrorCategory::Cancelled
         ),
         "Vertex cancellation must yield exactly one typed error, got {remaining:?}"
     );

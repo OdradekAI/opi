@@ -230,6 +230,10 @@ each provider request through the SDK's canonical transcript seam
 prompt and the trusted registry's tool definitions into one leading system
 message (AIR-020); adapters consume only that normalized input.
 
+Invalid initial or stored tool declarations fail before provider dispatch. The
+registry freezes schema validation at installation; only trusted non-execution
+branches write typed `not_executed` facts, and actual tool effects never do.
+
 ## Tool Results and Diagnostics
 
 `ToolResult` is the runtime result contract shared by built-in tools, custom

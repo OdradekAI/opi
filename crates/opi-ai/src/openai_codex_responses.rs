@@ -171,6 +171,7 @@ impl OpenAiCodexResponsesProvider {
         timeout: Option<std::time::Duration>,
         session_id: Option<String>,
         request_id: Option<String>,
+        snapshot: crate::stream::ProducerSnapshot,
         tx: tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let account_id = resolved
@@ -244,65 +245,74 @@ impl OpenAiCodexResponsesProvider {
             crate::model_info::WireApi::OpenAiCodexResponses,
             &requested_model,
         );
-        loop {
-            let chunk = tokio::select! {
-                _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
-                chunk = bytes.next() => match chunk {
-                    Some(chunk) => chunk,
-                    None => break,
-                },
-            };
-            let chunk = chunk.map_err(|error| {
-                if error.is_timeout() {
-                    ProviderError::Timeout
-                } else if error.is_connect() {
-                    ProviderError::Network(ProviderErrorSummary::sanitized(error.to_string()))
-                } else {
-                    ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
-                }
-            })?;
-            buffer.push_str(&decoder.push(&chunk));
-            for frame in drain_sse_frames(&mut buffer) {
-                match ResponsesEvent::try_from_frame(&frame) {
-                    ParsedEvent::Valid(event) => {
-                        let event = match event {
-                            ResponsesEvent::Error { .. } => ResponsesEvent::Error {
-                                message: UPSTREAM_STREAM_ERROR.to_owned(),
-                            },
-                            event => event,
-                        };
-                        for item in mapper.process(event) {
-                            if !send_or_cancel(&cancel, &tx, item).await? {
-                                return Ok(());
+        mapper.set_snapshot(snapshot);
+        let result: Result<(), ProviderError> = async {
+            loop {
+                let chunk = tokio::select! {
+                    _ = cancel.cancelled() => return Err(mapper.failure(ProviderError::Cancelled)),
+                    chunk = bytes.next() => match chunk {
+                        Some(chunk) => chunk,
+                        None => break,
+                    },
+                };
+                let chunk = chunk.map_err(|error| {
+                    if error.is_timeout() {
+                        ProviderError::Timeout
+                    } else if error.is_connect() {
+                        ProviderError::Network(ProviderErrorSummary::sanitized(error.to_string()))
+                    } else {
+                        ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                            error.to_string(),
+                        ))
+                    }
+                })?;
+                buffer.push_str(&decoder.push(&chunk));
+                for frame in drain_sse_frames(&mut buffer) {
+                    match ResponsesEvent::try_from_frame(&frame) {
+                        ParsedEvent::Valid(event) => {
+                            let event = match event {
+                                ResponsesEvent::Error { .. } => ResponsesEvent::Error {
+                                    message: UPSTREAM_STREAM_ERROR.to_owned(),
+                                },
+                                event => event,
+                            };
+                            for item in mapper.process(event) {
+                                if !send_or_cancel(&cancel, &tx, item).await? {
+                                    return Ok(());
+                                }
                             }
                         }
-                    }
-                    ParsedEvent::UsageError(error) => {
-                        return Err(ProviderError::StreamError(ProviderErrorSummary::sanitized(
-                            error,
-                        )));
-                    }
-                    ParsedEvent::Malformed { .. } => {
-                        return Err(ProviderError::StreamError(
-                            ProviderErrorSummary::attested_static(MALFORMED_STREAM_ERROR),
-                        ));
+                        ParsedEvent::UsageError(error) => {
+                            return Err(mapper.failure(ProviderError::StreamError(
+                                ProviderErrorSummary::sanitized(error),
+                            )));
+                        }
+                        ParsedEvent::Malformed { .. } => {
+                            return Err(mapper.failure(ProviderError::StreamError(
+                                ProviderErrorSummary::attested_static(MALFORMED_STREAM_ERROR),
+                            )));
+                        }
                     }
                 }
             }
+            let eof_tail = decoder.finish();
+            buffer.push_str(&eof_tail);
+            if !mapper.saw_done {
+                let _ = send_or_cancel(
+                    &cancel,
+                    &tx,
+                    Err(mapper.failure(ProviderError::StreamError(
+                        ProviderErrorSummary::attested_static(
+                            "stream ended without a terminal event",
+                        ),
+                    ))),
+                )
+                .await;
+            }
+            Ok(())
         }
-        let eof_tail = decoder.finish();
-        buffer.push_str(&eof_tail);
-        if !mapper.saw_done {
-            let _ = send_or_cancel(
-                &cancel,
-                &tx,
-                Err(ProviderError::StreamError(
-                    ProviderErrorSummary::attested_static("stream ended without a terminal event"),
-                )),
-            )
-            .await;
-        }
-        Ok(())
+        .await;
+        result.map_err(|cause| mapper.failure(cause))
     }
 }
 
@@ -368,6 +378,8 @@ impl Provider for OpenAiCodexResponsesProvider {
         };
         let cancel = request.cancel.clone();
         let client = self.client.client().clone();
+        let snapshot = crate::stream::ProducerSnapshot::default();
+        let producer_snapshot = snapshot.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let stream_cancel = cancel.clone();
 
@@ -384,7 +396,11 @@ impl Provider for OpenAiCodexResponsesProvider {
                     }))
                     .await;
             });
-            return Box::pin(CancelAwareReceiverStream::new(rx, stream_cancel));
+            return Box::pin(CancelAwareReceiverStream::with_snapshot(
+                rx,
+                stream_cancel,
+                snapshot,
+            ));
         }
 
         let tx_closed = tx.clone();
@@ -410,6 +426,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                     timeout,
                     session_id,
                     request_id,
+                    producer_snapshot,
                     tx.clone(),
                 )
                 .await
@@ -424,7 +441,11 @@ impl Provider for OpenAiCodexResponsesProvider {
                 _ = work => {},
             }
         });
-        Box::pin(CancelAwareReceiverStream::new(rx, stream_cancel))
+        Box::pin(CancelAwareReceiverStream::with_snapshot(
+            rx,
+            stream_cancel,
+            snapshot,
+        ))
     }
 }
 

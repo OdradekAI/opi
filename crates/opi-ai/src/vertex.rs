@@ -133,11 +133,11 @@ impl VertexProvider {
                         stream_events.extend(mapper.process(event));
                     }
                     ParsedEvent::Malformed => {
-                        stream_events.push(Err(ProviderError::StreamError(
+                        stream_events.push(Err(mapper.failure(ProviderError::StreamError(
                             ProviderErrorSummary::attested_static(
                                 "Vertex returned a malformed streaming frame",
                             ),
-                        )));
+                        ))));
                     }
                 }
             }
@@ -187,31 +187,45 @@ impl Provider for VertexProvider {
         let extra_headers = request.extra_headers;
         let http_client = self.client.client().clone();
 
+        let snapshot = crate::stream::ProducerSnapshot::default();
+        let producer_snapshot = snapshot.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let producer_cancel = cancel.clone();
 
+        let tx_closed = tx.clone();
         tokio::spawn(async move {
-            let result = stream_vertex_http(
-                http_client,
-                access_token,
-                &url,
-                requested_model,
-                &body,
-                producer_cancel.clone(),
-                timeout,
-                extra_headers,
-                &tx,
-            )
-            .await;
-            match result {
-                Ok(()) | Err(ProviderError::Cancelled) => {}
-                Err(error) => {
-                    let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+            let run = async {
+                let result = stream_vertex_http(
+                    http_client,
+                    access_token,
+                    &url,
+                    requested_model,
+                    &body,
+                    producer_cancel.clone(),
+                    timeout,
+                    extra_headers,
+                    producer_snapshot,
+                    &tx,
+                )
+                .await;
+                match result {
+                    Ok(()) | Err(ProviderError::Cancelled) => {}
+                    Err(error) => {
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                    }
                 }
+            };
+            tokio::select! {
+                biased;
+                _ = producer_cancel.cancelled() => (),
+                _ = tx_closed.closed() => (),
+                _ = run => (),
             }
         });
 
-        Box::pin(CancelAwareReceiverStream::new(rx, cancel))
+        Box::pin(CancelAwareReceiverStream::with_snapshot(
+            rx, cancel, snapshot,
+        ))
     }
 }
 
@@ -226,6 +240,7 @@ async fn stream_vertex_http(
     cancel: CancellationToken,
     timeout: Option<std::time::Duration>,
     extra_headers: Vec<(String, String)>,
+    snapshot: crate::stream::ProducerSnapshot,
     tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
 ) -> Result<(), ProviderError> {
     let route_headers = vec![
@@ -276,67 +291,73 @@ async fn stream_vertex_http(
     );
     let mut saw_done = false;
 
-    loop {
-        let chunk = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => {
-                return Err(ProviderError::Cancelled);
-            }
-            chunk = byte_stream.next() => {
-                match chunk {
-                    Some(c) => c,
-                    None => break,
+    mapper.set_snapshot(snapshot);
+    let result: Result<(), ProviderError> = async {
+        loop {
+            let chunk = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    return Err(mapper.failure(ProviderError::Cancelled));
                 }
-            }
-        };
-
-        let chunk = chunk.map_err(|error| {
-            if error.is_timeout() {
-                ProviderError::Timeout
-            } else {
-                ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
-            }
-        })?;
-        buffer.push_str(&decoder.push(&chunk));
-
-        for parsed in drain_sse_data(&mut buffer) {
-            match parsed {
-                ParsedEvent::Valid(event) => {
-                    for item in mapper.process(event) {
-                        let is_terminal = match &item {
-                            Ok(terminal_event) => terminal_event.is_terminal(),
-                            Err(_) => true,
-                        };
-                        if !send_or_cancel(&cancel, tx, item).await? {
-                            return Ok(());
-                        }
-                        if is_terminal {
-                            saw_done = true;
-                        }
+                chunk = byte_stream.next() => {
+                    match chunk {
+                        Some(c) => c,
+                        None => break,
                     }
                 }
-                ParsedEvent::Malformed => {
-                    let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                        "Vertex returned a malformed streaming frame",
-                    ));
-                    if !send_or_cancel(&cancel, tx, Err(err)).await? {
-                        return Ok(());
+            };
+
+            let chunk = chunk.map_err(|error| {
+                if error.is_timeout() {
+                    ProviderError::Timeout
+                } else {
+                    ProviderError::StreamError(ProviderErrorSummary::sanitized(error.to_string()))
+                }
+            })?;
+            buffer.push_str(&decoder.push(&chunk));
+
+            for parsed in drain_sse_data(&mut buffer) {
+                match parsed {
+                    ParsedEvent::Valid(event) => {
+                        for item in mapper.process(event) {
+                            let is_terminal = match &item {
+                                Ok(terminal_event) => terminal_event.is_terminal(),
+                                Err(_) => true,
+                            };
+                            if !send_or_cancel(&cancel, tx, item).await? {
+                                return Ok(());
+                            }
+                            if is_terminal {
+                                saw_done = true;
+                            }
+                        }
+                    }
+                    ParsedEvent::Malformed => {
+                        let err =
+                            ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                                "Vertex returned a malformed streaming frame",
+                            ));
+                        if !send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await? {
+                            return Ok(());
+                        }
                     }
                 }
             }
         }
-    }
 
-    let eof_tail = decoder.finish();
-    buffer.push_str(&eof_tail);
-    if !saw_done {
-        let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
-            "stream ended without a terminal event",
-        ));
-        let _ = send_or_cancel(&cancel, tx, Err(err)).await?;
-    }
+        let eof_tail = decoder.finish();
+        buffer.push_str(&eof_tail);
+        if !saw_done {
+            let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                "stream ended without a terminal event",
+            ));
+            let _ = send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await?;
+        }
 
-    Ok(())
+        Ok(())
+    }
+    .await;
+    result.map_err(|cause| mapper.failure(cause))
 }
 
 fn map_vertex_status(

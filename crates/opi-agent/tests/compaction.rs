@@ -423,6 +423,7 @@ fn tool_result_with_image(id: &str, text: &str) -> Entry {
     Entry {
         id: id.into(),
         message: AgentMessage::Llm(Message::ToolResult(ToolResultMessage {
+            not_executed: None,
             tool_call_id: "tc_1".into(),
             tool_name: "screenshot".into(),
             content: vec![

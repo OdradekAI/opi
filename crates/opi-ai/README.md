@@ -61,7 +61,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `Request` / `CacheRetention` | Provider request: model, messages, tools, token limits, thinking config, metadata, cancellation, timeout, extra headers, cache retention, and session affinity. |
 | `Message` | Provider-facing user, assistant, and tool-result messages. |
 | `InputContent` / `OutputContent` | Text and image content blocks. |
-| `ToolResultMessage` | Provider-facing tool-result message: content, optional details, `is_error`, `truncated`, and timestamp metadata. |
+| `ToolResultMessage` | Tool-result content, details, error/truncation/time metadata and optional typed `not_executed` facts from the trusted execution boundary. Historical absence means unknown effect; ordinary error text never proves non-execution. |
 | `AssistantStreamEvent` | Provider-neutral stream events for start, text, thinking, tool calls, and done. The in-band `Error` terminal is a read-only legacy format retained for deserializing historical saved events; current producers never emit it. |
 | `ChatStream` | The public owner of one logical call's event stream: iteration is `Stream<Item = Result<AssistantStreamEvent, CallFailure>>` with first-terminal absorption into permanent EOF, and `result(self)` actively drains to the single final outcome. |
 | `CallFailure` | The single final failure of one logical call: the canonical partial/terminal `AssistantMessage` (content, provenance, diagnostics, known usage; setup failures have none) plus a typed redacted cause. |
@@ -318,13 +318,24 @@ lexical/resource/dynamic/recursive reference frames. Evaluation runs on an
 explicit work stack (schema depth cannot exhaust the Rust call stack),
 distinguishes productive recursion from no-progress recursion as a typed
 failure, and carries no implicit I/O or source-free size/fuel limits.
-Regex leaves compile at admission with the exact regress 0.12.0 feature
-profile; URL-family formats use the WHATWG `url` implementation. The engine is
-evidence-only substrate: it closes no product acceptance; the public
-normalizer/validator seam (and the packaged Unicode-16 backend identity) are
-later slices. Structurally selected invalid regexes fail admission even in
-branches the upstream would never visit — a documented fail-closed
-divergence.
+Regex admission follows source-selected schema edges; annotation objects are
+not schemas unless reached as reference targets. Reference targets are frozen
+in the compiled plan, including resource effects from fields absent in the
+instance. Admission reports `NoProgress` only after proving that a repeated
+compiler prefix's URI decisions and function-cache membership remain invariant;
+it does not prune active nodes or impose an iteration limit. Null reference
+targets use the source's false fallback; root null and root/referenced numbers
+or strings fail with `InvalidSchema`, while JSON arrays remain inert.
+Regex and URL operations use upstream crates.io `regress 0.12.0` and `url 2.5.8`.
+Unicode properties, scripts, case mapping and IDNA data follow the supported
+dependency profile, rather than a fixed Unicode version. The permitted data
+differences and upgrade checks are recorded in
+[RDF-21](../../docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile).
+The workspace lock does not fix every library consumer's graph. Opi disables
+regress default features and enables `std`, `utf16`, `prohibit-unsafe`; ordinary
+external consumers also exercise feature union. These data differences do not
+relax schema guards, admission/ref order, normalization, authorization or the
+no-I/O contract. Full conformance and package/platform acceptance remain open.
 
 ## Public Tool-Argument Normalizer/Validator
 
@@ -355,9 +366,11 @@ ID: a closed batch may reuse an ID, but a duplicate call ID, duplicate
 result, orphan result or result/call name mismatch inside a batch is a
 typed `ReplayError` raised before any request is built (before
 authorization or network). An unambiguous missing result closes
-request-locally with a synthetic error result stating the result is
-unavailable and the execution effect is unknown - never "not executed",
-never re-executed; only a trusted Agent path records known non-execution.
+request-locally with an error stating the result is unavailable and the
+execution effect is unknown - never "not executed", never re-executed;
+only a trusted execution boundary records known non-execution. When the
+failed assistant's call view is omitted, a sanitized ordinary user context
+retains the missing-result fact without fabricating a tool call or result.
 Continuation identity is the exact wire plus provider plus requested model
 (`AssistantMessage.wire`, serde-defaulted: legacy-unknown is never
 same-identity). Cross-identity turns drop every thinking block - readable,
@@ -389,8 +402,8 @@ close with later tasks.
 `transcript` owns the canonical request chronology (AIR-008/011/020): the
 public `Context` shorthand (`system_prompt`, `messages`, `tools`) folds
 exactly once into a leading `Message::System` entry through
-`transcript::normalize_context`, the single constructor of
-`TranscriptContext` — a raw shorthand cannot reach provider code. Later
+`transcript::normalize_context`, returning a typed
+`Result<TranscriptContext, TranscriptError>` — a raw shorthand cannot reach provider code. Later
 system messages change the running state: `content` appends, named
 `sections` replace in order (`None` deletes, delete+readd appends), and
 `tools_added`/`tools_removed` change the tool set by value (a redefinition
@@ -402,7 +415,8 @@ else collapses to one replayed head — always a fresh value; the canonical
 chronology is never rewritten. Explicit `TranscriptProjection::Strict`
 rejects a transcript whose temporal placement the transport cannot honor
 before any request is built. Declaration installation
-(`TranscriptContext::append_system_change`) validates names (non-empty,
+(initial normalization, embedded system messages, deserialization and
+`TranscriptContext::append_system_change`) validates names (non-empty,
 unique per batch) and compiles input schemas under the private dialect
 engine, failing with a typed error before the message enters the
 transcript. `Request` carries `context: TranscriptContext` instead of

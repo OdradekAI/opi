@@ -52,7 +52,8 @@ fn request() -> Request {
                 description: "Read a file".into(),
                 input_schema: serde_json::json!({"type":"object"}),
             }],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: Some(0.2),
         thinking: ThinkingConfig {

@@ -2,6 +2,21 @@
 
 ### Breaking Changes
 
+- `opi-ai`: schema regex and URL/IDNA data now follow the supported crates.io
+  dependency profile instead of a fixed Unicode 16 fork (RDF-21). Newly assigned
+  letters, script names and domain mappings can change schema admission,
+  matching and normalization, including when saved declarations are recompiled.
+  TypeBox algorithms, typed failures and tool authorization remain unchanged.
+- `opi-ai`: `SchemaError` adds `InvalidSchema { path }` for root null and
+  root/referenced number/string schema nodes that the pinned compiler cannot
+  build. A reference resolving to null retains the source's false-target fallback;
+  JSON arrays keep the source's inert behavior.
+- `opi-ai`: `normalize_context` returns `Result<TranscriptContext, TranscriptError>`;
+  initial shorthand, embedded system declarations and deserialization reject
+  invalid declaration batches before dispatch. `ToolResultMessage` adds a
+  serde-defaulted `not_executed` reason written by trusted execution boundaries;
+  historical absence remains unknown, never inferred from error text.
+
 - `opi-ai`: `ProviderCollection` is replaced by a single `Models` driver
   (`provider_collection` module renamed to `models`; `CollectionError` is
   now `ModelsError`). All current callers migrate together: `register`,
@@ -30,6 +45,40 @@
   the turn's events and Agent state (in-band terminals unchanged; mid-stream
   failures previously lost the partial). Premature EOF surfaces as the
   typed stream-failure error instead of `AgentError::ProviderProtocol`.
+
+### Fixed
+
+- Completion futures freeze owned calls before polling and remain `Send +
+  'static` after the driver is changed or dropped; tool-registry installation
+  freezes validation against the final declaration rather than assembly cache.
+- Error/Aborted terminals deliver one failure; errors, cancellation and premature
+  EOF retain canonical raw/opaque content and known usage. Receiver drop releases
+  current adapters' connect/read/backpressure work.
+- Replay validates association before omitting failure pairs, rejects conflicting
+  effect facts, retains unknown effects and prevents legalized wire-ID collisions.
+  Missing results in omitted Error/Aborted turns retain their unknown effects in
+  sanitized ordinary user context, including after serialization.
+- Product session turn and compaction writes preserve trusted `not_executed`
+  facts through save/resume; historical absence remains unknown. Malformed
+  proposals rejected before execution remain replayable after restoration.
+- Public schema checks use upstream `regress` and `url` with an explicitly
+  recorded data-profile difference. Annotation data is not a validation schema; referenced targets keep
+  their guards. Exact native integers retain equality, bounds and uniqueness.
+  Registry publication and final package-consumer acceptance remain open.
+  Malformed properties/patternProperties maps are inert as a whole, while
+  schemas referenced inside const/enum retain evaluated-key/index tracking.
+  Optional nulls survive independent sub-schema compilation failures, while
+  failed sub-compiles remain non-matching union arms.
+  Regex admission follows source keyword order and freezes reference targets
+  in the compiled plan, including resource effects from absent instance fields.
+  Relative-reference recursion returns `NoProgress` only after proving a
+  repeated compiler prefix's URL decisions and function-cache membership remain
+  invariant; later regex targets and legal resource resets are still visited.
+  Resource identities use node identity, and resolved targets retain the
+  source's overwrite-and-single-exit behavior.
+- Package consumer checks reject any set `ICU4X_DATA_DIR`, including the empty
+  string, before creating scratch data or invoking a subprocess. This enforces
+  the upstream ICU bundled-data precondition for dependency-profile verification.
 
 ### Added
 
@@ -126,7 +175,7 @@
   carry redacted failures (instance pointer, keyword, schema-derived
   reason); the evaluator grew observation-only first-failure localization
   (JSON-pointer paths threaded through the work-stack frames; acceptance
-  unchanged, proven by the frozen 62-case corpus). The frozen 44-case
+  unchanged, proven by the frozen 64-case corpus). The frozen 44-case
   public differential battery asserts the recorded Pi normalized outputs
   (one RDF-09 exact-integer divergence documented in-case).
 - `opi-agent`: tool validation now consumes the SDK seam. `RegisteredTool`
@@ -155,35 +204,22 @@
   Rust call stack), types unchanged-instance self-recursion as a typed
   `NoProgress` failure while productive recursion continues, and has no
   implicit I/O or source-free size/fuel limits. The frozen 64-case research
-  differential corpus is asserted with the two UCD-17-only cases explicitly
-  deferred to the packaged Unicode-16 backend proof (20.8/20.57).
+  differential corpus retains its original inputs; two UCD-17 cases now assert
+  the approved upstream-data outcomes, with the historical oracle preserved.
   `serde_json` switches to `preserve_order` workspace-wide (insertion-order
   maps, the selected dialect identity); mechanical serialization-order
   fallouts were updated deliberately (eval manifest digest key order,
   execution-v1 schema snapshot, one clippy large-Err allowance). New
-  dependencies: regress 0.12.0 (exact research feature profile, no PikeVM),
+  dependencies: regress 0.12.0 (defaults off; std, utf16, prohibit-unsafe),
   unicode-normalization 0.1.26.
-- `third_party/unicode16-ecma-url`: controlled private dependency
-  distribution closure (DEL-04). Exact upstream archives (url 2.5.8,
-  idna 1.1.0, idna_adapter 1.2.1, seven ICU4X 2.0.0 crates, regress
-  0.12.0, UCD 16.0.0 + emoji 16 data) are pinned by sha256 in
-  `closure.json`; the ten URL/IDNA/ICU packages are namespace-transformed
-  to `opi-vendor-*` identities with only Cargo.toml changes (per-member
-  byte-integrity verified), and `opi-vendor-regress` 0.12.0-ucd16.1 ships
-  UCD 16 tables regenerated by regress's own pinned upstream generator —
-  deterministic across reruns and hash-matched, never build-time
-  generated.
-- `scripts/pi-sdk-conformance`: early ordinary external-consumer package
-  proof. A minimal local sparse registry hosts the packaged identities; a
-  fresh workspace-external consumer with a fresh cargo home resolves the
-  family by registry identity alongside ordinary crates.io dependencies
-  (no root patch, path dependency, library lockfile or generator) and
-  passes a frozen battery: 43/43 Number::toString/URL.canParse leaves,
-  UCD 16-vs-17 script-class differential (stock regress matches the
-  UCD-17-only classes, the fork does not), and single-graph coexistence
-  of the ordinary url/idna_adapter/ICU 2.2 chain with the family
-  ICU 2.0 chain. Registry publication remains separately authorized and
-  OPEN; substrate only, no product scenario closes here.
+- The private Unicode16 vendor source family and its generator, integrity and
+  local-registry checks are retired. Schema uses the ordinary crates.io URL
+  graph already shared by the SDK; no private package identities are required.
+- `scripts/pi-sdk-conformance`: offline package and external-consumer checks
+  exercise the public SDK with ordinary registry dependencies, including caller
+  feature unification. Frozen Node observations remain historical evidence;
+  current expectations explicitly identify accepted upstream-data differences.
+  Complete conformance and final distribution acceptance remain open.
 - `opi-ai`: byte-exact stream framing across all current real adapters
   (AIR-006). One shared incremental replacement decoder replaces per-chunk
   lossy decoding: multi-byte UTF-8 split across network chunks survives

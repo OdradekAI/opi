@@ -408,6 +408,7 @@ impl OpenAiChatEvent {
 
 /// Tracks tool call state and accumulates the final message.
 pub struct OpenAiChatMapper {
+    snapshot: crate::stream::ProducerSnapshot,
     partial: AssistantMessage,
     tool_calls: Vec<ToolCallState>,
     saw_done: bool,
@@ -423,6 +424,24 @@ struct ToolCallState {
 }
 
 impl OpenAiChatMapper {
+    pub(crate) fn set_snapshot(&mut self, snapshot: crate::stream::ProducerSnapshot) {
+        self.snapshot = snapshot;
+        self.snapshot.record(&self.partial);
+    }
+
+    pub fn process(
+        &mut self,
+        event: OpenAiChatEvent,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        let events = self.process_inner(event);
+        self.snapshot.record(&self.partial);
+        events
+    }
+
+    pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
+        cause.with_partial(self.partial.clone())
+    }
+
     pub fn new(
         api: crate::ApiKind,
         provider: &str,
@@ -430,6 +449,7 @@ impl OpenAiChatMapper {
         model: &str,
     ) -> Self {
         Self {
+            snapshot: crate::stream::ProducerSnapshot::default(),
             partial: empty_assistant_message(api, provider, wire, model),
             tool_calls: Vec::new(),
             saw_done: false,
@@ -483,7 +503,7 @@ impl OpenAiChatMapper {
     }
 
     /// Process one OpenAI event, returning zero or more stream events.
-    pub fn process(
+    fn process_inner(
         &mut self,
         event: OpenAiChatEvent,
     ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
@@ -717,14 +737,12 @@ impl OpenAiChatMapper {
                 events
             }
             OpenAiChatEvent::Error { message: _ } => {
-                // Current producers stop the dual terminal format: an in-band
-                // provider error event is a stream failure whose bounded
-                // diagnostic rides the typed cause; the accumulated partial is
-                // preserved by the public seam (ChatStream/CallFailure).
+                // Preserve state that did not produce a public event (usage,
+                // opaque content or signatures), alongside the typed cause.
                 self.saw_done = true;
-                vec![Err(ProviderError::StreamError(
+                vec![Err(self.failure(ProviderError::StreamError(
                     ProviderErrorSummary::attested_static(OPENAI_CHAT_STREAM_ERROR),
-                ))]
+                )))]
             }
         }
     }
@@ -1168,13 +1186,13 @@ impl OpenAiChatProvider {
                     }
                 }
                 ParsedEvent::UsageError(error) => {
-                    stream_events.push(Err(error));
+                    stream_events.push(Err(mapper.failure(error)));
                     break;
                 }
                 ParsedEvent::Malformed { .. } => {
-                    stream_events.push(Err(ProviderError::StreamError(
+                    stream_events.push(Err(mapper.failure(ProviderError::StreamError(
                         ProviderErrorSummary::attested_static("malformed OpenAI Chat SSE frame"),
-                    )));
+                    ))));
                     break;
                 }
             }
@@ -1201,6 +1219,7 @@ impl OpenAiChatProvider {
         body: &serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
+        snapshot: crate::stream::ProducerSnapshot,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let secret = resolved.secret.expose_secret();
@@ -1261,65 +1280,70 @@ impl OpenAiChatProvider {
             &requested_model,
         );
 
-        loop {
-            let chunk = tokio::select! {
-                _ = cancel.cancelled() => {
-                    return Err(ProviderError::Cancelled);
-                }
-                chunk = byte_stream.next() => {
-                    match chunk {
-                        Some(c) => c,
-                        None => break,
+        mapper.set_snapshot(snapshot);
+        let result: Result<(), ProviderError> = async {
+            loop {
+                let chunk = tokio::select! {
+                    _ = cancel.cancelled() => {
+                        return Err(mapper.failure(ProviderError::Cancelled));
                     }
-                }
-            };
+                    chunk = byte_stream.next() => {
+                        match chunk {
+                            Some(c) => c,
+                            None => break,
+                        }
+                    }
+                };
 
-            let chunk = chunk.map_err(|e| {
-                if e.is_timeout() {
-                    ProviderError::Timeout
-                } else if e.is_connect() {
-                    ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
-                } else {
-                    ProviderError::StreamError(ProviderErrorSummary::sanitized(e.to_string()))
-                }
-            })?;
-            buffer.push_str(&decoder.push(&chunk));
+                let chunk = chunk.map_err(|e| {
+                    if e.is_timeout() {
+                        ProviderError::Timeout
+                    } else if e.is_connect() {
+                        ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
+                    } else {
+                        ProviderError::StreamError(ProviderErrorSummary::sanitized(e.to_string()))
+                    }
+                })?;
+                buffer.push_str(&decoder.push(&chunk));
 
-            for parsed in drain_sse_events(&mut buffer) {
-                match parsed {
-                    ParsedEvent::Valid(events) => {
-                        for event in events {
-                            for item in mapper.process(event) {
-                                if !send_or_cancel(&cancel, tx, item).await? {
-                                    return Ok(());
+                for parsed in drain_sse_events(&mut buffer) {
+                    match parsed {
+                        ParsedEvent::Valid(events) => {
+                            for event in events {
+                                for item in mapper.process(event) {
+                                    if !send_or_cancel(&cancel, tx, item).await? {
+                                        return Ok(());
+                                    }
                                 }
                             }
                         }
-                    }
-                    ParsedEvent::UsageError(error) => return Err(error),
-                    ParsedEvent::Malformed { .. } => {
-                        return Err(ProviderError::StreamError(
-                            ProviderErrorSummary::attested_static(
-                                "malformed OpenAI Chat SSE frame",
-                            ),
-                        ));
+                        ParsedEvent::UsageError(error) => return Err(mapper.failure(error)),
+                        ParsedEvent::Malformed { .. } => {
+                            return Err(mapper.failure(ProviderError::StreamError(
+                                ProviderErrorSummary::attested_static(
+                                    "malformed OpenAI Chat SSE frame",
+                                ),
+                            )));
+                        }
                     }
                 }
             }
-        }
 
-        let eof_tail = decoder.finish();
-        buffer.push_str(&eof_tail);
-        if let Some(done) = mapper.flush_pending_done() {
-            let _ = send_or_cancel(&cancel, tx, Ok(done)).await;
-        } else if !mapper.saw_done {
-            let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                "stream ended without a terminal event",
-            ));
-            let _ = send_or_cancel(&cancel, tx, Err(err)).await;
-        }
+            let eof_tail = decoder.finish();
+            buffer.push_str(&eof_tail);
+            if let Some(done) = mapper.flush_pending_done() {
+                let _ = send_or_cancel(&cancel, tx, Ok(done)).await;
+            } else if !mapper.saw_done {
+                let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                    "stream ended without a terminal event",
+                ));
+                let _ = send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await;
+            }
 
-        Ok(())
+            Ok(())
+        }
+        .await;
+        result.map_err(|cause| mapper.failure(cause))
     }
 }
 
@@ -1645,6 +1669,8 @@ impl Provider for OpenAiChatProvider {
         let cancel = request.cancel.clone();
         let http_client = self.client.client().clone();
 
+        let snapshot = crate::stream::ProducerSnapshot::default();
+        let producer_snapshot = snapshot.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let tx_closed = tx.clone();
         let producer_cancel = cancel.clone();
@@ -1676,6 +1702,7 @@ impl Provider for OpenAiChatProvider {
                     &body,
                     cancel,
                     timeout,
+                    producer_snapshot,
                     &tx,
                 )
                 .await
@@ -1691,7 +1718,11 @@ impl Provider for OpenAiChatProvider {
             }
         });
 
-        Box::pin(CancelAwareReceiverStream::new(rx, stream_cancel))
+        Box::pin(CancelAwareReceiverStream::with_snapshot(
+            rx,
+            stream_cancel,
+            snapshot,
+        ))
     }
 
     fn id(&self) -> &str {

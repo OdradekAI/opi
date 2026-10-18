@@ -96,6 +96,7 @@ fn assistant_message_round_trips_through_json() {
 #[test]
 fn tool_result_message_round_trips_through_json() {
     let msg = Message::ToolResult(ToolResultMessage {
+        not_executed: None,
         tool_call_id: "call_123".into(),
         tool_name: "read_file".into(),
         content: vec![OutputContent::Text {
@@ -114,6 +115,7 @@ fn tool_result_message_round_trips_through_json() {
 #[test]
 fn tool_result_error_message_round_trips() {
     let msg = Message::ToolResult(ToolResultMessage {
+        not_executed: None,
         tool_call_id: "call_err".into(),
         tool_name: "bash".into(),
         content: vec![OutputContent::Text {
@@ -567,10 +569,16 @@ async fn chat_stream_error_and_aborted_done_reasons_are_failures() {
         let (events, text) = text_events(1, None);
         let mut events = events;
         events.push(Ok(done_terminal(&text, reason)));
-        let failure = chat_stream(events)
-            .result()
-            .await
-            .expect_err("error/aborted stop reasons are Err");
+        let mut stream = chat_stream(events);
+        let failure = loop {
+            match stream.next().await.expect("failure terminal") {
+                Ok(event) => assert!(!event.is_terminal(), "failure must not be delivered as Ok"),
+                Err(failure) => break failure,
+            }
+        };
+        assert!(stream.next().await.is_none());
+        assert!(stream.next().await.is_none());
+        assert_eq!(stream.result().await, Err(failure.clone()));
         assert_eq!(failure.message().stop_reason, reason);
         assert_eq!(assistant_text_of(failure.message()), text);
     }

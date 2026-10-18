@@ -601,7 +601,8 @@ max_output_tokens = 8192
                 system_prompt: None,
                 messages: vec![],
                 tools: vec![],
-            }),
+            })
+            .expect("valid context declarations"),
             max_tokens: None,
             temperature: None,
             thinking: ThinkingConfig::default(),
@@ -741,7 +742,8 @@ max_output_tokens = 8192
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -878,7 +880,8 @@ max_output_tokens = 8192
                     system_prompt: None,
                     messages: vec![],
                     tools: vec![],
-                }),
+                })
+                .expect("valid context declarations"),
                 max_tokens: None,
                 temperature: None,
                 thinking: ThinkingConfig::default(),
@@ -1034,7 +1037,8 @@ send_session_id_header = true
                 system_prompt: None,
                 messages: vec![],
                 tools: vec![],
-            }),
+            })
+            .expect("valid context declarations"),
             max_tokens: None,
             temperature: None,
             thinking: ThinkingConfig::default(),

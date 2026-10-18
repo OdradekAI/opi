@@ -129,7 +129,8 @@ fn request_builds_with_all_fields() {
                 description: "Read a file".into(),
                 input_schema: serde_json::json!({"type": "object"}),
             }],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(4096),
         temperature: Some(0.7),
         thinking: ThinkingConfig::default(),
@@ -165,7 +166,8 @@ fn request_cancellation_propagates() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -252,7 +254,8 @@ async fn custom_provider_untrusted_constructor_discards_error_payloads() {
                 system_prompt: None,
                 messages: vec![],
                 tools: vec![],
-            }),
+            })
+            .expect("valid context declarations"),
             max_tokens: None,
             temperature: None,
             thinking: ThinkingConfig::default(),
@@ -303,7 +306,8 @@ async fn provider_trait_yields_done_event() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

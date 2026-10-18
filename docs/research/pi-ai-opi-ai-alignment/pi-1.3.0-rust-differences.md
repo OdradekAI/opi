@@ -19,7 +19,7 @@
 | 范围／平台 | SDK 与宿主责任、Cargo/module 与 npm/Bun、native runtime 支持面 | 可以不复制非目标符号或平台桥，但 SDK 对应功能不能随之消失 |
 | 真正能力缺口 | 尚无公开可达实现、协议接线或机械证明 | 保持未完成；不能以“Rust 惯用”“deferred”或历史子集选择关闭 |
 
-以下 RDF-01–20 是固定的差异定位符，不是新要求或验收编号。一个条目可能含两类因素，但必须分别解释。每项的“机械验证”描述未来产品证据；前置源码轮没有执行 Cargo/Node 测试、构建、live/OAuth 请求、依赖安装或生成数据。最新离线harness另列实际执行，不冒充未来opi-ai公开consumer。
+以下 RDF-01–21 是差异定位符，不是新 AIR 要求、V 验收编号或进度账本。RDF-01–20 保留既有身份；RDF-21 是 2026-10-19 用户批准的上游 Unicode／IDNA 数据合同修订。一个条目可能含两类因素，但必须分别解释。每项的“机械验证”描述所需产品证据；前置源码轮没有执行 Cargo/Node 测试、构建、live/OAuth 请求、依赖安装或生成数据。离线 harness 与后续实施各列实际执行，不互相冒充。
 
 | ID | 差异 | 主分类 | 主验收导航 |
 |---|---|---|---|
@@ -43,6 +43,7 @@
 | RDF-18 | Cargo/native 平台与 npm/Bun/browser/CLI 边界 | 范围／平台 | V-26/42/49/58 |
 | RDF-19 | SDK 与 host-only 集成责任 | 范围 | V-20/39/49/58 |
 | RDF-20 | 全公开能力覆盖仍须实施证明 | 真正能力缺口 | V-49–59 及既有对应 V |
+| RDF-21 | 上游 Unicode／IDNA 数据 profile | 已批准数据行为差异 | V-11/34/35/39/41/58 |
 
 ## 逐项契约
 
@@ -119,7 +120,7 @@
 ### RDF-09 · JSON Schema normalization，不复制 TypeBox 私有路径
 
 - **Pi 事实：** [`validateToolArguments`](../../../.repo/pi-1.3.0/packages/ai/src/utils/validation.ts)clone 参数，normalize optional-null，经过 TypeBox Value.Convert；无 `Symbol.for("TypeBox.Kind")` 时还运行 plain JSON Schema coercion，再 validation。两条路径并非完全相同算法。
-- **Rust 目标：** 选定私有JSON-only TypeBox方言IR/evaluator＋regress0.12.0算法与可重建Unicode16数据；jsonschema0.28.3退出本默认路径。结构guard、mixed applicator/ref/evaluated状态、已知format/近似长度/数值与分支Result由方言owner表达，不先套metaschema、不全pattern guard或伪成功。ordered JSON采用preserve_order＋JS整数键枚举；ryu-js1.0.2与受控Unicode16 URL/IDNA/ICU profile保留JS叶语义。10个namespace后端包有registry分发维护合同，不依赖caller rootpatch。clone-before-normalize与raw/effective分离、原schema最终check及root漏洞修正继续保留，零schema I/O。
+- **Rust 目标：** 选定私有 JSON-only TypeBox 方言 IR/evaluator，采用普通 crates.io regress0.12.0、url2.5.8 及 RDF-21 声明的上游数据 profile；jsonschema0.28.3 退出本默认路径。结构 guard、mixed applicator/ref/evaluated 状态、已知 format/近似长度/数值与分支 Result 由方言 owner 表达，不先套 metaschema、不全 pattern guard 或伪成功。ordered JSON 采用 preserve_order＋JS 整数键枚举；ryu-js1.0.2 保留 JS 数值转字符串算法。Unicode16 分叉与10包 namespace 发布路线已被 RDF-21 取代，不依赖 caller root patch。clone-before-normalize、raw/effective 分离、原 schema 最终 check 及 root 漏洞修正继续保留，零 schema I/O。
 - **理由与分类：** JSON-only schema 是语言／包边界差异；UTF8公共String不表示孤立UTF16 surrogate，非JSON运行时值不隐式转换为有效JSON：保留raw text/bytes与parse状态并typed失败，不替换后假称同值。保留 raw 与拒绝坏关联是安全选择。并不意味着不做 normalization，也不承诺任意 TypeBox runtime 值在 Rust 可重建。
 - **外部 caller 影响：** caller 可在独立 SDK 手动验证工具，不必有 hook/authorizer；拿到 raw 与 normalized 的区别。执行和授权属于宿主，库不会因为验证成功就执行；host-only hook 顺序不作为 SDK 调用前提。
 - **机械验证：** V-11/35/39/41 用 plain JSON 的 optional null、union 保留优先、数组／additionalProperties、numeric string/boolean、非法根值及 precision corpus；TypeBox-only cases 作为显式差异，不通过删除失败或统一 coercion 输出掩盖。
@@ -225,11 +226,22 @@
 - **机械验证：** V-49–59 与既有 V 的公共面清单逐项闭合；严格离线 fixtures／fake transport 后才进行所需的 consumer/package/native 证明。运行记录固定输入、case/skip/缺失和归一化；live 另获授权。`未实现`、`未执行`、`无协议证据`分别保留，不能一律填“Rust差异已接受”。
 - **历史 D 依赖：** D-01/11/23/25/32/33 是历史范围与理由，D-30/31/37 是可保留的 SDK 基础；没有任何旧 D 单项批准本轮所有排除，也没有旧测试执行结果证明 1.2.0 全包等价。
 
+<a id="rdf-21-upstream-data-profile"></a>
+
+### RDF-21 · 上游 Unicode／IDNA 数据 profile
+
+- **Pi 事实：** 本次固定参考仍是 Node24.13.0／V8 13.6／ICU77.1／Unicode16 和 TypeBox1.3.27。旧 regex64例、URL29例、生成和 namespace 实验结果保持原日期、输入及接受集；不改写 Pi oracle。
+- **Rust 目标：** 使用 crates.io 原版 regress0.12.0（关闭默认 features，启用 `std,utf16,prohibit-unsafe`）与 url2.5.8，不再维护或分发 Unicode16 vendor 源码。本次 workspace 迁移图含 idna1.1.0、idna_adapter1.2.2、ICU normalizer/properties/data2.2.0；普通外部 consumer 的独立解析图为 ICU2.3.0／provider2.3.1，单独记录验证结果；以后按声明支持的上游 profile 审查，不是永久固定 Unicode17。每次升级记录 registry source/checksum、实际图、有效 features、数据差异及回归。workspace lock 不能固定所有库消费者的解析图。
+- **理由与分类：** 这是用户批准的**数据行为差异**。允许 Unicode 属性、脚本、大小写映射、IDNA 数据变化传播到 regex 编译／匹配、patternProperties/propertyNames、regex/IDN/URL/IRI formats、union 选择、内存 `$id`／`$ref` identity 和正常归一化。不能把 adapter／ICU 实现升级的未知算法差异都归入数据变化；归因不明的差异仍为缺口。
+- **已登记差异：** U+16EA0 成为 Letter，Beria_Erfe／Sidetic／Tai_Yo／Tolong_Siki 名称可编译；原文和 percent-encoded 新字符域名可被接受。U+16EA0 域名经 IDNA 映射的规范 ACE 为 `xn--zs0f.example`，直接对原始大写字符作 Punycode 的 `xn--7r0f.example` 仍为无效控制。原文／percent／规范 ACE 的资源 ref 双向解析须保持 const 正反判断。`uri`／`uri-reference` 各有来源 regex，不因 URL 接受就强行统一。新脚本子 schema 成功编译后可正常删除被其拒绝的 optional null；真正子编译失败时仍保留 null，required null 仍须最终失败。
+- **保留合同与 caller 影响：** 不豁免 ECMA 语法、backref/lookbehind、typed compile/check 错误相位、结构 guard/inert annotation、admission/ref 顺序、冻结目标／resource frame、迟到 Regex、合法 reset／正常递归和仅真实无进展时终止；不加任意上限或剪枝。保留 clone/raw、原 schema 最终验证、精确整数与 Number/String/source grapheme 算法。已有会话、raw、工具结果不被重写；声明重新编译与后续调用使用当前数据 profile，Schema 通过不授予工具执行权，真实 Agent 仍在 normalized 值上授权和执行。无隐式 schema 网络／file I/O。
+- **机械验证与退役边界：** 更新 Opi 的两条新数据 corpus 期望，保留 Pi 历史观察；新增脚本／字符／property key／format、原文／percent／规范 ACE 及资源 frame 正反例、旧字符与非法 IDNA 控制、正常归一化及失败子编译回归、真实 Agent／恢复后调用。通用 conformance、Number/URL 控制及 workspace 外真实 opi-ai public consumer 保留，包含 caller feature union；regress 的可选 PikeVM 代码可因 union 加入，但0.12.0正常 Regex API 仍为 BacktrackExecutor，须实测语义。退役 vendor 生成、manifest 变换、闭包完整性和双 family 专属门禁；不据此关闭 20.11、20.34、20.57 或 V-34/35/41/58 的完整验收。
+
 ## 差分与核准边界
 
 每个差分 fixture 应标明 RDF（如适用）、主 spec AIR、唯一 V、Pi snapshot/输入摘要、Rust state 和观察结果。可以归一化无关 clock/request ID 与双射工具 ID；不能归一化掉 alias 时点、backpressure、错误分类、partial、knownness、protected identity、callback 次数、取消／重试、publication 或资源完成差异。整数、计时和 runtime 平台差异须按本页列项显式断言。既定差异若使调用者失去本轮要求的公开能力，应重新列为缺口，不能仅增加一段理由就称已等价。
 
-机械验证为未来义务，本轮仅维护文档。测试影响：**none**；没有修改测试或 CI。后续测试处置仍按 acceptance matrix 的 add/update/delete/retain：保留真实 wire/安全/资源回归，更新被明确新契约取代的断言，删除只锁定已正式退出壳的重复断言，新增全公开面／差分／SDK/package/native 证明。历史 D/Q、70 测试及 probe 的结论保留原版本范围，不重写为本次运行。
+上述旧研究轮的机械验证为未来义务，该轮仅维护文档，测试影响 **none**；该轮没有修改测试或 CI。RDF-21 迁移的实际测试和检查另按本次实施结果记录。后续测试处置仍按 acceptance matrix 的 add/update/delete/retain：保留真实 wire/安全/资源回归，更新被明确新契约取代的断言，删除只锁定已正式退出壳的重复断言，新增全公开面／差分／SDK/package/native 证明。历史 D/Q、70 测试及 probe 的结论保留原版本范围，不重写为本次运行。
 
 ## Pi 1.3.0 对既有 RDF 的补充
 
@@ -245,7 +257,7 @@ RDF-14（telemetry）：Pi保持options引用，不冻结跨await的parent字段
 
 本轮[专项核查](pi-1.3.0-backend-gap-audit.md)以a37ed70为输入，细化现有RDF而不新增编号。七组仍OPEN，不能把未证明的补救变成已接受的Rust差异：
 
-- RDF-09：前置源码轮的metaschema／grapheme／format／ref／regex差异未由leaf hook关闭。后续实测后，当前设计明确改选source-defined JSON IR、Unicode16 regex与URL数据profile；不是原标准engine已等价。Kind symbol/factory-only边界与root修正仍保留，完整实现V仍OPEN。
+- RDF-09/21：前置源码轮的 metaschema／grapheme／format／ref／regex 差异未由 leaf hook 关闭。后续曾选 source-defined JSON IR、Unicode16 regex 与 URL 数据 profile；当前保留 IR 和算法合同，由 RDF-21 取代固定数据与 vendor 发布选择。不是原标准 engine 已等价。Kind symbol/factory-only 边界与 root 修正仍保留，完整实现 V 仍 OPEN。
 - RDF-13/18：WS累计read检查、124-header槽、Connection token-list/extension验证与无压缩分别核。前置源码轮未固定Pi真实global runtime；后续已固定Node24.13.0／Bun1.3.5，实测两者headers调用和PMD可达。显式websocket也会eligible fallback，最终SSE成功不关闭WS；实测from_partially_read不能补PMD，当前无压缩codec须补救／重选。完整provided-stream／自有Upgrade／patch方案仍未交付。
 - RDF-06/08/17/18：按source区分proxy/redirect/retry、H2、trust、RS256与mTLS。撤回JWT typ/kid默认；ring signing与verification范围不可混用，也不把RSA签名限制推成所有非RSA mTLS不支持。真实source不支持的key不凭想象增加义务。
 - RDF-10/11/12/18：full-chain、standard/adaptive/2026、ADC五家族和metadata timeout分别待证。executable默认保留源侧stdout+stderr合并解析；scoped frozen child env和kill/reap后代是明确安全/生命周期增强，非Node保证。无新的总时限、进程stdio默认cap或第二deny gate。

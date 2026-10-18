@@ -23,7 +23,8 @@ fn request(model: &str) -> Request {
             system_prompt: None,
             messages: Vec::new(),
             tools: Vec::new(),
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

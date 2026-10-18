@@ -390,6 +390,7 @@ impl AnthropicEvent {
 
 /// Tracks content block state and accumulates the final message.
 pub struct AnthropicMapper {
+    snapshot: crate::stream::ProducerSnapshot,
     partial: AssistantMessage,
     blocks: Vec<BlockState>,
     saw_done: bool,
@@ -417,12 +418,31 @@ impl Default for AnthropicMapper {
 }
 
 impl AnthropicMapper {
+    pub(crate) fn set_snapshot(&mut self, snapshot: crate::stream::ProducerSnapshot) {
+        self.snapshot = snapshot;
+        self.snapshot.record(&self.partial);
+    }
+
+    pub fn process(
+        &mut self,
+        event: AnthropicEvent,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        let events = self.process_inner(event);
+        self.snapshot.record(&self.partial);
+        events
+    }
+
+    pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
+        cause.with_partial(self.partial.clone())
+    }
+
     pub fn new() -> Self {
         Self::new_for_provider("anthropic")
     }
 
     fn new_for_provider(provider_id: &str) -> Self {
         Self {
+            snapshot: crate::stream::ProducerSnapshot::default(),
             partial: empty_assistant_message(provider_id),
             blocks: Vec::new(),
             saw_done: false,
@@ -430,7 +450,7 @@ impl AnthropicMapper {
     }
 
     /// Process one Anthropic event, returning zero or more stream events.
-    pub fn process(
+    fn process_inner(
         &mut self,
         event: AnthropicEvent,
     ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
@@ -545,6 +565,11 @@ impl AnthropicMapper {
                         }) = self.blocks.get_mut(index)
                         {
                             acc.push_str(&partial_json);
+                        }
+                        if let Some(AssistantContent::ToolCall { tool_call }) =
+                            self.partial.content.get_mut(index)
+                        {
+                            tool_call.arguments.push_str(&partial_json);
                         }
                         vec![Ok(AssistantStreamEvent::ToolCallDelta {
                             content_index,
@@ -662,14 +687,12 @@ impl AnthropicMapper {
                 })]
             }
             AnthropicEvent::Error { message: _ } => {
-                // Current producers stop the dual terminal format: an in-band
-                // provider error event is a stream failure whose bounded
-                // diagnostic rides the typed cause; the accumulated partial is
-                // preserved by the public seam (ChatStream/CallFailure).
+                // Preserve state that did not produce a public event (usage,
+                // opaque content or signatures), alongside the typed cause.
                 self.saw_done = true;
-                vec![Err(ProviderError::StreamError(
+                vec![Err(self.failure(ProviderError::StreamError(
                     ProviderErrorSummary::attested_static(ANTHROPIC_STREAM_ERROR),
-                ))]
+                )))]
             }
         }
     }
@@ -1000,15 +1023,15 @@ impl AnthropicProvider {
                     stream_events.extend(mapper.process(event));
                 }
                 ParsedEvent::UsageError(error) => {
-                    stream_events.push(Err(error));
+                    stream_events.push(Err(mapper.failure(error)));
                     break;
                 }
                 ParsedEvent::Malformed { event_type, .. } => {
-                    stream_events.push(Err(ProviderError::StreamError(
+                    stream_events.push(Err(mapper.failure(ProviderError::StreamError(
                         ProviderErrorSummary::sanitized(format!(
                             "malformed Anthropic SSE event '{event_type}'"
                         )),
-                    )));
+                    ))));
                 }
             }
         }
@@ -1030,6 +1053,7 @@ impl AnthropicProvider {
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
         extra_headers: Vec<(String, String)>,
+        snapshot: crate::stream::ProducerSnapshot,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let secret = resolved.secret.expose_secret();
@@ -1091,64 +1115,71 @@ impl AnthropicProvider {
         // alias when the Agent derives actual-route evidence.
         mapper.partial.response_model = Some(String::new());
 
-        loop {
-            let chunk = tokio::select! {
-                _ = cancel.cancelled() => {
-                    return Err(ProviderError::Cancelled);
-                }
-                chunk = byte_stream.next() => {
-                    chunk
-                }
-            };
-
-            let eof = chunk.is_none();
-            if let Some(chunk) = chunk {
-                let chunk = chunk.map_err(|e| {
-                    if e.is_timeout() {
-                        ProviderError::Timeout
-                    } else if e.is_connect() {
-                        ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
-                    } else {
-                        ProviderError::StreamError(ProviderErrorSummary::sanitized(e.to_string()))
+        mapper.set_snapshot(snapshot);
+        let result: Result<(), ProviderError> = async {
+            loop {
+                let chunk = tokio::select! {
+                    _ = cancel.cancelled() => {
+                        return Err(mapper.failure(ProviderError::Cancelled));
                     }
-                })?;
-                buffer.extend_from_slice(&chunk);
-            }
+                    chunk = byte_stream.next() => {
+                        chunk
+                    }
+                };
 
-            for parsed in drain_sse_events(&mut buffer, eof)? {
-                match parsed {
-                    ParsedEvent::Valid(event) => {
-                        for item in mapper.process(event) {
-                            if !send_or_cancel(&cancel, tx, item).await? {
-                                return Ok(()); // receiver dropped
+                let eof = chunk.is_none();
+                if let Some(chunk) = chunk {
+                    let chunk = chunk.map_err(|e| {
+                        if e.is_timeout() {
+                            ProviderError::Timeout
+                        } else if e.is_connect() {
+                            ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
+                        } else {
+                            ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                                e.to_string(),
+                            ))
+                        }
+                    })?;
+                    buffer.extend_from_slice(&chunk);
+                }
+
+                for parsed in drain_sse_events(&mut buffer, eof)? {
+                    match parsed {
+                        ParsedEvent::Valid(event) => {
+                            for item in mapper.process(event) {
+                                if !send_or_cancel(&cancel, tx, item).await? {
+                                    return Ok(()); // receiver dropped
+                                }
+                            }
+                        }
+                        ParsedEvent::UsageError(error) => return Err(mapper.failure(error)),
+                        ParsedEvent::Malformed { event_type, .. } => {
+                            let err = ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                                format!("malformed Anthropic SSE event '{event_type}'"),
+                            ));
+                            if !send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await? {
+                                return Ok(());
                             }
                         }
                     }
-                    ParsedEvent::UsageError(error) => return Err(error),
-                    ParsedEvent::Malformed { event_type, .. } => {
-                        let err = ProviderError::StreamError(ProviderErrorSummary::sanitized(
-                            format!("malformed Anthropic SSE event '{event_type}'"),
-                        ));
-                        if !send_or_cancel(&cancel, tx, Err(err)).await? {
-                            return Ok(());
-                        }
-                    }
+                }
+                if eof {
+                    break;
                 }
             }
-            if eof {
-                break;
+
+            // Stream ended without a terminal event  - surface as provider protocol error
+            if !mapper.saw_done {
+                let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                    "stream ended without a terminal event (message_stop or error)",
+                ));
+                let _ = send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await;
             }
-        }
 
-        // Stream ended without a terminal event  - surface as provider protocol error
-        if !mapper.saw_done {
-            let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                "stream ended without a terminal event (message_stop or error)",
-            ));
-            let _ = send_or_cancel(&cancel, tx, Err(err)).await;
+            Ok(())
         }
-
-        Ok(())
+        .await;
+        result.map_err(|cause| mapper.failure(cause))
     }
 }
 
@@ -1547,6 +1578,8 @@ impl Provider for AnthropicProvider {
         });
         let http_client = self.client.client().clone();
 
+        let snapshot = crate::stream::ProducerSnapshot::default();
+        let producer_snapshot = snapshot.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let tx_closed = tx.clone();
         let producer_cancel = cancel.clone();
@@ -1577,6 +1610,7 @@ impl Provider for AnthropicProvider {
                     cancel,
                     timeout,
                     extra_headers,
+                    producer_snapshot,
                     &tx,
                 )
                 .await
@@ -1592,7 +1626,11 @@ impl Provider for AnthropicProvider {
             }
         });
 
-        Box::pin(CancelAwareReceiverStream::new(rx, stream_cancel))
+        Box::pin(CancelAwareReceiverStream::with_snapshot(
+            rx,
+            stream_cancel,
+            snapshot,
+        ))
     }
 
     fn id(&self) -> &str {
@@ -1653,9 +1691,8 @@ mod tests {
 
     #[test]
     fn malformed_args_become_failure_context_not_empty_object() {
-        // RP-08: this wire only accepts object arguments, so a malformed
-        // proposal is replaced by an explicit failure context - never a
-        // fabricated `{}` tool_use.
+        // A proposal without a result has unknown effects. An object-only
+        // wire receives that fact as context rather than a fabricated call.
         let msg = test_assistant_msg(vec![AssistantContent::ToolCall {
             tool_call: ToolCall {
                 id: "tc_2".into(),
@@ -1679,7 +1716,9 @@ mod tests {
         let serialized =
             serialize_messages(&replay.messages, false, &serde_json::Value::Null, true);
         let body = serde_json::to_string(&serialized).unwrap();
-        assert!(body.contains("[tool proposal not replayed]"));
+        assert!(body.contains("Result unavailable"));
+        assert!(body.contains("execution effect is unknown"));
+        assert!(!body.contains("not-executed"));
         assert!(!body.contains("\"tool_use\""));
     }
 
@@ -1701,28 +1740,55 @@ mod tests {
                 },
             }]);
 
-            let replay = crate::replay::project_replay(
-                &[msg],
-                &crate::replay::ReplayRoute {
-                    wire: crate::model_info::WireApi::AnthropicMessages,
-                    provider: "anthropic".into(),
-                    model: "claude-sonnet-4-5-20250514".into(),
-                    supports_images: true,
-                },
-                crate::replay::ReplayProjection::NativeOrCollapse,
-            )
-            .unwrap();
-            let serialized =
-                serialize_messages(&replay.messages, false, &serde_json::Value::Null, true);
-            let body = serde_json::to_string(&serialized).unwrap();
-            assert!(
-                body.contains("[tool proposal not replayed]"),
-                "{label}: expected failure context"
-            );
-            assert!(
-                !body.contains("\"tool_use\""),
-                "{label}: no fabricated call"
-            );
+            for known_non_execution in [false, true] {
+                let mut messages = vec![msg.clone()];
+                if known_non_execution {
+                    messages.push(Message::ToolResult(crate::message::ToolResultMessage {
+                        tool_call_id: "tc".into(),
+                        tool_name: "test".into(),
+                        content: vec![OutputContent::Text {
+                            text: "private diagnostic".into(),
+                        }],
+                        details: None,
+                        is_error: true,
+                        not_executed: Some(
+                            crate::message::ToolNotExecutedReason::NonObjectArguments,
+                        ),
+                        truncated: false,
+                        timestamp_ms: 0,
+                    }));
+                }
+                let replay = crate::replay::project_replay(
+                    &messages,
+                    &crate::replay::ReplayRoute {
+                        wire: crate::model_info::WireApi::AnthropicMessages,
+                        provider: "anthropic".into(),
+                        model: "claude-sonnet-4-5-20250514".into(),
+                        supports_images: true,
+                    },
+                    crate::replay::ReplayProjection::NativeOrCollapse,
+                )
+                .unwrap();
+                let serialized =
+                    serialize_messages(&replay.messages, false, &serde_json::Value::Null, true);
+                let body = serde_json::to_string(&serialized).unwrap();
+                if known_non_execution {
+                    assert!(
+                        body.contains(crate::replay::MALFORMED_PROPOSAL_NOTE_PREFIX),
+                        "{label}"
+                    );
+                    assert!(body.contains("non_object_arguments"));
+                } else {
+                    assert!(body.contains("Result unavailable"), "{label}");
+                    assert!(body.contains("execution effect is unknown"));
+                    assert!(!body.contains("not-executed"));
+                }
+                assert!(!body.contains("private diagnostic"));
+                assert!(
+                    !body.contains("\"tool_use\""),
+                    "{label}: no fabricated call"
+                );
+            }
         }
     }
 
@@ -1771,7 +1837,8 @@ mod tests {
                     description: "Say hello".into(),
                     input_schema: serde_json::json!({"type": "object"}),
                 }],
-            }),
+            })
+            .expect("valid context declarations"),
             max_tokens: Some(100),
             temperature: None,
             thinking: crate::provider::ThinkingConfig::default(),
@@ -1921,6 +1988,7 @@ mod tests {
                 },
             }]),
             Message::ToolResult(ToolResultMessage {
+                not_executed: None,
                 tool_call_id: "tool-1".into(),
                 tool_name: "inspect".into(),
                 content: vec![OutputContent::Image {
@@ -1953,7 +2021,8 @@ mod tests {
         request.context = crate::transcript::normalize_context(crate::transcript::Context {
             messages,
             ..crate::transcript::Context::default()
-        });
+        })
+        .expect("valid context declarations");
 
         let body = provider.build_request_body(&request).unwrap();
         assert_eq!(

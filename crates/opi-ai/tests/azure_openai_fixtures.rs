@@ -48,7 +48,8 @@ fn text_request() -> opi_ai::provider::Request {
                 },
             )],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(256),
         temperature: None,
         thinking: Default::default(),
@@ -86,7 +87,8 @@ fn tool_request() -> opi_ai::provider::Request {
                     }
                 }),
             }],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(256),
         temperature: None,
         thinking: Default::default(),
@@ -429,12 +431,14 @@ async fn error_from_fixture() {
 
     // Current producers stop the dual terminal format: the in-band error
     // event is a stream failure with a bounded typed cause.
-    let failure = events
-        .iter()
-        .find(|e| matches!(e, Err(ProviderError::StreamError(_))));
-    let Some(Err(ProviderError::StreamError(summary))) = failure else {
+    let failure = events.iter().find(|e| {
+        e.as_ref()
+            .is_err_and(|cause| cause.category() == opi_ai::provider::ProviderErrorCategory::Stream)
+    });
+    let Some(Err(cause)) = failure else {
         panic!("expected a typed stream failure, got {events:?}");
     };
+    let summary = cause.to_string();
     assert!(
         summary.contains("openai chat stream error"),
         "cause must be the neutral literal, got: {summary}"
@@ -810,7 +814,7 @@ async fn assert_azure_cancelled(stall_point: AzureStallPoint) {
     assert!(
         matches!(
             remaining.as_slice(),
-            [Err(opi_ai::provider::ProviderError::Cancelled)]
+            [Err(cause)] if cause.category() == opi_ai::provider::ProviderErrorCategory::Cancelled
         ),
         "Azure cancellation must yield exactly one typed error, got {remaining:?}"
     );

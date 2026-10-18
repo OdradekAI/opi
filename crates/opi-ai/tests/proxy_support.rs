@@ -382,7 +382,8 @@ async fn openai_chat_provider_routes_http_requests_through_proxy() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(64),
         temperature: None,
         thinking: ThinkingConfig::default(),

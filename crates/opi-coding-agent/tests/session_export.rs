@@ -158,6 +158,7 @@ fn tool_result_msg(
         parent_id: parent.map(str::to_owned),
         timestamp: TS.into(),
         message: Message::ToolResult(ToolResultMessage {
+            not_executed: None,
             tool_call_id: call_id.into(),
             tool_name: tool.into(),
             content: vec![OutputContent::Text {

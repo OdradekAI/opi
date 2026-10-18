@@ -26,7 +26,8 @@ fn make_request(cancel: CancellationToken) -> Request {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -224,7 +225,10 @@ async fn stream_no_terminal_event() {
                     break;
                 }
             }
-            Err(ProviderError::StreamError(msg)) if msg.contains("terminal event") => {
+            Err(msg)
+                if msg.category() == opi_ai::provider::ProviderErrorCategory::Stream
+                    && msg.to_string().contains("terminal event") =>
+            {
                 saw_stream_error = true;
                 break;
             }
@@ -372,7 +376,8 @@ async fn gemini_cancel_discards_buffered_events_at_the_queue_barrier() {
         .await
         .expect("cancellation must be visible without draining the queue");
     match next {
-        Some(Err(ProviderError::Cancelled)) => {}
+        Some(Err(cause))
+            if cause.category() == opi_ai::provider::ProviderErrorCategory::Cancelled => {}
         other => panic!("cancellation must take priority, got {other:?}"),
     }
     assert!(stream.next().await.is_none());

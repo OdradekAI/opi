@@ -392,6 +392,7 @@ fn redact_tool_result_message(
     message: &opi_ai::message::ToolResultMessage,
 ) -> opi_ai::message::ToolResultMessage {
     opi_ai::message::ToolResultMessage {
+        not_executed: message.not_executed,
         tool_call_id: message.tool_call_id.clone(),
         tool_name: message.tool_name.clone(),
         content: message.content.iter().map(scrub_output_content).collect(),

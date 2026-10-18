@@ -57,7 +57,7 @@ OpenAI-compatible profile 加入。
 | `Request` / `CacheRetention` | Provider 请求：模型、消息、工具、token 限制、thinking 配置、metadata、取消、timeout、额外 header、cache retention 和会话亲和。 |
 | `Message` | 面向 Provider 的 user、assistant 和 tool-result 消息。 |
 | `InputContent` / `OutputContent` | 文本与图片内容块。 |
-| `ToolResultMessage` | 面向 Provider 的工具结果消息：content、可选 details、`is_error`、`truncated` 和时间戳元数据。 |
+| `ToolResultMessage` | 工具结果 content、details、错误/截断/时间元数据，以及可信执行边界写入的可选 typed `not_executed` 事实；历史缺省表示效果未知，普通错误文本不能证明未执行。 |
 | `AssistantStreamEvent` | Provider 无关流式事件，覆盖 start、text、thinking、tool call 与 done。带内 `Error` 终结符是只读的历史格式，仅为反序列化历史保存事件而保留；当前 producer 不再产生它。 |
 | `ChatStream` | 一个 logical call 事件流的公开 owner：迭代为 `Stream<Item = Result<AssistantStreamEvent, CallFailure>>`，首个终结符被吸收为永久 EOF，`result(self)` 主动驱动到唯一最终结果。 |
 | `CallFailure` | 一个 logical call 的唯一最终失败：规范化 partial/terminal `AssistantMessage`（内容、出处、诊断、已知 usage；setup 失败没有生成内容）加一个已脱敏的 typed cause。 |
@@ -272,12 +272,20 @@ JSON 机制、21 个默认字符串 format、结构化关键字 guard（guard �
 前，随后为插入顺序）以及完整的 lexical/resource/dynamic/recursive 引用
 frame。求值运行在显式 work stack 上（schema 深度不会耗尽 Rust 调用栈），
 区分 productive 递归与 no-progress 递归（后者为 typed 失败），没有隐式
-I/O 或 source-free 的规模/fuel 上限。regex 叶子在准入期以精确的 regress
-0.12.0 feature profile 编译；URL 族 format 使用 WHATWG `url` 实现。该引擎
-是 evidence-only 底座：不关闭任何产品验收；公开 normalizer/validator 接缝
-（以及打包时的 Unicode-16 后端身份）属于后续切片。被结构选中的非法 regex
-即使在 upstream 永不访问的分支也在准入期失败——这是有记录的 fail-closed
-差异。
+I/O 或 source-free 的规模/fuel 上限。结构选中的 schema 边选择 regex 编译；
+annotation 对象只有被引用为 schema 时才参与验证。引用目标在编译后的 plan 中
+冻结，包括实例中缺失字段在编译时产生的资源影响。只有证明重复的编译前缀在
+后续各轮保持相同的 URI 判断与函数缓存命中行为，admission 才返回 `NoProgress`；
+不剪枝 active 节点，也不设置迭代次数上限。null 引用目标使用来源的 false
+回退；根 null 及根或引用目标中的 number/string 以 `InvalidSchema` 失败，JSON
+数组仍保持 inert。regex 与 URL 使用 crates.io 上游 `regress 0.12.0` 和
+`url 2.5.8`。Unicode 属性、脚本、大小写映射和 IDNA 数据随受支持的依赖
+profile，不承诺固定 Unicode 版本。允许的数据差异与升级检查见
+[RDF-21](../../docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile)。
+workspace lock 不固定所有库消费者的图。Opi 关闭 regress 默认 features，
+启用 `std`、`utf16`、`prohibit-unsafe`；普通外部消费者也验证 feature union。
+数据差异不放宽 schema guard、admission/ref 顺序、normalization、授权或
+零 I/O 合同。完整 conformance 与包／平台验收仍保持 OPEN。
 
 ## 公开工具参数 Normalizer／Validator
 
@@ -302,8 +310,10 @@ ryu-js 1.0.2 得到 `"1e+21"`），最后用原 schema 检查 normalize 后的�
 批次位置＋source ID 校验工具关联：已闭合批次可以复用 ID，但批内重复 call
 ID、重复 result、孤儿 result 或 result／call 名称不匹配都是类型化
 `ReplayError`，在任何请求构造之前（授权与网络之前）失败。无歧义的缺失
-result 以请求局部合成错误 result 收尾，声明结果不可得且执行效果未知——
-绝不声称“未执行”，也绝不重新执行；只有可信 Agent 路径记录已知的未执行。
+result 以请求局部错误收尾，声明结果不可得且执行效果未知——
+绝不声称“未执行”，也绝不重新执行；只有可信执行边界记录已知的未执行。
+若失败 assistant 的调用视图被省略，则用脱敏的普通 user 上下文保留结果缺失
+事实，不伪造工具调用或结果。
 继续身份是精确 wire＋provider＋请求模型（`AssistantMessage.wire`，serde
 默认缺省：legacy 未知绝不视为同身份）。跨身份丢弃全部 thinking——可读、
 signed 与 redacted 一视同仁——绝不把推理转成可见文本（Pi 1.3 语义）；同
@@ -327,15 +337,15 @@ parity（AIR-038）与 effort 戳（V-32）由后续任务收尾。
 
 `transcript` 拥有规范的请求时序（AIR-008/011/020）：公共 `Context` 简写
 （`system_prompt`、`messages`、`tools`）经 `transcript::normalize_context`
-恰好一次折叠为首条 `Message::System`，该函数是 `TranscriptContext` 的唯一
-构造器——未归一化的简写无法到达 provider 代码。后续 system 消息修改运行态：
+恰好一次折叠为首条 `Message::System`，该函数返回 typed `Result<TranscriptContext, TranscriptError>`——未归一化的简写无法到达 provider 代码。后续 system 消息修改运行态：
 `content` 追加，具名 `sections` 保序替换（`None` 删除、删除后重加移末尾），
 `tools_added`／`tools_removed` 按值变更工具集（重定义=先删后加；相等状态不
 记录冗余变更）。重放（`get_current_system_message`／`get_current_tools`）
 解析当前 prompt 与工具。投影为 native-or-collapse：接受对话中 system 消息
 的传输保持原位，其余折叠为单个重放头——始终返回新值，绝不改写规范时序。
 显式 `TranscriptProjection::Strict` 在任何请求构造之前拒绝传输无法按时序
-放置的时序保真度。声明安装（`TranscriptContext::append_system_change`）先
+放置的时序保真度。声明安装（初始归一化、内嵌 system 消息、反序列化及
+`TranscriptContext::append_system_change`）先
 校验名称（非空、批次内唯一）并用私有方言引擎编译 input schema，失败以类型
 化错误在消息进入 transcript 之前发生。`Request` 以
 `context: TranscriptContext` 携带输入，不再有独立的 `system`／`tools` 运行时

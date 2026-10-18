@@ -19,6 +19,370 @@ use std::path::Path;
 use opi_ai::schema::{ToolArgumentOutcome, compile, validate_tool_arguments, validate_tool_call};
 use serde_json::Value;
 
+#[test]
+fn annotations_do_not_admit_validation_keywords() {
+    for schema in [
+        serde_json::json!({"type":"object", "default":{"pattern":"["}}),
+        serde_json::json!({"type":"object", "examples":[{"pattern":"["}]}),
+        serde_json::json!({"type":"object", "annotation":{"patternProperties":{"[":true}}}),
+        serde_json::json!({"additionalItems":{"pattern":"["}}),
+        serde_json::json!({"items":true, "additionalItems":{"pattern":"["}}),
+        serde_json::json!({"items":[1], "additionalItems":{"pattern":"["}}),
+    ] {
+        let compiled = compile(schema).expect("annotation data is not a subschema");
+        assert!(compiled.check(&serde_json::json!({})).unwrap());
+    }
+    assert!(
+        compile(serde_json::json!({"items":[true], "additionalItems":{"pattern":"["}})).is_err()
+    );
+    let referenced = compile(serde_json::json!({
+        "$id":"https://offline.invalid/root", "metadata":{"$id":"leaf", "pattern":"^ok$"}, "$ref":"leaf"
+    })).unwrap();
+    assert!(referenced.check(&serde_json::json!("ok")).unwrap());
+    assert!(!referenced.check(&serde_json::json!("no")).unwrap());
+    assert!(compile(serde_json::json!({
+        "$id":"https://offline.invalid/root", "metadata":{"$id":"leaf", "pattern":"["}, "$ref":"leaf"
+    })).is_err());
+    for keyword in ["const", "enum"] {
+        let schema = serde_json::json!({"metadata":{keyword:{"pattern":"^ok$"}}, "$ref":format!("#/metadata/{keyword}")});
+        let compiled = compile(schema).unwrap();
+        assert!(compiled.check(&serde_json::json!("ok")).unwrap());
+        assert!(!compiled.check(&serde_json::json!("bad")).unwrap());
+    }
+}
+
+#[test]
+fn malformed_schema_maps_are_inert_as_a_whole() {
+    use serde_json::json;
+
+    for keyword in ["properties", "patternProperties"] {
+        for invalid in [json!(1), Value::Null, json!([]), json!("schema")] {
+            let schema = json!({keyword: {"a": false, "ignored": invalid}});
+            let compiled = compile(schema.clone()).unwrap();
+            let raw = json!({"a": 1});
+            assert!(compiled.check(&raw).unwrap(), "{schema}");
+            assert_eq!(
+                validate_tool_arguments(&compiled, &raw, None).unwrap(),
+                ToolArgumentOutcome::Valid {
+                    normalized: raw.clone()
+                },
+                "{schema}"
+            );
+
+            // An inert map contributes no covered properties to its sibling.
+            let mut closed = schema;
+            closed["additionalProperties"] = json!(false);
+            let compiled = compile(closed).unwrap();
+            assert!(!compiled.check(&raw).unwrap());
+        }
+
+        let active = compile(json!({keyword: {"a": false, "ok": true}})).unwrap();
+        assert!(!active.check(&json!({"a": 1})).unwrap());
+        assert!(active.check(&json!({"ok": 1})).unwrap());
+    }
+}
+
+#[test]
+fn malformed_schema_maps_do_not_admit_regexes() {
+    use serde_json::json;
+
+    for schema in [
+        json!({"patternProperties": {"[": 1}}),
+        json!({"patternProperties": {"[": true, "ignored": 1}}),
+        json!({"properties": {"a": {"pattern": "["}, "ignored": 1}}),
+    ] {
+        let compiled = compile(schema.clone()).expect("malformed map is inert");
+        let raw = json!({"a": "text"});
+        assert!(compiled.check(&raw).unwrap(), "{schema}");
+        assert_eq!(
+            validate_tool_arguments(&compiled, &raw, None).unwrap(),
+            ToolArgumentOutcome::Valid { normalized: raw },
+            "{schema}"
+        );
+    }
+    for schema in [
+        json!({"patternProperties": {"[": true}}),
+        json!({"properties": {"a": {"pattern": "["}, "allowed": true}}),
+    ] {
+        assert!(
+            matches!(
+                compile(schema),
+                Err(opi_ai::schema::SchemaError::Regex { .. })
+            ),
+            "a structurally valid map must admit its regexes"
+        );
+    }
+}
+
+#[test]
+fn refs_into_const_and_enum_preserve_evaluated_tracking() {
+    use serde_json::json;
+
+    for (target, accepted, rejected) in [
+        (
+            json!({"properties": {"a": true}, "unevaluatedProperties": false}),
+            json!({"a": 1}),
+            json!({"a": 1, "extra": 2}),
+        ),
+        (
+            json!({"prefixItems": [true], "unevaluatedItems": false}),
+            json!([1]),
+            json!([1, 2]),
+        ),
+    ] {
+        let direct = compile(target.clone()).unwrap();
+        assert!(direct.check(&accepted).unwrap());
+        assert!(!direct.check(&rejected).unwrap());
+        for schema in [
+            json!({"metadata": {"const": target}, "$ref": "#/metadata/const"}),
+            json!({"metadata": {"enum": [target]}, "$ref": "#/metadata/enum/0"}),
+        ] {
+            // Rebuild the document exactly as a saved declaration is restored.
+            let restored: Value =
+                serde_json::from_slice(&serde_json::to_vec(&schema).unwrap()).unwrap();
+            let compiled = compile(restored).unwrap();
+            assert!(compiled.check(&accepted).unwrap(), "{schema}");
+            assert!(!compiled.check(&rejected).unwrap(), "{schema}");
+            assert_eq!(
+                validate_tool_arguments(&compiled, &accepted, None).unwrap(),
+                ToolArgumentOutcome::Valid {
+                    normalized: accepted.clone()
+                },
+                "{schema}"
+            );
+            assert!(matches!(
+                validate_tool_arguments(&compiled, &rejected, None).unwrap(),
+                ToolArgumentOutcome::Invalid { .. }
+            ));
+        }
+    }
+}
+
+#[test]
+fn unreferenced_const_and_enum_data_remain_data_with_unevaluated_keys() {
+    use serde_json::json;
+
+    let data = json!({"pattern": "[", "unevaluatedProperties": false});
+    for schema in [json!({"const": data}), json!({"enum": [data]})] {
+        let compiled = compile(schema).expect("constant data is not a regex schema");
+        assert!(compiled.check(&data).unwrap());
+        assert!(!compiled.check(&json!({})).unwrap());
+        assert_eq!(
+            validate_tool_arguments(&compiled, &data, None).unwrap(),
+            ToolArgumentOutcome::Valid {
+                normalized: data.clone()
+            }
+        );
+    }
+}
+
+#[test]
+fn upstream_regex_data_reaches_all_public_schema_paths() {
+    use serde_json::json;
+
+    // Known data changes in the supported upstream profile, not a promise to
+    // freeze this Unicode release for every future dependency resolution.
+    for (script, value) in [
+        ("Beria_Erfe", "\u{16ea0}"),
+        ("Sidetic", "\u{10940}"),
+        ("Tai_Yo", "\u{1e6c0}"),
+        ("Tolong_Siki", "\u{11db0}"),
+    ] {
+        let pattern = format!("^\\p{{Script={script}}}$");
+        let compiled = compile(json!({"type":"string", "pattern":pattern})).unwrap();
+        assert!(compiled.check(&json!(value)).unwrap(), "{script}");
+        assert!(!compiled.check(&json!("a")).unwrap(), "{script}");
+        assert_eq!(
+            validate_tool_arguments(&compiled, &json!(value), None).unwrap(),
+            ToolArgumentOutcome::Valid {
+                normalized: json!(value)
+            }
+        );
+    }
+    for schema in [
+        json!({"propertyNames":{"pattern":"^\\p{Letter}$"}}),
+        json!({"patternProperties":{"^\\p{Letter}$":{"const":3}}, "additionalProperties":false}),
+    ] {
+        let compiled = compile(schema).unwrap();
+        assert!(compiled.check(&json!({"\u{16ea0}":3})).unwrap());
+        assert!(!compiled.check(&json!({"1":3})).unwrap());
+    }
+    let regex = compile(json!({"format":"regex"})).unwrap();
+    assert!(regex.check(&json!("^\\p{Script=Beria_Erfe}$")).unwrap());
+    assert!(!regex.check(&json!("[")).unwrap());
+    assert!(compile(json!({"pattern":"["})).is_err());
+}
+
+#[test]
+fn upstream_domain_data_preserves_format_specific_rejection() {
+    use serde_json::json;
+
+    for format in ["url", "iri", "iri-reference"] {
+        let compiled = compile(json!({"type":"string", "format":format})).unwrap();
+        for value in [
+            "http://\u{16ea0}.example/",
+            "http://%F0%96%BA%A0.example/",
+            "http://xn--zs0f.example/",
+            "https://example.com/\u{16ea0}",
+        ] {
+            assert!(compiled.check(&json!(value)).unwrap(), "{format}: {value}");
+        }
+        for value in [
+            "http://[",
+            "http://a\u{200d}.example/",
+            "http://xn--7r0f.example/",
+        ] {
+            assert!(!compiled.check(&json!(value)).unwrap(), "{format}: {value}");
+        }
+    }
+    for (format, good, bad) in [
+        ("idn-hostname", "\u{16ea0}.example", "a\u{200d}.example"),
+        ("idn-email", "a@\u{16ea0}.example", "a@a\u{200d}.example"),
+    ] {
+        let compiled = compile(json!({"format":format})).unwrap();
+        assert!(compiled.check(&json!(good)).unwrap(), "{format}");
+        assert!(!compiled.check(&json!(bad)).unwrap(), "{format}");
+    }
+    // The URI formats keep their source regex algorithm, separate from URL.
+    let uri = compile(json!({"format":"uri"})).unwrap();
+    assert!(!uri.check(&json!("http://\u{16ea0}.example/")).unwrap());
+    assert!(uri.check(&json!("http://xn--zs0f.example/")).unwrap());
+}
+
+#[test]
+fn upstream_idna_mapping_survives_schema_roundtrip_and_relative_refs() {
+    use serde_json::json;
+
+    for target_host in [
+        "\u{16ea0}.example",
+        "%F0%96%BA%A0.example",
+        "xn--zs0f.example",
+    ] {
+        for reference_host in [
+            "\u{16ea0}.example",
+            "%F0%96%BA%A0.example",
+            "xn--zs0f.example",
+        ] {
+            for relative in [false, true] {
+                let reference = if relative {
+                    "leaf".to_owned()
+                } else {
+                    format!("http://{reference_host}/dir/leaf")
+                };
+                let schema = json!({
+                    "$id":format!("http://{reference_host}/dir/root"),
+                    "metadata":{"$id":format!("http://{target_host}/dir/leaf"),"const":3},
+                    "$ref":reference
+                });
+                let restored =
+                    serde_json::from_slice(&serde_json::to_vec(&schema).unwrap()).unwrap();
+                let compiled = compile(restored).unwrap();
+                assert!(compiled.check(&json!(3)).unwrap(), "{schema}");
+                assert!(!compiled.check(&json!(4)).unwrap(), "{schema}");
+            }
+        }
+    }
+    let invalid = compile(json!({"$id":"http://xn--7r0f.example/", "$ref":"leaf"})).unwrap();
+    assert!(matches!(
+        invalid.check(&json!(3)),
+        Err(opi_ai::schema::SchemaError::Uri { .. })
+    ));
+}
+
+#[test]
+fn upstream_new_script_admission_keeps_optional_null_and_union_rules() {
+    use serde_json::json;
+
+    let property = json!({"type":"string", "pattern":"^\\p{Script=Beria_Erfe}$"});
+    let compiled = compile(json!({"type":"object", "properties":{"p":property}})).unwrap();
+    let raw = json!({"p":null});
+    assert_eq!(
+        validate_tool_arguments(&compiled, &raw, None).unwrap(),
+        ToolArgumentOutcome::Valid {
+            normalized: json!({})
+        }
+    );
+    assert_eq!(raw, json!({"p":null}));
+    let required =
+        compile(json!({"type":"object", "properties":{"p":property}, "required":["p"]})).unwrap();
+    assert!(matches!(
+        validate_tool_arguments(&required, &raw, None).unwrap(),
+        ToolArgumentOutcome::Invalid { .. }
+    ));
+    let union = compile(json!({"anyOf":[property, {"const":"fallback"}]})).unwrap();
+    assert!(union.check(&json!("\u{16ea0}")).unwrap());
+    assert!(union.check(&json!("fallback")).unwrap());
+    assert!(!union.check(&json!("unrelated")).unwrap());
+}
+
+#[test]
+fn public_validation_uses_supported_upstream_data() {
+    let letter = compile(serde_json::json!({"type":"string", "pattern":"^\\p{Letter}$"})).unwrap();
+    assert!(letter.check(&serde_json::json!("\u{16ea0}")).unwrap());
+    assert!(letter.check(&serde_json::json!("\u{105c0}")).unwrap());
+    let url = compile(serde_json::json!({"type":"string", "format":"url"})).unwrap();
+    for value in ["http://\u{16ea0}.example", "http://%F0%96%BA%A0.example"] {
+        assert!(url.check(&serde_json::json!(value)).unwrap(), "{value}");
+    }
+    assert!(
+        url.check(&serde_json::json!("https://example.com/\u{16ea0}"))
+            .unwrap()
+    );
+}
+
+#[test]
+fn exact_integer_constraints_do_not_round_into_success() {
+    use serde_json::json;
+    for (schema, value) in [
+        (
+            json!({"const":9007199254740992u64}),
+            json!(9007199254740993u64),
+        ),
+        (
+            json!({"enum":[9007199254740992u64]}),
+            json!(9007199254740993u64),
+        ),
+        (
+            json!({"maximum":9007199254740992u64}),
+            json!(9007199254740993u64),
+        ),
+        (
+            json!({"minimum":9007199254740993u64}),
+            json!(9007199254740992u64),
+        ),
+        (
+            json!({"exclusiveMinimum":9007199254740992u64}),
+            json!(9007199254740993u64),
+        ),
+        (
+            json!({"exclusiveMaximum":9007199254740993u64}),
+            json!(9007199254740992u64),
+        ),
+        (json!({"maximum":i64::MAX}), json!(i64::MAX as u64 + 1)),
+        (
+            json!({"maximum":-9007199254740993i64}),
+            json!(-9007199254740992i64),
+        ),
+    ] {
+        let expected =
+            schema.get("exclusiveMinimum").is_some() || schema.get("exclusiveMaximum").is_some();
+        let compiled = compile(schema.clone()).unwrap();
+        let outcome = validate_tool_arguments(&compiled, &value, None).unwrap();
+        assert_eq!(
+            matches!(outcome, ToolArgumentOutcome::Valid { .. }),
+            expected,
+            "{schema} / {value}"
+        );
+    }
+    let unique = compile(json!({"uniqueItems":true})).unwrap();
+    assert!(
+        unique
+            .check(&json!([9007199254740992u64, 9007199254740993u64]))
+            .unwrap()
+    );
+    assert!(!unique.check(&json!([1, 1.0])).unwrap());
+}
+
 fn rows_by_id(id: &str) -> Option<Value> {
     let data = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/schema-public-expected.json"),
@@ -173,7 +537,7 @@ fn optional_null_deletion_and_required_null_coercion() {
 }
 
 #[test]
-fn optional_null_kept_when_subschema_accepts_null_or_fails_to_compile() {
+fn optional_null_kept_when_subschema_accepts_null_or_uses_ref() {
     // Sub-schema accepts null: key survives normalization.
     let compiled = compile(serde_json::json!({
         "type": "object",
@@ -196,6 +560,100 @@ fn optional_null_kept_when_subschema_accepts_null_or_fails_to_compile() {
     match validate_tool_arguments(&compiled, &serde_json::json!({"s": null}), None).unwrap() {
         ToolArgumentOutcome::Invalid { .. } => {}
         other => panic!("expected Invalid (null fails the referenced string), got {other:?}"),
+    }
+}
+
+#[test]
+fn optional_null_subcompile_failure_keeps_the_key_in_inert_properties() {
+    use serde_json::json;
+
+    let bad_regex = json!({"pattern": "["});
+    assert!(matches!(
+        compile(bad_regex.clone()),
+        Err(opi_ai::schema::SchemaError::Regex { .. })
+    ));
+    for (property, required, expected) in [
+        (bad_regex.clone(), false, json!({"a": null})),
+        (json!({"type": "number"}), false, json!({})),
+        (json!({"type": "null"}), false, json!({"a": null})),
+        (bad_regex, true, json!({"a": null})),
+        (json!({"$ref": "#/$defs/text"}), false, json!({"a": null})),
+    ] {
+        // The malformed sibling makes the evaluator's whole properties map
+        // inert; the normalizer still visits each present property.
+        let mut schema = json!({
+            "type": "object",
+            "$defs": {"text": {"type": "string"}},
+            "properties": {"a": property, "ignored": 1}
+        });
+        if required {
+            schema["required"] = json!(["a"]);
+        }
+        let original_schema = schema.clone();
+        let compiled = compile(schema.clone()).expect("malformed properties map is inert");
+        let raw = json!({"a": null});
+        let original_raw = raw.clone();
+        assert!(compiled.check(&raw).unwrap(), "{schema}");
+        let expected = ToolArgumentOutcome::Valid {
+            normalized: expected,
+        };
+        assert_eq!(
+            validate_tool_arguments(&compiled, &raw, None).unwrap(),
+            expected,
+            "{schema}"
+        );
+        assert_eq!(
+            validate_tool_call(&[("tool", &compiled)], "tool", &raw, None)
+                .unwrap()
+                .unwrap(),
+            expected,
+            "{schema}"
+        );
+        assert_eq!(raw, original_raw, "raw arguments must remain unchanged");
+        assert_eq!(schema, original_schema, "schema must remain unchanged");
+    }
+}
+
+#[test]
+fn union_subcompile_failure_does_not_select_the_failed_arm() {
+    use serde_json::json;
+
+    let failed_arm = json!({"type": "string", "pattern": "["});
+    assert!(matches!(
+        compile(failed_arm.clone()),
+        Err(opi_ai::schema::SchemaError::Regex { .. })
+    ));
+    for keyword in ["anyOf", "oneOf"] {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "a": {keyword: [failed_arm, {"type": "number"}]},
+                "ignored": 1
+            }
+        });
+        let original_schema = schema.clone();
+        let compiled = compile(schema.clone()).expect("malformed properties map is inert");
+        let raw = json!({"a": true});
+        let original_raw = raw.clone();
+        // Neither arm accepts the original boolean. The failed string arm's
+        // coerced candidate must not win over the number arm's fresh clone.
+        let expected = ToolArgumentOutcome::Valid {
+            normalized: json!({"a": 1}),
+        };
+        assert_eq!(
+            validate_tool_arguments(&compiled, &raw, None).unwrap(),
+            expected,
+            "{schema}"
+        );
+        assert_eq!(
+            validate_tool_call(&[("tool", &compiled)], "tool", &raw, None)
+                .unwrap()
+                .unwrap(),
+            expected,
+            "{schema}"
+        );
+        assert_eq!(raw, original_raw, "raw arguments must remain unchanged");
+        assert_eq!(schema, original_schema, "schema must remain unchanged");
     }
 }
 

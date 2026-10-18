@@ -53,7 +53,8 @@ async fn stream_yields_text_response_events() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),
@@ -99,7 +100,8 @@ async fn stream_yields_tool_call_response_events() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),
@@ -148,7 +150,8 @@ async fn stream_yields_error_response_events() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),
@@ -194,7 +197,8 @@ async fn multiple_stream_calls_consume_responses_in_order() {
             system_prompt: None,
             messages: vec![],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),
@@ -220,7 +224,8 @@ async fn multiple_stream_calls_consume_responses_in_order() {
                 system_prompt: None,
                 messages: vec![],
                 tools: vec![],
-            }),
+            })
+            .expect("valid context declarations"),
             max_tokens: None,
             temperature: None,
             thinking: Default::default(),

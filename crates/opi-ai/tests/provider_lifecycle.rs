@@ -27,7 +27,8 @@ fn make_request(cancel: CancellationToken) -> Request {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),
@@ -337,7 +338,10 @@ async fn stream_no_terminal_event_produces_stream_error() {
                     break;
                 }
             }
-            Err(ProviderError::StreamError(msg)) if msg.contains("terminal event") => {
+            Err(error)
+                if error.category() == opi_ai::provider::ProviderErrorCategory::Stream
+                    && error.to_string().contains("terminal event") =>
+            {
                 saw_stream_error = true;
                 break;
             }
@@ -858,7 +862,8 @@ async fn anthropic_cancel_discards_buffered_events_at_the_queue_barrier() {
         .await
         .expect("cancellation must be visible without draining the queue");
     match first {
-        Some(Err(ProviderError::Cancelled)) => {}
+        Some(Err(cause))
+            if cause.category() == opi_ai::provider::ProviderErrorCategory::Cancelled => {}
         other => panic!("cancellation must take priority over buffered events, got {other:?}"),
     }
     assert!(
@@ -967,8 +972,167 @@ async fn anthropic_cancel_at_the_connect_barrier_is_immediately_visible() {
         .await
         .expect("cancellation must be visible during the connect wait");
     match first {
-        Some(Err(ProviderError::Cancelled)) => {}
+        Some(Err(cause))
+            if cause.category() == opi_ai::provider::ProviderErrorCategory::Cancelled => {}
         other => panic!("expected typed cancellation, got {other:?}"),
     }
     assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn anthropic_failures_preserve_unpublished_mapper_state() {
+    use opi_ai::message::AssistantContent;
+    use opi_ai::stream::ChatStream;
+
+    let start = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"partial\",\"model\":\"claude\",\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}\n\n";
+    let middle = concat!(
+        "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"x\",\"name\":\"effect\",\"input\":{}}}\n\n",
+        "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"x\\\":\"}}\n\n",
+        "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"redacted_thinking\",\"data\":\"opaque-artificial\"}}\n\n",
+        "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":7}}\n\n",
+    );
+    for ending in [
+        "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"secret-error-canary\"}}\n\n",
+        "",
+        "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{},\"usage\":{\"output_tokens\":-1}}\n\n",
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(format!("{start}{middle}{ending}")),
+            )
+            .mount(&server)
+            .await;
+        let provider = AnthropicProvider::new(Some(server.uri()));
+        let failure = ChatStream::new(provider.stream_prepared(
+            make_request(CancellationToken::new()),
+            opi_ai::test_support::resolved_auth(),
+        ))
+        .result()
+        .await
+        .expect_err("provider error or premature EOF");
+        assert_eq!(failure.message().usage.output_tokens, 7);
+        assert_eq!(failure.message().usage.input_tokens, 10);
+        assert!(
+            matches!(&failure.message().content[0], AssistantContent::ToolCall { tool_call } if tool_call.arguments == "{\"x\":")
+        );
+        assert!(
+            matches!(&failure.message().content[1], AssistantContent::RedactedThinking { data } if data == "opaque-artificial")
+        );
+        assert!(!format!("{:?}", failure.cause()).contains("secret-error-canary"));
+    }
+}
+
+async fn assert_drop_closes_owned_http_attempt(bedrock: bool, response_started: bool) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let cancel = CancellationToken::new();
+    let provider: Box<dyn Provider> = if bedrock {
+        Box::new(opi_ai::bedrock::BedrockProvider::new(
+            Some(url),
+            std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+        ))
+    } else {
+        Box::new(opi_ai::gemini::GeminiProvider::new(Some(url)))
+    };
+    let auth = if bedrock {
+        opi_ai::ResolvedAuth::aws_sigv4(
+            opi_ai::AwsSigV4Credentials {
+                access_key_id: "offline-public-id".into(),
+                secret_access_key: "offline-public-secret".into(),
+                session_token: None,
+                region: "us-east-1".into(),
+            },
+            Default::default(),
+        )
+    } else {
+        opi_ai::test_support::resolved_auth()
+    };
+    let mut request = make_request(cancel.clone());
+    request.model = if bedrock {
+        "bedrock:amazon.nova-lite-v1:0"
+    } else {
+        "gemini:gemini-2.5-flash"
+    }
+    .into();
+    let mut stream = provider.stream_prepared(request, auth);
+    let (mut socket, _) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+    let mut received = Vec::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let count = socket.read(&mut buf).await.unwrap();
+        assert_ne!(count, 0);
+        received.extend_from_slice(&buf[..count]);
+        if let Some(end) = received.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+            let headers = std::str::from_utf8(&received[..end]).unwrap();
+            let length = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+                .unwrap();
+            if received.len() >= end + 4 + length {
+                break;
+            }
+        }
+    }
+    if response_started {
+        socket
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        let body = if bedrock {
+            opi_ai::bedrock::event_stream::build_test_frame(
+                "messageStart",
+                "application/json",
+                br#"{"role":"assistant"}"#,
+            )
+        } else {
+            b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"barrier\"}]}}]}\n\n"
+                .to_vec()
+        };
+        socket
+            .write_all(format!("{:x}\r\n", body.len()).as_bytes())
+            .await
+            .unwrap();
+        socket.write_all(&body).await.unwrap();
+        socket.write_all(b"\r\n").await.unwrap();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .is_ok()
+        );
+    }
+    drop(stream);
+    let closed =
+        tokio::time::timeout(std::time::Duration::from_secs(2), socket.read(&mut buf)).await;
+    cancel.cancel(); // also release the producer when this regression fails
+    assert!(
+        matches!(closed, Ok(Ok(0))),
+        "dropped owned attempt must release its HTTP wait: {closed:?}"
+    );
+}
+
+#[tokio::test]
+async fn gemini_drop_releases_connect_and_read_waits() {
+    for response_started in [false, true] {
+        assert_drop_closes_owned_http_attempt(false, response_started).await;
+    }
+}
+
+#[tokio::test]
+async fn bedrock_drop_releases_connect_and_read_waits() {
+    for response_started in [false, true] {
+        assert_drop_closes_owned_http_attempt(true, response_started).await;
+    }
 }

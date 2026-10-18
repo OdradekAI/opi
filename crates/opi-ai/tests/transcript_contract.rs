@@ -48,6 +48,58 @@ fn change() -> SystemMessage {
     }
 }
 
+#[test]
+fn serde_cannot_install_invalid_declaration_batches() {
+    let mut empty = tool("", "empty");
+    empty.input_schema = serde_json::json!({"type":"object"});
+    let mut broken = tool("broken", "invalid pattern");
+    broken.input_schema = serde_json::json!({"type":"string", "pattern":"["});
+    for tools in [
+        vec![empty],
+        vec![tool("same", "first"), tool("same", "second")],
+        vec![broken],
+    ] {
+        let messages = vec![Message::System(SystemMessage {
+            tools_added: tools,
+            ..change()
+        })];
+        let raw = serde_json::to_string(&messages).unwrap();
+        assert!(
+            serde_json::from_str::<TranscriptContext>(&raw).is_err(),
+            "{raw}"
+        );
+    }
+}
+
+#[test]
+fn initial_and_embedded_declarations_use_the_same_validation() {
+    let mut broken = tool("broken", "invalid pattern");
+    broken.input_schema = serde_json::json!({"type":"string", "pattern":"["});
+    for tools in [
+        vec![tool("", "empty")],
+        vec![tool("same", "a"), tool("same", "b")],
+        vec![broken],
+    ] {
+        assert!(
+            normalize_context(Context {
+                tools: tools.clone(),
+                ..Context::default()
+            })
+            .is_err()
+        );
+        assert!(
+            normalize_context(Context {
+                messages: vec![Message::System(SystemMessage {
+                    tools_added: tools,
+                    ..change()
+                })],
+                ..Context::default()
+            })
+            .is_err()
+        );
+    }
+}
+
 /// V-06 SDK-active: the public shorthand folds into exactly one leading
 /// transcript entry; an already normalized transcript re-enters unchanged.
 #[test]
@@ -57,7 +109,7 @@ fn initial_shorthand_folds_once_into_a_leading_entry() {
         messages: vec![user("hello")],
         tools: vec![tool("read", "Read things")],
     };
-    let normalized = normalize_context(context);
+    let normalized = normalize_context(context).expect("valid context declarations");
     assert_eq!(normalized.messages().len(), 2);
     let head = normalized
         .messages()
@@ -78,7 +130,8 @@ fn content_appends_and_sections_patch_in_order() {
         system_prompt: Some("base".to_owned()),
         messages: vec![user("q")],
         ..Context::default()
-    });
+    })
+    .expect("valid context declarations");
     transcript
         .append_system_change(SystemMessage {
             content: "add-one".to_owned(),
@@ -149,7 +202,8 @@ fn tool_declarations_are_by_value_with_real_deltas_only() {
     let mut transcript = normalize_context(Context {
         tools: vec![tool("a", "one"), tool("b", "two")],
         ..Context::default()
-    });
+    })
+    .expect("valid context declarations");
     // Redefine `a` and add `c` through the state-change message; equal
     // state produces None (dedup).
     assert!(tool_state_change_message(&[tool("a", "one")], &[tool("a", "one")], 1).is_none());
@@ -180,7 +234,8 @@ fn projection_is_native_or_collapse_and_never_rewrites_canonical() {
         system_prompt: Some("base".to_owned()),
         messages: vec![user("q")],
         ..Context::default()
-    });
+    })
+    .expect("valid context declarations");
     transcript
         .append_system_change(SystemMessage {
             content: "later".to_owned(),
@@ -219,7 +274,8 @@ fn projection_is_native_or_collapse_and_never_rewrites_canonical() {
     let fresh = normalize_context(Context {
         system_prompt: Some("only head".to_owned()),
         ..Context::default()
-    });
+    })
+    .expect("valid context declarations");
     resolve_transcript(&fresh, false, TranscriptProjection::Strict).unwrap();
 }
 
@@ -233,7 +289,7 @@ fn invalid_declarations_fail_before_installation() {
         description: "unknown keywords stay inert".to_owned(),
         input_schema: serde_json::json!({"type": "object", "unknownKeyword": {"x": 1}}),
     };
-    let mut transcript = normalize_context(Context::default());
+    let mut transcript = normalize_context(Context::default()).expect("valid context declarations");
     transcript
         .append_system_change(SystemMessage {
             tools_added: vec![inert],
@@ -291,7 +347,8 @@ fn adapters_consume_only_the_normalized_transcript() {
             system_prompt: Some("system text".to_owned()),
             messages: vec![user("hello")],
             tools: vec![tool("read", "Read things")],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(64),
         temperature: None,
         thinking: opi_ai::provider::ThinkingConfig::default(),
@@ -346,7 +403,8 @@ fn stored_chronologies_round_trip_and_pre_cutover_lists_still_parse() {
         system_prompt: Some("p".to_owned()),
         tools: vec![tool("t", "d")],
         ..Context::default()
-    });
+    })
+    .expect("valid context declarations");
     transcript
         .append_system_change(SystemMessage {
             sections: vec![SystemSection {
@@ -378,7 +436,8 @@ fn native_placement_renders_framed_updates() {
     let mut transcript = normalize_context(Context {
         system_prompt: Some("base".to_owned()),
         ..Context::default()
-    });
+    })
+    .expect("valid context declarations");
     let mut later = change();
     later.content = "new note".to_owned();
     later.sections = vec![SystemSection {

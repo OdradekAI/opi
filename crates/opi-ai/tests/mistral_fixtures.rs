@@ -153,7 +153,8 @@ fn mistral_request_body_strips_provider_prefix() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -263,9 +264,9 @@ async fn mistral_error_event_routing() {
     // Current producers stop the dual terminal format: the error frame routes
     // to a typed stream failure, not an Error event.
     assert!(
-        items
-            .iter()
-            .any(|e| matches!(e, Err(ProviderError::StreamError(_)))),
+        items.iter().any(|e| e.as_ref().is_err_and(
+            |cause| cause.category() == opi_ai::provider::ProviderErrorCategory::Stream
+        )),
         "should have a typed stream failure"
     );
     assert!(
@@ -418,7 +419,8 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -484,7 +486,8 @@ fn mistral_profile_inherits_shared_compat_flags() {
                 description: "list a directory".into(),
                 input_schema: serde_json::json!({"type":"object","properties":{}}),
             }],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -539,7 +542,8 @@ async fn stream_cancellation_aborts_before_completion() {
                 timestamp_ms: 0,
             })],
             tools: vec![],
-        }),
+        })
+        .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -566,7 +570,9 @@ async fn stream_cancellation_aborts_before_completion() {
         .await
         .expect("stream must surface cancellation before the delayed terminal fixture completes");
     match next {
-        Some(Err(ProviderError::Cancelled)) => { /* typed cancellation, as contracted */ }
+        Some(Err(cause))
+            if cause.category() == opi_ai::provider::ProviderErrorCategory::Cancelled =>
+        { /* typed cancellation, as contracted */ }
         other => panic!("expected Err(ProviderError::Cancelled) on cancellation, got: {other:?}"),
     }
 }

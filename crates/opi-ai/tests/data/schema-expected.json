@@ -225,9 +225,9 @@
   "deferred": false
  },
  "ecma-unicode17-script": {
-  "outcome": "mechanism-error",
-  "valid": null,
-  "deferred": true
+  "outcome": "evaluated",
+  "valid": true,
+  "deferred": false
  },
  "ecma-unicode16-todhri": {
   "outcome": "evaluated",
@@ -246,8 +246,8 @@
  },
  "ecma-unicode17-new-letter": {
   "outcome": "evaluated",
-  "valid": false,
-  "deferred": true
+  "valid": true,
+  "deferred": false
  },
  "ecma-astral-dot": {
   "outcome": "evaluated",

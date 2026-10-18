@@ -237,6 +237,7 @@ fn harness_events_cross_one_redacting_subscriber_fanout() {
         Entry {
             id: "tool-output".into(),
             message: AgentMessage::Llm(Message::ToolResult(opi_ai::message::ToolResultMessage {
+                not_executed: None,
                 tool_call_id: "tc-compaction".into(),
                 tool_name: "bash".into(),
                 content: vec![OutputContent::Text {
