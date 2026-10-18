@@ -6,7 +6,9 @@
 //!
 //! Task 14.12 restores optional subset fields and the four-line cost contract.
 
-use opi_ai::stream::{CostBreakdown, CumulativeUsage, Pricing, Usage, calculate_cost};
+use opi_ai::stream::{
+    CostBreakdown, CumulativeUsage, Pricing, Usage, calculate_cost, calculate_cumulative_cost,
+};
 
 fn compile_time_assert_optional_u64(_: Option<u64>) {}
 
@@ -475,4 +477,37 @@ fn calculate_cost_no_1h_subset_is_regression_safe() {
     let cost = calculate_cost(&usage, &pricing);
     // cache_write: 500k * 3.75/1M = 1.875 (all short, no 1h)
     assert!((cost.cache_write_cost - 1.875).abs() < 1e-10);
+}
+
+#[test]
+fn cumulative_cost_uses_exact_u64_totals_above_public_usage_range() {
+    let total = u64::from(u32::MAX) + 1_000_000;
+    let usage = CumulativeUsage::from_totals(
+        total,
+        total + 1,
+        total + 2,
+        total + 3,
+        Some(total / 2),
+        None,
+        1,
+        0,
+    );
+    let pricing = Pricing {
+        input_cost_per_mtok: 1.0,
+        output_cost_per_mtok: 2.0,
+        cache_read_cost_per_mtok: 0.5,
+        cache_write_cost_per_mtok: 1.25,
+    };
+
+    let cost = calculate_cumulative_cost(&usage, &pricing);
+    let one_hour = total / 2;
+    let short = (total + 3) - one_hour;
+    let expected = total as f64 / 1_000_000.0
+        + (total + 1) as f64 * 2.0 / 1_000_000.0
+        + (total + 2) as f64 * 0.5 / 1_000_000.0
+        + short as f64 * 1.25 / 1_000_000.0
+        + one_hour as f64 * 2.0 / 1_000_000.0;
+
+    assert_eq!(usage.as_usage().input_tokens, u32::MAX);
+    assert!((cost.total_cost() - expected).abs() < 1e-9);
 }

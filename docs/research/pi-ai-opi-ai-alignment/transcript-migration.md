@@ -142,10 +142,10 @@ active export与resume/fork复用active-chain重建；full-tree保留branch/pare
 | TM-V02 | 默认native或collapse且canonical不变；显式Strict提前失败；单初始state不误报loss | provider_collection及adapter伪传输；替换默认Strict旧断言 |
 | TM-V03 | context/model/inference/revision原子安装；stop/queue suffix/cancel/ack保持 | Agent next-turn/hooks；替换fixed-registry假设 |
 | TM-V04 | 模型声明不注册；可信动态schema可更新；hidden与active分离；normalized模型值先校验，hook后execution可超schema但authorizer审实际值 | authority/tool-validation，新增旧callrevision及live policy revocation |
-| TM-V05 | legacy源bytes不变、child来源及unknown、continuation处初始state、exact拒绝unknown；普通变化不child | phase17_legacy_migration与migration fixtures |
+| TM-V05 | legacy源bytes不变、child来源及unknown、continuation处初始state、exact拒绝unknown；普通变化不child | `session_migration.rs` 与 migration fixtures |
 | TM-V06 | sibling隔离、fork旧tip无future、active resume/fork/export一致、required与中断尾行区分 | session_contract/context/branching |
 | TM-V07 | pi式checkpoint+summary+retained非system+后续更新；多次压缩、重加、unknown保留；原始历史仍可检查 | session_context、coordinator；撤回逐retained旧call完全保真断言 |
-| TM-V08 | commit/leaf失败原子性；ack后provider/auth失败或取消仍保留accepted baseline；一个事务owner | phase17_failure_rollback、ProductCompactionHooks；改掉失败一律删除输入的旧预期 |
+| TM-V08 | commit/leaf失败原子性；ack后provider/auth失败或取消仍保留accepted baseline；一个事务owner | `runtime_failure_recovery.rs`、ProductCompactionHooks；改掉失败一律删除输入的旧预期 |
 | TM-V09 | 每call prefix/revision/projection可关联，同prepared attempts相同；新call新revision；旧call稳定但User Policy实时撤销 | evidence/binding多call fixtures；不新增普通更新child断言 |
 | TM-V10 | export脱敏、变化/unknown可见、full-tree不伪装单支、signature/opaque隐藏 | session_export现有边界 |
 | TM-V11 | 原单次聊天语义保持；便利输入唯一normalize；旧adapter双权威退出 | 直接SDK、mock、compaction、examples编译和payload fixtures |

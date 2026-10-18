@@ -1,14 +1,10 @@
-//! Phase 17 task 17.7 smoke addendum: artifact-truthfulness directory.
+// opi-runtime-acceptance
+//! Evidence artifact bundle produced by a real CodingHarness and FileEvidenceSink.
 //!
-//! Produces `target/opi-artifacts/phase17-task-17.7` from a real
-//! `CodingHarness` run bound to the product `FileEvidenceSink`. The directory
-//! carries one immutable per-run evidence directory (evidence.jsonl,
-//! manifest.json), run
-//! scaffolding (command/cwd/env/exit/stdout/stderr), mode payloads
-//! (ndjson/session/rpc), the resolved route assertion, tool counts, a
-//! RUN_SUMMARY claim table, and a SHA256SUMS manifest. Every required artifact
-//! must exist; every payload except stdout/stderr must be non-empty; SHA256SUMS
-//! is verified against a clean re-read.
+//! The temporary bundle contains immutable run evidence, mode payloads, invocation
+//! scaffolding, route facts, tool counts, a claim table, and verified SHA-256 sums.
+//! Harness-generated scaffolding is classified separately from captured runtime
+//! observations.
 
 use std::io::Write;
 use std::sync::Arc;
@@ -20,18 +16,11 @@ use opi_coding_agent::evidence::{EvidenceBuilderConfig, FileEvidenceSink};
 use opi_coding_agent::harness::CodingHarness;
 use opi_coding_agent::project_trust::TrustDecision;
 
-/// Resolve the canonical artifact directory under the workspace `target/`.
-fn artifact_dir() -> std::path::PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_owned());
-    std::path::Path::new(&manifest_dir).join("../../target/opi-artifacts/phase17-task-17.7")
-}
-
 #[tokio::test]
 #[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in awaited dispatch.
-async fn phase17_task_17_7_artifact_truthfulness_directory() {
-    let dir = artifact_dir();
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+async fn evidence_bundle_preserves_capture_and_artifact_integrity() {
+    let artifacts = tempfile::tempdir().unwrap();
+    let dir = artifacts.path().to_path_buf();
 
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
@@ -250,6 +239,7 @@ async fn phase17_task_17_7_artifact_truthfulness_directory() {
     }
     let mut f = std::fs::File::create(dir.join("SHA256SUMS.txt")).unwrap();
     writeln!(f, "{}", sha_lines.join("\n")).unwrap();
+    drop(f);
 
     // Verify SHA256SUMS.txt against a fresh read of every listed raw file (the
     // smoke-addendum requirement), not a same-path re-read tautology.
@@ -266,4 +256,12 @@ async fn phase17_task_17_7_artifact_truthfulness_directory() {
     // The finalized manifest is DirectRuntimeInput-bound and complete.
     assert_eq!(manifest["binding"]["kind"], "direct_runtime_input");
     assert!(!sink.records().is_empty());
+
+    drop(harness);
+    drop(sink);
+    drop(artifacts);
+    assert!(
+        !dir.exists(),
+        "temporary evidence bundle is removed on drop"
+    );
 }

@@ -1889,3 +1889,40 @@ async fn chat_keepalive_frames_are_ignored_between_events() {
         .collect();
     assert!(!events.is_empty(), "keepalive frame does not break parsing");
 }
+
+#[test]
+fn initial_chat_tool_call_arguments_are_emitted_after_start() {
+    let chunk = serde_json::json!({
+        "id": "response-1",
+        "model": "gpt-4o",
+        "choices": [{
+            "index": 0,
+            "delta": {
+                "tool_calls": [{
+                    "index": 0,
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {"name": "read", "arguments": "{\"path\":"}
+                }]
+            }
+        }]
+    });
+    let sse = format!("data: {chunk}\n\n");
+    let events = match opi_ai::openai_chat::parse_sse_events(&sse)
+        .next()
+        .expect("one frame")
+    {
+        opi_ai::openai_chat::ParsedEvent::Valid(events) => events,
+        opi_ai::openai_chat::ParsedEvent::UsageError(error) => panic!("{error}"),
+        opi_ai::openai_chat::ParsedEvent::Malformed { error, .. } => panic!("{error}"),
+    };
+
+    assert!(matches!(
+        events.first(),
+        Some(OpenAiChatEvent::ToolCallStart { .. })
+    ));
+    assert!(matches!(
+        events.get(1),
+        Some(OpenAiChatEvent::ToolCallDelta { arguments, .. }) if arguments == "{\"path\":"
+    ));
+}

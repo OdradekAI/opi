@@ -82,10 +82,10 @@ def requirement_record(
         },
         "observable_behavior": "The registered behavior is present.",
         "production_surfaces": ["crates/opi-agent/src/lib.rs"],
-        "test_evidence": ["phase17_api_audit"],
+        "test_evidence": ["architecture_guards"],
         "checks": [
             {
-                "command": "cargo test -p opi-agent phase17_api_audit",
+                "command": "cargo test -p opi-coding-agent --test architecture_guards",
                 "observed": "PASS",
             }
         ],

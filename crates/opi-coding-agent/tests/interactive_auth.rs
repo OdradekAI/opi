@@ -26,9 +26,9 @@ use serde_json::json;
 use wiremock::matchers::{body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-#[path = "common/phase14_auth_runtime.rs"]
-mod phase14_auth_runtime;
-use phase14_auth_runtime::{
+#[path = "common/auth_runtime.rs"]
+mod auth_runtime;
+use auth_runtime::{
     credential_runner, run_json_credential_capture, run_rpc_stdio_capture,
     run_text_credential_capture,
 };
@@ -1493,5 +1493,5 @@ async fn interactive_auth_help_is_discoverable_through_dispatcher() {
 #[tokio::test]
 #[ignore = "subprocess-only RPC stdio entry point"]
 async fn phase14_rpc_run_stdio_child() {
-    phase14_auth_runtime::run_rpc_stdio_child().await;
+    auth_runtime::run_rpc_stdio_child().await;
 }

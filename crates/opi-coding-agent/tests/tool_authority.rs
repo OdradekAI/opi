@@ -1,14 +1,9 @@
-//! Phase 17 task 17.4 — Reference Product trusted-authorization acceptance.
+// opi-runtime-acceptance
+//! Trusted tool authorization through ProductToolAuthorizer and Agent execution.
 //!
-//! Closes the three 17.4 acceptance scenarios against the production
-//! `ProductToolAuthorizer` (the call site the agent loop invokes):
-//! - P17-A06: model-visible content cannot expand the effective policy.
-//! - P17-A07: untrusted sources cannot forge registration, capability, or grant.
-//! - P17-A08: expired or failed authority is fail-closed with zero executions.
-//!
-//! A06/A07 exercise the `ToolAuthorizer::authorize` decision directly (the
-//! production call site); A08 drives a full `Agent::prompt` turn so the
-//! `agent_loop -> execute_tool -> authorize` path is covered end to end.
+//! Model-visible and untrusted content cannot forge registration or expand policy.
+//! Scope, capability, permission, and authority failures are fail-closed before
+//! side effects; real command and workspace-write adapters verify allowed paths.
 
 mod common;
 

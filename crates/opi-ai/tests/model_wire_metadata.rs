@@ -311,3 +311,31 @@ fn every_builtin_model_declares_exact_wire() {
     .unwrap();
     assert_eq!(azure.models()[0].wire_api, WireApi::AzureOpenAiCompletions);
 }
+
+#[test]
+fn model_metadata_rejects_thinking_map_without_thinking_capability() {
+    let model = ModelInfo::new(
+        "bad-thinking",
+        "Bad Thinking",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(1000, 100),
+    )
+    .with_thinking_level_map(
+        ThinkingLevelMap::disabled()
+            .with_mapping(ThinkingLevel::High, ThinkingLevelMapping::Identity),
+    );
+
+    assert!(model.validate().is_err());
+}
+
+#[test]
+fn model_metadata_rejects_long_cache_without_cache_control() {
+    let model = ModelInfo::new(
+        "bad-cache",
+        "Bad Cache",
+        WireApi::AnthropicMessages,
+        ModelCapabilities::new(1000, 100).with_long_cache_retention(true),
+    );
+
+    assert!(model.validate().is_err());
+}

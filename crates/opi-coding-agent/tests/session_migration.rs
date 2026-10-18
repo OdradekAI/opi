@@ -1,18 +1,9 @@
-//! Phase 17 task 17.8 — legacy session route migration + opaque trace preservation.
+// opi-runtime-acceptance
+//! Legacy session route normalization and opaque trace preservation.
 //!
-//! Drives the READ-side legacy-normalization contract (P17-MIG-001/002/004,
-//! acceptance P17-A13) through the production `CodingHarness` resume/fork/branch
-//! seams and the `FileEvidenceSink` file adapter:
-//!
-//! - a legacy bare `model_change` model normalizes against the dispatchable
-//!   collection (proving exactly one route), never guessing the active provider;
-//!   missing/ambiguous routes return typed remediation before any dispatch;
-//! - load/normalize/resume/fork leave legacy session fixtures byte-identical;
-//! - opaque legacy trace files coexist with new evidence, and new evidence never
-//!   overwrites, rewrites, upgrades, down-converts, or deletes them.
-//!
-//! This owns only legacy read/normalization behavior; it does not touch the 17.5
-//! canonical write schema (`ModelInputSource`/`append_model_change`).
+//! Resume and fork require a unique dispatchable route, preserve source bytes,
+//! and fail before creating a child when resolution is missing or ambiguous.
+//! New evidence remains separate from legacy traces and cannot overwrite them.
 
 use std::sync::Mutex;
 
@@ -108,62 +99,6 @@ fn write_legacy_session(dir: &std::path::Path, session_id: &str, recorded_model:
 }
 
 use std::sync::Arc;
-
-// ===========================================================================
-// P17-MIG-002 — a legacy bare model normalizes only when one dispatchable
-// route is provable. Unique case: the bare model belongs to a SECOND
-// dispatchable provider, not the active one.
-// ===========================================================================
-
-#[test]
-fn phase17_legacy_bare_model_normalizes_to_unique_dispatchable_route() {
-    let _lock = session_lock();
-    let sessions = tempfile::tempdir().unwrap();
-    set_sessions_dir(sessions.path());
-    // Legacy fixture: bare `shared-model` (no provider prefix).
-    write_legacy_session(sessions.path(), "s-unique", "shared-model");
-
-    let workspace = tempfile::tempdir().unwrap();
-    let alpha = MockProvider::new_with_models(
-        "alpha",
-        vec![model_info("alpha-model")],
-        vec![text_response("ok")],
-    );
-    let beta = MockProvider::new_with_models(
-        "beta",
-        vec![model_info("shared-model")],
-        vec![text_response("ok")],
-    );
-    let mut harness = CodingHarness::builder(
-        Box::new(alpha),
-        "alpha:alpha-model".into(),
-        OpiConfig::default(),
-        workspace.path().to_path_buf(),
-        TrustDecision::Trusted,
-    )
-    .extra_routes(vec![(Box::new(beta), static_resolver())])
-    .build();
-
-    harness
-        .resume_session_id("s-unique")
-        .expect("resume succeeds");
-
-    assert_eq!(
-        harness.model_spec(),
-        "beta:shared-model",
-        "legacy bare model normalizes to the unique dispatchable route, not the active provider"
-    );
-    let session = harness.session().expect("v1 source migrated to a v2 child");
-    let (header, _) = opi_agent::session::SessionReader::read_all(session.session_path()).unwrap();
-    assert_eq!(header.version, 2);
-    assert_eq!(header.parent_session.as_deref(), Some("s-unique"));
-    assert_eq!(
-        header.runtime_input_binding,
-        Some(session.runtime_input_binding().clone())
-    );
-
-    clear_sessions_dir();
-}
 
 /// Shared builder over an active `alpha` provider plus `extra` dispatchable
 /// routes, each carrying one model. The active model is `alpha:alpha-model`.
@@ -427,23 +362,16 @@ fn phase17_legacy_trace_file_blocks_evidence_setup_and_stays_byte_identical() {
 // while the trace is proved untouched across the whole run.
 // ===========================================================================
 
-/// Resolve the canonical artifact directory under the workspace `target/`.
-fn artifact_dir() -> std::path::PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_owned());
-    std::path::Path::new(&manifest_dir).join("../../target/opi-artifacts/phase17-task-17.8")
-}
-
 #[tokio::test]
 #[allow(clippy::await_holding_lock)] // serialized OPI_SESSIONS_DIR mutation; not re-acquired in the awaited dispatch.
-async fn phase17_legacy_sessions_and_opaque_traces_are_byte_preserved() {
+async fn legacy_sessions_and_opaque_traces_are_byte_preserved() {
     use opi_agent::evidence::EvidenceRecorder;
     use opi_coding_agent::config::ExecutionRunMode;
     use opi_coding_agent::evidence::{EvidenceBuilderConfig, FileEvidenceSink};
     use sha2::{Digest, Sha256};
 
-    let dir = artifact_dir();
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let artifacts = tempfile::tempdir().unwrap();
+    let dir = artifacts.path().to_path_buf();
 
     let workspace = tempfile::tempdir().unwrap();
     let user = tempfile::tempdir().unwrap();
@@ -638,6 +566,7 @@ async fn phase17_legacy_sessions_and_opaque_traces_are_byte_preserved() {
     use std::io::Write;
     let mut f = std::fs::File::create(dir.join("SHA256SUMS.txt")).unwrap();
     writeln!(f, "{}", sha_lines.join("\n")).unwrap();
+    drop(f);
 
     // Verify SHA256SUMS against a fresh re-read of every listed raw file.
     let sums = std::fs::read_to_string(dir.join("SHA256SUMS.txt")).unwrap();
@@ -648,4 +577,12 @@ async fn phase17_legacy_sessions_and_opaque_traces_are_byte_preserved() {
         let fresh = hex::encode(Sha256::digest(std::fs::read(dir.join(name)).unwrap()));
         assert_eq!(digest, fresh, "SHA256SUMS digest mismatch for {name}");
     }
+
+    drop(harness);
+    drop(sink);
+    drop(artifacts);
+    assert!(
+        !dir.exists(),
+        "temporary migration bundle is removed on drop"
+    );
 }

@@ -81,7 +81,7 @@ opi-agent Agent / loop and opi-coding-agent compaction
 
 **保留理由与代价：** 保留 Rust 显式所有权与 trait objects；代价是须解释 metadata-only/dispatchable 区别，且多份 catalog 需解决 O-002。候选替代是把数据存储内聚到一个实现内，而不是把全部语义摊给调用方。
 
-**建议与验证设计：** 保留三种职责；是否收窄公共可变接口与删除历史 facade 需分项决定。共享 conformance 应跨两个真实 wire 和 mapped provider 覆盖路由、preflight、auth、终止。保留 `api_mapped_provider` 的图验证与 `phase17_provider_runtime` 的产品路由测试。
+**建议与验证设计：** 保留三种职责；是否收窄公共可变接口与删除历史 facade 需分项决定。共享 conformance 应跨两个真实 wire 和 mapped provider 覆盖路由、preflight、auth、终止。保留 `api_mapped_provider` 的图验证与 `provider_runtime` 的产品路由测试。
 
 ## O-002：有效模型元数据有两个 authority，非启动 route override 可与实际 wire 脱节
 

@@ -1,53 +1,46 @@
-//! Phase 17 task 17.9 — removal, hermeticness, and platform-contract audits.
-//!
-//! - P17-MIG-006: the removed 0.x interfaces are absent from production
-//!   source — not retained behind aliases, feature flags, or compatibility
-//!   shims. Proven by an exact Rust-token scan over `crates/*/src`.
-//! - P17-PLT-002: the Phase 17 acceptance tests call no paid/live providers or
-//!   paid/live provider endpoints; local loopback fixtures remain permitted.
-//! - P17-PLT-003: the bilingual product documentation carries the non-sandbox
-//!   boundary (tool authorization is not an operating-system sandbox).
-//! - Task-local P17-A15 precondition: the CI workflow selects the SAME hermetic
-//!   Phase 17 acceptance on Linux, macOS, and Windows with no OS-specific
-//!   gating. (Actual three-platform run SHA/URLs/results remain Phase F
-//!   evidence; this proves the workflow definition only.)
+//! Source-aware architecture and offline-test audit helpers.
+//! Explicit acceptance markers include helper modules even without test functions.
 
-#[path = "common/phase17.rs"]
-mod phase17;
+// opi-runtime-acceptance
+#![allow(dead_code)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-const PHASE17_ACCEPTANCE_SOURCES: &[&str] = &[
+pub(super) const RUNTIME_ACCEPTANCE_SOURCES: &[&str] = &[
     "crates/opi-agent/tests/agent_loop_semantics.rs",
     "crates/opi-agent/tests/agent_wrapper.rs",
     "crates/opi-agent/tests/evidence_contract.rs",
     "crates/opi-agent/tests/evidence_runtime.rs",
     "crates/opi-agent/tests/hooks_queues.rs",
-    "crates/opi-agent/tests/phase17_prepare_call.rs",
+    "crates/opi-agent/tests/retry_agent.rs",
     "crates/opi-agent/tests/tool_authority.rs",
     "crates/opi-ai/tests/auth_contracts.rs",
     "crates/opi-ai/tests/oauth_wire_shape.rs",
     "crates/opi-ai/tests/per_request_auth.rs",
     "crates/opi-ai/tests/provider_collection.rs",
     "crates/opi-coding-agent/src/rpc.rs",
-    "crates/opi-coding-agent/tests/common/phase17.rs",
+    "crates/opi-coding-agent/tests/architecture_guards.rs",
+    "crates/opi-coding-agent/tests/ci_contract.rs",
+    "crates/opi-coding-agent/tests/common/auth_runtime.rs",
+    "crates/opi-coding-agent/tests/common/runtime_evidence.rs",
+    "crates/opi-coding-agent/tests/common/source_audit.rs",
+    "crates/opi-coding-agent/tests/cross_mode_runtime.rs",
+    "crates/opi-coding-agent/tests/evidence_artifacts.rs",
     "crates/opi-coding-agent/tests/interactive_mock.rs",
     "crates/opi-coding-agent/tests/json_mode.rs",
     "crates/opi-coding-agent/tests/non_interactive.rs",
-    "crates/opi-coding-agent/tests/phase17_api_audit.rs",
-    "crates/opi-coding-agent/tests/phase17_artifact_truthfulness.rs",
-    "crates/opi-coding-agent/tests/phase17_cross_mode.rs",
-    "crates/opi-coding-agent/tests/phase17_failure_rollback.rs",
-    "crates/opi-coding-agent/tests/phase17_legacy_migration.rs",
-    "crates/opi-coding-agent/tests/phase17_product_evidence.rs",
-    "crates/opi-coding-agent/tests/phase17_provider_runtime.rs",
-    "crates/opi-coding-agent/tests/phase17_tool_authority.rs",
+    "crates/opi-coding-agent/tests/product_evidence.rs",
+    "crates/opi-coding-agent/tests/provider_runtime.rs",
     "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+    "crates/opi-coding-agent/tests/runtime_failure_recovery.rs",
+    "crates/opi-coding-agent/tests/session_migration.rs",
     "crates/opi-coding-agent/tests/session_runtime.rs",
+    "crates/opi-coding-agent/tests/test_hermeticity.rs",
+    "crates/opi-coding-agent/tests/tool_authority.rs",
 ];
 
-fn workspace_root() -> PathBuf {
+pub(super) fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
@@ -70,7 +63,7 @@ fn collect_rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// Production source files (`crates/*/src/**/*.rs`) paired with their path for
 /// failure messages.
-fn production_sources() -> Vec<(PathBuf, String)> {
+pub(super) fn production_sources() -> Vec<(PathBuf, String)> {
     let root = workspace_root();
     let mut files = Vec::new();
     for crate_dir in [
@@ -114,14 +107,14 @@ struct RustToken {
 #[derive(Debug)]
 struct LexedRust {
     tokens: Vec<RustToken>,
-    phase17_acceptance_marker: bool,
+    acceptance_marker: bool,
 }
 
 struct RustLexer<'a> {
     source: &'a str,
     index: usize,
     line: usize,
-    phase17_acceptance_marker: bool,
+    acceptance_marker: bool,
 }
 
 impl<'a> RustLexer<'a> {
@@ -130,7 +123,7 @@ impl<'a> RustLexer<'a> {
             source,
             index: 0,
             line: 1,
-            phase17_acceptance_marker: false,
+            acceptance_marker: false,
         }
     }
 
@@ -138,7 +131,7 @@ impl<'a> RustLexer<'a> {
         let tokens = self.lex_group(None)?;
         Ok(LexedRust {
             tokens,
-            phase17_acceptance_marker: self.phase17_acceptance_marker,
+            acceptance_marker: self.acceptance_marker,
         })
     }
 
@@ -317,8 +310,11 @@ impl<'a> RustLexer<'a> {
             self.index += 1;
         }
         let comment = &self.source[start..self.index];
-        if comment.trim() == "opi-phase17-acceptance" {
-            self.phase17_acceptance_marker = true;
+        if matches!(
+            comment.trim(),
+            "opi-phase17-acceptance" | "opi-runtime-acceptance"
+        ) {
+            self.acceptance_marker = true;
         }
     }
 
@@ -708,7 +704,7 @@ fn source_token_occurrence_lines(source: &str, pattern: &str) -> Vec<usize> {
     lines
 }
 
-fn source_token_occurrences(source: &str, pattern: &str) -> usize {
+pub(super) fn source_token_occurrences(source: &str, pattern: &str) -> usize {
     source_token_occurrence_lines(source, pattern).len()
 }
 
@@ -719,7 +715,7 @@ fn relative_source_path(path: &Path) -> String {
         .replace('\\', "/")
 }
 
-fn token_sites(path: &Path, source: &str, token: &str) -> Vec<String> {
+pub(super) fn token_sites(path: &Path, source: &str, token: &str) -> Vec<String> {
     let relative = relative_source_path(path);
     source_token_occurrence_lines(source, token)
         .into_iter()
@@ -730,7 +726,10 @@ fn token_sites(path: &Path, source: &str, token: &str) -> Vec<String> {
         .collect()
 }
 
-fn acceptance_manifest_difference(expected: &[&str], actual: &[&str]) -> Result<(), String> {
+pub(super) fn acceptance_manifest_difference(
+    expected: &[&str],
+    actual: &[&str],
+) -> Result<(), String> {
     let expected_set = expected.iter().copied().collect::<BTreeSet<_>>();
     let actual_set = actual.iter().copied().collect::<BTreeSet<_>>();
     if expected_set.len() != expected.len() {
@@ -878,7 +877,7 @@ fn phase17_module_has_tests(tokens: &[RustToken]) -> bool {
     })
 }
 
-fn source_is_phase17_acceptance(path: &Path, source: &str) -> bool {
+fn source_is_runtime_acceptance(path: &Path, source: &str) -> bool {
     let lexed = RustLexer::new(source)
         .lex()
         .unwrap_or_else(|error| panic!("lex Rust source {}: {error}", path.display()));
@@ -891,10 +890,13 @@ fn source_is_phase17_acceptance(path: &Path, source: &str) -> bool {
     named_source
         || tests.iter().any(|name| name.starts_with("phase17_"))
         || phase17_module_has_tests(&lexed.tokens)
-        || (lexed.phase17_acceptance_marker && !tests.is_empty())
+        || lexed.acceptance_marker
 }
 
-fn discover_phase17_sources_under(root: &Path, source_roots: &[PathBuf]) -> Vec<String> {
+pub(super) fn discover_acceptance_sources_under(
+    root: &Path,
+    source_roots: &[PathBuf],
+) -> Vec<String> {
     let mut files = Vec::new();
     for source_root in source_roots {
         collect_rust_files(source_root, &mut files);
@@ -904,7 +906,7 @@ fn discover_phase17_sources_under(root: &Path, source_roots: &[PathBuf]) -> Vec<
         .filter(|path| {
             let source = std::fs::read_to_string(path)
                 .unwrap_or_else(|error| panic!("read source {}: {error}", path.display()));
-            source_is_phase17_acceptance(path, &source)
+            source_is_runtime_acceptance(path, &source)
         })
         .map(|path| {
             path.strip_prefix(root)
@@ -1006,7 +1008,7 @@ fn collect_attribute_violations(tokens: &[RustToken], violations: &mut Vec<Strin
     }
 }
 
-fn acceptance_source_violations(_relative: &str, source: &str) -> Vec<String> {
+pub(super) fn acceptance_source_violations(_relative: &str, source: &str) -> Vec<String> {
     let mut violations = Vec::new();
     collect_attribute_violations(&lex_rust(source).tokens, &mut violations);
     violations
@@ -2229,7 +2231,7 @@ fn collect_hermetic_violations(
     }
 }
 
-fn hermetic_source_violations(source: &str) -> Vec<String> {
+pub(super) fn hermetic_source_violations(source: &str) -> Vec<String> {
     let lexed = lex_rust(source);
     let mut violations = Vec::new();
     collect_hermetic_violations(
@@ -2421,7 +2423,7 @@ fn collect_evidence_sink_impl_targets(
     }
 }
 
-fn evidence_sink_impl_targets(source: &str) -> Vec<String> {
+pub(super) fn evidence_sink_impl_targets(source: &str) -> Vec<String> {
     let mut targets = Vec::new();
     let tokens = lex_rust(source).tokens;
     let trait_names = evidence_sink_aliases(&[&tokens]);
@@ -2429,7 +2431,7 @@ fn evidence_sink_impl_targets(source: &str) -> Vec<String> {
     targets
 }
 
-fn evidence_sink_impl_targets_across_sources(sources: &[&str]) -> Vec<String> {
+pub(super) fn evidence_sink_impl_targets_across_sources(sources: &[&str]) -> Vec<String> {
     let token_sets = sources
         .iter()
         .map(|source| lex_rust(source).tokens)
@@ -2446,778 +2448,3 @@ fn evidence_sink_impl_targets_across_sources(sources: &[&str]) -> Vec<String> {
 // ===========================================================================
 // P17-MIG-006 — removed interfaces stay removed: no symbol, alias, or shim in
 // production source.
-// ===========================================================================
-
-#[test]
-fn phase17_removed_interfaces_are_absent_from_production_source() {
-    let sources = production_sources();
-    assert!(
-        sources.len() > 100,
-        "the scan examined a real source tree ({} files)",
-        sources.len()
-    );
-
-    let targets: &[(&str, &str)] = &[
-        (
-            "SharedProvider",
-            "17.2: Agent no longer owns one Arc<dyn Provider>",
-        ),
-        (
-            "AgentLoopTurnUpdate",
-            "17.2: append-only turn updates replaced by atomic NextTurnState",
-        ),
-        (
-            "AgentHarness",
-            "17.2: the unused opi-agent state owner was removed",
-        ),
-        (
-            "HarnessRuntimeConfig",
-            "17.2: the unused opi-agent state owner was removed",
-        ),
-        (
-            "BeforeToolCallResult::Allow",
-            "17.4: the authorization-suggesting hook grant is now Continue",
-        ),
-        (
-            "MetadataProvider",
-            "17.5: renamed to ListingMetadataProvider",
-        ),
-        (
-            "TraceSink",
-            "17.7: the storage-shaped core trace contract was superseded by evidence",
-        ),
-        (
-            "TraceReader",
-            "17.8: no legacy trace reader exists without a registered workflow",
-        ),
-    ];
-    for (symbol, why) in targets {
-        for (path, source) in &sources {
-            let hits = source_token_occurrences(source, symbol);
-            assert_eq!(
-                hits,
-                0,
-                "removed interface `{symbol}` still referenced in {} ({why})",
-                path.display()
-            );
-        }
-    }
-
-    // Product policy must not live in Agent Core: the Reference Product policy
-    // types appear only in opi-coding-agent source.
-    for (path, source) in &sources {
-        let in_core = path
-            .components()
-            .any(|c| c.as_os_str().to_str() == Some("opi-agent"))
-            || path
-                .components()
-                .any(|c| c.as_os_str().to_str() == Some("opi-ai"));
-        if !in_core {
-            continue;
-        }
-        for symbol in [
-            "PermissionPolicy",
-            "EffectiveUserPolicy",
-            "ProductToolAuthorizer",
-        ] {
-            let sites = token_sites(path, source, symbol);
-            assert_eq!(
-                sites,
-                Vec::<String>::new(),
-                "product policy symbol `{symbol}` must not gain a new Agent Core site"
-            );
-        }
-    }
-
-    // The alias-registry and compatibility-shim rows of the removal audit have
-    // no single scannable symbol: their absence is proven behaviorally by the
-    // owner tasks (17.5's no-alias/bare-model-ambiguity tests in
-    // phase17_provider_runtime.rs) rather than by a token scan here.
-}
-
-// ===========================================================================
-// P17-EVD-010 (phase-exit closure) — the core-adapter boundary is ENFORCED:
-// Agent Core (opi-agent) ships only the no-op and in-memory EvidenceSink
-// implementations; file capture and exporters live outside it.
-// ===========================================================================
-
-#[test]
-fn phase17_core_evidence_adapters_are_limited_to_noop_and_in_memory() {
-    let sources = production_sources();
-    let core_sources = sources
-        .iter()
-        .filter(|(path, _)| {
-            path.components()
-                .any(|component| component.as_os_str().to_str() == Some("opi-agent"))
-        })
-        .map(|(_, source)| source.as_str())
-        .collect::<Vec<_>>();
-    for (path, source) in &sources {
-        let is_opi_agent = path
-            .components()
-            .any(|c| c.as_os_str().to_str() == Some("opi-agent"));
-        if !is_opi_agent {
-            continue;
-        }
-        // No file capture or exporter surface may exist in Agent Core.
-        for symbol in ["FileEvidenceSink", "Exporter", "exporter"] {
-            assert_eq!(
-                source_token_occurrences(source, symbol),
-                0,
-                "evidence adapter/exporter symbol `{symbol}` must not live in opi-agent: {}",
-                path.display()
-            );
-        }
-    }
-    let mut core_impl_sites = evidence_sink_impl_targets_across_sources(&core_sources);
-    core_impl_sites.sort();
-    assert_eq!(
-        core_impl_sites,
-        ["InMemoryEvidenceSink", "NoopEvidenceSink"],
-        "Agent Core implements EvidenceSink exactly for the admitted no-op and in-memory adapters"
-    );
-}
-
-// ===========================================================================
-// P17-PLT-002 — Phase 17 tests call no paid/live provider endpoints. Local
-// loopback servers and URL-shaped redaction data remain hermetic fixtures.
-// ===========================================================================
-
-#[test]
-fn phase17_tests_are_hermetic_no_network_no_paid_providers() {
-    let root = workspace_root();
-    for relative in PHASE17_ACCEPTANCE_SOURCES {
-        let path = root.join(relative);
-        let source = std::fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("read acceptance source {relative}: {error}"));
-        let violations = hermetic_source_violations(&source);
-        assert!(
-            violations.is_empty(),
-            "Phase 17 acceptance source contains live HTTP call sites: {relative}: {violations:?}"
-        );
-    }
-}
-
-#[test]
-fn phase17_acceptance_source_manifest_is_complete_and_platform_neutral() {
-    let root = workspace_root();
-    let discovered = discover_phase17_sources_under(
-        &root,
-        &[
-            root.join("crates/opi-agent/tests"),
-            root.join("crates/opi-agent/src"),
-            root.join("crates/opi-ai/tests"),
-            root.join("crates/opi-ai/src"),
-            root.join("crates/opi-coding-agent/tests"),
-            root.join("crates/opi-coding-agent/src"),
-        ],
-    );
-    let discovered_refs = discovered.iter().map(String::as_str).collect::<Vec<_>>();
-    acceptance_manifest_difference(PHASE17_ACCEPTANCE_SOURCES, &discovered_refs)
-        .unwrap_or_else(|difference| panic!("Phase 17 source manifest drift: {difference}"));
-
-    let mut registered = PHASE17_ACCEPTANCE_SOURCES.to_vec();
-    registered.sort_unstable();
-    assert_eq!(
-        registered, PHASE17_ACCEPTANCE_SOURCES,
-        "complete acceptance manifest remains sorted for review"
-    );
-    for relative in PHASE17_ACCEPTANCE_SOURCES {
-        let path = root.join(relative);
-        let source = std::fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("read acceptance source {relative}: {error}"));
-        let violations = acceptance_source_violations(relative, &source);
-        assert!(
-            violations.is_empty(),
-            "acceptance source {relative} is not platform-neutral: {violations:?}"
-        );
-    }
-}
-
-// ===========================================================================
-// P17-PLT-003 — the bilingual documentation carries the non-sandbox boundary.
-// ===========================================================================
-
-#[test]
-fn phase17_documentation_claims_no_os_sandbox() {
-    let root = workspace_root();
-    let en = std::fs::read_to_string(root.join("README.md")).unwrap();
-    assert!(
-        en.contains("not an operating-system sandbox"),
-        "the English README states the non-sandbox boundary"
-    );
-    let zh = std::fs::read_to_string(root.join("README.zh.md")).unwrap();
-    assert!(
-        zh.contains("不是操作系统 sandbox"),
-        "the Chinese README states the non-sandbox boundary"
-    );
-}
-
-// ===========================================================================
-// Task-local P17-A15 precondition — the CI workflow selects the same hermetic
-// Phase 17 acceptance on all three platforms with no OS-specific gating.
-// ===========================================================================
-
-#[test]
-fn phase17_ci_matrix_selects_same_acceptance_on_three_platforms() {
-    let ci = include_str!("../../../.github/workflows/ci.yml");
-    let start = ci
-        .find("  phase17_acceptance:")
-        .expect("the phase17_acceptance job exists");
-    let rest = &ci[start..];
-    // The job block runs until the next sibling job key: a line indented by
-    // exactly two spaces (deeper indentation belongs to this job's body).
-    let mut block_lines: Vec<&str> = Vec::new();
-    for (i, line) in rest.lines().enumerate() {
-        if i > 0
-            && ((line.starts_with("  ") && !line.starts_with("   "))
-                || (!line.starts_with(' ') && !line.is_empty()))
-        {
-            break;
-        }
-        block_lines.push(line);
-    }
-    let block = block_lines.join("\n");
-    for os in ["ubuntu-latest", "macos-latest", "windows-latest"] {
-        assert!(
-            block.contains(os),
-            "the phase17 acceptance matrix includes {os}"
-        );
-    }
-    for target in [
-        "--test phase17_cross_mode",
-        "--test phase17_failure_rollback",
-        "--test phase17_api_audit",
-    ] {
-        assert!(
-            block.contains(target),
-            "the phase17 acceptance job selects {target} on every matrix OS"
-        );
-    }
-    assert!(
-        !block.contains("if: matrix.os") && !block.contains("if: runner"),
-        "the phase17 acceptance job has no OS-conditional gating"
-    );
-}
-
-#[test]
-fn phase17_token_guard_ignores_trivia_and_finds_real_token_sequences() {
-    let trivia_only = r###"
-        // SharedProvider BeforeToolCallResult::Allow
-        /* outer SharedProvider /* BeforeToolCallResult::Allow */ done */
-        const NORMAL: &str = "SharedProvider BeforeToolCallResult::Allow";
-        const BYTES: &[u8] = b"SharedProvider BeforeToolCallResult::Allow";
-        const RAW: &str = r#"SharedProvider BeforeToolCallResult::Allow"#;
-        const BYTE_RAW: &[u8] = br##"SharedProvider BeforeToolCallResult::Allow"##;
-        const CHARACTER: char = 'X';
-        const BYTE_CHARACTER: u8 = b'X';
-    "###;
-    for forbidden in ["SharedProvider", "BeforeToolCallResult::Allow", "X"] {
-        assert_eq!(
-            source_token_occurrences(trivia_only, forbidden),
-            0,
-            "Rust trivia or literals must not create a `{forbidden}` token hit"
-        );
-    }
-
-    let real_tokens = r#"
-        fn nested() {
-            BeforeToolCallResult /* path trivia */ :: /* more trivia */ Allow;
-            if true { SharedProvider::new(); }
-        }
-    "#;
-    for forbidden in ["BeforeToolCallResult::Allow", "SharedProvider"] {
-        assert_eq!(
-            source_token_occurrences(real_tokens, forbidden),
-            1,
-            "real forbidden tokens remain visible across comments and token-tree nesting"
-        );
-    }
-
-    for source in [
-        "use BeforeToolCallResult::{Allow};",
-        "use BeforeToolCallResult /* trivia */ :: { Nested :: { Allow } };",
-        "enum BeforeToolCallResult { Continue, /* restored */ Allow }",
-        "enum BeforeToolCallResult<T = ()> where T: X { Continue, Allow }",
-        "impl BeforeToolCallResult { pub const Allow: Self = Self::Continue; }",
-        "impl r#BeforeToolCallResult { pub const r#Allow: Self = Self::Continue; }",
-        "impl BeforeToolCallResult /* trivia */ { pub const /* trivia */ Allow: Self = Self::Continue; }",
-    ] {
-        assert_eq!(
-            source_token_occurrences(source, "BeforeToolCallResult::Allow"),
-            1,
-            "grouped paths and enum declarations cannot hide the removed Allow variant: {source}"
-        );
-    }
-
-    assert_eq!(
-        source_token_occurrences(
-            "impl<T: BeforeToolCallResult> Other<T> { const Allow: Self = Self; }",
-            "BeforeToolCallResult::Allow",
-        ),
-        0,
-        "an inherent impl generic bound is not the associated-item target"
-    );
-}
-
-#[test]
-fn phase17_attribute_guard_distinguishes_attributes_from_trivia() {
-    let disabling_attributes = [
-        "#[ignore]\n#[test]\nfn skipped() {}",
-        "#[ignore = \"slow on CI\"]\n#[test]\nfn skipped() {}",
-        "#[r#ignore]\n#[test]\nfn skipped() {}",
-        "#[r#ignore = \"raw reason\"]\n#[test]\nfn skipped() {}",
-        "#[cfg_attr(windows, ignore)]\n#[test]\nfn skipped() {}",
-        "#[cfg_attr(test, r#ignore)]\n#[test]\nfn skipped() {}",
-        "#[cfg_attr(any(unix, windows), cfg_attr(test, ignore = \"platform\"))]\n#[test]\nfn skipped() {}",
-        "#[cfg_attr(test, cfg_attr(test, r#ignore = \"nested raw\"))]\n#[test]\nfn skipped() {}",
-        "#[cfg_attr(windows, cfg(any()))]\n#[test]\nfn skipped() {}",
-        "#[cfg_attr(test, test)]\nfn conditionally_a_test() {}",
-        "#[cfg_attr(windows, tokio::test)]\nfn conditionally_a_qualified_test() {}",
-        "#[cfg_attr(windows, cfg_attr(unix, tokio::test))]\nfn conditionally_a_nested_qualified_test() {}",
-        "#[r#cfg_attr(windows, r#cfg(any()))]\n#[test]\nfn skipped() {}",
-        "#[cfg_attr(test, cfg_attr(windows, r#test))]\nfn conditionally_a_test() {}",
-    ];
-    for source in disabling_attributes {
-        assert!(
-            !acceptance_source_violations("<canary>", source).is_empty(),
-            "guard accepted an ignored acceptance test: {source}"
-        );
-    }
-
-    let attribute_trivia = r###"
-        // #[ignore]
-        // #[r#ignore]
-        /* #[cfg_attr(windows, ignore)] */
-        const NORMAL: &str = "#[ignore = \"not an attribute\"]";
-        const RAW: &str = r#"#[cfg_attr(unix, ignore)]"#;
-        const RAW_IDENT_TEXT: &str = "#[r#ignore]";
-    "###;
-    assert!(
-        acceptance_source_violations("<canary>", attribute_trivia).is_empty(),
-        "ignore/cfg text in comments and strings is not an attribute"
-    );
-}
-
-#[test]
-fn phase17_attribute_guard_allows_harmless_cfg_attr() {
-    for harmless_conditional_attribute in [
-        "#[cfg_attr(test, allow(dead_code))]\n#[test]\nfn still_runs() {}",
-        "#[cfg_attr(test, cfg_attr(test, allow(dead_code)))]\n#[test]\nfn still_runs() {}",
-        "#[cfg_attr(test, warn(dead_code))]\n#[test]\nfn still_runs() {}",
-        "#[cfg_attr(test, deny(unused_variables))]\n#[test]\nfn still_runs() {}",
-    ] {
-        assert!(
-            acceptance_source_violations("<canary>", harmless_conditional_attribute).is_empty(),
-            "a cfg_attr that cannot disable the test is harmless"
-        );
-    }
-}
-
-#[test]
-fn phase17_evidence_impl_guard_parses_qualified_comment_separated_paths() {
-    let qualified_impl = r#"
-        impl opi_agent /* qualifier trivia */ :: evidence :: EvidenceSink
-            for crate /* target trivia */ :: CustomSink
-        {}
-    "#;
-    assert_eq!(
-        evidence_sink_impl_targets(qualified_impl),
-        vec!["crate::CustomSink"],
-        "qualified and comment-separated EvidenceSink implementations are discovered"
-    );
-
-    let aliased_impl = r#"
-        use opi_agent /* qualifier trivia */ :: evidence :: EvidenceSink as Sink;
-        impl Sink for crate::AliasedSink {}
-    "#;
-    assert_eq!(
-        evidence_sink_impl_targets(aliased_impl),
-        vec!["crate::AliasedSink"],
-        "local EvidenceSink aliases cannot hide an implementation"
-    );
-
-    let chained_alias_impl = r#"
-        use opi_agent::evidence::EvidenceSink as Sink;
-        use Sink as Alias;
-        impl Alias for crate::ChainedAliasSink {}
-    "#;
-    assert_eq!(
-        evidence_sink_impl_targets(chained_alias_impl),
-        vec!["crate::ChainedAliasSink"],
-        "local EvidenceSink aliases resolve to a fixed point"
-    );
-
-    let raw_keyword_idents = r#"
-        impl crate::r#for::EvidenceSink for crate::r#where::RawKeywordSink {}
-    "#;
-    assert_eq!(
-        evidence_sink_impl_targets(raw_keyword_idents),
-        vec!["crate::r#where::RawKeywordSink"],
-        "raw identifiers in trait paths and self types are not impl keywords"
-    );
-
-    let impl_trivia = r###"
-        // impl EvidenceSink for CommentSink {}
-        const NORMAL: &str = "impl EvidenceSink for StringSink {}";
-        const RAW: &str = r#"impl EvidenceSink for RawStringSink {}"#;
-    "###;
-    assert!(
-        evidence_sink_impl_targets(impl_trivia).is_empty(),
-        "implementation text in comments and strings is ignored"
-    );
-
-    let trait_bound_only = r#"
-        impl<T: EvidenceSink> OtherTrait for BoundOnly<T> {}
-    "#;
-    assert!(
-        evidence_sink_impl_targets(trait_bound_only).is_empty(),
-        "a generic EvidenceSink bound is not an EvidenceSink implementation"
-    );
-}
-
-#[test]
-fn phase17_evidence_impl_guard_resolves_cross_source_reexports() {
-    let sources = [
-        "pub use opi_agent::evidence::EvidenceSink as Sink;",
-        "use crate::Sink as Alias; impl Alias for crate::CrossSourceSink {}",
-    ];
-    assert_eq!(
-        evidence_sink_impl_targets_across_sources(&sources),
-        vec!["crate::CrossSourceSink"],
-        "EvidenceSink re-export aliases resolve across scanned core sources"
-    );
-}
-
-#[test]
-fn phase17_evidence_impl_guard_renders_complete_group_self_types() {
-    let source = r#"
-        impl EvidenceSink for (CustomSink, Other) {}
-        impl<T> crate::evidence::EvidenceSink for crate::CustomSink<T> {}
-        impl EvidenceSink for (crate::ParenthesizedSink<Model>) {}
-    "#;
-    assert_eq!(
-        evidence_sink_impl_targets(source),
-        [
-            "(CustomSink,Other)",
-            "crate::CustomSink<T>",
-            "(crate::ParenthesizedSink<Model>)",
-        ],
-        "the complete legal self type is retained for the core-adapter audit"
-    );
-}
-
-#[test]
-fn phase17_required_non_named_sources_are_discovered_from_markers() {
-    let root = workspace_root();
-    let discovered = discover_phase17_sources_under(
-        &root,
-        &[
-            root.join("crates/opi-agent/tests"),
-            root.join("crates/opi-agent/src"),
-            root.join("crates/opi-ai/tests"),
-            root.join("crates/opi-ai/src"),
-            root.join("crates/opi-coding-agent/tests"),
-            root.join("crates/opi-coding-agent/src"),
-        ],
-    );
-    for required in [
-        "crates/opi-agent/tests/agent_loop_semantics.rs",
-        "crates/opi-agent/tests/evidence_contract.rs",
-        "crates/opi-agent/tests/evidence_runtime.rs",
-        "crates/opi-agent/tests/tool_authority.rs",
-        "crates/opi-ai/tests/auth_contracts.rs",
-        "crates/opi-ai/tests/oauth_wire_shape.rs",
-        "crates/opi-ai/tests/per_request_auth.rs",
-        "crates/opi-coding-agent/src/rpc.rs",
-    ] {
-        assert!(
-            discovered.iter().any(|source| source == required),
-            "required acceptance source is independently discovered: {required}"
-        );
-    }
-}
-
-#[test]
-fn phase17_hermetic_guard_rejects_live_url_calls_on_any_non_fixture_host() {
-    for source in [
-        r#"reqwest::get("https://api.mistral.ai/v1/models").await;"#,
-        r##"client.post(r#"https://openrouter.ai/api/v1/chat"#);"##,
-        r#"connect("https://chatgpt.com/backend-api");"#,
-        r#"Provider::new(Some("https://api.individual.githubcopilot.com"));"#,
-        r#"HttpClient::request("https://arbitrary-provider.vendor/v1");"#,
-        r#"client.get(concat!("https://api.", "githubcopilot.com"));"#,
-        r#"client.get("https:\x2f\x2fapi.mistral.ai/v1");"#,
-        r#"client.get("HTTPS://UPPERCASE.vendor/v1");"#,
-        r#"assert!(reqwest::get("https://api.mistral.ai/v1").await.is_ok());"#,
-        r#"client.get(format!("https://{}", "api.mistral.ai"));"#,
-        r#"client.get(format!("https://{0}", "api.mistral.ai"));"#,
-        r#"client.get(format!("https://{host}", host = "api.mistral.ai"));"#,
-        r#"client.get(format!("https://{host}", host = provider_host()));"#,
-        r#"client.get(format!("{}{}", "https://", provider_host()));"#,
-        r#"client.get(format!("{scheme}://{host}", scheme = provider_scheme(), host = provider_host()));"#,
-        r#"client.get(concat!("http://127.0.0.1:", dynamic_authority_suffix()));"#,
-        r#"client.get(format!("https://{prefix}.example.test", prefix = dynamic_prefix()));"#,
-        r#"client.get(format!("{}://{:.14}", "https", "api.mistral.ai.example.test"));"#,
-        r#"client.get(provider_url());"#,
-        r#"fn call() { let endpoint = "https://api.mistral.ai/v1"; client.get(endpoint); }"#,
-        r#"fn call() { let endpoint = provider_url(); client.get(endpoint); }"#,
-        r#"client.get(format!("http://127.0.0.1:{}", port));"#,
-        r#"client.get(concat!("https://", concat!("api.", "mistral.ai")));"#,
-        r#"client.get("https:\u{2_f}\u{2_f}api.mistral.ai/v1");"#,
-        r#"fn misuse() { let redaction_fixture = "https://api.mistral.ai"; Provider::new(redaction_fixture); }"#,
-    ] {
-        assert!(
-            !hermetic_source_violations(source).is_empty(),
-            "live/non-fixture endpoint escaped the hermetic guard: {source}"
-        );
-    }
-}
-
-#[test]
-fn phase17_hermetic_binding_chain_uses_declaration_time() {
-    let source = r#"
-        let source = provider_url();
-        let endpoint = source;
-        let source = "http://127.0.0.1:4317";
-        client.get(endpoint);
-    "#;
-    assert!(
-        !hermetic_source_violations(source).is_empty(),
-        "a later safe shadow must not rewrite an earlier binding chain"
-    );
-
-    let safe_chain = r#"
-        let source = "http://127.0.0.1:4317";
-        let endpoint = source;
-        client.get(endpoint);
-    "#;
-    assert!(
-        hermetic_source_violations(safe_chain).is_empty(),
-        "an immutable declaration-ordered loopback chain is proven safe"
-    );
-}
-
-#[test]
-fn phase17_hermetic_mutable_binding_fails_closed() {
-    let source = r#"
-        let mut endpoint = "http://127.0.0.1:4317";
-        endpoint = provider_url();
-        client.get(endpoint);
-    "#;
-    assert!(
-        !hermetic_source_violations(source).is_empty(),
-        "mutable or reassigned endpoint bindings must fail closed"
-    );
-}
-
-#[test]
-fn phase17_hermetic_method_chain_receiver_fails_closed() {
-    for unknown in [
-        r#"reqwest::Client::new().get(provider_url());"#,
-        r#"reqwest::Client::new().get("https://provider.example.test/v1");"#,
-    ] {
-        assert!(
-            !hermetic_source_violations(unknown).is_empty(),
-            "an HTTP client constructor chain must not hide a non-local URL: {unknown}"
-        );
-    }
-
-    for fixture in [
-        r#"reqwest::Client::new().get("http://127.0.0.1:4317");"#,
-        r#"HashMap::new().get(key);"#,
-        r#"Vec::new().get(0);"#,
-    ] {
-        assert!(
-            hermetic_source_violations(fixture).is_empty(),
-            "an HTTP client constructor chain retains proven fixture URLs: {fixture}"
-        );
-    }
-}
-
-#[test]
-fn phase17_hermetic_fluent_http_chain_fails_closed() {
-    let unknown =
-        r#"reqwest::Client::builder().redirect(policy()).build().unwrap().get(provider_url());"#;
-    assert!(
-        !hermetic_source_violations(unknown).is_empty(),
-        "an arbitrary fluent HTTP client chain must not hide an unresolved URL"
-    );
-
-    let fixture = r#"reqwest::Client::builder().redirect(policy()).build().unwrap().get("http://127.0.0.1:4317");"#;
-    assert!(
-        hermetic_source_violations(fixture).is_empty(),
-        "an arbitrary fluent HTTP client chain retains a proven loopback URL"
-    );
-}
-
-#[test]
-fn phase17_hermetic_concrete_provider_constructors_fail_closed() {
-    for unknown in [
-        r#"let base_url = std::env::var("LIVE_URL").ok(); AnthropicProvider::new(base_url);"#,
-        r#"OpenAiChatProvider::new(provider_url());"#,
-        r#"OpenAiResponsesProvider::new(provider_url());"#,
-        r#"GeminiProvider::new(provider_url());"#,
-        r#"BedrockProvider::new(provider_url(), client);"#,
-        r#"OpenAiCodexResponsesProvider::new(provider_url(), models, client);"#,
-        r#"AzureOpenAIProvider::new(provider_url(), deployment, api_version);"#,
-        r#"VertexProvider::new(project, location, provider_url());"#,
-        r#"OpenAiChatProvider::new_for_profile(provider_url(), id, compat, headers, models);"#,
-        r#"mistral_provider(provider_url());"#,
-        r#"openrouter_provider(provider_url());"#,
-        r#"AnthropicProvider::new(None);"#,
-        r#"OpenAiChatProvider::new(None);"#,
-        r#"let base_url: Option<String> = Some("https://provider.example.test/v1".to_string()); AnthropicProvider::new(base_url);"#,
-        r#"fn construct(server_uri: String) { AnthropicProvider::new(Some(server_uri)); }"#,
-        r#"fn construct(server_uri: String) { AnthropicProvider::new(Some(server_uri)); } fn exercise() { construct(provider_url()); }"#,
-        r#"ContestProvider::new(provider_url());"#,
-        r#"LatestProvider::new(provider_url());"#,
-        r#"CustomProvider::from_config(provider_url());"#,
-        r#"CustomProvider::with_client(client, provider_url());"#,
-        r#"CustomProvider::builder();"#,
-    ] {
-        assert!(
-            !hermetic_source_violations(unknown).is_empty(),
-            "a concrete provider constructor must not hide an unresolved base URL: {unknown}"
-        );
-    }
-
-    for fixture in [
-        r#"let base_url: Option<String> = Some("http://127.0.0.1:4317".to_owned()); AnthropicProvider::new(base_url);"#,
-        r#"VertexProvider::new(project(), location(), Some("http://[::1]:4317".to_owned()));"#,
-        r#"OpenAiChatProvider::new_for_profile("http://localhost:4317".to_string(), id, compat, headers, models);"#,
-        r#"AnthropicProvider::for_route(id, models, Some("http://127.0.0.1:4317".into()), headers, client, false);"#,
-        r#"fn construct(server_uri: String) { AnthropicProvider::new(Some(server_uri)); } fn exercise() { let server = MockServer::start().await; construct(server.uri()); }"#,
-        r#"fn construct(server: &MockServer) { AnthropicProvider::new(Some(server.uri())); }"#,
-    ] {
-        assert!(
-            hermetic_source_violations(fixture).is_empty(),
-            "a concrete provider constructor retains a proven fixture URL: {fixture}"
-        );
-    }
-
-    for unrelated in [
-        r#"MockProvider::new(provider_url());"#,
-        r#"TestProvider::new(provider_url());"#,
-        r#"RecordingProvider::new(provider_url());"#,
-        r#"PendingProvider::new(provider_url());"#,
-        r#"UnrelatedProviderLike::new(provider_url());"#,
-        r#"Mock::mistral_provider(provider_url());"#,
-        r#"Models::new();"#,
-    ] {
-        assert!(
-            hermetic_source_violations(unrelated).is_empty(),
-            "a non-network provider constructor is outside the URL-consumer surface: {unrelated}"
-        );
-    }
-}
-
-#[test]
-fn phase17_hermetic_executable_consumers_require_local_endpoints() {
-    for executable in [
-        r#"reqwest::get("https://example.com").await;"#,
-        r#"let provider = AnthropicProvider::new(None); provider.stream_prepared(request, auth).await;"#,
-        r#"let provider = CustomProvider::new(provider_url()); provider.stream_prepared(request, auth).await;"#,
-        r#"let provider = CustomProvider::new(); provider.stream_prepared(request, auth).await;"#,
-        r#"let provider = CustomProvider::default(); provider.stream_prepared(request, auth).await;"#,
-        r#"let mut collection = Models::new(); collection.register_route(Box::new(CustomProvider::new()), resolver, provenance, compat); collection.prepare_call(model, request).await;"#,
-    ] {
-        assert!(
-            !hermetic_source_violations(executable).is_empty(),
-            "an executable network path must resolve to a local endpoint: {executable}"
-        );
-    }
-
-    for fixture in [
-        r#"reqwest::get("http://127.0.0.1:4317").await;"#,
-        r#"let redaction_fixture = "https://example.com/secret"; assert!(!redact(redaction_fixture).is_empty());"#,
-        r#"let provider = MockProvider::new(provider_url()); provider.stream_prepared(request, auth).await;"#,
-        r#"let provider = RecordingProvider::new(provider_url()); provider.stream_prepared(request, auth).await;"#,
-        r#"let provider = MockProvider::default(); provider.stream_prepared(request, auth).await;"#,
-        r#"ControlledProvider::new(provider_url());"#,
-        r#"let kind = ProviderKind::Mock; fn accepts<T: Provider>() {}"#,
-    ] {
-        assert!(
-            hermetic_source_violations(fixture).is_empty(),
-            "observation data and explicit non-network providers remain hermetic: {fixture}"
-        );
-    }
-}
-
-#[test]
-fn phase17_hermetic_guard_allows_loopback_reserved_and_redaction_fixtures() {
-    let source = r###"
-        fn redaction_contract() {
-            reqwest::get("http://127.0.0.1:4317/v1");
-            client.post("http://[::1]:8080/callback");
-            client.get(format!("http://{0}:8080", "127.0.0.1"));
-            client.get(format!("http://127.0.0.1:{}", addr.port()));
-            client.get(format!("http://127.0.0.1:{}", 8080));
-            client.get(concat!("http://", concat!("127.0.", "0.1:8080")));
-            let local_endpoint = "http://127.0.0.1:4317/v1";
-            client.get(local_endpoint);
-            RegisteredTool::new(format!("test-{name}"));
-            command_tx.send(RpcCommand::prompt { message: format!("p{run}") });
-            let redaction_fixture = "https://api.mistral.ai/secret?token=canary";
-            assert!(!redact(redaction_fixture).contains("token=canary"));
-            assert!(!redact(format!("{}{}", "https://", provider_host())).contains("token"));
-            assert!(!redact(concat!("https://", concat!("api.", "mistral.ai"))).contains("token"));
-            // reqwest::get("https://openrouter.ai/api/v1");
-            const COMMENT_LIKE: &str = r#"// https://chatgpt.com/backend-api"#;
-        }
-    "###;
-    assert!(
-        hermetic_source_violations(source).is_empty(),
-        "local/reserved and nonexecuted redaction fixtures remain hermetic: {:?}",
-        hermetic_source_violations(source)
-    );
-}
-
-#[test]
-fn phase17_acceptance_manifest_guard_rejects_an_omission() {
-    let fixture = tempfile::tempdir().unwrap();
-    let tests = fixture.path().join("crates/fixture/tests");
-    std::fs::create_dir_all(&tests).unwrap();
-    std::fs::write(
-        tests.join("ordinary_name.rs"),
-        "#[test]\nfn phase17_acceptance_hidden_by_an_ordinary_filename() {}\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tests.join("explicit_marker.rs"),
-        "// opi-phase17-acceptance\n#[test]\nfn acceptance_with_stable_name() {}\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tests.join("qualified_marker.rs"),
-        "// opi-phase17-acceptance\n#[tokio::test]\nasync fn qualified_acceptance_with_stable_name() {}\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tests.join("conditional_qualified_marker.rs"),
-        "// opi-phase17-acceptance\n#[cfg_attr(windows, tokio::test)]\nasync fn phase17_case() {}\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tests.join("marker_in_string.rs"),
-        "const MARKER: &str = \"// opi-phase17-acceptance\";\n#[test]\nfn ordinary_test() {}\n",
-    )
-    .unwrap();
-
-    let discovered = discover_phase17_sources_under(fixture.path(), &[tests]);
-    assert_eq!(
-        discovered,
-        [
-            "crates/fixture/tests/conditional_qualified_marker.rs",
-            "crates/fixture/tests/explicit_marker.rs",
-            "crates/fixture/tests/ordinary_name.rs",
-            "crates/fixture/tests/qualified_marker.rs",
-        ],
-        "discovery parses Phase 17 test names and source-aware markers outside phase17 filenames"
-    );
-    let discovered_refs = discovered.iter().map(String::as_str).collect::<Vec<_>>();
-    assert!(
-        acceptance_manifest_difference(&[], &discovered_refs).is_err(),
-        "an omitted acceptance source must fail the manifest guard"
-    );
-}

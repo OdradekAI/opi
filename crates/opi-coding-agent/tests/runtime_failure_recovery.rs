@@ -1,22 +1,14 @@
-//! Phase 17 task 17.9 — composed failure-boundary matrix and rollback fixtures.
+// opi-runtime-acceptance
+//! Typed failure boundaries and recovery through the assembled product runtime.
 //!
-//! P17-FAL-001/002/003 are COMPOSED from the owner-task slices (route/auth
-//! 17.1+17.5, next-turn 17.2, evidence 17.3+17.6+17.7, authority 17.4; timeout,
-//! cancellation, queue closure, and partial effects are owned by Phase 8/12;
-//! cleanup-unknown is owned by opi-protocol/opi-sandbox Phase 15/16). This file
-//! does not first implement boundary semantics: it proves the classes stay
-//! caller-distinguishable, that a failure stops before every later boundary in
-//! the fixed order, and that cancellation/evidence failure are not converted
-//! into success or an unqualified denial on the assembled product path.
-//!
-//! P17-RBK-003/004 rollback fixtures: a Phase 17 run's session and evidence
-//! bytes survive a subsequent load untouched, and the effective user policy is
-//! not widened by run activity or session persistence.
+//! Failures stop before later side effects, cancellation and evidence errors stay
+//! caller-distinguishable, and committed session/evidence outcomes survive reload.
+//! Recovery must preserve tool projections and the effective user policy.
 
 mod common;
 
-#[path = "common/phase17.rs"]
-mod phase17;
+#[path = "common/runtime_evidence.rs"]
+mod runtime_evidence;
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -638,7 +630,7 @@ async fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
 
     // Tool-authorizer Err, emission/finalization, cleanup-unknown, cancellation,
     // and bounded proxy overflow are exercised through their real owner paths
-    // by phase17_tool_authority, phase17_product_evidence,
+    // by tool_authority, product_evidence,
     // protocol_conformance, the cancellation test below, and streaming_proxy.
 }
 
@@ -656,7 +648,7 @@ async fn phase17_failure_precedence_stops_before_later_boundaries() {
     let user = tempfile::tempdir().unwrap();
     let alpha = MockProvider::new_with_models(
         "alpha",
-        vec![phase17::model_info("alpha-model")],
+        vec![runtime_evidence::model_info("alpha-model")],
         Vec::new(),
     );
     let alpha_calls = alpha.call_log_handle();
@@ -696,7 +688,8 @@ async fn phase17_failure_precedence_stops_before_later_boundaries() {
         tool_call_response("tc-1", "write", "{}"),
         text_response("denied path"),
     ];
-    let provider = MockProvider::new_with_models("mock", vec![phase17::model_info("m")], responses);
+    let provider =
+        MockProvider::new_with_models("mock", vec![runtime_evidence::model_info("m")], responses);
     let collection = Arc::new(single_route_collection(Box::new(provider)));
     let mut agent = Agent::new(
         collection,
@@ -734,7 +727,7 @@ async fn phase17_failure_precedence_stops_before_later_boundaries() {
     let recorder: Arc<dyn EvidenceRecorder> = sink;
     let dispatched = MockProvider::new_with_models(
         "alpha",
-        vec![phase17::model_info("alpha-model")],
+        vec![runtime_evidence::model_info("alpha-model")],
         vec![text_response("never reached")],
     );
     let dispatched_calls = dispatched.call_log_handle();
@@ -792,7 +785,7 @@ impl Provider for PendingProvider {
         static MODELS: std::sync::OnceLock<Vec<opi_ai::provider::ModelInfo>> =
             std::sync::OnceLock::new();
         MODELS
-            .get_or_init(|| vec![phase17::model_info("pending-model")])
+            .get_or_init(|| vec![runtime_evidence::model_info("pending-model")])
             .as_slice()
     }
     fn stream_prepared(&self, _request: Request, _auth: ResolvedAuth) -> EventStream {
@@ -817,7 +810,7 @@ async fn phase17_cancellation_and_evidence_failure_are_not_converted_to_success(
     let mut harness = CodingHarness::builder(
         Box::new(MockProvider::new_with_models(
             "alpha",
-            vec![phase17::model_info("alpha-model")],
+            vec![runtime_evidence::model_info("alpha-model")],
             vec![text_response("outcome preserved")],
         )),
         "alpha:alpha-model".into(),
@@ -2117,7 +2110,7 @@ async fn phase17_rollback_preserves_session_and_evidence_bytes() {
     let mut harness = CodingHarness::builder(
         Box::new(MockProvider::new_with_models(
             "alpha",
-            vec![phase17::model_info("alpha-model")],
+            vec![runtime_evidence::model_info("alpha-model")],
             vec![text_response("rollback fixture")],
         )),
         "alpha:alpha-model".into(),
@@ -2158,7 +2151,7 @@ async fn phase17_rollback_preserves_session_and_evidence_bytes() {
     let reloader = CodingHarness::builder(
         Box::new(MockProvider::new_with_models(
             "alpha",
-            vec![phase17::model_info("alpha-model")],
+            vec![runtime_evidence::model_info("alpha-model")],
             Vec::new(),
         )),
         "alpha:alpha-model".into(),
@@ -2216,7 +2209,7 @@ async fn phase17_rollback_does_not_widen_user_policy() {
     let executions = Arc::new(AtomicUsize::new(0));
     let provider = MockProvider::new_with_models(
         "mock",
-        vec![phase17::model_info("m")],
+        vec![runtime_evidence::model_info("m")],
         vec![
             tool_call_response("malicious-write-1", "write", r#"{"path":"outside-1"}"#),
             tool_call_response("malicious-write-2", "write", r#"{"path":"outside-2"}"#),

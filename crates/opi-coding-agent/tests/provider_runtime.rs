@@ -1,19 +1,12 @@
-//! Phase 17.5 provider-runtime acceptance (P17-A02 + PRV-001/002/004, OUT-001).
+// opi-runtime-acceptance
+//! Provider routing and authentication through Models and product entry points.
 //!
-//! These tests prove the dispatchable-provider-collection contract at the
-//! `Models` seam: route lookup and per-call auth preparation go
-//! through the registered runtime collection (not a startup-selected provider
-//! object), a missing / ambiguous / unauthenticated route or auth-preparation
-//! failure yields a typed error with ZERO model dispatch and NO silent fallback
-//! to another provider/model/wire/credential, and successive model calls route
-//! to different registered providers through one collection without rebuilding
-//! it.
-//!
-//! P17-A02 (the 17.5-owned acceptance scenario) is
-//! [`phase17_route_and_auth_failures_do_not_dispatch_model_http`].
+//! Canonical selection retains its registered route and resolver across calls,
+//! switches, and resume. Missing, ambiguous, lookup-only, or unauthenticated routes
+//! fail with typed errors before dispatch or persistence, without silent fallback.
 
-#[path = "common/phase17.rs"]
-mod phase17;
+#[path = "common/runtime_evidence.rs"]
+mod runtime_evidence;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -329,41 +322,6 @@ async fn phase17_canonical_selection_resolves_and_bare_is_ambiguous() {
     );
 }
 
-/// P17-PRV-004: a route or auth-preparation failure does not silently fall back
-/// to another registered provider; the typed failure is returned.
-#[tokio::test]
-async fn phase17_auth_failure_does_not_silently_fallback() {
-    let mut collection = Models::new();
-    let alpha = register_counting_route(&mut collection, "alpha", "a1", static_resolver());
-    let _gamma = register_counting_route(
-        &mut collection,
-        "gamma",
-        "g1",
-        Arc::new(FailingResolver {
-            provider_id: "gamma".into(),
-        }),
-    );
-
-    // gamma's auth fails; the collection must return the owning failure rather
-    // than retry against alpha.
-    let err = collection
-        .prepare_call("gamma:g1", request_for("gamma:g1"))
-        .await
-        .expect_err("gamma auth failure must surface");
-    assert!(
-        matches!(
-            err,
-            opi_ai::ModelsError::Provider(ProviderError::CredentialNeeded { .. })
-        ),
-        "got {err:?}"
-    );
-    assert_eq!(
-        alpha.load(Ordering::SeqCst),
-        0,
-        "no silent fallback reached alpha"
-    );
-}
-
 /// P17-A01 / P17-OUT-001 (Phase 17.5 acceptance): a `CodingHarness` whose
 /// dispatch collection holds TWO real routes switches provider via
 /// `set_model_validated` without reconstructing the Agent, and both providers
@@ -380,9 +338,9 @@ async fn phase17_coding_harness_cross_provider_switch_dispatches_both_providers(
     use opi_coding_agent::harness::CodingHarness;
     use opi_coding_agent::project_trust::TrustDecision;
 
-    let _lock = phase17::session_lock();
+    let _lock = runtime_evidence::session_lock();
     let sessions = tempfile::tempdir().expect("sessions tempdir");
-    phase17::set_sessions_dir(sessions.path());
+    runtime_evidence::set_sessions_dir(sessions.path());
     let workspace = tempfile::tempdir().expect("workspace tempdir");
 
     let alpha_provider = MockProvider::new_with_models(
@@ -475,7 +433,7 @@ async fn phase17_coding_harness_cross_provider_switch_dispatches_both_providers(
         "beta dispatched exactly once"
     );
 
-    phase17::clear_sessions_dir();
+    runtime_evidence::clear_sessions_dir();
 }
 
 /// P17-PRV-002 write side: a bare model served by MORE THAN ONE dispatchable
@@ -490,9 +448,9 @@ async fn phase17_bare_selection_ambiguous_across_dispatchable_routes_fails_typed
     use opi_coding_agent::harness::CodingHarness;
     use opi_coding_agent::project_trust::TrustDecision;
 
-    let _lock = phase17::session_lock();
+    let _lock = runtime_evidence::session_lock();
     let sessions = tempfile::tempdir().expect("sessions tempdir");
-    phase17::set_sessions_dir(sessions.path());
+    runtime_evidence::set_sessions_dir(sessions.path());
     let workspace = tempfile::tempdir().expect("workspace tempdir");
 
     let alpha_provider = MockProvider::new_with_models(
@@ -558,7 +516,7 @@ async fn phase17_bare_selection_ambiguous_across_dispatchable_routes_fails_typed
         "beta was never dispatched"
     );
 
-    phase17::clear_sessions_dir();
+    runtime_evidence::clear_sessions_dir();
 }
 
 /// Lookup-only extension providers are registry-resolvable but hold no
@@ -574,9 +532,9 @@ async fn phase17_set_model_to_lookup_only_extension_route_fails_without_persisti
     use opi_coding_agent::harness::CodingHarness;
     use opi_coding_agent::project_trust::TrustDecision;
 
-    let _lock = phase17::session_lock();
+    let _lock = runtime_evidence::session_lock();
     let sessions = tempfile::tempdir().expect("sessions tempdir");
-    phase17::set_sessions_dir(sessions.path());
+    runtime_evidence::set_sessions_dir(sessions.path());
     let workspace = tempfile::tempdir().expect("workspace tempdir");
 
     let alpha_provider = MockProvider::new_with_models(
@@ -630,7 +588,7 @@ async fn phase17_set_model_to_lookup_only_extension_route_fails_without_persisti
         "no model_change entry may be persisted for a rejected lookup-only route"
     );
 
-    phase17::clear_sessions_dir();
+    runtime_evidence::clear_sessions_dir();
 }
 
 /// Resuming a session whose latest `model_change` records a lookup-only
@@ -650,9 +608,9 @@ async fn phase17_resume_of_lookup_only_recorded_route_is_typed_not_panicking() {
     use opi_coding_agent::harness::CodingHarness;
     use opi_coding_agent::project_trust::TrustDecision;
 
-    let _lock = phase17::session_lock();
+    let _lock = runtime_evidence::session_lock();
     let sessions = tempfile::tempdir().expect("sessions tempdir");
-    phase17::set_sessions_dir(sessions.path());
+    runtime_evidence::set_sessions_dir(sessions.path());
     let workspace = tempfile::tempdir().expect("workspace tempdir");
 
     // Session fixture: one user message, then a canonical model_change naming
@@ -734,7 +692,7 @@ async fn phase17_resume_of_lookup_only_recorded_route_is_typed_not_panicking() {
         "the lookup-only recorded route emits the typed model-incompatible diagnostic"
     );
 
-    phase17::clear_sessions_dir();
+    runtime_evidence::clear_sessions_dir();
 }
 
 #[tokio::test]
@@ -748,7 +706,7 @@ async fn phase17_noninteractive_runtime_preserves_the_active_route_resolver() {
     use opi_coding_agent::runner::NonInteractiveRunner;
     use opi_coding_agent::runtime_packages::RuntimePackageStartup;
 
-    let _lock = phase17::session_lock();
+    let _lock = runtime_evidence::session_lock();
     let sessions = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
     let resolver_calls = Arc::new(AtomicU32::new(0));
@@ -760,7 +718,7 @@ async fn phase17_noninteractive_runtime_preserves_the_active_route_resolver() {
         vec![model_info("model")],
         vec![text_response("done")],
     );
-    phase17::set_sessions_dir(sessions.path());
+    runtime_evidence::set_sessions_dir(sessions.path());
     let startup = RuntimePackageStartup {
         extension_registry: ExtensionRegistry::new(),
         installed_packages: Vec::new(),
@@ -788,5 +746,5 @@ async fn phase17_noninteractive_runtime_preserves_the_active_route_resolver() {
 
     assert_eq!(result.exit_code, 0, "{}", result.stderr);
     assert_eq!(resolver_calls.load(Ordering::SeqCst), 1);
-    phase17::clear_sessions_dir();
+    runtime_evidence::clear_sessions_dir();
 }

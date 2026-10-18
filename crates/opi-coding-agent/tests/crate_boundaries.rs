@@ -1,26 +1,8 @@
-//! Phase 16 task 16.16.1 — crate/source boundary guard.
+//! Reference Product crate and source boundary guards.
 //!
-//! After 16.16.1 removes the built-in native sandbox from the Opi binary, the
-//! resolve graph of `opi-coding-agent` must contain neither the standalone
-//! `opi-sandbox` crate nor the native-policy crates (`landlock`, `seccompiler`),
-//! and the production source must not own native-restriction symbols. The
-//! load-bearing structural proof is `cargo tree -p opi-coding-agent --edges
-//! normal`; the source/Cargo.toml tripwires are secondary regression guards.
-//!
-//! Design references:
-//! - `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
-//!   Overview: "The Opi binary does not link `opi-sandbox`."
-//!   `## Migration from Phase 15`: "Native confinement and its
-//!   helper/capability-selection code leave core."
-//! - Plan task 16.16 residue check: `cargo tree -p opi-coding-agent` contains
-//!   no `opi-sandbox`/`landlock`/`seccompiler`; the source-guard symbol set
-//!   (`PreparedSandbox`/`SandboxConfig`/`SandboxMode`/`StrictBackend`/
-//!   `CODE_SANDBOX_DEGRADED`/`CODE_SANDBOX_UNAVAILABLE`) does not reappear
-//!   (the independent crate name `opi-sandbox` is permitted; the legacy
-//!   `--sandbox`/`--sandbox-require` flag strings are excluded from the
-//!   tripwire because 16.16.1 keeps them as hidden rejection-trigger args —
-//!   their rejection-with-remediation is pinned behaviorally in
-//!   `execution_migration.rs`).
+//! The product dependency graph excludes the standalone sandbox and native-policy
+//! crates. Source and manifest guards also reject reintroduced native restriction
+//! modules, exports, and legacy ownership symbols.
 
 #![forbid(unsafe_code)]
 

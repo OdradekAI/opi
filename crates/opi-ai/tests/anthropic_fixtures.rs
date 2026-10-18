@@ -1581,3 +1581,123 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         .await
         .expect("stream must drain promptly after cancellation (no hang/panic)");
 }
+
+mod request_compatibility {
+    use std::sync::Arc;
+
+    use futures_util::StreamExt;
+    use opi_ai::anthropic::AnthropicProvider;
+    use opi_ai::http::HttpClient;
+    use opi_ai::model_info::{AnthropicMessagesCompat, ThinkingLevel, WireCompat};
+    use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+    use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
+    use tokio_util::sync::CancellationToken;
+
+    fn request(model: &str) -> Request {
+        Request {
+            model: model.into(),
+            context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: None,
+                messages: Vec::new(),
+                tools: Vec::new(),
+            })
+            .expect("valid context declarations"),
+            max_tokens: None,
+            temperature: None,
+            thinking: ThinkingConfig::default(),
+            stop_sequences: Vec::new(),
+            metadata: None,
+            cancel: CancellationToken::new(),
+            timeout: None,
+            extra_headers: Vec::new(),
+            cache_retention: CacheRetention::None,
+            session_id: None,
+        }
+    }
+    #[tokio::test]
+    async fn direct_anthropic_rejects_unsupported_thinking_before_auth() {
+        let model = ModelInfo::new(
+            "thinking-model",
+            "Thinking Model",
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(1000, 100).with_thinking(true),
+        );
+        let provider = AnthropicProvider::for_route(
+            "test".into(),
+            vec![model],
+            None,
+            Default::default(),
+            Arc::new(HttpClient::new()),
+            false,
+        );
+        let mut request = request("test:thinking-model");
+        request.thinking = ThinkingConfig {
+            enabled: true,
+            budget_tokens: None,
+            level: ThinkingLevel::XHigh,
+        };
+
+        let error = provider
+            .stream_prepared(request, opi_ai::test_support::resolved_auth())
+            .next()
+            .await
+            .expect("preflight result")
+            .expect_err("unsupported thinking must fail");
+
+        assert!(matches!(error, ProviderError::UnsupportedCapability { .. }));
+    }
+    #[test]
+    fn anthropic_request_honors_adaptive_thinking_and_temperature_compat() {
+        let model = ModelInfo::new(
+            "copilot-model",
+            "Copilot Model",
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(1000, 100).with_thinking(true),
+        )
+        .with_compat(WireCompat::AnthropicMessages(AnthropicMessagesCompat {
+            supports_eager_tool_input_streaming: false,
+            force_adaptive_thinking: true,
+            supports_temperature: false,
+        }))
+        .unwrap();
+        let provider = AnthropicProvider::for_route(
+            "copilot".into(),
+            vec![model],
+            None,
+            Default::default(),
+            Arc::new(HttpClient::new()),
+            false,
+        );
+        let mut request = request("copilot:copilot-model");
+        request.temperature = Some(0.4);
+        request.thinking = ThinkingConfig {
+            enabled: true,
+            budget_tokens: Some(4096),
+            level: ThinkingLevel::High,
+        };
+
+        let body = provider.build_request_body(&request).unwrap();
+
+        assert!(body.get("temperature").is_none());
+        assert_eq!(body["thinking"], serde_json::json!({"type": "adaptive"}));
+    }
+    #[test]
+    fn anthropic_direct_catalog_preserves_fixed_thinking_and_temperature() {
+        let provider = AnthropicProvider::new(None);
+        let mut request = request("anthropic:claude-sonnet-4-5-20250514");
+        request.temperature = Some(0.4);
+        request.thinking = ThinkingConfig {
+            enabled: true,
+            budget_tokens: Some(4096),
+            level: ThinkingLevel::High,
+        };
+
+        let body = provider.build_request_body(&request).unwrap();
+
+        assert_eq!(body["temperature"], 0.4);
+        assert_eq!(
+            body["thinking"],
+            serde_json::json!({"type": "enabled", "budget_tokens": 4096})
+        );
+    }
+}

@@ -1,17 +1,9 @@
-//! Shared Phase 17 helpers for the task 17.9 capstone acceptance tests.
+// opi-runtime-acceptance
+//! Shared runtime-evidence integration-test helpers.
 //!
-//! Each task 17.9 binary pulls this in with:
-//! ```text
-//! #[path = "common/phase17.rs"]
-//! mod phase17;
-//! ```
-//! The `#[path]` form compiles this file as a per-binary module without editing
-//! `tests/common/mod.rs`, so no `common/mod.rs` ownership is claimed. Like
-//! `common/mod.rs`, this module is compiled once per binary that includes it and
-//! never participates in the published crate surface.
-//!
-//! Bodies are kept byte-identical to the per-binary copies in the 17.4-17.8
-//! phase17 tests they replace.
+//! Each test binary includes this private module through an explicit path.
+//! Session environment mutation is serialized per binary; fixture parsers and
+//! artifact integrity helpers do not enter the published crate surface.
 
 #![allow(dead_code)]
 
@@ -45,8 +37,7 @@ pub fn clear_sessions_dir() {
     }
 }
 
-/// A static API-key auth resolver for test routes (byte-identical to the
-/// per-binary copies in 17.7/17.8).
+/// A static API-key auth resolver for test routes.
 pub fn static_resolver() -> Arc<dyn opi_ai::auth::AuthResolver> {
     Arc::new(opi_ai::auth::StaticAuthResolver::new(
         opi_ai::auth::AuthScheme::ApiKey,
@@ -55,7 +46,7 @@ pub fn static_resolver() -> Arc<dyn opi_ai::auth::AuthResolver> {
 }
 
 /// A `ModelInfo` whose id and display name are both `id`, on the OpenAI wire
-/// with a 100k/4k capability envelope (byte-identical to the 17.7/17.8 copy).
+/// with a 100k/4k capability envelope.
 pub fn model_info(id: &str) -> opi_ai::provider::ModelInfo {
     opi_ai::provider::ModelInfo::new(
         id,
@@ -73,13 +64,6 @@ pub fn parse_ndjson(output: &str) -> Vec<serde_json::Value> {
         .filter(|l| !l.is_empty())
         .map(|line| serde_json::from_str(line).unwrap_or_else(|_| panic!("invalid JSON: {line}")))
         .collect()
-}
-
-/// Resolve the canonical artifact directory under the workspace `target/` for
-/// task 17.9 (mirrors the 17.7/17.8 `artifact_dir` pattern).
-pub fn artifact_dir() -> std::path::PathBuf {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_owned());
-    std::path::Path::new(&manifest_dir).join("../../target/opi-artifacts/phase17-task-17.9")
 }
 
 /// The most recently modified `.jsonl` file directly under `dir` (skipping

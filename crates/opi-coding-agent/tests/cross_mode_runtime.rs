@@ -1,26 +1,13 @@
-//! Phase 17 task 17.9 — cross-mode runtime-semantics equivalence.
+// opi-runtime-acceptance
+//! Shared route, authorization, cancellation, and evidence semantics across
+//! interactive assembly, CodingHarness, print, JSON, and RPC entry points.
 //!
-//! P17-A14 / P17-MIG-005: one Phase 17 fixture — the active dispatchable route
-//! `alpha:alpha-model` (one tool turn plus completion) plus one extra `beta`
-//! route — is
-//! driven through every Reference Product entry point:
-//!
-//! 1. the interactive-binary harness assembly through the production TUI loop
-//!    and its race-safe headless driver;
-//! 2. `CodingHarness::prompt` (the shared library seam every mode calls);
-//! 3. `NonInteractiveRunner::run` (print) with durable `--trace` evidence;
-//! 4. `NonInteractiveRunner::run_json` (JSON/NDJSON) with durable evidence;
-//! 5. `RpcRunner` via `run_with_channels` with durable `--trace` evidence.
-//!
-//! The observable route, authority, cancellation, evidence completeness, and
-//! completion semantics are exercised directly in every mode. The success
-//! fixture asks for a real command tool whose adapter permission is not granted
-//! and proves zero executions. A second pending-provider fixture is
-//! cancelled only after canonical-route dispatch and proves the shared typed
-//! cancellation lifecycle.
+//! Real product paths execute one tool-denial fixture and one pending-provider
+//! cancellation fixture. Mode-specific persistence and the production TUI loop
+//! remain part of the observable contract.
 
-#[path = "common/phase17.rs"]
-mod phase17;
+#[path = "common/runtime_evidence.rs"]
+mod runtime_evidence;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -97,7 +84,7 @@ fn assert_authority_probe_not_executed(workspace: &std::path::Path, label: &str)
 fn alpha_fixture() -> (MockProvider, Arc<Mutex<Vec<opi_ai::provider::Request>>>) {
     let alpha = MockProvider::new_with_models(
         "alpha",
-        vec![phase17::model_info("alpha-model")],
+        vec![runtime_evidence::model_info("alpha-model")],
         vec![
             tool_call_response(
                 "authority-call",
@@ -129,7 +116,7 @@ impl Provider for PendingProvider {
         static MODELS: std::sync::OnceLock<Vec<opi_ai::provider::ModelInfo>> =
             std::sync::OnceLock::new();
         MODELS
-            .get_or_init(|| vec![phase17::model_info("alpha-model")])
+            .get_or_init(|| vec![runtime_evidence::model_info("alpha-model")])
             .as_slice()
     }
 
@@ -194,9 +181,12 @@ fn empty_resume_info(
 
 /// The fixture's extra dispatchable route: provider `beta`, model `beta-model`.
 fn beta_route() -> (Box<dyn Provider>, Arc<dyn AuthResolver>) {
-    let beta =
-        MockProvider::new_with_models("beta", vec![phase17::model_info("beta-model")], Vec::new());
-    (Box::new(beta), phase17::static_resolver())
+    let beta = MockProvider::new_with_models(
+        "beta",
+        vec![runtime_evidence::model_info("beta-model")],
+        Vec::new(),
+    );
+    (Box::new(beta), runtime_evidence::static_resolver())
 }
 
 /// Sorted distinct record-kind names emitted by a run through an in-memory
@@ -215,7 +205,7 @@ fn kind_names(records: &[EvidenceRecord]) -> Vec<String> {
 /// Sorted distinct record-kind names parsed from a durable `evidence.jsonl`.
 fn jsonl_kind_names(path: &std::path::Path) -> Vec<String> {
     let raw = std::fs::read_to_string(path).unwrap();
-    let mut kinds: Vec<String> = phase17::parse_ndjson(&raw)
+    let mut kinds: Vec<String> = runtime_evidence::parse_ndjson(&raw)
         .iter()
         .filter_map(|line| line["kind"].as_str().map(str::to_owned))
         .collect();
@@ -308,7 +298,9 @@ fn assert_in_memory_manifest(sink: &InMemoryEvidenceSink, expected: TerminalOutc
 }
 
 fn durable_evidence(run_dir: &std::path::Path) -> Vec<serde_json::Value> {
-    phase17::parse_ndjson(&std::fs::read_to_string(run_dir.join("evidence.jsonl")).unwrap())
+    runtime_evidence::parse_ndjson(
+        &std::fs::read_to_string(run_dir.join("evidence.jsonl")).unwrap(),
+    )
 }
 
 fn assert_durable_manifest(run_dir: &std::path::Path, expected_outcome: &str, label: &str) {
@@ -454,13 +446,12 @@ fn sink_summary(label: &str, sink: &InMemoryEvidenceSink) -> String {
 // ===========================================================================
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase17_all_public_product_modes_share_runtime_semantics() {
+async fn all_public_product_modes_share_runtime_semantics() {
     let _tui_driver_lock = TUI_DRIVER_LOCK.lock().await;
     let sessions = tempfile::tempdir().unwrap();
 
-    let dir = phase17::artifact_dir();
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let artifacts = tempfile::tempdir().unwrap();
+    let dir = artifacts.path().to_path_buf();
 
     // --- Mode 1: interactive-binary harness assembly (builder seam) ---------
     let ws1 = tempfile::tempdir().unwrap();
@@ -637,7 +628,7 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
     );
     assert_wire_requests_use_canonical_route("JSON/NDJSON", &calls4, 2);
     assert_authority_probe_not_executed(ws4.path(), "JSON/NDJSON");
-    let json_lines = phase17::parse_ndjson(&json_result.stdout);
+    let json_lines = runtime_evidence::parse_ndjson(&json_result.stdout);
     let summary = json_lines
         .iter()
         .find(|l| l["type"] == "session_summary")
@@ -699,7 +690,7 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
             "rpc-authority",
         )),
         Some(ev5.path().to_path_buf()),
-        phase17::static_resolver(),
+        runtime_evidence::static_resolver(),
         vec![beta_route()],
     )
     .expect("rpc runner constructs");
@@ -833,7 +824,7 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
     .unwrap();
     std::fs::write(
         dir.join("command.txt"),
-        "cargo test -p opi-coding-agent --test phase17_cross_mode phase17_all_public_product_modes_share_runtime_semantics\n",
+        "cargo test -p opi-coding-agent --test cross_mode_runtime all_public_product_modes_share_runtime_semantics\n",
     )
     .unwrap();
     std::fs::write(dir.join("cwd.txt"), format!("{}\n", ws2.path().display())).unwrap();
@@ -880,8 +871,14 @@ async fn phase17_all_public_product_modes_share_runtime_semantics() {
         "tool-execution-counts.json",
         "RUN_SUMMARY.md",
     ];
-    phase17::write_sha256sums(&dir, &names, &["stdout.txt", "stderr.txt"]);
-    phase17::verify_sha256sums(&dir, &["stdout.txt", "stderr.txt"]);
+    runtime_evidence::write_sha256sums(&dir, &names, &["stdout.txt", "stderr.txt"]);
+    runtime_evidence::verify_sha256sums(&dir, &["stdout.txt", "stderr.txt"]);
+
+    drop(artifacts);
+    assert!(
+        !dir.exists(),
+        "temporary cross-mode bundle is removed on drop"
+    );
 }
 
 async fn exercise_harness_cancellation(
@@ -979,7 +976,7 @@ async fn exercise_runner_cancellation(json: bool) -> Vec<String> {
     assert_eq!(result.stderr, "cancelled", "{label}");
     assert_wire_requests_use_canonical_route(label, &calls, 1);
     if json {
-        let lines = phase17::parse_ndjson(&result.stdout);
+        let lines = runtime_evidence::parse_ndjson(&result.stdout);
         assert_eq!(
             lines
                 .iter()
@@ -1025,7 +1022,7 @@ async fn exercise_rpc_cancellation() -> Vec<String> {
             "rpc-cancel",
         )),
         Some(evidence.path().to_path_buf()),
-        phase17::static_resolver(),
+        runtime_evidence::static_resolver(),
         vec![beta_route()],
     )
     .expect("RPC runner constructs");

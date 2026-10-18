@@ -1,12 +1,9 @@
-//! Phase 17 task 17.7 — Reference Product evidence cutover.
+// opi-runtime-acceptance
+//! Product evidence capture through CodingHarness and the real agent loop.
 //!
-//! Drives the production evidence capture path through `CodingHarness::prompt`:
-//! the harness binds an [`opi_agent::evidence::EvidenceRecorder`] (here the
-//! in-memory oracle), runs the real agent loop — which emits provider/tool/retry
-//! records per task 17.6 — and finalizes one strict `DirectRuntimeInput`-bound
-//! manifest. The legacy `TraceSink` capture path is replaced by this evidence
-//! lifecycle; this test proves the production call site wires setup → emit →
-//! finalize through the public harness, not a helper or unit shim.
+//! Setup, emission, artifact registration, and finalization bind evidence to the
+//! durable session runtime input. File and in-memory recorders share lifecycle
+//! conformance, while failures preserve actual execution and persistence outcomes.
 
 use std::path::Path;
 use std::sync::Arc;

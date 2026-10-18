@@ -4,6 +4,7 @@ import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).with_name("opi-doc-check.py")
@@ -1089,6 +1090,38 @@ class SkillContractTests(unittest.TestCase):
             "missing=['opi-example'], extra=[]",
             doc_check.ERRORS,
         )
+
+
+class CurrentProductContractTests(unittest.TestCase):
+    def test_tool_authorization_boundary_is_required_in_both_readmes(self):
+        self.addCleanup(doc_check.ERRORS.clear)
+        original_read = doc_check.read
+        boundaries = {
+            "README.md": "not an operating-system sandbox",
+            "README.zh.md": "不是操作系统 sandbox",
+        }
+        for missing in (None, *boundaries):
+            with self.subTest(missing=missing):
+                doc_check.ERRORS.clear()
+
+                def read(rel):
+                    text = original_read(rel)
+                    if rel == missing:
+                        return text.replace(boundaries[rel], "tool authorization")
+                    return text
+
+                with patch.object(doc_check, "read", side_effect=read):
+                    doc_check.check_current_contracts([])
+                errors = [
+                    error
+                    for error in doc_check.ERRORS
+                    if "tool authorization boundary" in error
+                ]
+                if missing is None:
+                    self.assertEqual(errors, [])
+                else:
+                    self.assertEqual(len(errors), 1)
+                    self.assertTrue(errors[0].startswith(f"{missing}:"))
 
 
 class LocalLinkExemptionTest(unittest.TestCase):

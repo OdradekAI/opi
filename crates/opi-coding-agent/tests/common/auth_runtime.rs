@@ -1,4 +1,8 @@
-//! Shared Phase 14 runtime-auth integration-test plumbing.
+// opi-runtime-acceptance
+//! Shared runtime-authentication integration-test helpers.
+//!
+//! Drives bounded text, JSON, and real RPC stdio capture without live providers.
+//! Child ownership includes termination, reader joins, and draining through EOF.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
@@ -20,7 +24,7 @@ pub fn credential_runner(workspace: &Path) -> NonInteractiveRunner {
             provider_id: "anthropic".into(),
         })],
     );
-    // Phase 17.5: the harness dispatches through Models::prepare_call,
+    // The harness dispatches through Models::prepare_call,
     // which strictly resolves the `provider:model` spec against the provider's
     // catalog. MockProvider only registers "mock-model", so the spec must match it;
     // the CredentialNeeded provider_id is driven by the mock error, not the spec.

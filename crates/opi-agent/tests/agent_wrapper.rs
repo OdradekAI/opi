@@ -1210,3 +1210,71 @@ async fn phase17_next_call_routes_from_applied_state_nxt006() {
         "provider B called on turn 2 via the applied (rerouted) state"
     );
 }
+
+mod construction_dispatch_errors {
+    use super::{TestHooks, common};
+    use std::sync::Arc;
+
+    use opi_agent::agent::Agent;
+    use opi_agent::loop_types::{
+        AgentError, AgentLoopConfig, InferenceConfig, InvalidNextTurnReason,
+    };
+    use opi_ai::test_support::{MockProvider, text_response};
+    use opi_ai::{Models, ModelsError, ProviderRegistry, RegistryError};
+
+    fn agent_construction_error(collection: Models, spec: &str) -> AgentError {
+        match Agent::new(
+            Arc::new(collection),
+            common::registrations_from(Vec::new()),
+            Some(common::permissive_authorizer()),
+            spec.to_owned(),
+            None,
+            InferenceConfig::default(),
+            AgentLoopConfig::default(),
+            Box::new(TestHooks),
+        ) {
+            Ok(_) => panic!("agent construction unexpectedly accepted {spec}"),
+            Err(error) => error,
+        }
+    }
+    #[test]
+    fn construction_preserves_registry_and_dispatch_failure_classes() {
+        let route = || {
+            opi_ai::test_support::single_route_collection(Box::new(MockProvider::new(
+                "mock",
+                vec![text_response("unused")],
+            )))
+        };
+
+        assert!(matches!(
+            agent_construction_error(route(), "bare-model"),
+            AgentError::InvalidModelSpec { .. }
+        ));
+        assert!(matches!(
+            agent_construction_error(route(), "missing:mock-model"),
+            AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::Route(
+                ModelsError::Registry(RegistryError::UnknownProvider(_))
+            ))
+        ));
+        assert!(matches!(
+            agent_construction_error(route(), "mock:missing"),
+            AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::Route(
+                ModelsError::Registry(RegistryError::UnknownModel { .. })
+            ))
+        ));
+
+        let mut registry = ProviderRegistry::new();
+        registry
+            .register_provider(Box::new(MockProvider::new(
+                "mock",
+                vec![text_response("unused")],
+            )))
+            .unwrap();
+        assert!(matches!(
+            agent_construction_error(Models::from_registry(registry), "mock:mock-model"),
+            AgentError::InvalidNextTurnCandidate(InvalidNextTurnReason::Route(
+                ModelsError::RouteNotDispatchable { .. }
+            ))
+        ));
+    }
+}

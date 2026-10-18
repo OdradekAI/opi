@@ -712,3 +712,119 @@ async fn concrete_custom_route_ignores_credential_base_url_and_uses_model_base_u
     assert!(requests[0].headers.get("anthropic-beta").is_none());
     assert!(default_server.received_requests().await.unwrap().is_empty());
 }
+
+mod capability_and_catalog_dispatch {
+    use super::request;
+    use std::sync::Arc;
+
+    use futures_util::StreamExt;
+    use opi_ai::model_info::ThinkingLevel;
+    use opi_ai::provider::{EventStream, Provider, ProviderError, Request, ThinkingConfig};
+    use opi_ai::{ApiMappedProvider, ModelCapabilities, ModelInfo, WireApi};
+
+    struct CountingRoute {
+        model: Vec<ModelInfo>,
+        calls: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl Provider for CountingRoute {
+        fn id(&self) -> &str {
+            "mapped"
+        }
+
+        fn models(&self) -> &[ModelInfo] {
+            &self.model
+        }
+
+        fn stream_prepared(
+            &self,
+            _request: Request,
+            _auth: opi_ai::auth::ResolvedAuth,
+        ) -> EventStream {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(futures_util::stream::empty())
+        }
+
+        fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+            self.model = models;
+            Ok(())
+        }
+    }
+
+    fn unsupported_xhigh_model() -> ModelInfo {
+        ModelInfo::new(
+            "reasoning",
+            "Reasoning",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(1000, 100).with_thinking(true),
+        )
+    }
+    #[tokio::test]
+    async fn mapped_provider_preflights_before_route_dispatch() {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let model = unsupported_xhigh_model();
+        let mapped = ApiMappedProvider::try_new(
+            "mapped",
+            vec![model.clone()],
+            [(
+                WireApi::OpenAiCompletions,
+                Box::new(CountingRoute {
+                    model: vec![model],
+                    calls: calls.clone(),
+                }) as Box<dyn Provider>,
+            )],
+        )
+        .unwrap();
+        let mut request = request("mapped:reasoning");
+        request.thinking = ThinkingConfig {
+            enabled: true,
+            budget_tokens: None,
+            level: ThinkingLevel::XHigh,
+        };
+
+        let error = mapped
+            .stream_prepared(request, opi_ai::test_support::resolved_auth())
+            .next()
+            .await
+            .expect("preflight result")
+            .expect_err("unsupported thinking must fail");
+
+        assert!(matches!(error, ProviderError::UnsupportedCapability { .. }));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+    #[test]
+    fn mapped_provider_materializes_an_effective_model_catalog_into_routes() {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let original = unsupported_xhigh_model();
+        let mut mapped = ApiMappedProvider::try_new(
+            "mapped",
+            vec![original.clone()],
+            [(
+                WireApi::OpenAiCompletions,
+                Box::new(CountingRoute {
+                    model: vec![original.clone()],
+                    calls: calls.clone(),
+                }) as Box<dyn Provider>,
+            )],
+        )
+        .unwrap();
+        let added = ModelInfo::new(
+            "added",
+            "Added",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(2000, 200),
+        );
+
+        mapped
+            .replace_model_catalog(vec![original, added])
+            .expect("effective catalog");
+        let stream = mapped.stream_prepared(
+            request("mapped:added"),
+            opi_ai::test_support::resolved_auth(),
+        );
+
+        drop(stream);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(mapped.models().iter().any(|model| model.id == "added"));
+    }
+}

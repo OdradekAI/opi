@@ -44,7 +44,7 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
         "library_gates": [
           ".agents/skills/opi-implement/scripts/opi-impl-smoke.sh full"
         ],
-        "behavioral_tests": ["crates/opi-coding-agent/tests/phase17_provider_runtime.rs"],
+        "behavioral_tests": ["crates/opi-coding-agent/tests/provider_runtime.rs"],
         "snapshot_tests": [],
         "smoke_addendum": null
       },
@@ -54,7 +54,7 @@ Atomic writes use an ignored `.opi-impl-state.json.tmp` plus rename.
           "source": "docs/superpowers/specs/<registered-phase-source>.md#Acceptance scenarios and verification",
           "scenario": "An invalid registered provider route returns its owning typed failure before model HTTP dispatch.",
           "verification": [
-            "cargo test -p opi-coding-agent --test phase17_provider_runtime phase17_route_and_auth_failures_do_not_dispatch_model_http"
+            "cargo test -p opi-coding-agent --test provider_runtime phase17_route_and_auth_failures_do_not_dispatch_model_http"
           ],
           "production_call_sites": [
             "opi_coding_agent::CodingHarness::prompt",

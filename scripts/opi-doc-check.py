@@ -1152,6 +1152,8 @@ def check_local_links(rel: str) -> None:
 
 
 def check_current_contracts(doc_paths: list[str]) -> None:
+    require("README.md", "not an operating-system sandbox", label="tool authorization boundary")
+    require("README.zh.md", "不是操作系统 sandbox", label="tool authorization boundary")
     version = workspace_version()
     if version:
         require(

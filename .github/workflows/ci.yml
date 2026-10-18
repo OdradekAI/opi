@@ -83,12 +83,8 @@ jobs:
       - name: Run execution runtime acceptance
         run: cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_runtime
 
-  # Phase 17 task 17.9: hermetic cross-mode / failure-rollback / api-audit
-  # acceptance. Platform-neutral (no OS-specific permission or confinement);
-  # identical selection on Linux, macOS, and Windows. Uses local MockProvider
-  # fixtures and in-repo source/CI audits — no network, no subprocess peer, no
-  # feature flag. Job and step names stay literal because phase17_api_audit
-  # reads this file to prove the three-platform contract.
+  # Offline runtime acceptance uses the same targets on all three platforms.
+  # ci_contract checks this selection; test_hermeticity audits fixture sources.
   phase17_acceptance:
     name: Phase 17 acceptance (${{ matrix.os }})
     strategy:
@@ -100,12 +96,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Run phase17 cross-mode acceptance
-        run: cargo test -p opi-coding-agent --test phase17_cross_mode
-      - name: Run phase17 failure-rollback acceptance
-        run: cargo test -p opi-coding-agent --test phase17_failure_rollback
-      - name: Run phase17 api-audit acceptance
-        run: cargo test -p opi-coding-agent --test phase17_api_audit
+      - name: Run cross-mode acceptance
+        run: cargo test -p opi-coding-agent --test cross_mode_runtime
+      - name: Run failure-recovery acceptance
+        run: cargo test -p opi-coding-agent --test runtime_failure_recovery
+      - name: Run architecture guards
+        run: cargo test -p opi-coding-agent --test architecture_guards
+      - name: Run offline test guards
+        run: cargo test -p opi-coding-agent --test test_hermeticity
+      - name: Run CI contract guards
+        run: cargo test -p opi-coding-agent --test ci_contract
 
   doctest:
     runs-on: ubuntu-latest

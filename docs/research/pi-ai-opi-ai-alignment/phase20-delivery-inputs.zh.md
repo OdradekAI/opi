@@ -174,6 +174,8 @@ Anthropic、OpenAI Codex legacy、OpenAI ChatGPT（direct）、GitHub Copilot、
 
 `crates/opi-ai/tests/` 下 41 个 integration 文件：`anthropic_fixtures.rs`、`anthropic_thinking_roundtrip.rs`、`api_mapped_provider.rs`、`auth_contracts.rs`、`azure_openai_fixtures.rs`、`bedrock_fixtures.rs`、`connection_pooling.rs`、`context_budget.rs`、`custom_provider_registration.rs`、`gemini_fixtures.rs`、`gemini_lifecycle.rs`、`image_input.rs`、`image_provider_serialization.rs`、`mistral_fixtures.rs`、`model_capabilities_migration.rs`、`model_wire_metadata.rs`、`oauth_wire_shape.rs`、`openai_chat_fixtures.rs`、`openai_codex_responses.rs`、`openai_compat_lifecycle.rs`、`openai_responses_fixtures.rs`、`openai_responses_lifecycle.rs`、`openrouter_fixtures.rs`、`output_content_image.rs`、`per_request_auth.rs`、`phase14_remediation.rs`、`provider_collection.rs`、`provider_diagnostics.rs`、`provider_error_classes.rs`、`provider_lifecycle.rs`、`provider_trait.rs`、`proxy_support.rs`、`registry.rs`、`request_enrichment.rs`、`retry_backoff.rs`、`stream_events.rs`、`test_support_tests.rs`、`tool_result_no_leak.rs`、`tool_result_wire.rs`、`usage_cost.rs`、`vertex_fixtures.rs`。
 
+以上保留原始交付输入清单，不代表当前文件数量。其中 remediation 回归现已合并到 `anthropic_fixtures.rs`、`openai_chat_fixtures.rs`、`model_wire_metadata.rs`、`api_mapped_provider.rs`、`provider_collection.rs` 和 `usage_cost.rs`；当前路径见 [acceptance-matrix.md](acceptance-matrix.md)。
+
 7 个含 `cfg(test)` 的 src 文件：`src/anthropic.rs`、`src/endpoint.rs`、`src/openai_responses_shared.rs`、`src/stream.rs`、`src/bedrock/credentials.rs`、`src/bedrock/event_stream.rs`、`src/bedrock/sigv4.rs`。
 
 这 48 个文件的逐断言 `add/update/delete/retain` 处置位于 [acceptance-matrix.md](acceptance-matrix.md)（“2026-10-16 测试迁移补核”）。它们是绑定合同核准与实现变更的未来建议；任务 20.1 不执行其中任何一项、不删除任何内容。

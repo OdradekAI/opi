@@ -2970,3 +2970,167 @@ async fn models_simple_and_advanced_observe_same_route_and_outcome() {
     assert_eq!(simple_message.model, advanced_message.model);
     assert_eq!(simple_message.provider, advanced_message.provider);
 }
+
+mod registry_preflight_and_refresh {
+    use super::minimal_request as request;
+    use std::sync::{Arc, Mutex};
+
+    use opi_ai::credential::BoxAuthFuture;
+    use opi_ai::model_info::ThinkingLevel;
+    use opi_ai::models::{AuthDescriptor, CompatMetadata, Models, SecretKey};
+    use opi_ai::provider::{EventStream, Provider, ProviderError, Request, ThinkingConfig};
+    use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
+
+    struct CountingRoute {
+        model: Vec<ModelInfo>,
+        calls: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl Provider for CountingRoute {
+        fn id(&self) -> &str {
+            "mapped"
+        }
+
+        fn models(&self) -> &[ModelInfo] {
+            &self.model
+        }
+
+        fn stream_prepared(
+            &self,
+            _request: Request,
+            _auth: opi_ai::auth::ResolvedAuth,
+        ) -> EventStream {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(futures_util::stream::empty())
+        }
+
+        fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+            self.model = models;
+            Ok(())
+        }
+    }
+
+    fn unsupported_xhigh_model() -> ModelInfo {
+        ModelInfo::new(
+            "reasoning",
+            "Reasoning",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(1000, 100).with_thinking(true),
+        )
+    }
+    #[tokio::test]
+    async fn collection_preflights_registry_model_before_provider_dispatch() {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut collection = Models::new();
+        collection
+            .register(
+                Box::new(CountingRoute {
+                    model: vec![unsupported_xhigh_model()],
+                    calls: calls.clone(),
+                }),
+                AuthDescriptor::StaticApiKey {
+                    value: SecretKey::new("unused"),
+                },
+                CompatMetadata::default(),
+            )
+            .unwrap();
+        let mut request = request("mapped:reasoning");
+        request.thinking = ThinkingConfig {
+            enabled: true,
+            budget_tokens: None,
+            level: ThinkingLevel::XHigh,
+        };
+
+        let error = collection
+            .prepare_call("mapped:reasoning", request)
+            .await
+            .expect_err("unsupported thinking must fail");
+
+        assert!(error.to_string().contains("unsupported"));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+    struct LoggedRefreshProvider {
+        id: &'static str,
+        log: Arc<Mutex<Vec<String>>>,
+        result: Result<Option<Vec<ModelInfo>>, &'static str>,
+    }
+
+    impl Provider for LoggedRefreshProvider {
+        fn id(&self) -> &str {
+            self.id
+        }
+
+        fn models(&self) -> &[ModelInfo] {
+            &[]
+        }
+
+        fn stream_prepared(
+            &self,
+            _request: Request,
+            _auth: opi_ai::auth::ResolvedAuth,
+        ) -> EventStream {
+            Box::pin(futures_util::stream::empty())
+        }
+
+        fn refresh_models(
+            &self,
+        ) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
+            self.log.lock().unwrap().push(self.id.into());
+            let result = self.result.clone();
+            Box::pin(async move {
+                result.map_err(|message| {
+                    ProviderError::ProviderSide(
+                        opi_ai::provider::ProviderErrorSummary::from_untrusted(message),
+                    )
+                })
+            })
+        }
+    }
+    #[tokio::test]
+    async fn refresh_collects_every_provider_after_the_first_error() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut collection = Models::new();
+        for provider in [
+            LoggedRefreshProvider {
+                id: "a-error",
+                log: log.clone(),
+                result: Err("first"),
+            },
+            LoggedRefreshProvider {
+                id: "b-success",
+                log: log.clone(),
+                result: Ok(Some(vec![ModelInfo::new(
+                    "fresh",
+                    "Fresh",
+                    WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(1000, 100),
+                )])),
+            },
+            LoggedRefreshProvider {
+                id: "c-error",
+                log: log.clone(),
+                result: Err("later"),
+            },
+        ] {
+            collection
+                .register(
+                    Box::new(provider),
+                    AuthDescriptor::StaticApiKey {
+                        value: SecretKey::new("unused"),
+                    },
+                    CompatMetadata::default(),
+                )
+                .unwrap();
+        }
+
+        let error = collection.refresh().await.expect_err("batch must fail");
+
+        assert_eq!(error.to_string(), "provider error: [REDACTED]");
+        assert_eq!(
+            *log.lock().unwrap(),
+            ["a-error", "b-success", "c-error"],
+            "refresh must call every provider in sorted order"
+        );
+        assert!(collection.resolve("b-success:fresh").is_err());
+    }
+}
