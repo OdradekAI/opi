@@ -1505,7 +1505,7 @@
       "definition_of_done": "Expose serializable canonical chronology and initial shorthand normalization, ordered body/sections/tool declarations with by-value redefine and unchanged-state dedup. Install only validated declarations, preserve capture revisions and canonical raw. Migrate independent system/tools readers in adapters, mocks and necessary Agent/summary callers in the same compiling cutover, retaining session v1 readers/v2 writer and host authorization. Local scope: canonical chronology, declarations, sections, Serde and current migrated-adapter native/collapse projection. Sampling/onPayload interactions with native-effort stamps and complete V-16 close at 20.34 after 20.35/20.51 and the protocol adapters.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.10"
@@ -1804,12 +1804,97 @@
         "crates/opi-coding-agent/tests/phase17_product_evidence.rs",
         "crates/opi-coding-agent/tests/phase17_provider_runtime.rs",
         "crates/opi-coding-agent/tests/phase17_tool_authority.rs",
-        "crates/opi-coding-agent/tests/provider_factory.rs"
+        "crates/opi-coding-agent/tests/provider_factory.rs",
+        "crates/opi-agent/tests/agent_wrapper.rs",
+        "crates/opi-agent/tests/continuation_contract.rs",
+        "crates/opi-agent/tests/hooks_queues.rs",
+        "crates/opi-agent/tests/sdk_embedding.rs",
+        "crates/opi-agent/tests/tool_event_redaction.rs",
+        "crates/opi-coding-agent/tests/agents_md_context.rs",
+        "crates/opi-coding-agent/tests/execution_selected_routing.rs",
+        "crates/opi-coding-agent/tests/interactive_tui_auth.rs",
+        "crates/opi-coding-agent/tests/non_interactive.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "41559c603ee0d4f152578e5056b0b131e8039f70",
+      "evidence": {
+        "Opi-Task": "20.6",
+        "Opi-DoD-SHA256": "f52670736ade86d619a1195acf32f370f5c7dc01a526897bec8d28dca69182d0",
+        "Opi-Verification": "workspace; smoke full PASSED (opi-doc-check, fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets, cargo test --workspace --doc, rustdoc -D warnings); behavioral: cargo test -p opi-ai --test transcript_contract -> 8 passed (P20-CONTEXT closure battery); cargo test -p opi-ai --lib -> 174 passed incl. 20 transcript unit tests; cargo test --workspace --all-targets -> 79 test targets ok (incl. all migrated adapter fixture suites asserting unchanged wire shapes through the normalized path); tool_result_wire module-set baseline updated deliberately with 'transcript'",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; all DoD clauses mapped (serializable chronology, shorthand normalization, ordered body/sections/tools with by-value redefine and dedup, validated installation, canonical-raw preservation, adapters/mocks/Agent/summary-caller cutover with session v1 readers/v2 writer and host authorization retained, native/collapse projection for current migrated adapters); two C.1a appends with compiler evidence executed BEFORE edits (5 opi-agent + 4 opi-coding-agent test files, both recorded in the ledger); capture-revision execution semantics remain AIR-009 host-owned; Anthropic inline-tools/by-value tool_addition and sampling/onPayload stay with 20.34/20.35+ per the acceptance partition; workflow runtime unavailable, wf_ref=null (recorded in verify_runs)",
+        "Opi-Acceptance": "V-06/V-31 SDK-active sub-boundaries and AIR-008/011/020 delivered for this slice (transcript_contract battery + real-adapter fixture proof); full V-06 host-impact clauses (implementation revisions, tool_search/loadout/resume) and V-16 close remain with later tasks; AIR-009/037 host-owned by design"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-18T11:16:06+08:00",
+          "attempt": 1,
+          "summary": "B.2 authorized (user 同意). B.1 contract: (1) new crates/opi-ai/src/transcript.rs porting the pinned Pi transcript.ts (237 lines, read in full) - Context shorthand {system_prompt, messages, tools}, TranscriptContext with private messages and normalize_context as the single constructor (typed brand: a raw Context cannot reach adapters; session replay through empty shorthand is identity), SystemMessage with content/ordered sections (replace-keeps-position, null deletes, delete+readd appends)/tools_added/tools_removed/timestamp, replay helpers (get_current_tools/get_current_system_message/get_current_system_prompt joining content appends with \\n\\n), collapse_system_messages (fresh value; canonical never rewritten), resolve_transcript with NativeOrCollapse default and Strict returning a typed error before request construction (before auth/network), to_tool_declaration/declarations_equal/get_tool_state_changes (redefine = removal+addition, only real deltas recorded, order-preserving)/get_declared_tools/has_non_additive_tool_changes/resolve_transcript_tools for anchored transports (upstream-deprecated hasToolRedefinitions not ported), and declaration install validation (non-empty name + 20.9 dialect compile -> typed failure before installation); (2) Message::System variant with serde matching existing message.rs conventions, session v1 readers/v2 writer retained; (3) Request cutover - system/tools fields exit (AIR-020 scoped break), context: TranscriptContext carries the folded shorthand, all six adapters + api_mapped + bedrock consume via resolve_transcript, collapse is the current default capability with the native path exercised by tests; (4) opi-agent - loop builds Context {system_prompt: AgentLoopContext.system, tools: registry.definitions()} -> normalize_context (convenience input preserved per AIR-020), compaction estimates derive system/tools from the replayed current state, the four named Request.system/tools test consumers (rpc GatedCompactionProvider summary, interactive_startup_diagnostics tool listing, phase17_product_evidence, phase17_tool_authority) migrate through the canonical interface retaining their assertions; (5) tests/transcript_contract.rs closure battery (normalization, append/section semantics, by-value tool deltas + dedup, collapse/native/strict, canonical-untouched, declaration order) plus migrated fixture/lifecycle suites and bilingual READMEs + CHANGELOG. Multiple C iterations within cap 5 anticipated for the compiling cutover.",
+          "contract_confirmed": true
+        },
+        {
+          "timestamp": "2026-10-18T11:53:16+08:00",
+          "attempt": 1,
+          "summary": "C.1a append: five opi-agent test files (agent_wrapper, continuation_contract, hooks_queues, sdk_embedding, tool_event_redaction) hold provider::Request constructions/reads that must migrate in the same compiling cutover (AIR-020). Appended BEFORE any edit to them, with compiler evidence; scope limited to the Request shape change."
+        },
+        {
+          "timestamp": "2026-10-18T12:00:32+08:00",
+          "attempt": 1,
+          "summary": "C.1a append (second batch): five opi-coding-agent test files (agents_md_context, anthropic_cache_markers, execution_selected_routing, interactive_tui_auth, non_interactive) hold provider::Request constructions or recorded-request field reads that must migrate in the same compiling cutover (AIR-020). Compiler evidence: cargo check -p opi-coding-agent --all-targets E0560/E0609 at those paths after the Request shape change; appended BEFORE any edit to them; scope limited to the Request shape change and recorded-request reads."
+        },
+        {
+          "timestamp": "2026-10-18T13:22:12+08:00",
+          "attempt": 1,
+          "summary": "DEL-03 chronology slice delivered in commit 41559c603ee0d4f152578e5056b0b131e8039f70: (1) crates/opi-ai/src/transcript.rs ports the pinned Pi 1.3.0 transcript.ts (read in full, 237 lines) - Context shorthand folds once through normalize_context into a leading Message::System; TranscriptContext is serde-transparent with normalize_context as the single constructor (typed brand: raw shorthand cannot reach adapters; stored transcripts re-enter through empty-shorthand identity; pre-cutover lists parse unchanged so session v1 readers keep working); SystemMessage with content, ordered sections (custom ordered-object serde: replacement keeps position, null deletes, delete+readd appends, duplicate names keep first position + last value), tools_added/tools_removed, timestamp_ms; replay helpers (get_current_tools/get_current_system_message joining appends with \\n\\n, get_current_system_prompt, render_system_message_update framing); collapse_system_messages returns a fresh value and never rewrites canonical; resolve_transcript with NativeOrCollapse default (borrowed when native-capable, owned collapse otherwise) and Strict returning UnsupportedTemporalFidelity before any request build; to_tool_declaration seam (identity today for the 20.11 strip point), declarations_equal (structural, key-order independent; 1-vs-1.0 boundary documented - extra deltas only), get_tool_state_changes (redefine = removal+addition), tool_state_change_message (None on equal state = dedup), get_declared_tools (first-declaration order), has_non_additive_tool_changes, resolve_transcript_tools (anchored-additions split); append_system_change validates before installation (non-empty names, unique per batch, 20.9 dialect compile; inert keywords are not admission errors per AIR-008); upstream-deprecated hasToolRedefinitions not ported; (2) Message::System variant added with role tag 'system' matching message.rs conventions; (3) AIR-020 scoped break: Request.system/Request.tools exit, context: TranscriptContext enters; six adapters + api_mapped + bedrock consume only the normalized transcript via resolve_transcript at the head of request construction with a named per-wire SUPPORTS_MID_CONVO_SYSTEM_MESSAGES=false constant (collapse is the current capability; later model-compat tasks own the flags); anthropic/openai_chat/gemini/openai_responses/codex/bedrock wire tests assert unchanged body shapes through the normalized path; (4) agent loop builds Context {system_prompt: AgentLoopContext.system, tools: registry.definitions()} -> normalize_context (convenience input preserved); Models::prepare_call derives budget estimate from the replayed current state with system messages excluded from the message walk (double-count fixed and pinned by provider_collection budget tests); compaction summary_request and the GatedCompactionProvider summary detection in harness.rs/rpc.rs migrate to replayed prompt/tools reads; (5) compiling cutover across 83 files including all affected tests via a depth-aware mechanical transform (Request literals) plus manual read-site migrations; the public module-set baseline in tool_result_wire gains 'transcript' deliberately; (6) tests/transcript_contract.rs closure battery (8 tests) covering shorthand-folds-once, section ordering semantics, by-value deltas with dedup, canonical untouchedness, strict pre-request rejection, fail-closed installation, real Anthropic adapter consumption incl. mid-convo collapse, stored-chronology round trip, native framed updates; (7) bilingual READMEs (opi-ai chronology section, opi-agent request-construction note) + CHANGELOG Added/Breaking entries; doc-check PASS. Two C.1a appends with compiler evidence BEFORE edits: 5 opi-agent test files (agent_wrapper, continuation_contract, hooks_queues, sdk_embedding, tool_event_redaction) and 4 opi-coding-agent test files (agents_md_context, execution_selected_routing, interactive_tui_auth, non_interactive; anthropic_cache_markers was already explicitly owned) - both recorded in session notes. Environment: no incidents this cycle.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.sh full",
+            "d0_scenarios": "PASS: transcript_contract 8/8; opi-ai lib 174/174 incl. 20 transcript tests; workspace --all-targets 79 targets ok",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7), no must-fix; L-D7 verified all 83 changed paths owned (python fnmatch audit vs task_owned_paths incl. both C.1a appends)",
+            "d3_gap_checks": "PASS: declared non-goals held (no execution registry, no session v3, no host policy change, hooks/authorizer untouched, no tool_search); divergences documented (string content, numeric equality boundary, deprecated fn not ported); flaky-looking failures investigated - tool_result_wire baseline failure was real (deliberately updated), cancellation flake passed on rerun",
+            "test_disposition": [
+              {
+                "subject": "P20-CONTEXT closure",
+                "action": "add",
+                "test": "crates/opi-ai/tests/transcript_contract.rs (8 tests) + 20 transcript unit tests in transcript.rs",
+                "interface": "opi_ai::transcript (normalize_context, TranscriptContext, resolve_transcript, append_system_change, state-change helpers)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "adapter wire fixtures",
+                "action": "update",
+                "test": "all six adapter fixture/lifecycle suites construct Requests through normalize_context and assert unchanged wire shapes through the normalized path",
+                "interface": "provider::Request.context",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "module-set baseline",
+                "action": "update",
+                "test": "tool_result_wire provider_tool_result_error_no_phase12_breadth_guard baseline gains 'transcript' (deliberate, per the test's own instruction)",
+                "interface": "lib.rs public module set",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "agent/coding-agent suites",
+                "action": "update",
+                "test": "recorded-request reads migrated to context.messages()/get_current_tools/get_current_system_prompt; replaced-context count assertions account for the folded leading system entry",
+                "interface": "opi_agent::agent_loop request construction; harness/rpc gated summary detection",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "all other suites",
+                "action": "retain",
+                "test": "green in the workspace run",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.7",
@@ -13193,6 +13278,14 @@
       "mode": "manual-7-lens (workflow runtime unavailable)",
       "wf_ref": null,
       "result": "no must-fix findings; L-D1 clause-by-clause against commit f47b5b73bfc9e6b13cf1a68d00fb65c6ba093edd covering the DoD's clone-before-normalize, JS-corpus conversions (frozen 44-case battery from recorded public_pi outputs), final original-schema check with the RDF-09 fix, precise integers, arguments_error-before-coercion, redacted diagnostics, generation-owned IR (OnceLock on the declaration), blocking-pool cancellation without hard-kill claims, and agent consumption with hooks/final-authorizer policy preserved; L-D7 confirmed the authority.rs C.1a append was executed before the edit at B.3 with recorded evidence"
+    },
+    {
+      "timestamp": "2026-10-18T13:22:12+08:00",
+      "task": "20.6",
+      "stage": "exec",
+      "mode": "manual-7-lens (workflow runtime unavailable)",
+      "wf_ref": null,
+      "result": "no must-fix findings; L-D1 clause-by-clause against commit 41559c603ee0d4f152578e5056b0b131e8039f70 covering the DoD's serializable chronology, shorthand normalization, ordered body/sections/tools with by-value redefine and dedup, validated installation, canonical-raw preservation, the same-compiling-cutover migration of independent system/tools readers (adapters, mocks, Agent/summary callers) with session v1 readers/v2 writer and host authorization retained, and native/collapse projection for current migrated adapters; L-D7 confirmed via a python fnmatch audit that all 83 changed paths are owned, including both C.1a appends executed before edits with compiler evidence"
     }
   ]
 }
