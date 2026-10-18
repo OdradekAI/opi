@@ -2450,7 +2450,7 @@
       "definition_of_done": "Establish the supported crates.io Schema dependency profile using unmodified regress0.12.0 with std,utf16,prohibit-unsafe and url2.5.8, without the retired Unicode16 vendor, local code generation or namespace family. Record actual workspace and ordinary-consumer resolution, registry sources/checksums, effective features and applicable build.rs/native/unsafe/MSRV/license review. Exercise the packaged public Schema seam from an actual cargo package artifact extracted outside the workspace, with ordinary registry backend dependencies and both defaults-off and caller-defaults-on feature profiles; no source-checkout substitution or consumer root patch establishes proof. Reject every defined ICU4X_DATA_DIR value, including empty, before scratch creation or any subprocess/Cargo invocation, while retaining the shared Cargo cache. Preserve frozen Pi observations and generic conformance controls, recording RDF-21 data differences and actual executed results. This dependency-substrate slice does not close full Schema, strict/grammar, assembled SDK/package or native-platform acceptance owned by 20.10,20.11,20.34,20.57 and20.58.",
       "definition_source": "inferred",
       "replaces": "固定 Unicode16／ECMA／URL 私有依赖分发闭包",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.1"
       ],
@@ -2526,7 +2526,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": "fed528493ac633e36af88a75bb8ac50db9da44af",
+      "start_commit": "e3ccb33fdce4e85e8267313825ea64fde04f2b21",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -2540,13 +2540,13 @@
         "crates/opi-ai/tests/schema_engine.rs",
         "crates/opi-ai/tests/schema_public.rs"
       ],
-      "verified_at_commit": "57eff804b54998b3b0b3aa729414d5e91ca2ed45",
+      "verified_at_commit": "f41007eed5192e3537e97edd76c15cb938378764",
       "evidence": {
         "Opi-Task": "20.8",
-        "Opi-DoD-SHA256": "f78b289438a3bb4d3318ba84a07e7df5fca21bced2af671621aad406a2d0b750",
-        "Opi-Verification": "workspace; smoke full PASSED (opi-doc-check, fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets, cargo test --workspace --doc, rustdoc -D warnings; workspace crates and Cargo.lock untouched by this task); scenario python3 scripts/pi-sdk-conformance/run_early_package_proof.py --scratch <tmp> --port 8173 -> verdict PASS (43/43 leaves, 7/7 script probes, coexistence both chains; unicode16 probes stable across reruns); red run --skip-prepare -> resolution failure against empty registry recorded; py_compile clean on all three harness scripts",
-        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; all DoD clauses mapped to committed evidence; publication OPEN recorded per contract; Workflow runtime unavailable, wf_ref=null (recorded in verify_runs)",
-        "Opi-Acceptance": "substrate-only task by admission (no product AIR/V scenario assigned); 20.57 reuses this harness for the final assembled package proof"
+        "Opi-DoD-SHA256": "07aadb4c207e3a6475d0d73ef6d147dcfa6853df4fa3cd003b57e1e38bd7672a",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED on Windows native (doc-check, fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets, cargo test --workspace --doc, rustdoc -D warnings); scenario python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch /mnt/e/opi-package-proofs/20261019-20-8-a --target-dir <marked shared cache> -> verdict PASS (both profiles 73/73); addendum unittest discover test_package_proof.py 15/15 OK; artifact audit ok=true",
+        "Opi-Evaluator": "passed (manual 7-lens exec audit; one L-D1 must-fix fixed in-task; Workflow runtime unavailable, wf_ref=null, recorded in verify_runs)",
+        "Opi-Acceptance": "substrate-only by admission (no product scenario assigned); 20.57 reuses this harness for the final assembled package proof, 20.58 owns native/platform closure"
       },
       "blocker": null,
       "session_notes": [
@@ -2614,6 +2614,40 @@
             ],
             "candidate_evidence_record": "R20-UPSTREAM-PACKAGE",
             "proof_command": "python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch <new-workspace-external-directory> --target-dir <existing-marked-shared-workspace-cache>"
+          }
+        },
+        {
+          "timestamp": "2026-10-19T03:11:51+08:00",
+          "attempt": 1,
+          "summary": "B.2 authorized (user reply '同意'): execute task 20.8 revised RDF-21 upstream-profile contract with one task commit + separate ledger checkpoint commit, no push/publication. No drift (16/16 spec hashes); tree clean at e3ccb33fdce4e85e8267313825ea64fde04f2b21; smoke boot PASSED (fmt + production clippy)."
+        },
+        {
+          "timestamp": "2026-10-19T04:09:25+08:00",
+          "attempt": 1,
+          "summary": "Revised RDF-21 contract executed; task commit f41007eed5192e3537e97edd76c15cb938378764: (1) offline packaged-consumer proof run from a fresh workspace-external scratch with the marked shared cache: verdict PASS, both feature profiles (defaults-off; caller-defaults-on adding regress default+backend-pikevm) each passed the 73-check public Schema battery from the extracted opi-ai-0.8.3 package artifact with ordinary registry backends (regress 0.12.0 std/utf16/prohibit-unsafe, url 2.5.8), no vendor packages, no source-checkout substitution, no consumer root patch; package sha256 8d05986f..., consumer lock sha256 71d85ac3..., per-step exits and both full graphs recorded in scripts/pi-sdk-conformance/evidence/upstream-package-proof.json; consumer independent graph ICU 2.3.0 family / icu_provider 2.3.1 / unicode-ident 1.0.27 recorded separately from the workspace graph (ICU 2.2.0 / unicode-ident 1.0.24) per RDF-21; registry cache prewarmed beforehand by an ordinary online cargo fetch in a throwaway mirror of the consumer template (the proof itself ran fully offline); (2) ICU4X_DATA_DIR rejection before scratch/subprocess verified live (unset in session) and by the unittest suite including empty-string and set-value CLI paths; (3) opi-ai READMEs (EN+ZH) now record the profile review: no build.rs in the profile, derive-only proc-macros (yoke/zerofrom/zerovec-derive), no new native code (ring pre-existing via rustls), regress prohibit-unsafe, ICU compiled_data without external data directory, family rust-version max 1.88 < MSRV 1.97, licenses MIT/Apache-2.0 + Unicode-3.0 + unicode-ident dual; (4) frozen Pi corpus, current-profile.json two-leaf override contract and generic conformance controls unchanged. PLATFORM FINDING (open, not this task's): the same smoke full on WSL2 Linux fails gemini/bedrock_drop_releases_connect_and_read_waits deterministically - a minimal probe with the locked reqwest 0.12.28/hyper 1.9.0/tokio 1.52.3 reproduces that abandoning an in-flight response future or partial body stream leaves the server-side socket open indefinitely (>95s, regardless of pool idle timeout or Connection: close) on Linux, while Windows native closes it promptly (same HEAD passes in 0.01s); owner is the lifecycle/platform acceptance family (20.58 owns native platform closure) - pre-existing at HEAD, outside 20.8 owned paths, left failing on Linux with no code touched. opi-eval doctor disk check needs GNU df on PATH on Windows hosts (Git usr/bin), as its test documents.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.ps1 full on Windows native (marked cache opi-72fa37a0fa044958; CARGO_BUILD_JOBS=3 after an LNK1102 linker OOM at default parallelism; PATH prepended with Git usr/bin for the documented GNU df expectation); WSL/Linux run blocked by the pre-existing socket-teardown gap recorded above",
+            "d0_scenarios": "PASS: run_early_package_proof.py verdict PASS, both profiles 73/73 (defaults-off, caller-defaults-on); evidence preserved in scratch + committed artifact",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7): one L-D1 must-fix (missing build.rs/native/unsafe/MSRV/license review record for the upstream profile) accepted after adversarial verify, fixed in-task by the bilingual README record, affected checks rerun (opi-doc-check PASS, git diff --check clean); L-D2..L-D7 no findings; Workflow runtime unavailable, wf_ref=null",
+            "d3_gap_checks": "PASS: python3 scripts/opi-artifact-audit.py <scratch> --workspace-root $PWD --json -> ok=true, no issues; python3 scripts/opi-doc-check.py PASS after README edits; git diff --check clean; no other gap commands remained (addendum covered by smoke_addendum run)",
+            "test_disposition": [
+              {
+                "subject": "20.8",
+                "action": "none",
+                "test": "none (task changed no runtime contract; no product code modified)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.8 exercised suites",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/schema_engine.rs + crates/opi-ai/tests/schema_public.rs + scripts/pi-sdk-conformance/test_package_proof.py + consumer 73-check battery",
+                "interface": "public packaged opi-ai Schema seam via the external consumer harness",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
           }
         }
       ]
@@ -15361,6 +15395,16 @@
       "rejected_count": 5,
       "ran_at": "2026-10-19T02:57:14+08:00",
       "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 1,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-10-19T04:09:25+08:00",
+      "task_id": "20.8",
       "criterion_id": null
     }
   ]
