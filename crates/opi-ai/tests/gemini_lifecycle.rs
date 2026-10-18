@@ -17,14 +17,16 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 fn make_request(cancel: CancellationToken) -> Request {
     Request {
         model: "gemini:gemini-2.5-flash".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

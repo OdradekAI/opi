@@ -652,15 +652,19 @@ fn provider_call_contains_user_text(
     let Some(request) = calls.get(call_index) else {
         return false;
     };
-    request.messages.iter().any(|message| match message {
-        opi_ai::message::Message::User(user) => user.content.iter().any(|content| {
-            matches!(
-                content,
-                opi_ai::message::InputContent::Text { text: t } if t == text
-            )
-        }),
-        _ => false,
-    })
+    request
+        .context
+        .messages()
+        .iter()
+        .any(|message| match message {
+            opi_ai::message::Message::User(user) => user.content.iter().any(|content| {
+                matches!(
+                    content,
+                    opi_ai::message::InputContent::Text { text: t } if t == text
+                )
+            }),
+            _ => false,
+        })
 }
 
 /// AgentControl (the clonable handle RpcRunner stores) routes steer and

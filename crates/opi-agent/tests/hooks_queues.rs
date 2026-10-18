@@ -119,7 +119,7 @@ impl Provider for RecordingProvider {
         self.received_messages
             .lock()
             .unwrap()
-            .push(request.messages);
+            .push(request.context.messages().to_vec());
         let events = self.responses.lock().unwrap().remove(0);
         Box::pin(stream::iter(events.into_iter().map(Ok::<_, ProviderError>)))
     }

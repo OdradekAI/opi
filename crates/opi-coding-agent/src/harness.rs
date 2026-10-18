@@ -4696,11 +4696,11 @@ mod request_compaction_tests {
             request: opi_ai::provider::Request,
             auth: opi_ai::auth::ResolvedAuth,
         ) -> opi_ai::provider::EventStream {
-            let summary = request.tools.is_empty()
-                && request
-                    .system
-                    .as_deref()
-                    .is_some_and(|s| s.starts_with("Summarize the conversation"));
+            let system_prompt =
+                opi_ai::transcript::get_current_system_prompt(request.context.messages());
+            let summary = opi_ai::transcript::get_current_tools(request.context.messages())
+                .is_empty()
+                && system_prompt.starts_with("Summarize the conversation");
             let stream = self.inner.stream_prepared(request, auth);
             if summary {
                 self.started.notify_one();
@@ -5069,8 +5069,8 @@ mod request_compaction_tests {
         harness.prompt(&new_prompt).await.unwrap();
         let calls = calls.lock().unwrap();
         assert_eq!(calls.len(), 3);
-        assert!(calls[1].tools.is_empty());
-        let wire = serde_json::to_string(&calls[2].messages).unwrap();
+        assert!(opi_ai::transcript::get_current_tools(calls[1].context.messages()).is_empty());
+        let wire = serde_json::to_string(calls[2].context.messages()).unwrap();
         assert!(
             wire.contains("real initial checkpoint")
                 && wire.contains("KEPT_RECENT")
@@ -5125,7 +5125,7 @@ mod request_compaction_tests {
         assert_eq!(calls[1].model, "mock:small");
         assert_eq!(calls[1].max_tokens, Some(4096));
         assert!(
-            serde_json::to_string(&calls[2].messages)
+            serde_json::to_string(calls[2].context.messages())
                 .unwrap()
                 .contains("small model checkpoint")
         );
@@ -5375,10 +5375,10 @@ mod request_compaction_tests {
             "two task turns require a separate summary call"
         );
         assert!(
-            calls[1].tools.is_empty(),
+            opi_ai::transcript::get_current_tools(calls[1].context.messages()).is_empty(),
             "the summary cannot execute tools"
         );
-        let final_context = serde_json::to_string(&calls[2].messages).unwrap();
+        let final_context = serde_json::to_string(calls[2].context.messages()).unwrap();
         assert!(final_context.contains("generated checkpoint marker"));
         assert!(final_context.contains("RETAIN_RECENT"));
         assert!(final_context.contains("read-1"));

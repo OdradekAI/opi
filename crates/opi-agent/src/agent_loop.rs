@@ -463,11 +463,17 @@ async fn run_operation(
         // canonical model selection. Retries reuse the same prepared call, so
         // the request is not rebuilt inside the retry loop.
         let tool_defs = registry.definitions();
-        let request = Request {
-            model: state.model_selection.to_spec(),
-            system: context.system.clone(),
+        // Canonical transcript consumption (AIR-020): the convenience
+        // system/tool inputs fold into one leading system message; adapters
+        // receive only the normalized transcript.
+        let context_input = opi_ai::transcript::Context {
+            system_prompt: context.system.clone(),
             messages: llm_messages,
             tools: tool_defs,
+        };
+        let request = Request {
+            model: state.model_selection.to_spec(),
+            context: opi_ai::transcript::normalize_context(context_input),
             max_tokens: state.inference.max_tokens,
             temperature: state.inference.temperature,
             thinking: state.inference.thinking.clone(),

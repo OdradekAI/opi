@@ -98,25 +98,27 @@ fn user(texts: &[&str]) -> Message {
 fn request(model: &str, cache_retention: CacheRetention) -> Request {
     Request {
         model: model.into(),
-        system: Some("system prompt".into()),
-        messages: vec![
-            user(&["old user"]),
-            assistant(&["old assistant"]),
-            user(&["final user prefix", "final user text"]),
-            assistant(&["final assistant prefix", "final assistant text"]),
-        ],
-        tools: vec![
-            ToolDef {
-                name: "first_tool".into(),
-                description: "must remain unmarked".into(),
-                input_schema: json!({"type": "object"}),
-            },
-            ToolDef {
-                name: "last_tool".into(),
-                description: "must receive the final tool marker".into(),
-                input_schema: json!({"type": "object"}),
-            },
-        ],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("system prompt".into()),
+            messages: vec![
+                user(&["old user"]),
+                assistant(&["old assistant"]),
+                user(&["final user prefix", "final user text"]),
+                assistant(&["final assistant prefix", "final assistant text"]),
+            ],
+            tools: vec![
+                ToolDef {
+                    name: "first_tool".into(),
+                    description: "must remain unmarked".into(),
+                    input_schema: json!({"type": "object"}),
+                },
+                ToolDef {
+                    name: "last_tool".into(),
+                    description: "must receive the final tool marker".into(),
+                    input_schema: json!({"type": "object"}),
+                },
+            ],
+        }),
         max_tokens: Some(64),
         temperature: None,
         thinking: ThinkingConfig::default(),

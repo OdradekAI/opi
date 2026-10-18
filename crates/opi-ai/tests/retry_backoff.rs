@@ -163,9 +163,11 @@ async fn mock_provider_returns_error_response() {
     );
     let request = opi_ai::provider::Request {
         model: "mock-model".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),

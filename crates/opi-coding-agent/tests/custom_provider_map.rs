@@ -597,9 +597,11 @@ max_output_tokens = 8192
         unsafe { std::env::set_var(env_name, format!("token-{index}")) };
         let request = Request {
             model: format!("acme:{model}"),
-            system: None,
-            messages: vec![],
-            tools: vec![],
+            context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: None,
+                messages: vec![],
+                tools: vec![],
+            }),
             max_tokens: None,
             temperature: None,
             thinking: ThinkingConfig::default(),
@@ -735,9 +737,11 @@ max_output_tokens = 8192
 
     let request = || Request {
         model: "acme:chat".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -870,9 +874,11 @@ max_output_tokens = 8192
             .expect("production custom provider bundle");
             let request = Request {
                 model: format!("acme:{model}"),
-                system: None,
-                messages: vec![],
-                tools: vec![],
+                context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                    system_prompt: None,
+                    messages: vec![],
+                    tools: vec![],
+                }),
                 max_tokens: None,
                 temperature: None,
                 thinking: ThinkingConfig::default(),
@@ -1024,9 +1030,11 @@ send_session_id_header = true
     ] {
         let request = Request {
             model: format!("acme:{model}"),
-            system: None,
-            messages: vec![],
-            tools: vec![],
+            context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: None,
+                messages: vec![],
+                tools: vec![],
+            }),
             max_tokens: None,
             temperature: None,
             thinking: ThinkingConfig::default(),

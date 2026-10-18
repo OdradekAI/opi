@@ -139,7 +139,7 @@ async fn runtime_startup_is_the_single_source_of_runner_trust_in_all_builds() {
         let result = runner.run("check trust").await;
         assert_eq!(result.exit_code, ExitCode::Success as i32);
         let requests = call_log.lock().unwrap();
-        let system = requests[0].system.as_deref().unwrap();
+        let system = opi_ai::transcript::get_current_system_prompt(requests[0].context.messages());
         assert_eq!(
             system.contains("RUNTIME STARTUP TRUST MARKER"),
             should_load_project_context,
@@ -272,7 +272,7 @@ async fn request_output_limit_survives_retry_and_tool_continuation() {
     let calls = calls.lock().unwrap();
     assert_eq!(calls.len(), 3);
     assert!(calls.iter().all(|request| request.max_tokens == Some(2048)));
-    assert!(calls[2].messages.iter().any(|message| matches!(
+    assert!(calls[2].context.messages().iter().any(|message| matches!(
         message, opi_ai::message::Message::ToolResult(result)
             if result.tool_call_id == "read-1" && !result.is_error
                 && serde_json::to_string(&result.content).unwrap().contains("local tool evidence")
@@ -462,7 +462,7 @@ async fn runner_installed_adapter_hook_blocks_mutating_tool() {
     );
     let log = call_log.lock().unwrap();
     let second_request = log.get(1).expect("tool result should trigger second turn");
-    let saw_blocked_tool_result = second_request.messages.iter().any(|message| {
+    let saw_blocked_tool_result = second_request.context.messages().iter().any(|message| {
         matches!(
             message,
             opi_ai::message::Message::ToolResult(result)
@@ -478,7 +478,7 @@ async fn runner_installed_adapter_hook_blocks_mutating_tool() {
     assert!(
         saw_blocked_tool_result,
         "second provider request should contain blocked tool result: {:?}",
-        second_request.messages
+        second_request.context.messages()
     );
 }
 
@@ -646,7 +646,7 @@ async fn runner_resume_forwards_compaction_summary_to_provider() {
     // request the provider observed. Otherwise compacted context is silently
     // dropped on resume.
     let mut saw_summary = false;
-    for msg in &first_request.messages {
+    for msg in first_request.context.messages() {
         if let Message::User(u) = msg {
             for content in &u.content {
                 if let InputContent::Text { text } = content
@@ -660,7 +660,7 @@ async fn runner_resume_forwards_compaction_summary_to_provider() {
     assert!(
         saw_summary,
         "provider request messages must include compacted summary text; got: {:?}",
-        first_request.messages
+        first_request.context.messages()
     );
 }
 
@@ -699,7 +699,7 @@ async fn runner_resume_forwards_branch_summary_to_provider() {
     let log = call_log.lock().unwrap();
     let first_request = log.first().expect("provider was called at least once");
 
-    let saw_summary = first_request.messages.iter().any(|msg| {
+    let saw_summary = first_request.context.messages().iter().any(|msg| {
         if let Message::User(u) = msg {
             return u.content.iter().any(|content| {
                 matches!(
@@ -713,7 +713,7 @@ async fn runner_resume_forwards_branch_summary_to_provider() {
     assert!(
         saw_summary,
         "provider request messages must include branch summary text; got: {:?}",
-        first_request.messages
+        first_request.context.messages()
     );
 }
 
@@ -909,10 +909,11 @@ async fn text_surface_refuses_local_ask_at_startup_without_prompt() {
     let calls = call_log.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert!(
-        calls[0].tools.iter().all(|tool| tool.name != "bash"),
+        opi_ai::transcript::get_current_tools(calls[0].context.messages())
+            .iter()
+            .all(|tool| tool.name != "bash"),
         "headless ask must omit bash instead of falling back to local: {:?}",
-        calls[0]
-            .tools
+        opi_ai::transcript::get_current_tools(calls[0].context.messages())
             .iter()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>()

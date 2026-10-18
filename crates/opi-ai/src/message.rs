@@ -12,6 +12,8 @@ pub(crate) const TOOL_ERROR_MARKER: &str = "[tool_error] ";
 pub enum Message {
     #[serde(rename = "user")]
     User(UserMessage),
+    #[serde(rename = "system")]
+    System(crate::transcript::SystemMessage),
     #[serde(rename = "assistant")]
     Assistant(AssistantMessage),
     #[serde(rename = "tool_result")]

@@ -167,9 +167,11 @@ fn unsupported_thinking_model(id: &str, wire_api: WireApi) -> ModelInfo {
 fn unsupported_thinking_request(provider_id: &str, model_id: &str) -> Request {
     Request {
         model: format!("{provider_id}:{model_id}"),
-        system: None,
-        messages: Vec::new(),
-        tools: Vec::new(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: Vec::new(),
+            tools: Vec::new(),
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig {

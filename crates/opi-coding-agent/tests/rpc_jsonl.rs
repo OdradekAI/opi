@@ -3687,15 +3687,19 @@ async fn phase8_rpc_command_contract_follow_up_queued_while_running() {
             calls.len() >= 2,
             "queued follow-up must trigger a second provider request"
         );
-        let saw_follow_up = calls[1].messages.iter().any(|message| match message {
-            opi_ai::message::Message::User(user) => user.content.iter().any(|content| {
-                matches!(
-                    content,
-                    opi_ai::message::InputContent::Text { text } if text == "queued follow up"
-                )
-            }),
-            _ => false,
-        });
+        let saw_follow_up = calls[1]
+            .context
+            .messages()
+            .iter()
+            .any(|message| match message {
+                opi_ai::message::Message::User(user) => user.content.iter().any(|content| {
+                    matches!(
+                        content,
+                        opi_ai::message::InputContent::Text { text } if text == "queued follow up"
+                    )
+                }),
+                _ => false,
+            });
         assert!(
             saw_follow_up,
             "second provider request should include the follow-up message"
@@ -3846,16 +3850,20 @@ async fn rpc_mid_turn_steer_is_queued() {
             "queued steering should trigger a second provider request"
         );
         let second_call = &calls[1];
-        let saw_steering = second_call.messages.iter().any(|message| match message {
-            opi_ai::message::Message::User(user) => user.content.iter().any(|content| {
-                matches!(
-                    content,
-                    opi_ai::message::InputContent::Text { text }
-                        if text == "use the queued steering"
-                )
-            }),
-            _ => false,
-        });
+        let saw_steering = second_call
+            .context
+            .messages()
+            .iter()
+            .any(|message| match message {
+                opi_ai::message::Message::User(user) => user.content.iter().any(|content| {
+                    matches!(
+                        content,
+                        opi_ai::message::InputContent::Text { text }
+                            if text == "use the queued steering"
+                    )
+                }),
+                _ => false,
+            });
         assert!(
             saw_steering,
             "second provider request should include steering message"
@@ -4129,11 +4137,11 @@ async fn rpc_ready_refuses_local_ask_at_startup_without_prompt() {
     {
         let calls = call_log.lock().unwrap();
         assert_eq!(calls.len(), 1);
+        let advertised = opi_ai::transcript::get_current_tools(calls[0].context.messages());
         assert!(
-            calls[0].tools.iter().all(|tool| tool.name != "bash"),
+            advertised.iter().all(|tool| tool.name != "bash"),
             "RPC headless ask must omit bash instead of falling back to local: {:?}",
-            calls[0]
-                .tools
+            advertised
                 .iter()
                 .map(|tool| tool.name.as_str())
                 .collect::<Vec<_>>()

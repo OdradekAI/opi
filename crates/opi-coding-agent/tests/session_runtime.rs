@@ -3434,7 +3434,7 @@ async fn phase13_labels_and_session_name_do_not_enter_provider_context() {
         "provider should have received at least one request"
     );
     for request in log.iter() {
-        for message in &request.messages {
+        for message in request.context.messages() {
             match message {
                 Message::User(u) => {
                     for c in &u.content {
@@ -3467,7 +3467,8 @@ async fn phase13_labels_and_session_name_do_not_enter_provider_context() {
                 _ => {}
             }
         }
-        if let Some(system) = &request.system {
+        let system = opi_ai::transcript::get_current_system_prompt(request.context.messages());
+        if !system.is_empty() {
             assert!(
                 !system.contains("SECRET_LABEL_CANARY") && !system.contains("SECRET_NAME_CANARY"),
                 "metadata leaked into system prompt: {system}"
@@ -4167,13 +4168,13 @@ async fn phase17_compaction_replaces_provider_visible_context() {
         "four task requests and three genuine summary requests"
     );
     for idx in [1, 3, 5] {
-        assert!(calls[idx].tools.is_empty());
+        assert!(opi_ai::transcript::get_current_tools(calls[idx].context.messages()).is_empty());
         assert!(!calls[idx].thinking.enabled);
     }
     let request_text = |idx: usize| -> String {
         use opi_ai::message::{AssistantContent, InputContent, Message};
         let mut out = String::new();
-        for message in &calls[idx].messages {
+        for message in calls[idx].context.messages() {
             match message {
                 Message::User(u) => {
                     for c in &u.content {
@@ -4205,8 +4206,22 @@ async fn phase17_compaction_replaces_provider_visible_context() {
     // and no standalone superseded message object survives
     // (its content may legitimately be referenced inside the summary text).
     let last = &calls[6];
+    // AIR-020: the request folds the system prompt into one leading system
+    // entry, so the replaced context is that entry plus the same seven
+    // conversation messages the pre-cutover request carried.
+    assert!(
+        matches!(
+            last.context.messages().first(),
+            Some(opi_ai::message::Message::System(_))
+        ),
+        "the replaced context leads with the folded system entry"
+    );
     assert_eq!(
-        last.messages.len(),
+        last.context
+            .messages()
+            .iter()
+            .filter(|message| !matches!(message, opi_ai::message::Message::System(_)))
+            .count(),
         7,
         "the replaced context retains the complete 20k-token assistant and subsequent turns"
     );
@@ -4220,7 +4235,8 @@ async fn phase17_compaction_replaces_provider_visible_context() {
         "the post-compaction request carries the current turn's marker"
     );
     let standalone_superseded = last
-        .messages
+        .context
+        .messages()
         .iter()
         .any(|m| match m {
             opi_ai::message::Message::User(u) => u.content.iter().any(

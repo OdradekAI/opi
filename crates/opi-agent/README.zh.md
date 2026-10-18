@@ -191,7 +191,10 @@ schema 运行（替换 registry 获得新编译，in-flight 调用保留旧的�
 但不声称能同步硬杀引擎。校验失败是正常的运行时结果，而非循环错误：会持久化一个
 错误 `ToolResult`（`is_error = true`、`terminate = false`，仅含脱敏失败信息：实例
 指针、keyword 与来自 schema 的原因）并继续运行。此时 hook 已经运行，但 authorizer
-与工具不会运行；未知工具则会在 hook 之前被拒绝。
+与工具不会运行；未知工具则会在 hook 之前被拒绝。循环通过 SDK 的规范
+transcript 接缝（`opi_ai::transcript::normalize_context`）构造每个 provider
+请求，把便利 system prompt 与可信 registry 的工具定义折叠进唯一的 leading
+system 消息（AIR-020）；adapter 只消费归一化后的输入。
 
 ## 工具结果与诊断
 

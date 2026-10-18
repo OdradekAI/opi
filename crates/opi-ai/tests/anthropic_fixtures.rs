@@ -467,14 +467,16 @@ async fn cache_1h_malformed_subset_stops_production_stream_with_non_retryable_er
     let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -923,14 +925,16 @@ fn build_request_body_includes_thinking_when_enabled() {
     let provider = AnthropicProvider::new(None);
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(4096),
         temperature: None,
         thinking: ThinkingConfig {
@@ -961,14 +965,16 @@ fn build_request_body_uses_default_budget_when_none() {
     let provider = AnthropicProvider::new(None);
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(4096),
         temperature: None,
         thinking: ThinkingConfig {
@@ -1001,14 +1007,16 @@ fn build_request_body_omits_thinking_when_disabled() {
     let provider = AnthropicProvider::new(None);
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(4096),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1461,14 +1469,16 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
     let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
-        system: Some("You are helpful.".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1521,14 +1531,16 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
     let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),

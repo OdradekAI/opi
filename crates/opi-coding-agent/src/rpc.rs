@@ -1223,11 +1223,11 @@ mod tests {
             auth: opi_ai::auth::ResolvedAuth,
         ) -> opi_ai::provider::EventStream {
             use futures_util::StreamExt;
-            let summary = request.tools.is_empty()
-                && request
-                    .system
-                    .as_deref()
-                    .is_some_and(|s| s.starts_with("Summarize the conversation"));
+            let system_prompt =
+                opi_ai::transcript::get_current_system_prompt(request.context.messages());
+            let summary = opi_ai::transcript::get_current_tools(request.context.messages())
+                .is_empty()
+                && system_prompt.starts_with("Summarize the conversation");
             let stream = self.inner.stream_prepared(request, auth);
             if summary {
                 self.started.notify_one();
@@ -1425,7 +1425,8 @@ mod tests {
                 events
             } else {
                 if request
-                    .messages
+                    .context
+                    .messages()
                     .iter()
                     .any(|message| matches!(message, opi_ai::message::Message::ToolResult(_)))
                 {

@@ -269,9 +269,11 @@ async fn stream_from_custom_provider() {
     let (provider, _) = registry.resolve("stream-prov:s-model").unwrap();
     let request = Request {
         model: "stream-prov:s-model".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: opi_ai::provider::ThinkingConfig::default(),
@@ -661,9 +663,11 @@ fn echo_record_info(max_output: u64) -> ModelInfo {
 fn models_request() -> Request {
     Request {
         model: String::new(),
-        system: Some("be terse".into()),
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("be terse".into()),
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

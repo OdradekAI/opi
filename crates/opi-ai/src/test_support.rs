@@ -185,7 +185,7 @@ impl MockProvider {
             .lock()
             .unwrap()
             .iter()
-            .map(|r| r.messages.clone())
+            .map(|r| r.context.messages().to_vec())
             .collect()
     }
 

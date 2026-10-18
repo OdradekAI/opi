@@ -1035,10 +1035,27 @@ impl OpenAiChatProvider {
         // overrides win over the provider-level default).
         let compat = self.resolve_compat(model_id);
 
+        // Canonical transcript consumption (AIR-020); this wire currently
+        // projects by collapse.
+        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
+        let transcript = crate::transcript::resolve_transcript(
+            &request.context,
+            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
+            crate::transcript::TranscriptProjection::NativeOrCollapse,
+        )
+        .expect("native-or-collapse projection never fails");
+        let transcript = transcript.as_ref();
+        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
+        let current_tools = crate::transcript::get_current_tools(transcript.messages());
+
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
-            "messages": serialize_messages(&request.messages, &request.system, &compat),
+            "messages": serialize_messages(
+                &crate::transcript::without_initial_system_message(transcript.messages()),
+                &system_prompt,
+                &compat,
+            ),
         });
 
         if compat.usage_in_stream {
@@ -1053,10 +1070,9 @@ impl OpenAiChatProvider {
         {
             body["temperature"] = serde_json::Value::Number(n);
         }
-        if !request.tools.is_empty() {
+        if !current_tools.is_empty() {
             body["tools"] = serde_json::Value::Array(
-                request
-                    .tools
+                current_tools
                     .iter()
                     .map(|t| {
                         let mut function = serde_json::json!({
@@ -1306,13 +1322,14 @@ fn map_http_status(
 
 fn serialize_messages(
     messages: &[crate::message::Message],
-    system: &Option<String>,
+    system_prompt: &str,
     compat: &CompatConfig,
 ) -> serde_json::Value {
     let mut result = Vec::new();
 
     // System message first
-    if let Some(sys) = system {
+    if !system_prompt.is_empty() {
+        let sys = system_prompt;
         let role = compat.system_role_override.as_deref().unwrap_or("system");
         result.push(serde_json::json!({
             "role": role,
@@ -1408,6 +1425,10 @@ fn serialize_messages(
                     assistant_msg["content"] = serde_json::Value::String(text_parts.join(""));
                 }
                 result.push(assistant_msg);
+            }
+            crate::message::Message::System(_) => {
+                // Unreachable after collapse + without_initial_system_message.
+                unreachable!("system messages are projected out of the body list")
             }
             crate::message::Message::ToolResult(t) => {
                 let content_text: String = t

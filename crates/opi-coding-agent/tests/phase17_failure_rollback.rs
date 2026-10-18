@@ -532,9 +532,11 @@ async fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
     fn request(model: &str, cancel: CancellationToken) -> Request {
         Request {
             model: model.to_owned(),
-            system: None,
-            messages: Vec::new(),
-            tools: Vec::new(),
+            context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: None,
+                messages: Vec::new(),
+                tools: Vec::new(),
+            }),
             max_tokens: None,
             temperature: None,
             thinking: opi_ai::provider::ThinkingConfig::default(),
@@ -994,7 +996,8 @@ async fn credential_error_owns_run_while_empty_evidence_is_diagnostic_and_recove
     assert_eq!(calls.lock().unwrap().len(), 1);
     assert_eq!(
         calls.lock().unwrap()[0]
-            .messages
+            .context
+            .messages()
             .iter()
             .filter(|message| matches!(message, Message::User(_)))
             .count(),
@@ -1126,7 +1129,8 @@ async fn pre_record_hook_failure_is_rewound_before_continue() {
     let requests = calls.lock().unwrap();
     assert_eq!(requests.len(), 2);
     let users = requests[1]
-        .messages
+        .context
+        .messages()
         .iter()
         .filter_map(|message| match message {
             Message::User(user) => Some(&user.content),
@@ -1265,14 +1269,16 @@ async fn persisted_turn_commits_before_finalization_failure_and_retains_tool_pro
     assert_eq!(recovery_requests.len(), 1);
     assert!(
         recovery_requests[0]
-            .messages
+            .context
+            .messages()
             .iter()
             .any(|message| matches!(message, Message::ToolResult(_))),
         "the reopened provider request retains the persisted tool-result projection"
     );
     assert_eq!(
         recovery_requests[0]
-            .messages
+            .context
+            .messages()
             .iter()
             .filter(|message| matches!(message, Message::User(_)))
             .count(),
@@ -1569,7 +1575,8 @@ async fn automatic_compaction_start_failure_preserves_boundary_and_recovers_next
     assert_eq!(requests.len(), 2);
     assert_eq!(
         requests[1]
-            .messages
+            .context
+            .messages()
             .iter()
             .filter(|message| matches!(message, Message::User(_)))
             .count(),
@@ -1685,7 +1692,8 @@ async fn incomplete_health_blocks_automatic_compaction_and_recovers_next_prompt(
         .expect("the next evidence setup restores a healthy run");
     assert_eq!(
         calls.lock().unwrap()[1]
-            .messages
+            .context
+            .messages()
             .iter()
             .filter(|message| matches!(message, Message::User(_)))
             .count(),
@@ -1754,7 +1762,8 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
         "only the summary dispatch completed"
     );
     assert!(
-        calls.lock().unwrap()[0].tools.is_empty(),
+        opi_ai::transcript::get_current_tools(calls.lock().unwrap()[0].context.messages())
+            .is_empty(),
         "pending task never dispatched"
     );
     let session_path = harness
@@ -1872,20 +1881,32 @@ async fn automatic_compaction_terminal_failure_retains_mutation_and_recovers_nex
         2,
         "recovery summary then correlated task request"
     );
-    assert!(requests[0].tools.is_empty());
-    assert!(requests[1].messages.iter().any(|message| matches!(
-        message,
-        Message::User(user) if user.content.iter().any(|content| matches!(
-            content,
-            opi_ai::message::InputContent::Text { text }
-                if text.contains(&expected_summary)
-        ))
-    )));
-    assert!(requests[1].messages.iter().any(|message| matches!(
-        message,
-        Message::Assistant(assistant)
-            if serde_json::to_string(assistant).unwrap().contains(assistant_sentinel)
-    )));
+    assert!(opi_ai::transcript::get_current_tools(requests[0].context.messages()).is_empty());
+    assert!(
+        requests[1]
+            .context
+            .messages()
+            .iter()
+            .any(|message| matches!(
+                message,
+                Message::User(user) if user.content.iter().any(|content| matches!(
+                    content,
+                    opi_ai::message::InputContent::Text { text }
+                        if text.contains(&expected_summary)
+                ))
+            ))
+    );
+    assert!(
+        requests[1]
+            .context
+            .messages()
+            .iter()
+            .any(|message| matches!(
+                message,
+                Message::Assistant(assistant)
+                    if serde_json::to_string(assistant).unwrap().contains(assistant_sentinel)
+            ))
+    );
     assert!(sink.inner.completed_manifest().is_some());
     assert!(
         std::fs::read(&session_path)
@@ -1981,7 +2002,7 @@ async fn manual_compaction_preserves_primary_error_when_evidence_completion_fail
             self.inner.models()
         }
         fn stream_prepared(&self, request: Request, auth: ResolvedAuth) -> EventStream {
-            if request.tools.is_empty()
+            if opi_ai::transcript::get_current_tools(request.context.messages()).is_empty()
                 && let Some(path) = self.path.lock().unwrap().take()
             {
                 // Prepare has already validated this exact active file; fail
@@ -2058,7 +2079,10 @@ async fn manual_compaction_preserves_primary_error_when_evidence_completion_fail
         2,
         "task primer then genuine manual summary"
     );
-    assert!(calls.lock().unwrap()[1].tools.is_empty());
+    assert!(
+        opi_ai::transcript::get_current_tools(calls.lock().unwrap()[1].context.messages())
+            .is_empty()
+    );
     assert_eq!(
         error, expected,
         "secondary evidence errors cannot be appended"
@@ -2242,13 +2266,15 @@ async fn phase17_rollback_does_not_widen_user_policy() {
     assert_eq!(requests.len(), 3);
     assert!(
         requests[1]
-            .messages
+            .context
+            .messages()
             .iter()
             .any(|message| matches!(message, Message::ToolResult(_)))
     );
     assert!(
         requests[2]
-            .messages
+            .context
+            .messages()
             .iter()
             .filter(|message| matches!(message, Message::ToolResult(_)))
             .count()

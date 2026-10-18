@@ -357,12 +357,14 @@ impl SummaryHooks {
                 &self.collection,
                 opi_ai::provider::Request {
                     model: state.model_selection.to_spec(),
-                    system: Some("fixture summary instruction".into()),
-                    messages: vec![match user("summary request") {
-                        AgentMessage::Llm(message) => message,
-                        _ => unreachable!(),
-                    }],
-                    tools: vec![],
+                    context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                        system_prompt: Some("fixture summary instruction".into()),
+                        messages: vec![match user("summary request") {
+                            AgentMessage::Llm(message) => message,
+                            _ => unreachable!(),
+                        }],
+                        tools: vec![],
+                    }),
                     max_tokens: Some(256),
                     temperature: None,
                     thinking: Default::default(),

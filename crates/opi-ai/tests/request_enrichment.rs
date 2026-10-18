@@ -51,9 +51,11 @@ fn request_new_scalars_default_to_none_empty() {
     let cancel = CancellationToken::new();
     let req = Request {
         model: "test".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -78,9 +80,11 @@ fn request_scalars_carry_explicit_values() {
     let headers = vec![("X-Test".to_string(), "value".to_string())];
     let req = Request {
         model: "test".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -578,12 +582,14 @@ async fn session_affinity_wire_mappings() {
 fn make_anthropic_request(cancel: CancellationToken, timeout: Option<Duration>) -> Request {
     Request {
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text { text: "hi".into() }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "hi".into() }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -600,12 +606,14 @@ fn make_anthropic_request(cancel: CancellationToken, timeout: Option<Duration>) 
 fn make_openai_chat_request(cancel: CancellationToken, session_id: Option<String>) -> Request {
     Request {
         model: "openai:gpt-4o".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text { text: "hi".into() }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "hi".into() }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

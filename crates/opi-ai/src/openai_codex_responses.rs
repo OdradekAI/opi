@@ -65,7 +65,21 @@ impl OpenAiCodexResponsesProvider {
             .model
             .strip_prefix("openai-codex:")
             .unwrap_or(&request.model);
-        let input = convert_messages(request);
+        // Canonical transcript consumption (AIR-020); this wire currently
+        // projects by collapse.
+        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
+        let transcript = crate::transcript::resolve_transcript(
+            &request.context,
+            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
+            crate::transcript::TranscriptProjection::NativeOrCollapse,
+        )
+        .expect("native-or-collapse projection never fails");
+        let transcript = transcript.as_ref();
+        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
+        let current_tools = crate::transcript::get_current_tools(transcript.messages());
+        let input = convert_messages(&crate::transcript::without_initial_system_message(
+            transcript.messages(),
+        ));
         let session_id = if request.cache_retention != CacheRetention::Disabled {
             request.session_id.as_deref().filter(|id| !id.is_empty())
         } else {
@@ -75,7 +89,11 @@ impl OpenAiCodexResponsesProvider {
             "model": model_id,
             "store": false,
             "stream": true,
-            "instructions": request.system.as_deref().unwrap_or("You are a helpful assistant."),
+            "instructions": if system_prompt.is_empty() {
+                "You are a helpful assistant."
+            } else {
+                &system_prompt
+            },
             "input": input,
             "tool_choice": "auto",
             "parallel_tool_calls": true,
@@ -86,10 +104,9 @@ impl OpenAiCodexResponsesProvider {
             body["prompt_cache_key"] =
                 serde_json::Value::String(session_id.chars().take(64).collect());
         }
-        if !request.tools.is_empty() {
+        if !current_tools.is_empty() {
             body["tools"] = serde_json::Value::Array(
-                request
-                    .tools
+                current_tools
                     .iter()
                     .map(|tool| {
                         serde_json::json!({

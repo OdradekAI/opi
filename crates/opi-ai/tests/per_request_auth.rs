@@ -52,14 +52,16 @@ impl AuthResolver for NoCredentialResolver {
 fn sample_request(model: &str) -> Request {
     Request {
         model: model.to_owned(),
-        system: Some("You are helpful.".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),

@@ -627,8 +627,8 @@ async fn model_discovery_validates_allow_and_ask_candidates_but_not_denied() {
     harness.prompt("inspect model routing").await.unwrap();
 
     let calls = call_log.lock().unwrap();
-    let bash = calls[0]
-        .tools
+    let current_tools = opi_ai::transcript::get_current_tools(calls[0].context.messages());
+    let bash = current_tools
         .iter()
         .find(|tool| tool.name == "bash")
         .expect("model routing exposes bash");

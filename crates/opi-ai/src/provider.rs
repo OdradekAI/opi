@@ -8,7 +8,7 @@ use reqwest::header::{HeaderName, HeaderValue};
 use tokio_util::sync::CancellationToken;
 
 use crate::credential::BoxAuthFuture;
-use crate::message::{InputContent, Message, OutputContent, ToolDef};
+use crate::message::{InputContent, Message, OutputContent};
 use crate::model_info::{ThinkingLevel, WireApi};
 use crate::stream::AssistantStreamEvent;
 
@@ -101,9 +101,13 @@ pub enum CacheRetention {
 #[derive(Clone)]
 pub struct Request {
     pub model: String,
-    pub system: Option<String>,
-    pub messages: Vec<Message>,
-    pub tools: Vec<ToolDef>,
+    /// Canonical normalized transcript (AIR-020): the system prompt and tool
+    /// declarations live in the transcript's system messages, never in
+    /// independent runtime fields. Construct the value through
+    /// [`crate::transcript::normalize_context`], which folds the public
+    /// `Context` shorthand into one leading system message; adapters consume
+    /// only this canonical input.
+    pub context: crate::transcript::TranscriptContext,
     /// Per-request output limit. `Models::prepare_call` resolves
     /// `None` to the selected registry model's output capacity. Both implicit
     /// and explicit ceilings are reduced to fit the estimated remaining context
@@ -136,7 +140,7 @@ pub struct Request {
 impl Request {
     /// Returns true when any user or tool-result message contains image content.
     pub fn contains_image_content(&self) -> bool {
-        self.messages.iter().any(|message| match message {
+        self.context.messages().iter().any(|message| match message {
             Message::User(user) => user
                 .content
                 .iter()
@@ -187,7 +191,7 @@ pub(crate) fn github_copilot_route_headers(
 
 /// Derive GitHub Copilot's initiator from the final conversation message.
 pub(crate) fn github_copilot_initiator(request: &Request) -> &'static str {
-    match request.messages.last() {
+    match request.context.messages().last() {
         Some(Message::User(_)) | None => "user",
         Some(_) => "agent",
     }

@@ -310,14 +310,16 @@ fn vertex_request_body_uses_gemini_format() {
     let provider = vertex_provider();
     let request = Request {
         model: "vertex:gemini-2.5-flash".into(),
-        system: Some("You are helpful.".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -391,14 +393,16 @@ fn tool_call_sse_fixture() -> String {
 fn lifecycle_text_request() -> Request {
     Request {
         model: "vertex:gemini-2.5-flash".into(),
-        system: Some("You are helpful.".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),

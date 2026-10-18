@@ -25,6 +25,25 @@ pub fn estimate_text_tokens(text: &str) -> u64 {
 /// Approximate one message, including tool arguments and image content.
 pub fn estimate_message_tokens(message: &Message) -> u64 {
     let chars: u64 = match message {
+        // A system message contributes its prompt text, section values, and
+        // serialized tool declarations.
+        Message::System(system) => {
+            let mut chars = system.content.encode_utf16().count() as u64;
+            for section in &system.sections {
+                if let Some(value) = &section.value {
+                    chars += value.encode_utf16().count() as u64;
+                }
+            }
+            if !system.tools_added.is_empty() {
+                chars = chars.saturating_add(
+                    serde_json::to_string(&system.tools_added)
+                        .expect("tool definitions serialize")
+                        .encode_utf16()
+                        .count() as u64,
+                );
+            }
+            chars
+        }
         Message::User(message) => message
             .content
             .iter()
@@ -87,6 +106,7 @@ pub fn estimate_context_tokens(
         estimated = estimated.saturating_add(tokens);
         trailing_tokens = trailing_tokens.saturating_add(tokens);
         let timestamp = match message {
+            Message::System(_) => 0,
             Message::User(message) => message.timestamp_ms,
             Message::ToolResult(message) => message.timestamp_ms,
             Message::Assistant(message) => {

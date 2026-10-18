@@ -171,9 +171,11 @@ where
 fn minimal_request(model: &str) -> Request {
     Request {
         model: model.into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -2049,7 +2051,10 @@ max_tokens_field = "max_completion_tokens"
     let provider = build_provider(&config).expect("profile builds through the factory");
 
     let mut request = minimal_request("prof:m1");
-    request.system = Some("sys".into());
+    request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: Some("sys".into()),
+        ..Default::default()
+    });
     request.max_tokens = Some(1024);
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
     while let Some(result) = stream.next().await {

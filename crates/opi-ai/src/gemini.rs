@@ -522,8 +522,27 @@ impl GeminiProvider {
 
         let mut contents = Vec::new();
 
-        for msg in &request.messages {
+        // Canonical transcript consumption (AIR-020); this wire currently
+        // projects by collapse.
+        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
+        let transcript = crate::transcript::resolve_transcript(
+            &request.context,
+            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
+            crate::transcript::TranscriptProjection::NativeOrCollapse,
+        )
+        .expect("native-or-collapse projection never fails");
+        let transcript = transcript.as_ref();
+        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
+        let current_tools = crate::transcript::get_current_tools(transcript.messages());
+        let body_messages =
+            crate::transcript::without_initial_system_message(transcript.messages());
+
+        for msg in &body_messages {
             match msg {
+                crate::message::Message::System(_) => {
+                    // Unreachable after collapse + without_initial_system_message.
+                    unreachable!("system messages are projected out of contents")
+                }
                 crate::message::Message::User(u) => {
                     let parts: Vec<serde_json::Value> = u
                         .content
@@ -642,9 +661,9 @@ impl GeminiProvider {
         });
 
         // System instruction is a separate object
-        if let Some(sys) = &request.system {
+        if !system_prompt.is_empty() {
             body["systemInstruction"] = serde_json::json!({
-                "parts": [{"text": sys}]
+                "parts": [{"text": system_prompt}]
             });
         }
 
@@ -663,9 +682,9 @@ impl GeminiProvider {
         }
 
         // Tools
-        if !request.tools.is_empty() {
+        if !current_tools.is_empty() {
             body["tools"] = serde_json::Value::Array(vec![serde_json::json!({
-                "functionDeclarations": request.tools.iter().map(|t| {
+                "functionDeclarations": current_tools.iter().map(|t| {
                     serde_json::json!({
                         "name": t.name,
                         "description": t.description,

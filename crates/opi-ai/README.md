@@ -346,6 +346,33 @@ decimal digits instead of replicating JavaScript's parse-time precision loss
 (its dispatch reads the non-JSON `~kind` marker), and `~kind` markers in
 JSON schemas stay inert — a documented dialect boundary.
 
+## Canonical Context/Transcript Chronology
+
+`transcript` owns the canonical request chronology (AIR-008/011/020): the
+public `Context` shorthand (`system_prompt`, `messages`, `tools`) folds
+exactly once into a leading `Message::System` entry through
+`transcript::normalize_context`, the single constructor of
+`TranscriptContext` — a raw shorthand cannot reach provider code. Later
+system messages change the running state: `content` appends, named
+`sections` replace in order (`None` deletes, delete+readd appends), and
+`tools_added`/`tools_removed` change the tool set by value (a redefinition
+is a removal followed by an addition; equal states record no redundant
+change). Replay (`get_current_system_message`/`get_current_tools`) resolves
+the current prompt and tools. Projection is native-or-collapse: transports
+that accept mid-conversation system messages keep them in place, everything
+else collapses to one replayed head — always a fresh value; the canonical
+chronology is never rewritten. Explicit `TranscriptProjection::Strict`
+rejects a transcript whose temporal placement the transport cannot honor
+before any request is built. Declaration installation
+(`TranscriptContext::append_system_change`) validates names (non-empty,
+unique per batch) and compiles input schemas under the private dialect
+engine, failing with a typed error before the message enters the
+transcript. `Request` carries `context: TranscriptContext` instead of
+independent `system`/`tools` runtime fields; every adapter resolves the
+transcript at the head of request construction (the pinned TypeScript
+reference is `.repo/pi-1.3.0/packages/ai/src/utils/transcript.ts`; the
+upstream-deprecated `hasToolRedefinitions` is not ported).
+
 ## Non-Goals
 
 The following are explicit non-goals and must not appear as current core

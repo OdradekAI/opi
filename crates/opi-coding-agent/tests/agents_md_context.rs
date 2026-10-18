@@ -342,10 +342,12 @@ async fn e2e_context_in_system_prompt() {
     let _ = harness.prompt("test prompt").await;
 
     let requests = call_log.lock().unwrap();
-    let system = requests[0]
-        .system
-        .as_deref()
-        .expect("system prompt should be set");
+    let rendered = opi_ai::transcript::get_current_system_prompt(requests[0].context.messages());
+    let system: &str = if rendered.is_empty() {
+        panic!("system prompt should be set")
+    } else {
+        &rendered
+    };
     assert!(
         system.contains("E2E test agents instructions"),
         "System prompt should contain AGENTS.md content: {system}"
@@ -446,10 +448,12 @@ async fn e2e_global_context_in_system_prompt() {
     let _ = harness.prompt("test prompt").await;
 
     let requests = call_log.lock().unwrap();
-    let system = requests[0]
-        .system
-        .as_deref()
-        .expect("system prompt should be set");
+    let rendered = opi_ai::transcript::get_current_system_prompt(requests[0].context.messages());
+    let system: &str = if rendered.is_empty() {
+        panic!("system prompt should be set")
+    } else {
+        &rendered
+    };
     assert!(
         system.contains("Global agents instructions from config dir"),
         "System prompt should contain global AGENTS.md content: {system}"

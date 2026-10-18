@@ -147,7 +147,12 @@ async fn run_refused_interactive(
         .lock()
         .unwrap()
         .iter()
-        .map(|request| request.tools.iter().map(|tool| tool.name.clone()).collect())
+        .map(|request| {
+            opi_ai::transcript::get_current_tools(request.context.messages())
+                .iter()
+                .map(|tool| tool.name.clone())
+                .collect()
+        })
         .collect();
     (capture.system_messages, calls)
 }

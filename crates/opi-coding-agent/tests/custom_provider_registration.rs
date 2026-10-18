@@ -231,9 +231,11 @@ async fn extension_provider_streams_without_network() {
 
     let request = Request {
         model: "mock-net:local-m".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: opi_ai::provider::ThinkingConfig::default(),

@@ -926,14 +926,16 @@ use tokio_util::sync::CancellationToken;
 fn make_test_request() -> Request {
     Request {
         model: "openai:gpt-4o".into(),
-        system: Some("You are helpful.".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(4096),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1069,18 +1071,20 @@ fn compat_config_represents_assistant_after_tool_result() {
 fn make_tool_request() -> Request {
     Request {
         model: "openai:gpt-4o".into(),
-        system: Some("You are helpful.".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "list files".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "list files".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![ToolDef {
+                name: "list_dir".into(),
+                description: "list a directory".into(),
+                input_schema: serde_json::json!({"type":"object","properties":{}}),
             }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![ToolDef {
-            name: "list_dir".into(),
-            description: "list a directory".into(),
-            input_schema: serde_json::json!({"type":"object","properties":{}}),
-        }],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1251,27 +1255,29 @@ fn build_request_body_cache_key_absent_by_default() {
 fn make_tool_result_request() -> Request {
     Request {
         model: "openai:gpt-4o".into(),
-        system: None,
-        messages: vec![
-            Message::User(UserMessage {
-                content: vec![InputContent::Text {
-                    text: "run it".into(),
-                }],
-                timestamp_ms: 0,
-            }),
-            Message::ToolResult(ToolResultMessage {
-                tool_call_id: "call_1".into(),
-                tool_name: "list_dir".into(),
-                content: vec![OutputContent::Text {
-                    text: "a.rs".into(),
-                }],
-                details: None,
-                is_error: false,
-                truncated: false,
-                timestamp_ms: 0,
-            }),
-        ],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![
+                Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "run it".into(),
+                    }],
+                    timestamp_ms: 0,
+                }),
+                Message::ToolResult(ToolResultMessage {
+                    tool_call_id: "call_1".into(),
+                    tool_name: "list_dir".into(),
+                    content: vec![OutputContent::Text {
+                        text: "a.rs".into(),
+                    }],
+                    details: None,
+                    is_error: false,
+                    truncated: false,
+                    timestamp_ms: 0,
+                }),
+            ],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1342,17 +1348,19 @@ fn validate_rejects_image_on_text_only_openai_compatible_profile() {
     );
     let image_request = Request {
         model: "compatprof:text-only-model".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Image {
-                source: ImageSource::Url {
-                    url: "https://example.test/i.png".into(),
-                },
-                media_type: MediaType::Png,
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Image {
+                    source: ImageSource::Url {
+                        url: "https://example.test/i.png".into(),
+                    },
+                    media_type: MediaType::Png,
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1545,14 +1553,16 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
     let provider = OpenAiChatProvider::new(Some(server.uri()));
     let request = Request {
         model: "openai:gpt-4o".into(),
-        system: Some("You are helpful.".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1613,14 +1623,16 @@ async fn profile_extra_headers_reach_the_http_wire() {
     );
     let request = Request {
         model: "affinityprof:any-model".into(),
-        system: Some("You are helpful.".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1665,14 +1677,16 @@ async fn stream_cancellation_aborts_before_completion() {
     let provider = OpenAiChatProvider::new(Some(server));
     let request = Request {
         model: "openai:gpt-4o".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1737,9 +1751,11 @@ async fn chat_final_tool_call(arguments: &str) -> AssistantStreamEvent {
     let provider = OpenAiChatProvider::new(Some(server.uri()));
     let request = opi_ai::provider::Request {
         model: "openai:gpt-4o".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),

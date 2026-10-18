@@ -43,13 +43,15 @@ fn thinking_tool_stream() -> String {
 fn request(messages: Vec<Message>) -> Request {
     Request {
         model: "anthropic:model-alias".into(),
-        system: None,
-        messages,
-        tools: vec![ToolDef {
-            name: "read".into(),
-            description: "Read a local fixture".into(),
-            input_schema: json!({"type":"object","properties":{"path":{"type":"string"}}}),
-        }],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages,
+            tools: vec![ToolDef {
+                name: "read".into(),
+                description: "Read a local fixture".into(),
+                input_schema: json!({"type":"object","properties":{"path":{"type":"string"}}}),
+            }],
+        }),
         max_tokens: Some(4096),
         temperature: None,
         thinking: ThinkingConfig {

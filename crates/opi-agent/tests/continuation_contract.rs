@@ -115,7 +115,7 @@ async fn public_retry_retains_initial_steering_after_hook_failure() {
             .into_execution_result()
             .unwrap();
         assert_eq!(
-            texts(&calls.lock().unwrap()[0].messages),
+            texts(calls.lock().unwrap()[0].context.messages()),
             ["start", "must keep"]
         );
     }
@@ -153,7 +153,7 @@ async fn public_retry_retains_initial_steering_after_auth_preparation_failure() 
         .into_execution_result()
         .unwrap();
     assert_eq!(
-        texts(&calls.lock().unwrap()[0].messages),
+        texts(calls.lock().unwrap()[0].context.messages()),
         ["start", "must keep"]
     );
 }
@@ -183,7 +183,7 @@ async fn public_retry_retains_initial_steering_after_turn_start_cancellation() {
         .into_execution_result()
         .unwrap();
     assert_eq!(
-        texts(&calls.lock().unwrap()[0].messages),
+        texts(calls.lock().unwrap()[0].context.messages()),
         ["start", "must keep"]
     );
 }
@@ -208,7 +208,7 @@ async fn public_retry_does_not_requeue_steering_after_a_dispatched_provider_fail
     assert!(matches!(failed.error(), Some(AgentError::Provider(_))));
     assert_eq!(calls.lock().unwrap().len(), 1);
     assert_eq!(
-        texts(&calls.lock().unwrap()[0].messages),
+        texts(calls.lock().unwrap()[0].context.messages()),
         ["start", "already sent"]
     );
     agent
@@ -216,7 +216,10 @@ async fn public_retry_does_not_requeue_steering_after_a_dispatched_provider_fail
         .await
         .into_execution_result()
         .unwrap();
-    assert_eq!(texts(&calls.lock().unwrap()[1].messages), ["start"]);
+    assert_eq!(
+        texts(calls.lock().unwrap()[1].context.messages()),
+        ["start"]
+    );
 }
 
 #[derive(Default)]
@@ -310,7 +313,7 @@ async fn terminating_tool_batch_still_checks_stop_and_delivers_follow_up() {
     assert_eq!(hooks.stop_contexts.lock().unwrap().len(), 2);
     assert!(hooks.prepare_contexts.lock().unwrap()[0].terminate);
     assert_eq!(
-        texts(&calls.lock().unwrap()[1].messages),
+        texts(calls.lock().unwrap()[1].context.messages()),
         ["start", "prepared", "follow-up"]
     );
 }
@@ -380,7 +383,7 @@ async fn initial_steering_is_delivered_before_the_first_provider_request() {
     .await;
     assert!(result.error().is_none());
     assert_eq!(
-        texts(&calls.lock().unwrap()[0].messages),
+        texts(calls.lock().unwrap()[0].context.messages()),
         ["start", "initial steering"]
     );
     assert_eq!(calls.lock().unwrap().len(), 1);
@@ -542,7 +545,7 @@ async fn follow_up_is_selected_before_preparation_and_applied_to_replacement() {
     assert!(result.error().is_none(), "{result:?}");
     assert_eq!(*hooks.queue_observed_empty.lock().unwrap(), vec![true]);
     assert_eq!(
-        texts(&calls.lock().unwrap()[1].messages),
+        texts(calls.lock().unwrap()[1].context.messages()),
         ["start", "prepared", "follow-up"]
     );
 }
@@ -574,7 +577,7 @@ async fn preparation_picks_up_steering_when_no_message_was_pending() {
     .await;
     assert!(result.error().is_none(), "{result:?}");
     assert_eq!(
-        texts(&calls.lock().unwrap()[1].messages),
+        texts(calls.lock().unwrap()[1].context.messages()),
         ["start", "prepared", "during preparation"]
     );
     assert_eq!(hooks.prepare_calls.load(Ordering::SeqCst), 1);
@@ -627,7 +630,7 @@ async fn preparation_does_not_dequeue_more_steering_when_one_batch_is_pending() 
         .await;
         assert!(matches!(result.error(), Some(AgentError::Cancelled)));
         assert_eq!(
-            texts(&calls.lock().unwrap()[1].messages),
+            texts(calls.lock().unwrap()[1].context.messages()),
             ["start", "prepared", "earlier input"]
         );
         assert_eq!(

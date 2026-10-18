@@ -39,18 +39,20 @@ fn model(base_url: Option<String>) -> ModelInfo {
 fn request() -> Request {
     Request {
         model: "openai-codex:gpt-5.4".into(),
-        system: Some("system prompt".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "hello".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("system prompt".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![ToolDef {
+                name: "read".into(),
+                description: "Read a file".into(),
+                input_schema: serde_json::json!({"type":"object"}),
             }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![ToolDef {
-            name: "read".into(),
-            description: "Read a file".into(),
-            input_schema: serde_json::json!({"type":"object"}),
-        }],
+        }),
         max_tokens: Some(1024),
         temperature: Some(0.2),
         thinking: ThinkingConfig {

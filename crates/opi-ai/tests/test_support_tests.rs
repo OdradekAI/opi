@@ -46,12 +46,14 @@ async fn stream_yields_text_response_events() {
 
     let request = Request {
         model: "mock-model".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text { text: "Hi".into() }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "Hi".into() }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),
@@ -93,9 +95,11 @@ async fn stream_yields_tool_call_response_events() {
 
     let request = Request {
         model: "mock-model".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),
@@ -140,9 +144,11 @@ async fn stream_yields_error_response_events() {
 
     let request = Request {
         model: "mock-model".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),
@@ -184,9 +190,11 @@ async fn multiple_stream_calls_consume_responses_in_order() {
 
     let dummy_request = Request {
         model: "mock-model".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: Default::default(),
@@ -208,9 +216,11 @@ async fn multiple_stream_calls_consume_responses_in_order() {
     let stream2 = provider.stream_prepared(
         Request {
             model: "mock-model".into(),
-            system: None,
-            messages: vec![],
-            tools: vec![],
+            context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: None,
+                messages: vec![],
+                tools: vec![],
+            }),
             max_tokens: None,
             temperature: None,
             thinking: Default::default(),

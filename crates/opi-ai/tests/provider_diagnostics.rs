@@ -341,17 +341,19 @@ fn text_only_model(id: &str) -> ModelInfo {
 fn image_request(model: &str) -> Request {
     Request {
         model: model.into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Image {
-                source: ImageSource::Url {
-                    url: "https://example.test/img.png".into(),
-                },
-                media_type: MediaType::Png,
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Image {
+                    source: ImageSource::Url {
+                        url: "https://example.test/img.png".into(),
+                    },
+                    media_type: MediaType::Png,
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -404,12 +406,16 @@ fn validate_rejects_unsupported_thinking_on_chat_wire_before_request() {
         budget_tokens: Some(1024),
         level: opi_ai::ThinkingLevel::Medium,
     };
-    request.messages = vec![Message::User(UserMessage {
-        content: vec![InputContent::Text {
-            text: "think about this".into(),
-        }],
-        timestamp_ms: 0,
-    })];
+    request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "think about this".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+    });
     let err = validate_request_capabilities(&provider, &request)
         .expect_err("unsupported thinking must be rejected before request construction");
     assert!(

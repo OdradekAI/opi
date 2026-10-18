@@ -82,12 +82,27 @@ impl BedrockProvider {
 
     /// Build the Converse API request body.
     pub fn build_converse_body(&self, request: &Request) -> serde_json::Value {
+        // Canonical transcript consumption (AIR-020); this wire currently
+        // projects by collapse.
+        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
+        let transcript = crate::transcript::resolve_transcript(
+            &request.context,
+            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
+            crate::transcript::TranscriptProjection::NativeOrCollapse,
+        )
+        .expect("native-or-collapse projection never fails");
+        let transcript = transcript.as_ref();
+        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
+        let current_tools = crate::transcript::get_current_tools(transcript.messages());
+
         let mut body = serde_json::json!({
-            "messages": serialize_converse_messages(&request.messages),
+            "messages": serialize_converse_messages(
+                &crate::transcript::without_initial_system_message(transcript.messages()),
+            ),
         });
 
-        if let Some(ref system) = request.system {
-            body["system"] = serde_json::json!([{"text": system}]);
+        if !system_prompt.is_empty() {
+            body["system"] = serde_json::json!([{"text": system_prompt}]);
         }
 
         let mut inference_config = serde_json::json!({});
@@ -110,9 +125,9 @@ impl BedrockProvider {
         }
         body["inferenceConfig"] = inference_config;
 
-        if !request.tools.is_empty() {
+        if !current_tools.is_empty() {
             body["toolConfig"] = serde_json::json!({
-                "tools": request.tools.iter().map(|t| {
+                "tools": current_tools.iter().map(|t| {
                     serde_json::json!({
                         "toolSpec": {
                             "name": t.name,
@@ -203,7 +218,7 @@ impl Provider for BedrockProvider {
         }
 
         // Validate image sources -- Bedrock Converse does not support URL-sourced images
-        for msg in &request.messages {
+        for msg in request.context.messages() {
             if let crate::message::Message::User(user_msg) = msg {
                 for content in &user_msg.content {
                     if let crate::message::InputContent::Image {
@@ -967,6 +982,10 @@ fn serialize_converse_messages(messages: &[crate::message::Message]) -> serde_js
         messages
             .iter()
             .map(|msg| match msg {
+                crate::message::Message::System(_) => {
+                    // Unreachable after collapse + without_initial_system_message.
+                    unreachable!("system messages are projected out of the body list")
+                }
                 crate::message::Message::User(u) => {
                     let content: Vec<serde_json::Value> = u
                         .content

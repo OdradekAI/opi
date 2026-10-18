@@ -433,11 +433,11 @@ async fn ndjson_refuses_local_ask_at_startup_without_prompt() {
     assert_eq!(result.exit_code, ExitCode::Success as i32);
     let calls = call_log.lock().unwrap();
     assert_eq!(calls.len(), 1);
+    let advertised = opi_ai::transcript::get_current_tools(calls[0].context.messages());
     assert!(
-        calls[0].tools.iter().all(|tool| tool.name != "bash"),
+        advertised.iter().all(|tool| tool.name != "bash"),
         "headless ask must omit bash instead of falling back to local: {:?}",
-        calls[0]
-            .tools
+        advertised
             .iter()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>()
@@ -1845,7 +1845,8 @@ async fn json_mode_compact_text_deltas_are_constant_size() {
             );
             assert!(
                 calls[1]
-                    .messages
+                    .context
+                    .messages()
                     .contains(&Message::Assistant(complete.clone()))
             );
             let (_, entries, recovery) =

@@ -53,25 +53,27 @@ const EXPECTED_ERROR_MARKER: &str = "[tool_error] ";
 fn request_with_tool_result(is_error: bool, payload: &str) -> Request {
     Request {
         model: "m".into(),
-        system: None,
-        messages: vec![
-            Message::User(UserMessage {
-                content: vec![InputContent::Text { text: "hi".into() }],
-                timestamp_ms: 0,
-            }),
-            Message::ToolResult(ToolResultMessage {
-                tool_call_id: "tc-1".into(),
-                tool_name: "tool".into(),
-                content: vec![OutputContent::Text {
-                    text: payload.into(),
-                }],
-                details: None,
-                is_error,
-                truncated: false,
-                timestamp_ms: 0,
-            }),
-        ],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![
+                Message::User(UserMessage {
+                    content: vec![InputContent::Text { text: "hi".into() }],
+                    timestamp_ms: 0,
+                }),
+                Message::ToolResult(ToolResultMessage {
+                    tool_call_id: "tc-1".into(),
+                    tool_name: "tool".into(),
+                    content: vec![OutputContent::Text {
+                        text: payload.into(),
+                    }],
+                    details: None,
+                    is_error,
+                    truncated: false,
+                    timestamp_ms: 0,
+                }),
+            ],
+            tools: vec![],
+        }),
         max_tokens: Some(128),
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -426,6 +428,7 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "stream",
         "test_support",
         "time",
+        "transcript",
         "vertex",
     ];
     let declared: Vec<&str> = lib_rs

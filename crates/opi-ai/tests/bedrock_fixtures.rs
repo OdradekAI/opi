@@ -60,14 +60,16 @@ fn test_auth() -> ResolvedAuth {
 fn text_stream_request() -> Request {
     Request {
         model: "anthropic.claude-sonnet-4-20250514-v2:0".into(),
-        system: Some("You are helpful.".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: Default::default(),
@@ -84,22 +86,24 @@ fn text_stream_request() -> Request {
 fn tool_call_request() -> Request {
     Request {
         model: "anthropic.claude-sonnet-4-20250514-v2:0".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Read the file".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Read the file".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![ToolDef {
+                name: "read".into(),
+                description: "Read a file".into(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"]
+                }),
             }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![ToolDef {
-            name: "read".into(),
-            description: "Read a file".into(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {"path": {"type": "string"}},
-                "required": ["path"]
-            }),
-        }],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: Default::default(),
@@ -602,22 +606,24 @@ async fn url_image_rejected_with_clear_error() {
     let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
     let request = Request {
         model: "bedrock:anthropic.claude-sonnet-4-20250514-v2:0".into(),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![
-                InputContent::Text {
-                    text: "describe".into(),
-                },
-                InputContent::Image {
-                    source: ImageSource::Url {
-                        url: "https://example.com/img.png".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![
+                    InputContent::Text {
+                        text: "describe".into(),
                     },
-                    media_type: MediaType::Png,
-                },
-            ],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+                    InputContent::Image {
+                        source: ImageSource::Url {
+                            url: "https://example.com/img.png".into(),
+                        },
+                        media_type: MediaType::Png,
+                    },
+                ],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: Default::default(),
@@ -648,20 +654,24 @@ async fn url_image_rejected_with_clear_error() {
 fn tool_result_image_placeholder_preserves_media_type() {
     let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
     let mut request = text_stream_request();
-    request.messages = vec![Message::ToolResult(ToolResultMessage {
-        tool_call_id: "tool-1".into(),
-        tool_name: "screenshot".into(),
-        content: vec![OutputContent::Image {
-            source: ImageSource::Bytes {
-                data: vec![0xff, 0xd8, 0xff],
-            },
-            media_type: MediaType::Jpeg,
-        }],
-        details: None,
-        is_error: false,
-        truncated: false,
-        timestamp_ms: 0,
-    })];
+    request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages: vec![Message::ToolResult(ToolResultMessage {
+            tool_call_id: "tool-1".into(),
+            tool_name: "screenshot".into(),
+            content: vec![OutputContent::Image {
+                source: ImageSource::Bytes {
+                    data: vec![0xff, 0xd8, 0xff],
+                },
+                media_type: MediaType::Jpeg,
+            }],
+            details: None,
+            is_error: false,
+            truncated: false,
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+    });
 
     let body = provider.build_converse_body(&request);
     let text = body["messages"][0]["content"][0]["toolResult"]["content"][0]["text"]
@@ -959,14 +969,16 @@ fn lifecycle_text_request() -> Request {
     // stays free of URL-encoded version colons.
     Request {
         model: "bedrock:anthropic.claude-sonnet-4".into(),
-        system: Some("You are helpful.".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "Hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: Some(1024),
         temperature: None,
         thinking: Default::default(),

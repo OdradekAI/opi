@@ -37,16 +37,18 @@ fn make_provider_with_deployments(deployments: Vec<&str>) -> AzureOpenAIProvider
 fn text_request() -> opi_ai::provider::Request {
     opi_ai::provider::Request {
         model: "azure:my-gpt4o".into(),
-        system: Some("You are helpful.".into()),
-        messages: vec![opi_ai::message::Message::User(
-            opi_ai::message::UserMessage {
-                content: vec![opi_ai::message::InputContent::Text {
-                    text: "Hello".into(),
-                }],
-                timestamp_ms: 0,
-            },
-        )],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![opi_ai::message::Message::User(
+                opi_ai::message::UserMessage {
+                    content: vec![opi_ai::message::InputContent::Text {
+                        text: "Hello".into(),
+                    }],
+                    timestamp_ms: 0,
+                },
+            )],
+            tools: vec![],
+        }),
         max_tokens: Some(256),
         temperature: None,
         thinking: Default::default(),
@@ -66,23 +68,25 @@ fn tool_request() -> opi_ai::provider::Request {
 
     Request {
         model: "azure:my-gpt4o".into(),
-        system: None,
-        messages: vec![opi_ai::message::Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "What is the weather?".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![opi_ai::message::Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "What is the weather?".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![ToolDef {
+                name: "get_weather".into(),
+                description: "Get weather".into(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "city": {"type": "string"}
+                    }
+                }),
             }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![ToolDef {
-            name: "get_weather".into(),
-            description: "Get weather".into(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "city": {"type": "string"}
-                }
-            }),
-        }],
+        }),
         max_tokens: Some(256),
         temperature: None,
         thinking: Default::default(),

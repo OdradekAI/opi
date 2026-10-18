@@ -888,23 +888,38 @@ impl AnthropicProvider {
             serde_json::json!({"type": "ephemeral"})
         };
 
+        // Canonical transcript consumption (AIR-020): the prompt and tool
+        // declarations live in the transcript's system messages. This wire
+        // currently projects by collapse; the capability constant is the
+        // per-wire placement table later model-compat tasks own.
+        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
+        let transcript = crate::transcript::resolve_transcript(
+            &request.context,
+            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
+            crate::transcript::TranscriptProjection::NativeOrCollapse,
+        )
+        .expect("native-or-collapse projection never fails");
+        let transcript = transcript.as_ref();
+        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
+        let current_tools = crate::transcript::get_current_tools(transcript.messages());
+
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
-            "messages": serialize_messages(&request.messages, &self.provider_id, model_id, emit_cache, &cache_marker),
+            "messages": serialize_messages(&crate::transcript::without_initial_system_message(transcript.messages()), &self.provider_id, model_id, emit_cache, &cache_marker),
         });
 
         // System prompt: when caching is active, wrap the bare string as a
         // singled-content-block array so the marker has a place to live.
-        if let Some(ref system) = request.system {
+        if !system_prompt.is_empty() {
             if emit_cache {
                 body["system"] = serde_json::json!([{
                     "type": "text",
-                    "text": system,
+                    "text": system_prompt,
                     "cache_control": cache_marker,
                 }]);
             } else {
-                body["system"] = serde_json::Value::String(system.clone());
+                body["system"] = serde_json::Value::String(system_prompt.clone());
             }
         }
         if let Some(max_tokens) = request.max_tokens {
@@ -919,9 +934,8 @@ impl AnthropicProvider {
                 .map(serde_json::Value::Number)
                 .unwrap_or(serde_json::Value::Null);
         }
-        if !request.tools.is_empty() {
-            let mut tools: Vec<serde_json::Value> = request
-                .tools
+        if !current_tools.is_empty() {
+            let mut tools: Vec<serde_json::Value> = current_tools
                 .iter()
                 .map(|t| {
                     serde_json::json!({
@@ -1306,6 +1320,12 @@ fn serialize_messages(
                     .collect();
                 serde_json::json!({"role": "assistant", "content": content})
             }
+            crate::message::Message::System(_) => {
+                // Unreachable after collapse + without_initial_system_message:
+                // the projection removed every system message from the body
+                // list before this serializer runs.
+                unreachable!("system messages are projected out of the body list")
+            }
             crate::message::Message::ToolResult(t) => {
                 let text = t
                     .content
@@ -1586,34 +1606,36 @@ mod tests {
     fn make_request(cache_retention: CacheRetention) -> Request {
         Request {
             model: "anthropic:claude-sonnet-4-5-20250514".into(),
-            system: Some("You are a test assistant.".into()),
-            messages: vec![
-                Message::User(UserMessage {
-                    content: vec![crate::message::InputContent::Text {
-                        text: "Hello".into(),
-                    }],
-                    timestamp_ms: 0,
-                }),
-                Message::Assistant(AssistantMessage {
-                    content: vec![AssistantContent::Text {
-                        text: "Hi there!".into(),
-                    }],
-                    api: crate::ApiKind::Anthropic,
-                    provider: "anthropic".into(),
-                    model: "claude-sonnet-4-5-20250514".into(),
-                    response_model: None,
-                    response_id: None,
-                    usage: crate::stream::Usage::unknown(),
-                    stop_reason: crate::stream::StopReason::Stop,
-                    error_message: None,
-                    timestamp_ms: 0,
-                }),
-            ],
-            tools: vec![crate::message::ToolDef {
-                name: "greet".into(),
-                description: "Say hello".into(),
-                input_schema: serde_json::json!({"type": "object"}),
-            }],
+            context: crate::transcript::normalize_context(crate::transcript::Context {
+                system_prompt: Some("You are a test assistant.".into()),
+                messages: vec![
+                    Message::User(UserMessage {
+                        content: vec![crate::message::InputContent::Text {
+                            text: "Hello".into(),
+                        }],
+                        timestamp_ms: 0,
+                    }),
+                    Message::Assistant(AssistantMessage {
+                        content: vec![AssistantContent::Text {
+                            text: "Hi there!".into(),
+                        }],
+                        api: crate::ApiKind::Anthropic,
+                        provider: "anthropic".into(),
+                        model: "claude-sonnet-4-5-20250514".into(),
+                        response_model: None,
+                        response_id: None,
+                        usage: crate::stream::Usage::unknown(),
+                        stop_reason: crate::stream::StopReason::Stop,
+                        error_message: None,
+                        timestamp_ms: 0,
+                    }),
+                ],
+                tools: vec![crate::message::ToolDef {
+                    name: "greet".into(),
+                    description: "Say hello".into(),
+                    input_schema: serde_json::json!({"type": "object"}),
+                }],
+            }),
             max_tokens: Some(100),
             temperature: None,
             thinking: crate::provider::ThinkingConfig::default(),
@@ -1738,7 +1760,7 @@ mod tests {
     fn cache_control_reverse_scan_skips_textless_matching_roles() {
         let provider = cache_capable_provider();
         let mut request = make_request(CacheRetention::Short);
-        request.messages = vec![
+        let messages = vec![
             Message::User(UserMessage {
                 content: vec![InputContent::Text {
                     text: "cache this user text".into(),
@@ -1784,6 +1806,10 @@ mod tests {
                 signature: None,
             }]),
         ];
+        request.context = crate::transcript::normalize_context(crate::transcript::Context {
+            messages,
+            ..crate::transcript::Context::default()
+        });
 
         let body = provider.build_request_body(&request);
         assert_eq!(

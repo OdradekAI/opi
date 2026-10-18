@@ -541,7 +541,12 @@ async fn phase17_tool_projection_is_recomputed_for_consecutive_requests() {
         .lock()
         .unwrap()
         .iter()
-        .map(|request| request.tools.iter().map(|tool| tool.name.clone()).collect())
+        .map(|request| {
+            opi_ai::transcript::get_current_tools(request.context.messages())
+                .iter()
+                .map(|tool| tool.name.clone())
+                .collect()
+        })
         .collect();
     assert_eq!(
         projected,
@@ -710,7 +715,8 @@ async fn untrusted_content_sources_cannot_forge_tool_authority() {
     let first_text: Vec<_> = requests
         .first()
         .expect("first provider request")
-        .messages
+        .context
+        .messages()
         .iter()
         .filter_map(|message| match message {
             Message::User(user) => Some(
@@ -729,7 +735,8 @@ async fn untrusted_content_sources_cannot_forge_tool_authority() {
     let second_tool_text: Vec<_> = requests
         .get(1)
         .expect("second provider request")
-        .messages
+        .context
+        .messages()
         .iter()
         .filter_map(|message| match message {
             Message::ToolResult(result) => Some(

@@ -225,13 +225,17 @@ fn assert_same_state(actual: &NextTurnState, expected: &NextTurnState) {
 }
 
 fn contains_user_text(request: &Request, expected: &str) -> bool {
-    request.messages.iter().any(|message| match message {
-        Message::User(user) => user
-            .content
-            .iter()
-            .any(|content| matches!(content, InputContent::Text { text } if text == expected)),
-        _ => false,
-    })
+    request
+        .context
+        .messages()
+        .iter()
+        .any(|message| match message {
+            Message::User(user) => user
+                .content
+                .iter()
+                .any(|content| matches!(content, InputContent::Text { text } if text == expected)),
+            _ => false,
+        })
 }
 
 fn recording_agent(responses: Vec<Vec<AssistantStreamEvent>>) -> (Agent, Arc<Mutex<Vec<Request>>>) {
@@ -835,7 +839,7 @@ async fn phase17_agent_persists_complete_next_turn_state() {
     );
     // Context persistence: the second call observed the first turn's user msg.
     assert!(
-        log[2].messages.iter().any(|m| matches!(
+        log[2].context.messages().iter().any(|m| matches!(
             m,
             Message::User(u) if u.content.iter().any(|c| matches!(
                 c, InputContent::Text { text } if text == "turn one"
@@ -923,7 +927,8 @@ async fn idle_replacement_rejects_enabled_none_thinking_atomically_without_consu
     );
     assert_eq!(
         requests[0]
-            .messages
+            .context
+            .messages()
             .first()
             .and_then(|message| match message {
                 Message::Assistant(message) => Some(message.stop_reason),

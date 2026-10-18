@@ -1043,10 +1043,21 @@ fn compile_prepared_request(
     }
     let context_limit = model.capabilities.context_window;
     if context_limit > 0 {
+        let transcript = request.context.messages();
+        let current_system = crate::transcript::get_current_system_prompt(transcript);
+        let current_tools = crate::transcript::get_current_tools(transcript);
+        // The replayed prompt and tool set are estimated through their own
+        // parameters, so system messages must not be counted again as part of
+        // the message walk.
+        let conversation: Vec<crate::message::Message> = transcript
+            .iter()
+            .filter(|message| !matches!(message, crate::message::Message::System(_)))
+            .cloned()
+            .collect();
         let occupied = crate::context::estimate_context_tokens(
-            request.system.as_deref(),
-            &request.messages,
-            &request.tools,
+            (!current_system.is_empty()).then_some(current_system.as_str()),
+            &conversation,
+            &current_tools,
             &request.model,
         )
         .tokens;

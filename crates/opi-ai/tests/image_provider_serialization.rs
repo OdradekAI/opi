@@ -78,9 +78,11 @@ fn gemini_done_sse() -> &'static str {
 fn make_request(messages: Vec<Message>) -> Request {
     Request {
         model: "test-model".into(),
-        system: None,
-        messages,
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages,
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

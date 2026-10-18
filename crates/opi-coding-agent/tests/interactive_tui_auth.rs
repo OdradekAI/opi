@@ -262,7 +262,7 @@ async fn run_outer(
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .iter()
-        .map(|request| request.messages.clone())
+        .map(|request| request.context.messages().to_vec())
         .collect();
     OuterResult {
         result,
@@ -360,7 +360,8 @@ fn assert_one_noninteractive_user_message(calls: &Arc<Mutex<Vec<opi_ai::provider
     assert_eq!(calls.len(), 1, "credential failure must not retry");
     assert_eq!(
         calls[0]
-            .messages
+            .context
+            .messages()
             .iter()
             .filter(|message| matches!(message, Message::User(_)))
             .count(),
@@ -844,7 +845,7 @@ async fn outer_tui_midstream_revocation_never_opens_login_or_retries() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .iter()
-        .map(|request| request.messages.clone())
+        .map(|request| request.context.messages().to_vec())
         .collect::<Vec<_>>();
     assert_one_user_message(&recorded_messages);
 }

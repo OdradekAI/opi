@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
 };
-use crate::provider::{ProviderError, ProviderErrorSummary, Request};
+use crate::provider::{ProviderError, ProviderErrorSummary};
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
 /// Neutral public text substituted for the raw upstream Responses
@@ -716,9 +716,9 @@ fn empty_assistant_message(provider: &str) -> AssistantMessage {
 }
 
 /// Convert opi messages to standard Responses input items.
-pub(crate) fn convert_messages(request: &Request) -> Vec<serde_json::Value> {
+pub(crate) fn convert_messages(messages: &[crate::message::Message]) -> Vec<serde_json::Value> {
     let mut input = Vec::new();
-    for message in &request.messages {
+    for message in messages {
         match message {
             crate::message::Message::User(user) => {
                 let content: Vec<serde_json::Value> = user
@@ -778,6 +778,10 @@ pub(crate) fn convert_messages(request: &Request) -> Vec<serde_json::Value> {
                     input.push(serde_json::json!({"role":"assistant","content":text}));
                 }
                 input.extend(calls);
+            }
+            crate::message::Message::System(_) => {
+                // Unreachable after collapse + without_initial_system_message.
+                unreachable!("system messages are projected out of the input list")
             }
             crate::message::Message::ToolResult(result) => {
                 let content: String = result

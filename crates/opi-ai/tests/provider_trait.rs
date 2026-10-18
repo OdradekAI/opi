@@ -115,18 +115,20 @@ fn request_builds_with_all_fields() {
     let cancel = CancellationToken::new();
     let req = Request {
         model: "claude-sonnet-4-5-20250514".into(),
-        system: Some("You are helpful.".into()),
-        messages: vec![Message::User(opi_ai::message::UserMessage {
-            content: vec![opi_ai::message::InputContent::Text {
-                text: "Hello".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(opi_ai::message::UserMessage {
+                content: vec![opi_ai::message::InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 42,
+            })],
+            tools: vec![ToolDef {
+                name: "read_file".into(),
+                description: "Read a file".into(),
+                input_schema: serde_json::json!({"type": "object"}),
             }],
-            timestamp_ms: 42,
-        })],
-        tools: vec![ToolDef {
-            name: "read_file".into(),
-            description: "Read a file".into(),
-            input_schema: serde_json::json!({"type": "object"}),
-        }],
+        }),
         max_tokens: Some(4096),
         temperature: Some(0.7),
         thinking: ThinkingConfig::default(),
@@ -139,8 +141,17 @@ fn request_builds_with_all_fields() {
         session_id: None,
     };
     assert_eq!(req.model, "claude-sonnet-4-5-20250514");
-    assert_eq!(req.messages.len(), 1);
-    assert_eq!(req.tools.len(), 1);
+    // One leading system entry folded from the shorthand plus one user
+    // message (AIR-020).
+    assert_eq!(req.context.messages().len(), 2);
+    assert!(matches!(
+        req.context.messages()[0],
+        opi_ai::message::Message::System(_)
+    ));
+    assert_eq!(
+        opi_ai::transcript::get_current_tools(req.context.messages()).len(),
+        1
+    );
     assert!(!cancel.is_cancelled());
 }
 
@@ -149,9 +160,11 @@ fn request_cancellation_propagates() {
     let cancel = CancellationToken::new();
     let req = Request {
         model: "test".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -234,9 +247,11 @@ async fn custom_provider_untrusted_constructor_discards_error_payloads() {
     let mut stream = provider.stream_prepared(
         Request {
             model: "canary-errors:model".into(),
-            system: None,
-            messages: vec![],
-            tools: vec![],
+            context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: None,
+                messages: vec![],
+                tools: vec![],
+            }),
             max_tokens: None,
             temperature: None,
             thinking: ThinkingConfig::default(),
@@ -283,9 +298,11 @@ async fn provider_trait_yields_done_event() {
     let cancel = CancellationToken::new();
     let request = Request {
         model: "test".into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

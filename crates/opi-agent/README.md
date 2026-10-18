@@ -224,7 +224,11 @@ of the engine. A validation failure is a normal runtime outcome, not a loop
 error: an error `ToolResult` (`is_error = true`, `terminate = false`) with
 redacted failures (instance pointer, keyword, schema-derived reason only) is
 persisted and the run continues. The hook has already run, but the authorizer
-and tool do not. An unknown tool is rejected before the hook.
+and tool do not. An unknown tool is rejected before the hook. The loop builds
+each provider request through the SDK's canonical transcript seam
+(`opi_ai::transcript::normalize_context`), folding the convenience system
+prompt and the trusted registry's tool definitions into one leading system
+message (AIR-020); adapters consume only that normalized input.
 
 ## Tool Results and Diagnostics
 

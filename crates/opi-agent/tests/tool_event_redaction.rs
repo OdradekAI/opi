@@ -439,7 +439,8 @@ async fn tool_events_redact_command_context_and_provider_content_stays_unchanged
     let calls = call_log.lock().unwrap();
     let second_request = calls.get(1).expect("second provider request");
     let provider_tool_result = second_request
-        .messages
+        .context
+        .messages()
         .iter()
         .find_map(|message| match message {
             Message::ToolResult(tool_result) => Some(tool_result),

@@ -169,9 +169,11 @@ fn model(id: &str, wire: WireApi) -> ModelInfo {
 fn request(model: &str) -> Request {
     Request {
         model: model.into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

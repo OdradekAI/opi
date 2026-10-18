@@ -261,13 +261,28 @@ impl OpenAiResponsesProvider {
             .map(|(_, id)| id)
             .unwrap_or(&request.model);
         let config = self.resolve_config(model_id);
+        // Canonical transcript consumption (AIR-020); this wire currently
+        // projects by collapse.
+        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
+        let transcript = crate::transcript::resolve_transcript(
+            &request.context,
+            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
+            crate::transcript::TranscriptProjection::NativeOrCollapse,
+        )
+        .expect("native-or-collapse projection never fails");
+        let transcript = transcript.as_ref();
+        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
+        let current_tools = crate::transcript::get_current_tools(transcript.messages());
+
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
-            "input": convert_messages(request),
+            "input": convert_messages(
+                &crate::transcript::without_initial_system_message(transcript.messages()),
+            ),
         });
-        if let Some(system) = &request.system {
-            body["instructions"] = serde_json::Value::String(system.clone());
+        if !system_prompt.is_empty() {
+            body["instructions"] = serde_json::Value::String(system_prompt.clone());
         }
         if let Some(max_tokens) = request.max_tokens {
             body["max_output_tokens"] = serde_json::Value::Number(max_tokens.into());
@@ -277,10 +292,9 @@ impl OpenAiResponsesProvider {
         {
             body["temperature"] = serde_json::Value::Number(number);
         }
-        if !request.tools.is_empty() {
+        if !current_tools.is_empty() {
             body["tools"] = serde_json::Value::Array(
-                request
-                    .tools
+                current_tools
                     .iter()
                     .map(|tool| {
                         let mut value = serde_json::json!({

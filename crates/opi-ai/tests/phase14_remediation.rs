@@ -19,9 +19,11 @@ use tokio_util::sync::CancellationToken;
 fn request(model: &str) -> Request {
     Request {
         model: model.into(),
-        system: None,
-        messages: Vec::new(),
-        tools: Vec::new(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: Vec::new(),
+            tools: Vec::new(),
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),

@@ -28,9 +28,11 @@ use tokio_util::sync::CancellationToken;
 fn minimal_request(model: &str) -> Request {
     Request {
         model: model.into(),
-        system: None,
-        messages: vec![],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -1698,13 +1700,16 @@ mod phase17 {
             .unwrap();
         for explicit in [None, Some(30_000), Some(2_000)] {
             let mut request = minimal_request("budget:wide");
-            request.system = Some("s".repeat(4_000));
-            request.messages = vec![Message::User(UserMessage {
-                content: vec![InputContent::Text {
-                    text: "u".repeat(80_000),
-                }],
-                timestamp_ms: 1,
-            })];
+            request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: Some("s".repeat(4_000)),
+                messages: vec![Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "u".repeat(80_000),
+                    }],
+                    timestamp_ms: 1,
+                })],
+                tools: vec![],
+            });
             request.max_tokens = explicit;
             request.thinking = ThinkingConfig {
                 enabled: true,
@@ -1720,12 +1725,16 @@ mod phase17 {
                 .unwrap();
         }
         let mut exhausted = minimal_request("budget:wide");
-        exhausted.messages = vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "u".repeat(140_000),
-            }],
-            timestamp_ms: 1,
-        })];
+        exhausted.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "u".repeat(140_000),
+                }],
+                timestamp_ms: 1,
+            })],
+            tools: vec![],
+        });
         let prepared = collection
             .prepare_call("budget:wide", exhausted)
             .await
@@ -2625,15 +2634,19 @@ mod phase17 {
     /// A request carrying image content (rejected by text-only models).
     fn image_request(model: &str) -> Request {
         let mut request = minimal_request(model);
-        request.messages = vec![Message::User(UserMessage {
-            content: vec![InputContent::Image {
-                source: ImageSource::Bytes {
-                    data: vec![0x89, 0x50, 0x4E, 0x47],
-                },
-                media_type: MediaType::Png,
-            }],
-            timestamp_ms: 0,
-        })];
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Image {
+                    source: ImageSource::Bytes {
+                        data: vec![0x89, 0x50, 0x4E, 0x47],
+                    },
+                    media_type: MediaType::Png,
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        });
         request
     }
 

@@ -19,25 +19,27 @@ use tokio_util::sync::CancellationToken;
 fn request_with_truncated_tool_result() -> Request {
     Request {
         model: "m".into(),
-        system: None,
-        messages: vec![
-            Message::User(UserMessage {
-                content: vec![InputContent::Text { text: "hi".into() }],
-                timestamp_ms: 0,
-            }),
-            Message::ToolResult(ToolResultMessage {
-                tool_call_id: "tc-1".into(),
-                tool_name: "tool".into(),
-                content: vec![OutputContent::Text {
-                    text: "result".into(),
-                }],
-                details: None,
-                is_error: false,
-                truncated: true,
-                timestamp_ms: 0,
-            }),
-        ],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![
+                Message::User(UserMessage {
+                    content: vec![InputContent::Text { text: "hi".into() }],
+                    timestamp_ms: 0,
+                }),
+                Message::ToolResult(ToolResultMessage {
+                    tool_call_id: "tc-1".into(),
+                    tool_name: "tool".into(),
+                    content: vec![OutputContent::Text {
+                        text: "result".into(),
+                    }],
+                    details: None,
+                    is_error: false,
+                    truncated: true,
+                    timestamp_ms: 0,
+                }),
+            ],
+            tools: vec![],
+        }),
         max_tokens: Some(128),
         temperature: None,
         thinking: ThinkingConfig::default(),

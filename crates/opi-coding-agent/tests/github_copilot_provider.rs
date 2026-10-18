@@ -298,14 +298,16 @@ async fn factory_provider(
 fn request(model: &str) -> Request {
     Request {
         model: format!("github-copilot:{model}"),
-        system: None,
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text {
-                text: "hello".into(),
-            }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        }),
         max_tokens: None,
         temperature: None,
         thinking: ThinkingConfig::default(),
@@ -501,13 +503,17 @@ async fn github_copilot_initiator_tracks_last_user_or_agent_message() {
     let _ = drain(&collection, request("claude-sonnet-4.5")).await;
 
     let mut assistant = request("gpt-4.1");
-    assistant
-        .messages
-        .push(Message::Assistant(opi_ai::test_support::base_assistant()));
+    let mut assistant_messages = assistant.context.into_messages();
+    assistant_messages.push(Message::Assistant(opi_ai::test_support::base_assistant()));
+    assistant.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        messages: assistant_messages,
+        ..Default::default()
+    });
     let _ = drain(&collection, assistant).await;
 
     let mut tool = request("gpt-5.4");
-    tool.messages.push(Message::ToolResult(ToolResultMessage {
+    let mut tool_messages = tool.context.into_messages();
+    tool_messages.push(Message::ToolResult(ToolResultMessage {
         tool_call_id: "call-1".into(),
         tool_name: "read".into(),
         content: vec![OutputContent::Text {
@@ -518,6 +524,10 @@ async fn github_copilot_initiator_tracks_last_user_or_agent_message() {
         truncated: false,
         timestamp_ms: 0,
     }));
+    tool.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        messages: tool_messages,
+        ..Default::default()
+    });
     let _ = drain(&collection, tool).await;
 
     let requests = server.received_requests().await.unwrap();
@@ -552,33 +562,40 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
 
     let _ = drain(&collection, request("claude-sonnet-4.5")).await;
     let mut user_image = request("gpt-4.1");
-    user_image.messages = vec![Message::User(UserMessage {
-        content: vec![InputContent::Image {
-            source: ImageSource::Base64 {
-                data: "AA==".into(),
-            },
-            media_type: MediaType::Png,
-        }],
-        timestamp_ms: 0,
-    })];
-    let _ = drain(&collection, user_image).await;
-    let mut tool_image = request("gpt-5.4");
-    tool_image
-        .messages
-        .push(Message::ToolResult(ToolResultMessage {
-            tool_call_id: "call-image".into(),
-            tool_name: "screenshot".into(),
-            content: vec![OutputContent::Image {
+    user_image.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Image {
                 source: ImageSource::Base64 {
                     data: "AA==".into(),
                 },
                 media_type: MediaType::Png,
             }],
-            details: None,
-            is_error: false,
-            truncated: false,
             timestamp_ms: 0,
-        }));
+        })],
+        tools: vec![],
+    });
+    let _ = drain(&collection, user_image).await;
+    let mut tool_image = request("gpt-5.4");
+    let mut tool_image_messages = tool_image.context.into_messages();
+    tool_image_messages.push(Message::ToolResult(ToolResultMessage {
+        tool_call_id: "call-image".into(),
+        tool_name: "screenshot".into(),
+        content: vec![OutputContent::Image {
+            source: ImageSource::Base64 {
+                data: "AA==".into(),
+            },
+            media_type: MediaType::Png,
+        }],
+        details: None,
+        is_error: false,
+        truncated: false,
+        timestamp_ms: 0,
+    }));
+    tool_image.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        messages: tool_image_messages,
+        ..Default::default()
+    });
     let _ = drain(&collection, tool_image).await;
 
     let requests = server.received_requests().await.unwrap();
@@ -617,15 +634,20 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
     )
     .await;
     let mut anthropic_user_image = request("claude-sonnet-4.5");
-    anthropic_user_image.messages = vec![Message::User(UserMessage {
-        content: vec![InputContent::Image {
-            source: ImageSource::Base64 {
-                data: "AA==".into(),
-            },
-            media_type: MediaType::Png,
-        }],
-        timestamp_ms: 0,
-    })];
+    anthropic_user_image.context =
+        opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Image {
+                    source: ImageSource::Base64 {
+                        data: "AA==".into(),
+                    },
+                    media_type: MediaType::Png,
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        });
     let _ = drain(&anthropic_collection, anthropic_user_image).await;
     let anthropic_requests = anthropic_server.received_requests().await.unwrap();
     assert_eq!(anthropic_requests.len(), 1);

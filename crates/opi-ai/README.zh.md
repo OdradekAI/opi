@@ -295,6 +295,26 @@ ryu-js 1.0.2 得到 `"1e+21"`），最后用原 schema 检查 normalize 后的�
 `Value.Convert` 对纯 JSON 方言 schema 是 no-op（其分发读取非 JSON 的 `~kind`
 标记），JSON schema 中的 `~kind` 标记保持 inert——有记录的方言边界。
 
+## 规范 Context／Transcript 时序
+
+`transcript` 拥有规范的请求时序（AIR-008/011/020）：公共 `Context` 简写
+（`system_prompt`、`messages`、`tools`）经 `transcript::normalize_context`
+恰好一次折叠为首条 `Message::System`，该函数是 `TranscriptContext` 的唯一
+构造器——未归一化的简写无法到达 provider 代码。后续 system 消息修改运行态：
+`content` 追加，具名 `sections` 保序替换（`None` 删除、删除后重加移末尾），
+`tools_added`／`tools_removed` 按值变更工具集（重定义=先删后加；相等状态不
+记录冗余变更）。重放（`get_current_system_message`／`get_current_tools`）
+解析当前 prompt 与工具。投影为 native-or-collapse：接受对话中 system 消息
+的传输保持原位，其余折叠为单个重放头——始终返回新值，绝不改写规范时序。
+显式 `TranscriptProjection::Strict` 在任何请求构造之前拒绝传输无法按时序
+放置的时序保真度。声明安装（`TranscriptContext::append_system_change`）先
+校验名称（非空、批次内唯一）并用私有方言引擎编译 input schema，失败以类型
+化错误在消息进入 transcript 之前发生。`Request` 以
+`context: TranscriptContext` 携带输入，不再有独立的 `system`／`tools` 运行时
+字段；每个 adapter 在构造请求体开头解析 transcript（固定的 TypeScript 参考
+是 `.repo/pi-1.3.0/packages/ai/src/utils/transcript.ts`；上游已废弃的
+`hasToolRedefinitions` 不移植）。
+
 ## 非目标
 
 以下是明确的非目标，不得作为当前核心行为出现：

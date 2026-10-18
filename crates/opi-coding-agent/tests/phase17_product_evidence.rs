@@ -413,7 +413,11 @@ async fn assert_a11_failure_preserves_live_persisted_and_reopened_outcome(
     reloader.prompt(&reopen_prompt).await.unwrap();
     let calls = recovery_calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
-    assert_sentinel_message_order(&calls[0].messages, &tool_sentinel, &assistant_sentinel);
+    assert_sentinel_message_order(
+        calls[0].context.messages(),
+        &tool_sentinel,
+        &assistant_sentinel,
+    );
     assert!(
         std::fs::read(&session_path)
             .unwrap()
@@ -660,8 +664,8 @@ async fn consecutive_product_turns_reproject_the_current_tool_authority() {
     let requests = calls.lock().unwrap();
     assert_eq!(requests.len(), 3);
     for (index, request) in requests.iter().enumerate() {
-        let names = request
-            .tools
+        let current = opi_ai::transcript::get_current_tools(request.context.messages());
+        let names = current
             .iter()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>();
@@ -673,7 +677,8 @@ async fn consecutive_product_turns_reproject_the_current_tool_authority() {
     }
     assert_eq!(
         requests[1]
-            .messages
+            .context
+            .messages()
             .iter()
             .filter(|message| matches!(message, opi_ai::message::Message::ToolResult(_)))
             .count(),
@@ -681,7 +686,8 @@ async fn consecutive_product_turns_reproject_the_current_tool_authority() {
     );
     assert_eq!(
         requests[2]
-            .messages
+            .context
+            .messages()
             .iter()
             .filter(|message| matches!(message, opi_ai::message::Message::ToolResult(_)))
             .count(),
@@ -1851,12 +1857,12 @@ async fn harness_complete_evidence_mapping_denies_unlaunched_tool() {
         "the run consumes both scripted responses (fail-open dispatch, fail-closed launch)"
     );
     for (index, request) in calls.iter().enumerate() {
+        let advertised = opi_ai::transcript::get_current_tools(request.context.messages());
         assert!(
-            request.tools.iter().any(|tool| tool.name == "write"),
+            advertised.iter().any(|tool| tool.name == "write"),
             "provider request {} must still advertise the registered write tool: {:?}",
             index + 1,
-            request
-                .tools
+            advertised
                 .iter()
                 .map(|tool| tool.name.clone())
                 .collect::<Vec<_>>()

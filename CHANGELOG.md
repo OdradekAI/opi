@@ -33,6 +33,40 @@
 
 ### Added
 
+- `opi-ai`: canonical Context/Transcript chronology (DEL-03, task 20.6).
+  New `transcript` module ports the pinned Pi 1.3.0 `transcript.ts`
+  semantics: the public `Context` shorthand folds once into a leading
+  `Message::System` entry via `normalize_context`, the single constructor
+  of `TranscriptContext` (stored transcripts re-enter through the
+  transparent message list; pre-cutover lists parse unchanged); later
+  system messages append `content`, patch ordered named `sections`
+  (replacement keeps position, `None` deletes, delete+readd appends) and
+  change tools by value (`tools_added`/`tools_removed`; a redefinition is
+  removal+addition; equal states add no redundant change). Replay resolves
+  the current prompt/tools; projection is native-or-collapse returning a
+  fresh value (canonical history never rewritten), with explicit
+  `TranscriptProjection::Strict` rejecting unsupported temporal placement
+  before any request is built. Declaration installation validates
+  non-empty unique names and dialect-engine schema compilation before a
+  change enters the transcript (a keyword inert under the structural guard
+  is not an admission error). Documented Rust boundaries: system `content`
+  is a plain string; declaration equality is structural (key-order
+  independent, `1` vs `1.0` distinguishes where JavaScript would not —
+  extra deltas only, never missed ones); upstream-deprecated
+  `hasToolRedefinitions` is not ported.
+- **Breaking (0.x, AIR-020):** `provider::Request` now carries
+  `context: TranscriptContext`; the independent `system` and `tools`
+  runtime fields exit in the same scoped break. All six provider adapters
+  plus api-mapped/Bedrock consume only the normalized transcript via
+  `resolve_transcript` (collapse is the current per-wire capability,
+  expressed as a named per-wire constant for later compat tasks); the
+  agent loop folds its convenience prompt and registry definitions through
+  the seam; `Models::prepare_call` derives budget inputs from the replayed
+  current state; compaction summary requests, harness/RPC gated-provider
+  summary detection, diagnostics/validators, MockProvider recorded reads
+  and the affected tests migrated in the same compiling cutover. Host
+  policy (hooks, authorization, compaction thresholds, session v1
+  readers/v2 writer) is unchanged.
 - `opi-ai`: public tool-argument normalizer/validator seam
   (`schema::validate_tool_arguments`/`validate_tool_call`, DEL-04 task
   20.10). Ports the pinned Pi 1.3.0 `validateToolArguments` pipeline:
