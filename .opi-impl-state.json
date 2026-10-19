@@ -3641,7 +3641,7 @@
       "definition_of_done": "Route Models -> migrated real OpenAI Chat adapter -> HttpClient -> loopback using the20.13 private safe upstream mechanism and an explicitly selected instance AWS-LC provider. Extend the existing public opi_ai::http::HttpClientBuilder with a minimal tls(TlsOptions) entry (planned, not present today): one owned typed value for source-scoped trust mode/root inputs (pinned Node default, extra/explicit roots or explicit host-root mode), optional owned client certificate-chain/key identity and source-qualified H1/H2/ALPN selection. Validate/freeze these instance inputs before I/O with typed redacted build/config failures. Choose the fixed AWS-LC provider and TLS cipher/signature/KX profile internally; expose no backend selector, generic crypto trait, raw verifier/bypass or test-only signing API. The real Chat adapter and workspace-external package consumer must receive this built HttpClient through their actual public client-injection/Models path, not raw reqwest/rustls or an in-process privileged helper. Existing HttpClientBuilder currently has only pool/proxy settings; these TLS configuration inputs are new necessary public surface, not an already-delivered capability. Preserve zero ambient credential/trust/proxy discovery; an explicitly selected host-root mode remains scoped to its authorized source operation. Freeze source TLS versions/ciphers/signature schemes/ALPN and declared KX order X25519MLKEM768,X25519,secp256r1,secp384r1; prove ordinary H2 versus explicit H1, P-521 signing/verification/mTLS and source-required supported RSA keys, while RSA1024/multiprime keys and P-521-only KX fail typed/redacted with no business HTTP or hidden fallback. Preserve WebPKI chain/hostname/time verification, actual packaged pinned Node reference default CA bundle, scoped extra/explicit roots, opt-in host roots and client identity/pool isolation. Exercise real public TLS negatives for roots/host/client key/chain/ALPN, independent alg-only RS256 JWT signature/claims fixtures, host preinstalled-ring versus empty-provider controls and caller feature union without global provider/config mutation. Prove cancellation during handshake/response/accepted partial, owned native-key lifetime until worker join and late-result suppression, correct failure stage/partial/known usage/terminal/permanent EOF, no identity rediscovery/extra sends. Before passing run a real cargo package artifact extracted outside the workspace through ordinary and caller-feature-union public consumers, recording resolved versions/features/registry checksums and actual native build/link provenance under RDF-23; no source-checkout/root patch/library lock/research crate is package proof. Retain generic conformance; no crypto fork/local-FFI namespace obligations or new public crypto framework. The private-signing fixtures do not close real ADC20.21.1, complete DEL-06 at20.34, assembled SDK package20.57, full native/platform20.58 or20.11.",
       "definition_source": "inferred",
       "replaces": "实际 TLS／roots／mTLS／签名与平台边界",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.13"
@@ -3753,9 +3753,9 @@
         "opi_ai private safe upstream key/provider/signing owner consumed by instance rustls mTLS/verification (target; real ADC remains20.21.1)"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "22a9cb8c41de5b5ec4ded1cea995566668beed89",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -3775,10 +3775,78 @@
         "crates/opi-ai/tests/proxy_support.rs",
         "scripts/pi-sdk-conformance/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "0230af3fc341719198624ff417b0d26155ea8784",
+      "evidence": {
+        "Opi-Task": "20.14",
+        "Opi-DoD-SHA256": "68e7c6ec6c2ac84996f379caf37cc75ac07bdf497fcbf7ac717e7c71d5e62dea",
+        "Opi-Verification": "workspace; opi-impl-smoke.ps1 full PASSED on Windows native x86_64-msvc final tree (doc-check, fmt --all, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets 248 suites, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps) with AWS_LC_SYS_USE_SYSTEM=0; tls_contract 21/21 and crypto:: 13/13 inside the gate; WSL x86_64-linux fmt/clippy/doc-check and affected binaries (tls_contract, openai_chat_fixtures, connection_pooling, proxy_support, opi-ai lib, coding-agent lib) also PASSED; scripts/pi-sdk-conformance/package_slice.py --family crypto --offline PASS on Windows native (ordinary + caller-union consumers, 6 checks each, resolved rustls/aws-lc identities with registry lock checksums, CC builder, AWS_LC_SYS_USE_SYSTEM=0 observed false, static archive, no dynamic libcrypto)",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; exec.workflow runtime unavailable (node absent in environment), wf_ref=null",
+        "Opi-Acceptance": "P20-S14 closed at the transport seam this task owns: real Models->migrated OpenAiChatProvider->HttpClient TLS/mTLS/ALPN over loopback plus real extracted-package ordinary/feature-union public consumers. Real ADC wiring 20.21.1, complete DEL-06 20.34, assembled SDK package 20.57, full native/platform 20.58 and 20.11 remain open; positive host-root trust against real host CAs is not claimed (host-store mutation is out of scope; the opt-in path is proven typed-negative against the loopback CA)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-20T03:58:26+08:00",
+          "attempt": 1,
+          "summary": "DEL-06 transport slice delivered in commit 0230af3fc341719198624ff417b0d26155ea8784: public HttpClientBuilder::tls(TlsOptions) accepting source-scoped trust (packaged pinned Node v22.19.0 default CA bundle - 150 certs, bundle sha256 12f4cd646968b72866b445b2850df3ac9e245031d15cdfa76d8ab51bde6f7c24, extracted via committed scripts/extract-node-root-store.py; extra/explicit roots; explicit host-system-root opt-in via new rustls-native-certs 0.8.5 dependency), optional owned mTLS client identity admitted through the 20.13 private crypto owner, and H2-preferred/HTTP1-only ALPN. Inputs validated and frozen at build with typed redacted HttpClientBuildError/TlsConfigError/TlsKeyError (breaking build() signature change, all four callers migrated, CHANGELOG Unreleased entry). Fixed internal profile: explicit instance aws-lc-rs provider, TLS1.3+1.2, provider default cipher/signature suites, declared KX order X25519MLKEM768/X25519/secp256r1/secp384r1, WebPKI chain/host/time always on; no backend selector, generic crypto trait, raw verifier/bypass or test-only signing API; no process-global provider install (fresh-process empty-provider and host-preinstalled-ring controls both green, global provider unchanged asserted). tls_contract.rs (21 tests, embedded synthetic corpus from the sealed research bundle) drives the REAL public path Models::register_route(OpenAiChatProvider::with_client)->prepare_call->start_attempt over loopback rustls servers: H2/H1 x TLS1.3/1.2 negotiation with server-side ALPN/version/fingerprint observation, admitted identity profiles (RSA2048/8192/e3/P521 client, P521 server), identity isolation across connections, negatives with zero business HTTP and single accept (wrong root, wrong hostname, expired server, missing/untrusted/expired/wrong-eku client, ALPN no-overlap, P521-only KX via a test-only SupportedKxGroup implemented over public aws-lc-rs ECDH), typed pre-I/O admission negatives (RSA1024/multiprime/encrypted keys, mismatched chain/key with zero sockets), cancellation during handshake/awaiting-response (drop+abort) and accepted partial body with owned cleanup, no late application bytes, single EOF and no extra sends, and chat-level mid-stream cancellation reaching one terminal. crypto unit tests add alg-only RS256 JWT sign (owned worker) with independent aws-lc-rs verification, verbatim claims round-trip and tamper rejection. Workspace reqwest now enables http2: the shipped client previously reached the H2 pool only through wiremock dev feature unification (hyper-util http2 client path panics otherwise) - the packaged-consumer proof exposed this; production graphs now carry the feature the RDF-22/23 profile requires. Package proof: package_slice.py --family crypto --offline (generic family entry, consumer-crypto template, 10 unittests) packages opi-ai, extracts outside the workspace and runs ordinary + caller-union (ring installed process-globally by the caller) consumers through the public path over loopback TLS; evidence records package sha256, resolved rustls/aws-lc-rs/aws-lc-sys identities with registry lock checksums, CC builder, USE_SYSTEM=0 false, static prefixed archive and no dynamic libcrypto (Windows MSVC; openssl-probe 0.2.1 pre-seeded once into the Windows cargo cache as machine prep - target-gated crates are never compiled by the workspace itself). Untested unions/platforms, positive host-root trust and real host CAs remain OPEN.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.ps1 full on Windows native final tree incl. reqwest http2 change (log C:/Users/Luiz/AppData/Local/Temp/opi-win-full6.log) - 248 test suites, 0 failures, tls_contract 21/21 and crypto:: 13/13 included. WSL x86_64-linux: fmt/clippy -D warnings/doc-check and all affected binaries PASSED (same environment-specific pre-existing exclusions as 20.13: provider_lifecycle drop-release WSL-only failures and opi-eval df PATH gap are outside this task's paths and did not occur in the authoritative gate).",
+            "d0_scenarios": "P20-S14 verification commands executed: cargo test -p opi-ai --test tls_contract (21/21), --test openai_chat_fixtures --test connection_pooling --test proxy_support (all green in gate), python scripts/pi-sdk-conformance/package_slice.py --family crypto --offline (delivered and run: PASS, evidence C:/Users/Luiz/AppData/Local/Temp/opi-crypto-proof-5/evidence.json)",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7) no must-fix: seams/profile/negatives match DoD clause-by-clause; tests observe real negotiated state (ALPN/version/fingerprint/counters), not implementation echoes; production call sites are the registered public paths; evidence footers truthful incl. the http2 feature-gap fix disclosure and host-root positive-trust boundary; no non-goal leak (no ADC wiring, no public crypto API, no fork); workspace deps via root table; test stewardship add/retain recorded below",
+            "d3_gap_checks": "PASS: git diff --check clean; no *.pem/*.key/*.p12 files tracked (synthetic corpus embedded as PEM text inside .rs fixtures with provenance headers); opi-doc-check.py PASS; test_package_proof.py (schema family harness) still OK after harness additions; package proof PASS with lock checksums for rustls/aws-lc-rs/aws-lc-sys and native provenance (CC, USE_SYSTEM=0 false, static archive, no dynamic libcrypto)",
+            "test_disposition": [
+              {
+                "subject": "20.14",
+                "action": "add",
+                "test": "crates/opi-ai/tests/tls_contract.rs (21 tests: chat_tls13_h2_negotiation_with_explicit_roots, chat_tls13_h1_explicit_selection_with_extra_roots, chat_tls12_h2_negotiation, admitted_client_identity_profiles_over_mtls, p521_server_identity_and_client_identity, connection_source_identity_isolation, untrusted_server_root_fails_zero_http, wrong_hostname_and_expired_server_fail_zero_http, host_system_roots_do_not_trust_the_loopback_ca, wrong_client_identities_fail_zero_http, alpn_no_overlap_fails_zero_http, p521_only_key_exchange_fails_zero_http, unsupported_client_keys_fail_typed_at_admission, root_input_negatives_fail_typed, mismatched_identity_fails_before_any_socket, build_error_displays_redacted, cancellation_during_handshake_and_response_releases_transport, accepted_partial_body_cancellation_cleanup, chat_level_cancellation_stops_the_attempt_without_extra_sends, instance_tls_never_installs_a_process_global_provider, host_preinstalled_ring_provider_control)",
+                "interface": "public opi_ai::http HttpClientBuilder::tls(TlsOptions) + Models/OpenAiChatProvider injection path",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.14",
+                "action": "add",
+                "test": "src/crypto mod tests: jwt_rs256_alg_only_header_signs_and_independently_verifies, tampered_and_wrong_alg_jwt_never_verify (worker-signed JWT, independent aws-lc-rs verification, verbatim claims, tamper rejection, offered-scheme gate)",
+                "interface": "private opi_ai::crypto (20.13 owner)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.14",
+                "action": "add",
+                "test": "scripts/pi-sdk-conformance consumer-crypto battery (6 checks x ordinary/caller-union profiles, run by package_slice.py) + test_package_slice.py (10 unittests)",
+                "interface": "scripts/pi-sdk-conformance public package-proof harness",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.14",
+                "action": "retain",
+                "test": "all existing suites incl. openai_chat_fixtures/connection_pooling/proxy_support (unchanged contracts; green in the gate), provider_lifecycle (authoritative host), schema package-proof harness",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.14",
+                "action": "update",
+                "test": "opi-coding-agent build_http_client signature follows the typed HttpClientBuildError (no behavior change); crypto 20.13 test module gains the two JWT cases",
+                "interface": "public build() error type; private crypto tests",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.14",
+                "action": "none",
+                "test": "none deleted",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.15",
@@ -15686,6 +15754,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-20T01:38:16+08:00",
       "task_id": "20.13",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-10-20T03:58:26+08:00",
+      "task_id": "20.14",
       "criterion_id": null
     }
   ]
