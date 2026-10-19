@@ -10,7 +10,7 @@
 | 双语 Phase 来源／责任／完成条件 | [English spec](spec-draft.md)、[中文spec](spec-draft.zh.md)：Phase 20 条款映射、分解、风险／回滚／平台及精确章节采纳；67 AIR身份＝57 active SDK＋9 host-impact＋1 retired；没有实施证明 |
 | 本次逐项升级 | [1.2.0→1.3.0复核](pi-1.3.0-upgrade-review.md)、[固定来源与全路径摘要](pi-1.3.0-source-evidence.json)：AI47与telemetry2变化路径全部处置；本地身份不等于已验证上游tag |
 | 当前全部公开能力 | [Pi1.3.0 SDK合同](pi-1.3.0-sdk-contracts.md)：10 chat、1 image、4 classifier、42 factories、9 OAuth；profile复用wire仍须独立证明 |
-| Rust调用体验与差异 | [RDF-01–21](pi-1.3.0-rust-differences.md)：owned/lazy/Result/knownness/tracing/platform、获批上游 Unicode／IDNA 数据 profile 与真实能力缺口分别说明 |
+| Rust调用体验与差异 | [RDF-01–23](pi-1.3.0-rust-differences.md)：owned/lazy/Result/knownness/tracing/platform、获批上游 Unicode／IDNA 数据 profile 与真实能力缺口分别说明 |
 | 本轮确定后端与维护成本 | [Schema](pi-1.3.0-readiness-schema.md)、[WS](pi-1.3.0-readiness-ws.md)、[HTTP/TLS/auth](pi-1.3.0-readiness-transport-auth.md)、[telemetry/交付输入](pi-1.3.0-readiness-runtime.md)；source/data/namespace/native/unsafe边界明示，不靠consumer rootpatch |
 | Rust机制与OPEN后端缺口 | [后端／五项合同及缺口表](pi-1.3.0-rust-backends.md)、[专项源码核查](pi-1.3.0-backend-gap-audit.md)、[Schema／WS离线实测](pi-1.3.0-schema-ws-offline-validation.md)：实测反例、候选判定与未证项；七组均OPEN |
 | 唯一验收与测试迁移 | [验收矩阵](acceptance-matrix.md)：59 V身份＝54 active SDK＋4 host-impact＋1 retired；Pi174 test files不是执行通过，Rust41 integration＋7 source-test处置保留 |
@@ -40,7 +40,13 @@
 
 ## 当前 HTTP 合同协调
 
-HTTP 已按用户选择修订为普通 crates.io reqwest0.12.28/Hyper1.9.0 的 [RDF-22 接受范围 profile](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile)，不再要求 Hyper 补丁、HTTP namespace 或 third-party/pi-http 必建路径。来源限定 transport/retry、协议／秘密／取消与 partial/usage 义务保留；真实 adapter、普通／feature-union package 与平台验收仍 OPEN。WS 受控 Ratchet 和 crypto 选择不变。下方旧研究窗口、原始 patch 与计数保留历史身份，不能作为新 profile 的执行结果。
+HTTP 已按用户选择修订为普通 crates.io reqwest0.12.28/Hyper1.9.0 的 [RDF-22 接受范围 profile](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile)，不再要求 Hyper 补丁、HTTP namespace 或 third-party/pi-http 必建路径。来源限定 transport/retry、协议／秘密／取消与 partial/usage 义务保留；真实 adapter、普通／feature-union package 与平台验收仍 OPEN。该 HTTP 修订不改变 WS；crypto 后由 RDF-23 单独修订。下方旧研究窗口、原始 patch 与计数保留历史身份，不能作为新 profile 的执行结果。
+
+## Crypto 上游 profile 跟进边界
+
+用户选择按 [RDF-23](pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile) 采用 crates.io 原版 rustls0.23.40 + aws-lc-rs1.18.2/aws-lc-sys0.46.0，经私有 safe Rust owner 使用公开 provider/key/signing seam；取消本地 LibCtx/EVP FFI 与 third-party/pi-crypto 必建义务。允许命名的 RSA1024/多素数拒绝、无 P-521 KX 和上游集合/顺序差异，保留默认 Node roots/WebPKI、JWT alg/claims、mTLS/ALPN、显式 provider 宿主隔离和取消所有权。无本地 FFI 仍有 native C/assembly/build 准入：记录实际源码、system 替换入口、工具链与包消费者 provenance，不用 library lock 声称固定所有调用者。
+
+[后续隔离研究摘要](offline-probes/upstream-crypto/summary.json)保留最终实际计数与局限；它不是产品代码或本次 plan 的执行。真实普通/feature-union cargo package 消费者、ADC、完整 DEL-06、平台/最终包仍由既有任务验收，不提前完成20.11/34/57。通用 conformance 保留；WS Upgrade/PMD/受控 Ratchet 完全不变。下列旧窗口的 Unicode16、HTTP patch 与 private EVP 均保留历史事实，当前选择分别由 RDF-21/22/23 取代。
 
 ## 设计收敛研究窗口（注册前）
 

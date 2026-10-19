@@ -45,13 +45,15 @@ telemetry 包未声明依赖。`openai@7.19.0` 已逐包验证 SHA-512 integrity
 | 组 | 选定身份 |
 |---|---|
 | HTTP | crates.io 原版 `reqwest` 0.12.28 + `Hyper` 1.9.0，明确声明 RDF-22 HTTP parser/storage 接受范围；唯一显式 transport/retry owner；无 HTTP fork/namespace 义务 |
-| TLS / ADC 签名 | `rustls` 0.23.40 / `ring` 0.17.14，实例 trust/mTLS 与显式 ALPN；原生默认为固定 Node 参考 CA bundle；ADC RS256 与来源要求的签名/验证/KX 使用私有 OpenSSL 3 `LibCtx`（内置默认 provider、仅内存 EVP C API），经由窄安全 Rust owner 走 rustls 公开 seam |
+| TLS / ADC 签名 | 原版 `rustls` 0.23.40 + `aws-lc-rs` 1.18.2 / `aws-lc-sys` 0.46.0；公开 safe key/provider/signing seam 上的私有 owner，显式实例 provider/trust/mTLS/ALPN；固定 Node 默认 CA。RDF-23 明示 key/算法/native 边界，无本地 FFI 或 crypto fork/namespace 必建义务 |
 | WS | 自有严格 Upgrade（动态 headers/tail）+ 受控/打补丁的 Ratchet `ratchet_core`/`ratchet_ext`/deflate 1.2.1，含公开 PMD message-state 适配器与固定有限帧 RSV/length/checked-storage 修正；TW/TTW 0.28.0 退出完整目标 |
 | AWS / ADC 来源协议 | Smithy Query/XML 0.62.1、`xmlparser` 0.13.5、`p256` 0.13.2、`sha1` 0.10.6、既有 `hmac`/`sha2` |
-| Schema | 私有 TypeBox JSON 方言 IR/evaluator + `regress` 0.12.0 算法与可复现 Unicode16 数据、`serde_json` preserve_order、显式 JS 键枚举、`ryu-js` 1.0.2 |
+| Schema | 私有 TypeBox JSON 方言 IR/evaluator + crates.io `regress` 0.12.0（`std,utf16,prohibit-unsafe`，关闭 defaults）与 `url` 2.5.8 的受支持上游 Unicode/IDNA 数据 profile（RDF-21）、`serde_json` preserve_order、显式 JS 键枚举、`ryu-js` 1.0.2 |
 | Telemetry | `tracing` 0.1.44 / `tracing-core` 0.1.36 |
 
 这些是经 Phase 交付合同采纳、带有明确补丁/来源/数据出处的**选定设计身份**。HTTP 修订（2026-10-19）：HTTP 行采用 RDF-22；普通 reqwest/Hyper 已在产品 Cargo 图中，但完整新 profile、source-owner 组装与包消费者行为仍须实施验收。本次选型不新增编译通过声明。其他固定输入身份与历史计数保留原证据窗口；正式准入仍是独立门槛（[spec-draft.zh.md](spec-draft.zh.md) 后端附件；[pi-1.3.0-design-readiness.md](pi-1.3.0-design-readiness.md)）。
+
+Crypto 修订（2026-10-19）：RDF-23 取代私有 OpenSSL/EVP 方案，允许命名的 key/算法差异并保留 native 来源、取消所有权、普通/feature-union 包消费者门禁；WS 不变。下表旧 crypto 15观察保留历史，后续上游研究另见[封存摘要](offline-probes/upstream-crypto/summary.json)，不是本次 plan 运行或产品验收。Schema 行仅纠正为已批准的 RDF-21，不新增选择。
 
 ## 4. 数据身份
 

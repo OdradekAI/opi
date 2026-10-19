@@ -85,7 +85,13 @@ Responses effort markers、final arguments_error、thinking-off与投影修复�
 
 ## HTTP 上游 profile 跟进边界
 
-当前 HTTP 合同独立采用 [RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile)：跟进普通 crates.io reqwest/Hyper 的实际 graph、feature union、registry checksum、head/buffer/trailer/chunk-extension边界与 typed 失败／partial/usage／取消。退役 HTTP patch-apply／namespace 专属活动义务，保留旧修正证据和通用 conformance／真实包消费者；不得因上游版本升高继承通过或重新引入隐藏 retry/身份旁路。WS/crypto 受控设计不变，下列同版旧窗口不改写。完整实施与平台仍由既有任务验收。
+当前 HTTP 合同独立采用 [RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile)：跟进普通 crates.io reqwest/Hyper 的实际 graph、feature union、registry checksum、head/buffer/trailer/chunk-extension边界与 typed 失败／partial/usage／取消。退役 HTTP patch-apply／namespace 专属活动义务，保留旧修正证据和通用 conformance／真实包消费者；不得因上游版本升高继承通过或重新引入隐藏 retry/身份旁路。该 HTTP 修订不改 WS；crypto 后由 RDF-23 单独修订，下列同版旧窗口不改写。完整实施与平台仍由既有任务验收。
+
+## Crypto 上游 profile 跟进边界
+
+用户选择按 [RDF-23](pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile) 采用 crates.io 原版 rustls0.23.40 + aws-lc-rs1.18.2/aws-lc-sys0.46.0，经私有 safe Rust owner 使用公开 provider/key/signing seam；取消本地 LibCtx/EVP FFI 与 third-party/pi-crypto 必建义务。允许命名的 RSA1024/多素数拒绝、无 P-521 KX 和上游集合/顺序差异，保留默认 Node roots/WebPKI、JWT alg/claims、mTLS/ALPN、显式 provider 宿主隔离和取消所有权。无本地 FFI 仍有 native C/assembly/build 准入：记录实际源码、system 替换入口、工具链与包消费者 provenance，不用 library lock 声称固定所有调用者。
+
+[后续隔离研究摘要](offline-probes/upstream-crypto/summary.json)保留最终实际计数与局限；它不是产品代码或本次 plan 的执行。真实普通/feature-union cargo package 消费者、ADC、完整 DEL-06、平台/最终包仍由既有任务验收，不提前完成20.11/34/57。通用 conformance 保留；WS Upgrade/PMD/受控 Ratchet 完全不变。下列旧窗口的 Unicode16、HTTP patch 与 private EVP 均保留历史事实，当前选择分别由 RDF-21/22/23 取代。
 
 ## 同版设计就绪收敛窗口
 

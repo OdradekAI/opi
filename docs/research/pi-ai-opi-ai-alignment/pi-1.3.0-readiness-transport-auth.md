@@ -2,12 +2,14 @@
 
 > 2026-10-16，非规范性研究。本文确定三个组的后端／owner／运行合同，供双语 candidate 采用；**设计决定已收敛，产品实现与验收继续 OPEN**。没有改产品代码、根 Cargo、产品测试、CI 或实施 ledger。本文不是完整 Pi adapter、跨平台交付、真实身份／供应商接受性证明。原始结果、pins 与可重放脚本在 [readiness-transport-auth](offline-probes/readiness-transport-auth/README.md)。旧[源码专项](pi-1.3.0-backend-gap-audit.md#4-httpproxyh2redirect按实际消费路径)仍是历史依据，新实际结果优先。
 
+> 现行 crypto 选择按 [RDF-23](pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile) 改为普通 crates.io rustls＋AWS-LC 的明示接受范围；§4.2 的 OpenSSL 私有 libctx 选择及其原始结果保留历史身份，由 §4.3 取代。此协调不改变 WS codec／受控修正，也不改变 RDF-18 的 trust source／reference bundle。新增 [上游 crypto 证据摘要](offline-probes/upstream-crypto/summary.json)只记录历史 Windows 研究，不能关闭产品、外部包或平台验收。
+
 ## 1. 三项确定决定
 
 | 组 | 选定方案 | 被排除的捷径 | 后续产品状态 |
 |---|---|---|---|
 | HTTP／proxy／H2／redirect | crates.io 原版 reqwest 0.12.28／Hyper 1.9.0，采用 RDF-22 明示 parser/storage 接受范围；保留 source-owned route／redirect／retry 与实例 TLS 显式 ALPN。普通 Bedrock 保留 H2，明确 proxy／placeholder／WS classic 路径用 H1；不维护 HTTP fork/namespace | 把 reqwest 默认 redirect10 当来源规则；隐藏后端边界或伪称无限接受；“启 http2 feature 就得到 preconfigured TLS 的 H2”；由 SDK 二次发现 ambient proxy | V-01/05/09/29/30/51/55/58 OPEN；旧对照只证明其原 patch，当前 profile／产品组装须独立验证 |
-| TLS／trust／crypto | TLS 保留实例 rustls 0.23.40＋ring 0.17.14 作为 common crypto，并以 **OpenSSL3私有libctx成熟EVP** 补足已选源的key/signature/verification/KX机制；RS256也用该私有context。raw ABI 的最窄 unsafe 模块外提供 safe Rust 外观，不使用默认 context／全局禁 config／自研密码学。按源冻结根证书、proxy 与 target identity | ring-only TLS/RSA 完整覆盖；简单换 aws-lc 或 BoringSSL 就声称支持全部 Node 输入；默认 openssl PKey／Signer 方便函数等于私有 context | V-09/49/55/58、RDF-18 OPEN。RSA C API 机制已测，TLS扩展／Rust wrapper 安全审查／正式锁图／native 构建和平台行为未完成 |
+| TLS／trust／crypto | 原版 crates.io rustls0.23.40＋aws-lc-rs1.18.2／aws-lc-sys0.46.0；SDK 私有 safe Rust 模块使用公开 KeyProvider／SigningKey／Signer，RS256 与 TLS 明确选择 AWS-LC 实例 provider。按 RDF-23 声明 RSA／P-521／KX 接受范围，不补本地 FFI、fork 或 crypto namespace；按源冻结 roots／proxy／identity | ring-only 或 AWS-LC 等于完整 Node/OpenSSL；隐式 builder／global provider install；将没有本地 FFI 说成没有上游 C／FFI／初始化；以替换 crypto 改 trust | V-09/49/55/58、RDF-18/23 OPEN。所测 safe 机制有证据；产品接线、普通／union 包消费者、MSRV／三平台／native 来源仍未验收 |
 | Auth／ADC／AWS | 保留私有 full-source coordinator＋固定协议 adapter，统一受控 transport、已有 SigV4／成熟 HMAC/SHA、Query/XML codecs、p256 DPoP；**同时实现 standard、adaptive 与固定 Smithy 2026 分支**，不删 source／MFA／SSO／login／executable | vendor 默认 Client/Config 的 eager resolver、隐式 fs/env／trace；standard-only；选中 source 的服务失败后改选另一账户；metadata1s猜值 | V-05/09/12/43/55/58 OPEN。来源与模式是必须实施的合同，未把几个实测点提升为 full chain 通过 |
 
 这些是实际技术选择，不再留“未来选择另一引擎／补 Unsupported”作为设计完成条件。source-scoped secrets、操作模式、取消／mutation owner 均是 SDK 私有机制；没有新增 public crypto／transport／retry 框架、scope 或默认预算。正式准入仍由 `opi-spec` 与既有工作流决定。
@@ -42,7 +44,7 @@ Pi proxy helper 的 **16 次真实源码调用**覆盖 scoped lower/upper、empt
 
 普通合法200响应含99/100/101/125/200 headers：固定 Node/Bun 都通过；原 reqwest/Hyper 对101/125/200拒绝。TEMP prototype **只改变 Client response parser 的两个 storage arrays**：None 时依已缓冲 head 的实际行数取必要槽数，在第一空行停止，coalesced body 不增加槽数；Some 显式policy保留。原 httparse、status、framing、body decoding 完全保留。该原始 patch 已 `cargo build --locked --offline`，同20条 paired records 的 patched native 全部通过。
 
-**现行生产实现合同（RDF-22）：** 上述 dynamic-head/trailer/buffer patch 选择由用户明确修订为普通 crates.io 上游 profile；历史 patch 与 paired records 保持原样。允许已声明的 response-head/read-buffer、trailer count/bytes 和累计 chunk-extension 边界拒绝其他方面合法的 Pi 输入，不再要求 HTTP fork、namespace 或 `third-party/pi-http` 必建目录。不承诺后端全部内部 allocation 可恢复，也不放大为 SDK body/SSE/WS cap 或任意资源保证豁免。固定版本、实际 graph/features/checksum 和边界须由真实公共 adapter、普通／feature-union 包消费者验证；B−1/B/B+ 与逐字节／合并输入不能只测 is_err。失败保留 typed 脱敏 cause／阶段、完整 partial/usage、终态及重试封口。完整 framing／conflicting CL-TE／obs-fold／interim responses／trailers／callbacks／EOF／cancel／pool 生命周期继续是正确性验收，不因 profile 差异放宽。TLS/crypto 与 WS 受控方案不变，完整验收 OPEN，详见 [RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile)。
+**现行生产实现合同（RDF-22）：** 上述 dynamic-head/trailer/buffer patch 选择由用户明确修订为普通 crates.io 上游 profile；历史 patch 与 paired records 保持原样。允许已声明的 response-head/read-buffer、trailer count/bytes 和累计 chunk-extension 边界拒绝其他方面合法的 Pi 输入，不再要求 HTTP fork、namespace 或 `third-party/pi-http` 必建目录。不承诺后端全部内部 allocation 可恢复，也不放大为 SDK body/SSE/WS cap 或任意资源保证豁免。固定版本、实际 graph/features/checksum 和边界须由真实公共 adapter、普通／feature-union 包消费者验证；B−1/B/B+ 与逐字节／合并输入不能只测 is_err。失败保留 typed 脱敏 cause／阶段、完整 partial/usage、终态及重试封口。完整 framing／conflicting CL-TE／obs-fold／interim responses／trailers／callbacks／EOF／cancel／pool 生命周期继续是正确性验收，不因 profile 差异放宽。TLS/crypto 按独立 RDF-23 修订，WS 受控方案不变，完整验收 OPEN，详见 [RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile)。
 
 ### 3.3 H2 与 TLS 的实际组装
 
@@ -56,13 +58,15 @@ Pi proxy helper 的 **16 次真实源码调用**覆盖 scoped lower/upper、empt
 
 独立复审指出 ring 默认key范围不是Node完整范围后，追加同一TLS1.3/H2 wire的三个实际case：**P521和2048/e3客户端身份均被Node服务端授权，ring默认key loader拒绝；1024/e65537则Node自身先以ee key too small拒绝**，不当作有效mTLS差分。研究Rust helper在key-loader Err处unwrap而exit101，记录为显式的研究错误路径，不是产品panic合同。ADC的RSA签名1024正例不能推广为Node mTLS也接受1024。
 
-**选定补救机制：** `rustls0.23.40 crypto/signer.rs:15–89,139–183`公开 `SigningKey::choose_scheme`／`Signer::sign`、`CertifiedKey::new`和`SingleCertAndKey`／`ResolvesClientCert`，允许用同一私有OpenSSL EVP提供key-specific signer；无须从默认ring的`with_client_auth_cert`重新加载。`webpki/verify.rs:60–83`的`WebPkiSupportedAlgorithms.all/mapping`和`rustls-pki-types1.14.1 SignatureVerificationAlgorithm`允许补充certificate/TLS signature算法，已有P521/SHA512公开AlgorithmIdentifier；**继续由WebPKI验证chain、hostname、time和trust，不改成dangerous verifier绕过**。这些公开seam是选定的实现路径，不是待挑选的backend。
+**当前公开接入机制（RDF-23）：** rustls0.23.40 的 `CryptoProvider.key_provider`／`KeyProvider::load_private_key`、`SigningKey::choose_scheme`／`Signer::sign`、`CertifiedKey`／client certificate resolver 为 safe 私有 glue 提供接入点；AWS-LC 上游实现承担密钥解码、RSA／P-521 签名和相应验证。**继续由 WebPKI 验证 chain、hostname、time 和 trust，不改成 dangerous verifier 绕过**。不再补 OpenSSL EVP signer／verification／KX；旧公开 seam 可表达性并不要求本地维护另一套算法实现。
 
-TLS source owner同时冻结实际参考source的TLS1.2/1.3、cipher/group/signature scheme及优先级，ring列表不能默认为Pi列表。`crypto/mod.rs:184–210,367–433`公开实例`CryptoProvider`、`SupportedKxGroup`／`ActiveKeyExchange`，可由同一私有OpenSSL EVP keygen/derive/encapsulation机制补入源支持而ring缺少的组（包括其适用协议/peer校验/共享秘密编码），不自写曲线／大数／KEM原语；hybrid组须按固定成熟协议实作与共同向量验证。没有把“有一个RSA签名probe”当作这些TLS机制已运行。完整源算法清单、优先级／协商／仅补充组的服务器、证书与TLS签名负例、safe FFI及平台均属明确的实施V，不能以typedUnsupported永久收面。补充机制扩大了私有crypto适配维护成本，不能继续称ring-only方案或只增加一个RS256调用。
+TLS source owner 冻结选定 RDF-23 profile 的 TLS1.2/1.3、cipher／signature scheme／group 集与优先级、ALPN，不能把依赖默认列表冒充 Pi 列表，也不能因 feature union 改变冻结配置。候选 KX 次序明确为 `[X25519MLKEM768, X25519, secp256r1, secp384r1]`；P-521 签名／验证／mTLS 支持不等于 P-521 KX 支持。仅提供 P-521 KX 的 peer 必须 typed TLS 失败、零业务 HTTP，不以静默换源或另造 KX 实现掩盖。完整 Node cipher／scheme／group／指纹等价义务由 RDF-23 明示上游接受范围取代；正常协商、证书／签名错误、协议／ALPN、host provider 不变与平台仍是实施验收。
 
 **选定 trust 合同：** root source 与 source owner／revision 绑定，获取时冻结并按有效 trust/proxy/client identity 隔离 pool。固定 Node 的 bundled/default CA fingerprints 可以作为参考来源 fixture；本次干净启动实际都为146条。webpki 与任意 OS roots 都不自动等于该集合。native默认选择这一固定Node reference bundle；按source消费scoped extra/explicit roots，host-root source由caller显式选择。不把此Rust native默认冒充所有Bun／OS默认；scope 内的文件由 owned source 读取。不得让无 scoped-env 注入的后端任意读取真实 `SSL_CERT_FILE/DIR`、home、OpenSSL config 或把 subject token trust_chain 加入 server trust。默认集合及平台差异在 RDF-18 清楚记录；参考 bundle／host source 的正式打包和各平台验证保持 OPEN，不能写“默认系统根已完全等价”。
 
-### 4.2 ring-only 已被实际排除，选择私有 libctx
+### 4.2 历史：ring-only 的排除与原私有 libctx 选择
+
+本节保留 2026-10-16 的比较、机制选择、计数与原生责任，记录当时完整源接受域要求下为何选择私有 EVP。以下“选择／计划／必须”属于该历史方案；当前 RDF-23 已取代私有 libctx／本地 FFI 实施义务，不继承本节证据作为上游 AWS-LC 的运行结果。
 
 固定实际 `google-auth-library/build/src/gtoken/jwsSign.js`→jws4.0.1→jwa2.0.1，用 synthetic key 生成精确 `alg=RS256` 的 header.payload。Node 对 PKCS#1/PKCS#8 的1024/e65537、2048/e65537、2048/e3、4096/e65537、8192/e65537全部签名且验签成功；ring 只接受2048/4096、e65537的四项，对其余六项在 key 阶段拒绝。不能用 signing4096/verification8192 混淆范围，也不能把弱 key 的拒绝称作 Pi 本有预算。
 
@@ -77,6 +81,20 @@ TLS source owner同时冻结实际参考source的TLS1.2/1.3、cipher/group/signa
 Rust safe外观必须隔离不可避免unsafe：非空句柄、完整 return检查、输入/输出长度与 checked转换、不可越界 callback、显式所有权、每次digest独立；先释放digest/decoder/key，再provider，再libctx；没有证明前不为裸指针宣称 Send/Sync。保持 host error queue／thread policy不被随意清空，外部 typed error 不调用会输出 key/body 的 Debug／日志。同步 native签名不能被async timeout硬杀；caller离开不提前释放仍被使用的key/context。实现时的 FFI 安全审查和平台构建仍是门禁。
 
 该选择增加native C、build script及平台工具链／供应链成本；已解释并限制在私有EVP签名／verification／KX适配，不引另一套TLS协议栈／默认provider／auth resolver。aws-lc-rs1.18.1仍2048..8192，boring5.2.0只two-prime，均不能作为完整上述输入面的一键替代；RustCrypto rsa 的 [RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071.html) 在本次核验的2026-09修订仍无修复，因此未选用它来规避native成本。不自写密码学原语。
+
+### 4.3 现行：原版 rustls＋AWS-LC 接受范围与原生边界
+
+采用普通 crates.io **rustls0.23.40＋aws-lc-rs1.18.2／aws-lc-sys0.46.0**，SDK 以公开 safe `KeyProvider`／`SigningKey`／`Signer` 使用上游密码学；不维护源码 patch、独立 namespace、`third-party/pi-crypto` 必建目录或本地 `extern`／unsafe FFI。ring 可以因宿主或传递 feature union 共存，但实际 SDK 路径明确选择 AWS-LC 实例 provider；不得调用 `install_default` 或依赖隐式 provider 推断。现有 HMAC／SHA、SigV4、DPoP 和 source coordinator 合同不因换后端改动。
+
+接受范围按 RDF-23 记录：正常 two-prime RSA2048/3072/4096/8192、2048/e3、PKCS#1／PKCS#8 与 P-521 签名／验证／mTLS 须保留；RSA1024、多素数 RSA 允许 typed 拒绝，不能称 Pi 原本不接受。所测 P-521 PKCS#8／SEC1 与 PEM／DER、RSA 编码一致性只证明对应语料，不泛称全部密钥／证书编码。错误算法、无密码 encrypted key、public-only、损坏／截断密钥和坏签名继续失败；不允许 algorithm confusion、passphrase UI、secret Debug 或新增任意 payload cap。ADC JWT 保留仅 `alg=RS256` 的 header、来源限定 iss／scope／aud／iat／exp 与原 retry／endpoint；真实 service-account token→Bearer wire 机制不能关闭完整 ADC 工厂。
+
+标准分发基线为**非 FIPS、上游源码构建**；上游仍含 C／FFI／平台汇编、build scripts、CPU 一次初始化、`OPENSSL_ia32cap` 能力输入及 OS entropy。“无本地 FFI”不表示纯 Rust、零原生初始化或零环境读取。允许这些已声明的后端机制，不允许读取 ambient 身份／roots／proxy／passphrase，或更改全局 rustls provider／OpenSSL config／provider。模型构造和静态查阅仍零身份发现／网络；crypto CPU 初始化不能被用作 source I/O 例外。
+
+标准分发和实际普通／feature-union 包消费者须控制并记录 native 来源、工具链、实际 build flags／output 和静态链接身份；本轮研究明确 `AWS_LC_SYS_USE_SYSTEM=0`、毒化 `OPENSSL_DIR` 后通过真实 CC 源码构建。不能仅凭 registry checksum 或 opi lock 固定所有消费者的 native 输入；system directory／system bindings／skip-version-check／target-specific overrides 等未审替换必须在该分发／consumer 门禁中拒绝，不能静默继承源码构建证据。上游 C／FFI／license／安全更新、MSRV1.97、Windows／Linux／macOS 的构建与运行继续审查。native-tls／default-tls／native-roots 附加组合及 FIPS 未执行，不声明任意 feature union 皆通过。
+
+取消边界保留 owned 生命周期：同步 `Signer::sign` 不可硬杀，worker 持有真实上游 key，caller drop／abort 后抑制 late publish，工作完成 join 后才释放；握手／等待响应／已读 partial 的异步取消须终止 owner 并观察连接清理，不把 Future drop 当全部清理完成。研究 partial-body 证据不代替产品 CallFailure／完整 partial／usage、终态／永久 EOF、无 handoff 后 retry 的验收。
+
+[固定研究摘要](offline-probes/upstream-crypto/summary.json)区分实际计数：共9次 Rust 测试函数执行；RSA／P-521 为每 profile 43项，独立验签48个签名／96个篡改反例；45个 TLS／ADC／取消场景在五条件共225次观察，另10份 JWT、8个受限 KX 对照。宿主预装 ring 与毒化环境均验证显式实例选择，源码身份审查是7个 registry crate／2403文件。以上为 Windows rustc1.99.1 的历史 scratch 研究，不是本轮重跑，更不关闭真实 Models→ADC、完整 HTTP／WS adapter、普通／union opi 包消费者、三平台、MSRV，或20.11／20.34／20.57。
 
 ## 5. Auth 全来源、attempt 和副作用 owner
 
@@ -109,6 +127,6 @@ Rust metadata owner冻结所选residency来源：明确值或**仅当metadata路
 
 ## 6. 后续验收与交接
 
-`选定机制 → verify: 本文pins、真实差分、公开C API／parser接入与局部补救` 已有实际证据。`产品接线／完整语料 → verify: 既有V与Rust外部consumer` 全部仍OPEN。尤其没有执行 full AWS chain／adaptive实现、OAuth真实服务、complete ADC工厂、代理TLS双隧道、全redirect与跨origin权限策略、上游HTTP profile完整公共边界验证、三平台、Rust FFIsafety审查或外部package smoke。不得用本文状态覆盖这些OPEN。
+`选定机制 → verify: 本文pins、历史C API对照、现行safe上游crypto profile与parser接入证据` 已有局部实际依据；历史 probe 的执行窗口与计数分开保留。`产品接线／完整语料 → verify: 既有V与Rust外部consumer` 全部仍OPEN。尤其没有执行 full AWS chain／adaptive实现、OAuth真实服务、complete ADC工厂、代理TLS双隧道、全redirect与跨origin权限策略、上游HTTP／crypto profile完整公共边界验证、三平台、MSRV、完整native来源／供应链审查或真实opi外部package smoke。本地Rust FFI已退出计划，不能继续将其安全审查列为必建实现；上游原生边界审查保留。不得用本文状态覆盖这些OPEN。
 
 测试影响：研究 **add**（脚本／isolated crate／source pins／raw结果）；产品 **none**（add/update/delete均0，现有产品测试retain）。没有paid provider、真实credential、非loopback metadata网络或用户目录发现；准备网络与crypto CLI都已显式分开记录。没有 commit/push。本页技术附件没有既有英文counterpart；双语spec须同步采纳选择与差异。

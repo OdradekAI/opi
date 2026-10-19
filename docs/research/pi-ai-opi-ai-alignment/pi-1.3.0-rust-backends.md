@@ -10,11 +10,13 @@
 
 > 2026-10-19：用户批准的 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile) 仅取代本页 Schema 的固定 Unicode16／vendor 数据选择；其他受控后端与供应链门禁不变，旧源码／研究运行结果保留原窗口。完整 task 20.11、20.34、20.57 仍 OPEN。
 
+> 后续独立修订：[RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile) 采用原版 HTTP 上游接受范围；[RDF-23](pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile) 采用原版 rustls＋AWS-LC profile，移除私有 OpenSSL EVP／本地 FFI／crypto namespace 必建义务。WS 受控 Ratchet 方案、RDF-18 trust source 和所有产品／平台门禁保留；[crypto 摘要](offline-probes/upstream-crypto/summary.json)是历史研究证据，不是新产品运行证明。
+
 ## 1. 选择原则与适用层
 
 保留一个 Models、一个 frozen call、一个 acquisition owner、一个最终 collector。所选后端负责明确的协议机制；来源优先级、取消、预算、cache publication 和资源所有权仍在 opi-ai。不能因为引入成熟库，就委托它自行发现另一身份、重试、代理、重定向、启动进程或换一个全局 runtime。
 
-本页中的类型／签名是待实施的 interface 合同，不是可复制即编译的示例。保持 67 AIR／59 V 追踪身份（AIR-060／V-52 退役）；RDF-01–21 只登记差异，不建立第二矩阵或实施账本。正式 opi-spec §8.1、PRIN-002、GATE-002 保留；本页不准入新能力、不豁免单 image adapter 的 placement 证据。
+本页中的类型／签名是待实施的 interface 合同，不是可复制即编译的示例。保持 67 AIR／59 V 追踪身份（AIR-060／V-52 退役）；RDF-01–23 只登记差异，不建立第二矩阵或实施账本。正式 opi-spec §8.1、PRIN-002、GATE-002 保留；本页不准入新能力、不豁免单 image adapter 的 placement 证据。
 
 ## 2. 五项工程合同：来源先于默认值
 
@@ -77,11 +79,11 @@ call创建时冻结完整record/adapter/options；后来替换/删除不改旧ca
 
 ### 3.1 HTTP、TLS、proxy
 
-保留reqwest0.12.28、Hyper1.9.0、现Tokio1.52.3/futures0.3.32及实例rustls0.23.40/tokio-rustls0.26.4。HTTP采用RDF-22普通crates.io上游parser/storage接受范围，不再维护Hyper窄patch或HTTP namespace；ring0.17.14仅common crypto，来源需要的signer/verification/KX由私有OpenSSL3 EVP补充，保持WebPKI chain/host/time检查。本轮不改产品Cargo/features。后续root workspace声明、完整锁图/feature/native/MSRV/平台审查仍必需。原仅H1与webpki-only配置不能被称为完成Pi默认对齐。
+保留reqwest0.12.28、Hyper1.9.0、现Tokio1.52.3/futures0.3.32及实例rustls0.23.40/tokio-rustls0.26.4。HTTP采用RDF-22普通crates.io上游parser/storage接受范围，不再维护Hyper窄patch或HTTP namespace；crypto按RDF-23选原版aws-lc-rs1.18.2／aws-lc-sys0.46.0，由公开safe KeyProvider／SigningKey／Signer接入，不补私有OpenSSL EVP、本地FFI或crypto namespace。ring可因宿主／传递union共存，SDK明确使用AWS-LC实例provider，不隐式推断或全局安装。WebPKI chain/host/time/root检查保持；不承诺完整Node算法/指纹，RSA1024／multiprime与P-521-only KX按RDF-23 typed拒绝，正常RSA2048..8192／e3与P-521签名／验证／mTLS仍须验证。source冻结TLS/cipher/scheme/group及ALPN，候选KX顺序[X25519MLKEM768,X25519,secp256r1,secp384r1]不得被union改变。本轮不改产品Cargo/features；root workspace、实际锁图/feature/native/MSRV/平台审查仍必需。
 
 WS classic Upgrade及明确ProxyPlaceholderSigning需要H1；Pi普通Bedrock默认H2，proxy/FORCE_HTTP1才改H1，须保留该能力或公开未关闭差异，不能因当前features不启H2就默认剥夺。TLS1.2/1.3、SNI/hostname/server验证、禁止bypass及实例显式crypto provider保留；不安装global provider。默认选固定Node参考bundle，scoped extra/explicit roots按source消费，host roots显式选择。webpki与任意OS roots不冒称Node/Bun同默认；参考bundle打包及企业CA/系统trust各平台覆盖仍需验收，不自动读取越权ambient目录。
 
-构造/静态读取保持零source I/O，首次需要时冻结route/TLS并按有效配置共享pool。scoped>ambient/lowercase>uppercase/protocol>ALL_PROXY、NO_PROXY host/domain/port/IPv6按Pi纯函数语料，空值沿非空fallback；Direct显式表达。Pi helper确实只HTTP(S)proxy，SOCKS/PAC拒绝有来源。custom transport不重复包。proxy/root/identity/cache不会随每次credential无界新建；由配置/owner释放而不是虚构cache容量拒绝请求。
+构造/静态读取保持零source I/O，首次需要时冻结route/TLS并按有效配置共享pool；RDF-23明示允许的上游native CPU初始化／能力输入／OS entropy不授权ambient身份、roots、proxy或OpenSSL配置读取。scoped>ambient/lowercase>uppercase/protocol>ALL_PROXY、NO_PROXY host/domain/port/IPv6按Pi纯函数语料，空值沿非空fallback；Direct显式表达。Pi helper确实只HTTP(S)proxy，SOCKS/PAC拒绝有来源。custom transport不重复包。proxy/root/identity/cache不会随每次credential无界新建；由配置/owner释放而不是虚构cache容量拒绝请求。
 
 ### 3.2 Codex WS
 
@@ -145,11 +147,11 @@ V-05/09/20/39/49/51/55/58涵盖所有来源、MFA/SSO/login/DPoP/cache、多key 
 
 ### 3.4 Vertex ADC：owned有界协议adapter＋成熟签名
 
-选opi-ai私有ADC adapter，复用受控reqwest0.12.28/rustls0.23.40和现有serde_json/base64/time。ring-only RS256被真实key语料排除；签名选OpenSSL3私有libctx＋内建default provider＋memory-only decoder/EVP，以openssl-sys0.9.117 raw ABI及最窄缺失extern声明包裹safe Rust。PKI类型仍为rustls-pki-types1.14.1。不引Google auth/service SDK、JWT聚合树或JS runtime，不自写密码学原语；有限受控依赖维护成本明确见[transport/auth设计](pi-1.3.0-readiness-transport-auth.md)。
+选opi-ai私有ADC adapter，复用受控reqwest0.12.28/rustls0.23.40和现有serde_json/base64/time。ring-only不能覆盖所选范围；现按RDF-23使用原版aws-lc-rs1.18.2／aws-lc-sys0.46.0，经rustls公开safe KeyProvider／SigningKey／Signer完成明确算法的RS256。PKI类型仍为rustls-pki-types1.14.1。不引Google auth/service SDK、JWT聚合树或JS runtime，不自写密码学原语、不维护本地FFI、fork或`third-party/pi-crypto`。历史private LibCtx比较保留在[transport/auth §4.2](pi-1.3.0-readiness-transport-auth.md#42-历史ring-only-的排除与原私有-libctx-选择)，现行接受域／native边界见其§4.3。
 
 排除官方google-cloud-auth **1.17.0**：其MSRV1.91不是问题，实际user/external-account/STS交换内部Client::new/builder无公开通用transport注入，reqwest0.13.4/default aws-lc还会引第二套配置路径；仅包装default constructor不能修复内部proxy/env/redirect。gcp_auth0.12.7覆盖不全且有gcloud路径，也不采用。代价是SDK维护下面各条Google标准HTTP exchange与source状态；以固定google-auth-library10.6.2/@google/genai2.21.0源码与官方协议语料跟进，不能称选一个库已自动得到完整ADC。
 
-RSA采用所选private LibCtx的成熟PKCS1/SHA256 EVP签名，不调用默认PKey/Signer／legacy PEM路径、全局NO_LOAD_CONFIG或passphrase UI。原10项加三素数key的11项签名与Node精确JWS一致，poison默认context仍不影响private；这只是C API机制，Rust wrapper／FFI safety／所有key与TLS算法及平台未验收。JWT header只有alg=RS256，iss/scope/aud/iat/exp保留原来源，不加typ/kid/delegation。PKCS1/8 PEM与mTLS分开；原Node拒绝的encrypted-no-passphrase/P12不虚增支持。EC key误挂RS256 header在Rust按RSA算法拒绝，为单列正确性差异。
+RSA采用上游PKCS1v1.5/SHA256签名，正常two-prime RSA2048/3072/4096/8192与2048/e3保留；RSA1024和multiprime允许明确typed拒绝。EC key误挂RS256 header继续按RSA算法拒绝，不以“接近Node”放宽算法。JWT header只有alg=RS256，iss/scope/aud/iat/exp保留原来源，不加typ/kid/delegation；PKCS1/8 PEM与mTLS分开，不增加passphrase UI或原Node未接受的P12能力。新研究每profile43项密钥矩阵、48签名独立验签／96篡改负例和10份真实loopback ADC JWT捕获有[固定摘要](offline-probes/upstream-crypto/summary.json)；不是完整Models→ADC或全部编码／TLS算法验收。旧11项private LibCtx签名／poison结果只证明历史C API机制，不改成AWS-LC结果。同步签名不可硬杀，owned key在caller离开后保活、抑制late publish并在join后释放。
 
 | Pi实际ADC家族／source | 选定Rust机制与边界 |
 |---|---|
@@ -181,7 +183,7 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 
 所有新增依赖仅为有条件文档意图；旧source-evidence的selected清单固定于上一轮，不自动授予本轮Schema guard/其他已撤回配置有效地位，未来从root workspace声明并用Cargo生成锁图，不手改Cargo.lock。所选Query/XML codec manifest MSRV为1.94.1、p256为1.65；当前Ratchet core/ext/deflate1.2.1的精确manifest均未声明rust-version，不能继承旧TW的1.63。xmlparser/sha1也未声明MSRV，不将缺失当0；已声明下界不替代完整closure与workspace1.97实编译，三个平台仍OPEN。
 
-禁AWS默认HTTPS避免额外aws-lc C/CMake栈；现ring 0.17.14仍含native C/assembly/build.rs，rustls也有build script。最终方案不引入aws-types/service runtime的直接build路径，也不为签名升级hmac/sha2；codecs传递schema/runtime-api仍可能引proc macro，最终build脚本/原生闭包数量须实际审锁图。必须审manifest/features/build/native/proc-macro/transitive与来源，而非声称“全是Rust所以无供应链代价”。不为42个profile预建42个feature/crate，不以feature flag豁免正式准入。
+禁AWS默认HTTPS是为避免第二套隐式transport／provider／resolver，而不再以“避免所有aws-lc”为理由：RDF-23明确采用上游AWS-LC的C／FFI／汇编／build脚本。最终方案不引入aws-types/service runtime的直接build路径，也不为签名升级hmac/sha2；codecs传递schema/runtime-api仍可能引proc macro，实际原生／proc-macro闭包须审锁图。标准分发为非FIPS源码构建；普通／union真实包consumer须控制并记录native来源、CC/CMake/平台工具链、flags／output／链接身份，拒绝未审system来源、bindings／skip-version／target override等替换。研究用AWS_LC_SYS_USE_SYSTEM=0、poison OPENSSL_DIR并实际CC静态构建，只证明该Windows图；库lock／crate checksum不能固定所有消费者的native输入。native CPU一次初始化、OPENSSL_ia32cap与OS entropy按RDF-23明示，不承诺零初始化／零环境读取，不授权ambient身份／trust或global provider/config mutation。不能以default-features=false或“safe API”声称零native／unsafe供应链代价；FIPS／native-tls／native-roots等未测附加组合不继承union证据。不为42个profile预建42个feature/crate，不以feature flag豁免正式准入。
 
 前置源码轮只验证源码、公开签名和文档一致性。后续仅对隔离研究harness做Windows离线Cargo解析／编译／有效features与行为验证，不能代替产品root graph、外部opi consumer、三平台、真实adapter、内存／性能或vendor接受性。产品测试影响none，实验资产新增；原源码证据不追认为compile proof。
 
@@ -196,7 +198,7 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 | Schema | 私有 source dialect＋RDF-21 普通上游数据 profile；旧64/64、11合成错误控制、43/43叶与10包 namespace 同图保留历史身份，不追认为新图验证 | 全 normalizer/formats/refs/evaluated/UTF16 边界、public utility/consumer/cache/cancel；V-11/34/35/39/41/58 |
 | WS | ownedUpgrade＋受控Ratchet PMD/message/RSV/length/storage；旧80观察与后续纯内存修正分开；具体修复证明见WS报告，不靠SSE关闭 | fullprovider/continuation/pool/proxy/TLS/cleanup/multiplatform及新patch网络组装；V-02/30/49/58 |
 | HTTP/proxy/H2/redirect | sourceowner＋RDF-22上游HTTP profile；旧20headers patch对照、redirect逐leg及16proxy观察保留原输入，显式ALPN有实测 | 上游head/buffer/trailer/chunk-extension边界、CL/TE/EOF/取消、所有source/proxy组合与publicdriver；V-01/05/09/29/30/51/55/58 |
-| TLS/trust/crypto | 实例rustls/commonring＋privateEVP补齐signer/verification/KX，reference bundle/scopedroots；11RSA/privatepoison、TLS正常负例、P521/e3差异有实际来源 | 全算法/chain/source与协商优先级、Rust FFI安全、构建供应链/平台/真实服务；V-09/49/55/58 |
+| TLS/trust/crypto | RDF-23原版rustls/AWS-LC safe实例profile，reference bundle/scopedroots不变；RSA/P-521每profile43项、45场景×5共225观察、10JWT与8KX控制为历史Windows研究，旧11RSA/privatepoison保留原身份 | 声明接受范围/正常与错误协商/chain/source/host隔离/取消、真实ADC与mTLS/ALPN、native来源/普通union包consumer/MSRV/三平台；不再要求fullNode算法或本地FFI；V-09/49/55/58 |
 | Auth/ADC/AWS | ownedfullsource与standard/adaptive/Smithy2026 owner；metadata0/3000ms来源已定，不将局部机制算fullchain | 所有source/9OAuth/SSO/MFA/DPoP/adaptive/retry/process-tree/rotation与ACK；V-05/09/12/43/55/58 |
 | Telemetry | safe pinned poll/drop wrappers与源Dispatch；七场景跨线程/producer/noop真实运行 | 全SDK入口传播/serde/wire/secret/consumer；V-46–48/58 |
 | Cargo/platform/catalog | root锁图/namespace及patch来源/native审计、staging校验原子发布；人工42×3目录helper七项验证 | 产品graph/MSRV1.97/三平台native/packageconsumer/真实hydratedartifact；V-20/42/49/56/58/59 |
@@ -205,8 +207,8 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 
 ## 6. 维护与发布身份
 
-修改过的 Ratchet 继续使用受控、可被普通 consumer 解析的独立后端 package 身份与精确 version/source/checksum；HTTP 则采用 RDF-22 普通 crates.io reqwest/Hyper，无 HTTP namespace 发布义务；不把产品 lock 或 consumer root patch 当发布方案，Ratchet 修正版不标成未经修改 upstream crate，HTTP 则如实标明原版来源。Schema 的 regress／URL/IDNA/ICU 改用普通 crates.io package，不再承担 Unicode16 分叉或 namespace family 发布义务。旧 URL10包共图结果保留历史身份；通用 conformance、外部 consumer 及最终完整 registry／packaging 仍由 V-58 验，不在本轮 publish。不新增 Opi 领域 API、公共 trait 或根 workspace 拓扑。
+修改过的 Ratchet 继续使用受控、可被普通 consumer 解析的独立后端 package 身份与精确 version/source/checksum；HTTP采用RDF-22普通crates.io reqwest/Hyper，crypto采用RDF-23普通rustls/AWS-LC，不承担HTTP／crypto namespace、fork或`third-party/pi-crypto`必建义务。不把产品lock或consumer root patch当发布方案，Ratchet修正版不标成未经修改upstream，HTTP／crypto如实标明原版来源及实际features/native输入。Schema的regress／URL/IDNA/ICU用普通crates.io package，不再承担Unicode16分叉或namespace family发布义务。旧URL10包共图及privateEVP结果保留历史身份；通用conformance、真实普通／union外部consumer及完整registry／packaging仍由V-58验，不在本轮publish。不新增Opi领域API、公共trait或根workspace拓扑。
 
 后端namespace必须覆盖真正消费修正的最小类型依赖闭包：HTTP退出受控namespace闭包，仅审查实际reqwest/hyper-util/Hyper/TLS glue普通registry图及feature union；WS仍为相互交换extension/frame类型的Ratchet core/ext/deflate。逐边固定package别名/版本/source/checksum，证明WS driver实际链接选定修正版、HTTP driver实际使用声明的上游图，不增加无消费者fork或混合两套类型。未改的通用http/bytes/rustls等类型能共享时不无端复制；完整闭包由实际metadata/反向feature树和externalconsumer验收，不能预先用猜测包数当完成。公共SDK／custom transport边界不泄漏私有backend类型，正常caller显式提供的标准client/transport按其已有合同接入一次，不加第二router/driver/retry；本机默认路径不靠caller rootpatch修补。
 
-Unicode16 数据重生／闭包专属工具退役；普通 ICU2.2 data 仍含上游 build.rs，须审 ICU4X_DATA_DIR 等构建输入，不能称依赖树零 build script。ryu-js safe API 内部有 unsafe；Ratchet deflate 强制 zlib 带 C/build.rs；private OpenSSL EVP 扩大到 source-required 签名/verification/KX，包含受限 unsafe/native 构建责任。保留适用的许可／NOTICE、最小 diff、补丁前后源 SHA、数据及 source 版本；上游升级先重放语料并审算法 diff。不得静默扩大为另一个通用引擎，或换更窄后端后仍声称同目标。产品 root graph、MSRV、三平台以及供应链/FFI 审查继续 OPEN。
+Unicode16数据重生／闭包专属工具退役；普通ICU2.2 data仍含上游build.rs，须审ICU4X_DATA_DIR等输入，不能称依赖树零build script。ryu-js safe API内部有unsafe；Ratchet deflate强制zlib带C/build.rs；AWS-LC公开safe API内部仍有native C／FFI／汇编、CPU初始化和OS entropy，但不新增SDK本地FFI。受控WS仍保留最小diff／补丁前后源SHA与闭包身份；普通HTTP／crypto审实际registry checksum／features／native来源，均保留适用license／NOTICE。上游升级先重放语料并审算法／接受范围diff，不得静默扩大新引擎、恢复私有EVP或收窄RDF-23正常范围。产品root graph、MSRV、三平台、真正普通／union包consumer及上游native供应链审查继续OPEN；20.11／20.34／20.57不提前验收。

@@ -1,0 +1,142 @@
+{
+  "baseline": "d97c77e15f02001c083847a8eda1b9e87894f7fe",
+  "rust_harness_final": [
+    {
+      "command": "tests-ordinary-attempt2",
+      "harness_tests_passed": 3
+    },
+    {
+      "command": "tests-union",
+      "harness_tests_passed": 3
+    },
+    {
+      "command": "transport-ordinary-poison-attempt2",
+      "harness_tests_passed": 1
+    },
+    {
+      "command": "transport-union-poison",
+      "harness_tests_passed": 1
+    },
+    {
+      "command": "transport-union-host-ring",
+      "harness_tests_passed": 1
+    }
+  ],
+  "final_rust_harness_passed": 9,
+  "signature_profiles": [
+    {
+      "profile": "ordinary",
+      "cases": 43,
+      "accept": 24,
+      "reject": 19
+    },
+    {
+      "profile": "union",
+      "cases": 43,
+      "accept": 24,
+      "reject": 19
+    }
+  ],
+  "independent_signature_accept": 48,
+  "independent_tamper_rejections": 96,
+  "transport_profiles": [
+    {
+      "variant": "ordinary",
+      "cases": 45,
+      "passed": true
+    },
+    {
+      "variant": "ordinary-poison",
+      "cases": 45,
+      "passed": true
+    },
+    {
+      "variant": "union",
+      "cases": 45,
+      "passed": true
+    },
+    {
+      "variant": "union-poison",
+      "cases": 45,
+      "passed": true
+    },
+    {
+      "variant": "union-host-ring",
+      "cases": 45,
+      "passed": true
+    }
+  ],
+  "final_transport_observations": 225,
+  "adc_independent_records": 10,
+  "owned_signing": [
+    {
+      "profile": "ordinary",
+      "cases": 3,
+      "native_signatures": 12
+    },
+    {
+      "profile": "union",
+      "cases": 3,
+      "native_signatures": 12
+    }
+  ],
+  "reserved_statuses": {
+    "20.11": "failing",
+    "20.34": "failing",
+    "20.57": "failing"
+  },
+  "ledger_sha256": "62e9d7fa82b74e4cc374553b6ba7c7ba1016c51bf014e6ca526becefea0016f2",
+  "worktree_unchanged": true,
+  "test_impact_product": "none; retain",
+  "test_impact_research": "add",
+  "logged_commands": 47,
+  "logged_nonzero_commands": [
+    "build-ordinary-initial-env-failure",
+    "build-ordinary-borrowed-key-failure"
+  ],
+  "secret_canary_log_check": true,
+  "kind": "isolated research evidence, not product acceptance or this plan execution",
+  "profile": "RDF-23",
+  "versions": {
+    "rustls": "0.23.40",
+    "aws-lc-rs": "1.18.2",
+    "aws-lc-sys": "0.46.0",
+    "tokio-rustls": "0.26.4",
+    "reqwest": "0.12.28"
+  },
+  "final_probe_source_sha256": "249a01af3c6876d24b653fa9c3b70cfdb016861dcdcf14eff359625b3d3fee33",
+  "raw_bundle_directory": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-crypto-upstream-mv_w4u_4",
+  "raw_bundle_files": {
+    "artifact-manifest.json": "4f6eb0004347d71a76e3eba5355ceda6cedc2a9008835c0f22136ed4bb902563",
+    "probe/Cargo.toml": "0f90a9c3083eed4e0b336d974efaac162fcfa5598ae61c402e6c3fb51835ece6",
+    "probe/Cargo.lock": "a17407bc480445b621d6b66c7d11e5a8da4e9e477f3a6064f3bb2f38520861ed",
+    "report.md": "6e15f3726a3abf2fb46a4572d17017ba5b744a72b6598fcfda41c6bbb207c74e",
+    "evidence/verification-summary.json": "2abc1f3f4810f74e36720570b9abfe9b135cff0eeabb496e34a71cfe8b88ba1e",
+    "evidence/native-provenance.json": "8a95876ced19e41ed177d4315109ca7ab2e8638fc9e2832d16c7b30600561a03",
+    "evidence/probe-review.json": "15157ad9fd65f65767b16e3a8eeaf7f5997312365e1f7b48dcb6fdd709841e80"
+  },
+  "kx_observations": {
+    "profiles": 2,
+    "per_profile": 4,
+    "total": 8,
+    "x25519_success": 4,
+    "p521_only_rejected_zero_http": 4
+  },
+  "host_controls": {
+    "fresh_processes": 5,
+    "wrong_implicit_builder_is_negative_control": true
+  },
+  "independent_adc": "10 captured JWTs; exact alg-only RS256 header and source five-claim contract; independent verification, including tampered negatives; no client identity on service_account route",
+  "source_integrity": "7 critical crate archives, 2403 source files; exact archive bytes and lock checksums checked",
+  "native_boundary": "Windows MSVC rustc1.99.1 only; AWS_LC_SYS_USE_SYSTEM=0, actual CC static prefixed AWS-LC; no libcrypto/libssl DLL. No local FFI does not mean no native code.",
+  "limitations": [
+    "Research crate, not packaged opi-ai or real product ADC wiring",
+    "No MSRV or Linux/macOS proof",
+    "Selected ordinary and ring-enabled caller feature union only; no blanket native-tls/native-roots/FIPS union claim",
+    "Synchronous native signing not preempted; cancellation ownership tested between operations until join",
+    "Two pre-final compile failures and three probe assertion repairs are disclosed in raw report; final counts exclude superseded runs",
+    "First build log identity correction is disclosed in raw log-identity-correction.json; no fabricated replay claim"
+  ],
+  "plan_execution_counts": "none; historical numbers above are copied from final sealed research summary",
+  "counting_unit": "final_rust_harness_passed=9 counts test-function executions: 3+3+1+1+1 across five final command variants; not nine Cargo commands or 225 test functions"
+}

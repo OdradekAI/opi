@@ -19,7 +19,7 @@
 | 范围／平台 | SDK 与宿主责任、Cargo/module 与 npm/Bun、native runtime 支持面 | 可以不复制非目标符号或平台桥，但 SDK 对应功能不能随之消失 |
 | 真正能力缺口 | 尚无公开可达实现、协议接线或机械证明 | 保持未完成；不能以“Rust 惯用”“deferred”或历史子集选择关闭 |
 
-以下 RDF-01–22 是差异定位符，不是新 AIR 要求、V 验收编号或进度账本。RDF-01–20 保留既有身份；RDF-21 是上游 Unicode／IDNA 数据合同修订，RDF-22 是本次用户选定的 HTTP 上游接受范围合同修订。两者独立，不扩展为其他后端豁免。一个条目可能含两类因素，但必须分别解释。每项的“机械验证”描述所需产品证据；前置源码轮没有执行 Cargo/Node 测试、构建、live/OAuth 请求、依赖安装或生成数据。离线 harness 与后续实施各列实际执行，不互相冒充。
+以下 RDF-01–23 是差异定位符，不是新 AIR 要求、V 验收编号或进度账本。RDF-01–20 保留既有身份；RDF-21 是上游 Unicode／IDNA 数据合同修订，RDF-22 是 HTTP 上游接受范围修订，RDF-23 是本次用户选定的 crypto key/算法及原生构建 profile 修订。三者独立，不扩展为其他后端豁免。一个条目可能含两类因素，但必须分别解释。每项的“机械验证”描述所需产品证据；前置源码轮没有执行 Cargo/Node 测试、构建、live/OAuth 请求、依赖安装或生成数据。离线 harness 与后续实施各列实际执行，不互相冒充。
 
 | ID | 差异 | 主分类 | 主验收导航 |
 |---|---|---|---|
@@ -45,6 +45,7 @@
 | RDF-20 | 全公开能力覆盖仍须实施证明 | 真正能力缺口 | V-49–59 及既有对应 V |
 | RDF-21 | 上游 Unicode／IDNA 数据 profile | 已批准数据行为差异 | V-11/34/35/39/41/58 |
 | RDF-22 | 上游 HTTP parser/storage 接受范围 profile | 明示后端资源差异 | V-01/02/05/09/13/29/30/51/55/58 |
+| RDF-23 | 上游 crypto key/算法及原生构建 profile | 明示后端接受范围与构建差异 | V-09/49/55/58 |
 
 ## 逐项契约
 
@@ -203,10 +204,10 @@
 ### RDF-18 · Cargo/native 平台与 npm/Bun/browser/CLI 边界
 
 - **Pi 事实：** [`package.json`](../../../.repo/pi-1.3.0/packages/ai/package.json)公开 root/subpaths、`pi-ai` CLI 和 bun-oauth；[root export](../../../.repo/pi-1.3.0/packages/ai/src/index.ts)强调 core side-effect-free，provider/catalog 分开；[Bun bridge](../../../.repo/pi-1.3.0/packages/ai/src/bun-oauth.ts#L12)为静态打包加载 OAuth。[AuthContext](../../../.repo/pi-1.3.0/packages/ai/src/auth/context.ts#L19)存在 browser fallback，Node-only flow 仍需对应平台能力。
-- **Rust 目标：** Cargo/module/resources/host Tokio表达独立SDK，npm/Bun/browser/CLI符号和任意executor/WASM不承诺ABI。确定RDF-22普通上游HTTP接受范围profile、ownedUpgrade＋受控Ratchet PMD/长度/checked存储、实例rustls/commonring＋私有OpenSSL EVP signer/verification/KX，以及full-source AWS/ADC owner；不以ring范围/标准only/noPMD收面。native默认trust选固定Node参考bundle，scoped extra/explicit roots按source消费，host roots显式选择；不宣称Bun/OS/webpki同默认。原生C、有限unsafe及fork/数据/registry包维护成本明示；产品MSRV/锁图/三平台/consumer仍OPEN。保留真实executable env gate/host授权、portable well-known与无自动gcloud差异，无虚构预算/零retry/双独立gate。
+- **Rust 目标：** Cargo/module/resources/host Tokio表达独立SDK，npm/Bun/browser/CLI符号和任意executor/WASM不承诺ABI。确定RDF-22普通上游HTTP接受范围profile、ownedUpgrade＋受控Ratchet PMD/长度/checked存储、RDF-23原版rustls/AWS-LC公开safe key/provider/signing seam及其明示key/算法profile，以及full-source AWS/ADC owner；仅RDF-23命名的crypto接受范围可有差异，不以其他ring范围/标准only/noPMD静默收面。native默认trust选固定Node参考bundle，scoped extra/explicit roots按source消费，host roots显式选择；不宣称Bun/OS/webpki同默认。原生C、有限unsafe及fork/数据/registry包维护成本明示；产品MSRV/锁图/三平台/consumer仍OPEN。保留真实executable env gate/host授权、portable well-known与无自动gcloud差异，无虚构预算/零retry/双独立gate。
 - **理由与分类：** packaging/runtime 桥属于平台差异；不是删除 OAuth/helper/catalog/独立 SDK 动作的理由。当前 [manifest](../../../crates/opi-ai/Cargo.toml)与[CI](../../../.github/workflows/ci.yml#L40)支持 native 依赖与 Linux/macOS/Windows 验证路线；本候选**不承诺 WASM/browser 或任意 executor 支持**，也不从源码无显式 wasm forbid 推断可用。
 - **外部 caller 影响：** Rust caller 自行装配 runtime、Stream/Serde 和 UI；无 Agent/产品 crate 前提。SDK 文档需列 native 支持面、平台相关 OAuth presenter/callback限制和正常依赖。未证明编译大小、lazy link、启动或性能收益，不为 tree-shaking 猜测加 feature。
-- **机械验证：** V-26/42/49/58 用离线 package 与 workspace 外 consumer、native 多平台组装／假传输、资源定位、无环境读取构造、公开工具能力映射。不能以 monorepo 内编译证明可发布，也不能用未缓存依赖的自动下载补缺。
+- **机械验证：** V-26/42/49/58 用离线 package 与 workspace 外 consumer、native 多平台组装／假传输、资源定位、构造无auth/source发现（RDF-23允许的native CPU初始化/能力输入/OS entropy单独记录）、公开工具能力映射。不能以 monorepo 内编译证明可发布，也不能用未缓存依赖的自动下载补缺。
 - **历史 D 依赖：** D-21/30/35/37 与父规范 GOAL-003；不复制 Bun/npm 形状不等于免除 SDK 功能。
 
 ### RDF-19 · SDK 与 host-only 集成责任
@@ -245,8 +246,20 @@
 - **Pi 事实与保留证据：** 固定 Node/Bun 的 99/100/101/125/200 headers 正例、原 reqwest/Hyper 拒绝与 TEMP patch 对照均保留原输入／结果；20 条 paired records 不是新上游 profile 的 20 条通过。旧 head-only patch 不证明 trailer/buffer 或真实 provider 接线。RDF-21 的数据差异不适用于 HTTP。
 - **Rust 目标：** 取消 HTTP 源码修改和 namespace 发布路线，使用普通 crates.io reqwest0.12.28/Hyper1.9.0 与既有 HttpClient。后端的 HTTP response-head／read-buffer、trailer count/bytes、累计 chunk-extension 接受边界成为明确差异。固定 Hyper 源码基准为 `src/proto/h1/role.rs` 的默认 100 header 槽、`io.rs` 的 `8192 + 4096 * 100` 缓冲策略，以及 `decode.rs` 的 16KiB 累计 chunk-extension／trailer 字节约束；这些常量不是所有分块方式下的精确 head 长度／数量成功保证，等值边界由产品测试实证。不额外增加同名 SDK 校验 cap，也不以 usize::MAX 触发巨大预分配。
 - **理由与分类：** 这是明示的后端资源／接受范围差异，减少 HTTP fork、manifest 变换和传递 namespace 维护。它允许范围外的合法 Pi HTTP 输入失败，不声称无限接受或逐输入 parity。不选择新版本、不豁免未知升级差异，也不把后端 parser buffer 等同于统一 SSE/body 总量上限。
-- **保留合同与 caller 影响：** SDK 仍只有来源限定 route/redirect/retry owner，关闭嵌套 retry，保留 H2、proxy/TLS/CONNECT/tail/NO_PROXY、身份与受保护 header、callback 次数、取消／Drop／本地清理。畸形协议、CL/TE 歧义、截断与秘密泄漏不能登记成允许差异。边界失败保留 typed 脱敏 backend/transport cause、可证明的失败阶段、完整 partial/known usage 与唯一终态／永久 EOF，不截断、不成功收尾或 handoff 后重试；后端不区分的细因不虚构为 resource-limit。Custom transport 不二次包装，opaque backend 不冒称受本 profile 完整担保。WS/PMD、crypto、Schema、Context/tool 与数据 payload 的现有合同保持不变。
+- **保留合同与 caller 影响：** SDK 仍只有来源限定 route/redirect/retry owner，关闭嵌套 retry，保留 H2、proxy/TLS/CONNECT/tail/NO_PROXY、身份与受保护 header、callback 次数、取消／Drop／本地清理。畸形协议、CL/TE 歧义、截断与秘密泄漏不能登记成允许差异。边界失败保留 typed 脱敏 backend/transport cause、可证明的失败阶段、完整 partial/known usage 与唯一终态／永久 EOF，不截断、不成功收尾或 handoff 后重试；后端不区分的细因不虚构为 resource-limit。Custom transport 不二次包装，opaque backend 不冒称受本 profile 完整担保。本条不改 WS/PMD、Schema、Context/tool 与数据 payload；crypto 后由 RDF-23 单独修订。
 - **机械验证与退役边界：** 在现有 connection_pooling/openai_chat_fixtures/proxy_support 公共 seam 更新／补充 Models → 真实 OpenAI Chat → HttpClient → loopback；记录正常与 caller feature-union 的 graph/features/source/checksum、99/100/101/125/200 headers、head-buffer/trailer 数量／字节／累计 chunk-extension 的边界及逐字节／合并方式。区分 acquisition 与已交付 partial/usage 后的失败，验证非法 CL/TE、提前 EOF、取消／Drop、无隐藏 sends 和重试封口。真实 cargo package 产物由 workspace 外普通消费者验证，不用 source checkout、root patch、私有 HTTP namespace 或 library lock 代替。仅退役 patch 重放／source-transform／namespace 专属义务，保留通用 conformance、原始失败和包消费者。20.12 只关闭命名的实际 Chat 切片；全来源由 20.34、组装 package 由 20.57、平台由 20.58 继续验证。本次 plan 无新的运行计数，不提前完成 20.11、20.34、20.57。
+
+<a id="rdf-23-upstream-crypto-profile"></a>
+
+### RDF-23 · 上游 crypto 接受范围与原生构建 profile
+
+- **Pi 事实与历史：** 固定 Node 参考的 RSA1024、多素数 RSA、P-521 KX 与算法/协商集合是比较输入；旧 LibCtx/EVP 的 15 个观察及 3 条 P521/e3mTLS 记录保留原身份，不改写为上游或产品通过。RDF-21/22 分别处理数据和 HTTP，本条独立修订 crypto。
+- **Rust 目标与接受范围：** 使用 crates.io 原版 rustls0.23.40 + aws-lc-rs1.18.2/aws-lc-sys0.46.0，private safe owner 经公开 key-provider/SigningKey/Signer 和 rustls/WebPKI seam 接线。接受未加密双素数 RSA2048–8192 PKCS1/PKCS8 PEM/DER（含 e3）及支持的 PKCS8/SEC1 P-521 签名/验证/mTLS；允许拒绝合法 RSA1024、多素数 RSA，不提供 P-521 KX，P-521-only peer typed 握手失败且零业务 HTTP。冻结 TLS version/cipher/signature/ALPN 与上游 group 顺序 X25519MLKEM768/X25519/secp256r1/secp384r1；不承诺完整 Node 集合、顺序、fingerprint 或错误字符串等价。版本是当前基准，消费者独立解析结果必须复核，非永久版本豁免。
+- **保留合同：** 显式实例 AWS-LC provider，不依赖/安装全局 provider；ring 可传递共存，HMAC/SHA/SigV4 不变。保留 WebPKI chain/host/time、打包的固定 Node 默认 CA、来源 extra/explicit roots、opt-in host roots、mTLS/pool 隔离和 ALPN。JWT 仍为 alg-only RS256 header、来源 claims，不加 typ/kid；错算法/加密/坏 key 不可假成功/降级/换身份/隐藏重试。typed 脱敏 cause 及可证明阶段、partial/usage、终态/永久 EOF、取消/Drop/owned 清理不豁免，也不虚构 backend 未提供的错误子类。WS Upgrade/PMD/受控 Ratchet 方案保持不变。
+- **原生构建边界：** 退役本地 OpenSSL LibCtx/EVP FFI、crypto fork/namespace 与 third-party/pi-crypto 必建义务，不删除通用 conformance/外部包验证。上游仍有 native C/FFI/assembly/build/proc 依赖及安全/平台准入。允许 CPU process-once 初始化、OS entropy、CPU capability 环境读取（包括 OPENSSL_ia32cap），不允许修改全局 rustls/OpenSSL provider/config/env/subscriber 或 ambient credential/trust/proxy 发现。aws-lc-sys0.46.0 默认可能探测系统库；标准源码构建证明固定 AWS_LC_SYS_USE_SYSTEM=0，记录实际 CC/static 来源，控制 SYSTEM_DIR/SYSTEM_BINDINGS/SKIP_VERSION_CHECK 与 target overrides 等替换入口。包验证门禁拒绝未经审查的来源；SDK 库不能用 Cargo.lock 保证任意 caller 环境。基准非 FIPS；未验证的 native-tls/default-TLS/native-roots/FIPS unions、MSRV 和其他平台不声明通过。同步 native 签名不可硬取消，worker join 前保留真实 key/resource 并抑制迟到结果；操作间取消不证明单次原生调用抢占。
+- **机制证据与未来验证：** [封存摘要](offline-probes/upstream-crypto/summary.json)保留基线、精确版本/源码 hash、9 次最终 Rust 测试函数执行、86 个签名观察、独立 48 签名/96 篡改负例及45个 transport 场景×5变体=225观察、10条独立 ADC JWT 记录、8个 KX 观察、5个 fresh-host controls 和24次 owned native 签名；这些是已完成隔离研究，不是本次 plan 新执行或225个 Rust test。只覆盖 Windows MSVC 和命名 ordinary/feature-union 图，不关闭产品路径/包/平台。20.13 负责 safe mechanism/native admission；20.14 负责真实 Models→Chat→HttpClient TLS/mTLS/ALPN、宿主隔离、错 key/host/trust、取消和真实 cargo package 解包后的普通/feature-union 消费者。20.21.1 仍负责真实 ADC，20.34 完整 DEL-06，20.57 最终组装包，20.58 全平台/场景；20.11/34/57 均不提前验收。
+
+本条取代 RDF-18/旧机制报告中要求全源算法集与私有 EVP/crypto namespace 的当前交付义务；历史事实保留。未列出的算法/协议差异、授权或资源失败不能借本条吞掉。
 
 ## 差分与核准边界
 
@@ -292,3 +305,5 @@ RDF-14（telemetry）：Pi保持options引用，不冻结跨await的parent字段
 RDF-18的依赖分发必须对普通外部consumer有效：受控源码／数据包采用独立registry身份与精确source/version/checksum；library lock、rootpatch或TEMP path不是发布方案。URL的10包隔离已实测，其他最终产物与发布、全部native/unsafe安全审查仍由既有V验收。原API/Context/telemetry责任不扩成新公共框架。
 
 RDF-09除原root验证修正外明确UTF8表示边界；RDF-18的EC key拒绝错误RS256标签是算法正确性选择，不能用其拒绝源支持的RSA。原生库保留chain/host/time、显式签名与协商约束，无bypass或全局provider/config禁用。所有七组产品coverage保持OPEN，研究实测通过不等于V通过。
+
+RDF-18/20 的历史 namespace 分发说明仅适用于仍选择受控源码/数据的后端。当前 Unicode/HTTP/crypto 分别按 RDF-21/22/23 使用上游 profile；不得据旧说明恢复已退役的 vendor 必建义务。受控 WS 与其分发/验证义务不变。

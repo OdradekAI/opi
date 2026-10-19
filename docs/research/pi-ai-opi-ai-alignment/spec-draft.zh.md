@@ -42,7 +42,7 @@ READY 表示设计已确定且有依据：七组后端有选定机制、明确�
 | DEL-03 | 可序列化 Context/Transcript、有序声明与 replay/projection → verify: 公开手动工具循环／换模型、raw/opaque 保留、工具关联及 malformed/final-argument 行为；不新增执行器或 session writer。 |
 | DEL-04 | Source-dialect Schema/normalizer/strict/grammar 机制 → verify: 公开校验及 adapter 编译、逐分支差分 corpus、原 schema 最终检查和明确 RDF 用例。 |
 | DEL-05 | Source-qualified HTTP/H2/proxy/redirect/retry transport → verify: 真实公开 adapter 与受控 fake transport、合法 send、受保护 header、取消及明确声明的上游 HTTP 接受范围 profile（RDF-22），包含可观察的边界失败。 |
-| DEL-06 | TLS/trust/signing/verification/KX 与受控后端依赖闭包 → verify: 真实 SDK crypto/transport 路径、正反 fixture、私有所有权、可复现 package 与 native/unsafe 复审。 |
+| DEL-06 | RDF-23 上游 crypto profile 下的 TLS/trust/signing/verification/KX 与后端依赖闭包 → verify: 真实 SDK crypto/transport 路径、正反 fixture、私有安全所有权、普通/feature-union 包消费者与原生构建来源复审。 |
 | DEL-07 | Codex WS/PMD/length-storage/continuation/pool cleanup → verify: 包含最终修正 codec 的真实 Provider 公开路径、真实 frame/upgrade corpus 与资源生命周期；不能由 SSE fallback 代替。 |
 | DEL-08 | Auth/ADC/AWS sources 及所有固定 retry mode → verify: 公开 SDK 经注入来源与真实 adapter、选定身份、source exchange、process/metadata 生命周期及构造不做来源发现。 |
 | DEL-09 | 九 OAuth 家族及 store-owned ACK/mutation barrier → verify: 公开 login/refresh/store/request 路径、same-store 并发、取消、late write 与诚实的 pending/unknown outcome。 |
@@ -181,7 +181,7 @@ SDK 无会话前提。它不要求 Agent authorizer、durable 事务、子会话
 | AIR-028 | Classifier dispatch/validation；classify | MUST 通过 typed choice/bool/ordered-score 输入／结果支持全部 4 个已发布 classifier API：typesafe-system-one、cloudflare-workers-ai-system-one、llama-cpp-classify 和 openai-decisions。保留协议特定 envelope、label/score 限制、tokenizer/template/probability 算法、images、auth availability 和 failure/retry 规则。System One bool→noul 与 Decisions bool→predicate 不可互换。 | Current SDK contracts; V-24/50/55 |
 | AIR-029 | 答案验证；概率/分数 | MUST 保留每个 classifier parser 真实的必需字段/类型/finite-number 校验。固定 adapter 未做的 probability/confidence[0,1]、请求 label membership、完整 probability keys、score domain、sum/argmax 或归一化，不增为统一拒绝规则。adapter 输入 label/levels 规则与 llama 概率算法分别保留。缺失/无效必需值 typed 失败，不填0；不声称 provider 数值已校准。 | SP-11/U-2; D-25 Q28; V-24 |
 | AIR-030 | 操作结果；失败/成功 | MUST 区分 input/unsupported/auth/timeout/cancel/transport/http/invalid-result/resource-limit，并在业务验证失败后保留已知 usage/非秘密响应元数据。缺失/无效用量不同于 0；未报告的早期重试不是总账单。未知价格保持未知；普通诊断排除媒体/原始 body/秘密。 | SP-12/O-011; D-10/13/25; V-13/25 |
-| AIR-031 | Budget/reader；编码/读取/解码前 | MUST 按来源审计区分 Pi 显式限制、协议要求、backend 约束与可选 caller policy。不得以无依据的默认 bytes/body/depth/count/总时长 cap，或统一 positive-only/no-unlimited 规则缩小 Pi 输入。各参数有意义的0/省略/sentinel分别保留；checked arithmetic 与分配失败仍 typed。显式配置的 caller policy 被捕获、检查并执行，不截断或伪成功；它不能授权新操作或目的地。有界调度不保证任意合法 retained output 的固定进程内存。 仅明确采纳的 RDF-22 HTTP envelope/parser-storage 约束属于获准后端接受范围差异；其他无依据限制继续禁止。 | SP-15; D-25 Q28; V-23–25 |
+| AIR-031 | Budget/reader；编码/读取/解码前 | MUST 按来源审计区分 Pi 显式限制、协议要求、backend 约束与可选 caller policy。不得以无依据的默认 bytes/body/depth/count/总时长 cap，或统一 positive-only/no-unlimited 规则缩小 Pi 输入。各参数有意义的0/省略/sentinel分别保留；checked arithmetic 与分配失败仍 typed。显式配置的 caller policy 被捕获、检查并执行，不截断或伪成功；它不能授权新操作或目的地。有界调度不保证任意合法 retained output 的固定进程内存。 仅明确采纳的 RDF-22 HTTP envelope/parser-storage 和 RDF-23 crypto key/算法 profile 属于获准后端接受范围差异；后者不引入 payload/递归 cap，其他无依据限制继续禁止。 | SP-15; D-25 Q28; V-23–25 |
 | AIR-032 | SDK 公开能力所有者；支持声明 | MUST 通过公共调用方路径、真实 adapter 加受控本地 transport，以及协议 fixtures，证明每项映射 operation/adapter/profile。无默认终端工具、启动请求、隐藏文件输出或权威扩张。factory/type 名称本身不是交付；共享 wire 仍需 profile-default/auth/filter 证据，单一 image wire 不是多 wire 证明。 | Capability inventory; V-21/22/26/49/50 |
 
 ## 要求：已发布路径与请求定制
@@ -442,14 +442,14 @@ AWS 选定来源表和精确依赖证据见 [SDK 附录 A–D](sdk-target-propos
 | 模块 | 已选设计／实施义务 |
 |---|---|
 | HTTP | crates.io 原版 reqwest0.12.28＋Hyper1.9.0，采用明确声明的 parser/storage 接受范围 profile（RDF-22）；明确来源的 protocol/proxy/redirect/retry owner。不分发 HTTP fork/namespace，不设第二 retry driver |
-| TLS／ADC签名 | rustls0.23.40/ring0.17.14，实例 trust/mTLS 与显式 ALPN；native默认取固定Node参考CA bundle，scoped extra/explicit roots归source，host roots显式选择；ADC RS256 与来源要求的 TLS signing/verification/KX 通过私有 OpenSSL3 LibCtx、内建 default provider 和仅内存 EVP C API，由窄 safe Rust owner 包裹，并接 rustls 的公共 signer/WebPKI/KX seam。ring-only 签名退出；无全局 config/provider 修改或 passphrase UI |
+| TLS / ADC 签名 | crates.io 原版 rustls0.23.40 + aws-lc-rs1.18.2/aws-lc-sys0.46.0，私有安全 Rust owner 使用公开 key/provider/signing seam；显式实例 provider/trust/mTLS/ALPN，固定 Node 默认 CA、scoped extra/explicit roots、opt-in host roots。RDF-23 明示 key/算法/native 边界；无本地 FFI 或 crypto fork/namespace 必建义务 |
 | WS | owned 严格 Upgrade、动态 headers/tail＋ratchet_core/ext/deflate1.2.1、公共 PMD message-state 适配与固定有限的 frame RSV/length/checked-storage 修正。TW/TTW0.28.0 退出完整目标，不靠 fallback 或 backend cap 关闭覆盖 |
 | AWS／ADC来源协议 | owned sources、source-specific retry/redirect 与完整 modes；保留 Smithy Query/XML0.62.1、xmlparser0.13.5、p2560.13.2/sha1 0.10.6 和现 hmac/sha2。无虚构总 send/depth/body 配额，不以 standard-only 替代 |
 | Schema | 私有 TypeBox JSON 方言 IR/evaluator、crates.io regress0.12.0（`default-features=false`，`std,utf16,prohibit-unsafe`）及 url2.5.8，采用受支持的上游 Unicode/IDNA 数据（RDF-21）；serde_json preserve_order、显式 JS key 枚举与 ryu-js1.0.2。Pi normalizer 和 strict wire projection 分离。无 JS runtime、metaschema 收面、隐式 schema I/O 或猜测 work/fuel cap |
 | Telemetry | tracing0.1.44/tracing-core0.1.36；owned Span＋源 Dispatch、安全私有 pinned poll/drop wrapper，含 producer。不采 ambient、不拆新 crate/domain schema 或 exporter |
 | Cargo／catalog | root 管理精确产品 graph 与 native/patch 来源；版本化真实 catalog 输入，经 schema/身份/hash 验证后原子发布。研究 lock／人工记录不替代产品／平台／artifact 验收 |
 
-[后端专项核查](pi-1.3.0-backend-gap-audit.md)与首轮离线报告保留原始反例。[设计就绪决定](pi-1.3.0-design-readiness.md)及机制报告选定上述有限修正；版本、patch、源码及数据身份是设计的一部分。Schema 选择已由 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile) 中获批的上游数据 profile 取代；HTTP 独立采用 [RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile) 的上游接受范围 profile。两项修订均不替换受控 WS 或私有 crypto 设计。七组完整实施／覆盖仍全部 OPEN。正式准入、产品 graph、完整公开 conformance 与 native 平台交付分别保留门禁。
+[后端专项核查](pi-1.3.0-backend-gap-audit.md)与首轮离线报告保留原始反例。[设计就绪决定](pi-1.3.0-design-readiness.md)及机制报告选定上述有限修正；版本、patch、源码及数据身份是设计的一部分。Schema 选择已由 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile) 中获批的上游数据 profile 取代；HTTP 独立采用 [RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile) 的上游接受范围 profile。crypto 的私有 OpenSSL/EVP 选择另由 [RDF-23](pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile) 上游 profile 取代，受控 WS 不变。七组完整实施／覆盖仍全部 OPEN。正式准入、产品 graph、完整公开 conformance 与 native 平台交付分别保留门禁。
 
 #### 流调度与可接受数据
 
@@ -476,6 +476,16 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 依赖准入时记录实际 graph、有效 features、registry checksum 及每项适用边界／配置。通过 Models → 真实 OpenAI Chat adapter → HttpClient 验证低于／等于／高于边界及逐字节／合并输入，包含 acquisition 失败与已交付内容后的失败。保留 typed 脱敏 backend/transport cause、失败阶段、完整 partial／已知 usage、唯一终态／永久 EOF、handoff 后不重试及无隐藏 sends。后端仅暴露较宽 typed cause 时，不虚构 resource-limit 诊断。畸形 CL/TE/framing、截断、身份／秘密泄漏、取消与 owned 资源清理仍是正确性要求，不是获准 profile 差异。Opaque caller transport 保留其声明责任，不二次包装或声称已知其限制。
 
 上述版本对是 workspace／研究基线，不承诺 library lock 固定普通消费者。外部独立解析的版本／features 必须先记录，并按本 HTTP 接受范围与正确性合同验证，才能声明支持；不存在统一升级豁免。真实 cargo package 产物必须由 workspace 外普通 consumer 使用，并验证正常依赖与 caller feature-union 图。Consumer root patch、HTTP 私有 namespace 或 workspace lockfile 不能证明交付。仅退役 HTTP patch-apply／source-transform／namespace 专属义务；通用 conformance 和包消费者保留。完整组装 transport、平台与 package 验收保留现有 owner；本修订不完成 20.11、20.34 或20.57。
+
+#### 上游 crypto 依赖 profile
+
+RDF-23 以 crates.io 原版 rustls0.23.40 + aws-lc-rs1.18.2（aws-lc-sys0.46.0；tokio-rustls0.26.4/reqwest0.12.28 基准）替代私有 OpenSSL3 LibCtx/EVP 与 third-party/pi-crypto 必建分发设计。在 opi-ai 私有 owner 内使用公开安全 Rust key-provider/signing 与 rustls provider/WebPKI seam；无需本地 FFI、crypto fork、namespace、root patch 或新公开 crypto/backend 框架。ring 可继续传递存在，但 SDK 自有 TLS 路径须显式选择 AWS-LC provider，不安装或继承进程全局 provider。既有 HMAC/SHA/SigV4 行为不变。
+
+接受来源要求的未加密双素数 RSA2048–8192 PKCS1/PKCS8 PEM/DER（含 e3），以及支持的 PKCS8/SEC1 输入上的 P-521 签名/验证/mTLS。明确允许拒绝 RSA1024、多素数 RSA，并不提供 P-521 KX；仅有 P-521 group 的 peer 必须 typed 脱敏握手失败且业务 HTTP 为零。使用来源冻结的 TLS version/cipher/signature/ALPN profile，声明上游 group 顺序 X25519MLKEM768、X25519、secp256r1、secp384r1；不声明完整 Node 算法、fingerprint、顺序或错误字符串等价。不支持 key、错算法、加密/畸形输入及无共同 group 不得假成功、降级、重新发现身份或隐藏 fallback。ADC RS256 保留来源 alg-only header（不自动加 typ/kid）、claims 与独立验证；完整真实 ADC caller 仍由既有 owner 验收。保留 WebPKI chain/host/time、打包的固定 Node 参考默认 CA bundle、来源限定 extra/explicit roots、opt-in host roots、pool/client identity 隔离、partial/usage、终态/EOF、取消及 owned 清理。
+
+无本地 FFI 不等于无上游 native C/FFI/assembly/build 依赖，仍须准入并复审实际原生来源、构建、工具链及可移植/安全输入。允许 native 进程一次 CPU 初始化、OS entropy 与 CPU capability 环境读取（含 OPENSSL_ia32cap）；不因此允许全局 rustls/OpenSSL provider/config/environment/subscriber 变更或 ambient credential/trust/proxy 发现。aws-lc-sys0.46.0 默认构建可能选系统库；标准源码构建证据使用 AWS_LC_SYS_USE_SYSTEM=0，记录实际 CC/static source 结果，控制 system directory/bindings/version-skip/target overrides。分发和消费者门禁拒绝未经审查的替换来源；库不能用自己的 Cargo.lock 固定任意 caller 构建环境或解析版本。基准为非 FIPS；native-tls/default-TLS/native-roots/FIPS union 与其他平台需另行证明才能声明支持。同步 native signing 不可硬取消：worker join 前保留 owned key/resource 并抑制迟到结果，操作之间取消不证明 native 调用内部抢占。
+
+20.13 负责私有安全机制与 native 准入。20.14 经 Models → 迁移后的真实 Chat → HttpClient → loopback 验证 TLS/mTLS/ALPN、trust/key/host 负例、显式 provider 的宿主隔离、取消，以及从真实 cargo package artifact 解包后在 workspace 外进行普通与 caller-feature-union 消费。记录版本/features/registry checksum/native 来源；source checkout、root patch 或研究 crate 不能替代公开消费者。复用通用 conformance/package 工具，只退役 crypto fork/本地 FFI/namespace 专属义务；各完整来源/平台验收仍由原 owner 保持 OPEN，包括20.21.1 的真实 ADC、20.34 的完整 DEL-06 和20.57 的最终 SDK 包。WS Upgrade/PMD/受控 Ratchet 修正不变。本次不完成20.11、20.34、20.57。[已封存研究摘要](offline-probes/upstream-crypto/summary.json)不是新增产品执行证据。
 
 #### Schema 语义与执行
 
@@ -537,7 +547,7 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 |---|---|
 | Rust后端选型与五项合同 | [当前后端附件](pi-1.3.0-rust-backends.md)；字节预算、mutation屏障、redirect/retry/proxy/TLS、Schema与typed custom API；选定版本不构成编译/准入证明 |
 | 当前完整 capability/default/protocol/flow 映射 | [Pi 1.3.0 SDK contracts](pi-1.3.0-sdk-contracts.md)；有源码支持的精确公开行为与明确 utility/platform 替代 |
-| Rust 差异、caller 影响和证明 | [RDF-01–22](pi-1.3.0-rust-differences.md)；语言／资源／正确性／平台／数据 profile 差异与真实覆盖缺口的区分 |
+| Rust 差异、caller 影响和证明 | [RDF-01–23](pi-1.3.0-rust-differences.md)；语言／资源／正确性／平台／数据 profile 差异与真实覆盖缺口的区分 |
 | 唯一机械验收和测试迁移 | [V-01–59](acceptance-matrix.md)；54 组 SDK、4 组仅宿主影响、1 组退役，以及 41 integration+7 source-file 处置；均不是已执行验收结果 |
 | 当前输入／修订和独立评审 | [参数baseline](pi-1.2.0-parameter-revision-baseline.json)、[参数复审](pi-1.2.0-parameter-revision-review.md)、[README](README.md) |
 | 审查发现与补核范围 | [版本审查](pi-1.2.0-review.md)、[五问补核](pi-1.2.0-followup.md)；发现仅适用于各自固定的修订前输入 |
@@ -555,3 +565,5 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 首轮[离线报告](pi-1.3.0-schema-ws-offline-validation.md)在其原等价目标下排除了未经适配的 Schema 与无 PMD WS 组合。后续[设计决定](pi-1.3.0-design-readiness.md)曾选定私有 source-defined JSON evaluator／生成 Unicode16 regex 数据，以及 owned Upgrade／明确适配及 patch 的 Ratchet PMD。当前 Schema 数据选择由 RDF-21 取代；固定 Node 观察与旧分叉结果仍是历史证据。正反例、原始失败与维护边界均保留；有限用例不证明完整等价。后续 WS 长度/storage 修正通过十四项纯内存测试（含十二个旧 codec fixture）；不执行 socket/请求，旧八十项网络观察仍固定旧 patch。本次数据迁移不完成 20.11、20.34 或 20.57。
 
 Transport/auth 实验区分 runtime redirect、ALPN、TLS 负例、metadata 作用域及参考更广的 RSA 输入集。选定的 OpenSSL 私有 context 不收窄为 ring key，也不修改全局配置。安全 tracing wrapper 和原目录 helper 已有隔离执行证据。产品代码／测试／依赖未变；七组实施／验收仍全部 OPEN。旧报告／复审／hash 保留原输入。
+
+上述设计就绪窗口中的 Unicode16/HTTP patch/私有 EVP 选择保留历史身份，当前分别由 RDF-21/22/23 修订；WS 未被这些修订替换。后续 crypto 上游研究摘要只证明命名的隔离机制观察，不关闭产品 V 或任务。
