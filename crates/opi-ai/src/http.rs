@@ -11,6 +11,27 @@ use tokio_util::sync::CancellationToken;
 
 use crate::provider::{ProviderError, ProviderErrorSummary};
 
+pub use crate::tls::{
+    AlpnPreference, ClientIdentity, TlsConfigError, TlsKeyError, TlsOptions, TrustRoots,
+};
+
+/// Typed failure while building an [`HttpClient`].
+///
+/// TLS configuration inputs are validated and frozen before any network
+/// I/O; rejected inputs surface as [`HttpClientBuildError::Tls`] with a
+/// redacted, typed cause. Backend construction failures (for example an
+/// invalid proxy URL) surface as [`HttpClientBuildError::Client`].
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum HttpClientBuildError {
+    /// TLS configuration was rejected at the pre-I/O freeze point.
+    #[error("TLS configuration rejected: {0}")]
+    Tls(#[from] TlsConfigError),
+    /// The underlying HTTP backend failed to construct.
+    #[error("HTTP client construction failed: {0}")]
+    Client(#[from] reqwest::Error),
+}
+
 /// Default maximum idle connections per host in the connection pool.
 const DEFAULT_POOL_MAX_IDLE_PER_HOST: usize = 10;
 
@@ -107,11 +128,12 @@ impl ProxyConfig {
     }
 }
 
-/// Shared HTTP client with tuned connection-pool and proxy settings.
+/// Shared HTTP client with tuned connection-pool, proxy and TLS settings.
 ///
 /// Wraps a `reqwest::Client` with sensible defaults for LLM provider use:
 /// connection pooling enabled, limited idle connections per host, a
-/// reasonable idle timeout, and optional proxy configuration. Designed to be
+/// reasonable idle timeout, optional proxy configuration and optional
+/// source-scoped TLS configuration ([`TlsOptions`]). Designed to be
 /// held as `Arc<HttpClient>` per provider or shared across providers.
 #[derive(Debug)]
 pub struct HttpClient {
@@ -119,6 +141,7 @@ pub struct HttpClient {
     max_idle_per_host: usize,
     idle_timeout: Duration,
     proxy_config: ProxyConfig,
+    tls_options: Option<TlsOptions>,
 }
 
 impl HttpClient {
@@ -148,6 +171,14 @@ impl HttpClient {
     pub fn proxy_config(&self) -> &ProxyConfig {
         &self.proxy_config
     }
+
+    /// Return the validated TLS configuration, if one was supplied.
+    ///
+    /// The value is the frozen, redacted view of the options accepted by
+    /// [`HttpClientBuilder::tls`]; no key material is exposed.
+    pub fn tls_options(&self) -> Option<&TlsOptions> {
+        self.tls_options.as_ref()
+    }
 }
 
 impl Default for HttpClient {
@@ -161,6 +192,7 @@ pub struct HttpClientBuilder {
     max_idle_per_host: usize,
     idle_timeout: Duration,
     proxy_config: ProxyConfig,
+    tls_options: Option<TlsOptions>,
 }
 
 impl HttpClientBuilder {
@@ -170,6 +202,7 @@ impl HttpClientBuilder {
             max_idle_per_host: DEFAULT_POOL_MAX_IDLE_PER_HOST,
             idle_timeout: DEFAULT_POOL_IDLE_TIMEOUT,
             proxy_config: ProxyConfig::default(),
+            tls_options: None,
         }
     }
 
@@ -195,14 +228,44 @@ impl HttpClientBuilder {
         self
     }
 
+    /// Set explicit source-scoped TLS configuration (RDF-23).
+    ///
+    /// The options are validated and frozen by [`Self::build`]: root
+    /// decoding, host-store availability, client-identity admission
+    /// (profile-gated upstream signing owner) and the fixed AWS-LC
+    /// TLS/ALPN/key-exchange profile are resolved before any network I/O,
+    /// failing typed and redacted through [`HttpClientBuildError::Tls`].
+    /// TLS inputs are new necessary public surface: the previous
+    /// pool/proxy-only builder had no way to express them, and consumers
+    /// must reach this path instead of building raw rustls/reqwest
+    /// transports themselves.
+    ///
+    /// A client built without this entry keeps the pre-existing backend
+    /// default transport (no ambient trust, credential or proxy discovery
+    /// is added either way).
+    pub fn tls(mut self, options: TlsOptions) -> Self {
+        self.tls_options = Some(options);
+        self
+    }
+
     /// Build the `HttpClient`.
     ///
-    /// Returns an error if the underlying `reqwest::Client` fails to
-    /// construct (e.g. invalid TLS or proxy URL).
-    pub fn build(self) -> Result<HttpClient, reqwest::Error> {
+    /// TLS inputs are validated and frozen here, before any I/O. Returns a
+    /// typed [`HttpClientBuildError`] for rejected TLS configuration and a
+    /// wrapped backend error for proxy URL or client construction
+    /// failures.
+    pub fn build(self) -> Result<HttpClient, HttpClientBuildError> {
         let mut builder = reqwest::Client::builder()
             .pool_max_idle_per_host(self.max_idle_per_host)
             .pool_idle_timeout(Some(self.idle_timeout));
+
+        if let Some(ref options) = self.tls_options {
+            let frozen = options.freeze()?;
+            builder = builder.use_preconfigured_tls(frozen.config);
+            if frozen.http1_only {
+                builder = builder.http1_only();
+            }
+        }
 
         if let Some(ref url) = self.proxy_config.url {
             let mut proxy = reqwest::Proxy::all(url)?;
@@ -218,6 +281,7 @@ impl HttpClientBuilder {
             max_idle_per_host: self.max_idle_per_host,
             idle_timeout: self.idle_timeout,
             proxy_config: self.proxy_config,
+            tls_options: self.tls_options,
         })
     }
 }

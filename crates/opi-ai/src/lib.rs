@@ -42,6 +42,7 @@ pub mod stream;
 pub mod test_support;
 mod text_decode;
 pub mod time;
+mod tls;
 pub mod transcript;
 pub mod vertex;
 

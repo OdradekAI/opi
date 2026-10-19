@@ -2075,7 +2075,7 @@ fn dirs_home() -> Option<PathBuf> {
 /// (`HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY`).
 pub fn build_http_client(
     proxy_config: Option<&ProviderProxyConfig>,
-) -> Result<std::sync::Arc<opi_ai::http::HttpClient>, reqwest::Error> {
+) -> Result<std::sync::Arc<opi_ai::http::HttpClient>, opi_ai::http::HttpClientBuildError> {
     let mut builder = opi_ai::http::HttpClientBuilder::new();
     if let Some(proxy) = proxy_config {
         builder = builder.proxy(opi_ai::http::ProxyConfig {

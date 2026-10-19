@@ -43,7 +43,7 @@ thiserror = "2"
 # async traits
 
 # HTTP/SSE
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "http2"] }
 url = "2.5.8"
 
 # Private schema dialect: upstream data profile, recorded under RDF-21.
@@ -111,6 +111,11 @@ rand = "0.8"
 # via cmake, static, non-FIPS). Transitive ring (reqwest rustls-tls) coexists;
 # no process-global provider is installed by opi-ai.
 rustls = { version = "=0.23.40", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+rustls-native-certs = "0.8"
+tokio-rustls = "0.26"
+hyper = { version = "1", features = ["http1", "http2", "server"] }
+hyper-util = { version = "0.1", features = ["tokio", "server"] }
+http-body-util = "0.1"
 aws-lc-rs = { version = "=1.18.2", default-features = false, features = ["aws-lc-sys", "alloc", "prebuilt-nasm"] }
 
 # env loading

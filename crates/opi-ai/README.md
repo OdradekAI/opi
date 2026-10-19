@@ -495,6 +495,45 @@ cancellation is observed between operations, owned keys/resources are
 retained until the blocking worker joins, and late results are suppressed
 rather than published.
 
+## Source-Scoped TLS (RDF-23)
+
+`HttpClientBuilder::tls(TlsOptions)` is the one public entry for source-
+scoped TLS configuration. `TlsOptions` carries the trust selection
+(packaged pinned Node reference default CA bundle, the same bundle plus
+explicit extra roots, explicit roots replacing it, or an explicit opt-in
+to the host system root store), an optional owned mutual-TLS client
+identity, and the H2-preferred / HTTP/1.1-only ALPN preference. Everything
+is validated and frozen when the client is built — before any network I/O —
+with typed redacted failures (`HttpClientBuildError::Tls` /
+`TlsConfigError` / `TlsKeyError`); client-identity keys are admitted through
+the private crypto owner above (RSA-1024, multi-prime RSA, encrypted or
+malformed keys fail typed at admission).
+
+The TLS profile itself is fixed, not caller-selectable: an explicit
+instance AWS-LC provider with TLS 1.3 + 1.2, WebPKI chain/hostname/time
+verification always on, and the declared key-exchange group order
+`X25519MLKEM768, X25519, secp256r1, secp384r1` (P-521 key exchange is
+deliberately omitted; a P-521-only peer fails the handshake with zero
+business HTTP). There is no backend selector, generic crypto trait, raw
+verifier, bypass, or test-only signing API, and no process-global provider
+or configuration is installed — the instance path works unchanged under a
+host-preinstalled `ring` provider.
+
+The pinned default trust bundle is the Node v22.19.0 runtime's compiled-in
+CA set, packaged inside `opi-ai` and reproducible via
+`scripts/extract-node-root-store.py` (150 certificates, bundle sha256
+`12f4cd646968b72866b445b2850df3ac9e245031d15cdfa76d8ab51bde6f7c24`). It is
+not webpki-roots, the OS store, or ambient discovery; host roots are an
+explicit per-client opt-in only.
+
+Packaged-consumer proof: `scripts/pi-sdk-conformance/package_slice.py
+--family crypto --offline` packages `opi-ai`, extracts the artifact outside
+the workspace, and runs an ordinary plus caller feature-union consumer
+through this exact public path (trust modes, mTLS, ALPN, typed negatives,
+host-provider independence), recording the resolved rustls/aws-lc
+versions, registry checksums and native build provenance. Real ADC wiring
+stays with its own owner; this closes only the transport mechanism.
+
 ## Non-Goals
 
 The following are explicit non-goals and must not appear as current core

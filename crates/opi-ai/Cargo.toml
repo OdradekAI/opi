@@ -34,9 +34,15 @@ secrecy = { workspace = true }
 # Upstream crypto profile (RDF-23): private signing owner only; not re-exported.
 rustls = { workspace = true }
 aws-lc-rs = { workspace = true }
+rustls-native-certs = { workspace = true }
 
 [dev-dependencies]
 futures-util = { workspace = true }
 tempfile = { workspace = true }
 wiremock = { workspace = true }
 secrecy = { workspace = true }
+tokio-rustls = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+http-body-util = { workspace = true }
+rustls = { workspace = true, features = ["ring"] }

@@ -411,6 +411,39 @@ FIPS；未测试的 feature union 与平台不声明支持。同步原生签名�
 硬抢占：取消仅在操作间观察，owned key/资源保留至阻塞 worker join，
 迟到结果被抑制而非发布。
 
+## 源限定 TLS（RDF-23）
+
+`HttpClientBuilder::tls(TlsOptions)` 是源限定 TLS 配置的唯一公开入口。
+`TlsOptions` 携带 trust 选择（打包的固定 Node 参考默认 CA bundle、
+同 bundle 加显式 extra roots、显式 roots 整体替换、或对宿主系统根
+存储的显式 opt-in）、可选的 owned mTLS 客户端身份，以及 H2 优先 /
+仅 HTTP1 的 ALPN 偏好。所有输入在构建客户端时验证并冻结——先于任何
+网络 I/O——失败为 typed、脱敏（`HttpClientBuildError::Tls` /
+`TlsConfigError` / `TlsKeyError`）；客户端身份密钥经由上方私有 crypto
+owner 准入（RSA-1024、多素数 RSA、加密或畸形密钥在准入处 typed 拒绝）。
+
+TLS profile 本身固定、不可选：显式实例 AWS-LC provider，TLS 1.3 + 1.2，
+WebPKI 链/主机名/时间验证始终开启，声明密钥交换组顺序
+`X25519MLKEM768, X25519, secp256r1, secp384r1`（有意不提供 P-521 密钥
+交换；仅 P-521 的对端握手失败且零业务 HTTP）。不暴露 backend 选择器、
+generic crypto trait、原始 verifier、旁路或测试专用签名 API；不安装
+进程级全局 provider 或配置——在宿主预装 `ring` provider 下实例路径
+行为不变。
+
+固定默认信任 bundle 是 Node v22.19.0 运行时内置 CA 集合，打包在
+`opi-ai` 内，可通过 `scripts/extract-node-root-store.py` 复现（150 张
+证书，bundle sha256
+`12f4cd646968b72866b445b2850df3ac9e245031d15cdfa76d8ab51bde6f7c24`）。
+它不是 webpki-roots、OS 存储或环境发现；宿主根仅为逐客户端显式
+opt-in。
+
+包消费者证明：`scripts/pi-sdk-conformance/package_slice.py --family
+crypto --offline` 对 `opi-ai` 打包、在工作区外解包，并以普通与
+caller feature-union 两个消费者走完本公开路径（trust 模式、mTLS、
+ALPN、typed 负例、宿主 provider 无关性），记录解析出的 rustls/aws-lc
+版本、registry 校验和与原生构建溯源。真实 ADC 接线仍归后续 owner；
+本条只收口传输机制。
+
 ## 非目标
 
 以下是明确的非目标，不得作为当前核心行为出现：

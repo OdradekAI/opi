@@ -16,6 +16,12 @@
   invalid declaration batches before dispatch. `ToolResultMessage` adds a
   serde-defaulted `not_executed` reason written by trusted execution boundaries;
   historical absence remains unknown, never inferred from error text.
+- `opi-ai`: `HttpClientBuilder::build` now returns
+  `Result<HttpClient, HttpClientBuildError>` instead of `reqwest::Error`;
+  rejected TLS configuration is typed and redacted (`TlsConfigError`,
+  `TlsKeyError`) while backend construction failures wrap `reqwest::Error`.
+  All current callers migrate together with no behavior change on the
+  non-TLS paths.
 
 - `opi-ai`: `ProviderCollection` is replaced by a single `Models` driver
   (`provider_collection` module renamed to `models`; `CollectionError` is
@@ -82,6 +88,27 @@
 
 ### Added
 
+- `opi-ai`: source-scoped TLS on the public transport (RDF-23, task 20.14;
+  DEL-06 substrate). `HttpClientBuilder::tls(TlsOptions)` accepts one owned
+  typed value for trust selection (packaged pinned Node v22.19.0 default CA
+  bundle, extra or explicit roots, explicit host-system-root opt-in), an
+  optional mutual-TLS client identity admitted through the private crypto
+  owner, and H2-preferred/HTTP1-only ALPN. Inputs are validated and frozen
+  before any I/O; the AWS-LC instance provider, WebPKI verification and the
+  declared key-exchange order are fixed internally with no process-global
+  provider mutation. New `tls_contract` integration suite drives the real
+  Models -> Chat -> HttpClient path over loopback TLS (H2/H1 × TLS 1.3/1.2,
+  mTLS identity profiles, trust/hostname/EKU/ALPN/no-common-group negatives
+  with zero business HTTP, cancellation/partial-body cleanup, host ring
+  controls), plus alg-only RS256 JWT sign/verify fixtures and the offline
+  `scripts/pi-sdk-conformance/package_slice.py --family crypto --offline`
+  packaged-consumer proof (ordinary + caller feature union) with resolved
+  graph, registry checksums and native build provenance. Production
+  dependency `rustls-native-certs` (OS root store loading, explicit opt-in
+  only). The workspace `reqwest` now enables its `http2` feature so the
+  shipped client actually supports the profile's H2 path in production
+  graphs (previously only reachable through dev-dependency feature
+  unification).
 - `opi-ai`: canonical replay projection and tool association (DEL-03,
   task 20.7; V-07/V-08/V-15 SDK-active, AIR-010/012/013/014). New `replay`
   module projects the canonical chronology into the request-local wire
