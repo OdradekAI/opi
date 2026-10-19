@@ -21,22 +21,22 @@
   "spec_files_sha256": {
     "docs/opi-spec.md": "7979f349811d5e8da8ed4b60adb0fa41175c76462a78e449fd326dd4c19cf9e1",
     "docs/opi-spec.zh.md": "6a199822c5f4233ab7c13942db87f7986ac8b0e74a68075402371476f431c005",
-    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "9303dc4ad26c944793c819c5cf27585b676446b585b2dfcd90fe3a2f05aa0f27",
-    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "43c94c31f329c4f8c56f127ea79a0bd5e9ddb215c1dfd06690b9e5fa872e1fb4",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "ff4e6d00af092f7e1b4b980fdbb2c681c5d05f14ae44cd5207fd09cf543d2728",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "33736988cd7e7fc8a52db713bcc95e600cbf6b05d77b71daaf500b637b51a4fb",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "fff683fd2ca3276fc15713ed50efae418d8b8f0818edc1371a6c3a5a52fdcca9",
-    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "367b6fc4149fecb3ed67a70cbca005de96dda963c7530305522758c3939ef3e2",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "21dce0f9e159efe097860bc16729c5ff78e533ffcd7a9a19040cb6a443ae980c",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "6ddcd671076e21e69fa57151b330122eea252b4690f78d2ad33d03264e10ca7d",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "ebcd865c391cf65e1106812a166001f2204187d49ee04ecb8d8b721b0572e736",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "5e4ea6a6aab6678ea5c49aeb1d2782a220f2385d37246eac0f298bc66da19d25",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "65bdfe57d93a9b1436f478f18c70e096b6a3bebd052cbbc3dfb805ae238a16d5",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "529c71fd8c86c4814e481da6ddfdbc37b86c14e85e62c14f3418944bbdaef386",
+    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "58d9cb05ffdd4bfcd8243356548997a3a80b3d2fde451438b1865e7f45d8c1e4",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "4a46c53b83f11bf5318b31a77a856f099774187be8e49478f9b359e755c823c4",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md": "878d15231e734dc03772e1f1bd48cb8ffe2252a2818748e4b8630af43a2e8a76",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md": "fd97dcfbe5fa485d83ecc569398c4cf39ae1d475fa4ee624609d65715989a888",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-transport-auth.md": "f0b7ca6f71d57cadd1f218a21ab41802175e3bbab63ed3d491f5752c8f2c077e",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-runtime.md": "0f7098ad7754ee4d0919362aaba622708b80a643f7f4db74e982f0d3468d17ea",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-transport-auth.md": "ff8276f87cc52fca288308038bfe243104b897f1f3003f3190c79e4fb852f649",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-runtime.md": "a3008f26974647712eda0fd8f001798a8226b2d2625e5e103ba38dacecc8e78c",
     "docs/research/pi-ai-opi-ai-alignment/transcript-target-proposal.md": "25a4234507ab1c4c12d483c56bb4083172bf4d5c35dfec1dc92bc98c77a5d94e",
     "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
     "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c"
   },
-  "task_graph_confirmed_at": "2026-10-19T16:55:19+08:00",
+  "task_graph_confirmed_at": "2026-10-19T18:46:54+08:00",
   "current_phase": 20,
   "tasks": [
     {
@@ -3490,12 +3490,12 @@
     {
       "id": "20.13",
       "phase": 20,
-      "title": "私有 OpenSSL3 EVP 安全 owner 与算法机制",
+      "title": "上游 rustls／AWS-LC 私有安全签名机制与原生准入",
       "crate": "workspace",
       "parent_spec_row": "DEL-06",
-      "definition_of_done": "Implement isolated audited safe owner over mature EVP using private LibCtx and exact supported sign/verify/KX algorithms, no global initialization/config discovery/passphrase UI. Pin maintained production OpenSSL build/source/security configuration at dependency admission, isolate narrow unavoidable FFI, test ownership/unwind/error and secret negatives. Preserve ring common paths; source research DLL is not a production pin or full TLS proof.",
+      "definition_of_done": "Implement a private opi-ai safe Rust key/signing owner using unmodified crates.io rustls0.23.40 and aws-lc-rs1.18.2/aws-lc-sys0.46.0 public KeyProvider::load_private_key, SigningKey algorithm/choose_scheme and Signer::sign seams. Prove RDF-23 unencrypted two-prime RSA2048..8192 PKCS1/PKCS8 PEM/DER including e3 and supported P-521 PKCS8/SEC1 signing/verification, independent signature verification, wrong-algorithm/encrypted/malformed/wrong-key negatives and declared RSA1024/multiprime rejection without false success or secret leakage. No local FFI, OpenSSL LibCtx/EVP owner, crypto fork/namespace/root patch or third-party/pi-crypto build path is required. Review actual registry graph/features/checksums and upstream native C/FFI/assembly/build/proc/toolchain inputs; standard non-FIPS source-build evidence uses AWS_LC_SYS_USE_SYSTEM=0, records actual static source/CC outcome and excludes unreviewed system/bindings/version-skip/target replacements at controlled build/consumer gates. Cargo.lock cannot freeze external native provenance; untested unions/platforms remain OPEN. Permit native process-once CPU initialization/capability environment reads and OS entropy without global provider/config/env/subscriber mutation or ambient credential/trust/proxy discovery. Retain owned upstream keys/resources until synchronous native signing worker joins after caller cancellation, suppress late publication and distinguish between-operation cancellation from impossible hard preemption. Preserve existing HMAC/SHA/SigV4 and transitive ring coexistence. This is substrate for20.14 and later real ADC20.21.1; tests cannot require exporting a new public crypto API or claim full TLS/public/package/platform acceptance.",
       "definition_source": "inferred",
-      "replaces": null,
+      "replaces": "私有 OpenSSL3 EVP 安全 owner 与算法机制",
       "status": "failing",
       "depends_on": [
         "20.1"
@@ -3503,28 +3503,28 @@
       "inference_notes": [
         {
           "field": "definition_of_done",
-          "reason": "Reviewed DEL-06 split, inferred target paths/names and commands require whole-graph confirmation. Implement isolated audited safe owner over mature EVP using private LibCtx and exact supported sign/verify/KX algorithms, no global initialization/config discovery/passphrase UI. Pin maintained production OpenSSL build/source/security configuration at dependency admission, isolate narrow unavoidable FFI, test ownership/unwind/error and secret negatives. Preserve ring common paths; source research DLL is not a production pin or full TLS proof.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+          "reason": "Implement a private opi-ai safe Rust key/signing owner using unmodified crates.io rustls0.23.40 and aws-lc-rs1.18.2/aws-lc-sys0.46.0 public KeyProvider::load_private_key, SigningKey algorithm/choose_scheme and Signer::sign seams. Prove RDF-23 unencrypted two-prime RSA2048..8192 PKCS1/PKCS8 PEM/DER including e3 and supported P-521 PKCS8/SEC1 signing/verification, independent signature verification, wrong-algorithm/encrypted/malformed/wrong-key negatives and declared RSA1024/multiprime rejection without false success or secret leakage. No local FFI, OpenSSL LibCtx/EVP owner, crypto fork/namespace/root patch or third-party/pi-crypto build path is required. Review actual registry graph/features/checksums and upstream native C/FFI/assembly/build/proc/toolchain inputs; standard non-FIPS source-build evidence uses AWS_LC_SYS_USE_SYSTEM=0, records actual static source/CC outcome and excludes unreviewed system/bindings/version-skip/target replacements at controlled build/consumer gates. Cargo.lock cannot freeze external native provenance; untested unions/platforms remain OPEN. Permit native process-once CPU initialization/capability environment reads and OS entropy without global provider/config/env/subscriber mutation or ambient credential/trust/proxy discovery. Retain owned upstream keys/resources until synchronous native signing worker joins after caller cancellation, suppress late publication and distinguish between-operation cancellation from impossible hard preemption. Preserve existing HMAC/SHA/SigV4 and transitive ring coexistence. This is substrate for20.14 and later real ADC20.21.1; tests cannot require exporting a new public crypto API or claim full TLS/public/package/platform acceptance.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile"
         },
         {
           "field": "reuse_search",
-          "reason": "searched=existing Bedrock SigV4/ring common crypto and fixed EVP private-context key/mTLS research; reused=existing Bedrock SigV4/ring common crypto and fixed EVP private-context key/mTLS research; gap=Implement isolated audited safe owner over mature EVP using private LibCtx and exact supported sign/verify/KX algorithms, no global initialization/config discovery/passphrase UI",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition; repository sources named in searched clause"
+          "reason": "searched=crates/opi-ai/src/lib.rs http.rs vertex.rs bedrock.rs and Cargo manifests/lock, existing hmac/sha2 SigV4 and rustls ring path, sealed upstream crypto corpus; reused=existing opi-ai crate ownership, PEM/DER standard types and upstream public safe key/signature APIs, existing HMAC/SHA primitives; gap=small private safe signing/key owner with explicit RDF-23 profile and native/owned-worker proof, not a crypto algorithm implementation; production_consumers=none for the proposed crypto module/EVP namespace in current source, existing Bedrock HMAC/SHA and HttpClient remain independent live consumers, future TLS20.14 and ADC20.21.1 explicitly planned; nonproduction_consumers=registered crypto contracts and historical EVP probes only for the retired mechanism, generic conformance and crate docs retained, no published pi-crypto dynamic/config/wire/persistent identity",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile; Cargo.toml; Cargo.lock; crates/opi-ai/src/vertex.rs; crates/opi-ai/src/bedrock.rs; crates/opi-ai/src/http.rs"
         },
         {
           "field": "placement",
-          "reason": "target=core; existing_home=opi-ai product-neutral model runtime; cannot_fit_fully=use existing opi-ai ownership, keep policy in current host, no new Opi crate or inward edge",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+          "reason": "target=core; existing_home=opi-ai private provider-neutral crypto mechanism; cannot_fit_fully=not-applicable, use existing crate below source policy, no new Opi crate internal edge or public framework",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile"
         },
         {
           "field": "surface_necessity",
-          "reason": "public_api=none, evidence only; config=none, no new host policy key, existing source overrides only; state=私有 OpenSSL3 EVP 安全 owner 与算法机制 source-owned state, exact transition/result/failure contract in DoD; dependency_edge=reviewed exact backend/data/native closure only, no internal Opi edge",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+          "reason": "public_api=none, private production substrate with safe upstream types and no test-only exports; config=none, no new host/backend selector, native source profile is a controlled build/consumer gate; state=owned DER/upstream key and synchronous-worker lifecycle with typed redacted failures; dependency_edge=ordinary crates.io rustls/aws-lc-rs and reviewed upstream native closure, no private crypto namespace or new internal Opi edge",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile"
         },
         {
           "field": "simplification_ceiling",
-          "reason": "ceiling=existing crate and single owning mechanism, no speculative generic framework or extra compatibility layer; revisit_when=a named public conformance case or advertised native/MSRV target fails, or a second real use cannot fit the selected interface; simplification_trigger=none",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+          "reason": "ceiling=private safe upstream owner and typed algorithm selection only, no local FFI crypto primitives generic key service or backend framework; revisit_when=a named RDF-23 normal input fails, accepted native/consumer provenance changes, or a later real production consumer cannot share this minimal owner; simplification_trigger=dependency-substitution; net_deletion=retire proposed local EVP/LibCtx/ABI wrapper and third-party/pi-crypto fork/namespace maintenance, no existing delivered product module removed; residual_glue=private key admission and typed failures, owned synchronous worker, exact native/feature admission evidence",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile"
         },
         {
           "field": "forbidden_scope",
@@ -3538,8 +3538,18 @@
         },
         {
           "field": "task_owned_paths",
-          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+          "reason": "Remove mandatory third-party/pi-crypto/** and the unimplemented planned crypto_evp.rs integration-test path. Direct owner/cancellation/key-admission regressions belong to private unit tests in existing owned src/crypto/**, run cargo test -p opi-ai --lib crypto::. No speculative crypto_backend integration binary or public test API is needed. Keep manifests and crate docs; no parent/ledger/WS paths are owned.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile"
+        },
+        {
+          "field": "test_impact_plan",
+          "reason": "add profile corpus and wrong-algorithm/malformed/encrypted/independent-tamper negatives plus actual native-key ownership until join and suppressed late result; update only RSA1024/multiprime acceptance expectations explicitly replaced by RDF-23; retain current HMAC/SHA/SigV4 security tests and sealed historical EVP results; retire local-FFI/fork/namespace-only future gates, no generic artifact or conformance deletion; retire only the unimplemented crypto_evp.rs target, direct owner checks live in private src/crypto unit tests without new public API; product tests changed/run by this plan=none",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile"
+        },
+        {
+          "field": "replaces",
+          "reason": "Substantively replaces unstarted private OpenSSL3 LibCtx/EVP/local-FFI and mandatory crypto namespace design with RDF-23 upstream profile. Preserve failing status and all runtime/history/edges, no prior product proof carried forward; full-source Node algorithm obligation replaced only by explicitly declared acceptance differences.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile"
         }
       ],
       "tier": "workspace",
@@ -3551,7 +3561,7 @@
           ".agents/skills/opi-implement/scripts/opi-impl-smoke.ps1 full"
         ],
         "behavioral_tests": [
-          "crates/opi-ai/tests/crypto_evp.rs"
+          "crates/opi-ai/src/crypto/** private unit regressions: cargo test -p opi-ai --lib crypto:: (planned module path; do not export private crypto for tests)"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -3571,9 +3581,7 @@
         "crates/opi-ai/README.md",
         "crates/opi-ai/README.zh.md",
         "crates/opi-ai/src/crypto/**",
-        "crates/opi-ai/src/lib.rs",
-        "crates/opi-ai/tests/crypto_evp.rs",
-        "third-party/pi-crypto/**"
+        "crates/opi-ai/src/lib.rs"
       ],
       "verified_at_commit": null,
       "evidence": null,
@@ -3583,12 +3591,12 @@
     {
       "id": "20.14",
       "phase": 20,
-      "title": "实际 TLS／roots／mTLS／签名与平台边界",
+      "title": "真实 TLS／roots／mTLS／ALPN 与上游 crypto 包消费者",
       "crate": "workspace",
       "parent_spec_row": "DEL-06",
-      "definition_of_done": "Wire private crypto through public rustls signer/verification/KX seams while keeping WebPKI chain/hostname/time validation, exact source algorithm selection and isolated pools. Package pinned Node default roots, scoped extra/explicit roots and explicit host roots. Validate JWT bytes with independent verification, accepted key corpus, invalid/encrypted/wrong-key negatives and server/mTLS/ALPN fixtures. Default/extra roots are actual packaged inputs, not a label; native/platform outcomes stay OPEN until executed.",
+      "definition_of_done": "Route Models -> migrated real OpenAI Chat adapter -> HttpClient -> loopback using the20.13 private safe upstream mechanism and an explicitly selected instance AWS-LC provider. Extend the existing public opi_ai::http::HttpClientBuilder with a minimal tls(TlsOptions) entry (planned, not present today): one owned typed value for source-scoped trust mode/root inputs (pinned Node default, extra/explicit roots or explicit host-root mode), optional owned client certificate-chain/key identity and source-qualified H1/H2/ALPN selection. Validate/freeze these instance inputs before I/O with typed redacted build/config failures. Choose the fixed AWS-LC provider and TLS cipher/signature/KX profile internally; expose no backend selector, generic crypto trait, raw verifier/bypass or test-only signing API. The real Chat adapter and workspace-external package consumer must receive this built HttpClient through their actual public client-injection/Models path, not raw reqwest/rustls or an in-process privileged helper. Existing HttpClientBuilder currently has only pool/proxy settings; these TLS configuration inputs are new necessary public surface, not an already-delivered capability. Preserve zero ambient credential/trust/proxy discovery; an explicitly selected host-root mode remains scoped to its authorized source operation. Freeze source TLS versions/ciphers/signature schemes/ALPN and declared KX order X25519MLKEM768,X25519,secp256r1,secp384r1; prove ordinary H2 versus explicit H1, P-521 signing/verification/mTLS and source-required supported RSA keys, while RSA1024/multiprime keys and P-521-only KX fail typed/redacted with no business HTTP or hidden fallback. Preserve WebPKI chain/hostname/time verification, actual packaged pinned Node reference default CA bundle, scoped extra/explicit roots, opt-in host roots and client identity/pool isolation. Exercise real public TLS negatives for roots/host/client key/chain/ALPN, independent alg-only RS256 JWT signature/claims fixtures, host preinstalled-ring versus empty-provider controls and caller feature union without global provider/config mutation. Prove cancellation during handshake/response/accepted partial, owned native-key lifetime until worker join and late-result suppression, correct failure stage/partial/known usage/terminal/permanent EOF, no identity rediscovery/extra sends. Before passing run a real cargo package artifact extracted outside the workspace through ordinary and caller-feature-union public consumers, recording resolved versions/features/registry checksums and actual native build/link provenance under RDF-23; no source-checkout/root patch/library lock/research crate is package proof. Retain generic conformance; no crypto fork/local-FFI namespace obligations or new public crypto framework. The private-signing fixtures do not close real ADC20.21.1, complete DEL-06 at20.34, assembled SDK package20.57, full native/platform20.58 or20.11.",
       "definition_source": "inferred",
-      "replaces": null,
+      "replaces": "实际 TLS／roots／mTLS／签名与平台边界",
       "status": "failing",
       "depends_on": [
         "20.3",
@@ -3597,28 +3605,28 @@
       "inference_notes": [
         {
           "field": "definition_of_done",
-          "reason": "Reviewed DEL-06 split, inferred target paths/names and commands require whole-graph confirmation. Wire private crypto through public rustls signer/verification/KX seams while keeping WebPKI chain/hostname/time validation, exact source algorithm selection and isolated pools. Package pinned Node default roots, scoped extra/explicit roots and explicit host roots. Validate JWT bytes with independent verification, accepted key corpus, invalid/encrypted/wrong-key negatives and server/mTLS/ALPN fixtures. Default/extra roots are actual packaged inputs, not a label; native/platform outcomes stay OPEN until executed.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+          "reason": "Route Models -> migrated real OpenAI Chat adapter -> HttpClient -> loopback using the20.13 private safe upstream mechanism and an explicitly selected instance AWS-LC provider. Extend the existing public opi_ai::http::HttpClientBuilder with a minimal tls(TlsOptions) entry (planned, not present today): one owned typed value for source-scoped trust mode/root inputs (pinned Node default, extra/explicit roots or explicit host-root mode), optional owned client certificate-chain/key identity and source-qualified H1/H2/ALPN selection. Validate/freeze these instance inputs before I/O with typed redacted build/config failures. Choose the fixed AWS-LC provider and TLS cipher/signature/KX profile internally; expose no backend selector, generic crypto trait, raw verifier/bypass or test-only signing API. The real Chat adapter and workspace-external package consumer must receive this built HttpClient through their actual public client-injection/Models path, not raw reqwest/rustls or an in-process privileged helper. Existing HttpClientBuilder currently has only pool/proxy settings; these TLS configuration inputs are new necessary public surface, not an already-delivered capability. Preserve zero ambient credential/trust/proxy discovery; an explicitly selected host-root mode remains scoped to its authorized source operation. Freeze source TLS versions/ciphers/signature schemes/ALPN and declared KX order X25519MLKEM768,X25519,secp256r1,secp384r1; prove ordinary H2 versus explicit H1, P-521 signing/verification/mTLS and source-required supported RSA keys, while RSA1024/multiprime keys and P-521-only KX fail typed/redacted with no business HTTP or hidden fallback. Preserve WebPKI chain/hostname/time verification, actual packaged pinned Node reference default CA bundle, scoped extra/explicit roots, opt-in host roots and client identity/pool isolation. Exercise real public TLS negatives for roots/host/client key/chain/ALPN, independent alg-only RS256 JWT signature/claims fixtures, host preinstalled-ring versus empty-provider controls and caller feature union without global provider/config mutation. Prove cancellation during handshake/response/accepted partial, owned native-key lifetime until worker join and late-result suppression, correct failure stage/partial/known usage/terminal/permanent EOF, no identity rediscovery/extra sends. Before passing run a real cargo package artifact extracted outside the workspace through ordinary and caller-feature-union public consumers, recording resolved versions/features/registry checksums and actual native build/link provenance under RDF-23; no source-checkout/root patch/library lock/research crate is package proof. Retain generic conformance; no crypto fork/local-FFI namespace obligations or new public crypto framework. The private-signing fixtures do not close real ADC20.21.1, complete DEL-06 at20.34, assembled SDK package20.57, full native/platform20.58 or20.11.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile"
         },
         {
           "field": "reuse_search",
-          "reason": "searched=instance rustls0.23.40/ring0.17.14 and existing validated HTTP TLS path; reused=instance rustls0.23.40/ring0.17.14 and existing validated HTTP TLS path; gap=Wire private crypto through public rustls signer/verification/KX seams while keeping WebPKI chain/hostname/time validation, exact source algorithm selection and isolated pools; production_consumers=all SDK HTTP adapters, source request clients and their TLS pools; nonproduction_consumers=matrix exact41 integration and7 src-test files, crate examples and current bilingual READMEs, dynamic/config/wire/persistent readers from repository reuse audit",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition; repository sources named in searched clause"
+          "reason": "searched=current HttpClient reqwest rustls-tls ring graph, Models and openai_chat.rs acquisition, vertex.rs injected Bearer and Bedrock hmac/sha2, connection_pooling/openai_chat_fixtures/proxy_support plus generic scripts/pi-sdk-conformance and upstream crypto probes; reused=existing Models/real Chat/HttpClient seam, instance pooling and generic conformance/package family harness planned for HTTP20.12; gap=minimal owned TLS configuration on current pool/proxy-only HttpClientBuilder plus real explicit-provider TLS/trust/mTLS/ALPN public slice and early actual crypto package-consumer proof; production_consumers=current real Chat HttpClient path and other SDK HTTP clients, no delivered crypto module or real ADC signer yet, ADC source caller remains20.21.1; nonproduction_consumers=current public HTTP/pool/proxy fixture binaries and crate READMEs, historical EVP and upstream probes retained, no published crypto namespace or dynamic/config/wire/persistent backend identity",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile; crates/opi-ai/src/http.rs; crates/opi-ai/src/openai_chat.rs; crates/opi-ai/src/vertex.rs; scripts/pi-sdk-conformance"
         },
         {
           "field": "placement",
-          "reason": "target=core; existing_home=opi-ai product-neutral model runtime; cannot_fit_fully=use existing opi-ai ownership, keep policy in current host, no new Opi crate or inward edge",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+          "reason": "target=core; existing_home=opi-ai HttpClient and real Chat provider-neutral transport with private crypto owner; cannot_fit_fully=not-applicable, source trust and typed lifecycle fit existing crate without host policy or new public crypto framework",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile"
         },
         {
           "field": "surface_necessity",
-          "reason": "public_api=opi_ai::HttpClient TLS assembly, opi_ai service-account JWT signer (target); config=none, no new host policy key, existing source overrides only; state=实际 TLS／roots／mTLS／签名与平台边界 source-owned state, exact transition/result/failure contract in DoD; dependency_edge=reviewed exact backend/data/native closure only, no internal Opi edge",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+          "reason": "public_api=extend existing opi_ai::http::HttpClientBuilder with planned tls(TlsOptions), owned typed trust/roots optional certificate-chain/key identity and source-qualified H1/H2/ALPN inputs, necessary for real public adapter/package consumers; config=new required instance TLS inputs on existing builder, current pool/proxy-only API lacks them, no host/backend selector or raw verifier bypass; state=validate and freeze instance trust/client identity/protocol and internally fixed provider/profile, reuse owned call/pool/worker completion with typed redacted build failures; dependency_edge=ordinary upstream rustls/aws-lc-rs/tokio-rustls/reqwest TLS glue with actual feature/native admission, no crypto namespace or new Opi dependency edge",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile"
         },
         {
           "field": "simplification_ceiling",
-          "reason": "ceiling=existing crate and single owning mechanism, no speculative generic framework or extra compatibility layer; revisit_when=a named public conformance case or advertised native/MSRV target fails, or a second real use cannot fit the selected interface; simplification_trigger=replace; net_deletion=default-only rustls trust/algorithm restriction -> instance source-qualified TLS/roots and private EVP supplement; residual_glue=necessary typed host bridge and historical read-only conversion only, remove no unrelated consumer",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+          "reason": "ceiling=one source-qualified existing TLS owner plus private safe upstream key/provider glue and generic conformance family, no parallel EVP path or crypto public framework; revisit_when=public/package RDF-23 normal or negative case fails, caller feature union changes explicit provider/profile, or advertised native/MSRV/platform lacks proof; simplification_trigger=dependency-substitution; net_deletion=retire planned local EVP supplement and crypto fork/namespace gates, replace implicit default-only ring TLS with explicit source-profile AWS-LC instance configuration; residual_glue=existing source trust/pool/ALPN and frozen owner, typed failure mapping, shared generic package/conformance family proof",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile"
         },
         {
           "field": "forbidden_scope",
@@ -3632,13 +3640,33 @@
         },
         {
           "field": "task_owned_paths",
-          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+          "reason": "Retain trust resources, private crypto, HttpClient and real openai_chat.rs ownership; add existing connection_pooling/openai_chat_fixtures/proxy_support binaries for public integration regressions and generic scripts/pi-sdk-conformance/** for early actual package family proof. Shared HTTP tooling is sequenced by existing20.12->20.14 edge, not independently duplicated. Planned tls_contract.rs/package_slice.py do not exist yet; ownership is a proposal, no ledger/parent/WS permission. Existing http.rs/lib.rs and bilingual crate README ownership covers the necessary public builder/TlsOptions/config-error surface and caller docs; no general crypto exports.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile"
         },
         {
           "field": "acceptance_partition",
-          "reason": "This task proves actual HttpClient TLS assembly and independently verified signing fixtures. ADC service-account consumers follow in 20.21.1; the complete DEL-06 outcome closes in 20.34 after these real source callers, rather than pretending a signer fixture is a future service-account call.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+          "reason": "This slice proves the actual Models -> migrated real Chat -> HttpClient TLS path and independent signing/JWT fixtures, plus an actual early packaged crypto public consumer in ordinary/feature-union graphs. Current Vertex only consumes injected Bearer and is not an ADC signer. Real ADC service-account wiring remains20.21.1, complete DEL-06 at20.34, fully assembled SDK/package20.57 and complete platform20.58; no status of20.11/20.34/20.57 changes.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile"
+        },
+        {
+          "field": "early_package_proof",
+          "reason": "Use scripts/pi-sdk-conformance/package_slice.py --family crypto --offline as a planned generic family entry (not delivered or executed by this plan), shared with the HTTP family rather than a separate crypto driver. Extract actual cargo package artifact outside workspace; ordinary consumer calls real public Models/Chat/HttpClient TLS/mTLS/ALPN and errors in normal and caller-feature-union graphs. Record actual graph/features/source/checksum and native source/CC/link output, reject unreviewed native replacements at the proof gate. No source checkout/root patch/library lock/research crate substitutes; this early slice proof does not close20.57. Review consumer semantics and all changed/created test targets at implementation. The external consumer must construct owned TLS options with public HttpClientBuilder::tls(TlsOptions), build HttpClient and pass it through the real adapter/Models client path; it cannot reach private crypto or substitute a raw rustls-only loopback. The public builder/config seam is a new task deliverable.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile"
+        },
+        {
+          "field": "test_impact_plan",
+          "reason": "retain existing public Chat/connection-pool/proxy trust/identity/protocol/cancel regressions and generic conformance, reuse actual fixtures rather than duplicate a test-only TLS router; add distinct actual-provider empty-host/preinstalled-ring/union controls, supported and rejected keys/no-common-KX, ALPN/roots/mTLS/ownership/partial/EOF plus actual package ordinary/union proof; update only RDF-23 named Node-equivalence expectations, retire only EVP/local-FFI/fork/namespace future obligations; direct private owner tests stay private, real ADC fixture is not production ADC, no tests modified/executed in this plan tls_contract and the extracted package consumer both configure nondefault trust, client identity and protocol through the new public builder entry; include invalid root/key/profile rejection, two differently configured instances and no cross-pool/global leakage. No private test-only configuration escape hatch counts.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile"
+        },
+        {
+          "field": "replaces",
+          "reason": "Substantively revises the unstarted TLS slice from private EVP/full-source algorithm assumptions to RDF-23 public safe upstream profile and early package proof. Keep all runtime history, failing/open states, tier/edges, trust/source obligations and later ADC/platform/assembled-package owners. No acceptance evidence is inherited from isolated probes.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile"
+        },
+        {
+          "field": "public_tls_seam",
+          "reason": "Extend the existing public opi_ai::http::HttpClientBuilder with a minimal tls(TlsOptions) entry (planned, not present today): one owned typed value for source-scoped trust mode/root inputs (pinned Node default, extra/explicit roots or explicit host-root mode), optional owned client certificate-chain/key identity and source-qualified H1/H2/ALPN selection. Validate/freeze these instance inputs before I/O with typed redacted build/config failures. Choose the fixed AWS-LC provider and TLS cipher/signature/KX profile internally; expose no backend selector, generic crypto trait, raw verifier/bypass or test-only signing API. The real Chat adapter and workspace-external package consumer must receive this built HttpClient through their actual public client-injection/Models path, not raw reqwest/rustls or an in-process privileged helper. Existing HttpClientBuilder currently has only pool/proxy settings; these TLS configuration inputs are new necessary public surface, not an already-delivered capability. Preserve zero ambient credential/trust/proxy discovery; an explicitly selected host-root mode remains scoped to its authorized source operation.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile; crates/opi-ai/src/http.rs#HttpClientBuilder; crates/opi-ai/src/openai_chat.rs#OpenAiChatProvider"
         }
       ],
       "tier": "workspace",
@@ -3650,7 +3678,11 @@
           ".agents/skills/opi-implement/scripts/opi-impl-smoke.ps1 full"
         ],
         "behavioral_tests": [
-          "crates/opi-ai/tests/tls_contract.rs"
+          "crates/opi-ai/tests/tls_contract.rs (public HttpClientBuilder::tls(TlsOptions) -> real Models/Chat/HttpClient, no private configuration helper)",
+          "crates/opi-ai/tests/openai_chat_fixtures.rs",
+          "crates/opi-ai/tests/connection_pooling.rs",
+          "crates/opi-ai/tests/proxy_support.rs",
+          "scripts/pi-sdk-conformance/package_slice.py --family crypto --offline (planned generic entry, not yet implemented/run)"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -3658,21 +3690,23 @@
       "acceptance_scenarios": [
         {
           "id": "P20-S14",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-06",
-          "scenario": "Wire private crypto through public rustls signer/verification/KX seams while keeping WebPKI chain/hostname/time validation, exact source algorithm selection and isolated pools. Package pinned Node default roots, scoped extra/explicit roots and explicit host roots. Validate JWT bytes with independent verification, accepted key corpus, invalid/encrypted/wrong-key negatives and server/mTLS/ALPN fixtures. Default/extra roots are actual packaged inputs, not a label; native/platform outcomes stay OPEN until executed.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream crypto dependency profile; docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile",
+          "scenario": "Route Models -> migrated real OpenAI Chat adapter -> HttpClient -> loopback using the20.13 private safe upstream mechanism and an explicitly selected instance AWS-LC provider. Extend the existing public opi_ai::http::HttpClientBuilder with a minimal tls(TlsOptions) entry (planned, not present today): one owned typed value for source-scoped trust mode/root inputs (pinned Node default, extra/explicit roots or explicit host-root mode), optional owned client certificate-chain/key identity and source-qualified H1/H2/ALPN selection. Validate/freeze these instance inputs before I/O with typed redacted build/config failures. Choose the fixed AWS-LC provider and TLS cipher/signature/KX profile internally; expose no backend selector, generic crypto trait, raw verifier/bypass or test-only signing API. The real Chat adapter and workspace-external package consumer must receive this built HttpClient through their actual public client-injection/Models path, not raw reqwest/rustls or an in-process privileged helper. Existing HttpClientBuilder currently has only pool/proxy settings; these TLS configuration inputs are new necessary public surface, not an already-delivered capability. Preserve zero ambient credential/trust/proxy discovery; an explicitly selected host-root mode remains scoped to its authorized source operation. Freeze source TLS versions/ciphers/signature schemes/ALPN and declared KX order X25519MLKEM768,X25519,secp256r1,secp384r1; prove ordinary H2 versus explicit H1, P-521 signing/verification/mTLS and source-required supported RSA keys, while RSA1024/multiprime keys and P-521-only KX fail typed/redacted with no business HTTP or hidden fallback. Preserve WebPKI chain/hostname/time verification, actual packaged pinned Node reference default CA bundle, scoped extra/explicit roots, opt-in host roots and client identity/pool isolation. Exercise real public TLS negatives for roots/host/client key/chain/ALPN, independent alg-only RS256 JWT signature/claims fixtures, host preinstalled-ring versus empty-provider controls and caller feature union without global provider/config mutation. Prove cancellation during handshake/response/accepted partial, owned native-key lifetime until worker join and late-result suppression, correct failure stage/partial/known usage/terminal/permanent EOF, no identity rediscovery/extra sends. Before passing run a real cargo package artifact extracted outside the workspace through ordinary and caller-feature-union public consumers, recording resolved versions/features/registry checksums and actual native build/link provenance under RDF-23; no source-checkout/root patch/library lock/research crate is package proof. Retain generic conformance; no crypto fork/local-FFI namespace obligations or new public crypto framework. The private-signing fixtures do not close real ADC20.21.1, complete DEL-06 at20.34, assembled SDK package20.57, full native/platform20.58 or20.11.",
           "verification": [
-            "cargo test -p opi-ai --test tls_contract"
+            "cargo test -p opi-ai --test tls_contract",
+            "cargo test -p opi-ai --test openai_chat_fixtures --test connection_pooling --test proxy_support",
+            "python scripts/pi-sdk-conformance/package_slice.py --family crypto --offline (planned entry, not yet delivered/run)"
           ],
           "production_call_sites": [
-            "opi_ai::HttpClient instance TLS assembly through migrated real Chat adapter (target)",
-            "opi_ai private EVP signer consumed through instance TLS mTLS/verification (target)"
+            "opi_ai::http::HttpClientBuilder::tls(TlsOptions) -> built HttpClient -> Models -> migrated real OpenAI Chat -> instance source-qualified TLS (planned new builder config; actual public consumer path)",
+            "opi_ai private safe upstream key/provider/signing owner consumed by instance rustls mTLS/verification (target; real ADC remains20.21.1)"
           ],
           "status": "open"
         }
       ],
       "production_call_sites": [
-        "opi_ai::HttpClient instance TLS assembly through migrated real Chat adapter (target)",
-        "opi_ai private EVP signer consumed through instance TLS mTLS/verification (target)"
+        "opi_ai::http::HttpClientBuilder::tls(TlsOptions) -> built HttpClient -> Models -> migrated real OpenAI Chat -> instance source-qualified TLS (planned new builder config; actual public consumer path)",
+        "opi_ai private safe upstream key/provider/signing owner consumed by instance rustls mTLS/verification (target; real ADC remains20.21.1)"
       ],
       "substrate_only": false,
       "iteration_count": 0,
@@ -3691,7 +3725,11 @@
         "crates/opi-ai/src/http.rs",
         "crates/opi-ai/src/lib.rs",
         "crates/opi-ai/src/openai_chat.rs",
-        "crates/opi-ai/tests/tls_contract.rs"
+        "crates/opi-ai/tests/tls_contract.rs",
+        "crates/opi-ai/tests/connection_pooling.rs",
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
+        "crates/opi-ai/tests/proxy_support.rs",
+        "scripts/pi-sdk-conformance/**"
       ],
       "verified_at_commit": null,
       "evidence": null,
@@ -13078,6 +13116,11 @@
           "field": "http_profile_reconciliation",
           "reason": "P20-GAP-HTTP follows the revised registered RDF-22 acceptance profile instead of the retired dynamic storage and no backend cap obligation. This is a sourced HTTP criterion correction only: retain open status and the complete platform task DoD, dependency edges, verification commands, owned paths and execution history. No native/platform evidence or20.11/20.34/20.57 closure is asserted.",
           "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile; docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md#5. 七组设计已确定，产品覆盖全部 OPEN"
+        },
+        {
+          "field": "crypto_profile_reconciliation",
+          "reason": "Only P20-GAP-CRYPTO scenario wording follows RDF-23, replacing full-source algorithm/local-FFI/crypto namespace obligations with named upstream acceptance/native boundaries and real public/package/platform proof. Preserve all other scenarios, platform task DoD/paths/commands/edges/history and open status. No20.11/20.34/20.57 or platform proof is asserted.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile"
         }
       ],
       "tier": "workspace",
@@ -13170,7 +13213,7 @@
         {
           "id": "P20-GAP-CRYPTO",
           "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md#5. 七组设计已确定，产品覆盖全部 OPEN",
-          "scenario": "Future full product closure, currently OPEN: full source algorithms/roots/mTLS/sign/verify/KX at actual SDK seams, private safe FFI/native package. Mechanism owners: 20.13,20.14. Every relevant V/RDF and platform requirement remains necessary, research counts do not close it.",
+          "scenario": "Future full product closure, currently OPEN: actual SDK TLS/trust/sign/verify/KX/mTLS/ALPN and real source/ADC callers under RDF-23 declared supported key/algorithm profile, explicit AWS-LC instance provider and frozen source/declared group order. Verify supported RSA2048..8192/e3/P-521 signing/mTLS and typed RSA1024/multiprime/noP521-KX failures, no hidden fallback/business sends on handshake failure, WebPKI and packaged Node default/scoped/opt-in roots, host-ring/feature-union isolation, cancellation/key ownership until join/late-result suppression and actual ordinary/union package plus native build/link provenance across supported platforms/MSRV. No complete Node algorithm set, local FFI or mandatory crypto namespace is required; upstream native C/FFI/assembly/build/security review remains. Mechanism owners20.13/20.14, real ADC20.21.1, complete DEL-06 at20.34 and assembled SDK20.57 remain separate. Every relevant V/RDF/platform requirement remains necessary; research counts do not close it.",
           "verification": [
             "cargo test -p opi-ai --test platform_delivery"
           ],
@@ -15443,6 +15486,36 @@
       "flagged_count": 0,
       "rejected_count": 8,
       "ran_at": "2026-10-19T16:51:40+08:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 7,
+      "ran_at": "2026-10-19T10:15:27+00:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 1,
+      "rejected_count": 10,
+      "ran_at": "2026-10-19T10:24:57+00:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 10,
+      "ran_at": "2026-10-19T10:30:14+00:00",
       "task_id": null,
       "criterion_id": null
     }
