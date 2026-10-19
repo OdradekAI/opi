@@ -41,7 +41,7 @@ READY 表示设计已确定且有依据：七组后端有选定机制、明确�
 | DEL-02 | 单一 Models／binding／driver 与 owned Result／stream 生命周期 → verify: native/simple/advanced/direct 公开调用、不可变 event-time 数据、cancel/drop、终态收集与真实下游调用方 cutover。 |
 | DEL-03 | 可序列化 Context/Transcript、有序声明与 replay/projection → verify: 公开手动工具循环／换模型、raw/opaque 保留、工具关联及 malformed/final-argument 行为；不新增执行器或 session writer。 |
 | DEL-04 | Source-dialect Schema/normalizer/strict/grammar 机制 → verify: 公开校验及 adapter 编译、逐分支差分 corpus、原 schema 最终检查和明确 RDF 用例。 |
-| DEL-05 | Source-qualified HTTP/H2/proxy/redirect/retry transport → verify: 真实公开 adapter 与受控 fake transport、合法 send、受保护 header、取消与不含隐藏后端接受 cap。 |
+| DEL-05 | Source-qualified HTTP/H2/proxy/redirect/retry transport → verify: 真实公开 adapter 与受控 fake transport、合法 send、受保护 header、取消及明确声明的上游 HTTP 接受范围 profile（RDF-22），包含可观察的边界失败。 |
 | DEL-06 | TLS/trust/signing/verification/KX 与受控后端依赖闭包 → verify: 真实 SDK crypto/transport 路径、正反 fixture、私有所有权、可复现 package 与 native/unsafe 复审。 |
 | DEL-07 | Codex WS/PMD/length-storage/continuation/pool cleanup → verify: 包含最终修正 codec 的真实 Provider 公开路径、真实 frame/upgrade corpus 与资源生命周期；不能由 SSE fallback 代替。 |
 | DEL-08 | Auth/ADC/AWS sources 及所有固定 retry mode → verify: 公开 SDK 经注入来源与真实 adapter、选定身份、source exchange、process/metadata 生命周期及构造不做来源发现。 |
@@ -140,8 +140,8 @@ SDK 无会话前提。它不要求 Agent authorizer、durable 事务、子会话
 | AIR-002 | Catalog/collection；覆盖、替换或刷新 | MUST 原子发布完整的最近已知有效修订；已准备调用保留旧绑定。刷新失败保留先前有效数据。列表不承诺存在分发路由。并发/后台发布及缓存一致性遵守 AIR-033/034，不新增第二个权威来源。 | O-001/005, EP-01; D-03/23; V-01 |
 | AIR-003 | Prepared/公共流；poll/EOF | 首个已交付终态 MUST 吸收、关闭内部 attempt 并永久 EOF。公共 ChatStream Done/Err(CallFailure) 是 logical-call 最终；高级 AttemptHandle 终态只属于 attempt，可重试 acquisition outcome 独立，不能转发成公共最终 error。异常 EOF 只产生一次 typed protocol failure 后 EOF。保留终态/partial message及已知 usage；旧 provider Error/transport Err 按 AIR-047 收敛，不转成功或丢消息。 | A-04/P03/06, UX-03/16; D-04/31/36; V-03/05/40 |
 | AIR-004 | Stream/producer；取消竞态 | 在终止交付前观察到的取消 MUST 优先于缓冲输出，并交付唯一取消结果；已经交付的终止保持最终有效。共享调用取消阻止后续 attempt；receiver drop 结束其 attempt。验证同步后的可观测竞态，不猜测全局线程顺序。 | A-03/04; D-04 Q9; V-04/05 |
-| AIR-005 | 每个生成 transport/producer；connect/send/read/backpressure/drop | MUST 保留有界 producer/队列并发及可取消背压，区分队列容量与可接受 frame/message/state 大小。现有 opi 队列计数64是内部调度选择，不是 Pi 行为或输入上限。不施加未经证明的默认字节/块数/深度 cap。合法大事件不能仅因超过队列 credit 而拒绝或死锁；独立 terminal 路径保留完整 partial/已知 usage。显式 caller 资源政策为 opt-in、冻结并 typed 报告；真实分配/backend 失败仍可观察，handoff 后不重发，也不保证 RSS。 | A-03/P07; retained D-04; V-04/05/55 |
-| AIR-006 | SSE 分帧；任意合法分块 | MUST 跨任意合法 UTF-8/CRLF 分块正确 framing，增量解析并 checked 校验协议长度/CRC。Rust 或 backend 默认值不能推出新的默认 SSE/AWS/WS 容量上限。保留协议必需校验；保持各 Pi adapter 的增量 TextDecoder replacement 语义，不新增 fatal SSE UTF-8 拒绝。相关坏 JSON/protocol 失败 typed 脱敏；合法 keepalive/control 与大事件仍可接受。已配置资源政策与不可避免 backend 缺口分别记录。 | A-02/P06; D-04; V-02 |
+| AIR-005 | 每个生成 transport/producer；connect/send/read/backpressure/drop | MUST 保留有界 producer/队列并发及可取消背压，区分队列容量与可接受 frame/message/state 大小。现有 opi 队列计数64是内部调度选择，不是 Pi 行为或输入上限。不施加未经证明的默认字节/块数/深度 cap。合法大事件不能仅因超过队列 credit 而拒绝或死锁；独立 terminal 路径保留完整 partial/已知 usage。显式 caller 资源政策为 opt-in、冻结并 typed 报告；真实分配/backend 失败仍可观察，handoff 后不重发，也不保证 RSS。 RDF-22 仅允许已声明的上游 HTTP envelope/parser-storage 约束，不新增 event/state cap。 | A-03/P07; retained D-04; V-04/05/55 |
+| AIR-006 | SSE 分帧；任意合法分块 | MUST 跨任意合法 UTF-8/CRLF 分块正确 framing，增量解析并 checked 校验协议长度/CRC。Rust 或 backend 默认值不能推出新的默认 SSE/AWS/WS 容量上限。保留协议必需校验；保持各 Pi adapter 的增量 TextDecoder replacement 语义，不新增 fatal SSE UTF-8 拒绝。相关坏 JSON/protocol 失败 typed 脱敏；合法 keepalive/control 与大事件仍可接受。已配置资源政策与不可避免 backend 缺口分别记录。 RDF-22 HTTP profile 不放宽协议验证或增加 payload cap。 | A-02/P06; D-04; V-02 |
 | AIR-007 | SDK retry 所有者；auth/acquisition/variant transition | MUST 每个 logical call 只解析／冻结一次 auth，并使用唯一低层 acquisition 所有者。遵守协议默认值和显式覆盖；不叠加 transport/Agent retry。HTTP retry 复用冻结 variant，特定 strict 降级则有自己的有界 variant transition。send/wait 前观察 cancel/deadline；不在 handoff 后重放，也不回退 Provider/model/account。显式 whole-call retry 为 AIR-065，创建新的 calls。 | EP-11/12, UX-16, current SDK annex; V-05/12/33/39/57 |
 
 ## 要求：transcript、执行与重放
@@ -181,7 +181,7 @@ SDK 无会话前提。它不要求 Agent authorizer、durable 事务、子会话
 | AIR-028 | Classifier dispatch/validation；classify | MUST 通过 typed choice/bool/ordered-score 输入／结果支持全部 4 个已发布 classifier API：typesafe-system-one、cloudflare-workers-ai-system-one、llama-cpp-classify 和 openai-decisions。保留协议特定 envelope、label/score 限制、tokenizer/template/probability 算法、images、auth availability 和 failure/retry 规则。System One bool→noul 与 Decisions bool→predicate 不可互换。 | Current SDK contracts; V-24/50/55 |
 | AIR-029 | 答案验证；概率/分数 | MUST 保留每个 classifier parser 真实的必需字段/类型/finite-number 校验。固定 adapter 未做的 probability/confidence[0,1]、请求 label membership、完整 probability keys、score domain、sum/argmax 或归一化，不增为统一拒绝规则。adapter 输入 label/levels 规则与 llama 概率算法分别保留。缺失/无效必需值 typed 失败，不填0；不声称 provider 数值已校准。 | SP-11/U-2; D-25 Q28; V-24 |
 | AIR-030 | 操作结果；失败/成功 | MUST 区分 input/unsupported/auth/timeout/cancel/transport/http/invalid-result/resource-limit，并在业务验证失败后保留已知 usage/非秘密响应元数据。缺失/无效用量不同于 0；未报告的早期重试不是总账单。未知价格保持未知；普通诊断排除媒体/原始 body/秘密。 | SP-12/O-011; D-10/13/25; V-13/25 |
-| AIR-031 | Budget/reader；编码/读取/解码前 | MUST 按来源审计区分 Pi 显式限制、协议要求、backend 约束与可选 caller policy。不得以无依据的默认 bytes/body/depth/count/总时长 cap，或统一 positive-only/no-unlimited 规则缩小 Pi 输入。各参数有意义的0/省略/sentinel分别保留；checked arithmetic 与分配失败仍 typed。显式配置的 caller policy 被捕获、检查并执行，不截断或伪成功；它不能授权新操作或目的地。有界调度不保证任意合法 retained output 的固定进程内存。 | SP-15; D-25 Q28; V-23–25 |
+| AIR-031 | Budget/reader；编码/读取/解码前 | MUST 按来源审计区分 Pi 显式限制、协议要求、backend 约束与可选 caller policy。不得以无依据的默认 bytes/body/depth/count/总时长 cap，或统一 positive-only/no-unlimited 规则缩小 Pi 输入。各参数有意义的0/省略/sentinel分别保留；checked arithmetic 与分配失败仍 typed。显式配置的 caller policy 被捕获、检查并执行，不截断或伪成功；它不能授权新操作或目的地。有界调度不保证任意合法 retained output 的固定进程内存。 仅明确采纳的 RDF-22 HTTP envelope/parser-storage 约束属于获准后端接受范围差异；其他无依据限制继续禁止。 | SP-15; D-25 Q28; V-23–25 |
 | AIR-032 | SDK 公开能力所有者；支持声明 | MUST 通过公共调用方路径、真实 adapter 加受控本地 transport，以及协议 fixtures，证明每项映射 operation/adapter/profile。无默认终端工具、启动请求、隐藏文件输出或权威扩张。factory/type 名称本身不是交付；共享 wire 仍需 profile-default/auth/filter 证据，单一 image wire 不是多 wire 证明。 | Capability inventory; V-21/22/26/49/50 |
 
 ## 要求：已发布路径与请求定制
@@ -441,7 +441,7 @@ AWS 选定来源表和精确依赖证据见 [SDK 附录 A–D](sdk-target-propos
 
 | 模块 | 已选设计／实施义务 |
 |---|---|
-| HTTP | reqwest0.12.28＋受控 Hyper1.9.0 H1 parser 存储修正；明确来源的 protocol/proxy/redirect/retry owner。无隐藏 header-count/buffer cap，不设第二 retry driver |
+| HTTP | crates.io 原版 reqwest0.12.28＋Hyper1.9.0，采用明确声明的 parser/storage 接受范围 profile（RDF-22）；明确来源的 protocol/proxy/redirect/retry owner。不分发 HTTP fork/namespace，不设第二 retry driver |
 | TLS／ADC签名 | rustls0.23.40/ring0.17.14，实例 trust/mTLS 与显式 ALPN；native默认取固定Node参考CA bundle，scoped extra/explicit roots归source，host roots显式选择；ADC RS256 与来源要求的 TLS signing/verification/KX 通过私有 OpenSSL3 LibCtx、内建 default provider 和仅内存 EVP C API，由窄 safe Rust owner 包裹，并接 rustls 的公共 signer/WebPKI/KX seam。ring-only 签名退出；无全局 config/provider 修改或 passphrase UI |
 | WS | owned 严格 Upgrade、动态 headers/tail＋ratchet_core/ext/deflate1.2.1、公共 PMD message-state 适配与固定有限的 frame RSV/length/checked-storage 修正。TW/TTW0.28.0 退出完整目标，不靠 fallback 或 backend cap 关闭覆盖 |
 | AWS／ADC来源协议 | owned sources、source-specific retry/redirect 与完整 modes；保留 Smithy Query/XML0.62.1、xmlparser0.13.5、p2560.13.2/sha1 0.10.6 和现 hmac/sha2。无虚构总 send/depth/body 配额，不以 standard-only 替代 |
@@ -449,13 +449,13 @@ AWS 选定来源表和精确依赖证据见 [SDK 附录 A–D](sdk-target-propos
 | Telemetry | tracing0.1.44/tracing-core0.1.36；owned Span＋源 Dispatch、安全私有 pinned poll/drop wrapper，含 producer。不采 ambient、不拆新 crate/domain schema 或 exporter |
 | Cargo／catalog | root 管理精确产品 graph 与 native/patch 来源；版本化真实 catalog 输入，经 schema/身份/hash 验证后原子发布。研究 lock／人工记录不替代产品／平台／artifact 验收 |
 
-[后端专项核查](pi-1.3.0-backend-gap-audit.md)与首轮离线报告保留原始反例。[设计就绪决定](pi-1.3.0-design-readiness.md)及机制报告选定上述有限修正；版本、patch、源码及数据身份是设计的一部分。Schema 选择已由 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile) 中获批的上游数据 profile 取代；这不授权把其他受控后端换成未经修改的上游 crate。七组完整实施／覆盖仍全部 OPEN。正式准入、产品 graph、完整公开 conformance 与 native 平台交付分别保留门禁。
+[后端专项核查](pi-1.3.0-backend-gap-audit.md)与首轮离线报告保留原始反例。[设计就绪决定](pi-1.3.0-design-readiness.md)及机制报告选定上述有限修正；版本、patch、源码及数据身份是设计的一部分。Schema 选择已由 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile) 中获批的上游数据 profile 取代；HTTP 独立采用 [RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile) 的上游接受范围 profile。两项修订均不替换受控 WS 或私有 crypto 设计。七组完整实施／覆盖仍全部 OPEN。正式准入、产品 graph、完整公开 conformance 与 native 平台交付分别保留门禁。
 
 #### 流调度与可接受数据
 
 撤回默认 SSE8MiB、AWS8MiB/headers128KiB、接收 WS8MiB/message16MiB/outgoing16MiB、retained32MiB/4096 blocks/depth64、tool/opaque8MiB、queue64MiB 和 terminal-envelope256KiB。现 queue64 是内部 count bound，不是新拒绝阈值；实施背压/一个 in-progress event，以及不因大事件卡死的 handoff，不增加 retry driver。独立 single terminal 路径保留完整 partial/已知 usage，不依赖不足的 queue permits。
 
-合法 retained output 必然随接受内容增长；不保证固定 RSS，也不静默截断。增量 framing、checked 协议长度、取消/drop/task cleanup 与 immutable shared snapshots 仍必需。显式 caller policy 测 B−1/B/B+1；省略 policy 时，更大的合法事件/输入不能新增已撤回 SDK 失败。backend size/recursion 约束须配置消除或保持明确未解覆盖缺口，不能藏为默认值。
+合法 retained output 必然随接受内容增长；不保证固定 RSS，也不静默截断。增量 framing、checked 协议长度、取消/drop/task cleanup 与 immutable shared snapshots 仍必需。显式 caller policy 测 B−1/B/B+1；省略 policy 时，更大的合法事件/输入不能新增已撤回 SDK 失败。除明确采纳的 RDF-22 HTTP envelope/parser-storage profile 外，backend size/recursion 约束须配置消除或保持明确未解覆盖缺口，不能藏为默认值。RDF-22 不新增 SSE/event/body、AWS payload、WS、Context、tool 或 Schema cap。
 
 #### Store-owned mutation completion
 
@@ -468,6 +468,14 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 只有一个显式 transport/retry owner；关闭嵌套 retry，不改来源限定的实际 sends。撤回 blanket redirect:none/仅 same-origin ADC GET<=5/16-total-send 的 parity 默认。复现固定各路径 redirect status/method/body/header stripping 和 retry；不向未授权目标泄漏 credential 或切换 auth identity。更强宿主 routing policy 须显式且记录接受差异。来源/backend 证明缺失是缺口，不是统一3xx失败。
 
 保留 scoped proxy/NO_PROXY、TLS 验证及实例所有权，不改全局 env/provider/subscriber 或绕过。WS Upgrade 与显式 proxy-placeholder 的 H1 不表示所有 Bedrock 流量 H1。撤回 CONNECT64KiB/124-header 和 close2s SDK 政策；选定的 owned Upgrade 与受控 Ratchet 组合替代这些 handshake/compression 约束；完整集成仍需覆盖证明。cross-origin/redirect/proxy fixtures 计合法 sends 并验 credential stripping/source binding。
+
+#### 上游 HTTP 依赖 profile
+
+使用 crates.io 原版 reqwest0.12.28/Hyper1.9.0，保留唯一来源限定 owner 与既有 custom-transport seam。RDF-22 明确允许其已声明的 HTTP response-head、read-buffer、trailer 数量／字节及累计 chunk-extension 约束拒绝其他方面合法的 Pi 输入。这些是后端接受范围差异，不是 Pi 默认值、新 SDK 校验配额或统一 body 上限。保留来源限定 H1/H2/TLS/proxy/redirect/retry 行为；不能仅为掩盖边界升级版本或把 allocation hint 填成 usize::MAX。
+
+依赖准入时记录实际 graph、有效 features、registry checksum 及每项适用边界／配置。通过 Models → 真实 OpenAI Chat adapter → HttpClient 验证低于／等于／高于边界及逐字节／合并输入，包含 acquisition 失败与已交付内容后的失败。保留 typed 脱敏 backend/transport cause、失败阶段、完整 partial／已知 usage、唯一终态／永久 EOF、handoff 后不重试及无隐藏 sends。后端仅暴露较宽 typed cause 时，不虚构 resource-limit 诊断。畸形 CL/TE/framing、截断、身份／秘密泄漏、取消与 owned 资源清理仍是正确性要求，不是获准 profile 差异。Opaque caller transport 保留其声明责任，不二次包装或声称已知其限制。
+
+上述版本对是 workspace／研究基线，不承诺 library lock 固定普通消费者。外部独立解析的版本／features 必须先记录，并按本 HTTP 接受范围与正确性合同验证，才能声明支持；不存在统一升级豁免。真实 cargo package 产物必须由 workspace 外普通 consumer 使用，并验证正常依赖与 caller feature-union 图。Consumer root patch、HTTP 私有 namespace 或 workspace lockfile 不能证明交付。仅退役 HTTP patch-apply／source-transform／namespace 专属义务；通用 conformance 和包消费者保留。完整组装 transport、平台与 package 验收保留现有 owner；本修订不完成 20.11、20.34 或20.57。
 
 #### Schema 语义与执行
 
@@ -529,7 +537,7 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 |---|---|
 | Rust后端选型与五项合同 | [当前后端附件](pi-1.3.0-rust-backends.md)；字节预算、mutation屏障、redirect/retry/proxy/TLS、Schema与typed custom API；选定版本不构成编译/准入证明 |
 | 当前完整 capability/default/protocol/flow 映射 | [Pi 1.3.0 SDK contracts](pi-1.3.0-sdk-contracts.md)；有源码支持的精确公开行为与明确 utility/platform 替代 |
-| Rust 差异、caller 影响和证明 | [RDF-01–21](pi-1.3.0-rust-differences.md)；语言／资源／正确性／平台／数据 profile 差异与真实覆盖缺口的区分 |
+| Rust 差异、caller 影响和证明 | [RDF-01–22](pi-1.3.0-rust-differences.md)；语言／资源／正确性／平台／数据 profile 差异与真实覆盖缺口的区分 |
 | 唯一机械验收和测试迁移 | [V-01–59](acceptance-matrix.md)；54 组 SDK、4 组仅宿主影响、1 组退役，以及 41 integration+7 source-file 处置；均不是已执行验收结果 |
 | 当前输入／修订和独立评审 | [参数baseline](pi-1.2.0-parameter-revision-baseline.json)、[参数复审](pi-1.2.0-parameter-revision-review.md)、[README](README.md) |
 | 审查发现与补核范围 | [版本审查](pi-1.2.0-review.md)、[五问补核](pi-1.2.0-followup.md)；发现仅适用于各自固定的修订前输入 |

@@ -77,7 +77,7 @@ call创建时冻结完整record/adapter/options；后来替换/删除不改旧ca
 
 ### 3.1 HTTP、TLS、proxy
 
-保留reqwest0.12.28、Hyper1.9.0、现Tokio1.52.3/futures0.3.32及实例rustls0.23.40/tokio-rustls0.26.4。Hyper response-head/trailer动态存储与无来源buffer cap采用受控窄patch；ring0.17.14仅common crypto，来源需要的signer/verification/KX由私有OpenSSL3 EVP补充，保持WebPKI chain/host/time检查。本轮不改产品Cargo/features。后续root workspace声明、完整锁图/feature/native/MSRV/平台审查仍必需。原仅H1与webpki-only配置不能被称为完成Pi默认对齐。
+保留reqwest0.12.28、Hyper1.9.0、现Tokio1.52.3/futures0.3.32及实例rustls0.23.40/tokio-rustls0.26.4。HTTP采用RDF-22普通crates.io上游parser/storage接受范围，不再维护Hyper窄patch或HTTP namespace；ring0.17.14仅common crypto，来源需要的signer/verification/KX由私有OpenSSL3 EVP补充，保持WebPKI chain/host/time检查。本轮不改产品Cargo/features。后续root workspace声明、完整锁图/feature/native/MSRV/平台审查仍必需。原仅H1与webpki-only配置不能被称为完成Pi默认对齐。
 
 WS classic Upgrade及明确ProxyPlaceholderSigning需要H1；Pi普通Bedrock默认H2，proxy/FORCE_HTTP1才改H1，须保留该能力或公开未关闭差异，不能因当前features不启H2就默认剥夺。TLS1.2/1.3、SNI/hostname/server验证、禁止bypass及实例显式crypto provider保留；不安装global provider。默认选固定Node参考bundle，scoped extra/explicit roots按source消费，host roots显式选择。webpki与任意OS roots不冒称Node/Bun同默认；参考bundle打包及企业CA/系统trust各平台覆盖仍需验收，不自动读取越权ambient目录。
 
@@ -195,7 +195,7 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 |---|---|---|
 | Schema | 私有 source dialect＋RDF-21 普通上游数据 profile；旧64/64、11合成错误控制、43/43叶与10包 namespace 同图保留历史身份，不追认为新图验证 | 全 normalizer/formats/refs/evaluated/UTF16 边界、public utility/consumer/cache/cancel；V-11/34/35/39/41/58 |
 | WS | ownedUpgrade＋受控Ratchet PMD/message/RSV/length/storage；旧80观察与后续纯内存修正分开；具体修复证明见WS报告，不靠SSE关闭 | fullprovider/continuation/pool/proxy/TLS/cleanup/multiplatform及新patch网络组装；V-02/30/49/58 |
-| HTTP/proxy/H2/redirect | sourceowner＋受控Hyper动态storage，20headers对照、redirect逐leg及16proxy source观察；显式ALPN有实测 | 完整head/trailer patch、CL/TE/EOF/取消、所有source/proxy组合与publicdriver；V-01/05/09/29/30/51/55/58 |
+| HTTP/proxy/H2/redirect | sourceowner＋RDF-22上游HTTP profile；旧20headers patch对照、redirect逐leg及16proxy观察保留原输入，显式ALPN有实测 | 上游head/buffer/trailer/chunk-extension边界、CL/TE/EOF/取消、所有source/proxy组合与publicdriver；V-01/05/09/29/30/51/55/58 |
 | TLS/trust/crypto | 实例rustls/commonring＋privateEVP补齐signer/verification/KX，reference bundle/scopedroots；11RSA/privatepoison、TLS正常负例、P521/e3差异有实际来源 | 全算法/chain/source与协商优先级、Rust FFI安全、构建供应链/平台/真实服务；V-09/49/55/58 |
 | Auth/ADC/AWS | ownedfullsource与standard/adaptive/Smithy2026 owner；metadata0/3000ms来源已定，不将局部机制算fullchain | 所有source/9OAuth/SSO/MFA/DPoP/adaptive/retry/process-tree/rotation与ACK；V-05/09/12/43/55/58 |
 | Telemetry | safe pinned poll/drop wrappers与源Dispatch；七场景跨线程/producer/noop真实运行 | 全SDK入口传播/serde/wire/secret/consumer；V-46–48/58 |
@@ -205,8 +205,8 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 
 ## 6. 维护与发布身份
 
-修改过的 Ratchet、Hyper 继续使用受控、可被普通 consumer 解析的独立后端 package 身份与精确 version/source/checksum；不把产品 lock 或 consumer root patch 当发布方案，不标成未经修改 upstream crate。Schema 的 regress／URL/IDNA/ICU 改用普通 crates.io package，不再承担 Unicode16 分叉或 namespace family 发布义务。旧 URL10包共图结果保留历史身份；通用 conformance、外部 consumer 及最终完整 registry／packaging 仍由 V-58 验，不在本轮 publish。不新增 Opi 领域 API、公共 trait 或根 workspace 拓扑。
+修改过的 Ratchet 继续使用受控、可被普通 consumer 解析的独立后端 package 身份与精确 version/source/checksum；HTTP 则采用 RDF-22 普通 crates.io reqwest/Hyper，无 HTTP namespace 发布义务；不把产品 lock 或 consumer root patch 当发布方案，Ratchet 修正版不标成未经修改 upstream crate，HTTP 则如实标明原版来源。Schema 的 regress／URL/IDNA/ICU 改用普通 crates.io package，不再承担 Unicode16 分叉或 namespace family 发布义务。旧 URL10包共图结果保留历史身份；通用 conformance、外部 consumer 及最终完整 registry／packaging 仍由 V-58 验，不在本轮 publish。不新增 Opi 领域 API、公共 trait 或根 workspace 拓扑。
 
-后端namespace必须覆盖真正消费修正的最小类型依赖闭包：HTTP为reqwest→hyper-util/Hyper及仍引用这些类型的hyper-rustls/TLS glue等实际路径；WS为相互交换extension/frame类型的Ratchet core/ext/deflate。逐边固定package别名/版本/source/checksum，证明SDK driver实际链接修正版，不只增加一个未被使用的私有Hyper或混合两套类型。未改的通用http/bytes/rustls等类型能共享时不无端复制；完整闭包由实际metadata/反向feature树和externalconsumer验收，不能预先用猜测包数当完成。公共SDK／custom transport边界不泄漏私有backend类型，正常caller显式提供的标准client/transport按其已有合同接入一次，不加第二router/driver/retry；本机默认路径不靠caller rootpatch修补。
+后端namespace必须覆盖真正消费修正的最小类型依赖闭包：HTTP退出受控namespace闭包，仅审查实际reqwest/hyper-util/Hyper/TLS glue普通registry图及feature union；WS仍为相互交换extension/frame类型的Ratchet core/ext/deflate。逐边固定package别名/版本/source/checksum，证明WS driver实际链接选定修正版、HTTP driver实际使用声明的上游图，不增加无消费者fork或混合两套类型。未改的通用http/bytes/rustls等类型能共享时不无端复制；完整闭包由实际metadata/反向feature树和externalconsumer验收，不能预先用猜测包数当完成。公共SDK／custom transport边界不泄漏私有backend类型，正常caller显式提供的标准client/transport按其已有合同接入一次，不加第二router/driver/retry；本机默认路径不靠caller rootpatch修补。
 
 Unicode16 数据重生／闭包专属工具退役；普通 ICU2.2 data 仍含上游 build.rs，须审 ICU4X_DATA_DIR 等构建输入，不能称依赖树零 build script。ryu-js safe API 内部有 unsafe；Ratchet deflate 强制 zlib 带 C/build.rs；private OpenSSL EVP 扩大到 source-required 签名/verification/KX，包含受限 unsafe/native 构建责任。保留适用的许可／NOTICE、最小 diff、补丁前后源 SHA、数据及 source 版本；上游升级先重放语料并审算法 diff。不得静默扩大为另一个通用引擎，或换更窄后端后仍声称同目标。产品 root graph、MSRV、三平台以及供应链/FFI 审查继续 OPEN。

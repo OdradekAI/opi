@@ -40,18 +40,18 @@ These pin the runtimes under which the offline differential observations in §9.
 
 The telemetry package declares no dependencies. `openai@7.19.0` was verified per-package SHA-512 integrity with archive SHA-256 `597532dcb9051ee8aa5edadedb57b798b42add68cc5aec1d67e994d0cfad07f1` and official tag commit `15f6e408a0359df50ee7a996616957cc14988659` (appendix A evidence in [sdk-target-proposal.md](sdk-target-proposal.md) and [sdk-auth-provider-migration.md](sdk-auth-provider-migration.md)).
 
-### 3.2 Design-selected Rust backend set (selected, not compiled)
+### 3.2 Design-selected Rust backend set (selection, not integration acceptance)
 
 | Group | Selected identity |
 |---|---|
-| HTTP | `reqwest` 0.12.28 + controlled `Hyper` 1.9.0 H1 parser-storage correction; one explicit transport/retry owner |
+| HTTP | unmodified crates.io `reqwest` 0.12.28 + `Hyper` 1.9.0, with the declared RDF-22 HTTP parser/storage acceptance profile; one explicit transport/retry owner; no HTTP fork/namespace obligation |
 | TLS / ADC signing | `rustls` 0.23.40 / `ring` 0.17.14 with instance trust/mTLS and explicit ALPN; native default is the pinned Node reference CA bundle; ADC RS256 and source-required signing/verification/KX use a private OpenSSL 3 `LibCtx` (built-in default provider, memory-only EVP C APIs) behind a narrow safe Rust owner through rustls public seams |
 | WS | owned strict Upgrade (dynamic headers/tail) + controlled/patched Ratchet `ratchet_core`/`ratchet_ext`/deflate 1.2.1 with the public PMD message-state adapter and pinned finite frame RSV/length/checked-storage correction; TW/TTW 0.28.0 exits the complete target |
 | AWS / ADC source protocols | Smithy Query/XML 0.62.1, `xmlparser` 0.13.5, `p256` 0.13.2, `sha1` 0.10.6, existing `hmac`/`sha2` |
 | Schema | private TypeBox JSON-dialect IR/evaluator + `regress` 0.12.0 algorithm with reproducible Unicode16 data, `serde_json` preserve_order, explicit JS key enumeration, `ryu-js` 1.0.2 |
 | Telemetry | `tracing` 0.1.44 / `tracing-core` 0.1.36 |
 
-These are selected design identities with declared patch/source/data provenance, adopted through the Phase delivery contract. They are not present in the product Cargo graph, are not compiled, and formal admission is a separate gate ([spec-draft.md](spec-draft.md) backend annex; [pi-1.3.0-design-readiness.md](pi-1.3.0-design-readiness.md)).
+These are selected design identities with declared patch/source/data provenance, adopted through the Phase delivery contract. HTTP amendment (2026-10-19): the HTTP row follows RDF-22; ordinary reqwest/Hyper already occur in the product Cargo graph, while the complete new profile, source-owner assembly and packaged-consumer behavior still require implementation acceptance. This selection makes no new compilation claim. Other fixed input identities and historical counts retain their original evidence window; formal admission remains a separate gate ([spec-draft.md](spec-draft.md) backend annex; [pi-1.3.0-design-readiness.md](pi-1.3.0-design-readiness.md)).
 
 ## 4. Data identities
 

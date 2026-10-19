@@ -6,7 +6,7 @@
 
 | 组 | 选定方案 | 被排除的捷径 | 后续产品状态 |
 |---|---|---|---|
-| HTTP／proxy／H2／redirect | 保留 reqwest 0.12.28、Hyper 1.9.0 与 source-owned route／redirect／retry；**Hyper response-head/trailer 存储与无来源 head buffer cap 采用受控窄 patch**，按实际输入增长，不预分配一个巨大固定 header 数；实例 TLS 显式 ALPN。普通 Bedrock 保留 H2，明确 proxy／placeholder／WS classic 路径用 H1 | 原生 reqwest 默认 redirect10、Hyper 默认100 headers／约400KiB buffer；“启 http2 feature 就得到 preconfigured TLS 的 H2”；由 SDK 二次发现 ambient proxy | V-01/05/09/29/30/51/55/58 OPEN；已证实两个已知差异及局部补救，不表示完整 patch／产品组装已完成 |
+| HTTP／proxy／H2／redirect | crates.io 原版 reqwest 0.12.28／Hyper 1.9.0，采用 RDF-22 明示 parser/storage 接受范围；保留 source-owned route／redirect／retry 与实例 TLS 显式 ALPN。普通 Bedrock 保留 H2，明确 proxy／placeholder／WS classic 路径用 H1；不维护 HTTP fork/namespace | 把 reqwest 默认 redirect10 当来源规则；隐藏后端边界或伪称无限接受；“启 http2 feature 就得到 preconfigured TLS 的 H2”；由 SDK 二次发现 ambient proxy | V-01/05/09/29/30/51/55/58 OPEN；旧对照只证明其原 patch，当前 profile／产品组装须独立验证 |
 | TLS／trust／crypto | TLS 保留实例 rustls 0.23.40＋ring 0.17.14 作为 common crypto，并以 **OpenSSL3私有libctx成熟EVP** 补足已选源的key/signature/verification/KX机制；RS256也用该私有context。raw ABI 的最窄 unsafe 模块外提供 safe Rust 外观，不使用默认 context／全局禁 config／自研密码学。按源冻结根证书、proxy 与 target identity | ring-only TLS/RSA 完整覆盖；简单换 aws-lc 或 BoringSSL 就声称支持全部 Node 输入；默认 openssl PKey／Signer 方便函数等于私有 context | V-09/49/55/58、RDF-18 OPEN。RSA C API 机制已测，TLS扩展／Rust wrapper 安全审查／正式锁图／native 构建和平台行为未完成 |
 | Auth／ADC／AWS | 保留私有 full-source coordinator＋固定协议 adapter，统一受控 transport、已有 SigV4／成熟 HMAC/SHA、Query/XML codecs、p256 DPoP；**同时实现 standard、adaptive 与固定 Smithy 2026 分支**，不删 source／MFA／SSO／login／executable | vendor 默认 Client/Config 的 eager resolver、隐式 fs/env／trace；standard-only；选中 source 的服务失败后改选另一账户；metadata1s猜值 | V-05/09/12/43/55/58 OPEN。来源与模式是必须实施的合同，未把几个实测点提升为 full chain 通过 |
 
@@ -36,13 +36,13 @@ Pi 使用已有固定 `.repo/pi-1.3.0`；package-lock SHA-256 是 `b686f30bc97e9
 
 Pi proxy helper 的 **16 次真实源码调用**覆盖 scoped lower/upper、empty fallback、ambient lower、protocol/ALL_PROXY、domain boundary、port、IPv6、wildcard、SOCKS、invalid URL 和 bypass-before-parse。包括 `ws_proxy=proxy:80` 会按 `ws://` 补 scheme 再拒绝的实际细节；不能把 helper 当所有 Google agent/runtime 的默认代理规则。Rust source owner 复制实际路径的 resolver 语义，冻结 scoped env；owned CONNECT 先验证 HTTPS proxy，再 target TLS，并保留 overread，不在失败后直连旁路。完整 tunnel/proxy/redirect/cancel 产品 conformance 继续 OPEN。
 
-### 3.2 Hyper 的隐藏限制必须修补
+### 3.2 上游 Hyper 接受范围与历史 patch
 
 精确来源是 Hyper `src/proto/h1/role.rs:31,1017–1030` 的默认100 header 槽；public `client/conn/http1.rs:450–465` 的 `max_headers(n)` 按 n 直接分配，不能填 `usize::MAX` 来假装无 cap。buffer 的默认与 `max_buf_size` 是另一约束；reqwest 本版本未公开相应 H1 header/buffer builder。
 
 普通合法200响应含99/100/101/125/200 headers：固定 Node/Bun 都通过；原 reqwest/Hyper 对101/125/200拒绝。TEMP prototype **只改变 Client response parser 的两个 storage arrays**：None 时依已缓冲 head 的实际行数取必要槽数，在第一空行停止，coalesced body 不增加槽数；Some 显式policy保留。原 httparse、status、framing、body decoding 完全保留。该原始 patch 已 `cargo build --locked --offline`，同20条 paired records 的 patched native 全部通过。
 
-**生产实现合同：** 在受控、精确源 patch 中完成 response head 和 trailer 的同一动态存储合同，并让无 caller policy 的 header buffer 按真实输入 checked 增长；不能只修改两个研究 arrays 后声称所有接受集已覆盖。持有原源码 checksum、最小 patch、测试向量和升级 diff；优先向维护中的上游提交等价补救，后续升级前重复边界语料。此路线维护成本是明确的新决定，不能偷偷变成整个 HTTP 自研、永久任意 fork 或固定大拒绝值。完整 framing／conflicting CL-TE／obs-fold／interim responses／trailers／header callbacks／大合法 head／EOF／cancel／pool 生命周期仍是实施验收，不在本文标 PASS。
+**现行生产实现合同（RDF-22）：** 上述 dynamic-head/trailer/buffer patch 选择由用户明确修订为普通 crates.io 上游 profile；历史 patch 与 paired records 保持原样。允许已声明的 response-head/read-buffer、trailer count/bytes 和累计 chunk-extension 边界拒绝其他方面合法的 Pi 输入，不再要求 HTTP fork、namespace 或 `third-party/pi-http` 必建目录。不承诺后端全部内部 allocation 可恢复，也不放大为 SDK body/SSE/WS cap 或任意资源保证豁免。固定版本、实际 graph/features/checksum 和边界须由真实公共 adapter、普通／feature-union 包消费者验证；B−1/B/B+ 与逐字节／合并输入不能只测 is_err。失败保留 typed 脱敏 cause／阶段、完整 partial/usage、终态及重试封口。完整 framing／conflicting CL-TE／obs-fold／interim responses／trailers／callbacks／EOF／cancel／pool 生命周期继续是正确性验收，不因 profile 差异放宽。TLS/crypto 与 WS 受控方案不变，完整验收 OPEN，详见 [RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile)。
 
 ### 3.3 H2 与 TLS 的实际组装
 
@@ -109,6 +109,6 @@ Rust metadata owner冻结所选residency来源：明确值或**仅当metadata路
 
 ## 6. 后续验收与交接
 
-`选定机制 → verify: 本文pins、真实差分、公开C API／parser接入与局部补救` 已有实际证据。`产品接线／完整语料 → verify: 既有V与Rust外部consumer` 全部仍OPEN。尤其没有执行 full AWS chain／adaptive实现、OAuth真实服务、complete ADC工厂、代理TLS双隧道、全redirect与跨origin权限策略、完整Hyper patch、三平台、Rust FFIsafety审查或外部package smoke。不得用本文状态覆盖这些OPEN。
+`选定机制 → verify: 本文pins、真实差分、公开C API／parser接入与局部补救` 已有实际证据。`产品接线／完整语料 → verify: 既有V与Rust外部consumer` 全部仍OPEN。尤其没有执行 full AWS chain／adaptive实现、OAuth真实服务、complete ADC工厂、代理TLS双隧道、全redirect与跨origin权限策略、上游HTTP profile完整公共边界验证、三平台、Rust FFIsafety审查或外部package smoke。不得用本文状态覆盖这些OPEN。
 
 测试影响：研究 **add**（脚本／isolated crate／source pins／raw结果）；产品 **none**（add/update/delete均0，现有产品测试retain）。没有paid provider、真实credential、非loopback metadata网络或用户目录发现；准备网络与crypto CLI都已显式分开记录。没有 commit/push。本页技术附件没有既有英文counterpart；双语spec须同步采纳选择与差异。

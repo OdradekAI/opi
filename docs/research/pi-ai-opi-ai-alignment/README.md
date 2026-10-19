@@ -38,6 +38,10 @@
 
 只移除被替代的现行要求／叙述，不改历史hash、旧测试执行结果或人类回答。只有已验证替代与保全关系后才可进一步删除历史证据；产品交付进度由既有流程拥有。产品测试影响 **none**；本轮新增离线研究harness与证据，所有V的完整实施／运行验收仍未交付。
 
+## 当前 HTTP 合同协调
+
+HTTP 已按用户选择修订为普通 crates.io reqwest0.12.28/Hyper1.9.0 的 [RDF-22 接受范围 profile](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile)，不再要求 Hyper 补丁、HTTP namespace 或 third-party/pi-http 必建路径。来源限定 transport/retry、协议／秘密／取消与 partial/usage 义务保留；真实 adapter、普通／feature-union package 与平台验收仍 OPEN。WS 受控 Ratchet 和 crypto 选择不变。下方旧研究窗口、原始 patch 与计数保留历史身份，不能作为新 profile 的执行结果。
+
 ## 设计收敛研究窗口（注册前）
 
 用户已明确选定设计READY口径，未授予产品实施。Schema改选私有方言IR／Unicode16 regex与URL数据profile；HTTP受控Hyper动态存储、WS受控Ratchet组合、private OpenSSL EVP配rustls公共扩展、full-source auth、safe tracing载体及版本化目录交付合同均在新报告确定。维护代价包括10个URL/IDNA/ICU后端namespace包、有限其他source/data补丁、zlib/OpenSSL native与unsafe审查；它们不新增Opi领域API或rootworkspace拓扑，也未获得依赖准入。

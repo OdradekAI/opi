@@ -19,7 +19,7 @@
 | 范围／平台 | SDK 与宿主责任、Cargo/module 与 npm/Bun、native runtime 支持面 | 可以不复制非目标符号或平台桥，但 SDK 对应功能不能随之消失 |
 | 真正能力缺口 | 尚无公开可达实现、协议接线或机械证明 | 保持未完成；不能以“Rust 惯用”“deferred”或历史子集选择关闭 |
 
-以下 RDF-01–21 是差异定位符，不是新 AIR 要求、V 验收编号或进度账本。RDF-01–20 保留既有身份；RDF-21 是 2026-10-19 用户批准的上游 Unicode／IDNA 数据合同修订。一个条目可能含两类因素，但必须分别解释。每项的“机械验证”描述所需产品证据；前置源码轮没有执行 Cargo/Node 测试、构建、live/OAuth 请求、依赖安装或生成数据。离线 harness 与后续实施各列实际执行，不互相冒充。
+以下 RDF-01–22 是差异定位符，不是新 AIR 要求、V 验收编号或进度账本。RDF-01–20 保留既有身份；RDF-21 是上游 Unicode／IDNA 数据合同修订，RDF-22 是本次用户选定的 HTTP 上游接受范围合同修订。两者独立，不扩展为其他后端豁免。一个条目可能含两类因素，但必须分别解释。每项的“机械验证”描述所需产品证据；前置源码轮没有执行 Cargo/Node 测试、构建、live/OAuth 请求、依赖安装或生成数据。离线 harness 与后续实施各列实际执行，不互相冒充。
 
 | ID | 差异 | 主分类 | 主验收导航 |
 |---|---|---|---|
@@ -44,6 +44,7 @@
 | RDF-19 | SDK 与 host-only 集成责任 | 范围 | V-20/39/49/58 |
 | RDF-20 | 全公开能力覆盖仍须实施证明 | 真正能力缺口 | V-49–59 及既有对应 V |
 | RDF-21 | 上游 Unicode／IDNA 数据 profile | 已批准数据行为差异 | V-11/34/35/39/41/58 |
+| RDF-22 | 上游 HTTP parser/storage 接受范围 profile | 明示后端资源差异 | V-01/02/05/09/13/29/30/51/55/58 |
 
 ## 逐项契约
 
@@ -111,7 +112,7 @@
 ### RDF-08 · headers／payload 扩展受身份约束
 
 - **Pi 事实：** [`applyAuth`](../../../.repo/pi-1.3.0/packages/ai/src/models.ts#L850)合并 auth 与 caller headers，再运行 `transformHeaders`；[`ProviderHeaders`](../../../.repo/pi-1.3.0/packages/ai/src/types.ts)允许 null remove；payload/response/raw provider event callbacks 是不同入口。Bedrock 对部分保留 header 静默忽略，其他 adapter 的覆盖行为也不能概括成一个规则。
-- **Rust 目标：** 保留static set/remove、dynamic headers/payload/response/provider-event callbacks及真实支持面。HTTP header语法有效性与protected auth/routing/identity保留，不增加任意header大小限。显式key/source在auth前选择；callback失败不被telemetry吞掉，普通retry复用输入。撤回blanket redirect:none及ADC same-origin5-hop例外；按具体Pi fetch/SDK/source的method/body/credential-stripping与retry计数对应，真实secret/目标权限边界明确列差异。custom transport不二次包、不反射担保opaque client。
+- **Rust 目标：** 保留static set/remove、dynamic headers/payload/response/provider-event callbacks及真实支持面。HTTP header语法有效性与protected auth/routing/identity保留；不增加任意SDK header大小限，上游HTTP envelope/parser-storage差异仅按RDF-22明示。显式key/source在auth前选择；callback失败不被telemetry吞掉，普通retry复用输入。撤回blanket redirect:none及ADC same-origin5-hop例外；按具体Pi fetch/SDK/source的method/body/credential-stripping与retry计数对应，真实secret/目标权限边界明确列差异。custom transport不二次包、不反射担保opaque client。
 - **理由与分类：** 扩展存在性属于能力；身份保护和拒绝方式属于明确安全差异。当前 [`provider_headers.rs`](../../../crates/opi-ai/src/provider_headers.rs#L9)的保护列表可作既有证据，但其“不覆盖任何 configured header”也不能代替目标合法 set/remove 合同。
 - **外部 caller 影响：** 可用动态定制仍保留；依赖 callback 偷换凭据／身份的 Pi 用法在此拒绝，须改用显式来源或另建 provider。observer 数据只读且受脱敏策略，不能从 response callback 重写业务结果。
 - **机械验证：** V-12/34/36/51 固定每个 callback 阶段、顺序、次数、取消、async failure、大小写／remove／CRLF／protected canary、未知 adapter 支持；同时证明正常定制实际到 wire，不能只有拒绝测试。
@@ -202,7 +203,7 @@
 ### RDF-18 · Cargo/native 平台与 npm/Bun/browser/CLI 边界
 
 - **Pi 事实：** [`package.json`](../../../.repo/pi-1.3.0/packages/ai/package.json)公开 root/subpaths、`pi-ai` CLI 和 bun-oauth；[root export](../../../.repo/pi-1.3.0/packages/ai/src/index.ts)强调 core side-effect-free，provider/catalog 分开；[Bun bridge](../../../.repo/pi-1.3.0/packages/ai/src/bun-oauth.ts#L12)为静态打包加载 OAuth。[AuthContext](../../../.repo/pi-1.3.0/packages/ai/src/auth/context.ts#L19)存在 browser fallback，Node-only flow 仍需对应平台能力。
-- **Rust 目标：** Cargo/module/resources/host Tokio表达独立SDK，npm/Bun/browser/CLI符号和任意executor/WASM不承诺ABI。确定受控Hyper动态head/trailer存储、ownedUpgrade＋受控Ratchet PMD/长度/checked存储、实例rustls/commonring＋私有OpenSSL EVP signer/verification/KX，以及full-source AWS/ADC owner；不以ring范围/标准only/noPMD收面。native默认trust选固定Node参考bundle，scoped extra/explicit roots按source消费，host roots显式选择；不宣称Bun/OS/webpki同默认。原生C、有限unsafe及fork/数据/registry包维护成本明示；产品MSRV/锁图/三平台/consumer仍OPEN。保留真实executable env gate/host授权、portable well-known与无自动gcloud差异，无虚构预算/零retry/双独立gate。
+- **Rust 目标：** Cargo/module/resources/host Tokio表达独立SDK，npm/Bun/browser/CLI符号和任意executor/WASM不承诺ABI。确定RDF-22普通上游HTTP接受范围profile、ownedUpgrade＋受控Ratchet PMD/长度/checked存储、实例rustls/commonring＋私有OpenSSL EVP signer/verification/KX，以及full-source AWS/ADC owner；不以ring范围/标准only/noPMD收面。native默认trust选固定Node参考bundle，scoped extra/explicit roots按source消费，host roots显式选择；不宣称Bun/OS/webpki同默认。原生C、有限unsafe及fork/数据/registry包维护成本明示；产品MSRV/锁图/三平台/consumer仍OPEN。保留真实executable env gate/host授权、portable well-known与无自动gcloud差异，无虚构预算/零retry/双独立gate。
 - **理由与分类：** packaging/runtime 桥属于平台差异；不是删除 OAuth/helper/catalog/独立 SDK 动作的理由。当前 [manifest](../../../crates/opi-ai/Cargo.toml)与[CI](../../../.github/workflows/ci.yml#L40)支持 native 依赖与 Linux/macOS/Windows 验证路线；本候选**不承诺 WASM/browser 或任意 executor 支持**，也不从源码无显式 wasm forbid 推断可用。
 - **外部 caller 影响：** Rust caller 自行装配 runtime、Stream/Serde 和 UI；无 Agent/产品 crate 前提。SDK 文档需列 native 支持面、平台相关 OAuth presenter/callback限制和正常依赖。未证明编译大小、lazy link、启动或性能收益，不为 tree-shaking 猜测加 feature。
 - **机械验证：** V-26/42/49/58 用离线 package 与 workspace 外 consumer、native 多平台组装／假传输、资源定位、无环境读取构造、公开工具能力映射。不能以 monorepo 内编译证明可发布，也不能用未缓存依赖的自动下载补缺。
@@ -236,6 +237,16 @@
 - **已登记差异：** U+16EA0 成为 Letter，Beria_Erfe／Sidetic／Tai_Yo／Tolong_Siki 名称可编译；原文和 percent-encoded 新字符域名可被接受。U+16EA0 域名经 IDNA 映射的规范 ACE 为 `xn--zs0f.example`，直接对原始大写字符作 Punycode 的 `xn--7r0f.example` 仍为无效控制。原文／percent／规范 ACE 的资源 ref 双向解析须保持 const 正反判断。`uri`／`uri-reference` 各有来源 regex，不因 URL 接受就强行统一。新脚本子 schema 成功编译后可正常删除被其拒绝的 optional null；真正子编译失败时仍保留 null，required null 仍须最终失败。
 - **保留合同与 caller 影响：** 不豁免 ECMA 语法、backref/lookbehind、typed compile/check 错误相位、结构 guard/inert annotation、admission/ref 顺序、冻结目标／resource frame、迟到 Regex、合法 reset／正常递归和仅真实无进展时终止；不加任意上限或剪枝。保留 clone/raw、原 schema 最终验证、精确整数与 Number/String/source grapheme 算法。已有会话、raw、工具结果不被重写；声明重新编译与后续调用使用当前数据 profile，Schema 通过不授予工具执行权，真实 Agent 仍在 normalized 值上授权和执行。无隐式 schema 网络／file I/O。
 - **机械验证与退役边界：** 更新 Opi 的两条新数据 corpus 期望，保留 Pi 历史观察；新增脚本／字符／property key／format、原文／percent／规范 ACE 及资源 frame 正反例、旧字符与非法 IDNA 控制、正常归一化及失败子编译回归、真实 Agent／恢复后调用。通用 conformance、Number/URL 控制及 workspace 外真实 opi-ai public consumer 保留，包含 caller feature union；regress 的可选 PikeVM 代码可因 union 加入，但0.12.0正常 Regex API 仍为 BacktrackExecutor，须实测语义。退役 vendor 生成、manifest 变换、闭包完整性和双 family 专属门禁；不据此关闭 20.11、20.34、20.57 或 V-34/35/41/58 的完整验收。
+
+<a id="rdf-22-upstream-http-profile"></a>
+
+### RDF-22 · 上游 HTTP 接受范围 profile
+
+- **Pi 事实与保留证据：** 固定 Node/Bun 的 99/100/101/125/200 headers 正例、原 reqwest/Hyper 拒绝与 TEMP patch 对照均保留原输入／结果；20 条 paired records 不是新上游 profile 的 20 条通过。旧 head-only patch 不证明 trailer/buffer 或真实 provider 接线。RDF-21 的数据差异不适用于 HTTP。
+- **Rust 目标：** 取消 HTTP 源码修改和 namespace 发布路线，使用普通 crates.io reqwest0.12.28/Hyper1.9.0 与既有 HttpClient。后端的 HTTP response-head／read-buffer、trailer count/bytes、累计 chunk-extension 接受边界成为明确差异。固定 Hyper 源码基准为 `src/proto/h1/role.rs` 的默认 100 header 槽、`io.rs` 的 `8192 + 4096 * 100` 缓冲策略，以及 `decode.rs` 的 16KiB 累计 chunk-extension／trailer 字节约束；这些常量不是所有分块方式下的精确 head 长度／数量成功保证，等值边界由产品测试实证。不额外增加同名 SDK 校验 cap，也不以 usize::MAX 触发巨大预分配。
+- **理由与分类：** 这是明示的后端资源／接受范围差异，减少 HTTP fork、manifest 变换和传递 namespace 维护。它允许范围外的合法 Pi HTTP 输入失败，不声称无限接受或逐输入 parity。不选择新版本、不豁免未知升级差异，也不把后端 parser buffer 等同于统一 SSE/body 总量上限。
+- **保留合同与 caller 影响：** SDK 仍只有来源限定 route/redirect/retry owner，关闭嵌套 retry，保留 H2、proxy/TLS/CONNECT/tail/NO_PROXY、身份与受保护 header、callback 次数、取消／Drop／本地清理。畸形协议、CL/TE 歧义、截断与秘密泄漏不能登记成允许差异。边界失败保留 typed 脱敏 backend/transport cause、可证明的失败阶段、完整 partial/known usage 与唯一终态／永久 EOF，不截断、不成功收尾或 handoff 后重试；后端不区分的细因不虚构为 resource-limit。Custom transport 不二次包装，opaque backend 不冒称受本 profile 完整担保。WS/PMD、crypto、Schema、Context/tool 与数据 payload 的现有合同保持不变。
+- **机械验证与退役边界：** 在现有 connection_pooling/openai_chat_fixtures/proxy_support 公共 seam 更新／补充 Models → 真实 OpenAI Chat → HttpClient → loopback；记录正常与 caller feature-union 的 graph/features/source/checksum、99/100/101/125/200 headers、head-buffer/trailer 数量／字节／累计 chunk-extension 的边界及逐字节／合并方式。区分 acquisition 与已交付 partial/usage 后的失败，验证非法 CL/TE、提前 EOF、取消／Drop、无隐藏 sends 和重试封口。真实 cargo package 产物由 workspace 外普通消费者验证，不用 source checkout、root patch、私有 HTTP namespace 或 library lock 代替。仅退役 patch 重放／source-transform／namespace 专属义务，保留通用 conformance、原始失败和包消费者。20.12 只关闭命名的实际 Chat 切片；全来源由 20.34、组装 package 由 20.57、平台由 20.58 继续验证。本次 plan 无新的运行计数，不提前完成 20.11、20.34、20.57。
 
 ## 差分与核准边界
 

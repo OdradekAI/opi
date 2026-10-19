@@ -10,6 +10,8 @@
 
 ## 验证边界及证据分层
 
+HTTP 的后端接受范围单独按 [RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile) 验证：普通 crates.io reqwest0.12.28/Hyper1.9.0 的 head/read-buffer、trailer count/bytes、累计 chunk-extension 边界可以拒绝其他方面合法的 Pi 输入。V-01/02/05/09/13/29/30/51/55/58 必须保留域内正常与域外 typed 脱敏失败、可证明的阶段、完整 partial/known usage、永久 EOF、handoff 后零重试及取消／清理证据；不虚构 backend 未区分的细因。逐字节／合并输入及 B−1/B/B+ 分开记录，不把采样常量当所有输入的成功保证。仅退役 HTTP patch-apply／namespace 门禁，通用 conformance／真正 package artifact 的普通与 feature-union 消费者保留。WS/PMD、crypto 与其他 payload/cap 合同不变；本次计划不修改测试或既有结果。
+
 active SDK 验收优先越过 Models/native/simple/complete/result、公开直接 adapter、typed operation、管理/store、具体 adapter＋loopback 伪传输以及 workspace 外 consumer。MockProvider 证明状态/调度，不证明 HTTP；payload fixture 证明编码，不证明供应商接受；只调用内部 serializer 不等于公共入口已组装。测试专用 fake 不要求新增公开 trait。SDK 破坏性 API 所需的 Agent/产品编译、机械调用方适配及原有安全回归仍在范围，不能据“仅 SDK”留下失编译的 workspace。
 
 **scope 规则：** V-17/18/19/33 是 `host-impact`，不计 SDK 完成。V-06/12/15/16/20/26/28/31/35/36/38/42/45/48 内的产品/Agent 场景只说明下游影响；每行明确的 SDK 子边界才是 active gate。AIR-009、015、016、017、018、019、037、039、041 共 9 个原要求保留为 `host-impact`，其产品授权、hook、session、compaction、tool_search、启动刷新、高层恢复或 UI 行为不要求本轮实现。V-57 独立验证显式 SDK whole-call retry helper，不让旧 V-33 的产品默认恢复反向成为 SDK 前提。
@@ -518,7 +520,7 @@ cargo test --offline --locked -p opi-ai --test gemini_lifecycle --test provider_
 |---|---|---|
 | Schema · V-11/34/35/39/41/58 · RDF-09 | 私有TypeBox JSON方言IR、regress0.12.0算法/Unicode16数据；64/64固定实例与11合成错误控制、生成两次一致；ryu-js14点和URL29点，43/43叶，10包namespace与普通ICU2.2共图不串数据；source guard inert边界明确 | 全normalizer/42机制/21formats/ref/dynamic/evaluated/错误诊断/UTF8边界、publicutility/consumer/cache/cancel；保留原raw和root正确性修正，不复制JS parse损失 |
 | WS · V-02/30/49/58 · RDF-13/18 | ownedUpgrade＋受控Ratchet PMD状态/帧修正；旧80观察及原缺陷保留。后续独立发现的长度/算术/分配边界，按最新WS纯内存探针另证；不自动继承旧网络运行记录到新patch | 全provider/continuation/pool/fallback/proxy/TLS/cleanup/platform，新增patch的网络组装未重跑；不得cap或SSE掩盖 |
-| HTTP/Auth · V-01/05/09/29/30/51/55/58 | sourceowner＋Hyper动态存储；112主记录/16Pi proxy、20headers对照，ALPN/H2和TLS负例，metadata0/3000ms有来源。prepared身份/redirect腿/retry副作用不合并成最终字符串 | 全head/trailer/buffercap补救、framing/所有source/代理/取消/回调/公开driver、adaptive/SSO/MFA/DPoP/9OAuth/rotation/store/process树 |
+| HTTP/Auth · V-01/05/09/29/30/51/55/58 | sourceowner＋RDF-22上游HTTP profile；旧112主记录/16Pi proxy、20headers patch对照，ALPN/H2和TLS负例，metadata0/3000ms有来源。prepared身份/redirect腿/retry副作用不合并成最终字符串 | 上游head/buffer/trailer/chunk-extension边界、framing/所有source/代理/取消/回调/公开driver、adaptive/SSO/MFA/DPoP/9OAuth/rotation/store/process树 |
 | Crypto · V-09/49/55/58 · RDF-18 | OpenSSL3私有libctx成熟EVP，11RSA/三输入负例/poison共15观察，P521/e3mTLS差异3记录；rustls公开signer/WebPKI/verification/KX扩展明确机制，commonring不冒称完整 | 全源算法/优先级/协商/链/构建/平台、Rust FFI安全/包消费者；已测C API不当完整Rust TLS adapter |
 | Telemetry · V-46–48/58 · RDF-14 | pinned safe poll/drop载体七场景，sourceDispatch/跨线程/Stream/producer/noop实际一致；不加domain/exporter | 全SDKnative/simple/direct/advanced/image/classifier/deferred入口、serde/wire/secretcanary、hostconsumer |
 | Delivery · V-20/42/49/56/58/59 | 原Pi catalog helper人工42×3记录七观察；固定schema/身份/hash/staging/原子publication合同，隔离研究Cargo图和少量cross-targetcheck不冒充产品 | 真hydratedartifact与source关联、产品graph/namespace registry产物/packaging、MSRV1.97/三平台native build/run/consumer |

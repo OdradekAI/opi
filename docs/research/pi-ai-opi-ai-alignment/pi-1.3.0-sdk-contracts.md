@@ -227,7 +227,7 @@ compat不是任意配置旁路；以下字段组逐项验收有/无/false/null�
 
 Custom typed options在兼容Models间可复用，upsert/同type替换不构成stale错误；API identity精确保留。Schema降为需Pi TypeBox corpus的条件候选，未知format/keyword/$schema和引用/regex不能靠blanket拒绝关差异；撤回容量/fuel/cache/jobs/全pattern guard。no implicit schema I/O有Pi来源。
 
-HTTP按具体fetch/SDK/source的redirect/retry/protocol/TLS行为，撤回统一none、ADC0retry/60s/16sends/1MiB/depth4、同origin5-hop/双独立executable gate。保留真实source授权/GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES、30s与5–120s配置、POST retries及单owner。H1-only/roots/ring key/WS handshake/compression无法证明等价时保持覆盖缺口，不以override或typed Unsupported冒称完成。AIR/V数量不变，全部新运行验收未执行。
+HTTP普通crates.io后端的envelope/parser-storage接受范围仅按RDF-22明示（不等于SSE/body总量cap）；真实公共adapter与普通／feature-union包消费者必须证明正常与边界失败、partial/usage及取消／重试封口。其余继续按具体fetch/SDK/source的redirect/retry/protocol/TLS行为，撤回统一none、ADC0retry/60s/16sends/1MiB/depth4、同origin5-hop/双独立executable gate。保留真实source授权/GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES、30s与5–120s配置、POST retries及单owner。H1-only/roots/ring key/WS handshake/compression无法证明等价时保持覆盖缺口，不以override或typed Unsupported冒称完成。AIR/V数量不变，全部新运行验收未执行。
 
 ## 11. Pi 1.3.0 变更的精确适用边界
 

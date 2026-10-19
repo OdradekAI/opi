@@ -83,6 +83,10 @@ Responses effort markers、final arguments_error、thinking-off与投影修复�
 
 产品代码／Cargo／测试／CI／正式spec／ledger未改；研究harness与证据add、产品testnone。候选重新比较不授予实施或新依赖准入，不创建自动监控、任务状态表或第二实施账本。
 
+## HTTP 上游 profile 跟进边界
+
+当前 HTTP 合同独立采用 [RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile)：跟进普通 crates.io reqwest/Hyper 的实际 graph、feature union、registry checksum、head/buffer/trailer/chunk-extension边界与 typed 失败／partial/usage／取消。退役 HTTP patch-apply／namespace 专属活动义务，保留旧修正证据和通用 conformance／真实包消费者；不得因上游版本升高继承通过或重新引入隐藏 retry/身份旁路。WS/crypto 受控设计不变，下列同版旧窗口不改写。完整实施与平台仍由既有任务验收。
+
 ## 同版设计就绪收敛窗口
 
 2026-10-16，Opi输入仍8cb0fd6，七组按用户明确确认的“设计READY／实施验收OPEN”分层判断。[当前决定](pi-1.3.0-design-readiness.md)及[独立复审](pi-1.3.0-design-readiness-review.md)取代上节当时“尚未选择新库”的状态，不改写旧source/experimental输入、hash或测试结果。
