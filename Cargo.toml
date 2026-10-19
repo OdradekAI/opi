@@ -105,6 +105,14 @@ hex = "0.4"
 # CSPRNG for PKCE code_verifier/state (Phase 14.2 OAuth)
 rand = "0.8"
 
+# Upstream crypto profile (RDF-23, task 20.13): unmodified crates.io sources
+# behind a private opi-ai signing owner. Exact baseline; upgrades require
+# re-reviewing the native C/FFI closure (aws-lc-sys builds vendored AWS-LC C
+# via cmake, static, non-FIPS). Transitive ring (reqwest rustls-tls) coexists;
+# no process-global provider is installed by opi-ai.
+rustls = { version = "=0.23.40", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+aws-lc-rs = { version = "=1.18.2", default-features = false, features = ["aws-lc-sys", "alloc", "prebuilt-nasm"] }
+
 # env loading
 dotenvy = "0.15"
 

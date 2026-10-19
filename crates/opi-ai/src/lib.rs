@@ -13,6 +13,12 @@ pub mod config;
 pub mod context;
 pub mod credential;
 mod endpoint;
+// Private upstream crypto substrate (RDF-23): explicit-provider key
+// admission/signing owner over unmodified crates.io rustls/aws-lc-rs.
+// Consumed by the TLS host wiring (task 20.14) and real ADC callers (task
+// 20.21.1); targeted allow until the first production consumer lands.
+#[allow(dead_code)]
+mod crypto;
 pub mod gemini;
 pub mod http;
 pub mod message;

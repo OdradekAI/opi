@@ -464,6 +464,37 @@ transcript at the head of request construction (the pinned TypeScript
 reference is `.repo/pi-1.3.0/packages/ai/src/utils/transcript.ts`; the
 upstream-deprecated `hasToolRedefinitions` is not ported).
 
+## Private Upstream Crypto Profile
+
+A private `crypto` module (not part of the public API) owns key admission and
+signing on the unmodified crates.io crypto baseline: `rustls` 0.23.40 with
+the `aws-lc-rs` provider (`aws-lc-rs` 1.18.2 / `aws-lc-sys` 0.46.0), used
+only through their public safe Rust seams (`KeyProvider::load_private_key`,
+`SigningKey::algorithm`/`choose_scheme`, `Signer::sign`). It is substrate for
+the TLS/mTLS host wiring and the real ADC callers; there is no local FFI,
+crypto fork, private crypto namespace, or public crypto API.
+
+The admission profile accepts unencrypted two-prime RSA-2048..8192 keys
+(PKCS#1/PKCS#8, PEM/DER, including e=3) and P-521 keys (PKCS#8/SEC1).
+RSA-1024, multi-prime RSA, encrypted/malformed inputs, public-key-only
+inputs, and algorithms outside the profile are typed, redacted rejections —
+never false success, downgrade, or identity rediscovery. The AWS-LC provider
+is instantiated explicitly per owner (never installed process-globally);
+transitive `ring` from the reqwest rustls-tls graph coexists, and existing
+HMAC/SHA/SigV4 signing is unchanged.
+
+Native admission notes: `aws-lc-sys` builds the vendored AWS-LC C sources
+into a static library (standard evidence uses `AWS_LC_SYS_USE_SYSTEM=0`;
+system directory/bindings, version-skip, and target overrides are unreviewed
+replacements). The build needs a C toolchain on each platform; native
+process-once CPU initialization and OS entropy are used without global
+provider/config/env/subscriber mutation or ambient credential discovery.
+The baseline is non-FIPS; untested feature unions and platforms are not
+declared supported. Synchronous native signing is not hard-preemptible:
+cancellation is observed between operations, owned keys/resources are
+retained until the blocking worker joins, and late results are suppressed
+rather than published.
+
 ## Non-Goals
 
 The following are explicit non-goals and must not appear as current core

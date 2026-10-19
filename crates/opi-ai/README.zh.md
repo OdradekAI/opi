@@ -385,6 +385,32 @@ parity（AIR-038）与 effort 戳（V-32）由后续任务收尾。
 是 `.repo/pi-1.3.0/packages/ai/src/utils/transcript.ts`；上游已废弃的
 `hasToolRedefinitions` 不移植）。
 
+## 私有上游 Crypto Profile
+
+私有 `crypto` 模块（不属于公开 API）基于未修改的 crates.io crypto 基线
+（`rustls` 0.23.40 + `aws-lc-rs` provider：`aws-lc-rs` 1.18.2 /
+`aws-lc-sys` 0.46.0）负责 key 准入与签名，且仅使用其公开 safe Rust
+接口（`KeyProvider::load_private_key`、`SigningKey::algorithm`/
+`choose_scheme`、`Signer::sign`）。它是后续 TLS/mTLS 宿主接线与真实 ADC
+调用方的 substrate；没有本地 FFI、crypto fork、私有 crypto namespace
+或公开 crypto API。
+
+准入 profile 接受未加密双素数 RSA-2048..8192（PKCS#1/PKCS#8、PEM/DER，
+含 e=3）与 P-521（PKCS#8/SEC1）。RSA-1024、多素数 RSA、加密/畸形输入、
+仅公钥输入及 profile 外算法一律为 typed、脱敏的拒绝——绝不假成功、
+降级或重新发现身份。AWS-LC provider 按实例显式构造（绝不安装进程级
+全局 provider）；reqwest rustls-tls 图中传递的 `ring` 共存不变，现有
+HMAC/SHA/SigV4 签名不变。
+
+原生准入说明：`aws-lc-sys` 将 vendored AWS-LC C 源码构建为静态库
+（标准证据使用 `AWS_LC_SYS_USE_SYSTEM=0`；system directory/bindings、
+version-skip 与 target override 均属未审查替换）。各平台构建需要 C
+工具链；允许原生进程级一次 CPU 初始化与 OS entropy，不进行全局
+provider/config/env/subscriber 变更，不做环境凭据发现。基线为非
+FIPS；未测试的 feature union 与平台不声明支持。同步原生签名不可被
+硬抢占：取消仅在操作间观察，owned key/资源保留至阻塞 worker join，
+迟到结果被抑制而非发布。
+
 ## 非目标
 
 以下是明确的非目标，不得作为当前核心行为出现：

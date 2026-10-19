@@ -266,6 +266,27 @@
   across later registration changes.
 - `opi-ai`: `ChatStream` and `CallFailure` are exported at the crate root;
   `ProviderError` is now `Clone` + `PartialEq`.
+- `opi-ai`: private upstream crypto substrate (DEL-06, task 20.13;
+  RDF-23). New private `crypto` module owns key admission and signing on the
+  unmodified crates.io baseline `rustls` 0.23.40 + `aws-lc-rs` 1.18.2
+  (`aws-lc-sys` 0.46.0) through the public safe seams only
+  (`KeyProvider::load_private_key`, `SigningKey::algorithm`/
+  `choose_scheme`, `Signer::sign`); no local FFI, crypto fork/namespace, or
+  public crypto API is added. The profile admits unencrypted two-prime
+  RSA-2048..8192 keys (PKCS#1/PKCS#8, PEM/DER, including e=3) and P-521
+  keys (PKCS#8/SEC1) with independent public-key verification; RSA-1024,
+  multi-prime RSA, encrypted/malformed/public-only inputs and non-profile
+  algorithms are typed, redacted rejections without false success or key
+  leakage. The AWS-LC provider is instantiated explicitly per owner and
+  never installed process-globally; transitive `ring` coexists and existing
+  HMAC/SHA/SigV4 signing is unchanged. `aws-lc-sys` builds the vendored
+  AWS-LC C sources into a static library (standard evidence:
+  `AWS_LC_SYS_USE_SYSTEM=0`); untested feature unions/platforms remain
+  unsupported. Cancellation-aware signing runs on an owned blocking worker:
+  cancellation is observed between operations only, owned keys/resources
+  are retained until the worker joins, and late results are suppressed
+  rather than published. Substrate for the TLS/mTLS host wiring (20.14) and
+  real ADC callers (20.21.1); closes no product acceptance scenario.
 
 ## 0.8.3 - 2026-10-15
 

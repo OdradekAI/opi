@@ -31,6 +31,9 @@ unicode-normalization = { workspace = true }
 ryu-js = { workspace = true }
 url = { workspace = true }
 secrecy = { workspace = true }
+# Upstream crypto profile (RDF-23): private signing owner only; not re-exported.
+rustls = { workspace = true }
+aws-lc-rs = { workspace = true }
 
 [dev-dependencies]
 futures-util = { workspace = true }
