@@ -1,0 +1,1815 @@
+{
+  "standards": "PASS bounded read-only/offline research",
+  "spec": "PASS selected mechanism and regression scope; product adoption INCOMPLETE",
+  "committed": "none-for-this-task",
+  "baseline": "c74f8ab3b3ba1bda136550c8c5eb3859678abb14",
+  "repository_unchanged": true,
+  "ledger_unchanged_sha256": "f28340f1c0196d2850254a1a102b1f2e57be14128b03859c366f55b5b6faeebd",
+  "profiles": [
+    {
+      "profile": "base",
+      "test_functions_passed": 76,
+      "packages": 19,
+      "registry_packages": 18,
+      "receipts": {
+        "test": "evidence\\1792412323942172100-base-test",
+        "clippy": "evidence\\1792412339782043300-base-clippy",
+        "fmt": "evidence\\1792412340550516500-base-fmt",
+        "metadata": "evidence\\1792412341002691800-base-metadata",
+        "resource": "evidence\\1792412341485893700-base-resource",
+        "cancel-resource": "evidence\\1792412342161534500-base-cancel-resource",
+        "wire": "evidence\\1792412344406988900-base-wire",
+        "compare": "evidence\\1792412422833531300-base-compare"
+      },
+      "key_features": {
+        "flate2@1.1.10": [
+          "any_impl",
+          "any_zlib",
+          "zlib-rs"
+        ],
+        "libz-rs-sys@0.6.8": [
+          "rust-allocator",
+          "std"
+        ],
+        "zlib-rs@0.6.8": [
+          "__internal-api",
+          "rust-allocator",
+          "std"
+        ]
+      },
+      "observations": {
+        "resource": [
+          {
+            "after_drop": 0,
+            "after_failure": 112,
+            "baseline": 0,
+            "case": "pmd-invalid-boundary-release",
+            "held": 47664,
+            "matches": true,
+            "scope": "finite Rust allocator observation, not all-process OOM/leak proof"
+          },
+          {
+            "case": "header-only-no-speculative-payload-reserve",
+            "declared": 1099511627776,
+            "matches": true,
+            "max_rust_request": 0
+          },
+          {
+            "case": "header-only-no-speculative-payload-reserve",
+            "declared": 9223372036854775807,
+            "matches": true,
+            "max_rust_request": 0
+          },
+          {
+            "case": "real-capacity-error-retains-source",
+            "matches": true,
+            "scope": "capacity overflow, no actual OOM"
+          }
+        ],
+        "cancel-resource": [
+          {
+            "after_cancel": 15677,
+            "after_drop": 15565,
+            "baseline": 15565,
+            "case": "cancel-active-output-frees-owned-state",
+            "held": 209862,
+            "matches": true,
+            "max_request_during_first_quantum": 131072,
+            "partial_decoded_bytes": 131072,
+            "scope": "finite single-thread Rust allocation observation; no all-process/native OOM or hard-walltime claim"
+          },
+          {
+            "case": "cancel-no-output-many-bfinal-work",
+            "matches": true
+          }
+        ]
+      },
+      "comparison": {
+        "case_count": 72413,
+        "valid": 1738,
+        "invalid": 70675,
+        "mismatches": 0,
+        "seconds": 2.7660000000614673,
+        "binary_sha256": "7e48fbf437fc1aa33c2569f589bd6d12e473dbc7c177413c9a6f2260b476fe87",
+        "oracle_sha256": "4629de7b1cc02382595ce445bfd989f244c5e08ff6bc7329c1f40a78d9294063",
+        "scope": "same structural gate rule, independently implemented C-zlib versus Rust-zlib; not exhaustive all streams or independent formal proof"
+      },
+      "comparison_raw_sha256": "bf949a121759c3cda75c2458efab0989a62981e3a93b59aa5f9f639b72a31f5f"
+    },
+    {
+      "profile": "union-default",
+      "test_functions_passed": 76,
+      "packages": 24,
+      "registry_packages": 23,
+      "receipts": {
+        "test": "evidence\\1792412348906934700-union-default-test",
+        "clippy": "evidence\\1792412367791406300-union-default-clippy",
+        "fmt": "evidence\\1792412368797382700-union-default-fmt",
+        "metadata": "evidence\\1792412369254077100-union-default-metadata",
+        "resource": "evidence\\1792412369712546200-union-default-resource",
+        "cancel-resource": "evidence\\1792412370361938300-union-default-cancel-resource",
+        "wire": "evidence\\1792412372521026500-union-default-wire",
+        "compare": "evidence\\1792412373635974200-union-default-compare"
+      },
+      "key_features": {
+        "flate2@1.1.10": [
+          "any_impl",
+          "any_zlib",
+          "default",
+          "miniz_oxide",
+          "runtime_detection",
+          "rust_backend",
+          "zlib-rs"
+        ],
+        "libz-rs-sys@0.6.8": [
+          "rust-allocator",
+          "std"
+        ],
+        "zlib-rs@0.6.8": [
+          "__internal-api",
+          "rust-allocator",
+          "std"
+        ]
+      },
+      "observations": {
+        "resource": [
+          {
+            "after_drop": 0,
+            "after_failure": 112,
+            "baseline": 0,
+            "case": "pmd-invalid-boundary-release",
+            "held": 47664,
+            "matches": true,
+            "scope": "finite Rust allocator observation, not all-process OOM/leak proof"
+          },
+          {
+            "case": "header-only-no-speculative-payload-reserve",
+            "declared": 1099511627776,
+            "matches": true,
+            "max_rust_request": 0
+          },
+          {
+            "case": "header-only-no-speculative-payload-reserve",
+            "declared": 9223372036854775807,
+            "matches": true,
+            "max_rust_request": 0
+          },
+          {
+            "case": "real-capacity-error-retains-source",
+            "matches": true,
+            "scope": "capacity overflow, no actual OOM"
+          }
+        ],
+        "cancel-resource": [
+          {
+            "after_cancel": 15677,
+            "after_drop": 15565,
+            "baseline": 15565,
+            "case": "cancel-active-output-frees-owned-state",
+            "held": 209862,
+            "matches": true,
+            "max_request_during_first_quantum": 131072,
+            "partial_decoded_bytes": 131072,
+            "scope": "finite single-thread Rust allocation observation; no all-process/native OOM or hard-walltime claim"
+          },
+          {
+            "case": "cancel-no-output-many-bfinal-work",
+            "matches": true
+          }
+        ]
+      },
+      "comparison": {
+        "case_count": 72413,
+        "valid": 1738,
+        "invalid": 70675,
+        "mismatches": 0,
+        "seconds": 2.687999999965541,
+        "binary_sha256": "a708e6be77eb5ecc6790803c3cba0d45d8d98d6007c9ee3ff563e43aa4280244",
+        "oracle_sha256": "4629de7b1cc02382595ce445bfd989f244c5e08ff6bc7329c1f40a78d9294063",
+        "scope": "same structural gate rule, independently implemented C-zlib versus Rust-zlib; not exhaustive all streams or independent formal proof"
+      },
+      "comparison_raw_sha256": "bf949a121759c3cda75c2458efab0989a62981e3a93b59aa5f9f639b72a31f5f"
+    },
+    {
+      "profile": "union-c-zlib",
+      "test_functions_passed": 76,
+      "packages": 27,
+      "registry_packages": 26,
+      "receipts": {
+        "test": "evidence\\1792412376844897800-union-c-zlib-test",
+        "clippy": "evidence\\1792412394804678900-union-c-zlib-clippy",
+        "fmt": "evidence\\1792412395780880000-union-c-zlib-fmt",
+        "metadata": "evidence\\1792412396223944900-union-c-zlib-metadata",
+        "resource": "evidence\\1792412396710549600-union-c-zlib-resource",
+        "cancel-resource": "evidence\\1792412397283370000-union-c-zlib-cancel-resource",
+        "wire": "evidence\\1792412399368005200-union-c-zlib-wire",
+        "compare": "evidence\\1792412400343961100-union-c-zlib-compare"
+      },
+      "key_features": {
+        "flate2@1.1.10": [
+          "any_c_zlib",
+          "any_impl",
+          "any_zlib",
+          "libz-sys",
+          "zlib",
+          "zlib-rs"
+        ],
+        "libz-rs-sys@0.6.8": [
+          "rust-allocator",
+          "std"
+        ],
+        "libz-sys@1.1.30": [],
+        "zlib-rs@0.6.8": [
+          "__internal-api",
+          "rust-allocator",
+          "std"
+        ]
+      },
+      "observations": {
+        "resource": [
+          {
+            "after_drop": 0,
+            "after_failure": 112,
+            "baseline": 0,
+            "case": "pmd-invalid-boundary-release",
+            "held": 47664,
+            "matches": true,
+            "scope": "finite Rust allocator observation, not all-process OOM/leak proof"
+          },
+          {
+            "case": "header-only-no-speculative-payload-reserve",
+            "declared": 1099511627776,
+            "matches": true,
+            "max_rust_request": 0
+          },
+          {
+            "case": "header-only-no-speculative-payload-reserve",
+            "declared": 9223372036854775807,
+            "matches": true,
+            "max_rust_request": 0
+          },
+          {
+            "case": "real-capacity-error-retains-source",
+            "matches": true,
+            "scope": "capacity overflow, no actual OOM"
+          }
+        ],
+        "cancel-resource": [
+          {
+            "after_cancel": 15675,
+            "after_drop": 15563,
+            "baseline": 15563,
+            "case": "cancel-active-output-frees-owned-state",
+            "held": 209858,
+            "matches": true,
+            "max_request_during_first_quantum": 131072,
+            "partial_decoded_bytes": 131072,
+            "scope": "finite single-thread Rust allocation observation; no all-process/native OOM or hard-walltime claim"
+          },
+          {
+            "case": "cancel-no-output-many-bfinal-work",
+            "matches": true
+          }
+        ]
+      },
+      "comparison": {
+        "case_count": 72413,
+        "valid": 1738,
+        "invalid": 70675,
+        "mismatches": 0,
+        "seconds": 2.7820000000065193,
+        "binary_sha256": "5022090161fc59a8e12da856dc7ddedad43e005ca84247cad2ee2615581a43af",
+        "oracle_sha256": "4629de7b1cc02382595ce445bfd989f244c5e08ff6bc7329c1f40a78d9294063",
+        "scope": "same structural gate rule, independently implemented C-zlib versus Rust-zlib; not exhaustive all streams or independent formal proof"
+      },
+      "comparison_raw_sha256": "bf949a121759c3cda75c2458efab0989a62981e3a93b59aa5f9f639b72a31f5f"
+    }
+  ],
+  "distinct_test_functions": 76,
+  "added_distinct_functions_vs_previous_prototype": 39,
+  "retained_previous_test_functions": 37,
+  "final_test_function_executions": 228,
+  "all_this_turn_logged_test_function_passes": 447,
+  "all_this_turn_logged_test_function_failures_expected": 7,
+  "registry_verification": {
+    "registry_archives_verified": 29,
+    "published_members_compared": 2545,
+    "packages": [
+      {
+        "name": "adler2",
+        "version": "2.0.1",
+        "archive_sha256": "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa",
+        "published_members_compared": 13
+      },
+      {
+        "name": "bytes",
+        "version": "1.12.1",
+        "archive_sha256": "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04",
+        "published_members_compared": 40
+      },
+      {
+        "name": "cc",
+        "version": "1.8.0",
+        "archive_sha256": "6651c9ed80effdc7db0ff72512157f901af5e3549e341e24b1dd4887d836d838",
+        "published_members_compared": 37
+      },
+      {
+        "name": "cfg-if",
+        "version": "1.0.5",
+        "archive_sha256": "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600",
+        "published_members_compared": 14
+      },
+      {
+        "name": "crc32fast",
+        "version": "1.5.2",
+        "archive_sha256": "01a7799fd6b852db0e61728dde9a204c423b44d689dbd432522543614b490e78",
+        "published_members_compared": 19
+      },
+      {
+        "name": "find-msvc-tools",
+        "version": "0.1.14",
+        "archive_sha256": "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484",
+        "published_members_compared": 19
+      },
+      {
+        "name": "flate2",
+        "version": "1.1.10",
+        "archive_sha256": "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb",
+        "published_members_compared": 63
+      },
+      {
+        "name": "itoa",
+        "version": "1.0.18",
+        "archive_sha256": "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682",
+        "published_members_compared": 14
+      },
+      {
+        "name": "libz-rs-sys",
+        "version": "0.6.8",
+        "archive_sha256": "434324ee61a8e4a05dd3fdf03d51c073ea7fdaf5a35b2ca33c4ca9f3f37def4a",
+        "published_members_compared": 15
+      },
+      {
+        "name": "libz-sys",
+        "version": "1.1.30",
+        "archive_sha256": "f710a23e6dbf193214fd46ca56a9d6864e550abe86202184532ae7275e46de19",
+        "published_members_compared": 238
+      },
+      {
+        "name": "memchr",
+        "version": "2.8.3",
+        "archive_sha256": "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98",
+        "published_members_compared": 59
+      },
+      {
+        "name": "miniz_oxide",
+        "version": "0.9.1",
+        "archive_sha256": "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c",
+        "published_members_compared": 23
+      },
+      {
+        "name": "pin-project-lite",
+        "version": "0.2.17",
+        "archive_sha256": "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd",
+        "published_members_compared": 81
+      },
+      {
+        "name": "pkg-config",
+        "version": "0.3.34",
+        "archive_sha256": "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548",
+        "published_members_compared": 16
+      },
+      {
+        "name": "proc-macro2",
+        "version": "1.0.107",
+        "archive_sha256": "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9",
+        "published_members_compared": 33
+      },
+      {
+        "name": "quote",
+        "version": "1.0.47",
+        "archive_sha256": "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001",
+        "published_members_compared": 35
+      },
+      {
+        "name": "serde",
+        "version": "1.0.229",
+        "archive_sha256": "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba",
+        "published_members_compared": 33
+      },
+      {
+        "name": "serde_core",
+        "version": "1.0.229",
+        "archive_sha256": "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48",
+        "published_members_compared": 27
+      },
+      {
+        "name": "serde_derive",
+        "version": "1.0.229",
+        "archive_sha256": "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348",
+        "published_members_compared": 36
+      },
+      {
+        "name": "serde_json",
+        "version": "1.0.149",
+        "archive_sha256": "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86",
+        "published_members_compared": 88
+      },
+      {
+        "name": "shlex",
+        "version": "2.0.1",
+        "archive_sha256": "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba",
+        "published_members_compared": 13
+      },
+      {
+        "name": "simd-adler32",
+        "version": "0.3.10",
+        "archive_sha256": "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea",
+        "published_members_compared": 22
+      },
+      {
+        "name": "syn",
+        "version": "3.0.9",
+        "archive_sha256": "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b",
+        "published_members_compared": 104
+      },
+      {
+        "name": "tokio",
+        "version": "1.53.3",
+        "archive_sha256": "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e",
+        "published_members_compared": 564
+      },
+      {
+        "name": "tokio-macros",
+        "version": "2.7.2",
+        "archive_sha256": "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e",
+        "published_members_compared": 10
+      },
+      {
+        "name": "unicode-ident",
+        "version": "1.0.27",
+        "archive_sha256": "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563",
+        "published_members_compared": 26
+      },
+      {
+        "name": "vcpkg",
+        "version": "0.2.15",
+        "archive_sha256": "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426",
+        "published_members_compared": 833
+      },
+      {
+        "name": "zlib-rs",
+        "version": "0.6.8",
+        "archive_sha256": "b268e58e7c693d7c271f93ffc4ba3b380412554231c85bf61ca7af91042a4112",
+        "published_members_compared": 53
+      },
+      {
+        "name": "zmij",
+        "version": "1.0.23",
+        "archive_sha256": "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b",
+        "published_members_compared": 17
+      }
+    ],
+    "scope": "cache read-only; all published regular files compared with registry archive; no extract, patch or cache deletion"
+  },
+  "wire_summary": {
+    "actual_wire_rows": 72,
+    "dictionary_witnesses": 12,
+    "wide15_negative_controls": 12,
+    "scope": "core compression profile, no actual WS Upgrade negotiation; independent Python C-zlib content and RFC1951 distance scanner; fixed backend8->9 mapping only"
+  },
+  "mutants_detected": 5,
+  "expected_compile_negative_checks": 2,
+  "baseline_behavioral_failures": 2,
+  "actual_logged_check_commands": 64,
+  "logged_nonzero_exits": 9,
+  "commands": [
+    {
+      "receipt": "allocator-union-negative\\evidence\\1792411716306616700-base-check\\commands.json",
+      "label": "lock",
+      "command": [
+        "cargo",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "exit": 0,
+      "seconds": 0.06299999996554106
+    },
+    {
+      "receipt": "allocator-union-negative\\evidence\\1792411716306616700-base-check\\commands.json",
+      "label": "check",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "--offline"
+      ],
+      "exit": 101,
+      "seconds": 0.5929999999934807
+    },
+    {
+      "receipt": "baseline-probe\\evidence\\1792411481253740800-base-test\\commands.json",
+      "label": "lock",
+      "command": [
+        "cargo",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "exit": 0,
+      "seconds": 0.125
+    },
+    {
+      "receipt": "baseline-probe\\evidence\\1792411481253740800-base-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--test",
+        "gaps",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 101,
+      "seconds": 2.25
+    },
+    {
+      "receipt": "evidence\\1792411717285060500-base-lock\\commands.json",
+      "label": "lock",
+      "command": [
+        "cargo",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "exit": 0,
+      "seconds": 0.10899999993853271
+    },
+    {
+      "receipt": "evidence\\1792411735150697000-base-format\\commands.json",
+      "label": "format",
+      "command": [
+        "cargo",
+        "fmt"
+      ],
+      "exit": 0,
+      "seconds": 0.14099999994505197
+    },
+    {
+      "receipt": "evidence\\1792411735669217700-base-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 14.437000000034459
+    },
+    {
+      "receipt": "evidence\\1792412004408788600-base-format\\commands.json",
+      "label": "format",
+      "command": [
+        "cargo",
+        "fmt"
+      ],
+      "exit": 0,
+      "seconds": 0.1559999999590218
+    },
+    {
+      "receipt": "evidence\\1792412004961841800-base-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 16.5
+    },
+    {
+      "receipt": "evidence\\1792412170200209800-base-format\\commands.json",
+      "label": "format",
+      "command": [
+        "cargo",
+        "fmt"
+      ],
+      "exit": 0,
+      "seconds": 0.125
+    },
+    {
+      "receipt": "evidence\\1792412170706655100-base-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 16.078000000095926
+    },
+    {
+      "receipt": "evidence\\1792412187101150400-base-clippy\\commands.json",
+      "label": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 101,
+      "seconds": 1.5940000000409782
+    },
+    {
+      "receipt": "evidence\\1792412265235210800-base-format\\commands.json",
+      "label": "format",
+      "command": [
+        "cargo",
+        "fmt"
+      ],
+      "exit": 0,
+      "seconds": 0.14099999994505197
+    },
+    {
+      "receipt": "evidence\\1792412265678251000-base-clippy\\commands.json",
+      "label": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 0.625
+    },
+    {
+      "receipt": "evidence\\1792412271020375400-base-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--test",
+        "pmd_async",
+        "decompression_yields_to_another_ready_task",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 101,
+      "seconds": 4.062999999965541
+    },
+    {
+      "receipt": "evidence\\1792412275446462700-base-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--test",
+        "pmd_async",
+        "another_task_cancels_active_decompression_before_publication",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 101,
+      "seconds": 4.015999999945052
+    },
+    {
+      "receipt": "evidence\\1792412279809348200-base-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--test",
+        "close",
+        "cancelled_pending_flush_with_all_close_bytes_written_accepts_peer_reply_eof",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 101,
+      "seconds": 1.265999999945052
+    },
+    {
+      "receipt": "evidence\\1792412281404048200-base-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--test",
+        "io",
+        "sixteen_megabyte_plain_text_validation_is_bounded_and_cancel_resumable",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 101,
+      "seconds": 3.765999999945052
+    },
+    {
+      "receipt": "evidence\\1792412285531374300-base-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--test",
+        "io",
+        "large_binary_continuation_copy_yields_preserves_prefix_and_control_order",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 101,
+      "seconds": 1.6559999999590218
+    },
+    {
+      "receipt": "evidence\\1792412323942172100-base-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 15.515999999945052
+    },
+    {
+      "receipt": "evidence\\1792412339782043300-base-clippy\\commands.json",
+      "label": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 0.4529999999795109
+    },
+    {
+      "receipt": "evidence\\1792412340550516500-base-fmt\\commands.json",
+      "label": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 0.14000000001396984
+    },
+    {
+      "receipt": "evidence\\1792412341002691800-base-metadata\\commands.json",
+      "label": "metadata",
+      "command": [
+        "cargo",
+        "metadata",
+        "--format-version",
+        "1",
+        "--locked",
+        "--offline"
+      ],
+      "exit": 0,
+      "seconds": 0.125
+    },
+    {
+      "receipt": "evidence\\1792412341002691800-base-metadata\\commands.json",
+      "label": "features",
+      "command": [
+        "cargo",
+        "tree",
+        "--edges",
+        "features",
+        "--locked",
+        "--offline"
+      ],
+      "exit": 0,
+      "seconds": 0.0470000000204891
+    },
+    {
+      "receipt": "evidence\\1792412341485893700-base-resource\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--bin",
+        "resource"
+      ],
+      "exit": 0,
+      "seconds": 0.06299999996554106
+    },
+    {
+      "receipt": "evidence\\1792412341485893700-base-resource\\commands.json",
+      "label": "resource",
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\resource.exe"
+      ],
+      "exit": 0,
+      "seconds": 0.29599999997299165,
+      "binary_sha256": "ea4f43fe2996422fe6574ee646dfd7080c56f100b1dd0be2f4a5393c742afb38"
+    },
+    {
+      "receipt": "evidence\\1792412342161534500-base-cancel-resource\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--bin",
+        "cancel_resource"
+      ],
+      "exit": 0,
+      "seconds": 0.0779999999795109
+    },
+    {
+      "receipt": "evidence\\1792412342161534500-base-cancel-resource\\commands.json",
+      "label": "cancel-resource",
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\cancel_resource.exe"
+      ],
+      "exit": 0,
+      "seconds": 1.8589999999385327,
+      "binary_sha256": "ca49962a7ad563b3cc1adb5f6fb61126db14a46518b5d4b087077aa91343244e"
+    },
+    {
+      "receipt": "evidence\\1792412344406988900-base-wire\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--bin",
+        "wire_probe"
+      ],
+      "exit": 0,
+      "seconds": 0.06199999991804361
+    },
+    {
+      "receipt": "evidence\\1792412344406988900-base-wire\\commands.json",
+      "label": "wire",
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\wire_probe.exe"
+      ],
+      "exit": 0,
+      "seconds": 0.8599999999860302,
+      "binary_sha256": "28c4a15beb18279ccda093da974ef8c197f7d154a6382f6db83cbd62e8e866fa"
+    },
+    {
+      "receipt": "evidence\\1792412345643301300-base-compare\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--bin",
+        "boundary_cli"
+      ],
+      "exit": 0,
+      "seconds": 0.06299999996554106
+    },
+    {
+      "receipt": "evidence\\1792412345643301300-base-compare\\commands.json",
+      "label": "compare",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-owned-ws-lifecycle-n5apqcat\\compare.py"
+      ],
+      "exit": 0,
+      "seconds": 2.875,
+      "binary_sha256": "6965927a96b81d1717c1d2186de7feb9b29ebf8775464020ebc2f25de6ef8ee0"
+    },
+    {
+      "receipt": "evidence\\1792412348906934700-union-default-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-default",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 18.57799999997951
+    },
+    {
+      "receipt": "evidence\\1792412367791406300-union-default-clippy\\commands.json",
+      "label": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--all-targets",
+        "--features",
+        "union-default",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 0.6870000000344589
+    },
+    {
+      "receipt": "evidence\\1792412368797382700-union-default-fmt\\commands.json",
+      "label": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 0.14000000001396984
+    },
+    {
+      "receipt": "evidence\\1792412369254077100-union-default-metadata\\commands.json",
+      "label": "metadata",
+      "command": [
+        "cargo",
+        "metadata",
+        "--format-version",
+        "1",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-default"
+      ],
+      "exit": 0,
+      "seconds": 0.10900000005494803
+    },
+    {
+      "receipt": "evidence\\1792412369254077100-union-default-metadata\\commands.json",
+      "label": "features",
+      "command": [
+        "cargo",
+        "tree",
+        "--edges",
+        "features",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-default"
+      ],
+      "exit": 0,
+      "seconds": 0.0470000000204891
+    },
+    {
+      "receipt": "evidence\\1792412369712546200-union-default-resource\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-default",
+        "--bin",
+        "resource"
+      ],
+      "exit": 0,
+      "seconds": 0.07800000009592623
+    },
+    {
+      "receipt": "evidence\\1792412369712546200-union-default-resource\\commands.json",
+      "label": "resource",
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\resource.exe"
+      ],
+      "exit": 0,
+      "seconds": 0.26599999994505197,
+      "binary_sha256": "6e0b71f4486d8bb5a574fa21b0e5b68c497f4ab25e5ba1c2d91d5b84524804e3"
+    },
+    {
+      "receipt": "evidence\\1792412370361938300-union-default-cancel-resource\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-default",
+        "--bin",
+        "cancel_resource"
+      ],
+      "exit": 0,
+      "seconds": 0.06299999996554106
+    },
+    {
+      "receipt": "evidence\\1792412370361938300-union-default-cancel-resource\\commands.json",
+      "label": "cancel-resource",
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\cancel_resource.exe"
+      ],
+      "exit": 0,
+      "seconds": 1.7959999999729916,
+      "binary_sha256": "b3744ce8160f005b66f398d9414eef82b066c8b0e8222cba0da22f9b94c89c21"
+    },
+    {
+      "receipt": "evidence\\1792412372521026500-union-default-wire\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-default",
+        "--bin",
+        "wire_probe"
+      ],
+      "exit": 0,
+      "seconds": 0.06299999996554106
+    },
+    {
+      "receipt": "evidence\\1792412372521026500-union-default-wire\\commands.json",
+      "label": "wire",
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\wire_probe.exe"
+      ],
+      "exit": 0,
+      "seconds": 0.734000000054948,
+      "binary_sha256": "5e4f03217bb1611bca3a62335cbbcad2b6505093535f54b8fe0a9e22895fdde2"
+    },
+    {
+      "receipt": "evidence\\1792412373635974200-union-default-compare\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-default",
+        "--bin",
+        "boundary_cli"
+      ],
+      "exit": 0,
+      "seconds": 0.06299999996554106
+    },
+    {
+      "receipt": "evidence\\1792412373635974200-union-default-compare\\commands.json",
+      "label": "compare",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-owned-ws-lifecycle-n5apqcat\\compare.py"
+      ],
+      "exit": 0,
+      "seconds": 2.812000000034459,
+      "binary_sha256": "6965927a96b81d1717c1d2186de7feb9b29ebf8775464020ebc2f25de6ef8ee0"
+    },
+    {
+      "receipt": "evidence\\1792412376844897800-union-c-zlib-test\\commands.json",
+      "label": "test",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-c-zlib",
+        "--",
+        "--test-threads=1",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 17.65700000000652
+    },
+    {
+      "receipt": "evidence\\1792412394804678900-union-c-zlib-clippy\\commands.json",
+      "label": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--all-targets",
+        "--features",
+        "union-c-zlib",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 0.6870000000344589
+    },
+    {
+      "receipt": "evidence\\1792412395780880000-union-c-zlib-fmt\\commands.json",
+      "label": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 0.125
+    },
+    {
+      "receipt": "evidence\\1792412396223944900-union-c-zlib-metadata\\commands.json",
+      "label": "metadata",
+      "command": [
+        "cargo",
+        "metadata",
+        "--format-version",
+        "1",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-c-zlib"
+      ],
+      "exit": 0,
+      "seconds": 0.125
+    },
+    {
+      "receipt": "evidence\\1792412396223944900-union-c-zlib-metadata\\commands.json",
+      "label": "features",
+      "command": [
+        "cargo",
+        "tree",
+        "--edges",
+        "features",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-c-zlib"
+      ],
+      "exit": 0,
+      "seconds": 0.0470000000204891
+    },
+    {
+      "receipt": "evidence\\1792412396710549600-union-c-zlib-resource\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-c-zlib",
+        "--bin",
+        "resource"
+      ],
+      "exit": 0,
+      "seconds": 0.07800000009592623
+    },
+    {
+      "receipt": "evidence\\1792412396710549600-union-c-zlib-resource\\commands.json",
+      "label": "resource",
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\resource.exe"
+      ],
+      "exit": 0,
+      "seconds": 0.2029999999795109,
+      "binary_sha256": "51a12032abce98f17df0a5e355083cfca1215a29cb9cbf1207297fd9ce65d6c9"
+    },
+    {
+      "receipt": "evidence\\1792412397283370000-union-c-zlib-cancel-resource\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-c-zlib",
+        "--bin",
+        "cancel_resource"
+      ],
+      "exit": 0,
+      "seconds": 0.06199999991804361
+    },
+    {
+      "receipt": "evidence\\1792412397283370000-union-c-zlib-cancel-resource\\commands.json",
+      "label": "cancel-resource",
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\cancel_resource.exe"
+      ],
+      "exit": 0,
+      "seconds": 1.7040000000270084,
+      "binary_sha256": "2448913987d9dbec9fbf4c85b7e3d0167e4f50dbab8b114216cfa438702da588"
+    },
+    {
+      "receipt": "evidence\\1792412399368005200-union-c-zlib-wire\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-c-zlib",
+        "--bin",
+        "wire_probe"
+      ],
+      "exit": 0,
+      "seconds": 0.0779999999795109
+    },
+    {
+      "receipt": "evidence\\1792412399368005200-union-c-zlib-wire\\commands.json",
+      "label": "wire",
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\wire_probe.exe"
+      ],
+      "exit": 0,
+      "seconds": 0.5779999999795109,
+      "binary_sha256": "0f04f5acc37e9776260e36144ea4906625f18bbae3d90ea540c50b02c754e8c8"
+    },
+    {
+      "receipt": "evidence\\1792412400343961100-union-c-zlib-compare\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-c-zlib",
+        "--bin",
+        "boundary_cli"
+      ],
+      "exit": 0,
+      "seconds": 0.06300000008195639
+    },
+    {
+      "receipt": "evidence\\1792412400343961100-union-c-zlib-compare\\commands.json",
+      "label": "compare",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-owned-ws-lifecycle-n5apqcat\\compare.py"
+      ],
+      "exit": 0,
+      "seconds": 2.890999999945052,
+      "binary_sha256": "6965927a96b81d1717c1d2186de7feb9b29ebf8775464020ebc2f25de6ef8ee0"
+    },
+    {
+      "receipt": "evidence\\1792412403593095100-union-c-zlib-build\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--features",
+        "union-c-zlib",
+        "--bin",
+        "wire_probe",
+        "--message-format=json"
+      ],
+      "exit": 0,
+      "seconds": 0.06300000008195639
+    },
+    {
+      "receipt": "evidence\\1792412422833531300-base-compare\\commands.json",
+      "label": "build",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--bin",
+        "boundary_cli"
+      ],
+      "exit": 0,
+      "seconds": 0.375
+    },
+    {
+      "receipt": "evidence\\1792412422833531300-base-compare\\commands.json",
+      "label": "compare",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-owned-ws-lifecycle-n5apqcat\\compare.py"
+      ],
+      "exit": 0,
+      "seconds": 2.89000000001397,
+      "binary_sha256": "6965927a96b81d1717c1d2186de7feb9b29ebf8775464020ebc2f25de6ef8ee0"
+    },
+    {
+      "receipt": "sync-negative\\evidence\\1792412125777786700-base-lock\\commands.json",
+      "label": "lock",
+      "command": [
+        "cargo",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "exit": 0,
+      "seconds": 0.09399999992456287
+    },
+    {
+      "receipt": "sync-negative\\evidence\\1792412125777786700-base-lock\\commands.json",
+      "label": "lock",
+      "command": [
+        "cargo",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "exit": 0,
+      "seconds": 0.09299999999348074
+    },
+    {
+      "receipt": "sync-negative\\evidence\\1792412266600760300-base-check\\commands.json",
+      "label": "check",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "--offline"
+      ],
+      "exit": 101,
+      "seconds": 0.32900000002700835
+    }
+  ],
+  "native": {
+    "cargo_event": {
+      "reason": "build-script-executed",
+      "package_id": "registry+https://github.com/rust-lang/crates.io-index#libz-sys@1.1.30",
+      "linked_libs": [
+        "static=z"
+      ],
+      "linked_paths": [
+        "native=E:/opi/cargo-targets/opi-72fa37a0fa044958\\debug\\build\\libz-sys-b8962bad3d245496\\out\\lib",
+        "native=E:/opi/cargo-targets/opi-72fa37a0fa044958\\debug\\build\\libz-sys-b8962bad3d245496\\out\\lib"
+      ],
+      "cfgs": [],
+      "env": [],
+      "out_dir": "E:/opi/cargo-targets/opi-72fa37a0fa044958\\debug\\build\\libz-sys-b8962bad3d245496\\out"
+    },
+    "build_output_sha256": "0b2bb877ff63fcad6891ae166b986fd67bc1c251b98db01141b6e92137d020c8",
+    "libraries": {
+      "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\build\\libz-sys-b8962bad3d245496\\out\\lib\\libz.a": "c1b3af9a2240f705304ee554d32a634f944a42b76ff68d16a74cf298dd9f6dbf",
+      "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\build\\libz-sys-b8962bad3d245496\\out\\lib\\z.lib": "c1b3af9a2240f705304ee554d32a634f944a42b76ff68d16a74cf298dd9f6dbf"
+    },
+    "zlib_headers": {
+      "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\build\\libz-sys-b8962bad3d245496\\out\\include\\zlib.h": "818667d6ab6a37fe7469cb06a7f0cb2c2cb2f2c948a03e5accf1a4a74bf3020a"
+    },
+    "scope": "actual selected cached static build output; not a forced rebuild or portable native proof"
+  },
+  "source_hashes": {
+    "Cargo.lock": "b2332e424e320db66f8a779b35cfce332d60bbcf11a74f67300f8135102ded50",
+    "Cargo.toml": "d23b3ed98a115434a76e229cf3936a97311bbb9b287fbb7338a9cfe10472bbad",
+    "allocator-union-negative\\Cargo.lock": "dfd3421e90875d96b616803e5bee717441dec6540d1e1189e709c879a18fb9ca",
+    "allocator-union-negative\\Cargo.toml": "72f13ff293f743fd870b1c231d95ae1b8dda0d81b663d97c906502e41c89bd22",
+    "baseline-probe\\Cargo.lock": "f7d089fd9abc8d8ad8ae80e977f06fa8a21c33fcb9bd274571a973106fd5278e",
+    "baseline-probe\\Cargo.toml": "7419f1eb21d0ecc9f1221e541a739edcf15d8b3f7aeb1576134c56f6fe7054d4",
+    "src\\frame.rs": "4b46cca1e99462bf81125427eef443ea56030c7a56ea2ba84407611b5415836e",
+    "src\\io.rs": "73437d47d30bccf82ed0aa085d3db85e5d382bcd1035d59ba3098559d5b1c516",
+    "src\\lib.rs": "9cb621695ddbf4c524aeb70812bef32470a23224f9105e50ad03d2c22c28cd28",
+    "src\\pmd.rs": "6851e91fdde0c0f76671e90db0af4659a8cbe67499046e66fedd2804cb3fdf3b",
+    "sync-negative\\Cargo.lock": "b62196f4920cba36974dcbbec57541927ce523a09531df433a30062474520561",
+    "sync-negative\\Cargo.toml": "d8d09fbb8c8597bfaf19f84d5692afe8266e21f8248cf9c5b1392a7d59132e89",
+    "tests\\close.rs": "30649ed43cd255754c73b70d080f8f39b9f6a46e4fb76ccd6dc7437868cdd8d4",
+    "tests\\frame.rs": "4bc73e36e7131373919b1680db39695d715526369d42fb09674eadf46a01b4e9",
+    "tests\\gaps.rs": "789f759ceeb967ee59f32e73f0b4851e3ec0908b0d55cdaa1c26bbea6e350049",
+    "tests\\io.rs": "7c2399e7a793a1b02a962f00389f0f347bc8d27181ca6ef6d92f98a79dc2f790",
+    "tests\\pmd.rs": "41165c180d3925ba9703c722f08d927b104a9c2c60b5e8fdbf0be0331d8423c4",
+    "tests\\pmd_async.rs": "f5bba434bedda980560a2ca83dbbdd101b945e0fe78cf81e04d046aca8420de3",
+    "tests\\pmd_red.rs": "bf22fd068e1b4523530e6b1507879bcd58f35e82270f1ffe29c7ce5f9c59710c",
+    "tests\\replay.rs": "eabbd2ad5c08a5219903fdd34772b9990b149d0a3d00e3a5cfe14b7f77b691be",
+    "allocator-union-negative\\src\\main.rs": "b213f4aa7d6ad5be8c88a1b04341ff9ffcb4edc01a7c39d6d279a2c84cfa9ef3",
+    "baseline-probe\\src\\frame.rs": "9ac653d4939bf04e4ddf9164287f4e0485958c281422fcf834b433c6c1cf2b97",
+    "baseline-probe\\src\\io.rs": "df06e7a8dbb4d3955d7beebe5fd4e1c8b19c75be8ba48e31c3b2d447a72e312f",
+    "baseline-probe\\src\\lib.rs": "9cb621695ddbf4c524aeb70812bef32470a23224f9105e50ad03d2c22c28cd28",
+    "baseline-probe\\src\\pmd.rs": "5ffbad67c659839cbca105d12c8b47267313e39af99e1a62a1d70b34587d3104",
+    "baseline-probe\\tests\\gaps.rs": "8d3716551799d5f4e9aa7507ef864cfce7e23adc115d128d6ac496e0ef1dc77c",
+    "src\\bin\\boundary_cli.rs": "a4a64776d708bdefeb5c91439cc9dad0a0a6228c7ca6648676480a8d7ca74177",
+    "src\\bin\\cancel_resource.rs": "486004ed7d61a747b7c94388228a7cf772c2a96c78c11974520f998c1627fad3",
+    "src\\bin\\resource.rs": "a6252f9aa30e717a7ef998a261b03a1c9bc798296056fa82a3313edab9118ac8",
+    "src\\bin\\wire_probe.rs": "9f63830f83dfc6e9f506e86c838a740caeb12e02a4e3b8f764c8425501f4f627",
+    "sync-negative\\src\\main.rs": "d99b5b0fd6b7eb5e406a9fb70aabb078f578ad5d92096da5bbca0b49b6ce0423"
+  },
+  "source_lines": {
+    "src\\frame.rs": 531,
+    "src\\io.rs": 700,
+    "src\\lib.rs": 3,
+    "src\\pmd.rs": 507
+  },
+  "test_names": [
+    "frame::growth_controls::preferred_reserve_failure_falls_back_without_losing_bytes",
+    "frame::growth_controls::required_reserve_failure_is_typed_and_absorbing",
+    "pmd::local_growth_tests::decoder_storage_failure_poisoning",
+    "pmd::local_growth_tests::encoder_storage_failure_poisoning",
+    "pmd::local_growth_tests::pending_decoder_output_growth_failure_releases_advanced_state",
+    "caller_deadline_bounds_missing_peer_and_is_absorbing",
+    "caller_deadline_bounds_response_backpressure_without_hidden_remainder",
+    "cancelled_pending_flush_with_all_close_bytes_written_accepts_peer_reply_eof",
+    "finish_close_retains_inflight_application_and_close_events",
+    "local_close_waits_for_peer_close_and_transport_eof_across_cancellation",
+    "malformed_close_is_error_once_then_permanent_eof",
+    "owner_drop_after_peer_close_does_not_send_implicit_ack",
+    "peer_close_discards_only_completely_unsent_application_frame",
+    "peer_close_finishes_partial_application_frame_then_exact_response",
+    "peer_close_requires_explicit_masked_response_empty_stays_empty",
+    "peer_eof_before_response_is_abnormal_not_close_success",
+    "post_close_data_cannot_be_delivered_or_turn_into_false_completion",
+    "response_preserves_close_code_reason_and_does_not_encode_status_1005",
+    "simultaneous_close_sends_exactly_one_frame",
+    "accepts_shortest_payload_boundaries_without_tail_loss",
+    "coalesced_failure_preserves_completed_prefix_exactly_once",
+    "compressed_message_is_assembled_without_pretending_it_is_utf8",
+    "every_incomplete_prefix_fails_eof_and_eof_is_permanent",
+    "fragmentation_requires_unique_initial_and_uncompressed_continuations",
+    "huge_valid_declaration_only_stores_actual_bytes",
+    "invalid_opcode_rsv_and_mask_bits_reject_before_body",
+    "malformed_utf8_and_close_are_terminal",
+    "message_fragments_keep_utf8_boundary_and_control_order",
+    "real_reservation_failure_keeps_typed_source_without_oom",
+    "rejects_high_bit_and_nonminimal_lengths_in_every_split",
+    "representation_overflow_is_typed_without_allocating",
+    "large_inflate_yields_before_returning_whole_message",
+    "peer_close_keeps_transport_for_explicit_response",
+    "async_driver_preserves_accepted_prefix_before_coalesced_failure",
+    "busy_queue_preserves_first_frame_and_does_not_advance_pmd_context",
+    "cancelled_backpressure_flush_resumes_exact_offset_without_reencoding",
+    "cancelled_next_after_inbound_quantum_preserves_unconsumed_read_bytes",
+    "cancelled_next_during_expansion_preserves_job_and_dictionary",
+    "cancelled_read_future_resumes_header_payload_and_pmd",
+    "compressed_text_continuation_copy_resumes_then_inflates_validates_once",
+    "core_preserves_prefix_rejects_decoded_utf8_and_absorbs_close_tail",
+    "dropping_owner_after_cancelled_read_closes_peer",
+    "dropping_owner_with_pending_write_sends_no_hidden_remainder",
+    "initialized_driver_and_next_future_move_between_executor_threads",
+    "invalid_or_incomplete_final_utf8_is_never_published_after_many_quanta",
+    "large_binary_continuation_copy_yields_preserves_prefix_and_control_order",
+    "malformed_frame_pmd_and_early_eof_error_once_then_permanent_none",
+    "owner_drop_during_pmd_job_releases_transport_without_late_result",
+    "public_messages_constructor_still_rejects_invalid_plain_text_at_fin",
+    "queued_close_survives_late_queue_rejection_and_cancelled_flush",
+    "sixteen_megabyte_compressed_text_validation_is_bounded_and_cancel_resumable",
+    "sixteen_megabyte_plain_text_validation_is_bounded_and_cancel_resumable",
+    "utf8_codepoints_cross_validation_quanta_without_false_rejection",
+    "complete_boundary_controls",
+    "explicit_decoded_limits_allow_equality_and_reject_overflow",
+    "invalid_boundary_absorbs_and_releases",
+    "invalid_window_admission_is_typed",
+    "no_arbitrary_final_stream_count_limit",
+    "rfc_bfinal_hello_and_nonzero_padding",
+    "roundtrip_windows_context_and_large_outputs",
+    "another_task_cancels_active_decompression_before_publication",
+    "bfinal_pending_job_moves_threads_without_iteration_cap",
+    "decoder_and_borrowed_decode_future_are_send",
+    "decompression_yields_to_another_ready_task",
+    "dropping_borrowed_future_leaves_resumable_owned_job",
+    "explicit_cancel_drops_partial_output_and_stream_and_absorbs",
+    "final_stream_normalization_retains_history_across_thread_migration",
+    "input_quantum_edges_preserve_large_incompressible_payload_and_reject_truncation",
+    "malformed_tail_after_many_polls_poisoning_and_limits_remain_distinct",
+    "pending_job_moves_between_os_threads_and_retains_dictionary",
+    "missing_block_header_must_fail",
+    "truncated_stored_body_must_fail",
+    "valid_empty_control",
+    "historical_twelve_wire_fixtures_replayed_bytewise_and_coalesced",
+    "independent_python_generated_pmd_content_exact",
+    "independent_python_history_and_bfinal_reset_fixtures"
+  ],
+  "product_test_impact": "none; external add39/update; product retain",
+  "adoption": "INCOMPLETE; no20.11/20.34/20.57 acceptance",
+  "incidents": [
+    "Initial sync-negative harness lacked evidence parent; no Cargo was invoked; created parent and reran.",
+    "Initial clippy collapsible_if failure repaired by equivalent let-chain, final all3graphs pass.",
+    "Base comparison repeated once to preserve per-profile raw output after shared output was overwritten."
+  ],
+  "kind": "sealed prior isolated owned-WS mechanism evidence; no plan/runtime acceptance execution",
+  "counting_unit": "76 distinct final test functions repeated in3graphs=228; prior intermediate447pass and7expectedfail distinct from final; each72413samecases repeated",
+  "versions": {
+    "libz-rs-sys": "0.6.8",
+    "zlib-rs": "0.6.8",
+    "flate2": "1.1.10",
+    "tokio": "1.53.3",
+    "rustc": "1.99.1",
+    "host": "x86_64-pc-windows-msvc"
+  },
+  "raw_bundle_directory": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-owned-ws-lifecycle-n5apqcat",
+  "raw_bundle_files": {
+    "analyze_wire.py": "fde0a97ea5a587556ac42d13359d1a9e536b0f111cac676792c4fc837d6c20c4",
+    "baseline.json": "c8a20cffbb5468657f43d216579d71935946ab32ebda945a327a774afb62c0bc",
+    "boundary-differential.json": "8ec562cf4e6111ddf73d1e13876fc868101a821a98678c43e351639e0fe025b1",
+    "cache-final.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cache-final.stdout": "3097476118ec258151a5f56c2ce286b17d44384abc04cf3e433fb9529423f2ee",
+    "Cargo.lock": "b2332e424e320db66f8a779b35cfce332d60bbcf11a74f67300f8135102ded50",
+    "Cargo.toml": "d23b3ed98a115434a76e229cf3936a97311bbb9b287fbb7338a9cfe10472bbad",
+    "close-notes.md": "9ec0cc9884e59e25cf2eb3430fa91c1826346ca7a64b06c90521c7ebfb548b46",
+    "compare.py": "8d6df06ed6755092cdf77e838c1cc2dada4594f305b9d7c65ae13d8d5f3b22d1",
+    "c_boundary_oracle.py": "f75d0f02f675d3e3591226dedcfbe6ad14dc2beb2f0087d271809ba802b5608d",
+    "deflate_distance.py": "b6a0f97075e0f3d619c7fcc705a34f1a8d39a32f14d7341303c7b0ef4411ea57",
+    "end-state.json": "c8a20cffbb5468657f43d216579d71935946ab32ebda945a327a774afb62c0bc",
+    "memory-codec-cases.json": "93e6c9d160d40d5b8a7f6754fc961e25f418276b4745a83c21572e4965bdfa62",
+    "mutate_lifecycle.py": "b1dc208508937dc3ad8615720dedeb457191a3860809556422d3dc8e25bcf4bc",
+    "mutation-summary.json": "c7365b8d51ac40793f5f006face6fe51f23973bd7e9c533529e0879caba89efb",
+    "oracle-cases.jsonl": "4629de7b1cc02382595ce445bfd989f244c5e08ff6bc7329c1f40a78d9294063",
+    "oracle-summary.json": "35819cfca4291efba99af0dbfbd6b29be42cd096b5c76b51902ec64eeeb8ef1b",
+    "parent-reference.json": "1a3d2fcde83b6dfce689e3b189502ff324b8cd338dcbb1aa91532dd3266149b7",
+    "pmd-context-fixtures.json": "a883f8c8e147f7d197bf53065f55ee8f2bd6ea05ac62f33c6c3d5f66a5f5d4d7",
+    "pmd-lifecycle-notes.md": "47d50b686c06af9e96047de8155956fdb0c873d80635067e8b973d4e7d7f320b",
+    "preserve_compare.py": "0962c6c1e12ed4775c2eeb0c7863a18b5d3b24275d15032d0a12014bfe8f67dd",
+    "profile-invocations.json": "62d6ccf71872e03939e153f57fe17ceb1a1c5bf37bfbdb641c0a54c0e9d15d06",
+    "python-pmd-fixtures.json": "a310ddb24f11a227f881064e042a1f098629ac9afe6b3e2bc068bdd772026df2",
+    "registry-verification.json": "035cea793ebb3c07ce1b4a78690edf3b58393dea56fd3be3f1a5cde1f97a666d",
+    "report.md": "f60bc5190b9ce4ccc267817f5a9ecf8b763a86239f1ba20e94fd6a0e4dd69792",
+    "run.py": "a4447046194eff254dcd0437f735b1ff4384168c2acafe8838edef75826600ff",
+    "toolchain.json": "43f81ee3d7d11e13db1b00c14283d0d7820ce0c108b71a4ad6f5ca8d251b825b",
+    "unsafe-maintenance-audit.md": "82568b925fa7335d8a3de7c1f353171b53cdf1f98810a728f1bfea15fcd429d0",
+    "validate_profiles.py": "01cabb62c434283aa5fb190f740aa4d4b9214cebc42ca31e6a1574cf5da169be",
+    "verification.json": "637ecba8673e88ab6e54feaa1e029653919a59a550a5346e16a59cf74a49d6e5",
+    "verify.py": "b2b6d345330e10d757aa0a8c4b779f3ecc120d6e619d87e281614b5a416c25d2",
+    "verify_registry.py": "dd34b046b5d1ea7a61f4fdc905b69341c0dbd61892a42a0dab16ef95dae231d5",
+    "wire-analysis.json": "c31733575bc239114b86880032fe4fd5d414934b23a700cea3770f0243f6f155",
+    "write_report.py": "fc32003804eaf40222621e0851f3278968aa8e021e9c80eec8750314a491da0e",
+    "allocator-union-negative\\Cargo.lock": "dfd3421e90875d96b616803e5bee717441dec6540d1e1189e709c879a18fb9ca",
+    "allocator-union-negative\\Cargo.toml": "72f13ff293f743fd870b1c231d95ae1b8dda0d81b663d97c906502e41c89bd22",
+    "allocator-union-negative\\invocation.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "allocator-union-negative\\invocation.stdout": "546b61124112b7cb4dd036d98d1a273aa879306a82ec1c7e5d5291b8d85a9103",
+    "allocator-union-negative\\result.json": "1bcabc9401f318d0b4cce17fc3c984a9cbe3b28ffc72b3bdcd5e38785e7483e1",
+    "allocator-union-negative\\run.py": "a02939a4266c4d4e50ec282c3f64a789d54c60e82825d5b13fa7c1a7d9d226cb",
+    "baseline-probe\\Cargo.lock": "f7d089fd9abc8d8ad8ae80e977f06fa8a21c33fcb9bd274571a973106fd5278e",
+    "baseline-probe\\Cargo.toml": "7419f1eb21d0ecc9f1221e541a739edcf15d8b3f7aeb1576134c56f6fe7054d4",
+    "baseline-probe\\run.py": "e5fcdfb3e8e4b07249ce06583f53c542096fa426cb9e98222566fd74f8930b57",
+    "evidence\\wire-analysis.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\wire-analysis.stdout": "c00bb6b249b778c07451b5ecd63f4c1f4700117dfb28e01c4fb545cbb0788109",
+    "src\\frame.rs": "4b46cca1e99462bf81125427eef443ea56030c7a56ea2ba84407611b5415836e",
+    "src\\io.rs": "73437d47d30bccf82ed0aa085d3db85e5d382bcd1035d59ba3098559d5b1c516",
+    "src\\lib.rs": "9cb621695ddbf4c524aeb70812bef32470a23224f9105e50ad03d2c22c28cd28",
+    "src\\pmd.rs": "6851e91fdde0c0f76671e90db0af4659a8cbe67499046e66fedd2804cb3fdf3b",
+    "sync-negative\\Cargo.lock": "b62196f4920cba36974dcbbec57541927ce523a09531df433a30062474520561",
+    "sync-negative\\Cargo.toml": "d8d09fbb8c8597bfaf19f84d5692afe8266e21f8248cf9c5b1392a7d59132e89",
+    "sync-negative\\run.py": "a02939a4266c4d4e50ec282c3f64a789d54c60e82825d5b13fa7c1a7d9d226cb",
+    "tests\\close.rs": "30649ed43cd255754c73b70d080f8f39b9f6a46e4fb76ccd6dc7437868cdd8d4",
+    "tests\\frame.rs": "4bc73e36e7131373919b1680db39695d715526369d42fb09674eadf46a01b4e9",
+    "tests\\gaps.rs": "789f759ceeb967ee59f32e73f0b4851e3ec0908b0d55cdaa1c26bbea6e350049",
+    "tests\\io.rs": "7c2399e7a793a1b02a962f00389f0f347bc8d27181ca6ef6d92f98a79dc2f790",
+    "tests\\pmd.rs": "41165c180d3925ba9703c722f08d927b104a9c2c60b5e8fdbf0be0331d8423c4",
+    "tests\\pmd_async.rs": "f5bba434bedda980560a2ca83dbbdd101b945e0fe78cf81e04d046aca8420de3",
+    "tests\\pmd_red.rs": "bf22fd068e1b4523530e6b1507879bcd58f35e82270f1ffe29c7ce5f9c59710c",
+    "tests\\replay.rs": "eabbd2ad5c08a5219903fdd34772b9990b149d0a3d00e3a5cfe14b7f77b691be",
+    "__pycache__\\deflate_distance.cpython-312.pyc": "9fa58e2f1e4c342aadbc5100949611a3ba3e1629f47d9212863b5aa38fe9580d",
+    "allocator-union-negative\\src\\main.rs": "b213f4aa7d6ad5be8c88a1b04341ff9ffcb4edc01a7c39d6d279a2c84cfa9ef3",
+    "allocator-union-negative\\evidence\\1792411716306616700-base-check\\check.stderr": "2d939c027c66c0254b8dd3772d3ebdfa79bbbaee1b3db17a79d826b2f41f6c58",
+    "allocator-union-negative\\evidence\\1792411716306616700-base-check\\check.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "allocator-union-negative\\evidence\\1792411716306616700-base-check\\commands.json": "0b18f73ba4d3d47d491a6f3c10998b01dfb3cad7a76ef8badb8083df540469e0",
+    "allocator-union-negative\\evidence\\1792411716306616700-base-check\\lock.stderr": "9f37ccd664c80239e11fe872e77d6c588edfc1f265e69f681d4907b285963a00",
+    "allocator-union-negative\\evidence\\1792411716306616700-base-check\\lock.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-probe\\src\\frame.rs": "9ac653d4939bf04e4ddf9164287f4e0485958c281422fcf834b433c6c1cf2b97",
+    "baseline-probe\\src\\io.rs": "df06e7a8dbb4d3955d7beebe5fd4e1c8b19c75be8ba48e31c3b2d447a72e312f",
+    "baseline-probe\\src\\lib.rs": "9cb621695ddbf4c524aeb70812bef32470a23224f9105e50ad03d2c22c28cd28",
+    "baseline-probe\\src\\pmd.rs": "5ffbad67c659839cbca105d12c8b47267313e39af99e1a62a1d70b34587d3104",
+    "baseline-probe\\tests\\gaps.rs": "8d3716551799d5f4e9aa7507ef864cfce7e23adc115d128d6ac496e0ef1dc77c",
+    "baseline-probe\\evidence\\1792411481253740800-base-test\\commands.json": "398364a4649fbd00e2e9d35e49f4ee47fb90ad3f139a23bc9ed6ce913ff74dbc",
+    "baseline-probe\\evidence\\1792411481253740800-base-test\\lock.stderr": "cc6726222e51ee763c008aeb18240cbf13e6285129e60080920705289752f99c",
+    "baseline-probe\\evidence\\1792411481253740800-base-test\\lock.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-probe\\evidence\\1792411481253740800-base-test\\test.stderr": "37cf9b56d2c3e76190ddaf6cc70baa44c14cc030e470f16f8f549941c136045c",
+    "baseline-probe\\evidence\\1792411481253740800-base-test\\test.stdout": "86e46e2ba3dfa5f61f0727bda7b12c0563e076fdbea7fb7fa7306af72cbb9e41",
+    "evidence\\1792411717285060500-base-lock\\commands.json": "175a15cb451b351cd5ec3da9383a0fd2b0ba1165bc2f9dc369c374007d002c71",
+    "evidence\\1792411717285060500-base-lock\\lock.stderr": "cc6726222e51ee763c008aeb18240cbf13e6285129e60080920705289752f99c",
+    "evidence\\1792411717285060500-base-lock\\lock.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792411735150697000-base-format\\commands.json": "1f09a4c44594ed8a616dadde2a34c638eee19e732b828a689a177fd6e9759762",
+    "evidence\\1792411735150697000-base-format\\format.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792411735150697000-base-format\\format.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792411735669217700-base-test\\commands.json": "1dba386cc212a3c5500e1d97a570739d2f3549ab6593e3fef53855d4f7facce7",
+    "evidence\\1792411735669217700-base-test\\test.stderr": "5b06632d828de628eedcd7430c5012a89f9d38d059d45d7042459b31a9cbb7db",
+    "evidence\\1792411735669217700-base-test\\test.stdout": "52acc2dcc852f1f52b043f59bafafe6fea85f414eac993158e0b1ac639301d8b",
+    "evidence\\1792412004408788600-base-format\\commands.json": "d79dd49de8e06f32dea949bdddcc09c12176fa97c1606468498aac62de958b44",
+    "evidence\\1792412004408788600-base-format\\format.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412004408788600-base-format\\format.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412004961841800-base-test\\commands.json": "0c0c197e1ee36119db9ceabbc6ad627544e0b8a3b8938826059edf81f3e50882",
+    "evidence\\1792412004961841800-base-test\\test.stderr": "fe913628da28682d9348fe044d5dabc081330efdb4906baa8744f7eb456c125d",
+    "evidence\\1792412004961841800-base-test\\test.stdout": "f2bd56961da7059bb909b625f564e992debb7abc55ab5d3d1ad95cd8d8aaff96",
+    "evidence\\1792412170200209800-base-format\\commands.json": "d11e570a7a07cb57351be17d54902d9ebc55c4fec9154eae729fd3a625d38031",
+    "evidence\\1792412170200209800-base-format\\format.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412170200209800-base-format\\format.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412170706655100-base-test\\commands.json": "5bda98ac44f24634c20ac49a6320c4d9a4aa0184fcb736f6c5fe72e5f9ae20a6",
+    "evidence\\1792412170706655100-base-test\\test.stderr": "8313951a3d295a5ac7689d2413802dcf22bba33a388817af367536b50852922f",
+    "evidence\\1792412170706655100-base-test\\test.stdout": "b0480e3b1c80dab2ecf616812b605c62c844474d919a4e6fe8379f8db23bf262",
+    "evidence\\1792412187101150400-base-clippy\\clippy.stderr": "92f6f1ba4fbdb3c96106b35f0f30a95ecbc117a5c5e5c2653201cc59c907a74a",
+    "evidence\\1792412187101150400-base-clippy\\clippy.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412187101150400-base-clippy\\commands.json": "4d171bde5fdcf1cd5ebaa8969a5c6fc43dd177bfb7772f09a0931a13afea8896",
+    "evidence\\1792412265235210800-base-format\\commands.json": "dddeac65283b8232d44b9850f4d490f50168f70a777fa6924a64953f8f019f51",
+    "evidence\\1792412265235210800-base-format\\format.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412265235210800-base-format\\format.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412265678251000-base-clippy\\clippy.stderr": "a2442d34698569e5ee9c62634c59de19a1ee5861485a6f4d75291dd5ad120864",
+    "evidence\\1792412265678251000-base-clippy\\clippy.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412265678251000-base-clippy\\commands.json": "9a5d42beee6008448a1f97b7262b7fbb6a1760a695b041994b76b2cb9fbbabbb",
+    "evidence\\1792412271020375400-base-test\\commands.json": "00a0d4aa49de0b75d60cfe489d5aefd9ee369e9048eef4310208812e675eca47",
+    "evidence\\1792412271020375400-base-test\\test.stderr": "b28c64d0fb74f7c5d2ee7f59a6f35037fac036aa316330e74450872655fce4f6",
+    "evidence\\1792412271020375400-base-test\\test.stdout": "432115c621bf3962edbad1fcc5d4fac530c6892f9d0e69e734a5e1899871b532",
+    "evidence\\1792412275446462700-base-test\\commands.json": "f8248abe025f92824b3fbf447cc7376c9e75dc730bb1fde681a349d283d1123f",
+    "evidence\\1792412275446462700-base-test\\test.stderr": "41766c02033fddefd2cd34435a641c1e40140f4cc14cb0deb075f963f37ff0a9",
+    "evidence\\1792412275446462700-base-test\\test.stdout": "646f6fe04a48e6749d26f88b327d998b300a16a0e671ab73e281cb6420ede519",
+    "evidence\\1792412279809348200-base-test\\commands.json": "080cdff6addb6b6da518a649a967431d0d7135cc05407a5139e23d8ee385c0b8",
+    "evidence\\1792412279809348200-base-test\\test.stderr": "c319077b22f7eef133fa2eeeeb1512f8b352b1f04d6f5a9f62c82d1f58cdf450",
+    "evidence\\1792412279809348200-base-test\\test.stdout": "7e0366a8cfd9e9381ee49ee53c92831d9f531be05cf5e59700cac2ce1aec92f0",
+    "evidence\\1792412281404048200-base-test\\commands.json": "8719fe60bf00b109c7ea4744cc5a3b6156de654c9209d4bcfdde659fcc444a96",
+    "evidence\\1792412281404048200-base-test\\test.stderr": "99b1e2ce6c25018e09abfd8462f922d26dee6be0074d86af36c947fffc0d95c3",
+    "evidence\\1792412281404048200-base-test\\test.stdout": "3e2ddc418c42dd0553313f98da8a8283a397d7b5d5f114ac25478a105d1c86f2",
+    "evidence\\1792412285531374300-base-test\\commands.json": "021025902381a97559965667ba4b2824b08854f097d8ae3cedd881b6c5ea8c6b",
+    "evidence\\1792412285531374300-base-test\\test.stderr": "16daf03d12c0ecb33b0554c1729f03587895054ad64903de9fb3347875a60a8d",
+    "evidence\\1792412285531374300-base-test\\test.stdout": "61d3ba4ac8332797af2f7b938a5675f5aa058278db26b26acb25b24fbbb3842e",
+    "evidence\\1792412323942172100-base-test\\commands.json": "ed15378205225ad33241454ddbf6ccd0dbf553d620cce1443ba61ad8591df4ae",
+    "evidence\\1792412323942172100-base-test\\test.stderr": "590b7826c1b7de9714ad651d9060733adef4e69f416052f192d4b038772bc12c",
+    "evidence\\1792412323942172100-base-test\\test.stdout": "c02ed115d8a91bbc5a7db7063044beb8a5e87cdc169b919050be2fd15f9a8170",
+    "evidence\\1792412339782043300-base-clippy\\clippy.stderr": "39c934f680e5d5ae512e605eb359c647ba37e358ef4dfa89d2cbec7014d5432f",
+    "evidence\\1792412339782043300-base-clippy\\clippy.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412339782043300-base-clippy\\commands.json": "deba8ee906e219023c422a7187feb1e7486751ad57508ad655ca93d492613138",
+    "evidence\\1792412340550516500-base-fmt\\commands.json": "79448049d3be4a27ebfd7b6846084cdac65849abc70ddd0d7748bc3a97588102",
+    "evidence\\1792412340550516500-base-fmt\\fmt.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412340550516500-base-fmt\\fmt.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412341002691800-base-metadata\\commands.json": "acb7d78a0322da5b7cabea955351d0479fdaeecde254577ae32e40ef5ea40292",
+    "evidence\\1792412341002691800-base-metadata\\features.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412341002691800-base-metadata\\features.stdout": "118f568d101e26d20519c7b451e82180176e247e553e40dad537630079e095bc",
+    "evidence\\1792412341002691800-base-metadata\\metadata.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412341002691800-base-metadata\\metadata.stdout": "1898443e3ebef802c96291262f465bec3f66b5b9d914e95fe91365407ab6b7d6",
+    "evidence\\1792412341485893700-base-resource\\build.stderr": "736e2582f563605dd272e5fb977840b0c0767377d27b6940c440caf75eec7157",
+    "evidence\\1792412341485893700-base-resource\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412341485893700-base-resource\\commands.json": "62cd34e16352b23a630b6832d92ddc6d671d4193d5c3edbc71438437aa8ffa7c",
+    "evidence\\1792412341485893700-base-resource\\resource.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412341485893700-base-resource\\resource.stdout": "c950773375a641cd56cc88931582e02bb690900a11881f56c5136f1e287f18c1",
+    "evidence\\1792412342161534500-base-cancel-resource\\build.stderr": "736e2582f563605dd272e5fb977840b0c0767377d27b6940c440caf75eec7157",
+    "evidence\\1792412342161534500-base-cancel-resource\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412342161534500-base-cancel-resource\\cancel-resource.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412342161534500-base-cancel-resource\\cancel-resource.stdout": "1963d9f845569ba424eb21b77ca334b158a2ea60525362464802634a8c2e0ca4",
+    "evidence\\1792412342161534500-base-cancel-resource\\commands.json": "e352e2e4584a64d2d4eda620ac7f5225aba8753386adfac5c9f800cfdbaa2275",
+    "evidence\\1792412344406988900-base-wire\\build.stderr": "736e2582f563605dd272e5fb977840b0c0767377d27b6940c440caf75eec7157",
+    "evidence\\1792412344406988900-base-wire\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412344406988900-base-wire\\commands.json": "9ce044f85c0a691f524169d0ec7435afe25e3f8c6d885d48b46b48b50fc98ffe",
+    "evidence\\1792412344406988900-base-wire\\wire.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412344406988900-base-wire\\wire.stdout": "82a25cdb476be9d159a4e957d43ef4f4881049dea468742ac774c80c0c03b0a4",
+    "evidence\\1792412345643301300-base-compare\\build.stderr": "736e2582f563605dd272e5fb977840b0c0767377d27b6940c440caf75eec7157",
+    "evidence\\1792412345643301300-base-compare\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412345643301300-base-compare\\commands.json": "dfc9f123e4967828772cb0b054d0f4c53f50179668627923925529bc462d365c",
+    "evidence\\1792412345643301300-base-compare\\compare.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412345643301300-base-compare\\compare.stdout": "6b728e3c08b83c1e7f197bddde8bf20e05f3f746042828e7dd76dae8f235813e",
+    "evidence\\1792412348906934700-union-default-test\\commands.json": "720397150b4b66a1890cf19b0a7a6c601d55788f42e33e6ca31153f70e18e73e",
+    "evidence\\1792412348906934700-union-default-test\\test.stderr": "ec40d7fc23e9ceefe144a75c8f01022ee5c1a5a1e4838e997789ba77ba47a707",
+    "evidence\\1792412348906934700-union-default-test\\test.stdout": "e9d52eea6820677a66d3881f7473e0b8479dc8ee0bb80bd75685c442c2c0081c",
+    "evidence\\1792412367791406300-union-default-clippy\\clippy.stderr": "dc2eeb578e122da7ffb2b6004eef2f598bc9bfe7e10edf009fdd2efd999c7aad",
+    "evidence\\1792412367791406300-union-default-clippy\\clippy.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412367791406300-union-default-clippy\\commands.json": "1fce260a74c6b4d923db84f99eaa6b8d3aece99c2d3a7873ddc9eca9d3a250b8",
+    "evidence\\1792412368797382700-union-default-fmt\\commands.json": "4caf1c79a1acccc742fd7e7dd571074f0cd749c110257b7b9ebc39138460208f",
+    "evidence\\1792412368797382700-union-default-fmt\\fmt.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412368797382700-union-default-fmt\\fmt.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412369254077100-union-default-metadata\\commands.json": "f70c4706b183a998996abf26980e78312da7b44c0ae42a41be561532b0e0ee68",
+    "evidence\\1792412369254077100-union-default-metadata\\features.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412369254077100-union-default-metadata\\features.stdout": "c0d2a2b1ce159f32e5b81ec1d1bfd0771fd1374dbba3256bed3b95ab31f9dc32",
+    "evidence\\1792412369254077100-union-default-metadata\\metadata.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412369254077100-union-default-metadata\\metadata.stdout": "07a140b7c5431edfb4a846fb3c06489fa88b894e11c556a9d99c8e515bf380f0",
+    "evidence\\1792412369712546200-union-default-resource\\build.stderr": "736e2582f563605dd272e5fb977840b0c0767377d27b6940c440caf75eec7157",
+    "evidence\\1792412369712546200-union-default-resource\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412369712546200-union-default-resource\\commands.json": "436db5c09f05c587f0a756638895fc7c295159afe3944be95e0e3196b46d6448",
+    "evidence\\1792412369712546200-union-default-resource\\resource.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412369712546200-union-default-resource\\resource.stdout": "c950773375a641cd56cc88931582e02bb690900a11881f56c5136f1e287f18c1",
+    "evidence\\1792412370361938300-union-default-cancel-resource\\build.stderr": "736e2582f563605dd272e5fb977840b0c0767377d27b6940c440caf75eec7157",
+    "evidence\\1792412370361938300-union-default-cancel-resource\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412370361938300-union-default-cancel-resource\\cancel-resource.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412370361938300-union-default-cancel-resource\\cancel-resource.stdout": "1963d9f845569ba424eb21b77ca334b158a2ea60525362464802634a8c2e0ca4",
+    "evidence\\1792412370361938300-union-default-cancel-resource\\commands.json": "031d461df984579e9377fb8d796b7f6d35767a5af2dd7d9ab506800673963933",
+    "evidence\\1792412372521026500-union-default-wire\\build.stderr": "736e2582f563605dd272e5fb977840b0c0767377d27b6940c440caf75eec7157",
+    "evidence\\1792412372521026500-union-default-wire\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412372521026500-union-default-wire\\commands.json": "27b755d815072c1402785537e4807efd742f372c1818af65fac406876df44aa5",
+    "evidence\\1792412372521026500-union-default-wire\\wire.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412372521026500-union-default-wire\\wire.stdout": "82a25cdb476be9d159a4e957d43ef4f4881049dea468742ac774c80c0c03b0a4",
+    "evidence\\1792412373635974200-union-default-compare\\build.stderr": "02db5a66fa0c60ca8618bd08aac556eac4f3ec863e8630a0d353dba6a0f6e126",
+    "evidence\\1792412373635974200-union-default-compare\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412373635974200-union-default-compare\\commands.json": "bf3e7632a43fe25068054dd5d6e449bc150d4db53daffd5a8863af1719f6b9ca",
+    "evidence\\1792412373635974200-union-default-compare\\compare.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412373635974200-union-default-compare\\compare.stdout": "998dbe7a3860bc777a8ea18e63de9c6304d1423dd0d0da6908c7d76c7714ada4",
+    "evidence\\1792412373635974200-union-default-compare\\rust.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412373635974200-union-default-compare\\rust.stdout": "bf949a121759c3cda75c2458efab0989a62981e3a93b59aa5f9f639b72a31f5f",
+    "evidence\\1792412373635974200-union-default-compare\\summary.json": "37ff3ccb3f7fd344153fb6420a653355ee9b330def58a59241182c5e0483955a",
+    "evidence\\1792412376844897800-union-c-zlib-test\\commands.json": "47d5e4628e5c1812c4799a5e0064b3631aeb6fd039ffba1a3fe02f19959afe9b",
+    "evidence\\1792412376844897800-union-c-zlib-test\\test.stderr": "612dfd1e77303ea30db29deddf2c79006e4c66f6db3e002fb4759e7b72b5160a",
+    "evidence\\1792412376844897800-union-c-zlib-test\\test.stdout": "cd324a50181272ac9c1005ef14f7d393c436f0140e74b5bebebfd51231acf468",
+    "evidence\\1792412394804678900-union-c-zlib-clippy\\clippy.stderr": "4672ade7ffb109bb08ee4dc5f4ddf60af61f095ba2dec233d03d77a1d226c125",
+    "evidence\\1792412394804678900-union-c-zlib-clippy\\clippy.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412394804678900-union-c-zlib-clippy\\commands.json": "a81845f9ab8f1f5c40a9610c97c578127f53f3283b1436944cab024024476fb5",
+    "evidence\\1792412395780880000-union-c-zlib-fmt\\commands.json": "fc7ca3ed788f585971ab7197cc306cd2b8505bba57dff9e5020a5f0f43216089",
+    "evidence\\1792412395780880000-union-c-zlib-fmt\\fmt.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412395780880000-union-c-zlib-fmt\\fmt.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412396223944900-union-c-zlib-metadata\\commands.json": "9600ce173648fc69d5f7011a4145784cac678bd18e8815e5132c8dd73a3d06cc",
+    "evidence\\1792412396223944900-union-c-zlib-metadata\\features.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412396223944900-union-c-zlib-metadata\\features.stdout": "45d60fb16c3272b981bbeca992a796bfa673033780a10254e66a2613af1f6810",
+    "evidence\\1792412396223944900-union-c-zlib-metadata\\metadata.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412396223944900-union-c-zlib-metadata\\metadata.stdout": "7ea3e33ce45b793bf1e1a54192a6f49acb8a2ee1c2ed5f62cd1ef0fa55ed1140",
+    "evidence\\1792412396710549600-union-c-zlib-resource\\build.stderr": "02db5a66fa0c60ca8618bd08aac556eac4f3ec863e8630a0d353dba6a0f6e126",
+    "evidence\\1792412396710549600-union-c-zlib-resource\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412396710549600-union-c-zlib-resource\\commands.json": "31d77e273083a2c8cee3ba2cf299927481a625e301976c00e439c73b679dea17",
+    "evidence\\1792412396710549600-union-c-zlib-resource\\resource.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412396710549600-union-c-zlib-resource\\resource.stdout": "c950773375a641cd56cc88931582e02bb690900a11881f56c5136f1e287f18c1",
+    "evidence\\1792412397283370000-union-c-zlib-cancel-resource\\build.stderr": "736e2582f563605dd272e5fb977840b0c0767377d27b6940c440caf75eec7157",
+    "evidence\\1792412397283370000-union-c-zlib-cancel-resource\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412397283370000-union-c-zlib-cancel-resource\\cancel-resource.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412397283370000-union-c-zlib-cancel-resource\\cancel-resource.stdout": "8e13f782cfb04a87406b6d78012f6f816f9cee72fbfeba097987b4fbadac291d",
+    "evidence\\1792412397283370000-union-c-zlib-cancel-resource\\commands.json": "3cdeea8664ec380b3948991ac2ca9ba505b1f642d790de37895b77acaf4c6681",
+    "evidence\\1792412399368005200-union-c-zlib-wire\\build.stderr": "736e2582f563605dd272e5fb977840b0c0767377d27b6940c440caf75eec7157",
+    "evidence\\1792412399368005200-union-c-zlib-wire\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412399368005200-union-c-zlib-wire\\commands.json": "132c2da623e380183c552268a873938cc861bafe78230cf21f6b519070c2ff26",
+    "evidence\\1792412399368005200-union-c-zlib-wire\\wire.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412399368005200-union-c-zlib-wire\\wire.stdout": "183a75aee51420c94d13617cd90768a557d07a48cfab054dd2f6ca3aa8785b6d",
+    "evidence\\1792412400343961100-union-c-zlib-compare\\build.stderr": "736e2582f563605dd272e5fb977840b0c0767377d27b6940c440caf75eec7157",
+    "evidence\\1792412400343961100-union-c-zlib-compare\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412400343961100-union-c-zlib-compare\\commands.json": "1d9e806ef92914be428cb5b9f3b812369b0d1429b320e352f1930efd201d7fac",
+    "evidence\\1792412400343961100-union-c-zlib-compare\\compare.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412400343961100-union-c-zlib-compare\\compare.stdout": "573f171e980c7a06748b4e16dbbba5a09b2feb97662f062fd57ed1031faa94af",
+    "evidence\\1792412400343961100-union-c-zlib-compare\\rust.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412400343961100-union-c-zlib-compare\\rust.stdout": "bf949a121759c3cda75c2458efab0989a62981e3a93b59aa5f9f639b72a31f5f",
+    "evidence\\1792412400343961100-union-c-zlib-compare\\summary.json": "879f1fcdbd1fefe9125d1a21c50f043c4a95e30f1165633c3443833f5d5bd323",
+    "evidence\\1792412403593095100-union-c-zlib-build\\build.stderr": "736e2582f563605dd272e5fb977840b0c0767377d27b6940c440caf75eec7157",
+    "evidence\\1792412403593095100-union-c-zlib-build\\build.stdout": "7261a56c531998208f0e68c8be2eed6e5679812947016466ecf435247cc22bf4",
+    "evidence\\1792412403593095100-union-c-zlib-build\\commands.json": "fa6c789c640215b2e45a8b1e9011da805670934407d28dae10f4d715f484a1ab",
+    "evidence\\1792412422833531300-base-compare\\build.stderr": "e6e76e3a2caa08ae72961c84a248e4b5d69eb8f83b3ba6f9fe0b399142e3d11f",
+    "evidence\\1792412422833531300-base-compare\\build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412422833531300-base-compare\\commands.json": "5c21e002b7515490d72d499ca80ef38703f52eb504c28352a6708aeac15c8392",
+    "evidence\\1792412422833531300-base-compare\\compare.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412422833531300-base-compare\\compare.stdout": "e6c902a3b68770bdf075dd1cbdd47cb75920cf98581c7fbbdcf9077958ef6a4f",
+    "evidence\\1792412422833531300-base-compare\\rust.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\1792412422833531300-base-compare\\rust.stdout": "bf949a121759c3cda75c2458efab0989a62981e3a93b59aa5f9f639b72a31f5f",
+    "evidence\\1792412422833531300-base-compare\\summary.json": "8ec562cf4e6111ddf73d1e13876fc868101a821a98678c43e351639e0fe025b1",
+    "evidence\\boundary-differential\\rust.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence\\boundary-differential\\rust.stdout": "bf949a121759c3cda75c2458efab0989a62981e3a93b59aa5f9f639b72a31f5f",
+    "mutation-evidence\\eager-continuation-copy\\change.json": "b854b3a5f6f4376e24bd677d8a393338d8930d93f24889f8503c2ade0f382f41",
+    "mutation-evidence\\eager-continuation-copy\\invocation.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mutation-evidence\\eager-continuation-copy\\invocation.stdout": "372d50ca272d714e07881b76f295ec7eab6a1344c019d8b6088f72150d11767f",
+    "mutation-evidence\\eager-text-validation\\change.json": "6b24ffc880a2a56bcc2064721bbefa886abfad456fba7be7fb94de36ce817cff",
+    "mutation-evidence\\eager-text-validation\\invocation.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mutation-evidence\\eager-text-validation\\invocation.stdout": "0ce20b0a0836e289aa5a71002d40661ddf6766bff8ae6c4137c72bccf8775c4b",
+    "mutation-evidence\\forget-written-close-before-flush\\change.json": "dce02dcff6c2c658de10a81b51505c3d1bbbbe23f85fcef17b8321d5618870b2",
+    "mutation-evidence\\forget-written-close-before-flush\\invocation.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mutation-evidence\\forget-written-close-before-flush\\invocation.stdout": "167510dc7bb87cb1af88a8cc74254376883946122526076b1165fee565e5fb6b",
+    "mutation-evidence\\ignore-active-cancel\\change.json": "488d5b5ef6e5800f60e9b9a7e3267348dce3273da65319ad749d2e92720e5415",
+    "mutation-evidence\\ignore-active-cancel\\invocation.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mutation-evidence\\ignore-active-cancel\\invocation.stdout": "6639d55cbe79730bc45d1bcaf41a92fe8cd6a8a4f76a0b54f8998d6e2b46c563",
+    "mutation-evidence\\inflate-no-yield\\change.json": "172757b2290e507521f41ccb85ccc9b9d91cd688a17ef1a2e62febf9e094b503",
+    "mutation-evidence\\inflate-no-yield\\invocation.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mutation-evidence\\inflate-no-yield\\invocation.stdout": "0267c0639cae8b0cc2f7b92d67ddac63deaa9bcfdc4b8f50aad09632c24adff7",
+    "src\\bin\\boundary_cli.rs": "a4a64776d708bdefeb5c91439cc9dad0a0a6228c7ca6648676480a8d7ca74177",
+    "src\\bin\\cancel_resource.rs": "486004ed7d61a747b7c94388228a7cf772c2a96c78c11974520f998c1627fad3",
+    "src\\bin\\resource.rs": "a6252f9aa30e717a7ef998a261b03a1c9bc798296056fa82a3313edab9118ac8",
+    "src\\bin\\wire_probe.rs": "9f63830f83dfc6e9f506e86c838a740caeb12e02a4e3b8f764c8425501f4f627",
+    "sync-negative\\src\\main.rs": "d99b5b0fd6b7eb5e406a9fb70aabb078f578ad5d92096da5bbca0b49b6ce0423",
+    "sync-negative\\evidence\\1792412125777786700-base-lock\\commands.json": "bf79b392c99bfc8c83bb13d46edc14055bdc3275c1979478f3e92f5756f5ff86",
+    "sync-negative\\evidence\\1792412125777786700-base-lock\\lock.stderr": "9d0e28c88f82f1ef05240fa4bcad10d7798813da0c19186f5bbc2d7c8441c903",
+    "sync-negative\\evidence\\1792412125777786700-base-lock\\lock.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sync-negative\\evidence\\1792412266600760300-base-check\\check.stderr": "fe2d1eb56acd691d2176303405c5d4d4c285fc4aa7f9f410f87294bab3829202",
+    "sync-negative\\evidence\\1792412266600760300-base-check\\check.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sync-negative\\evidence\\1792412266600760300-base-check\\commands.json": "0e53cc1af1d29f414157de0eaf4633dd77e1c353b7b5405745f850a7512f97b8"
+  },
+  "plan_execution_counts": {
+    "rust_test_functions": 0,
+    "provider_calls": 0,
+    "package_consumers": 0,
+    "cargo_invocations": 1,
+    "read_only_cargo_metadata_queries": 1
+  },
+  "limitations": [
+    "memory/Tokio-duplex only; no real Upgrade/window negotiation/provider/package/MSRV/native3platform proof",
+    "hidden public APIs and local unsafe Send require exact source review",
+    "bounded work quantum not hard preemption; outbound queue/encode synchronous",
+    "finite3graphs, not arbitraryfeatureunion/all-features",
+    "20.11/20.34/20.57 remain open"
+  ],
+  "plan_execution_note": "Independent plan reviewer disclosed one read-only cargo metadata --no-deps invocation, no build/test/fetch and no frozen/tracked file change. This is separate from all sealed prior research commands/counts."
+}

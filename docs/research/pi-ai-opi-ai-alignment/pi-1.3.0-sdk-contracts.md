@@ -229,6 +229,8 @@ Custom typed options在兼容Models间可复用，upsert/同type替换不构成s
 
 HTTP普通crates.io后端的envelope/parser-storage接受范围仅按RDF-22明示（不等于SSE/body总量cap）；真实公共adapter与普通／feature-union包消费者必须证明正常与边界失败、partial/usage及取消／重试封口。其余继续按具体fetch/SDK/source的redirect/retry/protocol/TLS行为，撤回统一none、ADC0retry/60s/16sends/1MiB/depth4、同origin5-hop/双独立executable gate。保留真实source授权/GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES、30s与5–120s配置、POST retries及单owner。crypto 的 RSA1024/多素数 RSA 拒绝、无 P-521 KX 及上游集合/顺序按 RDF-23 显式接受；该例外不豁免 roots/WebPKI、JWT alg/claims、mTLS/ALPN、宿主隔离、typed 失败与取消。仅用公开 safe rustls/aws-lc-rs seam，不要求本地 FFI/crypto namespace，仍须 native 来源和普通/feature-union 包验证。未列明的 H1-only/roots/key/WS handshake/compression 缺口仍 OPEN，不以 override 或 typed Unsupported 冒称完成。AIR/V数量不变，全部新运行验收未执行。
 
+WS当前按[RDF-24](pi-1.3.0-rust-differences.md#rdf-24-owned-ws-profile)与[WS§8](pi-1.3.0-readiness-ws.md#8-自有中立-ws-模块合同rdf-24)采用产品crate外中立Connection/PMD/Close/IO和原版压缩；opi-ai只拥有Upgrade/来源策略。退役Ratchet/patch/namespace及third-party/pi-ws必建义务，不新增消息/迭代cap、不弱化窗口/结束边界/Close/取消/typed partial与终态。隐藏公开SyncPoint/ResetKeep、本地unsafe Send/noSync、idle IO唤醒和同步outbound/分配不可硬抢占必须明示。独立构建/真实普通及union包消费者、native三平台/MSRV及完整SDK仍OPEN；旧研究和本次plan零运行计数不作产品证明。
+
 ## 11. Pi 1.3.0 变更的精确适用边界
 
 完整逐项语义、原始路径和测试预期见[升级复核](pi-1.3.0-upgrade-review.md)。十 chat／一 image／四 classifier／42 factories／九 OAuth 数量不变；public compact-frame 类型、encoder/reducer 与测试已删除，AIR-060/V-52仅保留退役身份，不能继续实施历史义务。普通 EventStream、block indices、final Result、不可变 Rust partial 不受此删除影响。

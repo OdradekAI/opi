@@ -10,7 +10,7 @@
 
 > 2026-10-19：用户批准的 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile) 仅取代本页 Schema 的固定 Unicode16／vendor 数据选择；其他受控后端与供应链门禁不变，旧源码／研究运行结果保留原窗口。完整 task 20.11、20.34、20.57 仍 OPEN。
 
-> 后续独立修订：[RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile) 采用原版 HTTP 上游接受范围；[RDF-23](pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile) 采用原版 rustls＋AWS-LC profile，移除私有 OpenSSL EVP／本地 FFI／crypto namespace 必建义务。WS 受控 Ratchet 方案、RDF-18 trust source 和所有产品／平台门禁保留；[crypto 摘要](offline-probes/upstream-crypto/summary.json)是历史研究证据，不是新产品运行证明。
+> 当前选择依次由[RDF-21/22/23/24](pi-1.3.0-rust-differences.md)修订：Unicode/HTTP/crypto用已声明上游profile；WS改为companions/ws自有中立状态机＋原版压缩，退役全部vendor/fork/namespace必建义务。RDF-18 trust source及产品/平台门禁保留。旧原始结果仍为历史；crypto和[WS摘要](offline-probes/owned-ws/summary.json)均非新产品运行证明。
 
 ## 1. 选择原则与适用层
 
@@ -87,11 +87,11 @@ WS classic Upgrade及明确ProxyPlaceholderSigning需要H1；Pi普通Bedrock默�
 
 ### 3.2 Codex WS
 
-选定 owned 严格 Upgrade＋ratchet_core/ext/deflate1.2.1＋公共 PMD message-state 适配及受控 frame/length/storage 修正，详见[WS设计](pi-1.3.0-readiness-ws.md)。TW/TTW0.28.0 不再承担完整目标；不采用 Ratchet 固定32headers握手，也不让新后端隐式proxy、重选auth、重连或fallback。动态head与tail分离、验证Accept／Connection／Upgrade／subprotocol／extension后，使用public from_upgraded接codec。每消息压缩状态、控制／continuation RSV 与RFC长度边界均有明确owner。
+选定owned严格Upgrade/glue＋产品crate之外companions/ws中立frame/message/PMD/Close/IO，使用原版libz-rs-sys0.6.8/zlib-rs0.6.8与flate2 1.1.10，见[WS§8](pi-1.3.0-readiness-ws.md#8-自有中立-ws-模块合同rdf-24)和RDF-24。根workspace七成员不变；仅新增必要opi-ai→独立包声明，不依赖Ratchet或上游补丁/namespace/third-party/pi-ws。opi-ai严格验证动态Upgrade/Accept/token/协商及tail，source proxy/TLS/auth与provider/pool/retry/fallback仍单一owner。
 
 HTTP proxy CONNECT；HTTPS proxy先outer TLS验证proxy，再CONNECT/inner TLS验证target；保留overread tunnel bytes。Pi connect15s保留连接作用域，不另猜CONNECT字节/header上限。具体来源的clear-ws proxy/redirect动作仍按同一路径验，不以proxy失败自动直连旁路。构造零source I/O、一个owned driver／背压、Text RFC／Binary replacement、Ping/Pong/Close不伪装内容；没有新增frame/message/outgoing大小拒绝。
 
-来源Node/Bun及受控组合的PMD/window/context/fragment正例和原库反例见原始80观察；它们固定当时六行PMD补丁。独立复审后来发现的长度编码／溢出／声明长度提前分配，必须由最新纯内存修正和结果另证，不能继承旧80为新补丁运行成功。用户限定后续不建立socket或发网络请求；网络层回归明确未重跑，完整provider/proxy/TLS/cancel组装仍OPEN。
+原Node/Bun/Ratchet80观察和14项扩大补丁内存结果保留原identity。新WS228次函数、72,413输入三图零差异、Send/完整客户端Close/取消及公平调度仅为前轮无socket原型。当前采用typed owned Connection、pre-tail SyncPoint/恰好一次tail/ResetKeep历史与有界poll；borrow取消可恢复，logical取消仍销毁且idle IO须接入owner唤醒。不把原型严格post-Close策略或8→9样本视为来源接受范围豁免；真实provider/协商/Close/清理/平台仍OPEN。
 
 长度先验RFC最高位与最短编码、checked转换/相加；接收存储按实际到达字节增长，不能按未收到的声明总长预分配，也不恢复固定MiB cap。真实表示／可恢复bulk分配失败typed；常规Rust allocator全进程OOM/abort不被假称完全隔离。修正范围与source identity是所选组合的一部分，遇超出有限边界的新协议需求须重开设计，不能静默另造帧解析器。
 
@@ -181,7 +181,7 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 
 ## 4. 供应链、平台与验证边界
 
-所有新增依赖仅为有条件文档意图；旧source-evidence的selected清单固定于上一轮，不自动授予本轮Schema guard/其他已撤回配置有效地位，未来从root workspace声明并用Cargo生成锁图，不手改Cargo.lock。所选Query/XML codec manifest MSRV为1.94.1、p256为1.65；当前Ratchet core/ext/deflate1.2.1的精确manifest均未声明rust-version，不能继承旧TW的1.63。xmlparser/sha1也未声明MSRV，不将缺失当0；已声明下界不替代完整closure与workspace1.97实编译，三个平台仍OPEN。
+所有新增依赖/中立包均为已选择但待正式实施的目标，不由研究source-evidence自动准入。root workspace集中依赖与Cargo生成锁图不变；companions/ws独立workspace，需单独fmt/clippy/test/doc/MSRV，根full不能替代。Query/XML codec声明MSRV1.94.1、p256为1.65；libz-rs-sys/zlib-rs0.6.8声明1.75也不是完整closure与workspace1.97实编译，xmlparser/sha1缺MSRV不当0。所有三平台native/package图保持OPEN。
 
 禁AWS默认HTTPS是为避免第二套隐式transport／provider／resolver，而不再以“避免所有aws-lc”为理由：RDF-23明确采用上游AWS-LC的C／FFI／汇编／build脚本。最终方案不引入aws-types/service runtime的直接build路径，也不为签名升级hmac/sha2；codecs传递schema/runtime-api仍可能引proc macro，实际原生／proc-macro闭包须审锁图。标准分发为非FIPS源码构建；普通／union真实包consumer须控制并记录native来源、CC/CMake/平台工具链、flags／output／链接身份，拒绝未审system来源、bindings／skip-version／target override等替换。研究用AWS_LC_SYS_USE_SYSTEM=0、poison OPENSSL_DIR并实际CC静态构建，只证明该Windows图；库lock／crate checksum不能固定所有消费者的native输入。native CPU一次初始化、OPENSSL_ia32cap与OS entropy按RDF-23明示，不承诺零初始化／零环境读取，不授权ambient身份／trust或global provider/config mutation。不能以default-features=false或“safe API”声称零native／unsafe供应链代价；FIPS／native-tls／native-roots等未测附加组合不继承union证据。不为42个profile预建42个feature/crate，不以feature flag豁免正式准入。
 
@@ -196,7 +196,7 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 | 组 | 当前设计／实际机制证据 | 仍OPEN的产品验收 |
 |---|---|---|
 | Schema | 私有 source dialect＋RDF-21 普通上游数据 profile；旧64/64、11合成错误控制、43/43叶与10包 namespace 同图保留历史身份，不追认为新图验证 | 全 normalizer/formats/refs/evaluated/UTF16 边界、public utility/consumer/cache/cancel；V-11/34/35/39/41/58 |
-| WS | ownedUpgrade＋受控Ratchet PMD/message/RSV/length/storage；旧80观察与后续纯内存修正分开；具体修复证明见WS报告，不靠SSE关闭 | fullprovider/continuation/pool/proxy/TLS/cleanup/multiplatform及新patch网络组装；V-02/30/49/58 |
+| WS | RDF-24 ownedUpgrade/glue＋独立中立WS/PMD/Close/Send/取消/checked存储/调度；原版Rust压缩与有限C-union，隐藏API/本地unsafe维护。旧80/14与新228/72,413×3研究分开 | 20.15独立包门禁/真实Upgrade与普通union产物consumer；20.16/17真实Codex/pool/idle取消/cleanup，20.57最终SDK，20.58三平台/MSRV/unsafe/native供应链；V-02/30/49/58全部OPEN |
 | HTTP/proxy/H2/redirect | sourceowner＋RDF-22上游HTTP profile；旧20headers patch对照、redirect逐leg及16proxy观察保留原输入，显式ALPN有实测 | 上游head/buffer/trailer/chunk-extension边界、CL/TE/EOF/取消、所有source/proxy组合与publicdriver；V-01/05/09/29/30/51/55/58 |
 | TLS/trust/crypto | RDF-23原版rustls/AWS-LC safe实例profile，reference bundle/scopedroots不变；RSA/P-521每profile43项、45场景×5共225观察、10JWT与8KX控制为历史Windows研究，旧11RSA/privatepoison保留原身份 | 声明接受范围/正常与错误协商/chain/source/host隔离/取消、真实ADC与mTLS/ALPN、native来源/普通union包consumer/MSRV/三平台；不再要求fullNode算法或本地FFI；V-09/49/55/58 |
 | Auth/ADC/AWS | ownedfullsource与standard/adaptive/Smithy2026 owner；metadata0/3000ms来源已定，不将局部机制算fullchain | 所有source/9OAuth/SSO/MFA/DPoP/adaptive/retry/process-tree/rotation与ACK；V-05/09/12/43/55/58 |
@@ -207,8 +207,8 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 
 ## 6. 维护与发布身份
 
-修改过的 Ratchet 继续使用受控、可被普通 consumer 解析的独立后端 package 身份与精确 version/source/checksum；HTTP采用RDF-22普通crates.io reqwest/Hyper，crypto采用RDF-23普通rustls/AWS-LC，不承担HTTP／crypto namespace、fork或`third-party/pi-crypto`必建义务。不把产品lock或consumer root patch当发布方案，Ratchet修正版不标成未经修改upstream，HTTP／crypto如实标明原版来源及实际features/native输入。Schema的regress／URL/IDNA/ICU用普通crates.io package，不再承担Unicode16分叉或namespace family发布义务。旧URL10包共图及privateEVP结果保留历史身份；通用conformance、真实普通／union外部consumer及完整registry／packaging仍由V-58验，不在本轮publish。不新增Opi领域API、公共trait或根workspace拓扑。
+Schema/HTTP/crypto继续使用RDF-21/22/23普通crates.io profile；WS按RDF-24使用自有中立package和未经修改的压缩依赖。取消Ratchet补丁/namespace闭包及third-party/pi-ws必建义务，不恢复HTTP/crypto/vendor分发或同义目录。不把自有库伪装成原Ratchet上游。实际独立包identity、精确source/version/checksum与artifact由普通外部consumer验证，不用root patch/TEMP path/library lock代替。当前无新发布/安装授权；最终完整registry/package仍由V-58和原任务验收。
 
-后端namespace必须覆盖真正消费修正的最小类型依赖闭包：HTTP退出受控namespace闭包，仅审查实际reqwest/hyper-util/Hyper/TLS glue普通registry图及feature union；WS仍为相互交换extension/frame类型的Ratchet core/ext/deflate。逐边固定package别名/版本/source/checksum，证明WS driver实际链接选定修正版、HTTP driver实际使用声明的上游图，不增加无消费者fork或混合两套类型。未改的通用http/bytes/rustls等类型能共享时不无端复制；完整闭包由实际metadata/反向feature树和externalconsumer验收，不能预先用猜测包数当完成。公共SDK／custom transport边界不泄漏私有backend类型，正常caller显式提供的标准client/transport按其已有合同接入一次，不加第二router/driver/retry；本机默认路径不靠caller rootpatch修补。
+不再要求任何受控backend namespace family；仅沿真实opi-ai→中立WS→原版压缩和现有HTTP/crypto类型图审metadata/反向features/registry/native来源。HTTP/custom transport不新增router/retry，WS不复制frame/PMD/Close owner；公共SDK不泄漏私有backend类型。根workspace成员不变，独立中立库自身构建/版本/发布门禁必须可运行；独立registry身份与发布需真实产物及单独授权，不能预先猜包数当完成。
 
-Unicode16数据重生／闭包专属工具退役；普通ICU2.2 data仍含上游build.rs，须审ICU4X_DATA_DIR等输入，不能称依赖树零build script。ryu-js safe API内部有unsafe；Ratchet deflate强制zlib带C/build.rs；AWS-LC公开safe API内部仍有native C／FFI／汇编、CPU初始化和OS entropy，但不新增SDK本地FFI。受控WS仍保留最小diff／补丁前后源SHA与闭包身份；普通HTTP／crypto审实际registry checksum／features／native来源，均保留适用license／NOTICE。上游升级先重放语料并审算法／接受范围diff，不得静默扩大新引擎、恢复私有EVP或收窄RDF-23正常范围。产品root graph、MSRV、三平台、真正普通／union包consumer及上游native供应链审查继续OPEN；20.11／20.34／20.57不提前验收。
+Unicode16/vendor、HTTP/crypto fork及Ratchet patch/namespace专属必建门禁退役，通用conformance/consumer和旧研究资产保留。普通ICU build.rs/ICU4X_DATA_DIR、ryu-js内部unsafe、AWS-LC C/FFI/assembly/build与RDF-23边界不变。WS默认decoder/encoder走Rust且含上游unsafe/SIMD，C-union encoder需native构建审查；中立库明确维护隐藏SyncPoint/ResetKeep、__internal-api和本地unsafe Send/指针/allocator/end。未审allocator/export/gz/其他图不继承支持，升级须重放语料并重审来源和接受集，不能静默fork或收面。license/NOTICE、实际包图、MSRV/三平台与20.11/20.34/20.57保持OPEN。

@@ -2,7 +2,7 @@
 
 > 2026-10-16，非规范性研究。本文确定三个组的后端／owner／运行合同，供双语 candidate 采用；**设计决定已收敛，产品实现与验收继续 OPEN**。没有改产品代码、根 Cargo、产品测试、CI 或实施 ledger。本文不是完整 Pi adapter、跨平台交付、真实身份／供应商接受性证明。原始结果、pins 与可重放脚本在 [readiness-transport-auth](offline-probes/readiness-transport-auth/README.md)。旧[源码专项](pi-1.3.0-backend-gap-audit.md#4-httpproxyh2redirect按实际消费路径)仍是历史依据，新实际结果优先。
 
-> 现行 crypto 选择按 [RDF-23](pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile) 改为普通 crates.io rustls＋AWS-LC 的明示接受范围；§4.2 的 OpenSSL 私有 libctx 选择及其原始结果保留历史身份，由 §4.3 取代。此协调不改变 WS codec／受控修正，也不改变 RDF-18 的 trust source／reference bundle。新增 [上游 crypto 证据摘要](offline-probes/upstream-crypto/summary.json)只记录历史 Windows 研究，不能关闭产品、外部包或平台验收。
+> 现行 crypto 选择按 [RDF-23](pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile) 改为普通 crates.io rustls＋AWS-LC 的明示接受范围；§4.2 的 OpenSSL 私有 libctx 选择及其原始结果保留历史身份，由 §4.3 取代。该crypto协调当时不改WS；后续RDF-24另选自有中立WS与原版压缩。RDF-18的trust source／reference bundle不变。新增 [上游 crypto 证据摘要](offline-probes/upstream-crypto/summary.json)只记录历史 Windows 研究，不能关闭产品、外部包或平台验收。
 
 ## 1. 三项确定决定
 
