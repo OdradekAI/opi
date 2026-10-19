@@ -21,22 +21,22 @@
   "spec_files_sha256": {
     "docs/opi-spec.md": "7979f349811d5e8da8ed4b60adb0fa41175c76462a78e449fd326dd4c19cf9e1",
     "docs/opi-spec.zh.md": "6a199822c5f4233ab7c13942db87f7986ac8b0e74a68075402371476f431c005",
-    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "87858cc9279f2fe157b6f27a6044b3b1ef5daac7b2c62f4cb195df6ad582d20e",
-    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "18322ffa3ab1fd0dbbe51495e1124d574a0b4c8ab5ac1e20a5317318da827370",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "b62068ddc7aabf8bc0782d26df3db380b8c769eea28756c6887e858ecbd10d3f",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "87538f4dfb1ebffbcd0b8e875e8d1b0e2f004a67817051b4f8138a53828db366",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "e598f281a5e167b19f02eea7ffa7f1fabea25ec1a3bcd17e0beeef843023360f",
-    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "801f3b961ffd2ac99e6d7c0296ccbe03acd651b278e661f604c09dae86e9d9ba",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "ecf4e367ee593d1ce978d8a0ad547660f94ccdfa8785eebf022b2be8cd46864f",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "9303dc4ad26c944793c819c5cf27585b676446b585b2dfcd90fe3a2f05aa0f27",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "43c94c31f329c4f8c56f127ea79a0bd5e9ddb215c1dfd06690b9e5fa872e1fb4",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "ff4e6d00af092f7e1b4b980fdbb2c681c5d05f14ae44cd5207fd09cf543d2728",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "33736988cd7e7fc8a52db713bcc95e600cbf6b05d77b71daaf500b637b51a4fb",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "fff683fd2ca3276fc15713ed50efae418d8b8f0818edc1371a6c3a5a52fdcca9",
+    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "367b6fc4149fecb3ed67a70cbca005de96dda963c7530305522758c3939ef3e2",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "21dce0f9e159efe097860bc16729c5ff78e533ffcd7a9a19040cb6a443ae980c",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md": "878d15231e734dc03772e1f1bd48cb8ffe2252a2818748e4b8630af43a2e8a76",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md": "fd97dcfbe5fa485d83ecc569398c4cf39ae1d475fa4ee624609d65715989a888",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-transport-auth.md": "e2897af04a10a56c069eac959d71fae723dd1a8c7fc6afc3e68bd847a84f3bf9",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-transport-auth.md": "f0b7ca6f71d57cadd1f218a21ab41802175e3bbab63ed3d491f5752c8f2c077e",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-runtime.md": "0f7098ad7754ee4d0919362aaba622708b80a643f7f4db74e982f0d3468d17ea",
     "docs/research/pi-ai-opi-ai-alignment/transcript-target-proposal.md": "25a4234507ab1c4c12d483c56bb4083172bf4d5c35dfec1dc92bc98c77a5d94e",
     "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
     "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c"
   },
-  "task_graph_confirmed_at": "2026-10-19T02:58:40+08:00",
+  "task_graph_confirmed_at": "2026-10-19T16:55:19+08:00",
   "current_phase": 20,
   "tasks": [
     {
@@ -3353,12 +3353,12 @@
     {
       "id": "20.12",
       "phase": 20,
-      "title": "源限定 HTTP／H2／proxy／redirect 与窄 Hyper 修正",
+      "title": "源限定 HTTP／H2／proxy／redirect 与上游接受范围 profile",
       "crate": "workspace",
       "parent_spec_row": "DEL-05",
-      "definition_of_done": "Route Models -> migrated real OpenAI Chat adapter -> source-qualified HTTP owner -> controlled loopback target through explicit send/proxy/redirect rules, protected-header stripping, cancellation and exact lawful-send counts. Own openai_chat.rs call-site migration as well as HttpClient; a wrapper-only or raw reqwest-client test cannot close this slice. Apply only the reviewed dynamic head/trailer/storage patch with reproducible dependency closure, no huge preallocation or new acceptance cap. Preserve ordinary Bedrock H2 versus explicit WS/placeholder H1 configuration, outer HTTPS proxy TLS plus CONNECT/tail/inner TLS, scoped NO_PROXY and zero double-wrap for custom transport. AWS/ADC exchanges and remaining adapters close their own source fixtures; full DEL-05 closes at 20.34 using those results. Verify the early ordinary external-consumer package proof in inference_notes before this dependency slice passes; 20.57 reuses it and proves final assembled package behavior.",
+      "definition_of_done": "Route Models -> migrated real OpenAI Chat adapter -> source-qualified HttpClient -> controlled loopback through explicit send/proxy/redirect rules, protected-header stripping, cancellation and exact lawful-send counts. Own openai_chat.rs acquisition migration as well as HttpClient; wrapper-only or raw reqwest-client tests cannot close this slice. Use unmodified crates.io reqwest0.12.28/Hyper1.9.0 under RDF-22, recording actual graph/features/registry checksums and applicable response-head/read-buffer/trailer-count/trailer-bytes/cumulative-chunk-extension boundaries. Exercise below/at/above and bytewise/coalesced inputs, typed redacted failure causes and provable stage, acquisition failure versus failure after accepted partial/known usage, one terminal/permanent EOF and no post-handoff retry or hidden sends. Do not invent a resource-limit subtype when the backend exposes only a broader typed cause; do not add SDK body/event caps, huge allocation hints or relax CL/TE/framing/EOF validation. Preserve ordinary Bedrock H2 versus explicit WS/placeholder H1, HTTPS proxy outer TLS -> CONNECT/tail -> target inner TLS, scoped NO_PROXY, cancellation/drop ownership and zero custom-transport double-wrap. No HTTP fork, namespace publication, patch replay or third-party/pi-http directory is required. Before passing, prove the packaged public slice from an actual cargo package artifact extracted outside the workspace with ordinary registry backends and normal plus caller feature-union graphs; no source-checkout substitution, root patch or library lock establishes proof. AWS/ADC and other adapters retain their own source fixtures; full DEL-05 closes only at20.34, final assembled package at20.57 and native/platform at20.58; this slice does not complete20.11,20.34 or20.57.",
       "definition_source": "inferred",
-      "replaces": null,
+      "replaces": "源限定 HTTP／H2／proxy／redirect 与窄 Hyper 修正",
       "status": "failing",
       "depends_on": [
         "20.3",
@@ -3367,23 +3367,23 @@
       "inference_notes": [
         {
           "field": "reuse_search",
-          "reason": "searched=http.rs HttpClient/Arc pooling, provider_headers.rs, reqwest0.12.28/Hyper1.9.0/hyper-util and proxy fixtures; reused=http.rs HttpClient/Arc pooling, provider_headers.rs, reqwest0.12.28/Hyper1.9.0/hyper-util and proxy fixtures; gap=Route Models -> migrated real OpenAI Chat adapter -> source-qualified HTTP owner -> controlled loopback target through explicit send/proxy/redirect rules, protected-header stripping, cancellation and exact lawful-send counts; production_consumers=all real adapter HttpClient calls, product injected HttpClient assembly; nonproduction_consumers=matrix exact41 integration and7 src-test files, crate examples and current bilingual READMEs, dynamic/config/wire/persistent readers from repository reuse audit",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition; repository sources named in searched clause"
+          "reason": "searched=crates/opi-ai/src/http.rs HttpClient/Arc pooling, provider_headers.rs, openai_chat.rs acquisition and root Cargo manifests/lock for reqwest0.12.28 Hyper1.9.0 hyper-util TLS glue, existing connection_pooling/openai_chat_fixtures/proxy_support and scripts/pi-sdk-conformance; reused=existing HttpClient, actual OpenAI Chat consumer, ordinary upstream graph and generic packaged-consumer/conformance seam; gap=one real Models-to-Chat HTTP source-owner slice with declared RDF-22 boundaries and packaged proof; production_consumers=real adapter HttpClient acquisition, Models chat dispatch and source exchange callers, no production pi-http namespace is present in current Cargo/source; nonproduction_consumers=connection_pooling.rs openai_chat_fixtures.rs proxy_support.rs, bilingual crate READMEs, generic scripts/pi-sdk-conformance, registered contracts and preserved historical HTTP patch evidence; no HTTP namespace public API dynamic loader configuration key or persisted/wire identity is published",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream HTTP dependency profile; Cargo.toml; Cargo.lock; crates/opi-ai/src/http.rs; crates/opi-ai/src/openai_chat.rs"
         },
         {
           "field": "placement",
-          "reason": "target=core; existing_home=opi-ai product-neutral model runtime; cannot_fit_fully=use existing opi-ai ownership, keep policy in current host, no new Opi crate or inward edge",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+          "reason": "target=core; existing_home=opi-ai provider-neutral HttpClient and private source-qualified transport owner; cannot_fit_fully=not-applicable, fit the existing crate without new Opi crate public backend framework or inward dependency edge",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream HTTP dependency profile"
         },
         {
           "field": "surface_necessity",
-          "reason": "public_api=opi_ai::HttpClient, opi_ai real adapter acquisition, opi_ai source exchange HTTP (target); config=none, no new host policy key, existing source overrides only; state=源限定 HTTP／H2／proxy／redirect 与窄 Hyper 修正 source-owned state, exact transition/result/failure contract in DoD; dependency_edge=reviewed exact backend/data/native closure only, no internal Opi edge",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+          "reason": "public_api=retain HttpClient and real adapter acquisition seam, no new public backend selector or generic trait; config=none, no new host key or SDK quota and retain existing scoped source options; state=freeze source-qualified route identity and attempt ownership with typed failures, reuse current call state; dependency_edge=ordinary crates.io reqwest Hyper hyper-util TLS glue only, no HTTP fork namespace or new internal Opi edge",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream HTTP dependency profile"
         },
         {
           "field": "simplification_ceiling",
-          "reason": "ceiling=existing crate and single owning mechanism, no speculative generic framework or extra compatibility layer; revisit_when=a named public conformance case or advertised native/MSRV target fails, or a second real use cannot fit the selected interface; simplification_trigger=dependency-substitution; net_deletion=upstream HTTP head/trailer/default cap path -> controlled full dependency closure plus source-owner redirect/proxy; residual_glue=necessary typed host bridge and historical read-only conversion only, remove no unrelated consumer",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+          "reason": "ceiling=ordinary unmodified upstream HTTP profile with one existing source-qualified owner and public Chat/package proof, no parallel legacy HTTP stack generic parser or speculative compatibility layer; revisit_when=a named RDF-22 public boundary or malformed-input case fails, a dependency/feature union changes accepted inputs, or advertised native/MSRV support lacks proof; simplification_trigger=dependency-substitution; net_deletion=retire proposed Hyper patch source-transform namespace distribution and third-party/pi-http mandatory ownership, no existing product fork or generic conformance is deleted; residual_glue=existing source-qualified redirect/proxy/retry owner, typed redacted failure mapping, explicit HTTP profile documentation and generic package/conformance harness",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile"
         },
         {
           "field": "forbidden_scope",
@@ -3402,8 +3402,8 @@
         },
         {
           "field": "test_impact_plan",
-          "reason": "retain/update existing public Interface assertions in crates/opi-ai/tests/proxy_support.rs, crates/opi-ai/tests/connection_pooling.rs. add only materially distinct source inputs/outcomes to those existing suites. Before red, reread full bodies and matrix41+7 disposition, record every retain/update/add/delete and passing replacement before deletion. A new file name is not evidence of duplicate behavior. Run all actually created/modified binaries/filters and reject zero-test success.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+          "reason": "retain existing connection_pooling/proxy_support/openai_chat public safety, identity, send-count, cancellation/EOF/partial/usage tests and frozen HTTP patch controls; update only explicit old HTTP-unlimited acceptance expectations to RDF-22 in-domain success versus typed out-of-profile failure, not malformed-protocol success; add distinct head-buffer/trailer count and bytes/cumulative chunk-extension boundaries with bytewise/coalesced acquisition and post-partial failure, normal and caller-feature-union packaged consumers; retire HTTP patch/source-transform/namespace-exclusive future obligations only, not artifact protocols generic controls or external consumer proof; reread actual bodies before editing, no tests changed or executed by this plan",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile"
         },
         {
           "field": "acceptance_partition",
@@ -3412,13 +3412,18 @@
         },
         {
           "field": "early_package_proof",
-          "reason": "At first dependency activation, a fresh workspace-external ordinary Cargo consumer must resolve and actually use the corrected HTTP dependency graph from distributable package identities, alongside ordinary upstream dependencies where applicable. Keep the consumer/harness under scripts/pi-sdk-conformance and reuse it at 20.57; no root patch, TEMP path dependency, library lockfile or build-time generator may establish delivery. Unavailable registry artifacts stop this affected task and remain OPEN; preparation grants no publication/installation/live authorization.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+          "reason": "At this slice implementation use scripts/pi-sdk-conformance/package_slice.py --family http --offline (planned executable entry, not yet delivered or run) to build a real cargo package artifact and extract it outside the workspace. The ordinary consumer must actually use the migrated public Models/Chat/HttpClient slice with unmodified registry HTTP backends in normal and caller-feature-union graphs; record actual registry source/checksum/features and behavior. No source-checkout substitution consumer root patch private HTTP namespace publication or library lock establishes delivery. Reuse this generic proof at20.57 without claiming assembled SDK acceptance; no publication/live/cross-platform authorization follows.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream HTTP dependency profile"
         },
         {
           "field": "definition_of_done",
-          "reason": "Route Models -> migrated real OpenAI Chat adapter -> source-qualified HTTP owner -> controlled loopback target through explicit send/proxy/redirect rules, protected-header stripping, cancellation and exact lawful-send counts. Own openai_chat.rs call-site migration as well as HttpClient; a wrapper-only or raw reqwest-client test cannot close this slice. Apply only the reviewed dynamic head/trailer/storage patch with reproducible dependency closure, no huge preallocation or new acceptance cap. Preserve ordinary Bedrock H2 versus explicit WS/placeholder H1 configuration, outer HTTPS proxy TLS plus CONNECT/tail/inner TLS, scoped NO_PROXY and zero double-wrap for custom transport. AWS/ADC exchanges and remaining adapters close their own source fixtures; full DEL-05 closes at 20.34 using those results. Verify the early ordinary external-consumer package proof in inference_notes before this dependency slice passes; 20.57 reuses it and proves final assembled package behavior.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+          "reason": "Route Models -> migrated real OpenAI Chat adapter -> source-qualified HttpClient -> controlled loopback through explicit send/proxy/redirect rules, protected-header stripping, cancellation and exact lawful-send counts. Own openai_chat.rs acquisition migration as well as HttpClient; wrapper-only or raw reqwest-client tests cannot close this slice. Use unmodified crates.io reqwest0.12.28/Hyper1.9.0 under RDF-22, recording actual graph/features/registry checksums and applicable response-head/read-buffer/trailer-count/trailer-bytes/cumulative-chunk-extension boundaries. Exercise below/at/above and bytewise/coalesced inputs, typed redacted failure causes and provable stage, acquisition failure versus failure after accepted partial/known usage, one terminal/permanent EOF and no post-handoff retry or hidden sends. Do not invent a resource-limit subtype when the backend exposes only a broader typed cause; do not add SDK body/event caps, huge allocation hints or relax CL/TE/framing/EOF validation. Preserve ordinary Bedrock H2 versus explicit WS/placeholder H1, HTTPS proxy outer TLS -> CONNECT/tail -> target inner TLS, scoped NO_PROXY, cancellation/drop ownership and zero custom-transport double-wrap. No HTTP fork, namespace publication, patch replay or third-party/pi-http directory is required. Before passing, prove the packaged public slice from an actual cargo package artifact extracted outside the workspace with ordinary registry backends and normal plus caller feature-union graphs; no source-checkout substitution, root patch or library lock establishes proof. AWS/ADC and other adapters retain their own source fixtures; full DEL-05 closes only at20.34, final assembled package at20.57 and native/platform at20.58; this slice does not complete20.11,20.34 or20.57.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream HTTP dependency profile"
+        },
+        {
+          "field": "replaces",
+          "reason": "HTTP dependency/profile selection substantively replaces the planned narrow Hyper patch and mandatory third-party/pi-http ownership. The task is unstarted/failing with no commit/evidence to carry forward as proof. Preserve all other tasks, historical evidence and runtime fields; WS and crypto selection/ownership remain unchanged.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile"
         }
       ],
       "tier": "workspace",
@@ -3440,8 +3445,8 @@
       "acceptance_scenarios": [
         {
           "id": "P20-S12",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-05",
-          "scenario": "Route Models -> migrated real OpenAI Chat adapter -> source-qualified HTTP owner -> controlled loopback target through explicit send/proxy/redirect rules, protected-header stripping, cancellation and exact lawful-send counts. Own openai_chat.rs call-site migration as well as HttpClient; a wrapper-only or raw reqwest-client test cannot close this slice. Apply only the reviewed dynamic head/trailer/storage patch with reproducible dependency closure, no huge preallocation or new acceptance cap. Preserve ordinary Bedrock H2 versus explicit WS/placeholder H1 configuration, outer HTTPS proxy TLS plus CONNECT/tail/inner TLS, scoped NO_PROXY and zero double-wrap for custom transport. AWS/ADC exchanges and remaining adapters close their own source fixtures; full DEL-05 closes at 20.34 using those results.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Upstream HTTP dependency profile; docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile",
+          "scenario": "Route Models -> migrated real OpenAI Chat adapter -> source-qualified HttpClient -> controlled loopback through explicit send/proxy/redirect rules, protected-header stripping, cancellation and exact lawful-send counts. Own openai_chat.rs acquisition migration as well as HttpClient; wrapper-only or raw reqwest-client tests cannot close this slice. Use unmodified crates.io reqwest0.12.28/Hyper1.9.0 under RDF-22, recording actual graph/features/registry checksums and applicable response-head/read-buffer/trailer-count/trailer-bytes/cumulative-chunk-extension boundaries. Exercise below/at/above and bytewise/coalesced inputs, typed redacted failure causes and provable stage, acquisition failure versus failure after accepted partial/known usage, one terminal/permanent EOF and no post-handoff retry or hidden sends. Do not invent a resource-limit subtype when the backend exposes only a broader typed cause; do not add SDK body/event caps, huge allocation hints or relax CL/TE/framing/EOF validation. Preserve ordinary Bedrock H2 versus explicit WS/placeholder H1, HTTPS proxy outer TLS -> CONNECT/tail -> target inner TLS, scoped NO_PROXY, cancellation/drop ownership and zero custom-transport double-wrap. No HTTP fork, namespace publication, patch replay or third-party/pi-http directory is required. Before passing, prove the packaged public slice from an actual cargo package artifact extracted outside the workspace with ordinary registry backends and normal plus caller feature-union graphs; no source-checkout substitution, root patch or library lock establishes proof. AWS/ADC and other adapters retain their own source fixtures; full DEL-05 closes only at20.34, final assembled package at20.57 and native/platform at20.58; this slice does not complete20.11,20.34 or20.57.",
           "verification": [
             "cargo test -p opi-ai --test connection_pooling --test openai_chat_fixtures --test proxy_support"
           ],
@@ -3475,8 +3480,7 @@
         "crates/opi-ai/tests/connection_pooling.rs",
         "crates/opi-ai/tests/openai_chat_fixtures.rs",
         "crates/opi-ai/tests/proxy_support.rs",
-        "scripts/pi-sdk-conformance/**",
-        "third-party/pi-http/**"
+        "scripts/pi-sdk-conformance/**"
       ],
       "verified_at_commit": null,
       "evidence": null,
@@ -13069,6 +13073,11 @@
           "field": "upstream_data_contract",
           "reason": "Existing V-58/P20-GAP-SCHEMA own final resolved sources/checksums/features, ICU data build inputs, native Linux/macOS/Windows and MSRV evidence under RDF-21. Do not claim no build.rs, a permanently fixed Unicode release, or early Schema smoke as full package/platform acceptance. Reuse valid original proof only within its stated artifact/data identity.",
           "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile"
+        },
+        {
+          "field": "http_profile_reconciliation",
+          "reason": "P20-GAP-HTTP follows the revised registered RDF-22 acceptance profile instead of the retired dynamic storage and no backend cap obligation. This is a sourced HTTP criterion correction only: retain open status and the complete platform task DoD, dependency edges, verification commands, owned paths and execution history. No native/platform evidence or20.11/20.34/20.57 closure is asserted.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile; docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md#5. 七组设计已确定，产品覆盖全部 OPEN"
         }
       ],
       "tier": "workspace",
@@ -13149,7 +13158,7 @@
         {
           "id": "P20-GAP-HTTP",
           "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md#5. 七组设计已确定，产品覆盖全部 OPEN",
-          "scenario": "Future full product closure, currently OPEN: every source HTTP/H2/proxy/redirect/retry/headers path with exact sends, dynamic storage and no backend cap. Mechanism owners: 20.12,20.14. Every relevant V/RDF and platform requirement remains necessary, research counts do not close it.",
+          "scenario": "Future full product closure, currently OPEN: every source HTTP/H2/proxy/redirect/retry/headers path with exact lawful sends and the explicitly declared RDF-22 upstream HTTP response-head/read-buffer/trailer-count/trailer-bytes/cumulative-chunk-extension acceptance profile. Prove in-profile behavior and typed redacted out-of-profile failures, provable failure stage, partial/known usage, permanent EOF, cancellation/owned cleanup and no post-handoff retry; do not restore the retired dynamic-storage/no-backend-cap requirement or treat malformed protocols as allowed profile differences. Mechanism owners:20.12,20.14. Every relevant V/RDF and native/platform requirement remains necessary; research counts do not close it.",
           "verification": [
             "cargo test -p opi-ai --test platform_delivery"
           ],
@@ -15405,6 +15414,36 @@
       "rejected_count": 0,
       "ran_at": "2026-10-19T04:09:25+08:00",
       "task_id": "20.8",
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 9,
+      "ran_at": "2026-10-19T16:51:40+08:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 8,
+      "ran_at": "2026-10-19T16:51:40+08:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 8,
+      "ran_at": "2026-10-19T16:51:40+08:00",
+      "task_id": null,
       "criterion_id": null
     }
   ]
