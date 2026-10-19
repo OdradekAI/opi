@@ -339,18 +339,38 @@ no-I/O contract. Full conformance and package/platform acceptance remain open.
 
 Upstream profile review (regress, `url`, `idna`, `idna_adapter`, ICU4X
 `icu_*`, `unicode-ident`, and their `yoke`/`zerofrom`/`zerovec` support
-crates): no crate in the profile ships a `build.rs`; the only proc-macros are
-the `*-derive` companions (`yoke-derive`, `zerofrom-derive`,
-`zerovec-derive`); no new native (C/C++) code enters the dependency graph
+crates): the workspace resolves ICU data 2.2.0 and `displaydoc 0.2.5`; the
+ordinary-consumer proof resolves ICU data 2.3.0 and `displaydoc 0.2.7`.
+Both `icu_normalizer_data` and `icu_properties_data` ship a `build.rs` that
+checks `ICU4X_DATA_DIR`. Their `src/lib.rs` can include that directory's
+`mod.rs` instead of bundled data; a defined empty value can also select this
+path and fail the build. `compiled_data` does not disable this build-time
+input. The proof runner rejects every defined value, including empty, before
+creating scratch data or launching any subprocess. That guarantee applies to
+the harness; ordinary Cargo consumers must control their own build environment.
+It does not change the Schema runtime's no-I/O contract.
+
+The resolved closure also contains `proc-macro2`, `quote`, `serde` and
+`serde_core` build scripts. Its proc-macros include `displaydoc`, `serde_derive`
+and the `yoke-derive`, `zerofrom-derive`, `zerovec-derive` companions. These
+build inputs require source and feature review; no new native C/C++ code enters
 through the Schema data profile (`ring` remains the pre-existing rustls
-transport dependency). regress is compiled with `prohibit-unsafe`, which turns
-any `unsafe` block in that crate into a compile error; the ICU4X family is
-pure Rust with data baked through `compiled_data`, so no external ICU data
-directory participates in builds. Family `rust-version` requirements peak at
-1.88 (ICU4X 2.3.x on the consumer side), within the workspace MSRV 1.97.
+transport dependency).
+
+regress is compiled with `prohibit-unsafe`, an upstream implementation-selection
+feature, not a `forbid(unsafe_code)` or `deny(unsafe_code)` compilation rule.
+Several sites use `cfg!` to select implementations, and regress 0.12.0's
+`src/unicode.rs::uppercase` still uses `unsafe` `get_unchecked` when this
+feature is enabled. Opi calls safe APIs, but the feature does not establish an
+unsafe-free dependency tree: remaining upstream unsafe and its invariants must
+be reviewed against the exact source and effective features on upgrades.
+Family `rust-version` requirements peak at 1.88 (ICU4X 2.3.x on the consumer
+side), within the workspace MSRV 1.97; this is a manifest review, not a native
+platform or MSRV build result.
 Licenses are MIT OR Apache-2.0 (regress, `url`, `idna`, `idna_adapter`),
 Unicode-3.0 (ICU4X family and support crates), and
-`(MIT OR Apache-2.0) AND Unicode-3.0` (`unicode-ident`) — resolved versions,
+`(MIT OR Apache-2.0) AND Unicode-3.0` (`unicode-ident`); `displaydoc` and the
+`serde`/`proc-macro2`/`quote`/`syn` tooling use MIT OR Apache-2.0. Resolved versions,
 registry sources and checksums are recorded in `Cargo.lock`, and the actual
 ordinary-consumer resolution and effective features of both caller profiles
 in the package-consumer proof evidence

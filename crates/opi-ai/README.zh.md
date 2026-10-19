@@ -288,16 +288,33 @@ workspace lock 不固定所有库消费者的图。Opi 关闭 regress 默认 fea
 零 I/O 合同。完整 conformance 与包／平台验收仍保持 OPEN。
 
 上游 profile 审查（regress、`url`、`idna`、`idna_adapter`、ICU4X `icu_*`、
-`unicode-ident` 及其 `yoke`／`zerofrom`／`zerovec` 支撑 crate）：profile 内
-没有 crate 携带 `build.rs`；仅有的 proc-macro 是 `*-derive` 伴随 crate
-（`yoke-derive`、`zerofrom-derive`、`zerovec-derive`）；Schema 数据 profile
-不向依赖图引入新的原生（C/C++）代码（`ring` 仍是既有的 rustls 传输依赖）。
-regress 以 `prohibit-unsafe` 编译，任何 `unsafe` 块都会变成编译错误；
-ICU4X 家族为纯 Rust，数据经 `compiled_data` 内嵌，构建不依赖外部 ICU
-数据目录。家族 `rust-version` 要求最高为 1.88（consumer 侧 ICU4X 2.3.x），
-低于 workspace MSRV 1.97。许可证为 MIT OR Apache-2.0（regress、`url`、
+`unicode-ident` 及其 `yoke`／`zerofrom`／`zerovec` 支撑 crate）：workspace
+解析为 ICU data 2.2.0 与 `displaydoc 0.2.5`，普通 consumer 证明解析为
+ICU data 2.3.0 与 `displaydoc 0.2.7`。`icu_normalizer_data` 和
+`icu_properties_data` 都携带读取 `ICU4X_DATA_DIR` 的 `build.rs`；其
+`src/lib.rs` 可包含该目录的 `mod.rs`，替代内嵌数据；已定义的空值也可
+选择此路径并使构建失败。`compiled_data` 不关闭这个构建期输入。证明
+runner 在创建 scratch 或启动任何子进程前拒绝所有已定义值，包括空值。
+该保证仅适用于此 harness；普通 Cargo consumer 必须管理自己的构建环境。
+这不改变 Schema 运行时的零 I/O 合同。
+
+解析闭包还包含 `proc-macro2`、`quote`、`serde`、`serde_core` 的构建脚本；
+proc-macro 包含 `displaydoc`、`serde_derive` 和 `yoke-derive`、
+`zerofrom-derive`、`zerovec-derive` 伴随 crate。这些构建输入需要来源与
+feature 审查；Schema 数据 profile 不引入新的原生 C/C++ 代码（`ring`
+仍是既有的 rustls 传输依赖）。
+
+regress 的 `prohibit-unsafe` 是上游实现分支选择 feature，不是
+`forbid(unsafe_code)` 或 `deny(unsafe_code)` 编译规则。多处使用 `cfg!`
+选择实现，且 regress 0.12.0 的 `src/unicode.rs::uppercase` 在该 feature
+开启时仍使用 `unsafe` `get_unchecked`。Opi 调用 safe API，但该 feature
+不证明依赖树无 unsafe；升级时仍须按精确源码和有效 features 审查上游
+剩余 unsafe 及其不变量。家族 `rust-version` 要求最高为 1.88（consumer
+侧 ICU4X 2.3.x），低于 workspace MSRV 1.97；这是 manifest 审查，不是
+原生平台或 MSRV 构建结果。许可证为 MIT OR Apache-2.0（regress、`url`、
 `idna`、`idna_adapter`）、Unicode-3.0（ICU4X 家族及支撑 crate）与
-`(MIT OR Apache-2.0) AND Unicode-3.0`（`unicode-ident`）——解析版本、
+`(MIT OR Apache-2.0) AND Unicode-3.0`（`unicode-ident`）；`displaydoc` 及
+`serde`／`proc-macro2`／`quote`／`syn` 工具链为 MIT OR Apache-2.0。解析版本、
 registry 来源与校验和记录在 `Cargo.lock`，两个 caller profile 的普通外部
 consumer 实际解析图与有效 features 记录在 package-consumer 证明证据
 （`scripts/pi-sdk-conformance/evidence/upstream-package-proof.json`）。
