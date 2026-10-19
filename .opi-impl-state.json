@@ -3496,7 +3496,7 @@
       "definition_of_done": "Implement a private opi-ai safe Rust key/signing owner using unmodified crates.io rustls0.23.40 and aws-lc-rs1.18.2/aws-lc-sys0.46.0 public KeyProvider::load_private_key, SigningKey algorithm/choose_scheme and Signer::sign seams. Prove RDF-23 unencrypted two-prime RSA2048..8192 PKCS1/PKCS8 PEM/DER including e3 and supported P-521 PKCS8/SEC1 signing/verification, independent signature verification, wrong-algorithm/encrypted/malformed/wrong-key negatives and declared RSA1024/multiprime rejection without false success or secret leakage. No local FFI, OpenSSL LibCtx/EVP owner, crypto fork/namespace/root patch or third-party/pi-crypto build path is required. Review actual registry graph/features/checksums and upstream native C/FFI/assembly/build/proc/toolchain inputs; standard non-FIPS source-build evidence uses AWS_LC_SYS_USE_SYSTEM=0, records actual static source/CC outcome and excludes unreviewed system/bindings/version-skip/target replacements at controlled build/consumer gates. Cargo.lock cannot freeze external native provenance; untested unions/platforms remain OPEN. Permit native process-once CPU initialization/capability environment reads and OS entropy without global provider/config/env/subscriber mutation or ambient credential/trust/proxy discovery. Retain owned upstream keys/resources until synchronous native signing worker joins after caller cancellation, suppress late publication and distinguish between-operation cancellation from impossible hard preemption. Preserve existing HMAC/SHA/SigV4 and transitive ring coexistence. This is substrate for20.14 and later real ADC20.21.1; tests cannot require exporting a new public crypto API or claim full TLS/public/package/platform acceptance.",
       "definition_source": "inferred",
       "replaces": "私有 OpenSSL3 EVP 安全 owner 与算法机制",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.1"
       ],
@@ -3569,9 +3569,9 @@
       "acceptance_scenarios": [],
       "production_call_sites": [],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "99e9c344e957c8518a0a7a9249d79c9b034daf47",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -3583,10 +3583,54 @@
         "crates/opi-ai/src/crypto/**",
         "crates/opi-ai/src/lib.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "3f3e82afd8b97ed160a0c6b76666043ab84f8d7d",
+      "evidence": {
+        "Opi-Task": "20.13",
+        "Opi-DoD-SHA256": "6cc3972fbb05038ce25ef263b4f0c3a9436761f64e0d1ca74ad399f8b4983e57",
+        "Opi-Verification": "workspace; opi-impl-smoke.ps1 full PASSED on Windows native x86_64-msvc (doc-check, fmt --all, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets 245 suites, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps) with AWS_LC_SYS_USE_SYSTEM=0 and CARGO_BUILD_JOBS=2; crypto:: 11/11 unit tests inside the same gate; WSL x86_64-linux fmt/clippy/doc-check also PASSED",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; exec.workflow runtime unavailable (node absent in environment), wf_ref=null",
+        "Opi-Acceptance": "not-required (substrate_only=true, no owned acceptance scenarios; product closure stays with 20.14 TLS host wiring, 20.21.1 real ADC, 20.34 full DEL-06)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-20T01:38:16+08:00",
+          "attempt": 1,
+          "summary": "DEL-06 substrate delivered in commit 3f3e82afd8b97ed160a0c6b76666043ab84f8d7d: private opi-ai crypto module over unmodified crates.io rustls0.23.40+aws-lc-rs1.18.2/aws-lc-sys0.46.0 using only the public KeyProvider::load_private_key / SigningKey algorithm+choose_scheme / Signer::sign seams plus aws-lc-rs public verification parameters; admission accepts unencrypted two-prime RSA2048-8192 PKCS1/PKCS8 PEM/DER incl e3 and P-521 PKCS8/SEC1 with independent verification; typed redacted rejections (RSA1024 and multiprime at the backend seam, encrypted/malformed/truncated/public-only at decode, non-profile algorithms/schemes) with canary redaction proof; explicit per-owner aws-lc-rs provider, never installed process-globally (grep zero install_default calls), transitive ring coexists (feature union built and tested), HMAC/SHA/SigV4 untouched; owned blocking-worker signing retains the upstream Arc<dyn SigningKey> until join after caller drop/abort, suppresses late results, and observes cancellation between operations only (no hard-preemption claim). Native admission: exact-pinned lock diff adds only aws-lc-rs/aws-lc-sys/cmake/dunce/fs_extra/jobserver/pkg-config with recorded registry checksums; reviewed builder selection and env gates (USE_SYSTEM/SYSTEM_DIR/SYSTEM_BINDINGS/SKIP_VERSION_CHECK/CMAKE_BUILDER/target overrides all unset except AWS_LC_SYS_USE_SYSTEM=0); source-build evidence: x86_64-linux gcc cc-builder 377 objects -> static libaws_lc_0_46_0_crypto.a, universal pregenerated bindings, ldd shows no dynamic libcrypto/libssl; x86_64-msvc CC builder with prebuilt-nasm and USE_SYSTEM=0 completed inside the full gate. Untested feature unions and non-FIPS/other platforms remain OPEN; no product acceptance claimed. third-party/pi-crypto/** and the planned crypto_evp.rs integration-test path were never committed (nothing tracked to remove): the mandatory-build obligation is retired by absence; the ignored local residues (empty dir, tests/data/crypto-evp/*.pem research fixtures) were left untouched as unowned files.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.ps1 full on Windows native (log: C:/Users/Luiz/AppData/Local/Temp/opi-win-full4.log) - doc-check, fmt --all, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets (245 suites, 0 failures, incl. provider_lifecycle 35/35 and crypto:: 11/11), cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps. Two environment-specific pre-existing failures were excluded by evidence, not by task repair: (1) provider_lifecycle gemini/bedrock_drop_releases_connect_and_read_waits fail at HEAD 99e9c34 in a clean WSL worktree (deterministic 4/4 incl. isolated single-test runs) and pass on Windows native - WSL-only regression outside this task's owned paths; (2) opi-eval fail_closed_cli doctor disk observation needs GNU df from Git usr/bin on PATH (present on CI hosts and prepended for the gate) - local machine PATH gap, unrelated to the diff.",
+            "d0_scenarios": "none (substrate_only=true; acceptance_scenarios empty by admission)",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7) no must-fix: seams/profile/negatives/redaction match DoD; tests non-vacuous (round-trip verification, discriminant rejections, cross-encoding determinism, weak-ref lifecycle); no production call site by design (substrate); evidence footers truthful incl. environment disclosures; no non-goal leak (no TLS wiring/ADC/public crypto API/Agent policy); workspace deps via root table with { workspace = true }; no shared decision participates",
+            "d3_gap_checks": "PASS: grep install_default -> only the module comment, zero calls; no unsafe/env mutation in crypto module; git diff --check clean; no *.pem/*.key files committed (synthetic throwaway corpus embedded inline per repo secrets policy); lock diff additive-only with checksums recorded in note; AWS_LC_SYS_USE_SYSTEM=0 honored on both platforms ('Value: 0 is false' + CC builder in build output); WSL smoke full reached the test stage with doc-check/fmt/clippy PASS before the two WSL-only failures",
+            "test_disposition": [
+              {
+                "subject": "20.13",
+                "action": "add",
+                "test": "crates/opi-ai/src/crypto/mod.rs crypto::tests (11 tests: rsa_profile_accepts_two_prime_2048_through_8192_in_all_four_encodings, rsa_e3_small_exponent_keys_are_admitted, p521_profile_accepts_pkcs8_and_sec1_in_pem_and_der, rsa_1024_and_multi_prime_keys_are_rejected_at_the_backend_load_seam, encrypted_truncated_malformed_and_public_only_inputs_never_admit, non_profile_curves_and_wrong_algorithm_requests_are_typed_failures, independent_verification_accepts_valid_and_rejects_tampered_signatures, admission_errors_never_expose_key_material, worker_signing_publishes_a_verifiable_signature, caller_drop_retains_owned_key_until_worker_joins_and_suppresses_late_results, cancellation_before_the_native_call_skips_it_entirely)",
+                "interface": "private opi_ai::crypto (SigningOwner/OwnedSigningKey/WorkerSigning/verify)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.13",
+                "action": "retain",
+                "test": "all existing workspace suites (incl. opi-ai provider_lifecycle 35/35, HMAC/SHA/SigV4 security tests, schema/stream/replay suites; opi-eval/protocol/tui/coding-agent suites)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.13",
+                "action": "none",
+                "test": "none deleted or updated",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.14",
@@ -15632,6 +15676,16 @@
       "rejected_count": 10,
       "ran_at": "2026-10-19T13:06:52.914939+00:00",
       "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-10-20T01:38:16+08:00",
+      "task_id": "20.13",
       "criterion_id": null
     }
   ]
