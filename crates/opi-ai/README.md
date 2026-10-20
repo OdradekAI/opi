@@ -81,7 +81,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `AuthResolver` / `ResolvedAuth` | Driver-owned per-call auth resolution contract; one prepared result is frozen before an attempt starts. |
 | `ApiKind` | Crate-root enum tagging the backend family (`Anthropic`, `OpenAi`, `Google`, `Mistral`) carried on assistant messages. |
 | `HttpClient` | Shared `reqwest` client with pooling and explicit/env proxy support. |
-| `retry` | Retry config, exponential backoff, and `Retry-After` parsing. |
+| `retry` | The acquisition-retry owner (`AcquisitionPolicy`, `RetryAdmission`, `AcquisitionSeal`) plus the product-facing retry config, exponential backoff, and `Retry-After` parsing. |
 | `Usage` / `CumulativeUsage` | Token accumulation and cost helpers. |
 | `test_support::MockProvider` | Deterministic mock provider for downstream tests. |
 
@@ -116,6 +116,31 @@ and a prior credential-needed/revoked attempt closes the prepared call with
 `ProviderError::CredentialNeeded` and `ProviderError::CredentialRevoked`
 variants. Per-call credentials remain out of scope: `extra_headers` rejects
 provider-managed auth headers.
+
+### Acquisition retry owner (AIR-007)
+
+`prepare_call_with_policy` freezes an `AcquisitionPolicy` per logical call
+(`prepare_call` keeps the default of zero extra sends). The prepared call is
+the one acquisition-retry owner: it classifies observed attempt failures,
+keeps the per-payload-variant send counters (`max_retries` counts extra sends
+per variant, so an ordinary episode performs at most `1 + max_retries`
+sends), computes the source-qualified wait, and seals states. After a
+retryable failure with budget remaining, `retry_admission()` returns the
+1-based `retry_index` and `delay_ms` (server hints first, bounded by
+`max_retry_delay_ms`; otherwise `min(500ms * 2^i, 8000ms)` scaled by a
+`[0.75, 1.0)` jitter factor). `start_attempt` refuses dispatch with a typed
+`ModelsError::RetryNotReady` before that deadline elapses, with
+`CallSealed` once the call is sealed, and with `AttemptAlreadyActive` while
+an attempt stream is still live. Seals are sticky and observable via
+`acquisition_seal()`: the first delivered stream event is the
+streaming-response handoff (`PostHandoff`; later body/EOF/parser failures
+are final), a dispatched attempt dropped without an observed outcome records
+`UnknownDispatch`, a spent budget records `Exhausted`, and a terminal outcome
+without any delivered event records `Finished`. Success therefore no longer
+re-opens a prepared call: schedule retries through the admission, and
+re-prepare for a new logical call. The main-loop consumer reads the
+admission, waits cancellably, and re-enters `start_attempt`; it cannot reset
+counters, skip the wait, or stack sends beyond the frozen budget.
 
 Before authentication, `prepare_call` resolves an omitted `Request.max_tokens`
 to the selected registry model's `max_output_tokens` capacity, including model

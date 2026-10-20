@@ -925,6 +925,8 @@ fn exit_code_for_agent_error(error: &AgentError) -> i32 {
         | AgentError::RouteNotDispatchable { .. }
         | AgentError::RequestRouteMismatch { .. }
         | AgentError::AttemptAlreadyActive
+        | AgentError::RetryNotReady { .. }
+        | AgentError::CallSealed { .. }
         | AgentError::ProviderProtocol { .. } => ExitCode::ProviderFailure as i32,
         AgentError::Hook(_)
         | AgentError::InvalidArmedRun

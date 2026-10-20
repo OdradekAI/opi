@@ -30,7 +30,11 @@ JSONL 存储、分支重建、上下文压缩、SDK/RPC 类型、扩展、本地
 `ToolExecutionEnd` 事件上暴露，同时让面向 provider 的工具结果消息只携带 LLM 可见内容
 和失败状态。来自 `opi-ai` 的 `ProviderErrorCategory` 会映射为已脱敏 diagnostics 和
 evidence 记录；provider 返回的 cancellation 表现为 `AgentError::Cancelled`；retry diagnostics
-会区分重试预算耗尽与部分 provider 输出后的重试抑制。append-only 会话存储写入携带精确
+会区分重试预算耗尽与部分 provider 输出后的重试抑制。自 AIR-007 切换后，主循环不再自带
+采集调度：`prepare_call_with_policy` 把产品重试计数冻结为 SDK `AcquisitionPolicy`，主循环
+只调度 prepared call 所准入的 attempt（`retry_admission`），按 SDK 计算的延迟可取消地等待，
+`AutoRetryStart`/`AutoRetryEnd` 事件、重试诊断与 Retry evidence 记录保持原有形态。
+append-only 会话存储写入携带精确
 运行时输入绑定的版本 2 头部；旧版 1 输入保持只读。metadata 条目不进入 provider 上下文，
 但分支摘要会通过 `session_context::reconstruct_context` 进入。
 
@@ -64,7 +68,7 @@ id，`opi-ai` adapter 决定审查过的 cache-affinity 映射是否消费该值
 | `AgentHooks` | 覆盖上下文转换、LLM 转换、工具策略/结果、停止判断和下一轮准备的生命周期 hooks。 |
 | `AgentEvent` | 运行时事件流，覆盖生命周期、流式文本、工具调用、队列、重试、压缩和结束状态。 |
 | `AgentSessionEvent` | `opi --json` 使用的会话级事件协议。 |
-| `AgentLoopConfig` | 不可变的 provider 重试配置；不含内置轮数预算。 |
+| `AgentLoopConfig` | 不可变的 provider 重试配置（每调用采集策略来源）；不含内置轮数预算。 |
 
 ## 主循环形状
 
@@ -130,7 +134,8 @@ agent_end                                 # 仅一次，终止时
 - `CompactionEngine` 是上下文大小原语；连接它与持久化 CLI 会话的协调器位于
   `opi-coding-agent`。
 
-Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.retry` 处理。
+Rate limit 和 timeout 等可重试 Provider 错误可通过 `AgentLoopConfig.retry` 处理：其
+`max_attempts` 成为冻结进 SDK 采集 owner 的每调用策略，延迟由 SDK 按 source 家族规则计算。
 重试开始/结束会通过 `AgentEvent` 暴露。
 
 ## Hook 语义

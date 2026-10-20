@@ -1,6 +1,20 @@
-//! Retry/backoff/rate-limit support (task 2.15).
+//! Retry/backoff/rate-limit support.
 //!
-//! Provides header parsing, exponential backoff calculation, and retry config.
+//! Task 2.15 introduced the header parsing, exponential backoff calculation,
+//! and product-facing [`RetryConfig`]. Task 20.4 makes this module the one
+//! acquisition-retry owner (AIR-007 / P20-ACQUISITION):
+//! [`PreparedProviderCall`](crate::Models::prepare_call) freezes an
+//! [`AcquisitionPolicy`] per logical call, and the crate-private acquisition
+//! core owns the per-payload-variant send counters, retry admission,
+//! readiness deadline, and the sealed states that forbid further attempts.
+//! Consumers schedule attempts through
+//! [`start_attempt`](crate::models::PreparedProviderCall::start_attempt) and
+//! read [`RetryAdmission`] decisions instead of re-classifying failures.
+
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use crate::provider::ProviderError;
 
 /// Configuration for automatic retry of retryable provider errors.
 #[derive(Debug, Clone, PartialEq)]
@@ -171,4 +185,340 @@ fn date_to_unix(year: u32, month: u32, day: u32, hour: u32, minute: u32, second:
     let days = era * 146097 + doe - 719468;
     let secs = days * 86400 + hour as i64 * 3600 + minute as i64 * 60 + second as i64;
     secs as u64
+}
+
+// ---------------------------------------------------------------------------
+// Acquisition owner (task 20.4, AIR-007 / P20-ACQUISITION)
+// ---------------------------------------------------------------------------
+
+/// Per-logical-call acquisition policy frozen at
+/// [`Models::prepare_call_with_policy`](crate::Models::prepare_call_with_policy).
+///
+/// `max_retries` counts **extra sends per payload-variant acquisition
+/// episode**: an ordinary HTTP acquisition performs at most `1 + max_retries`
+/// sends of the frozen variant. The override order is per-call, then protocol
+/// default (helper/Codex adapters default to `0`); provider profiles are a
+/// later concern. `max_retry_delay_ms` bounds only the server-advisory hint
+/// (default 60 seconds); an explicit zero disables that upper-bound check but
+/// still honors hints. `jitter_seed` pins the backoff jitter for deterministic
+/// tests; production leaves it `None` for per-call entropy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcquisitionPolicy {
+    /// Extra sends admitted per payload variant (not counting the initial
+    /// request).
+    pub max_retries: u32,
+    /// Upper bound applied to server-advisory retry hints, in milliseconds.
+    /// `0` disables the bound (hints are used as-is).
+    pub max_retry_delay_ms: u64,
+    /// Deterministic jitter seed for tests; `None` uses per-call entropy.
+    pub jitter_seed: Option<u64>,
+}
+
+impl Default for AcquisitionPolicy {
+    fn default() -> Self {
+        Self {
+            max_retries: 0,
+            max_retry_delay_ms: 60_000,
+            jitter_seed: None,
+        }
+    }
+}
+
+impl AcquisitionPolicy {
+    /// A policy admitting `max_retries` extra sends with the protocol-default
+    /// hint bound and production entropy.
+    pub fn with_max_retries(max_retries: u32) -> Self {
+        Self {
+            max_retries,
+            ..Self::default()
+        }
+    }
+}
+
+/// The SDK-owned decision that another acquisition attempt is admitted.
+///
+/// Emitted by the acquisition owner after an observed retryable attempt failure
+/// while the frozen per-variant budget still has room. `retry_index` is
+/// 1-based (the first retry is `1`); `delay_ms` is the source-qualified wait
+/// the caller must observe before the next
+/// [`start_attempt`](crate::models::PreparedProviderCall::start_attempt)
+/// becomes ready.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetryAdmission {
+    /// 1-based index of the admitted extra send.
+    pub retry_index: u32,
+    /// Milliseconds to wait before the next attempt start is ready.
+    pub delay_ms: u64,
+}
+
+/// Why a prepared call no longer admits acquisition attempts.
+///
+/// Observable through
+/// [`acquisition_seal`](crate::models::PreparedProviderCall::acquisition_seal)
+/// and the [`crate::ModelsError::CallSealed`] start refusal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AcquisitionSeal {
+    /// A streaming response was successfully handed off (at least one stream
+    /// event reached the caller). Body/EOF/parser failures after handoff are
+    /// final and never re-enter acquisition retry.
+    PostHandoff,
+    /// An attempt was dispatched but dropped without an observed closed
+    /// outcome, so its effect is unknown and further scheduling is refused.
+    UnknownDispatch,
+    /// The frozen per-variant retry budget is spent.
+    Exhausted,
+    /// The attempt reached a terminal closed outcome (success, a classified
+    /// non-retryable failure, or end-of-stream) that admits no further send.
+    Finished,
+}
+
+impl AcquisitionSeal {
+    /// Stable, redacted machine-readable name for diagnostics.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PostHandoff => "post-handoff",
+            Self::UnknownDispatch => "unknown-dispatch",
+            Self::Exhausted => "exhausted",
+            Self::Finished => "finished",
+        }
+    }
+}
+
+/// Refusal reason returned by [`AcquisitionCore::check_start`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RetryStartError {
+    /// The call is sealed; no further attempt may be dispatched.
+    Sealed(AcquisitionSeal),
+    /// The admitted retry is not ready yet; the caller must keep waiting.
+    NotReady { retry_ready_in_ms: u64 },
+}
+
+/// Why [`AcquisitionCore::check_start`] refused a start, split from the
+/// seal so callers can name both without matching the core enum.
+pub(crate) fn start_error_seal(error: RetryStartError) -> Option<AcquisitionSeal> {
+    match error {
+        RetryStartError::Sealed(seal) => Some(seal),
+        RetryStartError::NotReady { .. } => None,
+    }
+}
+
+pub(crate) fn start_error_ready_in_ms(error: RetryStartError) -> Option<u64> {
+    match error {
+        RetryStartError::Sealed(_) => None,
+        RetryStartError::NotReady { retry_ready_in_ms } => Some(retry_ready_in_ms),
+    }
+}
+
+/// The per-logical-call acquisition state machine (crate-private).
+///
+/// One instance lives inside each `PreparedProviderCall` behind an `Arc` and
+/// is updated synchronously from the attempt stream's `poll_next` and from
+/// `start_attempt`. It owns the payload-variant counters, the retry admission
+/// decision (classification + hint-aware delay with jitter), the readiness
+/// deadline that enforces the caller's wait, and the sticky sealed state.
+/// No method performs IO.
+pub(crate) struct AcquisitionCore {
+    inner: Mutex<AcquisitionInner>,
+}
+
+struct AcquisitionInner {
+    policy: AcquisitionPolicy,
+    /// Index of the current payload variant. Adaptation (the bounded
+    /// strict-prefer downgrade) is owned by later tasks; every current
+    /// acquisition episode stays on variant 0.
+    variant_index: u32,
+    /// Total payload variants dispatched at least once (0 before the first
+    /// dispatch, 1 afterwards). Shared across variants; never reset.
+    variants_used: u32,
+    /// Extra sends admitted in the current variant. The shared counter is
+    /// what callers cannot reset.
+    retries_admitted: u32,
+    /// Deadline before which `start_attempt` refuses dispatch.
+    ready_at: Option<Instant>,
+    /// The admission awaiting the caller's next start, if any.
+    admission: Option<RetryAdmission>,
+    /// Sticky sealed state; the first seal wins.
+    sealed: Option<AcquisitionSeal>,
+    jitter: JitterRng,
+}
+
+impl AcquisitionCore {
+    pub(crate) fn new(policy: AcquisitionPolicy) -> Self {
+        let jitter = match policy.jitter_seed {
+            Some(seed) => JitterRng(seed),
+            None => JitterRng::from_entropy(),
+        };
+        Self {
+            inner: Mutex::new(AcquisitionInner {
+                policy,
+                variant_index: 0,
+                variants_used: 0,
+                retries_admitted: 0,
+                ready_at: None,
+                admission: None,
+                sealed: None,
+                jitter,
+            }),
+        }
+    }
+
+    /// Enforce the start preconditions: a sealed call refuses dispatch, and a
+    /// start before the admitted retry deadline refuses dispatch without
+    /// consuming anything. A start at or after the deadline clears it.
+    pub(crate) fn check_start(&self) -> Result<(), RetryStartError> {
+        let mut inner = self.inner.lock().expect("acquisition core poisoned");
+        if let Some(seal) = inner.sealed {
+            return Err(RetryStartError::Sealed(seal));
+        }
+        if let Some(ready_at) = inner.ready_at {
+            let now = Instant::now();
+            if now < ready_at {
+                return Err(RetryStartError::NotReady {
+                    retry_ready_in_ms: (ready_at - now).as_millis() as u64,
+                });
+            }
+            inner.ready_at = None;
+        }
+        Ok(())
+    }
+
+    /// Record that an attempt was dispatched (the first dispatch marks the
+    /// payload variant as used).
+    pub(crate) fn note_dispatch(&self) {
+        let mut inner = self.inner.lock().expect("acquisition core poisoned");
+        if inner.variants_used == inner.variant_index {
+            inner.variants_used += 1;
+        }
+    }
+
+    /// Record a successful streaming-response handoff: the first delivered
+    /// stream item seals acquisition retry, even before the first public
+    /// content event.
+    pub(crate) fn note_handoff(&self) {
+        let mut inner = self.inner.lock().expect("acquisition core poisoned");
+        if inner.sealed.is_none() {
+            inner.sealed = Some(AcquisitionSeal::PostHandoff);
+        }
+    }
+
+    /// Record an attempt dropped after dispatch without an observed closed
+    /// outcome: the effect is unknown and further scheduling is refused.
+    pub(crate) fn note_unknown_dispatch(&self) {
+        let mut inner = self.inner.lock().expect("acquisition core poisoned");
+        if inner.sealed.is_none() {
+            inner.sealed = Some(AcquisitionSeal::UnknownDispatch);
+        }
+    }
+
+    /// Record a terminal closed outcome that admits no further send (success,
+    /// end-of-stream, or a failure classified below).
+    pub(crate) fn note_finished(&self) {
+        let mut inner = self.inner.lock().expect("acquisition core poisoned");
+        if inner.sealed.is_none() {
+            inner.sealed = Some(AcquisitionSeal::Finished);
+        }
+    }
+
+    /// Classify an observed attempt failure. A retryable cause with remaining
+    /// per-variant budget produces the next [`RetryAdmission`] and sets the
+    /// readiness deadline; anything else seals the call (`Exhausted` when the
+    /// budget is spent, `Finished` for a classified final failure).
+    pub(crate) fn note_failure(&self, cause: &ProviderError) {
+        let mut inner = self.inner.lock().expect("acquisition core poisoned");
+        if inner.sealed.is_some() {
+            // Already sealed (for example post-handoff): the failure is final.
+            inner.admission = None;
+            return;
+        }
+        if !cause.is_retryable() {
+            inner.admission = None;
+            inner.sealed = Some(AcquisitionSeal::Finished);
+            return;
+        }
+        if inner.retries_admitted >= inner.policy.max_retries {
+            inner.admission = None;
+            inner.sealed = Some(AcquisitionSeal::Exhausted);
+            return;
+        }
+        let hint = cause.retry_after_ms();
+        let policy = inner.policy.clone();
+        let delay_ms = retry_delay_ms(&policy, inner.retries_admitted + 1, hint, &mut inner.jitter);
+        inner.retries_admitted += 1;
+        inner.ready_at = Some(Instant::now() + Duration::from_millis(delay_ms));
+        inner.admission = Some(RetryAdmission {
+            retry_index: inner.retries_admitted,
+            delay_ms,
+        });
+    }
+
+    /// The admission awaiting the caller's next start, if any.
+    pub(crate) fn admission(&self) -> Option<RetryAdmission> {
+        self.inner
+            .lock()
+            .expect("acquisition core poisoned")
+            .admission
+    }
+
+    /// The sticky sealed state, if the call no longer admits attempts.
+    pub(crate) fn seal(&self) -> Option<AcquisitionSeal> {
+        self.inner.lock().expect("acquisition core poisoned").sealed
+    }
+}
+
+/// Compute the source-qualified wait before the admitted retry.
+///
+/// Server advisory hints win when present, bounded by
+/// `policy.max_retry_delay_ms` unless that bound is explicitly zero
+/// (zero disables only the upper-bound check; hints are still honored).
+/// Without a hint the helper-family backoff runs: `min(500ms * 2^i, 8000ms)`
+/// for zero-based retry index `i`, multiplied by a jitter factor drawn from
+/// `[0.75, 1.0)`.
+fn retry_delay_ms(
+    policy: &AcquisitionPolicy,
+    one_based_retry_index: u32,
+    hint_ms: Option<u64>,
+    jitter: &mut JitterRng,
+) -> u64 {
+    let Some(hint) = hint_ms else {
+        let i = one_based_retry_index.saturating_sub(1);
+        let base = 500u64
+            .saturating_mul(1u64.checked_shl(i).unwrap_or(u64::MAX))
+            .min(8_000);
+        let percent = 75 + jitter.fraction_percent(); // [75, 99]
+        return base.saturating_mul(percent) / 100;
+    };
+    if policy.max_retry_delay_ms == 0 {
+        hint
+    } else {
+        hint.min(policy.max_retry_delay_ms)
+    }
+}
+
+/// SplitMix64 jitter source. Not cryptographic; it only decorrelates backoff
+/// waits. Seeded deterministically for tests, from process entropy otherwise.
+struct JitterRng(u64);
+
+impl JitterRng {
+    fn from_entropy() -> Self {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0);
+        Self(nanos ^ ((std::process::id() as u64) << 32))
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// Uniform jitter percentage in `[0, 24]`, so `75 + fraction_percent()`
+    /// covers the source's `[0.75, 1.0)` backoff factor.
+    fn fraction_percent(&mut self) -> u64 {
+        self.next_u64() % 25
+    }
 }

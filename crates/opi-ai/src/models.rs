@@ -270,6 +270,23 @@ pub enum ModelsError {
         /// Provider whose frozen credential entered the terminal state.
         provider: String,
     },
+    /// [`start_attempt`](PreparedProviderCall::start_attempt) was called
+    /// before the admitted retry's readiness deadline. The caller must keep
+    /// waiting (cancellably) for the [`RetryAdmission`](crate::retry::RetryAdmission) `delay_ms` it read; no
+    /// dispatch happened.
+    #[error("the admitted retry is not ready for another {retry_ready_in_ms}ms")]
+    RetryNotReady {
+        /// Milliseconds remaining before the next attempt start is ready.
+        retry_ready_in_ms: u64,
+    },
+    /// The prepared call is sealed (post-handoff, unknown-dispatch, exhausted
+    /// budget, or a terminal outcome) and no further attempt may be
+    /// dispatched on it. A new logical call must re-prepare.
+    #[error("the prepared call is sealed ({})", seal.as_str())]
+    CallSealed {
+        /// Which sealed state the call reached.
+        seal: crate::retry::AcquisitionSeal,
+    },
     /// A provider stream failed while draining to completion.
     #[error(transparent)]
     Provider(#[from] ProviderError),
@@ -604,7 +621,25 @@ impl Models {
 
     /// Resolve one canonical `provider:model` route, validate the request,
     /// resolve authentication once, and freeze an opaque
-    /// [`PreparedProviderCall`] (advanced entry).
+    /// [`PreparedProviderCall`] (advanced entry) with the default acquisition
+    /// policy (zero extra sends).
+    ///
+    /// Equivalent to
+    /// [`prepare_call_with_policy`](Self::prepare_call_with_policy) with
+    /// [`AcquisitionPolicy::default`](crate::retry::AcquisitionPolicy::default).
+    pub async fn prepare_call(
+        &self,
+        spec: &str,
+        request: Request,
+    ) -> Result<PreparedProviderCall, ModelsError> {
+        self.prepare_call_with_policy(spec, request, crate::retry::AcquisitionPolicy::default())
+            .await
+    }
+
+    /// Resolve one canonical `provider:model` route, validate the request,
+    /// resolve authentication once, and freeze an opaque
+    /// [`PreparedProviderCall`] (advanced entry) with an explicit per-call
+    /// acquisition policy.
     ///
     /// Sequential attempts from the prepared call reuse the same frozen route,
     /// request, and authentication without repeating preparation. Route lookup,
@@ -619,10 +654,11 @@ impl Models {
     /// to remaining context with 4,096 safety tokens (minimum one output token).
     /// Thinking that no longer fits is reduced to leave 1,024 answer tokens
     /// where possible. The caller's request is not mutated.
-    pub async fn prepare_call(
+    pub async fn prepare_call_with_policy(
         &self,
         spec: &str,
         mut request: Request,
+        policy: crate::retry::AcquisitionPolicy,
     ) -> Result<PreparedProviderCall, ModelsError> {
         let (provider_ref, model) = self.registry.resolve(spec)?;
         let provider_id = provider_ref.id().to_owned();
@@ -670,6 +706,7 @@ impl Models {
             route,
             active: Arc::new(AtomicBool::new(false)),
             credential_terminal: Arc::new(AtomicBool::new(false)),
+            acquisition: Arc::new(crate::retry::AcquisitionCore::new(policy)),
         })
     }
 
@@ -886,13 +923,21 @@ pub struct PreparedProviderCall {
     /// Set when an attempt reports that the frozen credential is unavailable
     /// or revoked; later attempts fail closed instead of redispatching it.
     credential_terminal: Arc<AtomicBool>,
+    /// The acquisition-retry owner: per-variant send counters, retry
+    /// admission, readiness deadline, and sealed states.
+    acquisition: Arc<crate::retry::AcquisitionCore>,
 }
 
 struct AttemptStream {
     inner: EventStream,
     active: Arc<AtomicBool>,
     credential_terminal: Arc<AtomicBool>,
+    acquisition: Arc<crate::retry::AcquisitionCore>,
     released: bool,
+    /// Whether this attempt was ever polled (dispatched). Distinguishes a
+    /// lease released before send from a dropped dispatch with unknown
+    /// effect.
+    polled: bool,
 }
 
 impl AttemptStream {
@@ -909,14 +954,28 @@ impl Stream for AttemptStream {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
+        this.polled = true;
         let item = this.inner.as_mut().poll_next(cx);
-        if matches!(
-            &item,
-            Poll::Ready(Some(Err(
-                ProviderError::CredentialNeeded { .. } | ProviderError::CredentialRevoked { .. }
-            )))
-        ) {
-            this.credential_terminal.store(true, Ordering::Release);
+        match &item {
+            Poll::Ready(Some(Err(cause))) => {
+                if matches!(
+                    cause,
+                    ProviderError::CredentialNeeded { .. }
+                        | ProviderError::CredentialRevoked { .. }
+                ) {
+                    this.credential_terminal.store(true, Ordering::Release);
+                }
+                this.acquisition.note_failure(cause);
+            }
+            Poll::Ready(Some(Ok(_))) => {
+                // The first delivered stream item is the streaming-response
+                // handoff; it seals acquisition retry for this logical call.
+                this.acquisition.note_handoff();
+            }
+            Poll::Ready(None) => {
+                this.acquisition.note_finished();
+            }
+            Poll::Pending => {}
         }
         let terminal = match &item {
             Poll::Ready(None) => true,
@@ -933,7 +992,14 @@ impl Stream for AttemptStream {
 
 impl Drop for AttemptStream {
     fn drop(&mut self) {
-        self.release();
+        if !self.released {
+            if self.polled {
+                // Dispatched but dropped without an observed closed outcome:
+                // the effect is unknown and further scheduling is refused.
+                self.acquisition.note_unknown_dispatch();
+            }
+            self.release();
+        }
     }
 }
 
@@ -964,6 +1030,27 @@ impl PreparedProviderCall {
         &self.auth.provenance
     }
 
+    /// The SDK-owned admission for the next attempt, if the last observed
+    /// failure was retryable and the frozen per-variant budget still has
+    /// room.
+    ///
+    /// The caller reads the [`RetryAdmission`](crate::retry::RetryAdmission), waits `delay_ms`
+    /// (cancellably, through its own token — the shared
+    /// [`Request::cancel`] token also forbids any further attempt once
+    /// cancelled), and then calls [`start_attempt`](Self::start_attempt)
+    /// again. Starting before the deadline returns
+    /// [`ModelsError::RetryNotReady`] with zero dispatch.
+    pub fn retry_admission(&self) -> Option<crate::retry::RetryAdmission> {
+        self.acquisition.admission()
+    }
+
+    /// The sealed state, if this prepared call no longer admits acquisition
+    /// attempts (post-handoff, unknown-dispatch, exhausted budget, or a
+    /// terminal outcome).
+    pub fn acquisition_seal(&self) -> Option<crate::retry::AcquisitionSeal> {
+        self.acquisition.seal()
+    }
+
     /// Start one attempt using the frozen request and authentication.
     ///
     /// Reuses the prepared route and authentication; does not repeat preparation.
@@ -973,6 +1060,9 @@ impl PreparedProviderCall {
     /// the prior attempt's stream reaches a terminal event or error, which
     /// releases the active slot. A credential-needed or credential-revoked
     /// stream error additionally terminates the prepared call and forbids retry.
+    /// The acquisition owner refuses dispatch while the call is sealed
+    /// (post-handoff, unknown-dispatch, exhausted budget, or a terminal
+    /// outcome) and before an admitted retry's readiness deadline.
     ///
     /// # Errors
     ///
@@ -980,6 +1070,9 @@ impl PreparedProviderCall {
     ///   been cancelled.
     /// - [`ModelsError::CredentialTerminated`] if a prior attempt rejected
     ///   the frozen credential.
+    /// - [`ModelsError::CallSealed`] if the acquisition owner sealed the call.
+    /// - [`ModelsError::RetryNotReady`] if the admitted retry's wait has not
+    ///   elapsed yet.
     /// - [`ModelsError::AttemptAlreadyActive`] if a prior attempt stream is
     ///   still active.
     pub fn start_attempt(&self) -> Result<EventStream, ModelsError> {
@@ -989,6 +1082,14 @@ impl PreparedProviderCall {
         if self.credential_terminal.load(Ordering::Acquire) {
             return Err(ModelsError::CredentialTerminated {
                 provider: self.route.provider_id.clone(),
+            });
+        }
+        if let Err(error) = self.acquisition.check_start() {
+            if let Some(seal) = crate::retry::start_error_seal(error) {
+                return Err(ModelsError::CallSealed { seal });
+            }
+            return Err(ModelsError::RetryNotReady {
+                retry_ready_in_ms: crate::retry::start_error_ready_in_ms(error).unwrap_or_default(),
             });
         }
         if self.active.swap(true, Ordering::AcqRel) {
@@ -1002,6 +1103,7 @@ impl PreparedProviderCall {
                 provider: self.route.provider_id.clone(),
             });
         }
+        self.acquisition.note_dispatch();
         let stream = self
             .provider
             .stream_prepared(self.request.clone(), self.auth.clone());
@@ -1009,7 +1111,9 @@ impl PreparedProviderCall {
             inner: stream,
             active: self.active.clone(),
             credential_terminal: self.credential_terminal.clone(),
+            acquisition: self.acquisition.clone(),
             released: false,
+            polled: false,
         }))
     }
 }

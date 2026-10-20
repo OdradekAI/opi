@@ -200,6 +200,21 @@ pub enum AgentError {
     CredentialTerminated { provider: String },
     #[error("a prepared provider attempt is already active")]
     AttemptAlreadyActive,
+    /// The prepared call's acquisition owner refused an early retry start;
+    /// the admitted wait has not elapsed yet and nothing was dispatched.
+    #[error("the admitted provider retry is not ready for another {retry_ready_in_ms}ms")]
+    RetryNotReady {
+        /// Milliseconds remaining before the next attempt start is ready.
+        retry_ready_in_ms: u64,
+    },
+    /// The prepared call's acquisition owner sealed the call (post-handoff,
+    /// unknown-dispatch, exhausted budget, or a terminal outcome) and refuses
+    /// further attempts.
+    #[error("the prepared provider call is sealed ({})", seal.as_str())]
+    CallSealed {
+        /// Which sealed state the call reached.
+        seal: opi_ai::retry::AcquisitionSeal,
+    },
     #[error("provider protocol failure: {detail}")]
     ProviderProtocol { detail: ProviderErrorSummary },
     /// A complete initial, idle replacement, or hook-produced state was
@@ -247,6 +262,10 @@ impl From<ModelsError> for AgentError {
                 route_model,
             },
             ModelsError::AttemptAlreadyActive => AgentError::AttemptAlreadyActive,
+            ModelsError::RetryNotReady { retry_ready_in_ms } => {
+                AgentError::RetryNotReady { retry_ready_in_ms }
+            }
+            ModelsError::CallSealed { seal } => AgentError::CallSealed { seal },
             ModelsError::CallCancelled => AgentError::Cancelled,
             ModelsError::CredentialTerminated { provider } => {
                 AgentError::CredentialTerminated { provider }

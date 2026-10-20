@@ -34,7 +34,13 @@ messages limited to LLM-visible content and failure state.
 `ProviderErrorCategory` values from `opi-ai` map into redacted diagnostics and
 evidence records, provider-returned cancellations surface as `AgentError::Cancelled`,
 and retry diagnostics distinguish exhausted retry budgets from suppression
-after partial provider output. Append-only session storage writes version 2
+after partial provider output. Since the AIR-007 cutover, the loop owns no
+acquisition scheduling of its own: `prepare_call_with_policy` freezes the
+product retry count into the SDK `AcquisitionPolicy`, and the loop schedules
+only the attempts the prepared call admits (`retry_admission`), waiting
+cancellably on the SDK-computed delay while `AutoRetryStart`/`AutoRetryEnd`
+events, retry diagnostics and Retry evidence records keep their shapes.
+Append-only session storage writes version 2
 headers with an exact runtime-input binding; legacy version 1 input remains
 read-only. Metadata entries do not enter provider context, but branch summaries
 do, through `session_context::reconstruct_context`.
@@ -75,7 +81,7 @@ mapping consumes it.
 | `AgentHooks` | Lifecycle hooks for context transforms, LLM conversion, tool policy/results, stopping, and next-turn preparation. |
 | `AgentEvent` | Runtime event stream for lifecycle, streaming text, tool calls, queues, retries, compaction, and end state. |
 | `AgentSessionEvent` | Session-level event protocol used by `opi --json`. |
-| `AgentLoopConfig` | Immutable provider retry configuration; no intrinsic turn budget. |
+| `AgentLoopConfig` | Immutable provider retry configuration (the per-call acquisition policy source); no intrinsic turn budget. |
 
 ## Loop Shape
 
@@ -145,8 +151,10 @@ Boundaries:
   to persisted CLI sessions lives in `opi-coding-agent`.
 
 Retryable provider errors such as rate limits and timeouts can be retried
-through `AgentLoopConfig.retry`. Retry start/end events are surfaced through
-`AgentEvent`.
+through `AgentLoopConfig.retry`: its `max_attempts` becomes the per-call
+policy frozen into the SDK acquisition owner, and the delays are
+SDK-computed from the source family table. Retry start/end events are
+surfaced through `AgentEvent`.
 
 ## Hook Semantics
 

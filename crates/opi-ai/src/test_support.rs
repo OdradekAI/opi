@@ -172,6 +172,21 @@ impl MockProvider {
         }
     }
 
+    /// Create a mock provider with custom models and scripted responses that
+    /// can interleave errors between successful event batches.
+    pub fn new_with_models_and_errors(
+        id: &str,
+        models: Vec<ModelInfo>,
+        responses: Vec<MockResponse>,
+    ) -> Self {
+        Self {
+            id: id.to_owned(),
+            models,
+            responses: Arc::new(Mutex::new(responses)),
+            call_log: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
     /// Number of prepared attempts made through `stream_prepared`.
     pub fn stream_call_count(&self) -> usize {
         self.call_log.lock().unwrap().len()

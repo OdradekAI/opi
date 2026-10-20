@@ -81,6 +81,8 @@ fn collection_error_kind(error: &ModelsError) -> &'static str {
         ModelsError::AttemptAlreadyActive => "attempt-already-active",
         ModelsError::CallCancelled => "call-cancelled",
         ModelsError::CredentialTerminated { .. } => "credential-terminated",
+        ModelsError::RetryNotReady { .. } => "retry-not-ready",
+        ModelsError::CallSealed { .. } => "call-sealed",
         ModelsError::Provider(_) => "provider",
     }
 }
@@ -1421,7 +1423,7 @@ mod phase17 {
     use opi_ai::credential::BoxAuthFuture;
     use opi_ai::models::CompatMetadata;
     use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
-    use opi_ai::test_support::text_response;
+    use opi_ai::test_support::{MockResponse, text_response};
     use secrecy::SecretString;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1437,6 +1439,10 @@ mod phase17 {
         prepared: Arc<AtomicUsize>,
         #[allow(dead_code)]
         legacy: Arc<AtomicUsize>,
+        /// When set, the first dispatch yields this retryable error instead
+        /// of a successful response, so tests can drive a real
+        /// fail-then-admitted-retry episode through the acquisition owner.
+        first_error: Option<ProviderError>,
     }
 
     impl ProbeProvider {
@@ -1456,7 +1462,13 @@ mod phase17 {
                 )],
                 prepared,
                 legacy,
+                first_error: None,
             }
+        }
+
+        fn with_first_error(mut self, error: ProviderError) -> Self {
+            self.first_error = Some(error);
+            self
         }
     }
 
@@ -1468,7 +1480,12 @@ mod phase17 {
             &self.models
         }
         fn stream_prepared(&self, _request: Request, _auth: ResolvedAuth) -> EventStream {
-            self.prepared.fetch_add(1, Ordering::SeqCst);
+            let dispatch = self.prepared.fetch_add(1, Ordering::SeqCst);
+            if dispatch == 0
+                && let Some(error) = &self.first_error
+            {
+                return Box::pin(futures_util::stream::iter(vec![Err(error.clone())]));
+            }
             let events = text_response("prepared");
             Box::pin(futures_util::stream::iter(
                 events.into_iter().map(Ok::<_, ProviderError>),
@@ -1622,14 +1639,26 @@ mod phase17 {
                 ModelCapabilities::new(200_000, limit),
             )
         };
-        let provider = MockProvider::new_with_models(
+        let provider = MockProvider::new_with_models_and_errors(
             "budget",
             vec![
                 model("wide", 131_072),
                 model("narrow", 8_192),
                 model("overridden", 4_096),
             ],
-            (0..8).map(|_| text_response("done")).collect(),
+            // Four fail-then-retry episodes: each spec's first send fails
+            // retryably with a zero-delay hint and the admitted retry
+            // succeeds.
+            (0..4)
+                .flat_map(|_| {
+                    vec![
+                        MockResponse::Error(ProviderError::RateLimited {
+                            retry_after_ms: Some(0),
+                        }),
+                        MockResponse::Events(text_response("done")),
+                    ]
+                })
+                .collect(),
         );
         let calls = provider.call_log_handle();
         let resolve_hits = Arc::new(AtomicUsize::new(0));
@@ -1659,13 +1688,37 @@ mod phase17 {
             let spec = format!("budget:{id}");
             let mut request = minimal_request(&spec);
             request.max_tokens = explicit_limit;
-            let prepared = collection.prepare_call(&spec, request).await.unwrap();
-            for _ in 0..2 {
-                let stream = prepared.start_attempt().unwrap();
-                drain_to_completion(stream).await.unwrap();
+            // Each episode is a real acquisition retry: the first send fails
+            // retryably (zero-delay hint) and the admitted retry reuses the
+            // same frozen compiled request, proving the frozen limit and
+            // model across attempts.
+            let prepared = collection
+                .prepare_call_with_policy(
+                    &spec,
+                    request,
+                    opi_ai::retry::AcquisitionPolicy::with_max_retries(1),
+                )
+                .await
+                .unwrap();
+            let mut first = prepared.start_attempt().unwrap();
+            while let Some(item) = first.next().await {
+                if let Err(error) = item {
+                    assert!(
+                        matches!(error, ProviderError::RateLimited { .. }),
+                        "expected the scripted rate-limit failure, got {error:?}"
+                    );
+                    break;
+                }
             }
+            assert!(
+                prepared.retry_admission().is_some(),
+                "the scripted failure with budget must admit the retry"
+            );
+            let stream = prepared.start_attempt().unwrap();
+            drain_to_completion(stream).await.unwrap();
             let calls = calls.lock().unwrap();
-            for call in &calls[calls.len() - 2..] {
+            let used = calls.len();
+            for call in &calls[used - 2..] {
                 assert_eq!(call.model, spec);
                 assert_eq!(call.max_tokens, Some(expected_limit));
             }
@@ -2243,25 +2296,48 @@ mod phase17 {
     }
 
     #[tokio::test]
-    async fn start_attempt_allows_sequential_retry_after_terminal_and_resolves_auth_once() {
+    async fn admitted_retry_after_failure_resolves_auth_once_and_releases_the_slot() {
         let prepared_hits = Arc::new(AtomicUsize::new(0));
         let legacy_hits = Arc::new(AtomicUsize::new(0));
         let resolve_hits = Arc::new(AtomicUsize::new(0));
-        let collection = collection_with_probe(
-            prepared_hits.clone(),
-            legacy_hits.clone(),
-            resolve_hits.clone(),
-        );
+        let mut collection = Models::new();
+        collection
+            .register_route(
+                Box::new(
+                    ProbeProvider::new(
+                        "alpha",
+                        "model-a",
+                        prepared_hits.clone(),
+                        legacy_hits.clone(),
+                    )
+                    .with_first_error(ProviderError::RateLimited {
+                        retry_after_ms: Some(0),
+                    }),
+                ),
+                Arc::new(CountingResolver {
+                    count: resolve_hits.clone(),
+                    secret: SecretString::from("sk-alpha-canary"),
+                }),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .expect("register dispatchable route");
         let prepared = collection
-            .prepare_call("alpha:model-a", minimal_request("alpha:model-a"))
+            .prepare_call_with_policy(
+                "alpha:model-a",
+                minimal_request("alpha:model-a"),
+                opi_ai::retry::AcquisitionPolicy::with_max_retries(1),
+            )
             .await
             .expect("prepare_call");
 
         let mut first = prepared.start_attempt().expect("first attempt");
         drain_to_terminal(&mut first).await;
-        let mut retry = prepared
-            .start_attempt()
-            .expect("sequential retry after terminal releases the active slot");
+        let admission = prepared
+            .retry_admission()
+            .expect("retryable failure with budget admits the next attempt");
+        assert_eq!(admission.retry_index, 1);
+        let mut retry = prepared.start_attempt().expect("admitted retry dispatches");
         drain_to_terminal(&mut retry).await;
 
         assert_eq!(
@@ -2272,7 +2348,7 @@ mod phase17 {
         assert_eq!(
             prepared_hits.load(Ordering::SeqCst),
             2,
-            "two prepared attempts"
+            "two prepared attempts: the failed one and the admitted retry"
         );
     }
 

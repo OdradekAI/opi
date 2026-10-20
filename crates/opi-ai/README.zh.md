@@ -77,7 +77,7 @@ OpenAI-compatible profile 加入。
 | `AuthResolver` / `ResolvedAuth` | 由 driver 按调用解析的鉴权契约；attempt 开始前会冻结一次准备结果。 |
 | `ApiKind` | crate 根枚举，标注 assistant 消息携带的后端家族（`Anthropic`、`OpenAi`、`Google`、`Mistral`）。 |
 | `HttpClient` | 共享 `reqwest` client，支持连接池和显式/环境变量代理。 |
-| `retry` | 重试配置、指数退避和 `Retry-After` 解析。 |
+| `retry` | 采集重试唯一 owner（`AcquisitionPolicy`、`RetryAdmission`、`AcquisitionSeal`），以及产品侧重试配置、指数退避和 `Retry-After` 解析。 |
 | `Usage` / `CumulativeUsage` | token 累计和费用辅助。 |
 | `test_support::MockProvider` | 供下游测试使用的确定性 mock provider。 |
 
@@ -105,6 +105,22 @@ cancellation token。attempt 必须串行：重叠 stream 返回
 credential-needed/revoked，则 prepared call 以 `CredentialTerminated` 关闭。凭据缺失与撤销分别成为显式且不可重试的
 `ProviderError::CredentialNeeded` 和 `ProviderError::CredentialRevoked`。
 按调用凭据仍不在范围内：`extra_headers` 会拒绝 Provider 管理的鉴权 header。
+
+### 采集重试唯一 owner（AIR-007）
+
+`prepare_call_with_policy` 为每个逻辑调用冻结一份 `AcquisitionPolicy`
+（`prepare_call` 保持默认零额外 send）。prepared call 是唯一的采集重试 owner：它对观测到的
+attempt 失败进行分类、维护每 payload 变体的 send 计数（`max_retries` 按变体计额外 send，
+普通 episode 至多 `1 + max_retries` 次）、计算 source-qualified 等待并封存状态。可重试失败且
+预算仍有余量时，`retry_admission()` 返回 1 起始的 `retry_index` 与 `delay_ms`（服务器 hint
+优先，受 `max_retry_delay_ms` 约束；否则 `min(500ms * 2^i, 8000ms)` 乘以 `[0.75, 1.0)`
+jitter 因子）。截止前 `start_attempt` 以类型化的 `ModelsError::RetryNotReady` 拒绝分发，
+封存后返回 `CallSealed`，attempt 流仍在活动时返回 `AttemptAlreadyActive`。封存状态具有粘性，
+可通过 `acquisition_seal()` 观测：首个交付的流事件即流式响应交接（`PostHandoff`；其后的
+body/EOF/parser 失败为终态）；已分发但未观测到结局即被 drop 的 attempt 记录为
+`UnknownDispatch`；预算耗尽记录为 `Exhausted`；未交付任何事件的终局记录为 `Finished`。
+因此成功不再重开 prepared call：重试按 admission 调度，新逻辑调用需重新 prepare。主循环消费方
+读取 admission、可取消地等待并再次进入 `start_attempt`；无法重置计数、跳过等待或在冻结预算之外叠加 send。
 
 `prepare_call` 在鉴权前把省略的 `Request.max_tokens` 解析为所选 registry model 的
 `max_output_tokens` 容量，包含 model override 和刷新后的 catalog。显式 request 上限

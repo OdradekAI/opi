@@ -57,6 +57,9 @@ struct RecordingRoute {
     id: String,
     models: Vec<ModelInfo>,
     calls: RouteCalls,
+    /// When set, the first dispatch yields this retryable error before any
+    /// event so tests can drive a fail-then-admitted-retry episode.
+    first_error: Option<opi_ai::provider::ProviderError>,
 }
 
 impl RecordingRoute {
@@ -65,7 +68,13 @@ impl RecordingRoute {
             id: id.into(),
             models,
             calls,
+            first_error: None,
         }
+    }
+
+    fn with_first_error(mut self, error: opi_ai::provider::ProviderError) -> Self {
+        self.first_error = Some(error);
+        self
     }
 }
 
@@ -80,12 +89,21 @@ impl Provider for RecordingRoute {
 
     fn stream_prepared(&self, request: Request, auth: ResolvedAuth) -> EventStream {
         let calls = Arc::clone(&self.calls);
+        let first_error = self.first_error.clone();
         Box::pin(futures_util::stream::once(async move {
+            let dispatch = calls.lock().unwrap().len();
             calls.lock().unwrap().push(RouteCall {
                 model: request.model,
                 auth_scheme: auth.scheme,
                 auth_secret: RedactedTestSecret(auth.secret.expose_secret().to_owned()),
             });
+            if dispatch == 0
+                && let Some(error) = first_error
+            {
+                // Retryable acquisition failure before any delivered event;
+                // later dispatches on the same logical call succeed.
+                return Err(error);
+            }
             Ok(AssistantStreamEvent::Error {
                 reason: opi_ai::stream::StopReason::Error,
                 message: opi_ai::message::AssistantMessage {
@@ -190,6 +208,12 @@ fn request(model: &str) -> Request {
 }
 
 fn mapped_fixture() -> (ApiMappedProvider, Arc<CountingResolver>, RouteLogs) {
+    mapped_fixture_with_first_responses_error(None)
+}
+
+fn mapped_fixture_with_first_responses_error(
+    mut first_error: Option<opi_ai::provider::ProviderError>,
+) -> (ApiMappedProvider, Arc<CountingResolver>, RouteLogs) {
     let models = vec![
         model("claude", WireApi::AnthropicMessages),
         model("chat", WireApi::OpenAiCompletions),
@@ -205,18 +229,18 @@ fn mapped_fixture() -> (ApiMappedProvider, Arc<CountingResolver>, RouteLogs) {
     ] {
         let calls = Arc::new(Mutex::new(Vec::new()));
         logs.insert(wire, Arc::clone(&calls));
-        routes.insert(
-            wire,
-            Box::new(RecordingRoute::new(
-                "acme",
-                models
-                    .iter()
-                    .filter(|model| model.wire_api == wire)
-                    .cloned()
-                    .collect(),
-                calls,
-            )),
-        );
+        let models_for_wire: Vec<ModelInfo> = models
+            .iter()
+            .filter(|model| model.wire_api == wire)
+            .cloned()
+            .collect();
+        let mut route = RecordingRoute::new("acme", models_for_wire, calls);
+        if wire == WireApi::OpenAiResponses
+            && let Some(error) = first_error.take()
+        {
+            route = route.with_first_error(error);
+        }
+        routes.insert(wire, Box::new(route));
     }
     (
         ApiMappedProvider::try_new("acme", models, routes).unwrap(),
@@ -259,7 +283,11 @@ async fn mapped_provider_dispatches_one_catalog_across_three_wires() {
 
 #[tokio::test]
 async fn mapped_provider_uses_collection_prepared_auth_once_across_retries() {
-    let (provider, auth, logs) = mapped_fixture();
+    let (provider, auth, logs) = mapped_fixture_with_first_responses_error(Some(
+        opi_ai::provider::ProviderError::RateLimited {
+            retry_after_ms: Some(0),
+        },
+    ));
     let mut collection = Models::new();
     collection
         .register_route(
@@ -270,28 +298,32 @@ async fn mapped_provider_uses_collection_prepared_auth_once_across_retries() {
         )
         .unwrap();
     let prepared = collection
-        .prepare_call("acme:responses", request("acme:responses"))
+        .prepare_call_with_policy(
+            "acme:responses",
+            request("acme:responses"),
+            opi_ai::retry::AcquisitionPolicy::with_max_retries(2),
+        )
         .await
         .unwrap();
 
-    for _ in 0..3 {
-        prepared
-            .start_attempt()
-            .unwrap()
-            .next()
-            .await
-            .unwrap()
-            .unwrap();
-    }
+    // The first send fails retryably before any delivered event; the one
+    // admitted retry then runs to the recorded terminal (whose first
+    // delivered event seals the call). Auth stays frozen from preparation
+    // and the retry reuses it.
+    let first = prepared.start_attempt().unwrap().next().await.unwrap();
+    assert!(first.is_err(), "scripted rate limit fails the first send");
+    assert!(prepared.retry_admission().is_some());
+    prepared
+        .start_attempt()
+        .unwrap()
+        .next()
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
     assert_eq!(
         logs[&WireApi::OpenAiResponses].lock().unwrap().as_slice(),
         [
-            RouteCall {
-                model: "acme:responses".to_owned(),
-                auth_scheme: AuthScheme::Bearer,
-                auth_secret: RedactedTestSecret("test-token".to_owned()),
-            },
             RouteCall {
                 model: "acme:responses".to_owned(),
                 auth_scheme: AuthScheme::Bearer,

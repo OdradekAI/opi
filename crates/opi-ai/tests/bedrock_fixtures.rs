@@ -1646,7 +1646,15 @@ fn prepared_bedrock_collection(base_url: String, resolutions: Arc<AtomicUsize>) 
     collection
 }
 
-async fn finish_failed_attempt(prepared: &opi_ai::PreparedProviderCall) {
+async fn finish_timeout_attempt(prepared: &opi_ai::PreparedProviderCall) {
+    let mut attempt = prepared.start_attempt().expect("start attempt");
+    assert!(
+        matches!(attempt.next().await, Some(Err(ProviderError::Timeout))),
+        "fixture should terminate the attempt with the configured 504"
+    );
+}
+
+async fn finish_provider_side_attempt(prepared: &opi_ai::PreparedProviderCall) {
     let mut attempt = prepared.start_attempt().expect("start attempt");
     assert!(
         matches!(
@@ -1660,20 +1668,33 @@ async fn finish_failed_attempt(prepared: &opi_ai::PreparedProviderCall) {
 #[tokio::test]
 async fn bedrock_resolves_once_per_logical_call_and_reuses_frozen_auth_for_retry() {
     let server = MockServer::start().await;
+    // 504 maps to the retryable Timeout classification so the acquisition
+    // owner admits the second send of the episode; the frozen SigV4
+    // credential must be reused, not re-resolved.
     Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(500).set_body_string("retryable fixture failure"))
+        .respond_with(ResponseTemplate::new(504).set_body_string("retryable fixture failure"))
         .mount(&server)
         .await;
     let resolutions = Arc::new(AtomicUsize::new(0));
     let collection = prepared_bedrock_collection(server.uri(), resolutions.clone());
     let spec = "bedrock:anthropic.claude-sonnet-4-20250514-v2:0";
     let prepared = collection
-        .prepare_call(spec, prepared_bedrock_request(CancellationToken::new()))
+        .prepare_call_with_policy(
+            spec,
+            prepared_bedrock_request(CancellationToken::new()),
+            opi_ai::retry::AcquisitionPolicy::with_max_retries(1),
+        )
         .await
         .expect("prepare Bedrock call");
 
-    finish_failed_attempt(&prepared).await;
-    finish_failed_attempt(&prepared).await;
+    finish_timeout_attempt(&prepared).await;
+    // Wait out the SDK-computed admission delay before the admitted retry.
+    let delay_ms = prepared
+        .retry_admission()
+        .expect("the timeout with budget admits the retry")
+        .delay_ms;
+    tokio::time::sleep(std::time::Duration::from_millis(delay_ms + 5)).await;
+    finish_timeout_attempt(&prepared).await;
 
     assert_eq!(
         resolutions.load(Ordering::SeqCst),
@@ -1709,7 +1730,7 @@ async fn separate_bedrock_logical_calls_resolve_fresh_credentials() {
             .prepare_call(spec, prepared_bedrock_request(CancellationToken::new()))
             .await
             .expect("prepare Bedrock call");
-        finish_failed_attempt(&prepared).await;
+        finish_provider_side_attempt(&prepared).await;
     }
 
     assert_eq!(resolutions.load(Ordering::SeqCst), 2);

@@ -164,6 +164,8 @@ pub(crate) fn terminal_outcome_for_error(error: &AgentError) -> crate::evidence:
         | AgentError::RequestRouteMismatch { .. }
         | AgentError::CredentialTerminated { .. }
         | AgentError::AttemptAlreadyActive
+        | AgentError::RetryNotReady { .. }
+        | AgentError::CallSealed { .. }
         | AgentError::ProviderProtocol { .. }
         | AgentError::InvalidNextTurnCandidate(_)
         | AgentError::InvalidToolRegistration(_) => crate::evidence::TerminalOutcome::Failed,
@@ -457,8 +459,12 @@ async fn run_operation(
         };
 
         let mut has_tools_pending = false;
-        let mut retry_attempt: u32 = 0;
-        let max_attempts = config.retry.as_ref().map(|r| r.max_attempts).unwrap_or(0);
+        // Product retry display counter: the 1-based index of the last retry
+        // the SDK acquisition owner admitted for this logical call. The SDK
+        // owns classification, counters, backoff and sealing; this loop only
+        // schedules the admitted attempts and keeps the product events.
+        let mut retry_admitted: u32 = 0;
+        let product_max_attempts = config.retry.as_ref().map(|r| r.max_attempts).unwrap_or(0);
 
         // Build the request ONCE per turn from the applied state's inference +
         // canonical model selection. Retries reuse the same prepared call, so
@@ -511,8 +517,17 @@ async fn run_operation(
         // validation, and auth resolution all happen here, once, before any
         // model-request dispatch. A failure returns a typed error without
         // selecting another provider, model, wire, or credential policy.
+        // The product retry count becomes the per-call acquisition policy:
+        // the SDK owner admits at most that many extra sends of the frozen
+        // request and computes the source-qualified wait between them.
+        let acquisition_policy =
+            opi_ai::retry::AcquisitionPolicy::with_max_retries(product_max_attempts);
         let prepared = match collection
-            .prepare_call(&state.model_selection.to_spec(), request)
+            .prepare_call_with_policy(
+                &state.model_selection.to_spec(),
+                request,
+                acquisition_policy,
+            )
             .await
         {
             Ok(prepared) => prepared,
@@ -608,12 +623,6 @@ async fn run_operation(
             };
             pending_steering.clear();
             pending_follow_up.clear();
-            // Track whether the provider has already delivered any stream item
-            // for this attempt. Once content has been emitted to the caller, a
-            // subsequent mid-stream retryable error must NOT trigger a retry:
-            // re-invoking the provider would emit a second Start plus duplicated
-            // content.
-            let mut stream_delivered_content = false;
 
             while let Some(item) = {
                 tokio::select! {
@@ -631,9 +640,10 @@ async fn run_operation(
             } {
                 match item {
                     Ok(event) => {
-                        // Any successfully delivered stream item means the
-                        // caller has observed output for this attempt.
-                        stream_delivered_content = true;
+                        // Any successfully delivered stream item is the
+                        // streaming-response handoff; the SDK acquisition
+                        // owner seals retry from here (observed through its
+                        // admission and sealed state below).
                         let terminal = process_stream_event(&event, &events);
                         if let Some(msg) = terminal.into_message() {
                             // Use the provider's complete terminal payload, which can
@@ -1100,28 +1110,21 @@ async fn run_operation(
                         }
                     }
                     Err(failure) => {
-                        // Task 20.2: stream failures arrive as one Err(CallFailure)
-                        // carrying the canonical partial and a typed, redacted
-                        // cause. Retry classification uses the cause exactly as
-                        // the pre-cutover transport-error path did.
+                        // Task 20.4: the SDK acquisition owner classifies the
+                        // observed failure, keeps the per-variant send
+                        // counters, computes the source-qualified wait and
+                        // seals post-handoff/unknown-dispatch states. This
+                        // loop only schedules the admitted attempts.
                         let cause = failure.cause().clone();
-                        if cause.is_retryable()
-                            && retry_attempt < max_attempts
-                            && !stream_delivered_content
-                            && let Some(ref rc) = config.retry
-                        {
-                            let retry_after_ms = match &cause {
-                                ProviderError::RateLimited { retry_after_ms } => *retry_after_ms,
-                                _ => None,
-                            };
-                            let delay_ms = rc.delay_for_attempt(retry_attempt, retry_after_ms);
-                            retry_attempt += 1;
+                        if let Some(admission) = prepared.retry_admission() {
+                            retry_admitted = admission.retry_index;
+                            let delay_ms = admission.delay_ms;
 
                             emit_public_event(
                                 &events,
                                 AgentEvent::AutoRetryStart {
-                                    attempt: retry_attempt,
-                                    max_attempts: rc.max_attempts,
+                                    attempt: retry_admitted,
+                                    max_attempts: product_max_attempts,
                                     delay_ms,
                                     error_message: cause.to_string(),
                                 },
@@ -1135,12 +1138,15 @@ async fn run_operation(
                                     "retrying after retryable provider error",
                                 )
                                 .details(json!({
-                                    "attempt": retry_attempt,
-                                    "max_attempts": rc.max_attempts,
+                                    "attempt": retry_admitted,
+                                    "max_attempts": product_max_attempts,
                                     "delay_ms": delay_ms,
                                 })),
                             );
 
+                            // Cancellable wait on the SDK-computed delay; the
+                            // acquisition owner enforces readiness at the
+                            // next start_attempt.
                             tokio::select! {
                                 biased;
                                 _ = cancel.cancelled() => {
@@ -1173,7 +1179,7 @@ async fn run_operation(
                                 crate::evidence::CallKind::Retry,
                                 crate::evidence::EvidencePayload::Structured(
                                     crate::evidence::RedactedValue::redacted(
-                                        json!({ "attempt": retry_attempt }),
+                                        json!({ "attempt": retry_admitted }),
                                         crate::diagnostic::RedactionMode::Summary,
                                     ),
                                 ),
@@ -1181,15 +1187,19 @@ async fn run_operation(
                             continue 'stream;
                         }
 
-                        if retry_attempt > 0 {
-                            let retry_suppressed_after_partial_output =
-                                cause.is_retryable() && stream_delivered_content;
+                        if retry_admitted > 0 {
+                            // The SDK sealed the episode: a post-handoff
+                            // failure suppressed the remaining budget, or the
+                            // budget is spent.
+                            let retry_suppressed_after_partial_output = prepared.acquisition_seal()
+                                == Some(opi_ai::retry::AcquisitionSeal::PostHandoff)
+                                && cause.is_retryable();
 
                             emit_public_event(
                                 &events,
                                 AgentEvent::AutoRetryEnd {
                                     success: false,
-                                    attempt: retry_attempt,
+                                    attempt: retry_admitted,
                                     final_error: Some(cause.to_string()),
                                 },
                             );
@@ -1203,8 +1213,8 @@ async fn run_operation(
                                         "retry suppressed after partial provider output",
                                     )
                                     .details(json!({
-                                        "attempts": retry_attempt,
-                                        "max_attempts": max_attempts,
+                                        "attempts": retry_admitted,
+                                        "max_attempts": product_max_attempts,
                                     })),
                                 );
                             } else {
@@ -1217,8 +1227,8 @@ async fn run_operation(
                                         "provider retries exhausted",
                                     )
                                     .details(json!({
-                                        "attempts": retry_attempt,
-                                        "max_attempts": max_attempts,
+                                        "attempts": retry_admitted,
+                                        "max_attempts": product_max_attempts,
                                     }))
                                     .action("reduce request frequency or check model availability"),
                                 );
@@ -1318,12 +1328,12 @@ async fn run_operation(
         // A retried turn that reached a terminal outcome emits the retry-success
         // event here (runs for every 'stream exit path, including the Done-event
         // break that skips the post-while-loop emission above).
-        if retry_attempt > 0 {
+        if retry_admitted > 0 {
             emit_public_event(
                 &events,
                 AgentEvent::AutoRetryEnd {
                     success: true,
-                    attempt: retry_attempt,
+                    attempt: retry_admitted,
                     final_error: None,
                 },
             );
@@ -1335,7 +1345,7 @@ async fn run_operation(
                     SOURCE_PROVIDER,
                     "provider request succeeded after retry",
                 )
-                .details(json!({ "attempts": retry_attempt })),
+                .details(json!({ "attempts": retry_admitted })),
             );
         }
 

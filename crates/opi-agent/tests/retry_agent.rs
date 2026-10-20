@@ -562,7 +562,10 @@ async fn cancellation_during_retry_backoff_aborts() {
 
     let retry = RetryConfig {
         max_attempts: 3,
-        initial_delay_ms: 2000, // long backoff so the cancel lands mid-sleep
+        // The SDK computes the no-hint family backoff (~375-500ms with
+        // jitter for the first retry); the long window still guarantees the
+        // cancel lands mid-sleep rather than racing setup.
+        initial_delay_ms: 2000,
         max_delay_ms: 5000,
     };
     let cancel = tokio_util::sync::CancellationToken::new();
@@ -765,4 +768,121 @@ mod prepared_call_auth {
             "provider stream must be invoked once per attempt"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// SDK acquisition owner cutover (task 20.4)
+// ---------------------------------------------------------------------------
+
+/// The SDK acquisition episode performs exactly 1+N sends: the loop schedules
+/// only admitted attempts, so nothing stacks on top of the SDK owner.
+#[tokio::test]
+async fn sdk_acquisition_episode_totals_exact_sends() {
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Error(ProviderError::RateLimited {
+                retry_after_ms: Some(1),
+            }),
+            MockResponse::Error(ProviderError::RateLimited {
+                retry_after_ms: Some(1),
+            }),
+            MockResponse::Events(test_support::text_response("recovered")),
+        ],
+    );
+    let call_log = provider.call_log_handle();
+
+    let (log, sink) = collect_events();
+    let result = agent_loop(
+        make_context(provider),
+        make_config(Some(RetryConfig {
+            max_attempts: 3,
+            ..fast_retry_config()
+        })),
+        &NoopHooks,
+        sink,
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .into_execution_result();
+
+    assert!(result.is_ok(), "two rate limits then success: {result:?}");
+    assert_eq!(
+        call_log.lock().unwrap().len(),
+        3,
+        "exactly 1+N sends (initial + two admitted retries)"
+    );
+    let events = log.lock().unwrap().clone();
+    let starts: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::AutoRetryStart { .. }))
+        .collect();
+    assert_eq!(starts.len(), 2, "one AutoRetryStart per admitted retry");
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::AutoRetryEnd { success: true, .. }))
+    );
+}
+
+/// A policy of one extra send stops the episode at 2 sends even though the
+/// failure stays retryable: the product loop cannot stack sends beyond the
+/// frozen per-call budget.
+#[tokio::test]
+async fn product_loop_cannot_stack_sends_beyond_the_frozen_budget() {
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Error(ProviderError::RateLimited {
+                retry_after_ms: Some(1),
+            }),
+            MockResponse::Error(ProviderError::RateLimited {
+                retry_after_ms: Some(1),
+            }),
+            // A third response exists only to prove the loop never consumes
+            // it: exceeding it would panic the mock.
+            MockResponse::Events(test_support::text_response("never sent")),
+        ],
+    );
+    let call_log = provider.call_log_handle();
+
+    let (log, sink) = collect_events();
+    let result = agent_loop(
+        make_context(provider),
+        make_config(Some(RetryConfig {
+            max_attempts: 1,
+            initial_delay_ms: 1,
+            max_delay_ms: 10,
+        })),
+        &NoopHooks,
+        sink,
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .into_execution_result();
+
+    assert!(result.is_err(), "the exhausted episode must fail");
+    match result.unwrap_err() {
+        AgentError::Provider(failure) => assert!(
+            matches!(failure.provider_error(), ProviderError::RateLimited { .. }),
+            "the second rate limit surfaces, got {failure}"
+        ),
+        other => panic!("expected Provider error, got {other:?}"),
+    }
+    assert_eq!(
+        call_log.lock().unwrap().len(),
+        2,
+        "exactly 1+N sends with max_attempts=1"
+    );
+    let events = log.lock().unwrap().clone();
+    let starts: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::AutoRetryStart { .. }))
+        .collect();
+    assert_eq!(starts.len(), 1, "only the first failure was admitted");
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::AutoRetryEnd { success: false, .. }))
+    );
 }

@@ -22,6 +22,28 @@
   `TlsKeyError`) while backend construction failures wrap `reqwest::Error`.
   All current callers migrate together with no behavior change on the
   non-TLS paths.
+- `opi-ai`: the prepared call is the one acquisition-retry owner (AIR-007 /
+  task 20.4). `Models::prepare_call_with_policy` freezes an `AcquisitionPolicy`
+  per logical call (`prepare_call` keeps zero extra sends); `start_attempt`
+  now refuses dispatch with new typed `ModelsError::RetryNotReady` before an
+  admitted retry's readiness deadline and with `ModelsError::CallSealed`
+  (`AcquisitionSeal`: `PostHandoff`/`UnknownDispatch`/`Exhausted`/`Finished`)
+  once the call is sealed. The first delivered stream event seals acquisition
+  retry, a dispatched attempt dropped without an observed outcome seals as an
+  unknown effect, and success no longer re-opens a prepared call — callers
+  that re-dispatched a finished call (including tests) must schedule the
+  admitted retries through `retry_admission()` or re-prepare. `opi-agent`
+  mirrors the refusals as `AgentError::RetryNotReady`/`AgentError::CallSealed`.
+- `opi-agent`: the agent loop no longer schedules acquisition retries itself.
+  The product retry count becomes the per-call SDK policy and the loop
+  schedules only the attempts the prepared call admits, waiting cancellably on
+  the SDK-computed delay (server hints first, otherwise the source family
+  backoff `min(500ms * 2^i, 8000ms)` with `[0.75, 1.0)` jitter instead of the
+  old product 1000ms/no-jitter/60s clamp). `AutoRetryStart`/`AutoRetryEnd`
+  events, retry diagnostics and Retry evidence records keep their shapes;
+  the summary `ProductCompactionHooks::prepare` new-call recovery and
+  `PreparationEvidence::run_provider_call` (single-send, zero extra sends)
+  are unchanged.
 - `opi-ai`: the shared `HttpClient` no longer auto-detects ambient
   `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables (RDF-22):
   proxy use is explicit-only through `ProxyConfig`, whose scoped `no_proxy`
@@ -94,6 +116,17 @@
 
 ### Added
 
+- `opi-ai`: the acquisition-retry owner surface (AIR-007, task 20.4):
+  `AcquisitionPolicy` (per-call extra sends, hint bound, deterministic test
+  jitter seed), `RetryAdmission` (1-based retry index plus the
+  source-qualified delay), `AcquisitionSeal` with `retry_admission()` and
+  `acquisition_seal()` on `PreparedProviderCall`, and
+  `Models::prepare_call_with_policy`. The `retry_backoff` suite proves the
+  episode through the real OpenAI Chat adapter: hint-honoring readiness with
+  typed zero-dispatch refusal of early starts, the family backoff range
+  without hints, exact `1 + max_retries` send caps with exhausted sealing,
+  frozen payload/credential reuse across attempts, post-handoff and
+  unknown-dispatch sealing, and cancellation forbidding further attempts.
 - `opi-ai`: explicit redirect and send policy on the public transport
   (RDF-22, task 20.12). `HttpClientBuilder::redirects(RedirectPolicy)`
   bounds lawful redirect sends (default `Limited(10)`, owned by `opi-ai`);

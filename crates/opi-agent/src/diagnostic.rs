@@ -973,6 +973,20 @@ impl From<&crate::loop_types::AgentError> for Diagnostic {
                 SOURCE_PROVIDER,
                 "a prepared provider attempt is already active",
             ),
+            AgentError::RetryNotReady { retry_ready_in_ms } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_REQUEST_FAILED,
+                SOURCE_PROVIDER,
+                "an admitted provider retry was started before its wait elapsed",
+            )
+            .details(serde_json::json!({ "retry_ready_in_ms": retry_ready_in_ms })),
+            AgentError::CallSealed { seal } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_REQUEST_FAILED,
+                SOURCE_PROVIDER,
+                "the prepared provider call no longer admits attempts",
+            )
+            .details(serde_json::json!({ "seal": seal.as_str() })),
             AgentError::ProviderProtocol { detail } => Diagnostic::new(
                 Severity::Error,
                 code::CODE_PROVIDER_STREAM_ERROR,
