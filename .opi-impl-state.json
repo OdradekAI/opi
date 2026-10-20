@@ -4529,7 +4529,7 @@
       "definition_of_done": "Separate source configuration checks, on-demand selected resolution and generation. Construction/register/staticlookup do zero env/store/network, injected source replaces ambient and explicit per-call key wins. check expired OAuth is configured without refresh, store/check error is typed not empty, selected source failure never falls back, logout ACKs only selected local deletion. Keep model/Auth/Telemetry Context separation and actual source I/O classification.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3"
       ],
@@ -4614,7 +4614,7 @@
         "opi_coding_agent::provider_factory"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": null,
       "baseline_dirty_files": [],
@@ -4680,10 +4680,62 @@
         "crates/opi-coding-agent/tests/*rpc*",
         "crates/opi-coding-agent/tests/*session*"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "9811cf0",
+      "evidence": {
+        "Opi-Task": "20.18",
+        "Opi-DoD-SHA256": "c33cf81a274b43b0555c058735d467953da2651d7d1d720110b568b2be3e72f6",
+        "Opi-Verification": "workspace; opi-impl-smoke.ps1 full PASSED on Windows native x86_64-msvc final tree (doc-check, fmt --all, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets 250 suites, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps) with AWS_LC_SYS_USE_SYSTEM=0 (log C:/Users/Luiz/AppData/Local/Temp/opi-win-full10.log); WSL x86_64-linux final tree also PASSED fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets (4130 passed over all suites), cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps, opi-doc-check.py and git diff --check; scenario command cargo test -p opi-ai --test auth_contracts green (18/18) on both hosts",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; exec.workflow runtime unavailable (node absent in environment), wf_ref=null",
+        "Opi-Acceptance": "P20-S18 delivered in commit 9811cf0: opi-ai gains the lazy injectable AuthContext seam (object-safe env/file_exists with typed AuthContextError, '~'-expanding AmbientAuthContext as the lazy default, set_auth_context replacing ambient entirely) and the four management results on Models - check_auth (on-demand configuration check through the injected context or the attached/probe-snapshot store; expired stored OAuth reports configured with no refresh and no write; backend-unavailable snapshots and store errors are typed ModelsError::CredentialStore, non-unicode env bytes typed ModelsError::AuthContext), get_available (registry filtered by the same check, optional provider filter), get_auth (explicit AuthResolutionOverrides::api_key wins with zero source access and new AuthProvenanceSource::Explicit; route resolver invoked exactly once - CredentialNeeded maps to unconfigured, any other failure propagates typed as ModelsError::AuthResolution with no fallback source consulted; descriptor paths resolve static keys, env via the context and stored credentials without refresh, leaving refresh to live route/flow owners) and logout (per-call credential store; ACK covers exactly the one local deletion, env untouched, other providers' entries retained, store failures typed). Construction, registration and static lookup perform zero env/store/network access - the env-reading AuthDescriptor::resolve/AuthStatus/Models::auth_status trio is deleted as the equal-or-weaker predecessor and ModelsError is non_exhaustive with the new typed variants. Context separation (model Context/transcript vs injectable AuthContext vs telemetry) is documented on the seam and the module. Production cutover: interactive /logout delegates to provider_factory::logout_stored_credential -> Models::logout (oauth::logout_credential removed with its tests migrated), --list-models enumerates through provider_factory::available_model_entries -> Models::get_available/check_auth, and openai-compatible profiles now register config-valid with their real EnvApiKey descriptor (listing_auth_available and resolved_auth_descriptor_for_profile deleted) so availability is decided on demand by the SDK check instead of a registration-time std::env read; doctor/availability policy for built-ins is unchanged. Boundaries kept open: OAuth login/refresh generation and the V-55 nine flows (20.22-20.31), AWS local/STS/SSO sources (20.19.x), ADC families (20.21.x), store-owned mutation ACK/rotation/barrier (20.22), strict/callback integration (20.11); no live provider calls, no keychain writes outside fakes, no user runtime data"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-20T21:50:00+08:00",
+          "attempt": 1,
+          "summary": "P20-S18 delivered in commit 9811cf0. opi-ai: new AuthContext/AuthContextError/AmbientAuthContext in auth.rs (object-safe sync source access; env returns Ok(None) for unset/whitespace-only, NotUnicode typed; file_exists expands ~ via HOME/USERPROFILE, missing/unexpandable => Ok(false), IO failures typed; never reads secrets to verify a source); Models gains auth_context + optional credential_store fields (set_auth_context/set_credential_store/auth_context accessors) and the four management methods with AuthCheck/AuthCheckKind/AuthResolutionOverrides and new ModelsError::{AuthContext, CredentialStore, AuthResolution} variants (non_exhaustive added). Descriptor/route checks: StaticApiKey presence, EnvApiKey via the context, Resolved label non-empty, StoreCredential via live store read (kind-aware, expired OAuth still configured, zero writes) falling back to the injected probe snapshot (Present configured / Absent unconfigured / BackendUnavailable typed error); route provenance sources Environment/OAuth/CredentialStore checked through the same owners without ever invoking the live resolver (checks are refresh-free and IO-bounded). get_auth precedence: explicit override (Explicit provenance, zero source reads) > route resolver (once; CredentialNeeded => None; other errors typed, no fallback - proven by a trap env var that must stay unread) > descriptor resolution (static value, env via context with Environment provenance, store credential without refresh, label-only => None). logout deletes exactly the selected local entry per call. Deleted AuthDescriptor::resolve + AuthStatus + Models::auth_status (env-reading sync predecessors with no remaining callers; changelog Breaking) and with_env_var in provider_collection (dead after test conversion). opi-coding-agent cutover: provider_factory::logout_stored_credential (Models::logout + typed diagnostics via the crate's redacted-summary path) replaces oauth::logout_credential for /logout (tests migrated to the SDK path); provider_factory::available_model_entries drives --list-models through Models::get_available; compatible profiles register config-valid with auth_descriptor_for_profile (EnvApiKey) so listing availability is the SDK check (listing_auth_available + resolved_auth_descriptor_for_profile deleted; provider_policy_is_centralized token list updated); loop_types maps the new management errors to redacted provider-config failures (non_exhaustive wildcard). Test impact: auth_contracts +10 tests (zero-IO construction/register/static lookup with a counting injected context; on-demand env check; injected-source-replaces-ambient incl. resolution provenance; explicit per-call key wins with zero reads; expired OAuth configured without refresh with read/write counts; typed store/check errors incl. probe-snapshot backend-unavailable; selected-source failure never falls back incl. resolver-call count and trap env; logout ACK only selected local deletion incl. typed failing store; get_available filtering; ambient file/env semantics under an env mutex; descriptor get_auth paths without refresh), provider_collection updated to the check contract (static/env/label/store-probe checks; whitespace env unconfigured; exhaustive-error audit extended to the new variants with the non_exhaustive catch-all), oauth_auth logout tests moved to the SDK helper, provider_factory/list_models tests updated to check_auth/get_available semantics (3 tests converted to async with ENV_MUTEX re-serialized; source-scan token list updated). Iteration notes disclosed: one recovery - a malformed scripted edit truncated interactive_auth.rs and the file was restored from git (single file, baseline-clean tree, no unrelated work affected) before redoing the cutover via the edit tool; first Windows run attempt needed a relaunch after a lost Start-Process (log empty), second ran clean.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.ps1 full on Windows native final tree (250 suites, log opi-win-full10.log). WSL x86_64-linux: fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets (4130 passed), workspace doc-tests, rustdoc -D warnings, doc-check, git diff --check all PASSED.",
+            "d0_scenarios": "Scenario command executed: cargo test -p opi-ai --test auth_contracts (18/18, includes the 10 new 20.18 tests) on both hosts; production cutover exercised by opi-coding-agent suites (interactive_auth, oauth_auth, provider_factory, list_models).",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7), no must-fix: DoD clause-by-clause mapping (separate checks vs on-demand resolution; zero env/store/network at construction/register/static lookup proven by a counting context; injected source replaces ambient including resolution; explicit per-call key wins with zero source access; expired OAuth configured without refresh proven by read=1/write=0; store/check errors typed incl. probe-snapshot BackendUnavailable and non-unicode env; selected-source failure never falls back proven by trap env var unread + resolver call count; logout ACK exactly the selected local deletion with other entries retained and env untouched; model/Auth/Telemetry context separation documented on the seam and reflected in types; actual source I/O classification via Environment/CredentialStore/OAuth/Explicit provenance). Production call sites real (provider_factory logout + available_model_entries + EnvApiKey registration; no substrate-only closure). Evidence footers truthful; deleted surfaces have equal-or-stronger replacements and changelog entries; test stewardship recorded below; no non-goal leak (no OAuth flow/store-transaction work, no AWS/ADC sources, no UI/startup policy, no live calls, no user runtime data).",
+            "d3_gap_checks": "PASS: git diff --check clean; no *.pem/*.key/*.p12 tracked; opi-doc-check.py PASS (workspace graph unchanged; no manifest/dependency changes); no new dependencies; ModelsError non_exhaustive migration covered by workspace-wide clippy/tests.",
+            "test_disposition": [
+              {
+                "subject": "20.18",
+                "action": "add",
+                "test": "crates/opi-ai/tests/auth_contracts.rs 10 new tests: construction_register_and_static_lookup_perform_zero_source_io, check_auth_reads_env_only_on_demand_through_the_injected_context, injected_source_replaces_ambient_for_checks_and_resolution, explicit_per_call_key_wins_over_every_source, check_reports_expired_oauth_configured_without_refresh, store_and_check_errors_are_typed_not_empty, selected_source_failure_never_falls_back, logout_acks_only_the_selected_local_deletion, get_available_lists_only_configured_providers, ambient_context_env_and_file_exists_semantics, get_auth_resolves_descriptor_sources_without_refresh",
+                "interface": "public opi_ai::{AuthContext, AmbientAuthContext, Models::check_auth/get_available/get_auth/logout, AuthResolutionOverrides}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.18",
+                "action": "update",
+                "test": "provider_collection descriptor-resolution suite -> on-demand check contract (auth_descriptor_static_key_checks_configured_and_missing, auth_descriptor_env_key_checks_through_the_context_on_demand, auth_descriptor_resolved_label_checks_configured, auth_descriptor_store_credential_checks_via_probe_snapshot); collection_error_match arm list extended to the new ModelsError variants; oauth_auth logout tests -> provider_factory::logout_stored_credential; provider_factory/list_models auth_status/registration-gate tests -> check_auth/get_available semantics",
+                "interface": "public Models management surface",
+                "replacement": "equal-or-stronger async checks through the injectable context/store",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.18",
+                "action": "delete",
+                "test": "AuthDescriptor::resolve/AuthStatus/Models::auth_status assertions (env-reading sync predecessor, no remaining callers) and oauth::logout_credential with its three tests (replaced by the SDK logout path tests)",
+                "interface": "removed public surface",
+                "replacement": "Models::check_auth / provider_factory::logout_stored_credential",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.18",
+                "action": "retain",
+                "test": "all existing auth_contracts resolver/OAuth/provenance tests, provider_collection collection/prepare_call suites, interactive_auth command tests, list_models output tests",
+                "interface": "unchanged public seams",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.19.1",
@@ -15993,6 +16045,16 @@
       "ran_at": "2026-10-20T20:05:00+08:00",
       "task_id": "20.15",
       "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-10-20T21:50:00+08:00",
+      "task_id": "20.18",
+      "criterion_id": "P20-S18"
     }
   ]
 }
