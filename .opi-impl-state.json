@@ -5665,7 +5665,7 @@
       "definition_of_done": "Own atomic credential+metadata updates/ACK and receipts at shared store, started rotation survives waiter cancellation while host runtime lives. Synchronous barrier creation captures same-store cutoff across Models, reports every pending/unknown/failure and late-write fence without starting auth or aborting rotation. Network15s scope excludes lock and ACK, no default wait/receipt caps. Serialize login/logout/replace/refresh, preserve host keychain/locking policy and unknown crash/runtime outcomes; migrate existing product bridge coherently.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.12",
@@ -5788,7 +5788,7 @@
         "opi_coding_agent::credential_store"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": null,
       "baseline_dirty_files": [],
@@ -5856,10 +5856,62 @@
         "crates/opi-coding-agent/tests/*rpc*",
         "crates/opi-coding-agent/tests/*session*"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "843cde1",
+      "evidence": {
+        "Opi-Task": "20.22",
+        "Opi-DoD-SHA256": "d5eff2c75dd2712e7d1fd5bdf5d382372345e713421d869f6386682beeb81d64",
+        "Opi-Verification": "workspace; opi-impl-smoke.ps1 full PASSED on Windows native x86_64-msvc final tree (doc-check, fmt --all, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets 250 suites, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps) with AWS_LC_SYS_USE_SYSTEM=0 (log C:/Users/Luiz/AppData/Local/Temp/opi-win-full11.log); WSL x86_64-linux final tree also PASSED fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets (5088 passed over all suites), cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps, opi-doc-check.py and git diff --check; behavioral suites green on both hosts (auth_contracts 27/27 incl. 9 new 20.22 tests, credential_store 43/43 incl. 3 new product tests)",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; exec.workflow runtime unavailable (node absent in environment), wf_ref=null",
+        "Opi-Acceptance": "P20-STORE delivered in commit 843cde1: opi-ai gains the mutation substrate (MutationQueue detached state machine with synchronous admission, store-wide generations, per-provider FIFO chains via predecessor-tail settling, per-provider revision bookkeeping, panic-to-Unknown with fixed non-secret details, unbounded receipts/reports by design) and the CredentialStore surface extension (modify: serialized read-modify-write with MutationSlotView re-reads, MutationDecision, non-secret MutationReceipt ACKs carrying Written/Deleted/Unchanged revisions, typed Failed{Store,Operation} and Unknown outcomes; mutation_barrier: synchronous same-store cutoff reported as pending/settled/failed/unknown plus fenced late writes, is_complete/wait without default deadlines, no auth started, no rotation aborted; MutationHandle wait-only cancellation; inert inline defaults for simple stores; queue-backed InMemoryCredentialStore reference implementation; CredentialStoreError Clone). Models::logout submits one serialized deletion and acknowledges exactly that receipt (new ModelsError::MutationOutcomeUnknown); Models::mutation_barrier shares the store cutoff across Models instances. Product bridge: KeychainCredentialStore splits KeychainCore and routes write/delete/modify through the embedded queue, each slot holding the cross-process fs4 lock across its full read-modify-write (marker+protected entry invariants and lock-free reads unchanged, host lock policy preserved); CredentialResolver::resolve_oauth (now Arc<dyn OAuthProvider>) runs rotation detached inside the slot: re-read under lock means a second waiter reuses the committed token with no second refresh, only the refresh HTTP exchange runs under the 15s network bound (lock waits and the ACK outside it), post-failure re-read under the slot reuses a concurrent writer's fresh token, timeout keeps its typed error, wrong-kind/no-entry report typed failures without writes, and a rotation queued behind a logout reports CredentialNeeded instead of resurrecting the replaced identity; /login persists through the serialized mutation before notify_success. Disclosed boundaries: receipts/revisions are an in-process view (cross-process serialization is the store's own fs4 lock; no cross-process receipt store), runtime death before settle leaves the handle unresolved by design (no claim the old token remains valid), late-write fencing reports rather than aborts, and the V-55 nine-flow login/refresh generation surface (20.23-20.31), AWS (20.19.x), ADC (20.21.x) and catalog publication races (20.32) stay open"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-20T23:40:00+08:00",
+          "attempt": 1,
+          "summary": "P20-STORE delivered in commit 843cde1. opi-ai new mutation module (~700 lines): MutationGeneration/CredentialRevision types, MutationDecision (Write/Keep/Delete), MutationError (Store/Operation, thiserror), non-secret MutationReceipt + MutationOutcome (Written/Deleted/Unchanged with revisions, Failed{Arc<MutationError>}, Unknown{fixed detail}), MutationSlotView re-read trait, HRTB CredentialMutationOp alias (for<'a> FnOnce(&'a (dyn MutationSlotView + 'a), Option<&'a Credential>) -> BoxAuthFuture<'a, _> so detached ops borrow the slot view), MutationSlot/MutationApplied for store glue, write_mutation/delete_mutation builders, MutationQueue (sync admission + predecessor-tail per-provider FIFO chains, detached tokio::spawn supervision with catch_unwind folding panics to Unknown, inline no-runtime fallback driving the slot inside the handle future, waker-settled waiting), MutationHandle (oneshot ACK receiver, drop = wait-only cancellation), MutationBarrier (sync cutoff capture, report/is_complete, deadline-less wait), BarrierReport/BarrierEntry with fenced late list, InMemoryCredentialStore (queue-backed reference impl with eager admission at method-call time), modify_inline/inert_barrier defaults. CredentialStore trait: +modify (default inline, unserialized - shared/persistent stores must override) +mutation_barrier (default inert); CredentialStoreError now Clone. models.rs: ModelsError::MutationOutcomeUnknown variant; logout via modify+receipt mapping; mutation_barrier() accessor. opi-coding-agent: KeychainCore split (Arc backend+service, marker/read/write/delete invariants + probe_metadata moved), LockCoordinator in Arc, queue embedded; write/delete/modify submit eager slots (lock acquired inside the slot across read-modify-write); resolve_oauth rewritten as detached store-owned rotation (Arc oauth param; slot re-read keeps single-flight, 15s network-only bound, post-failure re-read via view, receipt-driven result mapping with typed propagation and Unknown -> redacted AuthFailed); oauth.rs login_oauth persists via modify and ACKs before notify_success. Tests: auth_contracts +9 substrate tests (per-provider FIFO order with generations/revisions; started mutation survives waiter drop with gated release; second waiter Keep reuse with op-call count; barrier cutoff identical across two Models sharing the store; pending+Failed+Unknown+late in one report with cutoff assertion; Unknown receipt for one key survives another key's success; 300-mutation no-cap batch; network-bound-scoped-to-operation with slow predecessor slot; synchronous admission before any await); credential_store +3 product tests (started rotation survives waiter abort and commits refreshed token; logout serialized after gated rotation deletes the identity with no resurrection and later resolve reports CredentialNeeded; store barrier reports running rotation pending, fenced late write completing after release). Updated: protected-get read-count expectations 3/4 split between timeout (no post-failure reread) and provider-error (extra post-failure reread) paths; Arc<dyn OAuthProvider> call-site migration in oauth_auth/credential_store tests; tool_result_wire Phase-11 module baseline + mutation (deliberate). Two mid-run defects found and fixed via failing tests: revisions never persisted (entry().or_insert(0).saturating_add(1) computed but did not assign) and lazy admission (submit inside the returned boxed future's first poll) - both now eager/assigning with tests proving them. CHANGELOG Breaking (trait surface + Clone + logout/resolve_oauth signature + 15s scope) and Added entries; README.md/zh.md store-owned mutation sections. No spec/snapshot/ledger-frozen files touched; no manifest/dependency changes.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.ps1 full on Windows native final tree (250 suites, log opi-win-full11.log). WSL x86_64-linux: fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets (5088 passed), workspace doc-tests, rustdoc -D warnings, doc-check, git diff --check all PASSED.",
+            "d0_scenarios": "Behavioral suites: cargo test -p opi-ai --test auth_contracts (27/27) and cargo test -p opi-coding-agent --test credential_store (43/43) green on both hosts; oauth_wire_shape untouched (no CredentialStore impl there).",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7), no must-fix: DoD clause mapping (atomic credential+metadata updates+ACK/receipts at shared store -> modify slot applies marker+entry under held lock with non-secret receipts; started rotation survives waiter cancellation while host runtime lives -> detached tokio::spawn slots + rotation-abort product test with committed refreshed token; synchronous barrier captures same-store cutoff across Models -> store-level cutoff proven identical from two Models over one Arc store; reports every pending/unknown/failure and late-write fence without starting auth or aborting rotation -> report shape test incl. Unknown from caught panic and fenced late write completing; network 15s scope excludes lock and ACK, no default wait/receipt caps -> timeout wraps only oauth.refresh inside the slot, no caps anywhere with 300-mutation batch and deadline-less barrier wait; serialize login/logout/replace/refresh -> single per-provider FIFO queue routing write/delete/modify + login/logout migration; preserve host keychain/locking policy and unknown crash/runtime outcomes -> fs4 lock held across each slot with lock-free reads, panics settle Unknown, runtime-death non-guarantee documented; migrate existing product bridge coherently -> KeychainCore split + resolver/login migration with all 557 pre-existing coding-agent tests green). Production call sites real (resolver rotation, /login, /logout via Models). Evidence footers truthful; test stewardship recorded below; deleted surface has equal-or-stronger replacements (old lock-held rotation -> store-owned slot with same lock span). No non-goal leak (no OAuth flow generation, no AWS/ADC, no catalog, no live calls, no user runtime data).",
+            "d3_gap_checks": "PASS: git diff --check clean; no secrets in receipts (panic details fixed strings; ProviderError summaries already redacted); doc-check PASS (no manifest/dependency changes; workspace graph unchanged); MutationError non_exhaustive wildcard arms cover future variants at the two match sites; module baseline updated deliberately.",
+            "test_disposition": [
+              {
+                "subject": "20.22",
+                "action": "add",
+                "test": "auth_contracts: store_mutations_serialize_in_submission_order_per_provider, started_mutation_survives_waiter_cancellation, second_waiter_reuses_committed_result_without_second_operation, barrier_captures_cutoff_across_models_sharing_store, barrier_reports_pending_failure_unknown_and_late_writes, unknown_outcome_for_one_key_survives_another_keys_success, mutation_waits_and_receipts_have_no_default_caps, network_timeout_scope_excludes_lock_wait_and_ack, mutation_queue_admits_synchronously_before_any_await; credential_store: started_rotation_survives_waiter_cancellation_and_commits, logout_after_rotation_serializes_and_does_not_resurrect_the_identity, store_barrier_reports_rotation_pending_and_late_writes",
+                "interface": "public opi_ai::mutation::* / CredentialStore::{modify, mutation_barrier} / KeychainCredentialStore bridge",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.22",
+                "action": "update",
+                "test": "credential_store protected-get read counts (timeout path 3, provider-error path 4) for the new post-ACK re-read; resolve_oauth call sites to Arc<dyn OAuthProvider>; oauth_auth MockOAuthProvider bindings Arc-wrapped with post-assert observability; tool_result_wire Phase-11 module baseline +mutation",
+                "interface": "public CredentialResolver::resolve_oauth signature / module set",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.22",
+                "action": "delete",
+                "test": "none",
+                "interface": null,
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.22",
+                "action": "retain",
+                "test": "all existing credential_store lock/contention/envelope tests (fs4 serialization, contention timeout, lock-file invariants), oauth_auth resolver/rotation suite incl. double-refresh single-flight and cancellation/timeout shapes, auth_contracts 20.18 management battery",
+                "interface": "unchanged public seams",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.23",
@@ -16055,6 +16107,16 @@
       "ran_at": "2026-10-20T21:50:00+08:00",
       "task_id": "20.18",
       "criterion_id": "P20-S18"
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-10-20T23:40:00+08:00",
+      "task_id": "20.22",
+      "criterion_id": "P20-STORE"
     }
   ]
 }
