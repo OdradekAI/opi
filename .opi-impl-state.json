@@ -3987,7 +3987,7 @@
       "definition_of_done": "Implement the Agent-neutral owned client Connection/frame/message/PMD/Close/async IO at companions/ws/, outside product crates and the seven root workspace members, independently built/versioned and with no Opi dependency. Keep opi-ai/src/ws strictly source-qualified Upgrade/nonce/mask/headers/proxy-TLS bridge, negotiated parameters and exactly-once ordered tail; preserve strict101/Accept/Connection/Upgrade/singletons/extensions/subprotocol validation and no hidden auth discovery, sends, retry or fallback. Use unmodified libz-rs-sys0.6.8(std+rust-allocator/defaults-off), actual resolved zlib-rs0.6.8 and flate2 1.1.10(zlib-rs/defaults-off), no Ratchet/patch/namespace/third-party/pi-ws obligation. The neutral owner preserves RFC RSV/control/fragment/context takeover/UTF8/shortest length/high bit and checked usize/add with actual-received fallible bulk growth; no declared-payload speculative reserve, arbitrary size/block/total iteration cap or altered content. Prove pre-tail SyncPoint, exactly-once four-byte tail, Z_BLOCK/padding/BFINAL/ResetKeep history, ordinary reset and malformed/truncated/late-error handling. Window8 mapping needs exact source and actual independent wire-distance proof plus lawful true Upgrade negotiation, never config digits alone. Connection and necessary futures satisfy Send for Send IO with actual pending/context migration across OS/executor threads and a nonSync negative. Own/review the narrow unsafe init/reset/query/inflate/end/Send boundary, private stable Box/no Clone/raw handles/custom allocators/callbacks/no Sync, pointer rebinding and exactly-once end; pin public-hidden SyncPoint/ResetKeep and __internal-api source/allocator semantics. Reopen on hidden API, unsafe, feature or security changes rather than silently patching upstream or weakening acceptance. Complete explicit client Close through peer/local/simultaneous exchange, exact masked response/empty-code-reason, partial application bytes, bytes-written vs pending flush, write shutdown and peer transport EOF; caller absolute deadline only. Keep in-flight event backpressure without unbounded drain, typed abnormal EOF/timeout/protocol failure once then permanent EOF, no implicit response/mask/timer/reconnect. Reference-qualify postClose policy rather than adopting prototype strictness as an acceptance exemption. Borrowed future drop resumes owner-held IO/decode/UTF8/continuation; observed logical cancellation/abort/owner Drop destroys resources and suppresses late output, idle IO has a real cancellation wakeup. Bound per-poll input/output/inflate/UTF8/continuation work and demonstrate ready-task progress without message/iteration limits; disclose allocation/single backend call and synchronous outbound encoding nonpreemption. Replay the fixed frame/storage/cancellation and72413 PMD input corpus through current interfaces; distinguish wrong implementations with assertion counterexamples. Verify ordinary, flate2/default and flate2/zlib graphs; decoder remains direct Rust, C encoder native source/build/link audited. Preserve explicit unsupported allocator/export/gz/nightly/other feature unions and license/NOTICE. Run standalone companion fmt/clippy/all-target tests/doc plus strict Upgrade-to-Connection integration, and fresh outside-workspace ordinary/default/C-union consumers of real cargo package artifacts and distributable identities. The WS package_slice addendum owns these nonmember checks; root workspace full alone is insufficient. No research crate/checkout/TEMP path/root patch/library lock substitutes for distribution; missing artifacts or lawful socket capability stop and remain OPEN without bypass/publication. Keep original80/14 and new76x3 research identities separate; no new passing count is inferred. 20.16/17 consume this substrate for actual Codex/continuation/pool/cleanup, 20.57 retains full SDK package and20.58 native/MSRV; no20.11/20.34/20.57/fullV closure.",
       "definition_source": "draft-reviewed",
       "replaces": "owned Upgrade 与最终 Ratchet PMD／长度存储修正",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.12"
       ],
@@ -4071,7 +4071,7 @@
       "acceptance_scenarios": [],
       "production_call_sites": [],
       "substrate_only": true,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": null,
       "baseline_dirty_files": [],
@@ -4088,10 +4088,78 @@
         "scripts/pi-sdk-conformance/**",
         "companions/ws/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "a5a8366",
+      "evidence": {
+        "Opi-Task": "20.15",
+        "Opi-DoD-SHA256": "ffb4c303275c30faeb4792625a5e10c5383ed4a58061ee41a61bf7fbe97fdcd2",
+        "Opi-Verification": "workspace; opi-impl-smoke.ps1 full PASSED on Windows native x86_64-msvc final tree (doc-check, fmt --all, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets 250 suites, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps) with AWS_LC_SYS_USE_SYSTEM=0 (log C:/Users/Luiz/AppData/Local/Temp/opi-win-full9.log); ws package proof PASSED via package_slice.py --family ws --offline on Windows (scratch C:/Users/Luiz/AppData/Local/Temp/opi-ws-proof-4/evidence.json: companion fmt, clippy -D warnings and tests in ordinary/union-default/union-c-zlib graphs, companion doc, bridge-check cargo test -p opi-ai --test ws_upgrade 14/14, cargo package of the real artifact opi-ws-0.1.0.crate sha256 db716e31f997f773f9a5f0536e0ba35e764ed43b6ea36866c11a60445d36d0ba, fresh workspace-external consumers ordinary/union-default/union-c-zlib each 6/6 PASS with resolved libz-rs-sys 0.6.8 + zlib-rs 0.6.8 + flate2 1.1.10 (libz-sys 1.1.30 additionally in the C union), registry lock checksums, static libz.a native provenance and no dynamic libz); WSL x86_64-linux fmt, clippy --workspace --all-targets -D warnings, 242 suites, workspace doc-tests, rustdoc -D warnings, opi-doc-check.py, git diff --check and unittest test_package_slice (15) also PASSED",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; exec.workflow runtime unavailable (node absent in environment), wf_ref=null",
+        "Opi-Acceptance": "P20-WS named substrate slice delivered in commit a5a8366: the Agent-neutral opi-ws companion at companions/ws (standalone workspace-excluded package, no Opi dependency, publish=false) owns the exclusive Connection state machine, strict frames, PMD with exactly-once ordered tail, explicit Close and async IO with Send migration, nonSync negative, cancellation/backpressure/fairness and typed failures; the 76-function research battery replays with original identity and tests/boundary.rs replays the fixed 72,413-case deterministic PMD corpus against the recorded classification (exact outputs or SHA-256) with extractor provenance (oracle sha256 4629de7b1cc02382595ce445bfd989f244c5e08ff6bc7329c1f40a78d9294063); opi-ai/src/ws is strictly the source-qualified dynamic Upgrade bridge (request shape, pinned-entropy nonce/mask, strict typed 101 validation incl. exact Accept with the RFC 6455 known vector, token-wise Connection/Upgrade, singleton/duplicate rules, offered-only subprotocol/extension and exact PMD parameter negotiation with offered-ceiling enforcement) over the shared HttpClient with RedirectPolicy::None, and ws_upgrade.rs proves the strict Upgrade -> from-upgraded Connection integration including a bridged PMD/plain exchange and explicit Close through the real transport against a scripted raw-TCP peer. Boundaries kept open: real Codex Auto/continuation/fallback, P20-RESOURCES, product Accept/Close policy and real window8 negotiation (20.16/20.17), strict/callback integration (20.11), complete AIR/V closure (20.34), full SDK package (20.57), native/MSRV/platform including Linux/macOS graphs (20.58); opi-ws registry identity/publication deliberately not authorized"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-20T20:05:00+08:00",
+          "attempt": 1,
+          "summary": "P20-WS substrate delivered in commit a5a8366. companions/ws (opi-ws 0.1.0, edition 2024, MSRV 1.97, publish=false, standalone via root workspace exclude) ports the sealed owned-WS research sources verbatim (frame/pmd/io; crate rename only) with the three feature graphs default/union-default/union-c-zlib over unmodified libz-rs-sys =0.6.8 (std+rust-allocator, defaults off), zlib-rs 0.6.8 and flate2 =1.1.10 (zlib-rs, defaults off); the single audited unsafe boundary (boxed z_stream, inflateSyncPoint/inflateResetKeep doc(hidden) exports, exactly-once end, Send-without-Sync) is preserved with its inline justification, and LICENSE/NOTICE record upstream identities plus the rejected feature unions (allocator union compile_error, gz/nightly/export-symbols and other backend combos). Fixtures: memory-codec-cases/pmd-context/python-pmd committed with original bytes; boundary-seeds + boundary-expectations (217 KB) extracted from the sealed oracle-cases.jsonl by the committed extractor; tests/boundary.rs regenerates the deterministic corpus (exhaustive 0..=2 bytes, 13 seeds, every strict prefix, first/last-32 bit flips, fixed final streams = 72,413 cases, group counts asserted) and replays it (1,738 valid incl. SHA-256-compared outputs; ~1.0 s). A packaging constraint discovered empirically and honored: ANY manifest dependency (regular or optional, even dev with a version) on the unpublished companion breaks cargo package of opi-ai and offline consumer resolution, so the wiring is root workspace.dependencies (path+version, root-managed identity) plus a path-only dev-dependency in opi-ai that cargo strips from package output - the published dependency resolves by registry identity once authorized (20.57+); workspace membership exclusion keeps the companion independently buildable while remaining an in-tree dev target. opi-ai/src/ws adds the strict bridge (typed WsUpgradeError, fresh_nonce/fresh_mask from aws-lc-rs entropy, accept_token via the protocol-required SHA-1 with the RFC 6455 vector pinned, PmdOffer/NegotiatedPmd/Negotiation with driver_parameters for opi_ws::io::Driver, upgrade() requiring RedirectPolicy::None); tests/ws_upgrade.rs (14 tests) drives the real HttpClient against scripted raw-TCP peers: strict request-shape assertions, full bridged PMD and plain exchanges with masked sends and explicit Close completion, plus typed rejections (307 not followed, corrupted/duplicate/missing Accept, token-wise Connection without upgrade token, unsolicited Sec-WebSocket-Version, unoffered subprotocol, unsolicited/duplicate/unknown-parameter/ceiling-exceeding PMD negotiation, extensions never offered). tool_result_wire Phase-11 module baseline updated deliberately for the ws module. package_slice.py gains the ws companion family (standalone nonmember gates in all three graphs, root bridge-check, real artifact packaging, three consumer profiles with per-profile graph requirements, zlib native provenance via static libz.a and no dynamic libz) and consumer-ws runs a 6-check battery (rfc-hello decode, context-takeover with a fresh-decoder negative, duplex echo roundtrip, explicit Close with exact masked response, strict-rejection terminal absorption, cancelled-borrow resume). Proof iterations disclosed: scratch-1 failed (clippy flags after --), scratch-2 failed (stale consumer helper), scratch-3 failed (libz.a sits in out/lib), scratch-4 PASSED; WSL ad-hoc consumer run first deadlocked on a full duplex write and on an unlawful pre-response server shutdown - both fixed by joining write/receive and reading the response before shutdown (matching the companion's own close tests). Honest boundaries: the 76x3=228 research execution identity and the 80/14 historical identities are NOT claimed as new product runs (the product replay is the committed 78-function battery re-executed in-gate, 76 retained + 2 boundary additions); the window8 8->9 mapping remains fixed-backend source-qualified without new wire negotiation; no crate publication, no live provider/socket beyond lawful 127.0.0.1 loopback, no MSRV/platform claims beyond Windows+WSL gates.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.ps1 full on Windows native final tree (250 suites incl. ws_upgrade 14/14 and tool_result_wire baseline; log opi-win-full9.log). WSL x86_64-linux: fmt, clippy --workspace --all-targets -D warnings, 242 suites, workspace doc-tests, rustdoc -D warnings, doc-check, git diff --check all PASSED (one flaky credential_store lock-contention failure under first parallel run passed on rerun and in isolation).",
+            "d0_scenarios": "Scenario commands executed: cargo test -p opi-ai --test ws_upgrade (14) and the companion batteries in all three graphs inside the ws package proof; boundary corpus replay in every companion test run (72,413 cases, 1,738 valid exact/digest-checked).",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7), no must-fix: DoD mapped clause-by-clause (companion placement outside product crates and root membership; pinned unmodified compression graph with rejected-union documentation; RFC storage/length/RSV/UTF-8 rules with typed fallible growth; SyncPoint/exactly-once tail/Z_BLOCK/padding/BFINAL/ResetKeep/ordinary reset and malformed/truncated/late-error handling proven by the ported battery and corpus; Send migration across OS threads, nonSync negative and the unsafe audit retained; explicit Close with all six states, masked exact response, partial-write retention, bytes-written vs flush, shutdown+EOF completion and caller-only deadlines; backpressure, once-then-terminal typed failures, borrowed-drop resume and owner-drop destruction with idle wakeup; per-poll bounded quanta with 16 MiB and cancellation counterexamples replayed; corpus, frame/storage and cross-message dictionary controls replayed with distinguishing power; three-graph verification with direct-Rust decoder and C-union native provenance; standalone companion gates + bridge + real-artifact consumers). Tests observe peer/server-side state; production call sites exercised (upgrade bridge through real HttpClient; driver consumed by the integration test); evidence footers truthful incl. the packaging constraint and proof-iteration disclosures; no non-goal leak (no Bedrock/Codex/provider policy touched, aws-lc graph unchanged); workspace dependency table gains only the root-managed neutral declaration; test stewardship recorded below.",
+            "d3_gap_checks": "PASS: git diff --check clean; no *.pem/*.key/*.p12 tracked; opi-doc-check.py PASS (workspace graph unchanged: the companion is not a member and the path-only dev edge is not an internal dep); test_package_slice 15 unittests PASS.",
+            "test_disposition": [
+              {
+                "subject": "20.15",
+                "action": "add",
+                "test": "companions/ws/tests/boundary.rs (fixed_corpus_replays_recorded_classification_and_outputs: 72,413 regenerated cases vs recorded classification/outputs; digest_helper_matches_reference_vector)",
+                "interface": "public opi_ws::pmd::Decoder (fixed-corpus replay)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.15",
+                "action": "add",
+                "test": "crates/opi-ai/tests/ws_upgrade.rs (14 tests: RFC 6455 accept vector, entropy freshness, strict request shape, bridged PMD and plain exchanges with explicit Close, 307 non-follow, corrupted/duplicate/missing Accept, token-wise Connection, unsolicited version, unoffered subprotocol, strict PMD parameter rejections, never-offered extensions, redirect-policy refusal)",
+                "interface": "public opi_ai::ws::upgrade + Negotiation::driver_parameters -> opi_ws::io::Driver",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.15",
+                "action": "add",
+                "test": "scripts/pi-sdk-conformance/consumer-ws battery (6 checks x ordinary/union-default/union-c-zlib) + package_slice.py ws family gates (companion fmt/clippy x3/test x3/doc, bridge-check) + WsFamilyTests (5 unittests)",
+                "interface": "public packaged opi-ws artifact and the package-slice harness",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.15",
+                "action": "retain",
+                "test": "the ported 76-function research battery (frame 14, pmd 10, pmd_async 10, pmd_red 3, replay 3, io 20, close 14, gaps 2 in-suite incl. lib unittests) with original identity and fixtures, re-executed in all three graphs in-gate and in-proof",
+                "interface": "public opi_ws frame/pmd/io",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.15",
+                "action": "update",
+                "test": "crates/opi-ai/tests/tool_result_wire.rs Phase-11 public module baseline gains ws (deliberate later-phase addition)",
+                "interface": "public module surface guard",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.15",
+                "action": "none",
+                "test": "no product test deleted; Ratchet-era research assets untouched under docs/research with original identities",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.16",
@@ -15914,6 +15982,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-20T15:41:11+08:00",
       "task_id": "20.4",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-10-20T20:05:00+08:00",
+      "task_id": "20.15",
       "criterion_id": null
     }
   ]
