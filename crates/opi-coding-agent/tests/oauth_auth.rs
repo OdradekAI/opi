@@ -793,9 +793,9 @@ async fn resolve_oauth_present_and_fresh_returns_bearer_without_refresh() {
         .await
         .unwrap();
     let resolver = resolver_with(store);
-    let oauth = MockOAuthProvider::succeeding();
+    let oauth = Arc::new(MockOAuthProvider::succeeding());
     let resolved = resolver
-        .resolve_oauth(PROVIDER, &oauth)
+        .resolve_oauth(PROVIDER, oauth.clone())
         .await
         .expect("fresh resolve");
     assert_eq!(resolved.scheme, AuthScheme::Bearer);
@@ -807,8 +807,8 @@ async fn resolve_oauth_present_and_fresh_returns_bearer_without_refresh() {
 async fn resolve_oauth_absent_yields_credential_needed() {
     let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
     let resolver = resolver_with(store);
-    let oauth = MockOAuthProvider::succeeding();
-    match resolver.resolve_oauth(PROVIDER, &oauth).await {
+    let oauth = Arc::new(MockOAuthProvider::succeeding());
+    match resolver.resolve_oauth(PROVIDER, oauth.clone()).await {
         Err(AiProviderError::CredentialNeeded { provider_id }) => assert_eq!(provider_id, PROVIDER),
         other => panic!("expected CredentialNeeded, got {other:?}"),
     }
@@ -826,9 +826,9 @@ async fn resolve_oauth_near_expiry_refreshes_and_writes_new_token() {
         .await
         .unwrap();
     let resolver = resolver_with(store.clone());
-    let oauth = MockOAuthProvider::succeeding();
+    let oauth = Arc::new(MockOAuthProvider::succeeding());
     let resolved = resolver
-        .resolve_oauth(PROVIDER, &oauth)
+        .resolve_oauth(PROVIDER, oauth.clone())
         .await
         .expect("refresh resolve");
     assert_eq!(resolved.secret.expose_secret(), REFRESHED_ACCESS);
@@ -857,15 +857,16 @@ async fn resolve_oauth_refresh_failure_rereads_fresh_token_without_partial_write
     let resolver = resolver_with(store.clone());
     // Refresh fails, but a concurrent writer (simulated via the cloned backend)
     // has already written a fresh token to the shared store.
-    let mut oauth = MockOAuthProvider::succeeding();
-    oauth.fail = true;
-    oauth.backend = Some(backend);
-    oauth.inject_fresh = Mutex::new(Some(oauth_credential(
+    let mut oauth_mock = MockOAuthProvider::succeeding();
+    oauth_mock.fail = true;
+    oauth_mock.backend = Some(backend);
+    oauth_mock.inject_fresh = Mutex::new(Some(oauth_credential(
         REFRESHED_ACCESS,
         Some(fresh_expiry()),
     )));
+    let oauth = Arc::new(oauth_mock);
     let resolved = resolver
-        .resolve_oauth(PROVIDER, &oauth)
+        .resolve_oauth(PROVIDER, oauth.clone())
         .await
         .expect("reread resolve");
     assert_eq!(resolved.secret.expose_secret(), REFRESHED_ACCESS);
@@ -891,9 +892,12 @@ async fn resolve_oauth_refresh_failure_and_still_expired_returns_error() {
         .await
         .unwrap();
     let resolver = resolver_with(store);
-    let mut oauth = MockOAuthProvider::succeeding();
-    oauth.fail = true;
-    match resolver.resolve_oauth(PROVIDER, &oauth).await {
+    let oauth = Arc::new({
+        let mut mock = MockOAuthProvider::succeeding();
+        mock.fail = true;
+        mock
+    });
+    match resolver.resolve_oauth(PROVIDER, oauth.clone()).await {
         Err(AiProviderError::Network(_)) => {}
         other => panic!("expected Network refresh error, got {other:?}"),
     }
@@ -3484,7 +3488,7 @@ async fn openai_codex_resolver_propagates_account_id_without_secret_logging() {
     let registry = OAuthProviderRegistry::registry_with_builtins();
     let oauth = registry.lookup("openai-codex").unwrap();
     let resolved = resolver
-        .resolve_oauth("openai-codex", &*oauth)
+        .resolve_oauth("openai-codex", oauth.clone())
         .await
         .expect("resolved Codex credential");
     assert_eq!(resolved.account_id.as_deref(), Some("account-resolved"));
@@ -4583,11 +4587,11 @@ async fn concurrent_near_expiry_resolves_coalesce_to_single_refresh() {
 
     let r1 = resolver.clone();
     let m1 = mock.clone();
-    let h1 = tokio::spawn(async move { r1.resolve_oauth(PROVIDER, &*m1).await });
+    let h1 = tokio::spawn(async move { r1.resolve_oauth(PROVIDER, m1).await });
 
     let r2 = resolver.clone();
     let m2 = mock.clone();
-    let h2 = tokio::spawn(async move { r2.resolve_oauth(PROVIDER, &*m2).await });
+    let h2 = tokio::spawn(async move { r2.resolve_oauth(PROVIDER, m2).await });
 
     let (a, b) = tokio::join!(h1, h2);
     let a = a.unwrap().unwrap();
@@ -5448,7 +5452,7 @@ async fn refresh_timeout_releases_lock_and_preserves_prior_credential() {
     };
 
     let error = resolver
-        .resolve_oauth(PROVIDER, &oauth)
+        .resolve_oauth(PROVIDER, Arc::new(oauth))
         .await
         .expect_err("hung refresh must be bounded");
     assert!(matches!(error, AiProviderError::AuthFailed(_)), "{error:?}");

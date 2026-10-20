@@ -2542,9 +2542,39 @@ pub async fn login_oauth(
     let deferred_presenter = DeferredSuccessPresenter { inner: presenter };
     let cred = oauth.login(&deferred_presenter).await?;
     let stored: opi_ai::credential::Credential = cred.into();
-    if let Err(error) = store.write(provider_id, &stored).await {
-        presenter.notify_failure("credential store write failed");
-        return Err(store_error_to_provider(error));
+    // Persist through the store-owned serialized mutation queue so login
+    // serializes with logout/replace/refresh on the same store; the awaited
+    // receipt is the ACK before success is reported.
+    let receipt = match store
+        .modify(provider_id, opi_ai::write_mutation(stored))
+        .await
+    {
+        Ok(receipt) => receipt,
+        Err(error) => {
+            presenter.notify_failure("credential store write failed");
+            return Err(store_error_to_provider(error));
+        }
+    };
+    match receipt.outcome {
+        opi_ai::mutation::MutationOutcome::Written { .. } => {}
+        opi_ai::mutation::MutationOutcome::Failed {
+            error: ref mutation_error,
+        } => match &**mutation_error {
+            opi_ai::mutation::MutationError::Store(store_error) => {
+                presenter.notify_failure("credential store write failed");
+                return Err(store_error_to_provider(store_error.clone()));
+            }
+            _ => {
+                presenter.notify_failure("credential store write failed");
+                return Err(provider_config_error("credential mutation failed"));
+            }
+        },
+        _ => {
+            presenter.notify_failure("credential store write outcome unknown");
+            return Err(provider_config_error(
+                "credential store write outcome unknown",
+            ));
+        }
     }
     presenter.notify_success();
     Ok(())

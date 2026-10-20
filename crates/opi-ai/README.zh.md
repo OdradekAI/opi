@@ -128,6 +128,28 @@ resolver 的 `CredentialNeeded` 报告未配置，其他被选来源失败则以
 不动其他 provider 的条目。管理路径中的存储 OAuth 凭据解析不刷新；刷新
 属于 live route/flow owner。
 
+### Store 拥有的 mutation、ACK 与 mutation barrier（AIR-063 / P20-STORE）
+
+凭据 mutation（login、logout、replace、refresh）由共享 store 拥有，
+而不是提交它的 waiter。`CredentialStore` 新增 `modify` 与
+`mutation_barrier`：`modify` 提交一个串行化的 read-modify-write
+（操作看到当前凭据，并拿到用于失败后重读的 slot view），结算为非机密
+的 `MutationReceipt`——即 ACK——记录带 per-provider revision 的已应用
+写入、类型化失败与 unknown 丢失窗口。丢弃等待绝不会取消已开始的
+mutation：宿主 runtime 存活期间它照常完成，第二个 waiter 重读已提交
+的新 token 而不重复操作，per-provider FIFO 将 login/logout/replace/
+refresh 在同一 store 上串行化（生产 keychain 桥在每个 slot 全程持有
+跨进程锁，保留宿主锁策略）。
+
+`mutation_barrier` 同步捕获 store 级 cutoff——共享同一 store 的所有
+`Models` 实例看到相同 generation。其 report 列出全部被捕获的
+mutation（pending、settled、failed、unknown），并将 cutoff 之后的
+新提交作为 fenced late write 报告；它从不触发 auth，也从不中止进行中的
+rotation。没有默认 wait/receipt/admission 上限：调用方自带的界限只停止
+等待。参考实现 `InMemoryCredentialStore` 内嵌该队列；无共享状态的
+store 继承 inline 默认实现。revision 与 receipt 是进程内视图；
+跨进程串行化仍由 store 自身的锁策略负责。
+
 ### 采集重试唯一 owner（AIR-007）
 
 `prepare_call_with_policy` 为每个逻辑调用冻结一份 `AcquisitionPolicy`

@@ -119,7 +119,42 @@
   `Models::auth_status` (which read `std::env` directly) are removed in favor
   of the on-demand management results below; `ModelsError` is now
   `#[non_exhaustive]`.
+- `opi-ai`: the credential-store mutation surface moved from IO-free
+  primitives to store-owned serialized mutations (P20-STORE / task 20.22).
+  `CredentialStore` gains `modify` and `mutation_barrier` (default
+  implementations; stores with shared or persistent state must override);
+  `CredentialStoreError` is now `Clone`; `Models::logout` submits one
+  serialized deletion mutation and acknowledges its receipt (typed
+  `ModelsError::MutationOutcomeUnknown` for lost windows) instead of
+  calling `delete` directly; `CredentialResolver::resolve_oauth` takes
+  `Arc<dyn OAuthProvider>` (the rotation runs detached inside the store)
+  and its refresh network bound is now 15s, scoped to the HTTP exchange
+  only — lock waits and the ACK are outside it.
 ### Added
+- `opi-ai`: store-owned credential mutations with ACKs and a synchronous
+  mutation barrier (P20-STORE / task 20.22). New `mutation` module:
+  `CredentialStore::modify` submits a serialized read-modify-write whose
+  receipt (`MutationReceipt`, non-secret) records the applied
+  write/delete with per-provider revisions, typed failures
+  (`MutationError::{Store, Operation}`), and unknown loss windows; a
+  started mutation survives waiter cancellation while the host runtime
+  lives, per-provider FIFO serializes login/logout/replace/refresh, and
+  there are no default wait, receipt, or admission caps.
+  `CredentialStore::mutation_barrier` captures the store-wide cutoff
+  synchronously (shared across every `Models` over the same store) and
+  reports pending/settled/failed/unknown mutations plus fenced late
+  writes without starting auth or aborting rotations; `Models::
+  mutation_barrier()` exposes it. New queue-backed
+  `InMemoryCredentialStore` reference implementation. The production
+  keychain bridge (`opi-coding-agent`) routes `write`/`delete`/`modify`
+  through the queue, holds its cross-process `fs4` lock across each full
+  slot (host locking policy preserved), and runs OAuth rotation as a
+  detached store-owned mutation: a second waiter re-reads the committed
+  token instead of double-refreshing, a post-failure re-read under the
+  slot reuses a concurrent writer's fresh token, and a rotation queued
+  behind a logout reports `CredentialNeeded` instead of resurrecting the
+  replaced identity. `/login` persists through the serialized mutation
+  before acknowledging success.
 - `opi-ai`: lazy AuthContext and auth management results (AIR-063/AIR-066 /
   task 20.18). `AuthContext` is the injectable object-safe source-access seam
   (`env`/`file_exists`) with `AmbientAuthContext` as the lazy default;

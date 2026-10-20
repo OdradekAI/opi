@@ -1107,7 +1107,7 @@ async fn api_key_marker_is_not_oauth_and_resolve_oauth_returns_safe_wrong_kind()
 
     assert!(!resolver.has_oauth_credential("anthropic").await.unwrap());
     let error = resolver
-        .resolve_oauth("anthropic", &UnusedOAuthProvider)
+        .resolve_oauth("anthropic", Arc::new(UnusedOAuthProvider))
         .await
         .expect_err("API key must return wrong-kind, not CredentialNeeded");
     assert!(matches!(error, ProviderError::Config(_)), "{error:?}");
@@ -1218,7 +1218,7 @@ async fn oauth_refresh_serializes_against_public_write_on_the_same_lock_path() {
     };
     let refresh = tokio::spawn(async move {
         resolver
-            .resolve_oauth("scripted-oauth", &refresh_provider)
+            .resolve_oauth("scripted-oauth", Arc::new(refresh_provider))
             .await
     });
     started.notified().await;
@@ -1354,7 +1354,7 @@ async fn refresh_timeout_rereads_and_returns_newer_scripted_credential() {
     );
 
     let resolved = resolver
-        .resolve_oauth("scripted-oauth", &HangingOAuthProvider)
+        .resolve_oauth("scripted-oauth", Arc::new(HangingOAuthProvider))
         .await
         .expect("post-timeout reread returns the newer credential");
     assert_eq!(resolved.secret.expose_secret(), "newer-access");
@@ -1397,7 +1397,7 @@ async fn refresh_timeout_survives_failed_post_failure_reread() {
         resolver_with_failing_post_refresh_reread(Duration::from_millis(20));
 
     let error = resolver
-        .resolve_oauth("scripted-oauth", &HangingOAuthProvider)
+        .resolve_oauth("scripted-oauth", Arc::new(HangingOAuthProvider))
         .await
         .expect_err("timeout remains the primary failure");
     assert!(
@@ -1407,6 +1407,9 @@ async fn refresh_timeout_survives_failed_post_failure_reread() {
         ),
         "post-failure reread must not replace the typed timeout: {error:?}"
     );
+    // Three protected reads since task 20.22: fast-path read, locked slot
+    // re-read, and the waiter's post-ACK re-read. The timeout arm keeps the
+    // typed timeout error without a post-failure re-read.
     assert_eq!(protected_get_calls.load(Ordering::SeqCst), 3);
 }
 
@@ -1416,7 +1419,7 @@ async fn provider_refresh_error_survives_failed_post_failure_reread() {
         resolver_with_failing_post_refresh_reread(Duration::from_secs(1));
 
     let error = resolver
-        .resolve_oauth("scripted-oauth", &FailingRefreshProvider)
+        .resolve_oauth("scripted-oauth", Arc::new(FailingRefreshProvider))
         .await
         .expect_err("provider refresh failure remains primary");
     assert!(
@@ -1426,7 +1429,8 @@ async fn provider_refresh_error_survives_failed_post_failure_reread() {
         ),
         "post-failure reread must not replace the provider error: {error:?}"
     );
-    assert_eq!(protected_get_calls.load(Ordering::SeqCst), 3);
+    // Same four-read shape as the timeout variant (task 20.22).
+    assert_eq!(protected_get_calls.load(Ordering::SeqCst), 4);
 }
 
 #[tokio::test]
@@ -1815,4 +1819,224 @@ async fn keychain_store_reaches_production_construction() {
     let lock_contents =
         std::fs::read_to_string(dir.path().join("credential.lock")).unwrap_or_default();
     assert!(!lock_contents.contains(API_KEY));
+}
+
+// ---------------------------------------------------------------------------
+// P20-STORE (task 20.22) — store-owned rotation, serialization, and barrier
+// on the production keychain bridge.
+// ---------------------------------------------------------------------------
+
+use opi_ai::mutation::{BarrierEntry, MutationOutcome};
+
+fn near_expiry_oauth() -> Credential {
+    Credential::OAuthToken {
+        access: secret("stale-access"),
+        refresh: secret("stale-refresh"),
+        expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::seconds(60)),
+        base_url: None,
+        account_id: None,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn started_rotation_survives_waiter_cancellation_and_commits() {
+    let dir = TempDir::new().unwrap();
+    let store = Arc::new(KeychainCredentialStore::with_lock_timeout(
+        Box::new(FakeKeyringBackend::new()),
+        dir.path().to_path_buf(),
+        Duration::from_secs(2),
+    ));
+    store
+        .write("scripted-oauth", &near_expiry_oauth())
+        .await
+        .unwrap();
+    let resolver = CredentialResolver::with_refresh_timeout(
+        store.clone(),
+        Arc::new(|_: &str| None),
+        Duration::from_secs(10),
+    );
+    let provider = BlockingRefreshProvider {
+        started: Arc::new(tokio::sync::Notify::new()),
+        release: Arc::new(tokio::sync::Notify::new()),
+    };
+    let started = provider.started.clone();
+    let release = provider.release.clone();
+
+    let resolver = Arc::new(resolver);
+    let rotation = {
+        let resolver = resolver.clone();
+        let oauth: Arc<dyn OAuthProvider> = Arc::new(provider);
+        tokio::spawn(async move {
+            resolver
+                .resolve_oauth("scripted-oauth", oauth)
+                .await
+                .map(|_| ())
+        })
+    };
+    started.notified().await;
+
+    // Cancel the waiter while the refresh exchange is blocked: only the wait
+    // stops; the store-owned rotation keeps running.
+    rotation.abort();
+    let _ = rotation.await;
+
+    // Releasing the gate lets the detached rotation commit atomically even
+    // though no waiter remains.
+    release.notify_one();
+    let barrier = store.mutation_barrier();
+    let report = barrier.wait().await;
+    assert!(report.is_complete());
+    assert!(
+        report.captured.iter().any(|entry| matches!(
+            entry,
+            BarrierEntry::Settled(receipt)
+                if receipt.provider_id == "scripted-oauth"
+                    && matches!(receipt.outcome, MutationOutcome::Written { .. })
+        )),
+        "rotation must commit after waiter cancellation: {report:?}"
+    );
+    let committed = store.read("scripted-oauth").await.unwrap().unwrap();
+    match committed {
+        Credential::OAuthToken { access, .. } => {
+            assert_eq!(access.expose_secret(), "refreshed-access");
+        }
+        other => panic!("expected committed OAuth token, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn logout_after_rotation_serializes_and_does_not_resurrect_the_identity() {
+    let dir = TempDir::new().unwrap();
+    let store = Arc::new(KeychainCredentialStore::with_lock_timeout(
+        Box::new(FakeKeyringBackend::new()),
+        dir.path().to_path_buf(),
+        Duration::from_secs(2),
+    ));
+    store
+        .write("scripted-oauth", &near_expiry_oauth())
+        .await
+        .unwrap();
+    let resolver = CredentialResolver::with_refresh_timeout(
+        store.clone(),
+        Arc::new(|_: &str| None),
+        Duration::from_secs(10),
+    );
+    let provider = BlockingRefreshProvider {
+        started: Arc::new(tokio::sync::Notify::new()),
+        release: Arc::new(tokio::sync::Notify::new()),
+    };
+    let started = provider.started.clone();
+    let release = provider.release.clone();
+    let resolver = Arc::new(resolver);
+
+    // The rotation occupies the serialized slot for this provider; logout is
+    // admitted behind it in the same store queue.
+    let rotation = {
+        let resolver = resolver.clone();
+        let oauth: Arc<dyn OAuthProvider> = Arc::new(provider);
+        tokio::spawn(async move { resolver.resolve_oauth("scripted-oauth", oauth).await })
+    };
+    started.notified().await;
+    let logout = {
+        let store = store.clone();
+        tokio::spawn(async move {
+            opi_ai::Models::new()
+                .logout(&*store, "scripted-oauth")
+                .await
+        })
+    };
+    tokio::task::yield_now().await;
+
+    release.notify_one();
+    let rotation_result = rotation.await.unwrap();
+    logout.await.unwrap().unwrap();
+
+    // The rotation committed and returned its ACK; the serialized logout then
+    // deleted the entry. Final state: no identity — the late rotation did not
+    // resurrect it.
+    assert!(rotation_result.is_ok(), "{rotation_result:?}");
+    assert!(store.read("scripted-oauth").await.unwrap().is_none());
+    match resolver
+        .resolve_oauth(
+            "scripted-oauth",
+            Arc::new(HangingOAuthProvider) as Arc<dyn OAuthProvider>,
+        )
+        .await
+    {
+        Err(ProviderError::CredentialNeeded { provider_id }) => {
+            assert_eq!(provider_id, "scripted-oauth");
+        }
+        other => panic!("expected CredentialNeeded after logout, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn store_barrier_reports_rotation_pending_and_late_writes() {
+    let dir = TempDir::new().unwrap();
+    let store = Arc::new(KeychainCredentialStore::with_lock_timeout(
+        Box::new(FakeKeyringBackend::new()),
+        dir.path().to_path_buf(),
+        Duration::from_secs(2),
+    ));
+    store
+        .write("scripted-oauth", &near_expiry_oauth())
+        .await
+        .unwrap();
+    // The barrier sees the initial serialized write as settled history.
+    let baseline = store.mutation_barrier();
+    assert!(baseline.report().is_complete());
+
+    let resolver = CredentialResolver::with_refresh_timeout(
+        store.clone(),
+        Arc::new(|_: &str| None),
+        Duration::from_secs(10),
+    );
+    let provider = BlockingRefreshProvider {
+        started: Arc::new(tokio::sync::Notify::new()),
+        release: Arc::new(tokio::sync::Notify::new()),
+    };
+    let started = provider.started.clone();
+    let release = provider.release.clone();
+    let resolver = Arc::new(resolver);
+    let rotation = {
+        let resolver = resolver.clone();
+        let oauth: Arc<dyn OAuthProvider> = Arc::new(provider);
+        tokio::spawn(async move { resolver.resolve_oauth("scripted-oauth", oauth).await })
+    };
+    started.notified().await;
+
+    let barrier = store.mutation_barrier();
+    let report = barrier.report();
+    assert!(
+        report.captured.iter().any(|entry| matches!(
+            entry,
+            BarrierEntry::Pending { provider_id, .. } if provider_id == "scripted-oauth"
+        )),
+        "running rotation must be captured as pending: {report:?}"
+    );
+    assert!(!report.is_complete());
+
+    // A late write admitted after the barrier is fenced: reported, never
+    // aborted. Admission is eager, so the barrier sees it (pending behind
+    // the lock) before the gated rotation releases.
+    let late_cred = api_key_credential();
+    let late_write = store.write("other-provider", &late_cred);
+    let late_report = barrier.report();
+    assert!(
+        late_report
+            .late
+            .iter()
+            .any(|entry| entry.provider_id() == "other-provider"),
+        "post-cutoff write must be reported as fenced late: {late_report:?}"
+    );
+
+    release.notify_one();
+    late_write.await.unwrap();
+    rotation.await.unwrap().unwrap();
+    let final_report = barrier.wait().await;
+    assert!(final_report.is_complete());
+    assert!(
+        store.probe("other-provider").await.is_present(),
+        "fenced late write completed (never aborted by the barrier)"
+    );
 }

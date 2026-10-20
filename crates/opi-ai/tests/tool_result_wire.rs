@@ -465,6 +465,9 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "model",
         "model_info",
         "models",
+        // P20-STORE (task 20.22): store-owned serialized credential
+        // mutations are a deliberate later-phase addition.
+        "mutation",
         "openai_chat",
         "openai_codex_responses",
         "openai_responses",

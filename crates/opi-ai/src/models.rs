@@ -53,6 +53,7 @@ use crate::auth::{
 };
 use crate::credential::{Credential, CredentialSource, CredentialStore, CredentialStoreError};
 use crate::message::AssistantMessage;
+use crate::mutation::{MutationError, MutationOutcome};
 use crate::provider::{
     EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
 };
@@ -293,6 +294,16 @@ pub enum ModelsError {
         provider: String,
         /// Typed failure reported by the selected source.
         error: Box<ProviderError>,
+    },
+    /// A serialized store mutation settled with an unknown outcome (the
+    /// worker was lost mid-mutation). The effect may or may not have landed;
+    /// callers must not claim the previous state still holds.
+    #[error("mutation outcome unknown for provider '{provider}': {detail}")]
+    MutationOutcomeUnknown {
+        /// Provider key the mutation targeted.
+        provider: String,
+        /// Redacted, non-secret loss detail.
+        detail: String,
     },
 }
 
@@ -939,13 +950,52 @@ impl Models {
     /// revoked, and no other provider's entry is touched. Deleting an absent
     /// entry acknowledges successfully. Store failures propagate as typed
     /// [`ModelsError::CredentialStore`] errors.
+    /// Logout `provider_id`: submit one serialized store-owned deletion and
+    /// acknowledge exactly that local mutation. No environment variable is
+    /// unset, no remote session is revoked, and other providers' entries are
+    /// untouched. A store failure propagates typed; a lost mutation window
+    /// surfaces as [`ModelsError::MutationOutcomeUnknown`].
     pub async fn logout(
         &self,
         store: &dyn CredentialStore,
         provider_id: &str,
     ) -> Result<(), ModelsError> {
-        store.delete(provider_id).await?;
-        Ok(())
+        let receipt = store
+            .modify(provider_id, crate::mutation::delete_mutation())
+            .await?;
+        match receipt.outcome {
+            MutationOutcome::Deleted { .. } => Ok(()),
+            MutationOutcome::Failed { error } => match &*error {
+                MutationError::Store(store_error) => {
+                    Err(ModelsError::CredentialStore(store_error.clone()))
+                }
+                MutationError::Operation(_) => Err(ModelsError::CredentialStore(
+                    CredentialStoreError::Backend {
+                        provider: provider_id.to_owned(),
+                        reason: "delete mutation failed".to_owned(),
+                    },
+                )),
+            },
+            MutationOutcome::Unknown { detail } => Err(ModelsError::MutationOutcomeUnknown {
+                provider: provider_id.to_owned(),
+                detail,
+            }),
+            MutationOutcome::Written { .. } | MutationOutcome::Unchanged { .. } => Err(
+                ModelsError::CredentialStore(CredentialStoreError::Backend {
+                    provider: provider_id.to_owned(),
+                    reason: "unexpected delete mutation outcome".to_owned(),
+                }),
+            ),
+        }
+    }
+
+    /// Synchronously capture the attached store's mutation cutoff. Every
+    /// `Models` instance sharing the same store observes the same
+    /// generations. `None` when no credential store is attached.
+    pub fn mutation_barrier(&self) -> Option<crate::mutation::MutationBarrier> {
+        self.credential_store
+            .as_ref()
+            .map(|store| store.mutation_barrier())
     }
 
     /// Descriptor-path source check for [`check_auth`].

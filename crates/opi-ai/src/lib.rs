@@ -26,6 +26,7 @@ pub mod mistral;
 pub mod model;
 pub mod model_info;
 pub mod models;
+pub mod mutation;
 pub mod openai_chat;
 pub mod openai_codex_responses;
 pub mod openai_responses;
@@ -67,6 +68,12 @@ pub use models::{
     ApiId, AuthCheck, AuthCheckKind, AuthDescriptor, AuthResolutionOverrides, ChatApi,
     ChatApiHandle, ChatCall, ChatModelRecord, CompatMetadata, Models, ModelsError, NativeOptions,
     PreparedProviderCall, PreparedRoute, SecretKey, SimpleOptions,
+};
+pub use mutation::{
+    BarrierEntry, BarrierReport, CredentialMutationOp, CredentialRevision, InMemoryCredentialStore,
+    MutationAbandoned, MutationApplied, MutationBarrier, MutationDecision, MutationError,
+    MutationGeneration, MutationHandle, MutationOutcome, MutationQueue, MutationReceipt,
+    MutationSlot, MutationSlotView, delete_mutation, write_mutation,
 };
 pub use provider::Provider;
 pub use provider_headers::{ProviderHeaders, ProviderHeadersError};

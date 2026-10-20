@@ -144,6 +144,32 @@ and a prior credential-needed/revoked attempt closes the prepared call with
 variants. Per-call credentials remain out of scope: `extra_headers` rejects
 provider-managed auth headers.
 
+### Store-owned mutations, ACKs, and the mutation barrier (AIR-063 / P20-STORE)
+
+Credential mutations (login, logout, replace, refresh) are owned by the
+shared store, not by the waiter that submitted them. `CredentialStore`
+gains `modify` and `mutation_barrier`: `modify` submits a serialized
+read-modify-write (the operation sees the current credential plus a slot
+view for post-failure re-reads) and settles into a non-secret
+`MutationReceipt` — the ACK — recording applied writes with per-provider
+revisions, typed failures, and unknown loss windows. Dropping the wait
+never cancels a started mutation: it completes while the host runtime
+lives, a second waiter re-reads the committed token instead of repeating
+the operation, and per-provider FIFO serializes login/logout/replace/
+refresh on one store (the production keychain bridge holds its
+cross-process lock across each slot, preserving the host locking policy).
+
+`mutation_barrier` captures the store-wide cutoff synchronously — every
+`Models` instance sharing one store observes the same generations. Its
+report lists every captured mutation (pending, settled, failed, unknown)
+plus post-cutoff admissions as fenced late writes; it never starts auth
+and never aborts a running rotation. There are no default wait, receipt,
+or admission caps: caller-provided bounds stop the wait only. The
+reference `InMemoryCredentialStore` embeds the queue; stores without
+shared state inherit an inline default. Revisions and receipts are an
+in-process view; cross-process serialization stays the store's own lock
+policy.
+
 ### Acquisition retry owner (AIR-007)
 
 `prepare_call_with_policy` freezes an `AcquisitionPolicy` per logical call

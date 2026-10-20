@@ -999,3 +999,365 @@ async fn get_auth_resolves_descriptor_sources_without_refresh() {
         "label-only descriptor has no secret to resolve"
     );
 }
+
+// ---------------------------------------------------------------------------
+// P20-STORE (task 20.22) — store-owned serialized mutations, receipts, and
+// the synchronous mutation barrier.
+// ---------------------------------------------------------------------------
+
+use std::sync::Arc;
+
+use opi_ai::credential::{Credential, CredentialStore};
+use opi_ai::{
+    BarrierEntry, InMemoryCredentialStore, MutationDecision, MutationOutcome, MutationQueue,
+};
+
+fn stored_api_key(value: &str) -> Credential {
+    Credential::ApiKey(SecretString::from(value.to_owned()))
+}
+
+fn write_op(value: &'static str) -> opi_ai::CredentialMutationOp {
+    opi_ai::write_mutation(stored_api_key(value))
+}
+
+#[tokio::test]
+async fn store_mutations_serialize_in_submission_order_per_provider() {
+    let store = InMemoryCredentialStore::new();
+    let first = store
+        .modify("prov", write_op("one"))
+        .await
+        .expect("first ACK");
+    let second = store
+        .modify("prov", write_op("two"))
+        .await
+        .expect("second ACK");
+    let third = store
+        .modify("prov", opi_ai::delete_mutation())
+        .await
+        .expect("third ACK");
+
+    // Store-wide generations admit in submission order and per-provider FIFO
+    // executes them in that order; revisions advance per applied mutation.
+    assert_eq!(first.generation, 1);
+    assert_eq!(second.generation, 2);
+    assert_eq!(third.generation, 3);
+    assert!(matches!(
+        first.outcome,
+        MutationOutcome::Written { revision: 1 }
+    ));
+    assert!(matches!(
+        second.outcome,
+        MutationOutcome::Written { revision: 2 }
+    ));
+    assert!(matches!(
+        third.outcome,
+        MutationOutcome::Deleted { revision: 3 }
+    ));
+    assert!(
+        store.read("prov").await.expect("read").is_none(),
+        "final state is the serialized delete"
+    );
+}
+
+#[tokio::test]
+async fn started_mutation_survives_waiter_cancellation() {
+    let store = Arc::new(InMemoryCredentialStore::new());
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let op: opi_ai::CredentialMutationOp = Box::new(move |_view, _current| {
+        let released = released;
+        Box::pin(async move {
+            let _ = released.await;
+            Ok(MutationDecision::Write(stored_api_key("committed")))
+        })
+    });
+    let handle = store.modify("prov", op);
+
+    // Cancel the wait while the mutation is still running: dropping the
+    // handle stops only the observation, not the mutation.
+    drop(handle);
+    // The store owns the mutation: releasing the gate commits it even though
+    // no waiter remains.
+    release.send(()).unwrap();
+    let barrier = store.mutation_barrier();
+    let report = barrier.wait().await;
+    assert!(report.is_complete());
+    match report.captured.as_slice() {
+        [BarrierEntry::Settled(receipt)] => {
+            assert_eq!(receipt.provider_id, "prov");
+            assert!(matches!(
+                receipt.outcome,
+                MutationOutcome::Written { revision: 1 }
+            ));
+        }
+        other => panic!("expected one settled receipt, got {other:?}"),
+    }
+    match store.read("prov").await.unwrap() {
+        Some(Credential::ApiKey(secret)) => {
+            assert_eq!(secret.expose_secret(), "committed");
+        }
+        other => panic!("expected committed api key, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn second_waiter_reuses_committed_result_without_second_operation() {
+    let store = InMemoryCredentialStore::new();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let calls_for_op = calls.clone();
+    let op: opi_ai::CredentialMutationOp = Box::new(move |_view, current| {
+        let calls = calls_for_op.clone();
+        Box::pin(async move {
+            calls.fetch_add(1, Ordering::SeqCst);
+            match current {
+                Some(_) => Ok(MutationDecision::Keep),
+                None => Ok(MutationDecision::Write(stored_api_key("once"))),
+            }
+        })
+    });
+    let r1 = store.modify(
+        "prov",
+        Box::new(move |_view, current| {
+            // Distinct op object with identical single-flight semantics.
+            let _ = current;
+            Box::pin(async move { Ok(MutationDecision::Write(stored_api_key("once"))) })
+        }),
+    );
+    let r1 = r1.await.expect("first ACK");
+    let r2 = store.modify("prov", op).await.expect("second ACK");
+    assert!(matches!(r1.outcome, MutationOutcome::Written { .. }));
+    // The second serialized slot re-reads the committed state and keeps it:
+    // one operation ran for the second waiter.
+    assert!(matches!(
+        r2.outcome,
+        MutationOutcome::Unchanged { revision: 1 }
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn barrier_captures_cutoff_across_models_sharing_store() {
+    let store = Arc::new(InMemoryCredentialStore::new());
+    let mut models_a = opi_ai::Models::new();
+    models_a.set_credential_store(store.clone());
+    let mut models_b = opi_ai::Models::new();
+    models_b.set_credential_store(store.clone());
+
+    store.modify("prov-a", write_op("a")).await.expect("ACK a");
+    store.modify("prov-b", write_op("b")).await.expect("ACK b");
+
+    let from_a = models_a.mutation_barrier().expect("store attached to a");
+    let from_b = models_b.mutation_barrier().expect("store attached to b");
+    // The cutoff lives in the store: both Models observe the same history.
+    assert_eq!(from_a.cutoff(), from_b.cutoff());
+    assert_eq!(from_a.cutoff(), 2);
+    let report = from_b.report();
+    assert_eq!(report.captured.len(), 2);
+    assert!(report.late.is_empty());
+    assert!(report.is_complete());
+
+    // Without an attached store there is no barrier to capture.
+    assert!(opi_ai::Models::new().mutation_barrier().is_none());
+}
+
+#[tokio::test]
+async fn barrier_reports_pending_failure_unknown_and_late_writes() {
+    let store = InMemoryCredentialStore::new();
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let gated: opi_ai::CredentialMutationOp = Box::new(move |_view, _current| {
+        let released = released;
+        Box::pin(async move {
+            let _ = released.await;
+            Ok(MutationDecision::Keep)
+        })
+    });
+    let _pending = store.modify("prov-pending", gated);
+
+    let failing: opi_ai::CredentialMutationOp = Box::new(|_view, _current| {
+        Box::pin(async move {
+            Err(opi_ai::MutationError::Operation(ProviderError::AuthFailed(
+                opi_ai::provider::ProviderErrorSummary::from_untrusted("refresh failed"),
+            )))
+        })
+    });
+    let failed = store
+        .modify("prov-fail", failing)
+        .await
+        .expect("failed mutations still ACK with a receipt");
+    assert!(matches!(failed.outcome, MutationOutcome::Failed { .. }));
+
+    let panicking: opi_ai::CredentialMutationOp =
+        Box::new(|_view, _current| Box::pin(async move { panic!("worker lost") }));
+    // Drive the panicking slot to its Unknown receipt by awaiting the handle.
+    let unknown = store
+        .modify("prov-panic", panicking)
+        .await
+        .expect("panic mutations settle as Unknown, not lost handles");
+    assert!(matches!(unknown.outcome, MutationOutcome::Unknown { .. }));
+
+    let barrier = store.mutation_barrier();
+    let report = barrier.report();
+    assert_eq!(barrier.cutoff(), 3);
+    // Pending, failed, and unknown are all reported inside the cutoff.
+    let mut pending = 0;
+    let mut failures = 0;
+    let mut unknowns = 0;
+    for entry in &report.captured {
+        match entry {
+            BarrierEntry::Pending { .. } => pending += 1,
+            BarrierEntry::Settled(receipt) => match receipt.outcome {
+                MutationOutcome::Failed { .. } => failures += 1,
+                MutationOutcome::Unknown { .. } => unknowns += 1,
+                _ => {}
+            },
+        }
+    }
+    assert_eq!(pending, 1);
+    assert_eq!(failures, 1);
+    assert_eq!(unknowns, 1);
+    assert!(!report.is_complete());
+
+    // A post-cutoff admission is a fenced late write: reported, never aborted.
+    let late = store
+        .modify("prov-late", write_op("late"))
+        .await
+        .expect("late write completes");
+    assert!(matches!(late.outcome, MutationOutcome::Written { .. }));
+    let report = barrier.report();
+    assert_eq!(report.late.len(), 1);
+    assert_eq!(report.late[0].provider_id(), "prov-late");
+
+    // Waiting resolves once the pending mutation settles (no default
+    // deadline stopped it).
+    release.send(()).unwrap();
+    let report = barrier.wait().await;
+    assert!(report.is_complete());
+}
+
+#[tokio::test]
+async fn unknown_outcome_for_one_key_survives_another_keys_success() {
+    let store = InMemoryCredentialStore::new();
+    let panicking: opi_ai::CredentialMutationOp =
+        Box::new(|_view, _current| Box::pin(async move { panic!("lost") }));
+    let _ = store
+        .modify("prov-old", panicking)
+        .await
+        .expect("Unknown receipt");
+    let ok = store
+        .modify("prov-new", write_op("fresh"))
+        .await
+        .expect("ACK");
+    assert!(matches!(ok.outcome, MutationOutcome::Written { .. }));
+
+    let report = store.mutation_barrier().report();
+    // Receipts are retained by key: the new key's success did not clear the
+    // old key's unconfirmed outcome.
+    let old = report
+        .captured
+        .iter()
+        .find(|e| e.provider_id() == "prov-old")
+        .expect("old key retained");
+    match old {
+        BarrierEntry::Settled(receipt) => {
+            assert!(matches!(receipt.outcome, MutationOutcome::Unknown { .. }))
+        }
+        other => panic!("old key should be settled, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn mutation_waits_and_receipts_have_no_default_caps() {
+    let store = InMemoryCredentialStore::new();
+    // More mutations than any historical default cap (256-key style
+    // admission limits): all admit and all receipts are retained.
+    let mut handles = Vec::new();
+    for i in 0..300 {
+        let value: &'static str = Box::leak(format!("key-{i}").into_boxed_str());
+        handles.push(store.modify("prov-cap", write_op(value)));
+    }
+    for handle in handles {
+        handle.await.expect("every mutation ACKs");
+    }
+    let report = store.mutation_barrier().report();
+    assert_eq!(report.captured.len(), 300);
+    assert!(
+        report.captured.iter().all(|entry| matches!(
+            entry,
+            BarrierEntry::Settled(receipt)
+                if matches!(receipt.outcome, MutationOutcome::Written { .. })
+        )),
+        "every receipt retained"
+    );
+    assert!(report.is_complete());
+}
+
+#[tokio::test]
+async fn network_timeout_scope_excludes_lock_wait_and_ack() {
+    let store = InMemoryCredentialStore::new();
+    // A slow prior slot occupies the (per-provider) serialization for far
+    // longer than the second operation's own network bound.
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let slow: opi_ai::CredentialMutationOp = Box::new(move |_view, _current| {
+        let released = released;
+        Box::pin(async move {
+            let _ = released.await;
+            Ok(MutationDecision::Keep)
+        })
+    });
+    let _slow = store.modify("prov", slow);
+
+    let bounded: opi_ai::CredentialMutationOp = Box::new(|_view, _current| {
+        Box::pin(async move {
+            // The operation's own network bound (50ms) applies only to the
+            // simulated exchange, not to the slot's lock wait or the ACK.
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(50),
+                std::future::pending::<()>(),
+            )
+            .await
+            {
+                Err(_elapsed) => Ok(MutationDecision::Write(stored_api_key("after-wait"))),
+                Ok(()) => unreachable!("never resolves"),
+            }
+        })
+    });
+    let bounded = store.modify("prov", bounded);
+    // Let the queue admit both before releasing the slow slot.
+    tokio::task::yield_now().await;
+    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+    release.send(()).unwrap();
+    // The bounded operation's own timeout elapsed while waiting for the
+    // serialization, yet the mutation completes: lock waits and ACK are
+    // outside the operation's network bound.
+    let receipt = bounded.await.expect("ACK after slow slot");
+    assert!(matches!(receipt.outcome, MutationOutcome::Written { .. }));
+    match store.read("prov").await.unwrap() {
+        Some(Credential::ApiKey(secret)) => {
+            assert_eq!(secret.expose_secret(), "after-wait");
+        }
+        other => panic!("expected committed api key, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn mutation_queue_admits_synchronously_before_any_await() {
+    let queue = MutationQueue::new();
+    let barrier_before = queue.barrier();
+    assert_eq!(barrier_before.cutoff(), 0);
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let slot: opi_ai::MutationSlot = Box::new(move || {
+        let released = released;
+        Box::pin(async move {
+            let _ = released.await;
+            Ok(opi_ai::MutationApplied::Write)
+        })
+    });
+    let _handle = queue.submit("prov", slot);
+    // Admission was synchronous: the barrier captured the running mutation
+    // even though nothing has been awaited yet.
+    let barrier_after = queue.barrier();
+    assert_eq!(barrier_after.cutoff(), 1);
+    assert!(barrier_before.report().is_complete());
+    release.send(()).unwrap();
+    let report = barrier_after.wait().await;
+    assert!(report.is_complete());
+}

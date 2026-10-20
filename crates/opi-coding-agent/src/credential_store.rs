@@ -50,7 +50,11 @@ use opi_ai::credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
     UnknownEnvelopeField,
 };
-use opi_ai::provider::ProviderError;
+use opi_ai::mutation::{
+    CredentialMutationOp, MutationApplied, MutationDecision, MutationError, MutationHandle,
+    MutationOutcome, MutationQueue, MutationSlotView,
+};
+use opi_ai::provider::{ProviderError, ProviderErrorSummary};
 use secrecy::{ExposeSecret, SecretString};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -135,8 +139,11 @@ pub const KEYCHAIN_PRESENCE_SERVICE: &str = "opi.presence";
 /// [`CredentialStoreError::UnknownEnvelope`].
 const ENVELOPE_VERSION: u32 = 1;
 
-/// Maximum time a refresh HTTP future may hold the mutation lock.
-const OAUTH_REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
+/// Refresh network bound (AIR-063/V-12, task 20.22): applies to the OAuth
+/// refresh HTTP exchange only. Store lock acquisition and the mutation ACK
+/// are deliberately outside this timer, and there is no default wait or
+/// receipt cap around the mutation itself.
+const OAUTH_REFRESH_TIMEOUT: Duration = Duration::from_secs(15);
 
 // ---------------------------------------------------------------------------
 // Backend injection seam
@@ -785,37 +792,15 @@ impl Drop for LockGuard {
 // KeychainCredentialStore — concrete CredentialStore
 // ---------------------------------------------------------------------------
 
-/// OS-keychain-backed [`CredentialStore`]. Wraps an injected
-/// [`KeyringBackend`] (production: [`KeyringCoreBackend`]; tests:
-/// [`FakeKeyringBackend`]) and serializes entries as a versioned JSON envelope
-/// keyed by provider id under service [`KEYCHAIN_SERVICE`].
-pub struct KeychainCredentialStore {
-    backend: Box<dyn KeyringBackend>,
+/// Backend+service core shared by detached mutation slots. Owns the
+/// marker/protected-entry invariants; all methods run without the mutation
+/// lock (callers provide exclusion through the store's lock and queue).
+struct KeychainCore {
+    backend: std::sync::Arc<dyn KeyringBackend>,
     service: String,
-    lock: LockCoordinator,
 }
 
-impl KeychainCredentialStore {
-    /// Construct a store over `backend`, coordinating mutations with a lock at
-    /// `user_config_dir/credential.lock`.
-    pub fn new(backend: Box<dyn KeyringBackend>, user_config_dir: PathBuf) -> Self {
-        Self::with_lock_timeout(backend, user_config_dir, Duration::from_secs(5))
-    }
-
-    /// Same as [`Self::new`] but with a custom mutation-lock timeout. Tests use
-    /// a short timeout to exercise contention deterministically.
-    pub fn with_lock_timeout(
-        backend: Box<dyn KeyringBackend>,
-        user_config_dir: PathBuf,
-        lock_timeout: Duration,
-    ) -> Self {
-        Self {
-            backend,
-            service: KEYCHAIN_SERVICE.to_owned(),
-            lock: LockCoordinator::with_timeout(user_config_dir, lock_timeout),
-        }
-    }
-
+impl KeychainCore {
     fn backend_err(&self, provider_id: &str, error: BackendError) -> CredentialStoreError {
         match error {
             BackendError::BackendUnavailable(reason) => CredentialStoreError::BackendUnavailable {
@@ -842,8 +827,7 @@ impl KeychainCredentialStore {
         }
     }
 
-    /// Read without acquiring the mutation lock. Reads are lock-free; only
-    /// mutations take the lock.
+    /// Read the protected entry without any lock.
     async fn read_unlocked(
         &self,
         provider_id: &str,
@@ -881,10 +865,8 @@ impl KeychainCredentialStore {
         Ok(Some(credential))
     }
 
-    /// Write without acquiring the mutation lock. Package-private so T2 OAuth
-    /// refresh can hold one external lock across read/HTTP/write without
-    /// recursively acquiring the public locked `write`.
-    pub(crate) async fn write_unlocked(
+    /// Write marker then protected entry without any lock.
+    async fn write_unlocked(
         &self,
         provider_id: &str,
         cred: &Credential,
@@ -900,12 +882,8 @@ impl KeychainCredentialStore {
             .map_err(|error| self.backend_err(provider_id, error))
     }
 
-    /// Delete without acquiring the mutation lock. Package-private (same
-    /// rationale as [`Self::write_unlocked`]).
-    pub(crate) async fn delete_unlocked(
-        &self,
-        provider_id: &str,
-    ) -> Result<(), CredentialStoreError> {
+    /// Delete protected entry then marker without any lock.
+    async fn delete_unlocked(&self, provider_id: &str) -> Result<(), CredentialStoreError> {
         self.backend
             .delete(&self.service, provider_id)
             .map_err(|error| self.backend_err(provider_id, error))?;
@@ -914,71 +892,7 @@ impl KeychainCredentialStore {
             .map_err(|error| self.backend_err(provider_id, error))
     }
 
-    /// Acquire the OAuth-refresh mutation lock. Holds the exclusive
-    /// `fs4` lock across the refresh-HTTP + write so refresh-token rotation
-    /// cannot race a concurrent refresh. Drop the returned guard to release.
-    pub(crate) async fn acquire_lock(&self) -> Result<LockGuard, CredentialStoreError> {
-        self.lock.acquire().await
-    }
-}
-
-pub(crate) async fn keychain_store_from_factory(
-    user_config_dir: PathBuf,
-    backend_factory: KeyringBackendFactory,
-) -> KeychainCredentialStore {
-    // The native keyring backend eagerly connects to the platform secret store.
-    // On Linux that is the Secret Service via zbus, whose blocking adapter
-    // (`zbus::utils::block_on`) spins up a nested tokio runtime to drive the
-    // D-Bus connection. Constructing it from a runtime worker would nest
-    // runtimes and panic ("Cannot start a runtime from within a runtime"), so
-    // build the store on a `spawn_blocking` thread, which carries no runtime
-    // context. The blocking-pool thread is the established tokio pattern for a
-    // sync backend that itself owns a runtime.
-    tokio::task::spawn_blocking(move || {
-        KeychainCredentialStore::new(backend_factory(), user_config_dir)
-    })
-    .await
-    .expect("keyring store construction thread")
-}
-
-impl CredentialStore for KeychainCredentialStore {
-    fn read<'a>(
-        &'a self,
-        provider_id: &'a str,
-    ) -> BoxAuthFuture<'a, Result<Option<Credential>, CredentialStoreError>> {
-        Box::pin(async move { self.read_consistent_unlocked(provider_id).await })
-    }
-
-    fn write<'a>(
-        &'a self,
-        provider_id: &'a str,
-        cred: &'a Credential,
-    ) -> BoxAuthFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            // Public writes are unconditional last-writer-wins mutations. The
-            // lock serializes them; only T2's refresh read-modify-write path
-            // re-reads state after acquiring its external lock.
-            let _guard = self.lock.acquire().await?;
-            self.write_unlocked(provider_id, cred).await
-        })
-    }
-
-    fn delete<'a>(
-        &'a self,
-        provider_id: &'a str,
-    ) -> BoxAuthFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            let _guard = self.lock.acquire().await?;
-            self.delete_unlocked(provider_id).await
-        })
-    }
-
-    fn probe<'a>(&'a self, provider_id: &'a str) -> BoxAuthFuture<'a, CredentialSource> {
-        Box::pin(async move { self.probe_metadata(provider_id).await.source })
-    }
-}
-
-impl CredentialMetadataStore for KeychainCredentialStore {
+    /// Secret-free presence/kind probe from the marker alone.
     fn probe_metadata<'a>(
         &'a self,
         provider_id: &'a str,
@@ -1024,6 +938,268 @@ impl CredentialMetadataStore for KeychainCredentialStore {
                 },
             }
         })
+    }
+}
+
+/// Slot view over the shared core: re-reads the current entry under the
+/// slot's held lock.
+struct KeychainSlotView {
+    core: std::sync::Arc<KeychainCore>,
+    provider_id: String,
+}
+
+impl MutationSlotView for KeychainSlotView {
+    fn read_current<'a>(
+        &'a self,
+    ) -> BoxAuthFuture<'a, Result<Option<Credential>, CredentialStoreError>> {
+        Box::pin(async move { self.core.read_consistent_unlocked(&self.provider_id).await })
+    }
+}
+
+/// OS-keychain-backed [`CredentialStore`] (P20-STORE / task 20.22). Wraps an
+/// injected [`KeyringBackend`] (production: [`KeyringCoreBackend`]; tests:
+/// [`FakeKeyringBackend`]), serializes entries as a versioned JSON envelope
+/// keyed by provider id under service [`KEYCHAIN_SERVICE`], and owns every
+/// mutation through an [`MutationQueue`]: login/logout/replace/refresh
+/// serialize in per-provider FIFO order, a started mutation survives waiter
+/// cancellation while the host runtime lives, and each mutation settles into
+/// a non-secret receipt. Slots hold the cross-process `fs4` lock across
+/// their full read-modify-write, preserving the host locking policy.
+pub struct KeychainCredentialStore {
+    core: std::sync::Arc<KeychainCore>,
+    lock: std::sync::Arc<LockCoordinator>,
+    queue: MutationQueue,
+}
+
+/// Map a primitive write/delete receipt back to the original result shape:
+/// applied outcomes succeed, failures propagate their typed store error,
+/// unknown outcomes surface as typed backend errors (never silent success).
+fn receipt_to_store_result(
+    receipt: opi_ai::mutation::MutationReceipt,
+) -> Result<(), CredentialStoreError> {
+    match receipt.outcome {
+        MutationOutcome::Written { .. }
+        | MutationOutcome::Deleted { .. }
+        | MutationOutcome::Unchanged { .. } => Ok(()),
+        MutationOutcome::Failed { ref error } => match &**error {
+            MutationError::Store(store_error) => Err(store_error.clone()),
+            _ => Err(CredentialStoreError::Backend {
+                provider: receipt.provider_id,
+                reason: "mutation failed".to_owned(),
+            }),
+        },
+        MutationOutcome::Unknown { detail } => Err(CredentialStoreError::Backend {
+            provider: receipt.provider_id,
+            reason: format!("mutation outcome unknown: {detail}"),
+        }),
+    }
+}
+
+fn mutation_lost_error(provider_id: &str) -> CredentialStoreError {
+    CredentialStoreError::Backend {
+        provider: provider_id.to_owned(),
+        reason: "mutation worker lost before ACK".to_owned(),
+    }
+}
+
+impl KeychainCredentialStore {
+    /// Construct a store over `backend`, coordinating mutations with a lock at
+    /// `user_config_dir/credential.lock`.
+    pub fn new(backend: Box<dyn KeyringBackend>, user_config_dir: PathBuf) -> Self {
+        Self::with_lock_timeout(backend, user_config_dir, Duration::from_secs(5))
+    }
+
+    /// Same as [`Self::new`] but with a custom mutation-lock timeout. Tests use
+    /// a short timeout to exercise contention deterministically.
+    pub fn with_lock_timeout(
+        backend: Box<dyn KeyringBackend>,
+        user_config_dir: PathBuf,
+        lock_timeout: Duration,
+    ) -> Self {
+        Self {
+            core: std::sync::Arc::new(KeychainCore {
+                backend: std::sync::Arc::from(backend),
+                service: KEYCHAIN_SERVICE.to_owned(),
+            }),
+            lock: std::sync::Arc::new(LockCoordinator::with_timeout(user_config_dir, lock_timeout)),
+            queue: MutationQueue::new(),
+        }
+    }
+
+    /// Enqueue one serialized read-modify-write mutation: acquire the
+    /// cross-process lock, read the current entry, run `op`, apply the
+    /// decision under the same lock. Detached — dropping the returned
+    /// handle cancels only the wait, never a started mutation.
+    fn submit_mutation(&self, provider_id: &str, op: CredentialMutationOp) -> MutationHandle {
+        let core = self.core.clone();
+        let lock = self.lock.clone();
+        let provider = provider_id.to_owned();
+        self.queue.submit(
+            provider_id,
+            Box::new(move || {
+                let core = core;
+                let lock = lock;
+                let provider = provider;
+                let op = op;
+                Box::pin(async move {
+                    let _guard = lock.acquire().await.map_err(MutationError::from)?;
+                    let view = KeychainSlotView {
+                        core: core.clone(),
+                        provider_id: provider.clone(),
+                    };
+                    let current = core
+                        .read_consistent_unlocked(&provider)
+                        .await
+                        .map_err(MutationError::from)?;
+                    let decision = op(&view, current.as_ref()).await?;
+                    match decision {
+                        MutationDecision::Write(cred) => {
+                            core.write_unlocked(&provider, &cred)
+                                .await
+                                .map_err(MutationError::from)?;
+                            Ok(MutationApplied::Write)
+                        }
+                        MutationDecision::Keep => Ok(MutationApplied::Keep),
+                        MutationDecision::Delete => {
+                            core.delete_unlocked(&provider)
+                                .await
+                                .map_err(MutationError::from)?;
+                            Ok(MutationApplied::Delete)
+                        }
+                    }
+                })
+            }),
+        )
+    }
+
+    /// Enqueue one unconditional serialized write (the public
+    /// `CredentialStore::write` primitive).
+    fn submit_write(&self, provider_id: &str, cred: &Credential) -> MutationHandle {
+        let core = self.core.clone();
+        let lock = self.lock.clone();
+        let provider = provider_id.to_owned();
+        let cred = cred.clone();
+        self.queue.submit(
+            provider_id,
+            Box::new(move || {
+                let core = core;
+                let lock = lock;
+                let provider = provider;
+                let cred = cred;
+                Box::pin(async move {
+                    let _guard = lock.acquire().await.map_err(MutationError::from)?;
+                    core.write_unlocked(&provider, &cred)
+                        .await
+                        .map_err(MutationError::from)?;
+                    Ok(MutationApplied::Write)
+                })
+            }),
+        )
+    }
+
+    /// Enqueue one unconditional serialized delete (the public
+    /// `CredentialStore::delete` primitive).
+    fn submit_delete(&self, provider_id: &str) -> MutationHandle {
+        let core = self.core.clone();
+        let lock = self.lock.clone();
+        let provider = provider_id.to_owned();
+        self.queue.submit(
+            provider_id,
+            Box::new(move || {
+                let core = core;
+                let lock = lock;
+                let provider = provider;
+                Box::pin(async move {
+                    let _guard = lock.acquire().await.map_err(MutationError::from)?;
+                    core.delete_unlocked(&provider)
+                        .await
+                        .map_err(MutationError::from)?;
+                    Ok(MutationApplied::Delete)
+                })
+            }),
+        )
+    }
+}
+
+pub(crate) async fn keychain_store_from_factory(
+    user_config_dir: PathBuf,
+    backend_factory: KeyringBackendFactory,
+) -> KeychainCredentialStore {
+    // The native keyring backend eagerly connects to the platform secret store.
+    // On Linux that is the Secret Service via zbus, whose blocking adapter
+    // (`zbus::utils::block_on`) spins up a nested tokio runtime to drive the
+    // D-Bus connection. Constructing it from a runtime worker would nest
+    // runtimes and panic ("Cannot start a runtime from within a runtime"), so
+    // build the store on a `spawn_blocking` thread, which carries no runtime
+    // context. The blocking-pool thread is the established tokio pattern for a
+    // sync backend that itself owns a runtime.
+    tokio::task::spawn_blocking(move || {
+        KeychainCredentialStore::new(backend_factory(), user_config_dir)
+    })
+    .await
+    .expect("keyring store construction thread")
+}
+
+impl CredentialStore for KeychainCredentialStore {
+    fn read<'a>(
+        &'a self,
+        provider_id: &'a str,
+    ) -> BoxAuthFuture<'a, Result<Option<Credential>, CredentialStoreError>> {
+        Box::pin(async move { self.core.read_consistent_unlocked(provider_id).await })
+    }
+
+    fn write<'a>(
+        &'a self,
+        provider_id: &'a str,
+        cred: &'a Credential,
+    ) -> BoxAuthFuture<'a, Result<(), CredentialStoreError>> {
+        // Eager admission: serialized with every other mutation on this
+        // store (including rotations) at call time, acquiring the
+        // cross-process lock inside the slot. The returned future is only
+        // the wait for the ACK.
+        let handle = self.submit_write(provider_id, cred);
+        Box::pin(async move {
+            let receipt = handle.await.map_err(|_| mutation_lost_error(provider_id))?;
+            receipt_to_store_result(receipt)
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        provider_id: &'a str,
+    ) -> BoxAuthFuture<'a, Result<(), CredentialStoreError>> {
+        let handle = self.submit_delete(provider_id);
+        Box::pin(async move {
+            let receipt = handle.await.map_err(|_| mutation_lost_error(provider_id))?;
+            receipt_to_store_result(receipt)
+        })
+    }
+
+    fn probe<'a>(&'a self, provider_id: &'a str) -> BoxAuthFuture<'a, CredentialSource> {
+        Box::pin(async move { self.core.probe_metadata(provider_id).await.source })
+    }
+
+    fn modify<'a>(
+        &'a self,
+        provider_id: &'a str,
+        op: CredentialMutationOp,
+    ) -> BoxAuthFuture<'a, Result<opi_ai::mutation::MutationReceipt, CredentialStoreError>> {
+        // Eager admission (synchronous at call time).
+        let handle = self.submit_mutation(provider_id, op);
+        Box::pin(async move { handle.await.map_err(|_| mutation_lost_error(provider_id)) })
+    }
+
+    fn mutation_barrier(&self) -> opi_ai::mutation::MutationBarrier {
+        self.queue.barrier()
+    }
+}
+
+impl CredentialMetadataStore for KeychainCredentialStore {
+    fn probe_metadata<'a>(
+        &'a self,
+        provider_id: &'a str,
+    ) -> BoxAuthFuture<'a, CredentialMetadataProbe> {
+        self.core.probe_metadata(provider_id)
     }
 }
 
@@ -1139,7 +1315,7 @@ impl CredentialResolver {
         provider_id: &str,
         env_var: &str,
     ) -> Result<Option<ResolvedApiKey>, CredentialStoreError> {
-        match self.store.read_consistent_unlocked(provider_id).await {
+        match self.store.core.read_consistent_unlocked(provider_id).await {
             Ok(Some(Credential::ApiKey(value))) => Ok(Some(ResolvedApiKey {
                 value,
                 source: ApiKeySource::Store,
@@ -1171,16 +1347,26 @@ impl CredentialResolver {
             })
     }
 
-    /// Resolve a stored OAuth credential for `provider_id`, refreshing under the
-    /// mutation lock when the access token is near expiry (5-minute skew via
-    /// [`OAuthCredential::needs_refresh`]). Double-checks under the lock and
-    /// re-reads after a refresh failure so a concurrent writer's fresh token is
-    /// used. Writes only on a successful refresh (no partial write). Returns
+    /// Resolve a stored OAuth credential for `provider_id`, rotating under a
+    /// store-owned serialized mutation when the access token is near expiry
+    /// (5-minute skew via [`OAuthCredential::needs_refresh`]). The mutation is
+    /// serialized with login/logout/replace on the same store: the slot holds
+    /// the cross-process lock across re-read + refresh-HTTP + write, a second
+    /// waiter re-reads the committed token instead of double-refreshing, and a
+    /// rotation that already started survives waiter cancellation while the
+    /// host runtime lives. Only the refresh network exchange runs under the
+    /// refresh timeout; lock waits and the ACK are outside that timer. A
+    /// late rotation never resurrects a replaced identity: the slot re-reads
+    /// the current entry and reports [`MutationDecision::Keep`] or
+    /// [`ProviderError::CredentialNeeded`] when another writer already
+    /// committed or removed it. Writes only on a successful refresh (no
+    /// partial write); a post-failure re-read under the slot's exclusion
+    /// reuses a concurrent writer's fresh token. Returns
     /// [`ProviderError::CredentialNeeded`] when no OAuth credential is stored.
     pub async fn resolve_oauth(
         &self,
         provider_id: &str,
-        oauth: &dyn OAuthProvider,
+        oauth: Arc<dyn OAuthProvider>,
     ) -> Result<ResolvedAuth, ProviderError> {
         // Fast path: lock-free read.
         let cred = match self
@@ -1196,80 +1382,125 @@ impl CredentialResolver {
             }
         };
         if !cred.needs_refresh() {
-            return Ok(ResolvedAuth {
-                scheme: AuthScheme::Bearer,
-                secret: cred.access.clone(),
-                base_url: cred.base_url.clone(),
-                account_id: cred.account_id.clone(),
-                provenance: oauth_provenance(provider_id),
-            });
+            return Ok(resolved_oauth(provider_id, &cred));
         }
-        // Slow path: hold the lock across re-read + refresh-HTTP + write so
-        // refresh-token rotation cannot race a concurrent refresh.
-        let _guard = self
+        // Slow path: store-owned rotation. The slot re-reads under the lock
+        // (another writer may have refreshed already), runs the refresh
+        // network exchange under the refresh timeout, and commits
+        // atomically. Dropping this wait cannot abort it.
+        let provider = provider_id.to_owned();
+        let refresh_timeout = self.refresh_timeout;
+        let op: CredentialMutationOp = Box::new(
+            move |view: &dyn MutationSlotView, current: Option<&Credential>| {
+                let oauth = oauth.clone();
+                let provider = provider.clone();
+                Box::pin(async move {
+                    let current = match current {
+                        Some(credential) => match credential_as_oauth(credential) {
+                            Some(current) => current,
+                            None => {
+                                // Wrong-kind entry: typed failure, no write.
+                                return Err(MutationError::Operation(ProviderError::AuthFailed(
+                                    ProviderErrorSummary::from_untrusted(format!(
+                                        "stored credential for '{provider}' is not an OAuth token"
+                                    )),
+                                )));
+                            }
+                        },
+                        None => {
+                            // Deleted/replaced while queued: never resurrect a
+                            // replaced identity.
+                            return Err(MutationError::Operation(
+                                ProviderError::CredentialNeeded {
+                                    provider_id: provider.clone(),
+                                },
+                            ));
+                        }
+                    };
+                    if !current.needs_refresh() {
+                        // Another waiter's rotation committed before this slot
+                        // ran: reuse it, no second refresh.
+                        return Ok(MutationDecision::Keep);
+                    }
+                    let refresh = match tokio::time::timeout(
+                        refresh_timeout,
+                        oauth.refresh(&current),
+                    )
+                    .await
+                    {
+                        Ok(refresh) => refresh,
+                        Err(_elapsed) => {
+                            return Err(MutationError::Operation(ProviderError::AuthFailed(
+                                ProviderErrorSummary::from_untrusted(format!(
+                                    "OAuth refresh timed out for provider '{provider}'"
+                                )),
+                            )));
+                        }
+                    };
+                    match refresh {
+                        Ok(refreshed) => Ok(MutationDecision::Write(Credential::from(refreshed))),
+                        Err(refresh_err) => {
+                            // Post-failure re-read under the slot's exclusion: a
+                            // concurrent writer may have committed despite our
+                            // HTTP failing.
+                            match view.read_current().await {
+                                Ok(Some(credential)) => match credential_as_oauth(&credential) {
+                                    Some(reread) if !reread.needs_refresh() => {
+                                        Ok(MutationDecision::Keep)
+                                    }
+                                    _ => Err(MutationError::Operation(refresh_err)),
+                                },
+                                _ => Err(MutationError::Operation(refresh_err)),
+                            }
+                        }
+                    }
+                })
+            },
+        );
+        let receipt = self
             .store
-            .acquire_lock()
+            .modify(provider_id, op)
             .await
             .map_err(store_err_to_provider)?;
-        let cred = match self
-            .read_oauth(provider_id)
-            .await
-            .map_err(store_err_to_provider)?
+        // ACK received: re-read the committed entry (reads are lock-free and
+        // never refresh).
+        let reloaded = self.read_oauth(provider_id).await;
+        if let Ok(Some(cred)) = &reloaded
+            && (!cred.needs_refresh() || matches!(receipt.outcome, MutationOutcome::Written { .. }))
         {
-            Some(cred) => cred,
-            None => {
-                return Err(ProviderError::CredentialNeeded {
-                    provider_id: provider_id.to_owned(),
-                });
-            }
-        };
-        if !cred.needs_refresh() {
-            // Another writer refreshed between our fast read and the lock.
-            return Ok(ResolvedAuth {
-                scheme: AuthScheme::Bearer,
-                secret: cred.access.clone(),
-                base_url: cred.base_url.clone(),
-                account_id: cred.account_id.clone(),
-                provenance: oauth_provenance(provider_id),
-            });
+            return Ok(resolved_oauth(provider_id, cred));
         }
-        let refresh = match tokio::time::timeout(self.refresh_timeout, oauth.refresh(&cred)).await {
-            Ok(refresh) => refresh,
-            Err(_) => Err(ProviderError::AuthFailed(
-                opi_ai::provider::ProviderErrorSummary::from_untrusted(format!(
-                    "OAuth refresh timed out for provider '{provider_id}'"
+        match receipt.outcome {
+            MutationOutcome::Failed { ref error } => match &**error {
+                MutationError::Store(store_error) => {
+                    Err(store_err_to_provider(store_error.clone()))
+                }
+                MutationError::Operation(operation_error) => Err(operation_error.clone()),
+                _ => Err(ProviderError::AuthFailed(
+                    ProviderErrorSummary::from_untrusted(
+                        "OAuth rotation failed with an unrecognized mutation error",
+                    ),
+                )),
+            },
+            MutationOutcome::Unknown { detail } => Err(ProviderError::AuthFailed(
+                ProviderErrorSummary::from_untrusted(format!(
+                    "OAuth rotation outcome unknown for provider '{provider_id}': {detail}"
                 )),
             )),
-        };
-        match refresh {
-            Ok(refreshed) => {
-                let new_store = Credential::from(refreshed.clone());
-                self.store
-                    .write_unlocked(provider_id, &new_store)
-                    .await
-                    .map_err(store_err_to_provider)?;
-                Ok(ResolvedAuth {
-                    scheme: AuthScheme::Bearer,
-                    secret: refreshed.access,
-                    base_url: refreshed.base_url,
-                    account_id: refreshed.account_id,
-                    provenance: oauth_provenance(provider_id),
-                })
-            }
-            Err(refresh_err) => {
-                // Post-failure re-read under the lock: a concurrent writer may
-                // have refreshed despite our HTTP failing.
-                match self.read_oauth(provider_id).await {
-                    Ok(Some(reread)) if !reread.needs_refresh() => Ok(ResolvedAuth {
-                        scheme: AuthScheme::Bearer,
-                        secret: reread.access.clone(),
-                        base_url: reread.base_url.clone(),
-                        account_id: reread.account_id.clone(),
-                        provenance: oauth_provenance(provider_id),
-                    }),
-                    _ => Err(refresh_err),
-                }
-            }
+            MutationOutcome::Deleted { .. } => Err(ProviderError::CredentialNeeded {
+                provider_id: provider_id.to_owned(),
+            }),
+            MutationOutcome::Written { .. } | MutationOutcome::Unchanged { .. } => match reloaded {
+                Err(store_error) => Err(store_err_to_provider(store_error)),
+                Ok(None) => Err(ProviderError::CredentialNeeded {
+                    provider_id: provider_id.to_owned(),
+                }),
+                Ok(Some(_)) => Err(ProviderError::AuthFailed(
+                    ProviderErrorSummary::from_untrusted(format!(
+                        "OAuth refresh did not produce a usable credential for provider '{provider_id}'"
+                    )),
+                )),
+            },
         }
     }
 
@@ -1280,7 +1511,7 @@ impl CredentialResolver {
         &self,
         provider_id: &str,
     ) -> Result<Option<OAuthCredential>, CredentialStoreError> {
-        match self.store.read_consistent_unlocked(provider_id).await {
+        match self.store.core.read_consistent_unlocked(provider_id).await {
             Ok(Some(Credential::OAuthToken {
                 access,
                 refresh,
@@ -1311,7 +1542,7 @@ impl CredentialResolver {
     /// OAuth so Anthropic may use API-key env fallback; operational and
     /// corrupt-marker errors propagate.
     pub async fn has_oauth_credential(&self, provider_id: &str) -> Result<bool, ProviderError> {
-        match self.store.read_marker_kind(provider_id) {
+        match self.store.core.read_marker_kind(provider_id) {
             Ok(Some(CredentialKind::OAuthToken)) => Ok(true),
             Ok(Some(CredentialKind::ApiKey)) | Ok(None) => Ok(false),
             Err(CredentialStoreError::BackendUnavailable { .. }) => Ok(false),
@@ -1347,6 +1578,39 @@ impl CredentialResolver {
     /// absent/empty). Layered auth calls this for every Anthropic stream.
     pub fn env_value(&self, env_var: &str) -> Option<String> {
         (self.env_lookup)(env_var).filter(|v| !v.trim().is_empty())
+    }
+}
+
+/// Build the resolved auth for a stored (already committed) OAuth
+/// credential. Never triggers a refresh.
+fn resolved_oauth(provider_id: &str, cred: &OAuthCredential) -> ResolvedAuth {
+    ResolvedAuth {
+        scheme: AuthScheme::Bearer,
+        secret: cred.access.clone(),
+        base_url: cred.base_url.clone(),
+        account_id: cred.account_id.clone(),
+        provenance: oauth_provenance(provider_id),
+    }
+}
+
+/// Extract the OAuth shape from a stored credential (no secret exposure
+/// beyond the moved fields).
+fn credential_as_oauth(credential: &Credential) -> Option<OAuthCredential> {
+    match credential {
+        Credential::OAuthToken {
+            access,
+            refresh,
+            expires_at,
+            base_url,
+            account_id,
+        } => Some(OAuthCredential {
+            access: access.clone(),
+            refresh: refresh.clone(),
+            expires_at: *expires_at,
+            base_url: base_url.clone(),
+            account_id: account_id.clone(),
+        }),
+        Credential::ApiKey(_) => None,
     }
 }
 
@@ -1426,7 +1690,7 @@ impl AuthResolver for AuthSource {
                 let resolver = resolver.clone();
                 let provider_id = provider_id.clone();
                 let oauth = oauth.clone();
-                Box::pin(async move { resolver.resolve_oauth(&provider_id, &*oauth).await })
+                Box::pin(async move { resolver.resolve_oauth(&provider_id, oauth.clone()).await })
             }
             AuthSource::EnvOAuthToken {
                 provider_id,
@@ -1468,7 +1732,7 @@ impl AuthResolver for AuthSource {
                 let api_key_env_var = api_key_env_var.clone();
                 Box::pin(async move {
                     if resolver.has_oauth_credential(&provider_id).await? {
-                        return resolver.resolve_oauth(&provider_id, &*oauth).await;
+                        return resolver.resolve_oauth(&provider_id, oauth.clone()).await;
                     }
                     if let Some(value) = resolver.env_value(&oauth_env_var) {
                         let environment = AuthProvenanceSource::Environment {

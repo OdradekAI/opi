@@ -146,7 +146,7 @@ impl CredentialSource {
 /// unknown envelope, or an unreachable backend, is never collapsed into
 /// [`CredentialSource::Absent`] or an env fallback, so a corrupt store is
 /// surfaced explicitly rather than silently re-prompting for a credential.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 #[non_exhaustive]
 pub enum CredentialStoreError {
     /// The native credential service is not reachable on this host.
@@ -203,8 +203,8 @@ pub type BoxAuthFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 ///
 /// All methods are IO-free from `opi-ai`'s point of view: the concrete
 /// keychain/env implementations and the cross-process mutation lock live in
-/// `opi-coding-agent`. `read`/`write`/`delete`/`probe` return boxed futures
-/// so the trait is usable behind `dyn CredentialStore`.
+/// `opi-coding-agent`. `read`/`write`/`delete`/`probe`/`modify` return boxed
+/// futures so the trait is usable behind `dyn CredentialStore`.
 ///
 /// * `read` returns `Ok(None)` for a missing entry and an `Err` for a backend
 ///   failure — the two are never collapsed.
@@ -214,6 +214,14 @@ pub type BoxAuthFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 ///   implementations serialize them with the shared cross-process lock.
 ///   Acquire-then-re-read applies to read-modify-write operations such as
 ///   OAuth refresh, not to these unconditional methods.
+/// * `modify` submits a store-owned serialized mutation (login, logout,
+///   replace, refresh) that survives waiter cancellation while the host
+///   runtime lives; the resolved [`crate::mutation::MutationReceipt`] is the ACK and records
+///   operation/store failures and unknown loss windows instead of hiding
+///   them. The default implementation runs inline without serialization and
+///   is only for single-consumer stores; shared or persistent stores must
+///   override it (and `mutation_barrier`) with a real
+///   `crate::mutation::MutationQueue`.
 pub trait CredentialStore: Send + Sync {
     /// Read the credential for `provider_id`, if present.
     fn read<'a>(
@@ -236,4 +244,35 @@ pub trait CredentialStore: Send + Sync {
 
     /// Probe for a credential without reading the secret.
     fn probe<'a>(&'a self, provider_id: &'a str) -> BoxAuthFuture<'a, CredentialSource>;
+
+    /// Submit a serialized, store-owned mutation for `provider_id` and wait
+    /// for its ACK. The operation sees the current credential (read under
+    /// the slot's exclusion) plus a [`crate::mutation::MutationSlotView`] for post-failure
+    /// re-reads, and returns a [`crate::mutation::MutationDecision`]. Dropping the returned
+    /// future cancels only the wait: once a mutation starts it runs to its
+    /// recorded outcome while the host runtime lives (worker loss surfaces
+    /// as [`crate::mutation::MutationOutcome::Unknown`], never as a silent success).
+    ///
+    /// Operation and store failures settle into the receipt
+    /// ([`crate::mutation::MutationOutcome::Failed`]); `Err` is reserved for stores that
+    /// cannot admit mutations at all. There is no default wait, receipt, or
+    /// admission cap.
+    fn modify<'a>(
+        &'a self,
+        provider_id: &'a str,
+        op: crate::mutation::CredentialMutationOp,
+    ) -> BoxAuthFuture<'a, Result<crate::mutation::MutationReceipt, CredentialStoreError>> {
+        crate::mutation::modify_inline(self, provider_id, op)
+    }
+
+    /// Synchronously capture the store-wide mutation cutoff. Every caller
+    /// of one shared store (including multiple `Models` instances) observes
+    /// the same generations. The barrier reports pending, settled, failed,
+    /// and unknown mutations plus fenced late writes admitted after
+    /// creation; it never starts auth and never aborts a running mutation.
+    /// The default returns an inert barrier for stores without real
+    /// mutations.
+    fn mutation_barrier(&self) -> crate::mutation::MutationBarrier {
+        crate::mutation::inert_barrier()
+    }
 }
