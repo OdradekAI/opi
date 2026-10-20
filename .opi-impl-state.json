@@ -3359,7 +3359,7 @@
       "definition_of_done": "Route Models -> migrated real OpenAI Chat adapter -> source-qualified HttpClient -> controlled loopback through explicit send/proxy/redirect rules, protected-header stripping, cancellation and exact lawful-send counts. Own openai_chat.rs acquisition migration as well as HttpClient; wrapper-only or raw reqwest-client tests cannot close this slice. Use unmodified crates.io reqwest0.12.28/Hyper1.9.0 under RDF-22, recording actual graph/features/registry checksums and applicable response-head/read-buffer/trailer-count/trailer-bytes/cumulative-chunk-extension boundaries. Exercise below/at/above and bytewise/coalesced inputs, typed redacted failure causes and provable stage, acquisition failure versus failure after accepted partial/known usage, one terminal/permanent EOF and no post-handoff retry or hidden sends. Do not invent a resource-limit subtype when the backend exposes only a broader typed cause; do not add SDK body/event caps, huge allocation hints or relax CL/TE/framing/EOF validation. Preserve ordinary Bedrock H2 versus explicit WS/placeholder H1, HTTPS proxy outer TLS -> CONNECT/tail -> target inner TLS, scoped NO_PROXY, cancellation/drop ownership and zero custom-transport double-wrap. No HTTP fork, namespace publication, patch replay or third-party/pi-http directory is required. Before passing, prove the packaged public slice from an actual cargo package artifact extracted outside the workspace with ordinary registry backends and normal plus caller feature-union graphs; no source-checkout substitution, root patch or library lock establishes proof. AWS/ADC and other adapters retain their own source fixtures; full DEL-05 closes only at20.34, final assembled package at20.57 and native/platform at20.58; this slice does not complete20.11,20.34 or20.57.",
       "definition_source": "inferred",
       "replaces": "源限定 HTTP／H2／proxy／redirect 与窄 Hyper 修正",
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.14"
@@ -3462,9 +3462,9 @@
         "opi_ai::HttpClient source-qualified redirect/proxy/send owner (target)"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "509e2da1ac727a2948eb7cec213b4cf2b092ae90",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -3477,15 +3477,76 @@
         "crates/opi-ai/src/lib.rs",
         "crates/opi-ai/src/openai_chat.rs",
         "crates/opi-ai/src/provider_headers.rs",
+        "crates/opi-ai/tests/http_acceptance.rs",
         "crates/opi-ai/tests/connection_pooling.rs",
         "crates/opi-ai/tests/openai_chat_fixtures.rs",
         "crates/opi-ai/tests/proxy_support.rs",
         "scripts/pi-sdk-conformance/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "27979ec0d4cfa44cd9f1d91b6da5b53aad8e5ccb",
+      "evidence": {
+        "Opi-Task": "20.12",
+        "Opi-DoD-SHA256": "602728aa09bdaab0f495be493f893ab5e290b01dabbd9ca6bef014315601833d",
+        "Opi-Verification": "workspace; opi-impl-smoke.ps1 full PASSED on Windows native x86_64-msvc final tree (doc-check, fmt --all, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets 249 suites, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps) with AWS_LC_SYS_USE_SYSTEM=0 (log C:/Users/Luiz/AppData/Local/Temp/opi-win-full7.log); http_acceptance 15/15 and P20-S12 binaries connection_pooling 9 / openai_chat_fixtures 68 / proxy_support 26 green inside the gate; WSL x86_64-linux fmt/clippy -D warnings/doc-check and the four affected binaries also PASSED; scripts/pi-sdk-conformance/package_slice.py --family http --offline PASS on Windows native (scratch C:/Users/Luiz/AppData/Local/Temp/opi-http-proof-3, ordinary + caller-union 6 checks each, resolved reqwest 0.12.28 / hyper 1.9.0 / hyper-util 0.1.20 / http 1.4.0 with registry lock checksums, CC builder, AWS_LC_SYS_USE_SYSTEM=0 false, static archive, no dynamic libcrypto)",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; exec.workflow runtime unavailable (node absent in environment), wf_ref=null",
+        "Opi-Acceptance": "P20-S12 closed at the HTTP acquisition seam this task owns: real Models->migrated OpenAI Chat adapter->source-qualified HttpClient over controlled loopback (redirect chains, protected-header stripping, exact lawful-send counts, typed stage failures, acceptance boundaries) plus packaged ordinary/feature-union public consumers from an extracted cargo package artifact. Full DEL-05 stays with 20.34, assembled SDK with 20.57, native/platform with 20.58; 20.11 not completed. Bedrock ordinary H2 versus explicit WS/placeholder H1 preserved (existing suites green in the gate); cancellation/drop ownership preserved through the 20.14 tls_contract and lifecycle suites on the same seam"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-20T11:53:09+08:00",
+          "attempt": 1,
+          "summary": "DEL-05 transport slice delivered in commit 27979ec0d4cfa44cd9f1d91b6da5b53aad8e5ccb over the unmodified crates.io reqwest 0.12.28/Hyper 1.9.0 graph. Public surface: HttpClientBuilder::redirects(RedirectPolicy) - explicit send/redirect rule with default Limited(10) owned by opi-ai, typed redacted Network('too many redirects') acquisition failure on limit breach with zero further sends, None returning 3xx to caller status classification, upstream cross-origin protected-header stripping (authorization/cookie/cookie2/proxy-authorization/www-authenticate on host-or-port change) proven kept on same-origin hops and stripped cross-origin through the real Models->Chat->HttpClient path with exact lawful-send counts (2 same-origin, 3-then-refusal under Limited(2), 1 under None). Breaking: ambient HTTP_PROXY/HTTPS_PROXY/NO_PROXY backend env detection is now disabled - proxy use is explicit-only through ProxyConfig with its scoped no_proxy list deciding bypass (consumers use proxy_from_env + explicit config as opi-coding-agent already does); discovered live when the dev session's ambient proxy intercepted loopback traffic, and it also guarantees zero hidden sends. New http_acceptance.rs (15 tests, scripted raw-TCP peers, bytewise and coalesced delivery) records the RDF-22 acceptance range of the pinned graph: 8 KiB initial read buffer with adaptive growth (no head byte cap enforced below the adaptive maximum; 300 KiB heads accepted, 1 MiB observed chunking-dependent and therefore not asserted), 100-field message-head cap (98 pad + 2 standard accepted, 99 pad rejected at acquisition), 16 KiB cumulative chunk-extension limit (post-acceptance StreamError; below-limit accepted both deliveries), no artificial trailer cap through this surface (below/at/above the internal 100-field/16 KiB constants all accepted, coalesced and bytewise), typed acquisition-versus-post-acceptance stages (StreamFailure envelope with StreamError cause after accepted partial content), single-terminal EOF with no retry, HTTPS proxy outer TLS -> CONNECT -> inner TLS with exactly one CONNECT and no custom-transport double-wrap, and scoped NO_PROXY bypass with zero proxy connections. openai_chat.rs classifies redirect-limit failures with the producer-attested static cause (no URL/target leakage). No SDK body/event caps, allocation hints, invented resource-limit subtypes, or relaxed CL/TE/framing/EOF validation were added. Package proof: package_slice.py --family http --offline with the consumer-http template (ordinary + caller-union reqwest-gzip feature union) proving the extracted artifact through the public path (redirect policy ownership, same/cross-origin stripping, typed limit failure with exact sends, absolute-form proxy forwarding with scoped bypass, acquisition failure and single-terminal EOF) against pinned reqwest/hyper/hyper-util/http identities with registry lock checksums and native provenance. Machine-prep disclosures: Windows cargo cache seeded once with the gzip-union transitive crates (async-compression 0.4.51, tower-http 0.6.11) for offline consumer resolution; dev-session ambient proxy documented above. task_owned_paths appended with evidence: crates/opi-ai/tests/http_acceptance.rs (scripted raw-peer acceptance harness does not belong in the fixture-parser/pooling/proxy binaries); scripts/pi-sdk-conformance/consumer-http/** is covered by the existing scripts/pi-sdk-conformance/** entry. OPEN: response-head parsing beyond the adaptive maximum is chunking-dependent through this surface and stays unasserted; full DEL-05, assembled SDK and platform closure remain with their owners.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.ps1 full on Windows native final tree (249 suites, 0 failures, http_acceptance 15/15 included). WSL x86_64-linux: fmt/clippy -D warnings/doc-check and affected binaries PASSED (same environment-specific pre-existing exclusions as 20.13/20.14).",
+            "d0_scenarios": "P20-S12 verification commands executed: cargo test -p opi-ai --test connection_pooling --test openai_chat_fixtures --test proxy_support (9/68/26 green in the authoritative gate) and the DoD's packaged-proof requirement delivered as scripts/pi-sdk-conformance/package_slice.py --family http --offline (PASS, evidence C:/Users/Luiz/AppData/Local/Temp/opi-http-proof-3/evidence.json)",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7) no must-fix: DoD clauses mapped clause-by-clause (real routed path, explicit send/proxy/redirect rules, protected-header stripping, exact lawful-send counts, recorded graph/checksums and acceptance boundaries with below/at/above and bytewise/coalesced inputs, typed stages, acquisition-vs-post-partial, one terminal/permanent EOF, no invented subtypes/caps/relaxed validation, preserved Bedrock H2 vs WS/placeholder H1, HTTPS proxy tunnel, scoped NO_PROXY, zero double-wrap, no fork/namespace/patch/pi-http, packaged ordinary+union proof); tests observe server-side state (recorded requests/headers/targets, send counts, CONNECT counts, error discriminants); production call sites are the registered public paths; evidence footers truthful incl. the ambient-proxy discovery fix, cache seeding and the 1 MiB chunking-dependence disclosure; no non-goal leak; workspace dependency table unchanged (template-level pins only); test stewardship below",
+            "d3_gap_checks": "PASS: git diff --check clean; no *.pem/*.key/*.p12 tracked (loopback corpus is synthetic PEM text inside .rs fixtures with provenance headers, unchanged from 20.13/20.14); opi-doc-check.py PASS; package-proof harness unittests (11 package_slice + 15 package_proof) OK; package evidence records lock checksums for reqwest/hyper/hyper-util/http and native provenance (CC, USE_SYSTEM=0 false, static archive, no dynamic libcrypto)",
+            "test_disposition": [
+              {
+                "subject": "20.12",
+                "action": "add",
+                "test": "crates/opi-ai/tests/http_acceptance.rs (15 tests: redirect_policy_defaults_to_limited_ten_and_is_configurable, same_origin_redirect_keeps_authorization_with_exact_sends, cross_origin_redirect_strips_protected_authorization, redirect_limit_enforced_with_exact_lawful_sends_and_typed_cause, redirect_none_returns_status_to_caller_with_single_send, acquisition_failure_before_any_request_is_typed_network, server_close_after_accepted_head_is_single_terminal_without_retry, mid_body_abort_after_partial_events_is_stage_provable, response_head_below_at_and_above_initial_read_buffer, response_head_header_count_boundary, trailer_count_and_bytes_boundaries, cumulative_chunk_extension_boundary, single_extension_chunk_round_trip, https_proxy_outer_tls_connect_tunnel_inner_tls, scoped_no_proxy_bypasses_the_https_proxy)",
+                "interface": "public opi_ai::http HttpClientBuilder::redirects/proxy + Models/OpenAiChatProvider injection path",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.12",
+                "action": "add",
+                "test": "scripts/pi-sdk-conformance consumer-http battery (6 checks x ordinary/caller-union, run by package_slice.py) + test_package_slice.py http-family registration unittest (11 total)",
+                "interface": "scripts/pi-sdk-conformance public package-proof harness",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.12",
+                "action": "update",
+                "test": "openai_chat.rs send-error classification adds the typed redirect-limit branch (Network attested_static 'too many redirects'); http.rs build() disables ambient env proxy detection and applies the explicit redirect policy; bilingual READMEs + CHANGELOG document the breaking explicit-only proxy rule and the recorded acceptance profile",
+                "interface": "public HttpClientBuilder::build behavior; openai_chat acquisition classification",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.12",
+                "action": "retain",
+                "test": "connection_pooling (9), proxy_support (26), openai_chat_fixtures (68) and all other existing suites unchanged and green in the gate; tls_contract (21) and provider_lifecycle carry cancellation/drop ownership preservation on the same seam",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.12",
+                "action": "none",
+                "test": "none deleted",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.13",
@@ -15764,6 +15825,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-20T03:58:26+08:00",
       "task_id": "20.14",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-10-20T11:53:09+08:00",
+      "task_id": "20.12",
       "criterion_id": null
     }
   ]
