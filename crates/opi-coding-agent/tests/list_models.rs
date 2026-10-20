@@ -424,9 +424,8 @@ fn anthropic_oauth_env_alone_enables_secret_free_listing() {
     let entries = model_entries_from_registry(collection.registry());
     assert!(entries.iter().any(|entry| entry.provider_id == "anthropic"));
     let rendered = format!(
-        "{:?}{:?}{}",
+        "{:?}{}",
         collection.auth_descriptor("anthropic"),
-        collection.auth_status("anthropic"),
         entries
             .iter()
             .map(|entry| format!(
@@ -886,11 +885,7 @@ async fn listing_fails_closed_on_operational_and_corrupt_store_probes_with_env_p
             collection.registry().get_provider("anthropic").is_none(),
             "{name}: fail-closed store probe must not use API-key env fallback"
         );
-        let rendered = format!(
-            "{:?}{:?}",
-            collection.auth_descriptor("anthropic"),
-            collection.auth_status("anthropic")
-        );
+        let rendered = format!("{:?}", collection.auth_descriptor("anthropic"));
         assert!(!rendered.contains(env_canary), "{name}: {rendered}");
     }
 }
@@ -898,7 +893,7 @@ async fn listing_fails_closed_on_operational_and_corrupt_store_probes_with_env_p
 #[tokio::test]
 #[allow(clippy::await_holding_lock)] // Serializes process-env mutation; the awaited listing core never re-acquires this lock.
 async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
-    use opi_ai::{AuthDescriptor, AuthStatus};
+    use opi_ai::AuthDescriptor;
     use opi_coding_agent::credential_store::FakeKeyringBackend;
     use opi_coding_agent::provider_factory::build_collection_for_listing_command;
 
@@ -1059,12 +1054,12 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
                 case.name,
                 collection.auth_descriptor("bedrock")
             );
-            assert_eq!(
-                collection.auth_status("bedrock"),
-                Some(AuthStatus::Configured),
-                "{}: unexpected Bedrock auth status",
-                case.name
-            );
+            let check = collection
+                .check_auth("bedrock")
+                .await
+                .expect("bedrock check")
+                .expect("configured bedrock provider checks configured");
+            assert_eq!(check.kind, opi_ai::AuthCheckKind::ApiKey);
         } else {
             assert!(
                 collection.auth_descriptor("bedrock").is_none(),
@@ -1072,8 +1067,8 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
                 case.name
             );
             assert!(
-                collection.auth_status("bedrock").is_none(),
-                "{}: unavailable Bedrock provider retained auth status",
+                collection.check_auth("bedrock").await.unwrap().is_none(),
+                "{}: unavailable Bedrock provider must check unconfigured",
                 case.name
             );
         }
@@ -1084,10 +1079,9 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
         );
 
         let rendered = format!(
-            "providers={:?}\nauth={:?}\nstatus={:?}\nentries={}",
+            "providers={:?}\nauth={:?}\nentries={}",
             collection.provider_ids(),
             collection.auth_descriptor("bedrock"),
-            collection.auth_status("bedrock"),
             entries
                 .iter()
                 .map(|entry| format!(

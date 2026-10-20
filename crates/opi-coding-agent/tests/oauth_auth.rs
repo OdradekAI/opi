@@ -52,7 +52,7 @@ use opi_coding_agent::credential_store::{
 use opi_coding_agent::harness::CodingHarness;
 use opi_coding_agent::oauth::{
     AnthropicOAuthProvider, CodexOAuthProvider, CopilotOAuthProvider, OAuthProviderRegistry,
-    RegistryError, TuiLoginPresenter, login_oauth, logout_credential,
+    RegistryError, TuiLoginPresenter, login_oauth,
 };
 use opi_coding_agent::policy::ToolSelection;
 use opi_coding_agent::provider_factory::build_provider_with_oauth;
@@ -4811,7 +4811,7 @@ async fn anthropic_env_oauth_token_precedence_stored_wins_env_fallback() {
 }
 
 // ===========================================================================
-// Slice 6 閳?login_oauth / logout_credential store integration
+// Slice 6 閳?login_oauth / SDK logout store integration
 // ===========================================================================
 
 #[tokio::test]
@@ -4923,7 +4923,7 @@ async fn login_oauth_store_failure_stays_typed_and_does_not_report_success() {
 }
 
 #[tokio::test]
-async fn logout_credential_deletes_stored_entry() {
+async fn logout_deletes_the_stored_entry_through_the_sdk() {
     let backend = FakeKeyringBackend::new();
     let (_dir, store, _b) = store_with(backend);
     store
@@ -4932,8 +4932,7 @@ async fn logout_credential_deletes_stored_entry() {
         .unwrap();
     assert!(store.read("anthropic").await.unwrap().is_some());
 
-    let store_ref = &*store;
-    logout_credential("anthropic", store_ref)
+    opi_coding_agent::provider_factory::logout_stored_credential(&store, "anthropic")
         .await
         .expect("logout succeeds");
 
@@ -4941,21 +4940,20 @@ async fn logout_credential_deletes_stored_entry() {
 }
 
 #[tokio::test]
-async fn logout_credential_missing_entry_is_noop() {
+async fn logout_missing_entry_is_a_noop_ack() {
     let backend = FakeKeyringBackend::new();
     let (_dir, store, _b) = store_with(backend);
-    // No credential stored 閳?delete is a no-op.
-    let store_ref = &*store;
-    logout_credential("anthropic", store_ref)
+    // No credential stored 閳?the local deletion still ACKs.
+    opi_coding_agent::provider_factory::logout_stored_credential(&store, "anthropic")
         .await
         .expect("logout on missing entry is a no-op");
 }
 
 #[tokio::test]
-async fn logout_credential_store_failure_stays_typed() {
+async fn logout_store_failure_stays_typed() {
     let (_dir, store, _backend) = store_with(FakeKeyringBackend::new().with_unavailable());
 
-    let error = logout_credential("anthropic", &store)
+    let error = opi_coding_agent::provider_factory::logout_stored_credential(&store, "anthropic")
         .await
         .expect_err("unavailable store must fail logout");
 

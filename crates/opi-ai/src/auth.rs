@@ -7,6 +7,13 @@
 //! sequential retries without depending on a concrete backend or making
 //! providers generic over the resolver.
 //!
+//! Three context responsibilities stay separate (AIR-066): the serializable
+//! model Context/transcript (see [`crate::transcript`]), this module's
+//! injectable [`AuthContext`] source access, and any process-local telemetry
+//! observation. Credentials and source-access facts never enter model
+//! serialization, and model/transcript data never drives credential
+//! resolution.
+//!
 //! All async trait methods return [`BoxAuthFuture`] boxed futures, so
 //! `AuthResolver`, `OAuthProvider`, and `LoginPresenter` are usable behind
 //! `dyn` without an `async-trait` dependency.
@@ -196,6 +203,11 @@ pub enum AuthProvenanceSource {
     /// A static credential baked into provider construction.
     #[default]
     Static,
+    /// A caller-supplied per-call credential that replaced every configured
+    /// source for one resolution (see
+    /// [`crate::Models::get_auth`](crate::Models::get_auth) overrides). No
+    /// environment, store, or resolver access happened for that resolution.
+    Explicit,
     /// A credential read from a named environment variable. `name` is the
     /// variable name (e.g. `ANTHROPIC_API_KEY`), never its resolved value.
     Environment {
@@ -505,4 +517,143 @@ pub trait LoginPresenter: Send + Sync {
 
     /// Notify the user that login failed.
     fn notify_failure(&self, reason: &str);
+}
+
+// ---------------------------------------------------------------------------
+// AuthContext — injectable ambient-source access (AIR-063/AIR-066)
+// ---------------------------------------------------------------------------
+
+/// Typed failure of injectable [`AuthContext`] source access.
+///
+/// Source access is separated from credential values: an error here means the
+/// *source* could not be consulted (non-unicode environment bytes, a filesystem
+/// probe failure), never that a credential was missing. Missing values are
+/// `Ok(None)` so callers never conflate "unconfigured" with "source failed".
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum AuthContextError {
+    /// The named environment variable holds non-unicode bytes.
+    #[error("environment variable '{name}' is not valid unicode")]
+    EnvNotUnicode {
+        /// Variable whose value could not be decoded.
+        name: String,
+    },
+    /// An injected environment source failed for an implementation-specific
+    /// reason.
+    #[error("environment access failed for '{name}': {reason}")]
+    EnvAccess {
+        /// Variable that was being read.
+        name: String,
+        /// Stable, non-secret failure reason.
+        reason: String,
+    },
+    /// A file-existence probe failed for a reason other than the file being
+    /// absent (permissions, I/O error). A missing file is `Ok(false)`, not an
+    /// error.
+    #[error("file existence probe failed for '{path}': {reason}")]
+    FileProbe {
+        /// Path that was being probed.
+        path: String,
+        /// Stable, non-secret failure reason.
+        reason: String,
+    },
+}
+
+/// Injectable ambient-source access for authentication (AIR-063/AIR-066).
+///
+/// This is a distinct context responsibility from the serializable model
+/// Context/transcript (see [`crate::transcript`]) and from telemetry: it answers only
+/// "what does the ambient environment say". [`Models`](crate::Models) construction,
+/// registration, and static catalog lookup perform **zero** source access;
+/// the context is consulted on demand by the management operations
+/// ([`Models::check_auth`](crate::Models::check_auth),
+/// [`get_auth`](crate::Models::get_auth),
+/// [`get_available`](crate::Models::get_available)). Injecting an
+/// implementation replaces ambient access entirely — the default
+/// [`AmbientAuthContext`] is never consulted once a source is injected.
+///
+/// The contract never reads a credential to "verify" a source:
+/// [`file_exists`](Self::file_exists) checks path existence only.
+pub trait AuthContext: Send + Sync {
+    /// Read one named environment variable on demand.
+    ///
+    /// Returns `Ok(None)` when the variable is unset or empty after trimming.
+    /// Non-unicode bytes and injected-source failures are typed errors; a
+    /// missing value is never an error.
+    fn env(&self, name: &str) -> Result<Option<String>, AuthContextError>;
+
+    /// Probe whether a file exists, expanding a leading `~` to the user's home
+    /// directory.
+    ///
+    /// Returns `Ok(false)` for a missing file, an unresolvable `~` expansion,
+    /// or a platform without filesystem access (an injected source may answer
+    /// `false` explicitly). Probe failures other than absence are typed
+    /// errors. This method never reads file contents.
+    fn file_exists(&self, path: &str) -> Result<bool, AuthContextError>;
+}
+
+/// Default lazy [`AuthContext`] over the real process environment and
+/// filesystem.
+///
+/// Construction performs no access: environment variables are read and paths
+/// probed only when a management operation demands them, so `Models::new` and
+/// registration stay free of env/store/network work. `~` expands via `HOME`
+/// (unix) or `USERPROFILE` (Windows); an unexpandable `~` answers `Ok(false)`
+/// instead of touching the literal path.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AmbientAuthContext;
+
+impl AmbientAuthContext {
+    /// Expand a leading `~` (or `~` alone) to the home directory, when the
+    /// ambient environment names one.
+    fn expand_home(path: &str) -> Option<std::path::PathBuf> {
+        if !path.starts_with('~') {
+            return Some(std::path::PathBuf::from(path));
+        }
+        let home = if cfg!(windows) {
+            std::env::var_os("USERPROFILE")
+        } else {
+            std::env::var_os("HOME")
+        }?;
+        if home.is_empty() {
+            return None;
+        }
+        let rest = path.strip_prefix('~').unwrap_or(path);
+        let rest = rest.strip_prefix(['/', '\\']).unwrap_or(rest);
+        let mut expanded = std::path::PathBuf::from(home);
+        if !rest.is_empty() {
+            expanded.push(rest);
+        }
+        Some(expanded)
+    }
+}
+
+impl AuthContext for AmbientAuthContext {
+    fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
+        match std::env::var(name) {
+            Ok(value) if !value.trim().is_empty() => Ok(Some(value)),
+            // Unset or set-but-empty: not configured, never an error.
+            Ok(_) => Ok(None),
+            Err(std::env::VarError::NotPresent) => Ok(None),
+            Err(std::env::VarError::NotUnicode(_)) => Err(AuthContextError::EnvNotUnicode {
+                name: name.to_owned(),
+            }),
+        }
+    }
+
+    fn file_exists(&self, path: &str) -> Result<bool, AuthContextError> {
+        // An unexpandable `~` answers false: the referenced file cannot exist
+        // for this process, and inventing a literal "~" path would be wrong.
+        let Some(resolved) = Self::expand_home(path) else {
+            return Ok(false);
+        };
+        match std::fs::metadata(&resolved) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(AuthContextError::FileProbe {
+                path: path.to_owned(),
+                reason: error.to_string(),
+            }),
+        }
+    }
 }

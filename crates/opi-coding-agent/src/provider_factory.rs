@@ -549,17 +549,6 @@ fn build_proxied_client_for_listing(
     })
 }
 
-fn listing_auth_available(
-    env_name: Option<&str>,
-    store_probe: Option<&opi_ai::CredentialSource>,
-) -> bool {
-    let env_present = env_name
-        .and_then(std::env::var_os)
-        .and_then(|value| value.into_string().ok())
-        .is_some_and(|value| !value.trim().is_empty());
-    env_present || matches!(store_probe, Some(opi_ai::CredentialSource::Present { .. }))
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AvailabilityState {
     Present,
@@ -2259,16 +2248,6 @@ pub fn auth_descriptor_for_profile(profile: &OpenAiCompatibleProviderConfig) -> 
     AuthDescriptor::EnvApiKey { env_var }
 }
 
-fn resolved_auth_descriptor_for_profile(
-    profile: &OpenAiCompatibleProviderConfig,
-) -> AuthDescriptor {
-    let default = profile_api_key_env_default(&profile.id);
-    let env_var = resolve_env_name(&profile.api_key_env, &default);
-    AuthDescriptor::Resolved {
-        source: format!("env {env_var}"),
-    }
-}
-
 /// Compat metadata for a built-in provider id. Built-ins do not carry
 /// user-declared openai_compatible profile flags at the collection level.
 pub fn compat_metadata_for(provider_id: &str) -> CompatMetadata {
@@ -2358,15 +2337,14 @@ fn build_collection_for_listing_with_probes(
         }
     }
     for profile in config.providers.openai_compatible.values() {
-        let default_env = profile_api_key_env_default(&profile.id);
-        let env_name = resolve_env_name(&profile.api_key_env, &default_env);
-        if !listing_auth_available(Some(&env_name), None) {
-            continue;
-        }
+        // Registration is configuration-shaped only: every config-valid
+        // profile registers with its real env descriptor, and the SDK
+        // configuration check (`Models::get_available` over `check_auth`)
+        // decides availability on demand through the ambient source.
         let _ = build_proxied_client_for_listing(profile.proxy.as_ref())?;
         let models = openai_compatible_model_catalog(profile).map_err(ListModelsError::Config)?;
         let provider = ListingMetadataProvider::new(profile.id.clone(), models);
-        let auth = resolved_auth_descriptor_for_profile(profile);
+        let auth = auth_descriptor_for_profile(profile);
         let compat = compat_metadata_for_profile(profile);
         if let Err(e) = collection.register(Box::new(provider), auth, compat) {
             return Err(ListModelsError::Config(format!(
@@ -2398,6 +2376,53 @@ fn build_collection_for_listing_with_probes(
         }
     }
     Ok(collection)
+}
+
+/// Delete one provider's stored credential through the SDK management layer.
+///
+/// Builds a management collection with the store attached and delegates to
+/// [`opi_ai::Models::logout`], whose acknowledgement means exactly "the
+/// selected local store confirmed the entry is gone": no environment variable
+/// is unset, no remote session is revoked, and other providers' entries stay
+/// untouched. Store failures surface as typed product diagnostics.
+pub async fn logout_stored_credential(
+    store: &crate::credential_store::KeychainCredentialStore,
+    provider_id: &str,
+) -> Result<(), ProviderError> {
+    let collection = Models::new();
+    collection
+        .logout(store, provider_id)
+        .await
+        .map_err(|error| {
+            // Stable, non-secret diagnostics: the typed ModelsError text carries
+            // provider ids and backend reasons, never credential material.
+            ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+                format!("logout failed for {error}"),
+            ))
+        })
+}
+
+/// List model entries for providers whose source configuration checks out.
+///
+/// Drives `--list-models` availability through the SDK management layer
+/// ([`opi_ai::Models::get_available`] over [`opi_ai::Models::check_auth`]):
+/// registered-but-unconfigured providers (for example compatible profiles
+/// whose API-key environment variable is unset) are filtered on demand.
+pub async fn available_model_entries(
+    collection: &Models,
+) -> Result<Vec<crate::model_listing::ModelEntry>, String> {
+    let available = collection
+        .get_available(None)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(available
+        .into_iter()
+        .map(|(provider_id, model)| crate::model_listing::ModelEntry {
+            provider_id,
+            model_id: model.id,
+            display_name: model.display_name,
+        })
+        .collect())
 }
 
 /// Probe stored credential presence, then build a metadata-only listing collection.

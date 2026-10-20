@@ -271,6 +271,13 @@ impl From<ModelsError> for AgentError {
                 AgentError::CredentialTerminated { provider }
             }
             ModelsError::Provider(error) => AgentError::from(error),
+            // Management-layer failures (source access, credential store,
+            // selected-source resolution) and any future collection error
+            // carry no Agent state of their own: they surface as redacted
+            // provider-config failures.
+            _ => AgentError::Provider(AgentProviderFailure::new(ProviderError::Config(
+                ProviderErrorSummary::redacted(),
+            ))),
         }
     }
 }

@@ -12,7 +12,8 @@ use opi_ai::auth::{
 };
 use opi_ai::message::{AssistantContent, AssistantMessage};
 use opi_ai::models::{
-    AuthDescriptor, AuthStatus, CompatMetadata, Models, ModelsError, SecretKey, drain_to_completion,
+    AuthCheckKind, AuthDescriptor, CompatMetadata, Models, ModelsError, SecretKey,
+    drain_to_completion,
 };
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
 use opi_ai::registry::ProviderRegistry;
@@ -84,6 +85,12 @@ fn collection_error_kind(error: &ModelsError) -> &'static str {
         ModelsError::RetryNotReady { .. } => "retry-not-ready",
         ModelsError::CallSealed { .. } => "call-sealed",
         ModelsError::Provider(_) => "provider",
+        ModelsError::AuthContext(_) => "auth-context",
+        ModelsError::CredentialStore(_) => "credential-store",
+        ModelsError::AuthResolution { .. } => "auth-resolution",
+        // The enum is non_exhaustive for downstream evolution; this local
+        // exhaustive audit intentionally fails to compile on unseen variants.
+        _unreachable_variant => unreachable!(),
     }
 }
 
@@ -158,23 +165,6 @@ impl AuthResolver for MissingAuthResolver {
 
 static ENV_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-fn with_env_var<R>(name: &str, value: Option<&str>, f: impl FnOnce() -> R) -> R {
-    let _guard = ENV_TEST_LOCK.lock().unwrap();
-    let original = std::env::var_os(name);
-    match value {
-        Some(value) => unsafe { std::env::set_var(name, value) },
-        None => unsafe { std::env::remove_var(name) },
-    }
-
-    let result = f();
-
-    match original {
-        Some(value) => unsafe { std::env::set_var(name, value) },
-        None => unsafe { std::env::remove_var(name) },
-    }
-    result
-}
-
 // ---------------------------------------------------------------------------
 // SecretKey redaction
 // ---------------------------------------------------------------------------
@@ -200,87 +190,113 @@ fn secret_key_empty_is_not_present() {
 }
 
 // ---------------------------------------------------------------------------
-// AuthDescriptor resolution (redacted, no provider needed)
+// AuthDescriptor on-demand configuration checks (20.18: checks moved off the
+// IO-free descriptor onto Models::check_auth; the descriptor itself stays
+// secret-free data)
 // ---------------------------------------------------------------------------
 
-#[test]
-fn auth_descriptor_static_key_resolves_configured_and_missing() {
-    let configured = AuthDescriptor::StaticApiKey {
+fn check_collection(descriptor: AuthDescriptor) -> Models {
+    let mut collection = Models::new();
+    collection
+        .register(
+            text_mock("checkprov", "ok"),
+            descriptor,
+            CompatMetadata::default(),
+        )
+        .unwrap();
+    collection
+}
+
+#[tokio::test]
+async fn auth_descriptor_static_key_checks_configured_and_missing() {
+    let configured = check_collection(AuthDescriptor::StaticApiKey {
         value: SecretKey::new(SECRET_VALUE),
-    };
-    assert_eq!(configured.resolve(), AuthStatus::Configured);
-
-    let missing = AuthDescriptor::StaticApiKey {
-        value: SecretKey::new(""),
-    };
-    match missing.resolve() {
-        AuthStatus::Missing { source } => {
-            // Source names the reason but never leaks a value.
-            assert!(!source.contains(SECRET_VALUE));
-        }
-        other => panic!("expected Missing, got {other:?}"),
-    }
-}
-
-#[test]
-fn auth_descriptor_treats_whitespace_as_missing() {
-    let missing = AuthDescriptor::StaticApiKey {
-        value: SecretKey::new("   "),
-    };
-    assert!(matches!(missing.resolve(), AuthStatus::Missing { .. }));
-}
-
-#[test]
-fn auth_descriptor_env_key_missing_when_var_unset() {
-    // Read-only: relies on the var being unset. Unique name avoids collisions.
-    let descriptor = AuthDescriptor::EnvApiKey {
-        env_var: "OPI_TEST_PROV_COLL_DEFINITELY_UNSET_9F2A7C".into(),
-    };
-    match descriptor.resolve() {
-        AuthStatus::Missing { source } => {
-            assert!(source.contains("OPI_TEST_PROV_COLL_DEFINITELY_UNSET_9F2A7C"));
-            assert!(!source.contains(SECRET_VALUE));
-        }
-        AuthStatus::Configured => panic!("expected Missing for unset env var"),
-    }
-}
-
-#[test]
-fn auth_descriptor_env_key_treats_whitespace_as_missing() {
-    let env_var = "OPI_TEST_PROV_COLL_WHITESPACE_ONLY_0E7B3D";
-    let status = with_env_var(env_var, Some("   "), || {
-        AuthDescriptor::EnvApiKey {
-            env_var: env_var.into(),
-        }
-        .resolve()
     });
-    match status {
-        AuthStatus::Missing { source } => {
-            assert!(source.contains(env_var));
-            assert!(source.contains("set but empty"));
-            assert!(!source.contains(SECRET_VALUE));
-        }
-        AuthStatus::Configured => panic!("expected Missing for whitespace-only env var"),
+    let check = configured
+        .check_auth("checkprov")
+        .await
+        .unwrap()
+        .expect("non-empty static key is configured");
+    assert_eq!(check.kind, AuthCheckKind::ApiKey);
+    assert!(!format!("{check:?}").contains(SECRET_VALUE));
+
+    let missing = check_collection(AuthDescriptor::StaticApiKey {
+        value: SecretKey::new(""),
+    });
+    assert!(
+        missing.check_auth("checkprov").await.unwrap().is_none(),
+        "empty static key is unconfigured"
+    );
+    let whitespace = check_collection(AuthDescriptor::StaticApiKey {
+        value: SecretKey::new("   "),
+    });
+    assert!(
+        whitespace.check_auth("checkprov").await.unwrap().is_none(),
+        "whitespace-only static key is unconfigured"
+    );
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serializes process-env mutation; the awaited check never re-acquires this lock.
+async fn auth_descriptor_env_key_checks_through_the_context_on_demand() {
+    // Unset in the ambient environment: unconfigured, not an error.
+    let unset = check_collection(AuthDescriptor::EnvApiKey {
+        env_var: "OPI_TEST_PROV_COLL_DEFINITELY_UNSET_9F2A7C".into(),
+    });
+    assert!(unset.check_auth("checkprov").await.unwrap().is_none());
+
+    // Mutate the shared environment across awaits under the test lock.
+    let env_var = "OPI_TEST_PROV_COLL_WHITESPACE_ONLY_0E7B3D";
+    let _guard = ENV_TEST_LOCK.lock().unwrap();
+    let original = std::env::var_os(env_var);
+    unsafe { std::env::set_var(env_var, "   ") };
+
+    let whitespace = check_collection(AuthDescriptor::EnvApiKey {
+        env_var: env_var.into(),
+    });
+    let check = whitespace.check_auth("checkprov").await.unwrap();
+    assert!(check.is_none(), "whitespace-only env value is unconfigured");
+
+    unsafe { std::env::set_var(env_var, "value-set-for-check") };
+    let present = check_collection(AuthDescriptor::EnvApiKey {
+        env_var: env_var.into(),
+    });
+    let check = present
+        .check_auth("checkprov")
+        .await
+        .unwrap()
+        .expect("env-backed provider is configured");
+
+    match original {
+        Some(value) => unsafe { std::env::set_var(env_var, value) },
+        None => unsafe { std::env::remove_var(env_var) },
     }
+    drop(_guard);
+
+    assert_eq!(check.source.as_deref(), Some(env_var));
+    assert_eq!(check.kind, AuthCheckKind::ApiKey);
+    assert!(!format!("{check:?}").contains("value-set-for-check"));
 }
 
-#[test]
-fn auth_descriptor_resolved_is_configured_without_secret_value() {
-    let descriptor = AuthDescriptor::Resolved {
+#[tokio::test]
+async fn auth_descriptor_resolved_label_checks_configured() {
+    let configured = check_collection(AuthDescriptor::Resolved {
         source: "env OPI_TEST_RESOLVED_SOURCE".into(),
-    };
-    assert_eq!(descriptor.resolve(), AuthStatus::Configured);
-    let rendered = format!("{descriptor:?}");
-    assert!(rendered.contains("OPI_TEST_RESOLVED_SOURCE"));
-    assert!(!rendered.contains(SECRET_VALUE));
-}
+    });
+    let check = configured
+        .check_auth("checkprov")
+        .await
+        .unwrap()
+        .expect("labeled source is configured");
+    assert_eq!(
+        check.source.as_deref(),
+        Some("env OPI_TEST_RESOLVED_SOURCE")
+    );
 
-#[test]
-fn auth_descriptor_resolved_treats_empty_source_as_missing() {
-    let descriptor = AuthDescriptor::Resolved {
+    let empty = check_collection(AuthDescriptor::Resolved {
         source: "   ".into(),
-    };
-    assert!(matches!(descriptor.resolve(), AuthStatus::Missing { .. }));
+    });
+    assert!(empty.check_auth("checkprov").await.unwrap().is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -672,9 +688,9 @@ fn collection_wraps_existing_registry_via_from_registry() {
     // Model lookup flows through the wrapped registry.
     let (provider, _) = collection.resolve("wrapped:mock-model").unwrap();
     assert_eq!(provider.id(), "wrapped");
-    // Auth descriptor defaults to absent for pre-registered providers.
+    // Auth descriptor defaults to absent for pre-registered providers, and the
+    // on-demand check reports them unconfigured.
     assert!(collection.auth_descriptor("wrapped").is_none());
-    assert!(collection.auth_status("wrapped").is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -758,16 +774,37 @@ fn credential_oauth_token_redacts_secrets_but_keeps_base_url() {
     );
 }
 
-#[test]
-fn auth_descriptor_store_credential_resolves_configured_not_authoritative() {
-    // resolve() is intentionally not authoritative for StoreCredential: the
-    // descriptor is secret-free and cannot perform IO, so it returns
-    // Configured (never blocks). The real gate is the per-route resolver
-    // consulted in prepare_call.
-    let descriptor = store_descriptor("anthropic");
-    assert_eq!(descriptor.resolve(), AuthStatus::Configured);
+#[tokio::test]
+async fn auth_descriptor_store_credential_checks_via_probe_snapshot() {
+    // Without a live store or probe snapshot the store-backed provider is
+    // simply unconfigured: the secret-free descriptor never fabricates a
+    // Configured answer.
+    let mut collection = Models::new();
+    collection
+        .register(
+            text_mock("anthropic", "ok"),
+            store_descriptor("anthropic"),
+            CompatMetadata::default(),
+        )
+        .unwrap();
+    assert!(collection.check_auth("anthropic").await.unwrap().is_none());
+
+    // An injected Present probe snapshot checks configured, label-only.
+    collection.set_probe(
+        "anthropic",
+        opi_ai::CredentialSource::Present {
+            label: "keychain opi:anthropic".into(),
+        },
+    );
+    let check = collection
+        .check_auth("anthropic")
+        .await
+        .unwrap()
+        .expect("present probe snapshot is configured");
+    assert_eq!(check.source.as_deref(), Some("keychain opi:anthropic"));
+
     // The descriptor itself carries no secret material.
-    let debug = format!("{descriptor:?}");
+    let debug = format!("{:?}", store_descriptor("anthropic"));
     assert!(!debug.contains(STORE_API_KEY));
     assert!(debug.contains("anthropic"));
 }

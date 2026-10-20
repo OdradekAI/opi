@@ -103,6 +103,32 @@ one lazy `AuthResolver` across all routes; provider/model metadata chooses the
 route before network IO. Unknown models, missing routes, and wire/compatibility
 mismatches are typed non-retryable failures.
 
+### Lazy AuthContext and management results (AIR-063/AIR-066)
+
+Source access is a separate context responsibility: the object-safe
+`AuthContext` (`env`, `file_exists`) answers only "what does the ambient
+environment say", never model or telemetry data. `AmbientAuthContext` is the
+default lazy implementation, and `Models::set_auth_context` replaces it
+entirely — an injected source is never bypassed back to the process
+environment. Construction, registration, and static catalog lookup perform
+zero environment/store/network access; `AuthContextError` keeps non-unicode
+environment bytes and failed existence probes typed instead of empty.
+
+On top of that context, `Models::{check_auth, get_available, get_auth,
+logout}` are the management results. `check_auth` reports configuration
+without refreshing — an expired stored OAuth credential is still configured —
+and surfaces unreachable store backends as typed `ModelsError::CredentialStore`
+errors (probe snapshots included), never as silent `Ok(None)`. `get_available`
+filters the registry by the same check. `get_auth` resolves the selected
+source on demand; an explicit `AuthResolutionOverrides::api_key` wins over
+every source without touching any, a route resolver's `CredentialNeeded`
+reports unconfigured, and any other selected-source failure propagates as
+`ModelsError::AuthResolution` with no fallback source tried. `logout` takes
+the credential store per call and acknowledges exactly one local deletion:
+no environment variable is unset, no remote session is revoked, and other
+providers' entries stay untouched. Stored OAuth credentials resolve without
+refresh in the management path; refresh belongs to the live route/flow owners.
+
 GitHub Copilot routes one static catalog through Anthropic Messages, OpenAI
 Completions/Chat, and OpenAI Responses; OpenAI Codex uses its dedicated
 Responses provider rather than standard Responses compatibility flags. The

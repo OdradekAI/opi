@@ -107,6 +107,27 @@ credential-needed/revoked，则 prepared call 以 `CredentialTerminated` 关闭�
 `ProviderError::CredentialNeeded` 和 `ProviderError::CredentialRevoked`。
 按调用凭据仍不在范围内：`extra_headers` 会拒绝 Provider 管理的鉴权 header。
 
+### 惰性 AuthContext 与管理结果（AIR-063/AIR-066）
+
+来源访问是独立的 context 职责：object-safe 的 `AuthContext`（`env`、
+`file_exists`）只回答"环境说了什么"，不承载模型或 telemetry 数据。
+`AmbientAuthContext` 是默认的惰性实现，`Models::set_auth_context` 注入后
+整体替换 ambient——注入来源不会被绕回进程环境。构造、注册与静态目录
+查找执行零 env/store/network 访问；`AuthContextError` 让非 Unicode 环境字节
+与失败的存在性探测保持类型化，而不是空结果。
+
+在此之上，`Models::{check_auth, get_available, get_auth, logout}` 是管理
+结果。`check_auth` 报告配置状态而不刷新——已过期的存储 OAuth 凭据仍是
+已配置——并将不可达的 store backend（含探测快照）以类型化的
+`ModelsError::CredentialStore` 错误呈现，绝不静默折叠为 `Ok(None)`。
+`get_available` 用同一检查过滤注册表。`get_auth` 按需解析被选中的来源；
+显式 `AuthResolutionOverrides::api_key` 无需触碰任何来源即获胜，route
+resolver 的 `CredentialNeeded` 报告未配置，其他被选来源失败则以
+`ModelsError::AuthResolution` 传播且绝不尝试回退来源。`logout` 按调用接收
+凭据 store，且只确认这一次本地删除：不 unset 环境变量、不撤销远端会话、
+不动其他 provider 的条目。管理路径中的存储 OAuth 凭据解析不刷新；刷新
+属于 live route/flow owner。
+
 ### 采集重试唯一 owner（AIR-007）
 
 `prepare_call_with_policy` 为每个逻辑调用冻结一份 `AcquisitionPolicy`

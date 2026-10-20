@@ -1006,9 +1006,10 @@ api_key_env = "KEY_OAR"
 // Phase 10.2: provider construction routes through the collection/auth seam
 // ---------------------------------------------------------------------------
 
-#[test]
-fn provider_factory_routes_through_collection() {
-    use opi_ai::{AuthDescriptor, AuthStatus};
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serializes process-env mutation; the awaited checks never re-acquire this lock.
+async fn provider_factory_routes_through_collection() {
+    use opi_ai::{AuthCheckKind, AuthDescriptor};
     use opi_coding_agent::config::load_config_file;
     use opi_coding_agent::provider_factory::{auth_descriptor_for, build_collection_for_listing};
 
@@ -1045,34 +1046,32 @@ supports_thinking = false
     }
     assert!(auth_descriptor_for(&config, "not-a-real-provider").is_none());
 
-    with_env_var(env_var, "test-key", || {
-        let collection = build_collection_for_listing(&config, &std::collections::HashMap::new())
-            .expect("listing collection builds through the factory");
-
-        // The factory returns the Models/auth-seam type and the profile
-        // model is resolvable through it.
-        let (_provider, model) = collection
-            .resolve("testprof:test-model")
-            .expect("profile model resolves through the collection");
-        assert_eq!(model.id, "test-model");
-
-        // Auth + compat metadata for the config-sourced profile live on the collection.
-        assert_eq!(
-            collection.auth_status("testprof"),
-            Some(AuthStatus::Configured)
-        );
+    // Serialize ambient-env mutation for the whole (now async) body.
+    let _env_lock = ENV_MUTEX.lock().unwrap();
+    let _env = EnvVarGuard::set(env_var, "test-key");
+    let collection = build_collection_for_listing(&config, &std::collections::HashMap::new())
+        .expect("listing collection builds through the factory");
+    {
+        // Auth + compat metadata for the config-sourced profile live on the
+        // collection; the on-demand check reads the env source and the
+        // descriptor records the variable name.
+        let check = collection
+            .check_auth("testprof")
+            .await
+            .expect("check")
+            .expect("configured through the env key");
+        assert_eq!(check.kind, AuthCheckKind::ApiKey);
+        assert_eq!(check.source.as_deref(), Some(env_var));
         match collection.auth_descriptor("testprof") {
-            Some(AuthDescriptor::Resolved { source }) => {
-                assert_eq!(source, &format!("env {env_var}"))
-            }
-            other => panic!("expected profile Resolved auth, got {other:?}"),
+            Some(AuthDescriptor::EnvApiKey { env_var: name }) => assert_eq!(name, env_var),
+            other => panic!("expected profile EnvApiKey auth, got {other:?}"),
         }
         let compat = collection
             .compat("testprof")
             .expect("profile compat metadata attached");
         assert!(compat.openai_compatible);
         assert_eq!(compat.profile.as_deref(), Some("testprof"));
-    });
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1212,8 +1211,9 @@ max_output_tokens = 4096
     }
 }
 
-#[test]
-fn listing_collection_skips_whitespace_only_credentials() {
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serializes process-env mutation; the awaited checks never re-acquire this lock.
+async fn listing_collection_skips_whitespace_only_credentials() {
     use opi_coding_agent::config::load_config_file;
     use opi_coding_agent::provider_factory::build_collection_for_listing;
 
@@ -1246,18 +1246,32 @@ supports_thinking = false
     .unwrap();
     let config = load_config_file(&path).unwrap();
 
-    with_env_vars(&[(openai_env, "   "), (profile_env, "\t ")], || {
-        let collection = build_collection_for_listing(&config, &std::collections::HashMap::new())
-            .expect("whitespace credentials are skipped");
-        let provider_ids = collection.provider_ids();
-        assert!(!provider_ids.contains(&"openai"));
-        assert!(!provider_ids.contains(&"testprof"));
-    });
+    // Whitespace-only credentials now stay unlisted through the on-demand
+    // configuration check: config-valid profiles register, but the check
+    // filters them out of availability (20.18).
+    let _env_lock = ENV_MUTEX.lock().unwrap();
+    let _openai = EnvVarGuard::set(openai_env, "   ");
+    let _profile = EnvVarGuard::set(profile_env, "\t ");
+    let collection = build_collection_for_listing(&config, &std::collections::HashMap::new())
+        .expect("listing collection builds");
+    assert!(
+        collection
+            .check_auth("testprof")
+            .await
+            .expect("check")
+            .is_none(),
+        "whitespace-only env value must not be available"
+    );
+    assert!(
+        collection.check_auth("openai").await.unwrap().is_none(),
+        "whitespace-only builtin env value must not be available"
+    );
 }
 
-#[test]
-fn listing_collection_uses_resolved_auth_for_constructed_builtin() {
-    use opi_ai::{AuthDescriptor, AuthStatus};
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serializes process-env mutation; the awaited checks never re-acquire this lock.
+async fn listing_collection_uses_resolved_auth_for_constructed_builtin() {
+    use opi_ai::{AuthCheckKind, AuthDescriptor};
     use opi_coding_agent::config::load_config_file;
     use opi_coding_agent::provider_factory::build_collection_for_listing;
 
@@ -1276,20 +1290,23 @@ api_key_env = "{env_var}"
     .unwrap();
     let config = load_config_file(&path).unwrap();
 
-    with_env_var(env_var, "test-key", || {
-        let collection = build_collection_for_listing(&config, &std::collections::HashMap::new())
-            .expect("listing collection builds");
-        assert_eq!(
-            collection.auth_status("openai"),
-            Some(AuthStatus::Configured)
-        );
-        match collection.auth_descriptor("openai") {
-            Some(AuthDescriptor::Resolved { source }) => {
-                assert_eq!(source, &format!("env {env_var}"))
-            }
-            other => panic!("expected builtin Resolved auth, got {other:?}"),
+    let _env_lock = ENV_MUTEX.lock().unwrap();
+    let _env = EnvVarGuard::set(env_var, "test-key");
+    let collection = build_collection_for_listing(&config, &std::collections::HashMap::new())
+        .expect("listing collection builds");
+    let check = collection
+        .check_auth("openai")
+        .await
+        .expect("check")
+        .expect("configured");
+    assert_eq!(check.kind, AuthCheckKind::ApiKey);
+    assert!(check.source.is_some());
+    match collection.auth_descriptor("openai") {
+        Some(AuthDescriptor::Resolved { source }) => {
+            assert_eq!(source, &format!("env {env_var}"))
         }
-    });
+        other => panic!("expected builtin Resolved auth, got {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -2133,8 +2150,8 @@ max_output_tokens = 4096
 /// `metadata_only_provider_dispatch_returns_explicit_error` asserts dispatch
 /// behavior; this pins the from_registry seam by asserting NO auth descriptor
 /// is attached to a lookup-only extension provider whose models still resolve.
-#[test]
-fn build_harness_collection_uses_from_registry_seam() {
+#[tokio::test]
+async fn build_harness_collection_uses_from_registry_seam() {
     use opi_coding_agent::provider_factory::build_harness_collection;
 
     let collection = build_harness_collection(
@@ -2151,8 +2168,12 @@ fn build_harness_collection_uses_from_registry_seam() {
         "from_registry collection must not attach an auth descriptor for the active provider"
     );
     assert!(
-        collection.auth_status("mock-active").is_none(),
-        "from_registry collection must not attach auth status for the active provider"
+        collection
+            .check_auth("mock-active")
+            .await
+            .expect("check")
+            .is_none(),
+        "from_registry collection must leave the active provider unchecked"
     );
 
     // The active provider's metadata IS resolvable, proving the harness model
@@ -2256,10 +2277,11 @@ fn provider_policy_is_centralized() {
         "fn build_provider",
         "fn build_runtime_route",
         "fn build_list_models_metadata",
-        "fn listing_auth_available",
         "fn openai_compatible_model_catalog",
         "fn build_openai_compatible_profile",
         "fn build_collection_for_listing",
+        "fn available_model_entries",
+        "fn logout_stored_credential",
         "fn build_collection_for_listing_with_store",
         "fn build_harness_collection",
         "fn materialize_active_overrides",
@@ -2271,8 +2293,6 @@ fn provider_policy_is_centralized() {
         "fn aws_home_dir",
         "fn profile_api_key_env_default",
         "fn auth_descriptor_for",
-        "fn resolved_auth_descriptor_for",
-        "fn resolved_auth_descriptor_for_profile",
         "fn auth_descriptor_for_profile",
         "fn compat_metadata_for",
         "struct ListingMetadataProvider",

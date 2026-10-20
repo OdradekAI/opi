@@ -221,7 +221,11 @@ pub async fn dispatch_auth_command<T: LoginTerminalControl>(
                     message: "unknown OAuth provider".to_owned(),
                 };
             }
-            match oauth::logout_credential(provider_id, services.store).await {
+            // SDK-owned management result: the acknowledgement covers only
+            // the selected local store deletion (20.18).
+            match crate::provider_factory::logout_stored_credential(services.store, provider_id)
+                .await
+            {
                 Ok(()) => AuthCommandOutcome::LoggedOut {
                     provider_id: provider_id.to_owned(),
                 },

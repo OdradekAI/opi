@@ -48,8 +48,10 @@ use futures_util::future::BoxFuture;
 use futures_util::{Stream, stream};
 use tokio_util::sync::CancellationToken;
 
-use crate::auth::{AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, ResolvedAuth};
-use crate::credential::CredentialSource;
+use crate::auth::{
+    AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth,
+};
+use crate::credential::{Credential, CredentialSource, CredentialStore, CredentialStoreError};
 use crate::message::AssistantMessage;
 use crate::provider::{
     EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
@@ -139,8 +141,8 @@ pub enum AuthDescriptor {
     /// and `display_source` is a non-secret label shown in diagnostics. The
     /// descriptor itself cannot perform IO, so the redacted
     /// [`CredentialSource`] probe state is injected separately via
-    /// [`Models::set_probe`] and read back via
-    /// [`Models::probe`] for listing/auth-status display.
+    /// [`Models::set_probe`] and consulted by
+    /// [`Models::check_auth`] when no live store is attached.
     StoreCredential {
         /// Store account key (typically the provider id).
         key: String,
@@ -149,60 +151,42 @@ pub enum AuthDescriptor {
     },
 }
 
-impl AuthDescriptor {
-    /// Resolve the descriptor to a redacted [`AuthStatus`] at dispatch time.
-    ///
-    /// The returned `source` text names the reason (for example the env var
-    /// name) but never contains a credential value.
-    pub fn resolve(&self) -> AuthStatus {
-        match self {
-            AuthDescriptor::StaticApiKey { value } => {
-                if value.is_present() {
-                    AuthStatus::Configured
-                } else {
-                    AuthStatus::Missing {
-                        source: "static api key is empty".to_owned(),
-                    }
-                }
-            }
-            AuthDescriptor::EnvApiKey { env_var } => match std::env::var(env_var) {
-                Ok(value) if !value.trim().is_empty() => AuthStatus::Configured,
-                Ok(_) => AuthStatus::Missing {
-                    source: format!("env var {env_var} is set but empty"),
-                },
-                Err(std::env::VarError::NotPresent) => AuthStatus::Missing {
-                    source: format!("env var {env_var} is not set"),
-                },
-                Err(std::env::VarError::NotUnicode(_)) => AuthStatus::Missing {
-                    source: format!("env var {env_var} is not valid unicode"),
-                },
-            },
-            AuthDescriptor::Resolved { source } => {
-                if source.trim().is_empty() {
-                    AuthStatus::Missing {
-                        source: "resolved auth source is empty".to_owned(),
-                    }
-                } else {
-                    AuthStatus::Configured
-                }
-            }
-            // Not authoritative: the secret-free descriptor cannot perform IO,
-            // so the redacted probe state is injected via set_probe and read
-            // back via probe() for listing/auth-status display. Returning
-            // Configured here keeps auth_status() non-blocking for the variant.
-            AuthDescriptor::StoreCredential { .. } => AuthStatus::Configured,
-        }
-    }
+/// Non-secret result of an on-demand source-configuration check.
+///
+/// Produced by [`Models::check_auth`] and [`Models::get_available`]. `source`
+/// names where the configured credential comes from (for example an
+/// environment-variable name or `"OAuth"`) without ever carrying a credential
+/// value. `None` from those operations means the provider is unknown or has no
+/// complete configuration; source *failures* are typed
+/// [`ModelsError`] values, never an empty or silently-missing result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthCheck {
+    /// Non-secret source label for status UI (e.g. `ANTHROPIC_API_KEY`,
+    /// `"OAuth"`, `"credential store"`).
+    pub source: Option<String>,
+    /// Which credential family the configured source supplies.
+    pub kind: AuthCheckKind,
 }
 
-/// Resolution of an [`AuthDescriptor`] at a point in time.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AuthStatus {
-    /// Credential is present and non-empty.
-    Configured,
-    /// No credential found. `source` names the origin (e.g. env var name)
-    /// without leaking any value.
-    Missing { source: String },
+/// Credential family reported by [`AuthCheck`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthCheckKind {
+    /// A static or environment-sourced API key.
+    ApiKey,
+    /// A stored OAuth credential (reported configured even when its access
+    /// token is expired: checks never refresh).
+    OAuth,
+}
+
+/// Explicit per-call resolution overrides for
+/// [`Models::get_auth`](crate::Models::get_auth).
+///
+/// An explicit [`api_key`](Self::api_key) wins over every configured source:
+/// no environment, store, or resolver access happens for that call.
+#[derive(Debug, Clone, Default)]
+pub struct AuthResolutionOverrides {
+    /// Caller-supplied API key that replaces all configured sources.
+    pub api_key: Option<secrecy::SecretString>,
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +212,7 @@ pub struct CompatMetadata {
 
 /// Error type for provider collection operations.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ModelsError {
     /// A registry lookup failed.
     #[error(transparent)]
@@ -290,6 +275,25 @@ pub enum ModelsError {
     /// A provider stream failed while draining to completion.
     #[error(transparent)]
     Provider(#[from] ProviderError),
+    /// Ambient source access failed while checking or resolving
+    /// authentication. The failure is typed: an unreadable source is never
+    /// reported as "unconfigured".
+    #[error(transparent)]
+    AuthContext(#[from] crate::auth::AuthContextError),
+    /// A credential-store operation failed while checking, resolving, or
+    /// deleting authentication. Store failures stay distinct from missing
+    /// entries and never trigger a silent fallback.
+    #[error(transparent)]
+    CredentialStore(#[from] CredentialStoreError),
+    /// The selected auth source failed while resolving a credential. The
+    /// failure propagates: no other source is tried for that call.
+    #[error("auth resolution failed for '{provider}': {error}")]
+    AuthResolution {
+        /// Provider whose selected source failed.
+        provider: String,
+        /// Typed failure reported by the selected source.
+        error: Box<ProviderError>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +326,16 @@ pub struct Models {
     /// are captured (cloned `Arc`s) at call creation, so later registration
     /// changes never mutate an existing call.
     chat_apis: BTreeMap<ApiId, ChatApiRegistration>,
+    /// Injectable ambient-source access consulted on demand by the auth
+    /// management operations. Defaults to the lazy
+    /// [`AmbientAuthContext`](crate::auth::AmbientAuthContext); construction
+    /// and registration never touch it.
+    auth_context: std::sync::Arc<dyn crate::auth::AuthContext>,
+    /// Optional credential store backing the auth management operations
+    /// (`check_auth`/`get_auth`/`logout` on store-backed sources). Absent by
+    /// construction-time design: no store, env, or network access happens
+    /// until the owner attaches one.
+    credential_store: Option<std::sync::Arc<dyn CredentialStore>>,
 }
 
 impl Models {
@@ -336,6 +350,8 @@ impl Models {
             resolvers: HashMap::new(),
             sources: HashMap::new(),
             chat_apis: BTreeMap::new(),
+            auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
+            credential_store: None,
         }
     }
 
@@ -345,7 +361,7 @@ impl Models {
     /// Pre-registered providers are lookup-only until replaced by
     /// [`register_route`](Self::register_route) or
     /// [`register_chat_api`](Self::register_chat_api):
-    /// [`Models::auth_status`] returns `None` and
+    /// [`Models::check_auth`] returns `Ok(None)` and
     /// [`prepare_call`](Self::prepare_call) returns
     /// [`ModelsError::RouteNotDispatchable`].
     pub fn from_registry(registry: ProviderRegistry) -> Self {
@@ -357,6 +373,8 @@ impl Models {
             resolvers: HashMap::new(),
             sources: HashMap::new(),
             chat_apis: BTreeMap::new(),
+            auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
+            credential_store: None,
         }
     }
 
@@ -748,16 +766,337 @@ impl Models {
         self.auth.get(provider_id)
     }
 
-    /// Resolve the current redacted auth status for a provider, if the
-    /// collection owns an auth descriptor for it.
+    /// Inject the ambient-source access used by the auth management
+    /// operations ([`check_auth`](Self::check_auth),
+    /// [`get_auth`](Self::get_auth), [`get_available`](Self::get_available)).
     ///
-    /// Not authoritative for [`AuthDescriptor::StoreCredential`]: that variant
-    /// always resolves to [`AuthStatus::Configured`] here because the
-    /// secret-free descriptor cannot perform IO. The redacted probe state
-    /// injected via [`Self::set_probe`] is read back via [`Self::probe`] for
-    /// listing/auth-status display.
-    pub fn auth_status(&self, provider_id: &str) -> Option<AuthStatus> {
-        self.auth.get(provider_id).map(AuthDescriptor::resolve)
+    /// An injected source **replaces** ambient access entirely: after this
+    /// call the collection never consults the process environment or
+    /// filesystem through [`AmbientAuthContext`](crate::auth::AmbientAuthContext).
+    /// Injecting has no other effect; registration and static lookups perform
+    /// zero source access either way.
+    pub fn set_auth_context(&mut self, context: std::sync::Arc<dyn crate::auth::AuthContext>) {
+        self.auth_context = context;
+    }
+
+    /// Attach the credential store backing store-sourced auth checks,
+    /// resolution, and [`logout`](Self::logout).
+    ///
+    /// Absent by default: constructing, registering, and statically looking up
+    /// providers never touches a store. Store-backed checks without a live
+    /// store consult the injected probe snapshot instead
+    /// ([`set_probe`](Self::set_probe)).
+    pub fn set_credential_store(&mut self, store: std::sync::Arc<dyn CredentialStore>) {
+        self.credential_store = Some(store);
+    }
+
+    /// The ambient-source access this collection consults on demand.
+    pub fn auth_context(&self) -> &std::sync::Arc<dyn crate::auth::AuthContext> {
+        &self.auth_context
+    }
+
+    /// Check whether one provider has complete source configuration, on
+    /// demand, without refreshing anything.
+    ///
+    /// Returns `Ok(Some(check))` when the selected source is configured — an
+    /// expired stored OAuth credential is reported configured with kind
+    /// [`AuthCheckKind::OAuth`] and no refresh attempt — and `Ok(None)` when
+    /// the provider is unknown or unconfigured. Source failures are typed
+    /// [`ModelsError`] values (non-unicode env bytes, unreachable credential
+    /// backend, store error); they are never folded into `Ok(None)`.
+    ///
+    /// Descriptor-sourced providers check through the injected
+    /// [`AuthContext`](crate::auth::AuthContext) (or the live store for
+    /// [`AuthDescriptor::StoreCredential`]); store-backed providers without a
+    /// live store fall back to the redacted probe snapshot injected via
+    /// [`set_probe`](Self::set_probe). Route providers check their
+    /// non-secret source classification the same way, never their live
+    /// resolver: checking is IO-bounded and refresh-free by contract.
+    pub async fn check_auth(&self, provider_id: &str) -> Result<Option<AuthCheck>, ModelsError> {
+        if let Some(descriptor) = self.auth.get(provider_id) {
+            return self.check_descriptor(provider_id, descriptor).await;
+        }
+        match self.sources.get(provider_id) {
+            Some(source) => self.check_source(provider_id, source).await,
+            None => Ok(None),
+        }
+    }
+
+    /// Models of every provider whose source configuration checks out.
+    ///
+    /// Each entry is `(provider_id, model)` in registry order (sorted provider
+    /// ids, provider catalog order within). `provider_id` restricts the check
+    /// to one provider. Providers without any auth facts (pure registry
+    /// providers registered behind [`from_registry`](Self::from_registry))
+    /// are never available through this path.
+    pub async fn get_available(
+        &self,
+        provider_id: Option<&str>,
+    ) -> Result<Vec<(String, ModelInfo)>, ModelsError> {
+        let ids: Vec<String> = self
+            .registry
+            .provider_ids()
+            .into_iter()
+            .filter(|id| provider_id.is_none_or(|wanted| wanted == *id))
+            .map(str::to_owned)
+            .collect();
+        let mut available = Vec::new();
+        for id in ids {
+            if self.check_auth(&id).await?.is_some() {
+                available.push(id);
+            }
+        }
+        let mut entries = Vec::new();
+        for (provider, model) in self.registry.all_models() {
+            if available.iter().any(|id| id == provider) {
+                entries.push((provider.to_owned(), model.clone()));
+            }
+        }
+        Ok(entries)
+    }
+
+    /// Resolve provider auth on demand for management/status use.
+    ///
+    /// An explicit [`AuthResolutionOverrides::api_key`] wins over every
+    /// configured source: no environment, store, or resolver access happens.
+    /// Otherwise the selected source resolves: a registered route invokes its
+    /// live [`AuthResolver`] exactly once, and a descriptor-sourced provider
+    /// resolves through the injected [`AuthContext`](crate::auth::AuthContext)
+    /// or attached store. `Ok(None)` means unknown or unconfigured (a
+    /// [`ProviderError::CredentialNeeded`] from a route maps here); any other
+    /// selected-source failure propagates as [`ModelsError::AuthResolution`]
+    /// and **no fallback source is tried**. Stored OAuth credentials resolve
+    /// without refresh here; refresh belongs to the live route/flow owners.
+    pub async fn get_auth(
+        &self,
+        provider_id: &str,
+        overrides: AuthResolutionOverrides,
+    ) -> Result<Option<ResolvedAuth>, ModelsError> {
+        if let Some(api_key) = overrides.api_key {
+            return Ok(Some(ResolvedAuth {
+                scheme: AuthScheme::ApiKey,
+                secret: api_key,
+                base_url: None,
+                account_id: None,
+                provenance: AuthProvenance {
+                    source: AuthProvenanceSource::Explicit,
+                    fallback: AuthFallback::NotAttempted,
+                },
+            }));
+        }
+        if let Some(resolver) = self.resolvers.get(provider_id) {
+            return match resolver.resolve().await {
+                Ok(resolved) => Ok(Some(resolved)),
+                Err(ProviderError::CredentialNeeded { .. }) => Ok(None),
+                Err(error) => Err(ModelsError::AuthResolution {
+                    provider: provider_id.to_owned(),
+                    error: Box::new(error),
+                }),
+            };
+        }
+        let Some(descriptor) = self.auth.get(provider_id) else {
+            return Ok(None);
+        };
+        match descriptor {
+            AuthDescriptor::StaticApiKey { value } => {
+                Ok(value.is_present().then(|| ResolvedAuth {
+                    scheme: AuthScheme::ApiKey,
+                    secret: secrecy::SecretString::from(value.as_str().to_owned()),
+                    base_url: None,
+                    account_id: None,
+                    provenance: AuthProvenance::default(),
+                }))
+            }
+            AuthDescriptor::EnvApiKey { env_var } => match self.auth_context.env(env_var)? {
+                Some(value) => Ok(Some(ResolvedAuth {
+                    scheme: AuthScheme::ApiKey,
+                    secret: secrecy::SecretString::from(value),
+                    base_url: None,
+                    account_id: None,
+                    provenance: AuthProvenance {
+                        source: AuthProvenanceSource::Environment {
+                            name: env_var.clone(),
+                        },
+                        fallback: AuthFallback::NotAttempted,
+                    },
+                })),
+                None => Ok(None),
+            },
+            // Label-only descriptor: the secret is owned by a route/flow that
+            // is not part of this collection.
+            AuthDescriptor::Resolved { .. } => Ok(None),
+            AuthDescriptor::StoreCredential { key, .. } => {
+                self.resolve_from_store(provider_id, key).await
+            }
+        }
+    }
+
+    /// Delete the stored credential for one provider, acknowledging only that
+    /// local deletion.
+    ///
+    /// The acknowledgement means exactly "the given store confirmed the entry
+    /// is gone": no environment variable is unset, no remote session is
+    /// revoked, and no other provider's entry is touched. Deleting an absent
+    /// entry acknowledges successfully. Store failures propagate as typed
+    /// [`ModelsError::CredentialStore`] errors.
+    pub async fn logout(
+        &self,
+        store: &dyn CredentialStore,
+        provider_id: &str,
+    ) -> Result<(), ModelsError> {
+        store.delete(provider_id).await?;
+        Ok(())
+    }
+
+    /// Descriptor-path source check for [`check_auth`].
+    async fn check_descriptor(
+        &self,
+        provider_id: &str,
+        descriptor: &AuthDescriptor,
+    ) -> Result<Option<AuthCheck>, ModelsError> {
+        match descriptor {
+            AuthDescriptor::StaticApiKey { value } => Ok(value.is_present().then(|| AuthCheck {
+                source: Some("static api key".to_owned()),
+                kind: AuthCheckKind::ApiKey,
+            })),
+            AuthDescriptor::EnvApiKey { env_var } => {
+                Ok(self.auth_context.env(env_var)?.map(|_| AuthCheck {
+                    source: Some(env_var.clone()),
+                    kind: AuthCheckKind::ApiKey,
+                }))
+            }
+            AuthDescriptor::Resolved { source } => {
+                Ok((!source.trim().is_empty()).then(|| AuthCheck {
+                    source: Some(source.clone()),
+                    kind: AuthCheckKind::ApiKey,
+                }))
+            }
+            AuthDescriptor::StoreCredential { key, .. } => {
+                self.check_store_credential(provider_id, key, AuthCheckKind::ApiKey)
+                    .await
+            }
+        }
+    }
+
+    /// Route-path source check for [`check_auth`].
+    async fn check_source(
+        &self,
+        provider_id: &str,
+        source: &AuthProvenanceSource,
+    ) -> Result<Option<AuthCheck>, ModelsError> {
+        match source {
+            AuthProvenanceSource::Static => Ok(Some(AuthCheck {
+                source: Some("static".to_owned()),
+                kind: AuthCheckKind::ApiKey,
+            })),
+            AuthProvenanceSource::Environment { name } => {
+                Ok(self.auth_context.env(name)?.map(|_| AuthCheck {
+                    source: Some(name.clone()),
+                    kind: AuthCheckKind::ApiKey,
+                }))
+            }
+            // A route's provenance label names the store kind, not the store
+            // account key; store-backed routes key entries by provider id.
+            AuthProvenanceSource::CredentialStore { .. } | AuthProvenanceSource::OAuth { .. } => {
+                let kind = if matches!(source, AuthProvenanceSource::OAuth { .. }) {
+                    AuthCheckKind::OAuth
+                } else {
+                    AuthCheckKind::ApiKey
+                };
+                self.check_store_credential(provider_id, provider_id, kind)
+                    .await
+            }
+            AuthProvenanceSource::AwsSigV4 { .. } => Ok(Some(AuthCheck {
+                source: Some("aws credential chain".to_owned()),
+                kind: AuthCheckKind::ApiKey,
+            })),
+            AuthProvenanceSource::Explicit => Ok(Some(AuthCheck {
+                source: Some("explicit per-call credential".to_owned()),
+                kind: AuthCheckKind::ApiKey,
+            })),
+        }
+    }
+
+    /// Store-backed check: a live store read classifies the credential kind
+    /// (an expired OAuth credential still reports configured, never
+    /// refreshed); without a live store the injected probe snapshot decides,
+    /// with backend-unavailable snapshots surfacing as typed errors.
+    async fn check_store_credential(
+        &self,
+        provider_id: &str,
+        key: &str,
+        fallback_kind: AuthCheckKind,
+    ) -> Result<Option<AuthCheck>, ModelsError> {
+        if let Some(store) = self.credential_store.as_ref() {
+            return match store.read(key).await? {
+                Some(Credential::ApiKey(_)) => Ok(Some(AuthCheck {
+                    source: Some("credential store".to_owned()),
+                    kind: AuthCheckKind::ApiKey,
+                })),
+                Some(Credential::OAuthToken { .. }) => Ok(Some(AuthCheck {
+                    source: Some("OAuth".to_owned()),
+                    kind: AuthCheckKind::OAuth,
+                })),
+                None => Ok(None),
+            };
+        }
+        match self.probed.get(provider_id) {
+            Some(CredentialSource::Present { label }) => Ok(Some(AuthCheck {
+                source: Some(label.clone()),
+                kind: fallback_kind,
+            })),
+            Some(CredentialSource::Absent) | None => Ok(None),
+            Some(CredentialSource::BackendUnavailable { reason }) => Err(
+                ModelsError::CredentialStore(CredentialStoreError::BackendUnavailable {
+                    provider: provider_id.to_owned(),
+                    reason: reason.clone(),
+                }),
+            ),
+        }
+    }
+
+    /// Store-backed resolution for descriptor-sourced providers: returns the
+    /// stored credential without refresh (refresh is route/flow-owned).
+    async fn resolve_from_store(
+        &self,
+        _provider_id: &str,
+        key: &str,
+    ) -> Result<Option<ResolvedAuth>, ModelsError> {
+        let Some(store) = self.credential_store.as_ref() else {
+            return Ok(None);
+        };
+        match store.read(key).await? {
+            Some(Credential::ApiKey(value)) => Ok(Some(ResolvedAuth {
+                scheme: AuthScheme::ApiKey,
+                secret: value,
+                base_url: None,
+                account_id: None,
+                provenance: AuthProvenance {
+                    source: AuthProvenanceSource::CredentialStore {
+                        kind: "credential store".to_owned(),
+                    },
+                    fallback: AuthFallback::NotAttempted,
+                },
+            })),
+            Some(Credential::OAuthToken {
+                access,
+                base_url,
+                account_id,
+                ..
+            }) => Ok(Some(ResolvedAuth {
+                scheme: AuthScheme::Bearer,
+                secret: access,
+                base_url,
+                account_id,
+                provenance: AuthProvenance {
+                    source: AuthProvenanceSource::CredentialStore {
+                        kind: "credential store".to_owned(),
+                    },
+                    fallback: AuthFallback::NotAttempted,
+                },
+            })),
+            None => Ok(None),
+        }
     }
 
     /// Inject the redacted probe state for a [`AuthDescriptor::StoreCredential`]

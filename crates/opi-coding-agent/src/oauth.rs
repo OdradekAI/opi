@@ -2550,20 +2550,6 @@ pub async fn login_oauth(
     Ok(())
 }
 
-/// Delete the stored credential for `provider_id`. Called by the interactive
-/// `/logout` command. The store's `delete` acquires the cross-process mutation
-/// lock; no credential is required to be logged out.
-pub async fn logout_credential(
-    provider_id: &str,
-    store: &crate::credential_store::KeychainCredentialStore,
-) -> Result<(), ProviderError> {
-    store
-        .delete(provider_id)
-        .await
-        .map_err(store_error_to_provider)?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use std::io;

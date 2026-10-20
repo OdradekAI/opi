@@ -49,9 +49,10 @@ pub mod ws;
 
 pub use api_mapped::{ApiMapError, ApiMappedProvider};
 pub use auth::{
-    AuthFallback, AuthInvalidPolicy, AuthProvenance, AuthProvenanceSource, AuthResolver,
-    AuthScheme, AwsCredentialSource, AwsSigV4Credentials, LoginPresenter, OAuthCredential,
-    OAuthLoginMethod, OAuthProvider, ResolvedAuth, StaticAuthResolver,
+    AmbientAuthContext, AuthContext, AuthContextError, AuthFallback, AuthInvalidPolicy,
+    AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, AwsCredentialSource,
+    AwsSigV4Credentials, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider,
+    ResolvedAuth, StaticAuthResolver,
 };
 pub use config::{Config, Error};
 pub use credential::{
@@ -63,9 +64,9 @@ pub use model_info::{
     ThinkingLevelMap, ThinkingLevelMapping, WireApi, WireCompat,
 };
 pub use models::{
-    ApiId, AuthDescriptor, AuthStatus, ChatApi, ChatApiHandle, ChatCall, ChatModelRecord,
-    CompatMetadata, Models, ModelsError, NativeOptions, PreparedProviderCall, PreparedRoute,
-    SecretKey, SimpleOptions,
+    ApiId, AuthCheck, AuthCheckKind, AuthDescriptor, AuthResolutionOverrides, ChatApi,
+    ChatApiHandle, ChatCall, ChatModelRecord, CompatMetadata, Models, ModelsError, NativeOptions,
+    PreparedProviderCall, PreparedRoute, SecretKey, SimpleOptions,
 };
 pub use provider::Provider;
 pub use provider_headers::{ProviderHeaders, ProviderHeadersError};

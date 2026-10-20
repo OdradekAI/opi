@@ -1497,7 +1497,16 @@ async fn run_list_models_command_core(
         }
     };
     let entries =
-        opi_coding_agent::model_listing::model_entries_from_registry(collection.registry());
+        match opi_coding_agent::provider_factory::available_model_entries(&collection).await {
+            Ok(entries) => entries,
+            Err(message) => {
+                return CommandOutcome {
+                    stdout: String::new(),
+                    stderr: format!("opi: auth check failed: {message}\n"),
+                    exit_code: 1,
+                };
+            }
+        };
 
     if entries.is_empty() {
         return CommandOutcome {

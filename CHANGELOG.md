@@ -114,7 +114,27 @@
   string, before creating scratch data or invoking a subprocess. This enforces
   the upstream ICU bundled-data precondition for dependency-profile verification.
 
+- `opi-ai`: source-configuration checks moved off the IO-free descriptor.
+  `AuthDescriptor::resolve`, `AuthStatus`, and the synchronous
+  `Models::auth_status` (which read `std::env` directly) are removed in favor
+  of the on-demand management results below; `ModelsError` is now
+  `#[non_exhaustive]`.
 ### Added
+- `opi-ai`: lazy AuthContext and auth management results (AIR-063/AIR-066 /
+  task 20.18). `AuthContext` is the injectable object-safe source-access seam
+  (`env`/`file_exists`) with `AmbientAuthContext` as the lazy default;
+  `Models::set_auth_context` replaces ambient access entirely.
+  `Models::{check_auth, get_available, get_auth, logout}` deliver the
+  management results: checks never refresh (expired stored OAuth stays
+  configured), store and source-access failures are typed
+  (`ModelsError::AuthContext`/`CredentialStore`/`AuthResolution`), a
+  selected-source failure never falls back, an explicit
+  `AuthResolutionOverrides::api_key` wins over every source
+  (`AuthProvenanceSource::Explicit`), and `logout` acknowledges exactly one
+  local store deletion. `opi-coding-agent`'s `/logout` and `--list-models`
+  now route through `provider_factory::{logout_stored_credential,
+  available_model_entries}`; compatible profiles register config-valid with
+  their real env descriptor and availability is decided by the SDK check.
 
 - `opi-ws` (new Independent Companion at `companions/ws`, RDF-24 / task
   20.15): the Agent-neutral owned WebSocket client substrate. One exclusive
