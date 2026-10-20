@@ -1,0 +1,16 @@
+[package]
+name = "consumer-ws"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# The extracted real cargo package artifact of the neutral owned WS
+# companion (RDF-24); this proof consumes the distributable identity.
+opi-ws = { path = "@PACKAGE@" }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-util", "time"] }
+serde_json = "1"
+
+[features]
+union-default = ["opi-ws/union-default"]
+union-c-zlib = ["opi-ws/union-c-zlib"]

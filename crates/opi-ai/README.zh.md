@@ -77,6 +77,7 @@ OpenAI-compatible profile 加入。
 | `AuthResolver` / `ResolvedAuth` | 由 driver 按调用解析的鉴权契约；attempt 开始前会冻结一次准备结果。 |
 | `ApiKind` | crate 根枚举，标注 assistant 消息携带的后端家族（`Anthropic`、`OpenAi`、`Google`、`Mistral`）。 |
 | `HttpClient` | 共享 `reqwest` client，支持连接池和显式/环境变量代理。 |
+| `ws` | 严格动态 WebSocket Upgrade 桥（`upgrade`、`WsUpgradeRequest`、`Negotiation`、`fresh_nonce`/`fresh_mask`）：请求头、nonce/mask 熵与严格的 101 校验；中立 frame/PMD/Close/IO 状态机由 `opi-ws` companion 持有。 |
 | `retry` | 采集重试唯一 owner（`AcquisitionPolicy`、`RetryAdmission`、`AcquisitionSeal`），以及产品侧重试配置、指数退避和 `Retry-After` 解析。 |
 | `Usage` / `CumulativeUsage` | token 累计和费用辅助。 |
 | `test_support::MockProvider` | 供下游测试使用的确定性 mock provider。 |
@@ -264,6 +265,29 @@ OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是�
 `session_id`。自定义/proxy affinity 默认关闭，必须显式 opt-in。
 `previous_response_id` 被推迟（见 OpenAI-Compatible Profile），兼容 profile 可携带静态
 `extra_headers` 用于路由/会话钉扎。不存在服务端会话链。
+
+## WebSocket Upgrade（RDF-24）
+
+`ws::upgrade` 在共享的 source-qualified `HttpClient` 上执行严格动态 Upgrade
+（显式代理/TLS profile；重定向必须按 client 关闭：对带有重定向策略的 client
+发起 Upgrade 会类型化失败，而不是静默跟随）。该桥拥有请求形状（`Connection:
+Upgrade`、`Upgrade: websocket`、`Sec-WebSocket-Version: 13`、来自固定平台熵源的新鲜
+16 字节 `Sec-WebSocket-Key`、已提议的 subprotocol 与可选的 `permessage-deflate`
+offer）以及 101 响应的严格校验：状态与 HTTP 版本、精确的 `Sec-WebSocket-Accept`
+（钉住 RFC 6455 已知向量）、重复/缺失 singleton 规则、按 token 的
+`Connection`/`Upgrade` 匹配、只接受已提议的 subprotocol，以及精确的
+permessage-deflate 参数校验（无重复条目、无未知参数、值域合法、不含 offer 未提议
+的参数、client 窗口不高于提议上限）。任何违规都会在流分离前以类型化的
+`WsUpgradeError` 失败。
+
+中立协议状态机刻意位于本 crate 之外：`opi-ws` Independent Companion
+（`companions/ws`，以 path-only 开发依赖接入）拥有严格 RFC 6455 帧、消息装配、
+恰好一次 `00 00 FF FF` tail 注入的 permessage-deflate、显式 Close 交换与异步 IO
+owner。`Negotiation::driver_parameters` 把已校验的 `(pmd,
+server_no_context_takeover)` 事实交给 `opi_ws::io::Driver`（由分离的
+`reqwest::Upgraded` 流构造）；发布包待发布授权后按 registry identity 解析该
+companion。真实 Provider 消费者（Codex WebSocket，20.16）与平台/打包验收
+（20.57/20.58）保持 OPEN。
 
 ## 代理
 

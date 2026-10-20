@@ -480,6 +480,9 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "time",
         "transcript",
         "vertex",
+        // RDF-24 (task 20.15): the strict WebSocket Upgrade bridge is a
+        // deliberate later-phase addition.
+        "ws",
     ];
     let declared: Vec<&str> = lib_rs
         .lines()

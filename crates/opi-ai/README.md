@@ -81,6 +81,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `AuthResolver` / `ResolvedAuth` | Driver-owned per-call auth resolution contract; one prepared result is frozen before an attempt starts. |
 | `ApiKind` | Crate-root enum tagging the backend family (`Anthropic`, `OpenAi`, `Google`, `Mistral`) carried on assistant messages. |
 | `HttpClient` | Shared `reqwest` client with pooling and explicit/env proxy support. |
+| `ws` | Strict dynamic WebSocket Upgrade bridge (`upgrade`, `WsUpgradeRequest`, `Negotiation`, `fresh_nonce`/`fresh_mask`): request headers, nonce/mask entropy, and strict 101 validation; the neutral frame/PMD/Close/IO state machine is the `opi-ws` companion. |
 | `retry` | The acquisition-retry owner (`AcquisitionPolicy`, `RetryAdmission`, `AcquisitionSeal`) plus the product-facing retry config, exponential backoff, and `Retry-After` parsing. |
 | `Usage` / `CumulativeUsage` | Token accumulation and cost helpers. |
 | `test_support::MockProvider` | Deterministic mock provider for downstream tests. |
@@ -313,6 +314,35 @@ Custom/proxy affinity remains disabled by default and requires explicit
 opt-in. `previous_response_id` is deferred (see OpenAI-Compatible Profiles),
 and compatible profiles may carry static `extra_headers` for routing/session
 pinning. There is no server-side session chain.
+
+## WebSocket Upgrade (RDF-24)
+
+`ws::upgrade` performs the strict dynamic Upgrade over the shared,
+source-qualified `HttpClient` (explicit proxy/TLS profile, redirects must be
+disabled per client: an upgrade request against a client with a redirect
+policy fails typed instead of silently following). The bridge owns the
+request shape (`Connection: Upgrade`, `Upgrade: websocket`,
+`Sec-WebSocket-Version: 13`, a fresh 16-byte `Sec-WebSocket-Key` from the
+pinned platform entropy, offered subprotocols and an optional
+`permessage-deflate` offer) and strict validation of the 101 response:
+status and HTTP version, exact `Sec-WebSocket-Accept` (RFC 6455 known
+vector pinned), duplicate/absent singleton rules, token-wise
+`Connection`/`Upgrade` matching, offered-only subprotocols, and exact
+permessage-deflate parameter validation (no duplicate entries, no unknown
+parameters, value ranges, no parameters the offer did not include, no
+client window above the offered ceiling). Any violation is a typed
+`WsUpgradeError` before the stream detaches.
+
+The neutral protocol state machine is deliberately outside this crate: the
+`opi-ws` Independent Companion (`companions/ws`, wired here as a
+path-only development dependency) owns strict RFC 6455 frames, message
+assembly, permessage-deflate with exactly-once `00 00 FF FF` tail injection,
+the explicit Close exchange and the async IO owner. `Negotiation::
+driver_parameters` hands the validated `(pmd, server_no_context_takeover)`
+facts to `opi_ws::io::Driver::from` the detached `reqwest::Upgraded` stream;
+the published package resolves the companion by registry identity once that
+publication is authorized. The real provider consumer (Codex WebSocket,
+20.16) and platform/package acceptance (20.57/20.58) remain open.
 
 ## Proxy
 

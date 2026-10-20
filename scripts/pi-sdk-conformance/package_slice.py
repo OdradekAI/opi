@@ -7,6 +7,16 @@ runs the family's public-consumer profiles.
 
 Families:
 
+- ``ws`` (task 20.15, RDF-24): the standalone neutral owned WS companion
+  (``companions/ws``, not a root workspace member) runs its own
+  fmt/clippy/all-target test/doc gates in all three feature graphs, the
+  strict Upgrade->Connection bridge test runs in the root workspace, and the
+  real ``cargo package`` artifact of ``opi-ws`` is consumed by fresh
+  workspace-external ordinary / union-default / union-c-zlib consumers whose
+  resolved compression identities (libz-rs-sys/zlib-rs, or libz-sys for the
+  C-zlib union) and native libz-sys build provenance are recorded. The root
+  workspace full gate alone cannot cover this nonmember package.
+
 - ``crypto`` (task 20.14, RDF-23): the `consumer-crypto` template exercises
   the real public TLS/Models/Chat path (trust modes, mTLS, ALPN selection,
   typed negatives) in an ordinary profile and a caller feature-union
@@ -73,14 +83,69 @@ FAMILIES: dict[str, dict[str, Any]] = {
             ("http", "1.4.0"),
         ],
     },
+    "ws": {
+        "kind": "companion",
+        "crate": "opi-ws",
+        "package_dir": "companions/ws",
+        "consumer": "consumer-ws",
+        "profiles": [
+            {
+                "name": "ordinary",
+                "features": [],
+                "graph_requirements": [
+                    ("libz-rs-sys", "0.6.8"),
+                    ("zlib-rs", "0.6.8"),
+                    ("flate2", "1.1.10"),
+                ],
+            },
+            {
+                "name": "union-default",
+                "features": ["union-default"],
+                "graph_requirements": [
+                    ("libz-rs-sys", "0.6.8"),
+                    ("zlib-rs", "0.6.8"),
+                    ("flate2", "1.1.10"),
+                ],
+            },
+            {
+                "name": "union-c-zlib",
+                "features": ["union-c-zlib"],
+                "graph_requirements": [
+                    ("flate2", "1.1.10"),
+                    ("libz-sys", "1.1.30"),
+                ],
+            },
+        ],
+        "expected_checks": 6,
+    },
 }
 
 
+def zlib_native_provenance(target: Path) -> dict:
+    """Summarize the actual libz-sys native build under the consumer-used
+    target directory for the C-zlib union graph: the static archive from the
+    vendored build and the absence of any dynamic libz artifact."""
+    static_archives: list[str] = []
+    for build_dir in sorted(target.glob("debug/build/libz-sys-*")):
+        for archive in (build_dir / "out").glob("**/libz*.a"):
+            static_archives.append(str(archive))
+    dynamic = [
+        str(p)
+        for p in sorted(target.glob("debug/deps/*"))
+        if p.suffix.lower() in (".dll", ".so", ".dylib") and "libz" in p.name.lower()
+    ]
+    return {
+        "static_archives": static_archives,
+        "dynamic_libz_artifacts": dynamic,
+        "scope": "provenance read from the shared consumer-built target cache",
+    }
+
+
 def check_family_graph(
-    metadata: dict, package: Path, requirements: list[tuple[str, str]]
+    metadata: dict, package: Path, requirements: list[tuple[str, str]], crate: str = "opi-ai"
 ) -> dict:
     packages = metadata["packages"]
-    sdk = [p for p in packages if p["name"] == "opi-ai"]
+    sdk = [p for p in packages if p["name"] == crate]
     if len(sdk) != 1 or Path(sdk[0]["manifest_path"]).resolve() != package / "Cargo.toml":
         raise ValueError("consumer must compile the extracted opi-ai package")
     features = {node["id"]: node["features"] for node in metadata["resolve"]["nodes"]}
@@ -184,6 +249,8 @@ def main() -> int:
     scratch.mkdir(parents=True)
     env = dict(os.environ, CARGO_TARGET_DIR=str(target), CARGO_INCREMENTAL="1")
     env.setdefault("AWS_LC_SYS_USE_SYSTEM", "0")
+    # The companion doc gate fails on warnings like the root workspace gate.
+    env.setdefault("RUSTDOCFLAGS", "-D warnings")
     env.setdefault("CARGO_BUILD_JOBS", "4")
     evidence: dict[str, Any] = {
         "family": args.family,
@@ -222,12 +289,54 @@ def main() -> int:
     try:
         run("lease-start", lease + ["start", "--target", str(target), "--pid", str(os.getpid())], REPO)
         leased = True
-        version = tomllib.loads(
-            (REPO / "Cargo.toml").read_text(encoding="utf-8")
-        )["workspace"]["package"]["version"]
-        prefix = f"opi-ai-{version}"
-        run("package", ["cargo", "package", "-p", "opi-ai", "--allow-dirty", "--no-verify",
-                        "--offline", "--locked"], REPO)
+        if family.get("kind") == "companion":
+            companion = REPO / family["package_dir"]
+            companion_pkg = tomllib.loads(
+                (companion / "Cargo.toml").read_text(encoding="utf-8")
+            )["package"]
+            prefix = f"{companion_pkg['name']}-{companion_pkg['version']}"
+            # Standalone nonmember gates in every feature graph. The root
+            # workspace full gate cannot see this package.
+            run("companion-fmt", ["cargo", "fmt", "--check"], companion)
+            for profile in family["profiles"]:
+                tag = profile["name"]
+                flags = (
+                    ["--features", ",".join(profile["features"])]
+                    if profile["features"] else []
+                )
+                run(
+                    f"companion-clippy-{tag}",
+                    ["cargo", "clippy", "--all-targets", "--offline", "--locked"]
+                    + flags
+                    + ["--", "-D", "warnings"],
+                    companion,
+                )
+                run(
+                    f"companion-test-{tag}",
+                    ["cargo", "test", "--offline", "--locked"] + flags,
+                    companion,
+                )
+            run(
+                "companion-doc",
+                ["cargo", "doc", "--no-deps", "--offline", "--locked"],
+                companion,
+            )
+            # Strict Upgrade->connection bridge check in the root workspace.
+            run(
+                "bridge-check",
+                ["cargo", "test", "-p", "opi-ai", "--test", "ws_upgrade",
+                 "--offline", "--locked"],
+                REPO,
+            )
+            run("package", ["cargo", "package", "--allow-dirty", "--no-verify",
+                            "--offline", "--locked"], companion)
+        else:
+            version = tomllib.loads(
+                (REPO / "Cargo.toml").read_text(encoding="utf-8")
+            )["workspace"]["package"]["version"]
+            prefix = f"opi-ai-{version}"
+            run("package", ["cargo", "package", "-p", "opi-ai", "--allow-dirty", "--no-verify",
+                            "--offline", "--locked"], REPO)
         archive = scratch / f"{prefix}.crate"
         archive.write_bytes((target / "package" / archive.name).read_bytes())
         evidence["package"] = {
@@ -255,7 +364,11 @@ def main() -> int:
                 ["cargo", "metadata", "--format-version", "1", "--offline", "--locked"] + flags,
                 consumer,
             ))
-            graph = check_family_graph(metadata, package, family["graph_requirements"])
+            graph = check_family_graph(
+                metadata, package,
+                profile.get("graph_requirements", family.get("graph_requirements")),
+                family.get("crate", "opi-ai"),
+            )
             report = json.loads(run(
                 f"{profile['name']}-consumer",
                 ["cargo", "run", "--offline", "--locked"] + flags,
@@ -271,18 +384,30 @@ def main() -> int:
             (consumer / "Cargo.lock").read_bytes()
         ).hexdigest()
         lock = tomllib.loads((consumer / "Cargo.lock").read_text(encoding="utf-8"))
+        graph_names = {
+            name
+            for profile in family["profiles"]
+            for name, _ in profile.get(
+                "graph_requirements", family.get("graph_requirements", [])
+            )
+        }
         lock_checksums = {
             p["name"]: p.get("checksum")
             for p in lock.get("package", [])
-            if p["name"] in {name for name, _ in family["graph_requirements"]}
+            if p["name"] in graph_names
         }
         evidence["lock_checksums"] = lock_checksums
         missing = [n for n, c in lock_checksums.items() if not c]
         if missing:
             raise ValueError(f"consumer lock lacks registry checksums for {missing}")
-        evidence["native_provenance"] = native_build_provenance(target)
-        if not evidence["native_provenance"]["static_archives"]:
-            raise ValueError("no static aws-lc archive found in the consumer-built target")
+        if family.get("kind") == "companion":
+            evidence["native_provenance"] = zlib_native_provenance(target)
+            if not evidence["native_provenance"]["static_archives"]:
+                raise ValueError("no static libz archive found in the consumer-built target")
+        else:
+            evidence["native_provenance"] = native_build_provenance(target)
+            if not evidence["native_provenance"]["static_archives"]:
+                raise ValueError("no static aws-lc archive found in the consumer-built target")
         evidence["verdict"] = "PASS"
     except (OSError, ValueError, subprocess.TimeoutExpired, tarfile.TarError) as exc:
         evidence["error"] = str(exc)

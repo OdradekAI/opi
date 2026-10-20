@@ -45,6 +45,7 @@ pub mod time;
 mod tls;
 pub mod transcript;
 pub mod vertex;
+pub mod ws;
 
 pub use api_mapped::{ApiMapError, ApiMappedProvider};
 pub use auth::{

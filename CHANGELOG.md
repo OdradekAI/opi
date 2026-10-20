@@ -116,6 +116,32 @@
 
 ### Added
 
+- `opi-ws` (new Independent Companion at `companions/ws`, RDF-24 / task
+  20.15): the Agent-neutral owned WebSocket client substrate. One exclusive
+  `io::Driver` connection state machine over any upgraded
+  `AsyncRead + AsyncWrite` stream; strict `frame` decoding (reserved
+  opcodes/RSV, fragmentation, control-frame shape, shortest length encodings,
+  64-bit high bit, actual-received-byte typed fallible storage growth);
+  owned `pmd` decoding (pre-tail `SyncPoint` proof, exactly-once
+  `00 00 FF FF` tail injection, `Z_BLOCK`/`BFINAL`/`ResetKeep` history,
+  context takeover, bounded per-poll work, explicit cancellation) over
+  unmodified libz-rs-sys 0.6.8 / zlib-rs 0.6.8 / flate2 1.1.10; the explicit
+  client Close state machine with caller-supplied masks, retained in-flight
+  events and caller-only deadlines; and the fixed 72,413-case deterministic
+  PMD boundary corpus replayed against recorded expectations. The crate is
+  standalone (not a root workspace member, no Opi dependency) with
+  `union-default`/`union-c-zlib` caller feature-union graphs; the package
+  identity/publication is deliberately not authorized yet.
+- `opi-ai`: the `ws` module (RDF-24 / task 20.15), the strict dynamic
+  WebSocket Upgrade bridge over the source-qualified `HttpClient`:
+  request shape with pinned-entropy nonce/mask helpers, and strict typed
+  101 validation (status/version, exact `Sec-WebSocket-Accept` with the RFC
+  6455 known vector pinned, singleton/duplicate rules, token-wise
+  `Connection`/`Upgrade`, offered-only subprotocols, exact
+  permessage-deflate parameter negotiation) before detaching the upgraded
+  stream. The neutral `opi-ws` substrate is consumed through a path-only
+  development dependency (stripped from `cargo package` output) until the
+  companion's registry identity is published.
 - `opi-ai`: the acquisition-retry owner surface (AIR-007, task 20.4):
   `AcquisitionPolicy` (per-call extra sends, hint bound, deterministic test
   jitter seed), `RetryAdmission` (1-based retry index plus the

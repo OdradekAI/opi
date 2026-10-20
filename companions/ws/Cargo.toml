@@ -1,0 +1,29 @@
+# Agent-neutral owned WebSocket client substrate (RDF-24). Independent
+# Companion: standalone workspace (not a root member), no Opi crate
+# dependency, independently built/versioned. The product bridge is the
+# `ws` module of `opi-ai` (dev-dependency wiring until publication).
+[package]
+name = "opi-ws"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+publish = false
+description = "Agent-neutral owned WebSocket client substrate: strict RFC 6455 frames, PMD, explicit Close, async IO"
+
+[features]
+default = []
+# Caller feature-union rehearsals over the same source: the encoder is an
+# ordinary safe flate2 client and follows the caller's backend union. The
+# decoder always uses the direct libz-rs-sys Rust path in every graph.
+union-default = ["flate2/default"]
+union-c-zlib = ["flate2/zlib"]
+
+[dependencies]
+libz-rs-sys = { version = "=0.6.8", default-features = false, features = ["std", "rust-allocator"] }
+flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"] }
+tokio = { version = "1", features = ["time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-util", "sync", "time", "test-util"] }
+serde_json = "1"

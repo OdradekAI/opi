@@ -101,6 +101,83 @@ class FamilyRegistryTests(unittest.TestCase):
         self.assertIn('caller-union = ["reqwest/gzip"]', manifest)
 
 
+class WsFamilyTests(unittest.TestCase):
+    """The ws family packages the standalone companion, not the SDK."""
+
+    def test_ws_family_registered_with_companion_shape(self):
+        from package_slice import FAMILIES
+
+        ws = FAMILIES["ws"]
+        self.assertEqual(ws["kind"], "companion")
+        self.assertEqual(ws["crate"], "opi-ws")
+        self.assertEqual(ws["package_dir"], "companions/ws")
+        self.assertEqual(ws["consumer"], "consumer-ws")
+        self.assertEqual(ws["expected_checks"], 6)
+        self.assertEqual(
+            [p["name"] for p in ws["profiles"]],
+            ["ordinary", "union-default", "union-c-zlib"],
+        )
+        for profile in ws["profiles"]:
+            self.assertTrue(
+                all(
+                    (name, version) in profile["graph_requirements"]
+                    for name, version in [("flate2", "1.1.10")]
+                ),
+                profile["name"],
+            )
+        self.assertIn(
+            ("libz-sys", "1.1.30"),
+            ws["profiles"][2]["graph_requirements"],
+        )
+
+    def test_consumer_ws_template_declares_union_features(self):
+        base = Path(__file__).resolve().parent / "consumer-ws"
+        manifest = (base / "Cargo.toml").read_text(encoding="utf-8")
+        self.assertIn('path = "@PACKAGE@"', manifest)
+        self.assertIn('union-default = ["opi-ws/union-default"]', manifest)
+        self.assertIn('union-c-zlib = ["opi-ws/union-c-zlib"]', manifest)
+        source = (base / "src" / "main.rs").read_text(encoding="utf-8")
+        for name in [
+            "rfc-hello-decodes",
+            "context-takeover-across-messages",
+            "driver-echo-roundtrip",
+            "close-handshake-masked-response",
+            "strict-rejection-is-terminal",
+            "cancelled-borrow-resumes",
+        ]:
+            self.assertIn(name, source, f"missing check {name}")
+
+    def test_companion_graph_uses_extracted_opi_ws(self):
+        ws = package_slice.FAMILIES["ws"]
+        temp = tempfile.TemporaryDirectory(prefix="opi-ws-graph-test-")
+        self.addCleanup(temp.cleanup)
+        package = Path(temp.name).resolve() / "opi-ws-0.1.0"
+        package.mkdir()
+        (package / "Cargo.toml").write_text("", encoding="utf-8")
+        metadata = graph_metadata(
+            ws["profiles"][0]["graph_requirements"], package / "Cargo.toml"
+        )
+        # graph_metadata names the SDK entry opi-ai; rename it to opi-ws for
+        # this companion case.
+        metadata["packages"][0]["name"] = "opi-ws"
+        graph = package_slice.check_family_graph(
+            metadata, package, ws["profiles"][0]["graph_requirements"], "opi-ws"
+        )
+        self.assertEqual(graph["libz-rs-sys"]["version"], "0.6.8")
+        self.assertEqual(graph["zlib-rs"]["version"], "0.6.8")
+
+    def test_zlib_native_provenance_captures_static_archive(self):
+        temp = tempfile.TemporaryDirectory(prefix="opi-zlib-prov-")
+        self.addCleanup(temp.cleanup)
+        target = Path(temp.name).resolve()
+        build = target / "debug/build/libz-sys-abc/out"
+        build.mkdir(parents=True)
+        (build / "libz.a").write_bytes(b"static")
+        provenance = package_slice.zlib_native_provenance(target)
+        self.assertEqual(len(provenance["static_archives"]), 1)
+        self.assertEqual(provenance["dynamic_libz_artifacts"], [])
+
+
 class FamilyReportTests(unittest.TestCase):
     def setUp(self):
         self.family = package_slice.FAMILIES["crypto"]

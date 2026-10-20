@@ -1,0 +1,29 @@
+opi-ws (companion) — Agent-neutral owned WebSocket client substrate
+
+This crate links against the following unmodified crates.io dependencies:
+
+- libz-rs-sys 0.6.8 (MIT OR Apache-2.0) — C-compatible FFI surface over the
+  pure-Rust zlib-rs implementation, used with default-features = false and
+  the "std" + "rust-allocator" features. The decoder calls the public but
+  doc(hidden) inflateSyncPoint / inflateResetKeep exports (the zlib-rs
+  __internal-api surface). No source patches, private symbols, custom
+  allocators or callbacks are used.
+- zlib-rs 0.6.8 (MIT OR Apache-2.0) — transitive Rust deflate/inflate
+  implementation backing libz-rs-sys.
+- flate2 1.1.10 (MIT OR Apache-2.0) — used with default-features = false and
+  the "zlib-rs" backend for the encoder. The optional feature unions
+  "union-default" (flate2/default, miniz_oxide Rust backend) and
+  "union-c-zlib" (flate2/zlib, native C libz-sys build) are caller-side
+  rehearsals of the supported published feature graphs; every graph keeps the
+  direct libz-rs-sys Rust decoder path.
+
+Unsupported feature unions (rejected, not silently accepted): libz-rs-sys
+rust-allocator + c-allocator (upstream compile_error!), gz/gzprintf paths,
+nightly-only features, export-symbols/prefix combinations, and any other
+backend/debug/fuzz combination not listed above. C-zlib native
+source/build/link identity (libz-sys toolchain, flags, static archive) is
+recorded by the packaging proof, not assumed.
+
+Any upgrade of these dependencies requires the recorded unsafe-boundary,
+feature-graph and acceptance reviews to be re-run before adoption (see
+README.md, "Maintenance boundaries").
