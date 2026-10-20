@@ -984,7 +984,7 @@
       "definition_of_done": "Through Models and the migrated real OpenAI Chat adapter, demonstrate one executable acquisition attempt at a time, frozen auth/model/account, payload-variant counters, cancellable source-qualified waiting, and sealed post-handoff/unknown-dispatch states. Remove only duplicate main-loop acquisition scheduling in the same compiling cutover. PreparationEvidence::run_provider_call adapts to the same SDK mechanism; ProductCompactionHooks::prepare retains its existing new-call summary recovery, usage-unknown accounting and cancellation policy. Bedrock modes, Codex branches and strict/callback integration remain owned by 20.20, 20.16 and 20.11; complete AIR-007/V-05 closure is 20.34, never an early pass here.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -1114,9 +1114,9 @@
         "opi_coding_agent::ProductCompactionHooks::prepare"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "64ef09ea743386116b07e885d9111eba8c825bbd",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -1189,10 +1189,79 @@
         "crates/opi-coding-agent/tests/*session*",
         "crates/opi-coding-agent/tests/product_evidence.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "03e8cb94434adcea4923910eab975a55f7e2d7a3",
+      "evidence": {
+        "Opi-Task": "20.4",
+        "Opi-DoD-SHA256": "34883b4f7ed221cba919edf0600828a6020e44f174258de82ba0a31713d9108e",
+        "Opi-Verification": "workspace; opi-impl-smoke.ps1 full PASSED on Windows native x86_64-msvc final tree (doc-check, fmt --all, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets 249 suites, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps) with AWS_LC_SYS_USE_SYSTEM=0 (log C:/Users/Luiz/AppData/Local/Temp/opi-win-full8.log); P20-S04 verification commands green inside the gate: cargo test -p opi-agent --test agent_loop_semantics (22) --test retry_agent (14), cargo test -p opi-ai --test openai_chat_fixtures (68) --test provider_collection (62) --test retry_backoff (35), cargo test -p opi-coding-agent --test product_evidence (29); WSL x86_64-linux fmt/clippy -D warnings/241 suites/workspace doc-tests/rustdoc -D warnings/opi-doc-check.py/git diff --check also PASSED",
+        "Opi-Evaluator": "manual 7-lens exec audit passed, no must-fix; exec.workflow runtime unavailable (node absent in environment), wf_ref=null",
+        "Opi-Acceptance": "P20-S04 closed at the acquisition seam this task owns: one executable attempt at a time, frozen auth/model/account, per-payload-variant send counters, cancellable source-qualified waiting and sealed post-handoff/unknown-dispatch states proven through the real Models->migrated OpenAI Chat adapter (hint-honoring readiness with typed zero-dispatch RetryNotReady refusal, family backoff range, exact 1+N caps with exhausted sealing, identical frozen payload/bearer across sends) plus registered-provider mechanism proofs, with the duplicate agent-loop acquisition scheduling removed in the same compiling cutover (AutoRetry events/diagnostics/evidence shapes preserved), PreparationEvidence::run_provider_call single-send through the same SDK mechanism, and ProductCompactionHooks::prepare new-call summary recovery, usage-unknown accounting and cancellation policy retained unchanged. Bedrock Smithy modes remain with 20.20, Codex branches with 20.16, strict/callback integration with 20.11, and complete AIR-007/V-05 closure with 20.34 - never claimed here"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-20T15:41:11+08:00",
+          "attempt": 1,
+          "summary": "P20-ACQUISITION owner delivered in commit 03e8cb94434adcea4923910eab975a55f7e2d7a3. opi-ai::retry gains the crate-private AcquisitionCore plus the public AcquisitionPolicy (max_retries = extra sends per payload variant, hint bound max_retry_delay_ms default 60s where 0 disables only the bound, injectable deterministic jitter seed), RetryAdmission (1-based retry_index + delay_ms) and AcquisitionSeal (PostHandoff/UnknownDispatch/Exhausted/Finished with as_str). Models::prepare_call_with_policy freezes the policy at preparation (prepare_call keeps AcquisitionPolicy::default, zero extra sends); start_attempt enforces cancel -> credential -> sealed -> readiness -> single-lease in that order with new typed ModelsError::RetryNotReady (zero dispatch before the admitted deadline; the deadline clears once elapsed) and ModelsError::CallSealed; AttemptStream records each item into the core: the first Ok item is the streaming-response handoff and seals acquisition retry (body/EOF/parser failures after handoff are final), an Err item is classified (retryable + budget -> admission with hint-priority delay, hint bounded by max_retry_delay_ms, else min(500ms*2^i,8000ms) with [0.75,1.0) SplitMix64 jitter; retryable without budget -> Exhausted; otherwise Finished), Ready(None) seals Finished when nothing was delivered, and Drop after a poll without an observed outcome seals UnknownDispatch while an unpolled drop only releases the lease (drop-before-send consumes no send). The reopenable successful lease is removed: a terminal outcome seals the call and a new logical call must re-prepare. agent_loop.rs loses its own retry scheduling (retry_attempt/max_attempts/delay_for_attempt/stream_delivered_content classification deleted): it passes config.retry.max_attempts as the per-call policy, schedules only prepared.retry_admission() attempts, waits cancellably on the SDK delay (during_retry_sleep select preserved), keeps AutoRetryStart/End events, retry-attempt/suppressed/exhausted/succeeded diagnostics (suppression now read from acquisition_seal()==PostHandoff) and parented Retry evidence records; loop_types mirrors the refusals as AgentError::RetryNotReady/CallSealed with diagnostics and exit-code mappings. PreparationEvidence::run_provider_call stays single-send (default policy) through the same mechanism; the summary ProductCompactionHooks::prepare new-call recovery loop, usage-unknown accounting (SummaryUsageUnavailable) and cancellation policy are untouched, so no sends stack beyond the frozen budget. Tests: retry_backoff gains 7 closure tests (real-adapter hint/readiness/frozen-payload, family backoff range, 1+N budget with exhausted seal, post-handoff and unknown-dispatch sealing, finished sealing incl. eventless EOF, cancelled token forbidding attempts); retry_agent gains exact-send-count episode proofs (3 sends with 2 admissions incl. no-stacking under max_attempts=1); reopen-dependent suites re-proven through real admitted retries (provider_collection admitted_retry_after_failure..., budget-clamp fail->retry episode with frozen compiled limits, bedrock Timeout episode with frozen SigV4 plus a separate provider-side fresh-credential helper, api_mapped RateLimited episode with auth resolved once and frozen bearer). Honest boundaries: seals are sticky with the first reason winning (a fully successful stream seals as PostHandoff; Finished is observable for eventless termini); admission breadth (409/5xx/x-should-retry, Smithy/Bedrock and Codex tables, quota/deadline enforcement) stays with 20.34/20.20/20.16; MockProvider counts stream_prepared calls so an unpolled dropped attempt still consumes a scripted mock response (no test depends on that discrepancy); no new workspace dependencies (jitter is an internal SplitMix64).",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.ps1 full on Windows native final tree (249 suites, 0 failures; log opi-win-full8.log). WSL x86_64-linux: fmt, clippy -D warnings, 241 suites, workspace doc-tests, rustdoc -D warnings, doc-check, git diff --check all PASSED (same environment-specific pre-existing exclusions as 20.13/20.14).",
+            "d0_scenarios": "P20-S04 verification commands executed inside the authoritative gate and on WSL: cargo test -p opi-agent --test agent_loop_semantics --test retry_agent (22/14), cargo test -p opi-ai --test openai_chat_fixtures --test provider_collection --test retry_backoff (68/62/35), cargo test -p opi-coding-agent --test product_evidence (29).",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7), no must-fix: DoD mapped clause-by-clause (one-at-a-time enforcement incl. retained AttemptAlreadyActive proof; frozen auth/model/account via identical wiremock bodies + one bearer + resolver-once counters incl. Bedrock SigV4; payload-variant counters via admission-counted 1+N budget with exhausted sealing; cancellable source-qualified waiting via hint-priority family delays, RetryNotReady zero-dispatch enforcement, during_retry_sleep cancellation and cancelled-token-forbids tests; sealed post-handoff/unknown-dispatch with mechanism and wire-level proofs; duplicate main-loop scheduling removed in one compiling cutover with product event/diagnostic/evidence shapes preserved; run_provider_call single-send adaptation; compaction recovery/usage-unknown/cancellation retained and covered by product_evidence; 20.20/20.16/20.11/20.34 boundaries not claimed). Tests observe server/provider-side state; production call sites all exercised; evidence footers truthful incl. sticky-seal disclosure and reopen removal; no non-goal leak; workspace dependency table unchanged; test stewardship recorded below.",
+            "d3_gap_checks": "PASS: git diff --check clean; no *.pem/*.key/*.p12 tracked; opi-doc-check.py PASS; no schema fixtures touched by the new error variants (AgentError/ModelsError are runtime errors, not serialized schema members).",
+            "test_disposition": [
+              {
+                "subject": "20.4",
+                "action": "add",
+                "test": "crates/opi-ai/tests/retry_backoff.rs acquisition module (7 tests: real_adapter_retry_honors_hint_enforces_readiness_and_freezes_payload, real_adapter_retry_without_hint_uses_family_backoff_range, real_adapter_budget_caps_sends_and_seals_exhausted, post_handoff_failure_is_sealed_not_retried, dispatched_drop_records_unknown_dispatch_and_seals, successful_terminal_seals_the_call incl. eventless-EOF Finished companion, cancelled_token_forbids_attempts_after_admission)",
+                "interface": "public opi_ai Models::prepare_call_with_policy + PreparedProviderCall::start_attempt/retry_admission/acquisition_seal (P20-ACQUISITION closure_test)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.4",
+                "action": "add",
+                "test": "crates/opi-agent/tests/retry_agent.rs (sdk_acquisition_episode_totals_exact_sends, product_loop_cannot_stack_sends_beyond_the_frozen_budget)",
+                "interface": "public agent_loop acquisition cutover",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.4",
+                "action": "update",
+                "test": "provider_collection start_attempt_allows_sequential_retry_after_terminal_and_resolves_auth_once -> admitted_retry_after_failure_resolves_auth_once_and_releases_the_slot (real admitted retry instead of re-dispatched successes; ProbeProvider gained with_first_error); provider_collection budget-clamp test now drives a fail->retry episode proving frozen compiled max_tokens/model across a real retry; bedrock retry test now uses a 504 Timeout episode with AcquisitionPolicy and SDK-delay wait (finish_timeout_attempt) plus finish_provider_side_attempt for the separate-calls test; api_mapped retry test now a RateLimited fail->admitted-retry episode with auth resolved once and frozen bearer (RecordingRoute first_error, fixture parametrized); collection_error_match arms cover RetryNotReady/CallSealed; retry_agent cancellation comment reflects SDK-computed delays",
+                "interface": "public prepared-call lifecycle across real retries",
+                "replacement": "each update replaces its own reopenable-success predecessor in place with an equal-or-stronger admitted-retry proof",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.4",
+                "action": "update",
+                "test": "production mappings: agent_loop.rs (SDK-admitted scheduling, suppression via acquisition_seal), loop_types.rs (AgentError::RetryNotReady/CallSealed + From arms), diagnostic.rs (refusal diagnostics), runner.rs (exit codes), test_support.rs (MockProvider::new_with_models_and_errors), bilingual READMEs + CHANGELOG",
+                "interface": "public AgentError/ModelsError surfaces and product loop behavior",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.4",
+                "action": "retain",
+                "test": "all other existing suites (241 WSL / 249 Windows suites green) including provider_collection AttemptAlreadyActive and unpolled-drop lease-release proofs, retry_agent event-shape/cancellation/suppression suite, product_evidence compaction + retry-graph proofs, PreparationEvidence summary path",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.4",
+                "action": "none",
+                "test": "none deleted",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ],
+      "in_progress_since": null
     },
     {
       "id": "20.5",
@@ -15835,6 +15904,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-20T11:53:09+08:00",
       "task_id": "20.12",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-10-20T15:41:11+08:00",
+      "task_id": "20.4",
       "criterion_id": null
     }
   ]
