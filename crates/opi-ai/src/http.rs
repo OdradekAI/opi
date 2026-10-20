@@ -32,6 +32,44 @@ pub enum HttpClientBuildError {
     Client(#[from] reqwest::Error),
 }
 
+/// Source-qualified redirect policy for an [`HttpClient`] (RDF-22).
+///
+/// This is the explicit send rule for redirects: it bounds how many
+/// redirect hops one logical request may lawfully follow, and is enforced
+/// by the upstream backend. Cross-origin redirects (host or port change)
+/// strip protected headers (`authorization`, `cookie`, `cookie2`,
+/// `proxy-authorization`, `www-authenticate`) before the next hop is sent;
+/// same-origin redirects preserve them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RedirectPolicy {
+    /// Never follow redirects: the 3xx response is returned to the caller
+    /// and surfaces through provider status classification.
+    None,
+    /// Follow at most `n` redirects; exceeding the bound fails the request
+    /// with a typed, redacted network cause ("too many redirects") and no
+    /// further sends.
+    Limited(usize),
+}
+
+impl Default for RedirectPolicy {
+    fn default() -> Self {
+        // Matches the upstream default; owned here so the source-qualified
+        // profile does not silently track backend defaults.
+        RedirectPolicy::Limited(10)
+    }
+}
+
+impl RedirectPolicy {
+    /// The policy applied to requests by [`RedirectPolicy::default`].
+    pub fn to_reqwest(self) -> reqwest::redirect::Policy {
+        match self {
+            RedirectPolicy::None => reqwest::redirect::Policy::none(),
+            RedirectPolicy::Limited(n) => reqwest::redirect::Policy::limited(n),
+        }
+    }
+}
+
 /// Default maximum idle connections per host in the connection pool.
 const DEFAULT_POOL_MAX_IDLE_PER_HOST: usize = 10;
 
@@ -142,6 +180,7 @@ pub struct HttpClient {
     idle_timeout: Duration,
     proxy_config: ProxyConfig,
     tls_options: Option<TlsOptions>,
+    redirect_policy: RedirectPolicy,
 }
 
 impl HttpClient {
@@ -179,6 +218,15 @@ impl HttpClient {
     pub fn tls_options(&self) -> Option<&TlsOptions> {
         self.tls_options.as_ref()
     }
+
+    /// Return the source-qualified redirect policy.
+    ///
+    /// The default is [`RedirectPolicy::Limited`] with 10 hops. Requests
+    /// that exceed the bound fail typed; cross-origin hops strip protected
+    /// headers (see [`RedirectPolicy`]).
+    pub fn redirect_policy(&self) -> RedirectPolicy {
+        self.redirect_policy
+    }
 }
 
 impl Default for HttpClient {
@@ -193,6 +241,7 @@ pub struct HttpClientBuilder {
     idle_timeout: Duration,
     proxy_config: ProxyConfig,
     tls_options: Option<TlsOptions>,
+    redirect_policy: RedirectPolicy,
 }
 
 impl HttpClientBuilder {
@@ -203,7 +252,22 @@ impl HttpClientBuilder {
             idle_timeout: DEFAULT_POOL_IDLE_TIMEOUT,
             proxy_config: ProxyConfig::default(),
             tls_options: None,
+            redirect_policy: RedirectPolicy::default(),
         }
+    }
+
+    /// Set the source-qualified redirect policy (RDF-22).
+    ///
+    /// The policy bounds lawful redirect sends per logical request:
+    /// [`RedirectPolicy::None`] returns 3xx responses to the caller, and
+    /// [`RedirectPolicy::Limited`] fails typed ("too many redirects") once
+    /// the hop count is exceeded, with no further sends either way.
+    /// Cross-origin hops always strip protected headers. This replaces the
+    /// implicit backend default with an explicit profile input without
+    /// adding any retry, backoff or hidden-send behavior.
+    pub fn redirects(mut self, policy: RedirectPolicy) -> Self {
+        self.redirect_policy = policy;
+        self
     }
 
     /// Set the maximum number of idle connections per host.
@@ -254,10 +318,19 @@ impl HttpClientBuilder {
     /// typed [`HttpClientBuildError`] for rejected TLS configuration and a
     /// wrapped backend error for proxy URL or client construction
     /// failures.
+    ///
+    /// Proxy use is explicit-only: ambient `HTTP_PROXY`/`HTTPS_PROXY`/
+    /// `NO_PROXY` environment detection by the backend is disabled so the
+    /// source-qualified owner makes every send decision (including
+    /// [`ProxyConfig::no_proxy`] scoping) from declared inputs. Consumers
+    /// that want environment-derived proxies resolve them with
+    /// [`proxy_from_env`] and pass an explicit [`ProxyConfig`].
     pub fn build(self) -> Result<HttpClient, HttpClientBuildError> {
         let mut builder = reqwest::Client::builder()
             .pool_max_idle_per_host(self.max_idle_per_host)
-            .pool_idle_timeout(Some(self.idle_timeout));
+            .pool_idle_timeout(Some(self.idle_timeout))
+            .redirect(self.redirect_policy.to_reqwest())
+            .no_proxy();
 
         if let Some(ref options) = self.tls_options {
             let frozen = options.freeze()?;
@@ -282,6 +355,7 @@ impl HttpClientBuilder {
             idle_timeout: self.idle_timeout,
             proxy_config: self.proxy_config,
             tls_options: self.tls_options,
+            redirect_policy: self.redirect_policy,
         })
     }
 }

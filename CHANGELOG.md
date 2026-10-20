@@ -22,6 +22,12 @@
   `TlsKeyError`) while backend construction failures wrap `reqwest::Error`.
   All current callers migrate together with no behavior change on the
   non-TLS paths.
+- `opi-ai`: the shared `HttpClient` no longer auto-detects ambient
+  `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables (RDF-22):
+  proxy use is explicit-only through `ProxyConfig`, whose scoped `no_proxy`
+  list decides bypassing. Consumers that want environment-derived proxies
+  resolve them with `proxy_from_env` and pass an explicit config, as the
+  coding agent already does.
 
 - `opi-ai`: `ProviderCollection` is replaced by a single `Models` driver
   (`provider_collection` module renamed to `models`; `CollectionError` is
@@ -88,6 +94,26 @@
 
 ### Added
 
+- `opi-ai`: explicit redirect and send policy on the public transport
+  (RDF-22, task 20.12). `HttpClientBuilder::redirects(RedirectPolicy)`
+  bounds lawful redirect sends (default `Limited(10)`, owned by `opi-ai`);
+  exceeding the bound fails acquisition with the typed redacted cause
+  `Network("too many redirects")` and no further sends, `None` returns
+  3xx responses to caller status classification, and cross-origin hops
+  strip protected headers (`authorization`, `cookie`, `cookie2`,
+  `proxy-authorization`, `www-authenticate`) while same-origin hops keep
+  them. New `http_acceptance` integration suite drives the real
+  Models -> Chat -> HttpClient path over scripted loopback peers with
+  bytewise and coalesced delivery: exact lawful-send counts, redirect
+  chains, typed acquisition versus post-acceptance failure stages,
+  single-terminal EOF without retries, the recorded hyper 1.9.0
+  acceptance boundaries (8 KiB initial read buffer with adaptive growth,
+  100 head fields, 16 KiB cumulative chunk extensions, no artificial
+  trailer or head byte cap), HTTPS proxy outer TLS -> CONNECT -> inner
+  TLS and scoped NO_PROXY bypass. Offline packaged-consumer proof via
+  `scripts/pi-sdk-conformance/package_slice.py --family http --offline`
+  (ordinary and caller feature-union graphs, resolved versions and
+  registry checksums).
 - `opi-ai`: source-scoped TLS on the public transport (RDF-23, task 20.14;
   DEL-06 substrate). `HttpClientBuilder::tls(TlsOptions)` accepts one owned
   typed value for trust selection (packaged pinned Node v22.19.0 default CA

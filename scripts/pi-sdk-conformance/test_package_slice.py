@@ -78,6 +78,29 @@ class FamilyGraphTests(unittest.TestCase):
                                              self.family["graph_requirements"])
 
 
+class FamilyRegistryTests(unittest.TestCase):
+    def test_http_family_registered_with_pinned_identities(self):
+        from package_slice import FAMILIES
+
+        http = FAMILIES["http"]
+        self.assertEqual(http["consumer"], "consumer-http")
+        self.assertEqual([p["name"] for p in http["profiles"]], ["ordinary", "caller-union"])
+        self.assertEqual(http["expected_checks"], 6)
+        self.assertEqual(
+            http["graph_requirements"],
+            [
+                ("reqwest", "0.12.28"),
+                ("hyper", "1.9.0"),
+                ("hyper-util", "0.1.20"),
+                ("http", "1.4.0"),
+            ],
+        )
+        template = Path(__file__).resolve().parent / "consumer-http" / "Cargo.toml"
+        manifest = template.read_text(encoding="utf-8")
+        self.assertIn('path = "@PACKAGE@"', manifest)
+        self.assertIn('caller-union = ["reqwest/gzip"]', manifest)
+
+
 class FamilyReportTests(unittest.TestCase):
     def setUp(self):
         self.family = package_slice.FAMILIES["crypto"]

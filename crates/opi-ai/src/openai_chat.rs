@@ -1254,6 +1254,14 @@ impl OpenAiChatProvider {
             .map_err(|e| {
                 if e.is_timeout() {
                     ProviderError::Timeout
+                } else if e.is_redirect() {
+                    // Redirect limit exceeded at acquisition: the backend
+                    // stops after the lawful hops. The cause is reported as
+                    // a producer-attested static string so no redirect
+                    // target or credential material leaks into diagnostics.
+                    ProviderError::Network(ProviderErrorSummary::attested_static(
+                        "too many redirects",
+                    ))
                 } else {
                     ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
                 }

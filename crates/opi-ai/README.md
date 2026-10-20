@@ -534,6 +534,53 @@ host-provider independence), recording the resolved rustls/aws-lc
 versions, registry checksums and native build provenance. Real ADC wiring
 stays with its own owner; this closes only the transport mechanism.
 
+## Source-Scoped HTTP Acquisition Profile (RDF-22)
+
+`HttpClient` owns the source-qualified HTTP send policy over the unmodified
+crates.io `reqwest 0.12.28` / `Hyper 1.9.0` graph. `HttpClientBuilder::redirects
+(RedirectPolicy)` is the explicit redirect rule: `RedirectPolicy::Limited(n)`
+(default 10, owned by `opi-ai` rather than silently tracking the backend)
+bounds lawful redirect sends per logical request — one original request plus
+at most `n` hops — and exceeding the bound fails acquisition with the typed
+redacted cause `Network("too many redirects")` and no further sends;
+`RedirectPolicy::None` returns the 3xx response to the caller as ordinary
+provider status classification. Cross-origin hops (host or port change)
+strip protected headers (`authorization`, `cookie`, `cookie2`,
+`proxy-authorization`, `www-authenticate`) before the next send; same-origin
+hops preserve them. Proxy use is explicit-only: ambient
+`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment detection by the backend is
+disabled, and the scoped `no_proxy` list of an explicit `ProxyConfig` decides
+bypassing; `https://` proxies are supported as outer TLS -> CONNECT ->
+inner TLS to the target with no custom-transport double-wrap. There is no
+retry, backoff or hidden-send behavior anywhere in the client: cancellation
+stops the attempt, an accepted-then-truncated body produces exactly one
+terminal stream error, and the server-observed send count equals the lawful
+count.
+
+The recorded acceptance range of the pinned upstream graph (exercised by
+`tests/http_acceptance.rs` through the real `Models -> OpenAiChatProvider ->
+HttpClient` loopback path, with bytewise and coalesced delivery): HTTP/1
+response heads are parsed through an 8 KiB initial read buffer that grows
+adaptively (no byte cap is enforced below the adaptive maximum; 300 KiB
+heads are accepted), message heads are capped at 100 header fields, and
+chunked bodies allow at most 16 KiB of cumulative chunk-extension bytes
+(above that the body fails as a typed post-acceptance `StreamError`).
+Trailer sections are accepted below, at and above the upstream internal
+constants (no artificial trailer cap is enforced through this surface), and
+no SDK-side body/event caps, allocation hints or loosened
+content-length/transfer-encoding/EOF validation exist. Failures keep their
+provable stage: pre-response problems surface as `Network`/`Timeout` at
+acquisition, post-acceptance body problems as `StreamError` (wrapped with
+partial assistant state when content was already delivered).
+
+Packaged-consumer proof: `scripts/pi-sdk-conformance/package_slice.py
+--family http --offline` packages `opi-ai`, extracts the artifact outside
+the workspace, and runs an ordinary plus caller feature-union consumer
+through this exact public path (redirect chains with exact send counts and
+protected-header stripping, typed redirect-limit and acquisition failures,
+proxy routing with scoped bypass, single-terminal EOF), recording the
+resolved reqwest/hyper/hyper-util/http versions and registry checksums.
+
 ## Non-Goals
 
 The following are explicit non-goals and must not appear as current core

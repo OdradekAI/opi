@@ -57,6 +57,22 @@ FAMILIES: dict[str, dict[str, Any]] = {
             ("aws-lc-sys", "0.46.0"),
         ],
     },
+    "http": {
+        "consumer": "consumer-http",
+        "profiles": [
+            {"name": "ordinary", "features": []},
+            {"name": "caller-union", "features": ["caller-union"]},
+        ],
+        "expected_checks": 6,
+        # Exact resolved identities the consumer graph must pin for the
+        # packaged SDK (RDF-22 baseline).
+        "graph_requirements": [
+            ("reqwest", "0.12.28"),
+            ("hyper", "1.9.0"),
+            ("hyper-util", "0.1.20"),
+            ("http", "1.4.0"),
+        ],
+    },
 }
 
 

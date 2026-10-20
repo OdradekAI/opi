@@ -444,6 +444,41 @@ ALPN、typed 负例、宿主 provider 无关性），记录解析出的 rustls/a
 版本、registry 校验和与原生构建溯源。真实 ADC 接线仍归后续 owner；
 本条只收口传输机制。
 
+## 源限定 HTTP 采集 Profile（RDF-22）
+
+`HttpClient` 在未修改的 crates.io `reqwest 0.12.28` / `Hyper 1.9.0` 图之上
+持有源限定的 HTTP 发送策略。`HttpClientBuilder::redirects(RedirectPolicy)`
+是显式重定向规则：`RedirectPolicy::Limited(n)`（默认 10，由 `opi-ai` 显式
+持有而不是跟随后端默认值）限定一次逻辑请求的合法重定向发送——原始请求加
+至多 `n` 跳——超限在采集阶段以类型化脱敏原因 `Network("too many
+redirects")` 失败且不再发送；`RedirectPolicy::None` 将 3xx 响应作为普通
+provider 状态分类交还给调用方。跨源跳转（主机或端口变化）在下一跳发送前
+剥离受保护头（`authorization`、`cookie`、`cookie2`、`proxy-authorization`、
+`www-authenticate`）；同源跳转保留它们。代理仅显式使用：后端的
+`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` 环境探测被禁用，由显式
+`ProxyConfig` 的作用域 `no_proxy` 列表决定旁路；`https://` 代理以
+外层 TLS -> CONNECT -> 内层 TLS 的方式到达目标，无自定义传输二次包装。
+客户端不存在任何重试、退避或隐藏发送：取消会停止尝试，接受后被截断的
+body 恰好产生一个终止性流错误，服务端观测到的发送数等于合法计数。
+
+钉定上游图的实测接受范围（由 `tests/http_acceptance.rs` 经真实
+`Models -> OpenAiChatProvider -> HttpClient` 回环路径、按逐字节与合并两种
+投递方式验证）：HTTP/1 响应头经 8 KiB 初始读缓冲解析并自适应增长（自适应
+上限之内无字节上限；300 KiB 响应头被接受），消息头最多 100 个字段，
+chunked body 累计 chunk 扩展字节至多 16 KiB（超出后 body 以类型化的
+接受后 `StreamError` 失败）。trailer 节在上游内部常量之下、之上、恰好
+处于边界值时均被接受（该表面不强制人为 trailer 上限），且不存在 SDK 侧
+body/事件上限、分配提示或放宽的 content-length/transfer-encoding/EOF
+校验。失败保持可证明的阶段：响应前问题在采集阶段表现为
+`Network`/`Timeout`，接受后的 body 问题表现为 `StreamError`（已交付内容时
+携带部分 assistant 状态包装）。
+
+打包消费者证明：`scripts/pi-sdk-conformance/package_slice.py --family http
+--offline` 将 `opi-ai` 打包、在工作区之外解包，并以普通与调用方特性并集
+两种消费者经由这条公开路径运行（带精确发送计数与受保护头剥离的重定向链、
+类型化的重定向超限与采集失败、带作用域旁路的代理路由、单终止 EOF），
+记录解析出的 reqwest/hyper/hyper-util/http 版本与 registry 校验和。
+
 ## 非目标
 
 以下是明确的非目标，不得作为当前核心行为出现：

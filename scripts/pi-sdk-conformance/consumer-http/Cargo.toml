@@ -1,0 +1,32 @@
+[package]
+name = "consumer-http"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# The packaged opi-ai artifact extracted by package_slice.py. Only this SDK
+# path is substituted; backend dependencies resolve from crates.io.
+opi-ai = { path = "@PACKAGE@" }
+tokio = { version = "=1.52.3", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync"] }
+serde_json = "=1.0.149"
+futures-util = "=0.3.32"
+secrecy = "=0.10.3"
+tokio-util = "=0.7.18"
+# Feature-union control only (see [features]); the consumer never calls
+# reqwest directly - the SDK path is the public opi-ai HttpClient.
+reqwest = { version = "=0.12.28", default-features = false }
+# Resolution pins for the recorded RDF-22 acceptance-profile graph. The
+# packaged SDK's own hyper entries are dev-dependencies and do not
+# propagate to consumers; a caller proving the recorded profile pins the
+# exact identities whose acceptance range the battery exercises. No
+# features are added - reqwest's requirements unify at these versions.
+hyper = "=1.9.0"
+hyper-util = "=0.1.20"
+http = "=1.4.0"
+
+[features]
+# Caller feature-union control: the consumer's own graph additionally
+# enables the reqwest gzip feature, proving the SDK's recorded HTTP
+# acceptance profile is unchanged under a caller feature union.
+caller-union = ["reqwest/gzip"]
