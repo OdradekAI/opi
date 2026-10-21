@@ -361,29 +361,6 @@ fn resolve_env_name(configured: &str, default: &str) -> String {
     }
 }
 
-fn non_empty_env_var(env_name: &str) -> Option<String> {
-    std::env::var(env_name)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-}
-
-/// Read AWS credentials from environment variables.
-fn resolve_bedrock_env_credentials() -> (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
-    // Preserve present-but-blank credential values so the resolver can reject
-    // an attempted incomplete source instead of treating it as absent.
-    let akid = std::env::var("AWS_ACCESS_KEY_ID").ok();
-    let sak = std::env::var("AWS_SECRET_ACCESS_KEY").ok();
-    let token = std::env::var("AWS_SESSION_TOKEN").ok();
-    let region =
-        non_empty_env_var("AWS_REGION").or_else(|| non_empty_env_var("AWS_DEFAULT_REGION"));
-    (akid, sak, token, region)
-}
-
 /// AWS shared credentials file path.
 fn aws_credentials_path() -> Option<PathBuf> {
     std::env::var("AWS_SHARED_CREDENTIALS_FILE")
@@ -2037,62 +2014,81 @@ impl opi_ai::AuthResolver for BedrockAuthResolver {
 async fn resolve_bedrock_auth(
     bedrock_config: &BedrockProviderConfig,
 ) -> Result<opi_ai::ResolvedAuth, ProviderError> {
-    let (akid, sak, token, env_region) = resolve_bedrock_env_credentials();
-    let env_profile = std::env::var("AWS_PROFILE").ok();
-    let profile_name =
-        select_bedrock_profile(bedrock_config.profile.as_deref(), env_profile.as_deref())
-            .map(str::to_owned);
-    let credentials_file = aws_credentials_path();
-    let config_file = aws_config_path();
-    let secret_key = bedrock_config
-        .secret_access_key_env
-        .as_deref()
-        .and_then(|name| std::env::var(name).ok());
+    use opi_ai::auth::AmbientAuthContext;
+    use opi_ai::auth::aws::local::{
+        AwsAuthSelection, AwsLocalChainInput, ScopedAwsEnv, resolve_local_aws_auth,
+    };
+    use opi_ai::auth::aws::process::SpawnedCredentialProcess;
+
+    // The configured pair is a selected typed source: attempted-but-incomplete
+    // fails closed and never falls through to ambient sources.
+    let configured_attempted = bedrock_config.access_key_id.is_some()
+        || bedrock_config.secret_access_key_env.is_some()
+        || bedrock_config.session_token_env.is_some();
+
     let session_token = bedrock_config
         .session_token_env
         .as_deref()
         .and_then(|name| std::env::var(name).ok());
-    let configured_attempted = bedrock_config.access_key_id.is_some()
-        || bedrock_config.secret_access_key_env.is_some()
-        || bedrock_config.session_token_env.is_some();
-    let configured_access_key = bedrock_config
-        .access_key_id
-        .as_ref()
-        .map(ExposeSecret::expose_secret);
-    if configured_attempted
-        && !complete_bedrock_credential_pair(configured_access_key, secret_key.as_deref())
-    {
-        return Err(map_bedrock_resolution_error(
-            opi_ai::bedrock::credentials::CredentialResolutionError::IncompleteSource {
-                credential_source: opi_ai::bedrock::credentials::CredentialSource::ExplicitConfig,
-            },
-        ));
-    }
-    let environment_attempted = akid.is_some() || sak.is_some() || token.is_some();
-    if !configured_attempted
-        && environment_attempted
-        && !complete_bedrock_credential_pair(akid.as_deref(), sak.as_deref())
-    {
-        return Err(map_bedrock_resolution_error(
-            opi_ai::bedrock::credentials::CredentialResolutionError::IncompleteSource {
-                credential_source: opi_ai::bedrock::credentials::CredentialSource::Environment,
-            },
-        ));
-    }
-    let input = opi_ai::bedrock::credentials::CredentialResolutionInput {
-        config_access_key_id: configured_access_key,
-        config_secret_access_key: secret_key.as_deref(),
-        config_session_token: session_token.as_deref(),
-        config_region: bedrock_config.region.as_deref(),
-        env_access_key_id: akid.as_deref(),
-        env_secret_access_key: sak.as_deref(),
-        env_session_token: token.as_deref(),
-        env_region: env_region.as_deref(),
-        profile_name: profile_name.as_deref(),
-        credentials_file_path: credentials_file.as_deref(),
-        config_file_path: config_file.as_deref(),
+    let session_token_env = session_token
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .and(bedrock_config.session_token_env.as_deref())
+        .filter(|name| !name.trim().is_empty())
+        .map(str::to_owned);
+
+    let selection = if configured_attempted {
+        let secret_key = bedrock_config
+            .secret_access_key_env
+            .as_deref()
+            .and_then(|name| std::env::var(name).ok());
+        let configured_access_key = bedrock_config
+            .access_key_id
+            .as_ref()
+            .map(ExposeSecret::expose_secret);
+        if !complete_bedrock_credential_pair(configured_access_key, secret_key.as_deref()) {
+            return Err(map_bedrock_resolution_error(
+                opi_ai::auth::aws::local::CredentialResolutionError::IncompleteSource {
+                    credential_source: opi_ai::auth::aws::local::CredentialSource::ExplicitConfig,
+                },
+            ));
+        }
+        AwsAuthSelection::SigV4(opi_ai::AwsSigV4Credentials {
+            access_key_id: bedrock_config.access_key_id.clone().unwrap_or_default(),
+            secret_access_key: secrecy::SecretString::from(secret_key.unwrap_or_default()),
+            session_token: session_token
+                .filter(|token| !token.trim().is_empty())
+                .map(secrecy::SecretString::from),
+            region: bedrock_config
+                .region
+                .clone()
+                .filter(|region| !region.trim().is_empty())
+                .unwrap_or_else(|| "us-east-1".to_owned()),
+            expires_at: None,
+        })
+    } else {
+        let env_profile = std::env::var("AWS_PROFILE").ok();
+        match select_bedrock_profile(bedrock_config.profile.as_deref(), env_profile.as_deref()) {
+            Some(profile) => AwsAuthSelection::Profile(profile.to_owned()),
+            None => AwsAuthSelection::Auto,
+        }
     };
-    let mut auth = opi_ai::bedrock::credentials::resolve_auth(&input)
+
+    let ambient = AmbientAuthContext;
+    let credentials_file = aws_credentials_path();
+    let config_file = aws_config_path();
+    let process = SpawnedCredentialProcess;
+    let input = AwsLocalChainInput {
+        selection,
+        scoped: ScopedAwsEnv::empty(),
+        ambient: &ambient,
+        credentials_file: credentials_file.as_deref(),
+        config_file: config_file.as_deref(),
+        process: &process,
+        region: bedrock_config.region.as_deref(),
+        default_region: "us-east-1",
+    };
+    let mut auth = resolve_local_aws_auth(&input)
         .await
         .map_err(map_bedrock_resolution_error)?;
     if configured_attempted {
@@ -2108,12 +2104,7 @@ async fn resolve_bedrock_auth(
         auth.provenance.source = opi_ai::AuthProvenanceSource::AwsSigV4 {
             source: opi_ai::AwsCredentialSource::ConfiguredEnvironment {
                 secret_access_key_env,
-                session_token_env: session_token
-                    .as_deref()
-                    .filter(|value| !value.trim().is_empty())
-                    .and(bedrock_config.session_token_env.as_deref())
-                    .filter(|name| !name.trim().is_empty())
-                    .map(str::to_owned),
+                session_token_env,
             },
         };
     }
@@ -2121,10 +2112,10 @@ async fn resolve_bedrock_auth(
 }
 
 fn map_bedrock_resolution_error(
-    error: opi_ai::bedrock::credentials::CredentialResolutionError,
+    error: opi_ai::auth::aws::local::CredentialResolutionError,
 ) -> ProviderError {
     match error {
-        opi_ai::bedrock::credentials::CredentialResolutionError::Exhausted => {
+        opi_ai::auth::aws::local::CredentialResolutionError::Exhausted => {
             ProviderError::CredentialNeeded {
                 provider_id: "bedrock".into(),
             }
@@ -2635,6 +2626,8 @@ mod tests {
         let config_file = root.path().join("config");
         std::fs::write(&credentials_file, "").expect("credentials fixture");
         std::fs::write(&config_file, "").expect("config fixture");
+
+        // Without a governing profile, a complete ambient pair is selected.
         let _env = ScopedBedrockEnv::new(
             &[
                 ("AWS_ACCESS_KEY_ID", "ENV_ACCESS"),
@@ -2643,10 +2636,8 @@ mod tests {
             &credentials_file,
             &config_file,
         );
-        let mut config = OpiConfig::default();
-        config.providers.bedrock.profile = Some("fixture".into());
+        let config = OpiConfig::default();
         let (_provider, resolver) = build_bedrock(&config).expect("lazy Bedrock factory");
-
         let environment = resolver.resolve().await.expect("environment source");
         assert!(matches!(
             environment.provenance.source,
@@ -2655,17 +2646,24 @@ mod tests {
             }
         ));
 
-        // SAFETY: this test module serializes and restores these variables.
-        unsafe {
-            std::env::remove_var("AWS_ACCESS_KEY_ID");
-            std::env::remove_var("AWS_SECRET_ACCESS_KEY");
-        }
+        // An explicitly configured profile governs: the ambient environment
+        // pair is skipped entirely (verified adapter rule), and an absent
+        // profile is a typed credential-needed outcome, not an env fallback.
+        let mut profiled = OpiConfig::default();
+        profiled.providers.bedrock.profile = Some("fixture".into());
+        let (_provider, profiled_resolver) =
+            build_bedrock(&profiled).expect("lazy Bedrock factory");
+        assert!(matches!(
+            profiled_resolver.resolve().await,
+            Err(opi_ai::provider::ProviderError::CredentialNeeded { .. })
+        ));
+
         std::fs::write(
             &credentials_file,
             "[fixture]\naws_access_key_id=PROFILE_ACCESS\naws_secret_access_key=PROFILE_SECRET\n",
         )
         .expect("profile credentials fixture");
-        let profile = resolver
+        let profile = profiled_resolver
             .resolve()
             .await
             .expect("credentials profile source");
@@ -2682,7 +2680,10 @@ mod tests {
             "[profile fixture]\naws_access_key_id=CONFIG_ACCESS\naws_secret_access_key=CONFIG_SECRET\n",
         )
         .expect("config credentials fixture");
-        let shared_config = resolver.resolve().await.expect("config profile source");
+        let shared_config = profiled_resolver
+            .resolve()
+            .await
+            .expect("config profile source");
         assert!(matches!(
             shared_config.provenance.source,
             opi_ai::AuthProvenanceSource::AwsSigV4 {
@@ -2693,27 +2694,33 @@ mod tests {
 
     #[test]
     fn bedrock_resolution_failures_retain_distinct_closed_safe_reasons() {
-        use opi_ai::bedrock::credentials::{CredentialResolutionError, CredentialSource};
+        use opi_ai::auth::aws::local::{CredentialResolutionError, CredentialSource};
 
         let incomplete =
             super::map_bedrock_resolution_error(CredentialResolutionError::IncompleteSource {
-                credential_source: CredentialSource::Environment,
+                credential_source: CredentialSource::ExplicitConfig,
             });
-        let timeout = super::map_bedrock_resolution_error(
-            CredentialResolutionError::CredentialProcessTimeout,
-        );
+        let scoped =
+            super::map_bedrock_resolution_error(CredentialResolutionError::IncompleteSource {
+                credential_source: CredentialSource::ScopedEnvironment,
+            });
+        let exhausted = super::map_bedrock_resolution_error(CredentialResolutionError::Exhausted);
         let summary = |error: opi_ai::provider::ProviderError| match error {
             opi_ai::provider::ProviderError::Config(summary) => summary,
             other => panic!("expected config failure, got {other:?}"),
         };
         let incomplete = summary(incomplete);
-        let timeout = summary(timeout);
+        let scoped = summary(scoped);
+        assert!(matches!(
+            exhausted,
+            opi_ai::provider::ProviderError::CredentialNeeded { .. }
+        ));
 
         assert_ne!(incomplete.as_str(), "[REDACTED]");
-        assert_ne!(timeout.as_str(), "[REDACTED]");
-        assert_ne!(incomplete, timeout);
+        assert_ne!(scoped.as_str(), "[REDACTED]");
+        assert_ne!(incomplete, scoped);
         assert!(incomplete.as_str().contains("incomplete"));
-        assert!(timeout.as_str().contains("timed out"));
+        assert!(scoped.as_str().contains("incomplete"));
     }
 
     #[tokio::test]
@@ -2786,14 +2793,22 @@ mod tests {
         }
 
         {
+            // A partial ambient pair is continue-eligible per the fixed Node
+            // corpus: the chain advances past the half pair and selects the
+            // complete default profile below it.
             let _env = ScopedBedrockEnv::new(
                 &[("AWS_ACCESS_KEY_ID", "ENV_ACCESS")],
                 &credentials_file,
                 &config_file,
             );
+            let auth = resolve_bedrock_auth(&BedrockProviderConfig::default())
+                .await
+                .expect("partial ambient pair continues to the default profile");
             assert!(matches!(
-                resolve_bedrock_auth(&BedrockProviderConfig::default()).await,
-                Err(opi_ai::provider::ProviderError::Config(_))
+                auth.provenance.source,
+                opi_ai::AuthProvenanceSource::AwsSigV4 {
+                    source: opi_ai::AwsCredentialSource::ProfileFile
+                }
             ));
         }
     }

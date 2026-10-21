@@ -2,6 +2,43 @@
 
 ### Breaking Changes
 
+- `opi-ai`: the local AWS credential chain moved from
+  `bedrock::credentials` to `auth::aws::local`/`auth::aws::process` and now
+  follows the verified locked-Node source rules (task 20.19.1): an explicit
+  or scoped `AWS_PROFILE` skips the environment pair (an ambient profile
+  alone does not beat a complete pair), shared-config static credentials
+  overlay the credentials and config files per field (credentials file wins
+  per key), a partial ambient pair, unreadable profile files, and every
+  `credential_process` discovery failure are continue-eligible, and only a
+  partial scoped/typed pair fails closed (`IncompleteSource`).
+  `credential_process` runs with a frozen command/cwd/env through the
+  injectable `CredentialProcessRunner` seam (default spawn keeps the existing
+  10s/64 KiB opi budgets and process-tree cleanup) and validates the actual
+  `Version` plus RFC 3339 `Expiration`; expiry is retained on the resolved
+  credentials. `CredentialResolutionError` reduces to `Exhausted` /
+  `IncompleteSource`, and `bedrock::credentials::{resolve_auth,
+  resolve_credentials, CredentialResolutionInput, read_profile,
+  credentials_from_env}` were removed with the module.
+- `opi-ai`: `AwsSigV4Credentials` gains a non-secret `expires_at` field plus
+  `new`/`with_session_token`/`with_expires_at` constructors; struct-literal
+  callers migrate together. `AwsCredentialSource` adds `ScopedEnvironment`
+  and `ProxyPlaceholder` provenance (mirrored by `opi-agent` evidence facts).
+- `opi-ai`: `AuthResolutionOverrides` gains typed mutually exclusive
+  `bearer` and `aws_sigv4` per-call overrides; more than one explicit
+  override fails with the new `ModelsError::ConflictingAuthOverrides`
+  before any source access.
+- `opi-ai`: the Bedrock adapter attaches prepared Bearer authentication
+  (`Authorization: Bearer`, no SigV4 headers; endpoint from provider config
+  or the resolver-supplied base URL) next to SigV4, never both. The explicit
+  no-real-credential proxy-placeholder mode (`bedrock::proxy_placeholder_auth`)
+  signs with fixed nonsecret placeholder SigV4 on a caller-supplied
+  nonstandard endpoint, requires the dedicated HTTP/1.1 placeholder client
+  (`BedrockProvider::with_placeholder_client`), reads zero credential
+  sources, and standard AWS endpoints reject it.
+- `opi-coding-agent`: the Bedrock route resolver now runs the migrated
+  `auth::aws` chain; an explicitly configured `providers.bedrock.profile`
+  skips ambient environment credentials and a partial ambient pair continues
+  to the shared-config profile instead of failing closed.
 - `opi-ai`: `CredentialMutationOp` now distinguishes `Write`, `Delete`, and
   `Update(CredentialUpdateOp)`; custom callbacks wrap `Update`. Unconditional
   login replacement and logout can repair corrupt entries without decoding

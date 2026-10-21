@@ -1074,12 +1074,17 @@ pub enum AwsCredentialSourceFacts {
     },
     /// Standard AWS environment variables.
     Environment,
+    /// Scoped (injected per-call/per-credential) environment values supplied
+    /// the complete pair.
+    ScopedEnvironment,
     /// AWS shared credentials profile.
     ProfileFile,
     /// AWS shared config profile.
     ConfigFile,
     /// AWS shared config `credential_process`.
     CredentialProcess,
+    /// Explicit no-real-credential proxy-placeholder SigV4 mode.
+    ProxyPlaceholder,
 }
 
 /// Redacted text that is safe to serialize across an evidence sink boundary.
@@ -1204,11 +1209,15 @@ fn auth_source_facts(
                     }
                 }
                 AwsCredentialSource::Environment => AwsCredentialSourceFacts::Environment,
+                AwsCredentialSource::ScopedEnvironment => {
+                    AwsCredentialSourceFacts::ScopedEnvironment
+                }
                 AwsCredentialSource::ProfileFile => AwsCredentialSourceFacts::ProfileFile,
                 AwsCredentialSource::ConfigFile => AwsCredentialSourceFacts::ConfigFile,
                 AwsCredentialSource::CredentialProcess => {
                     AwsCredentialSourceFacts::CredentialProcess
                 }
+                AwsCredentialSource::ProxyPlaceholder => AwsCredentialSourceFacts::ProxyPlaceholder,
             },
         },
         _ => return Err(EvidenceFactError::UnsupportedAuthProvenance),

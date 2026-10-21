@@ -30,6 +30,8 @@ those live in `opi-agent` and `opi-coding-agent`.
 `models` module (`Models`) is the single driver wrapping `ProviderRegistry`
 with provider-side auth contracts, OpenAI-compatible compatibility metadata,
 and stream/complete dispatch. IO-free credential and OAuth traits live here;
+the reusable local AWS credential-source chain (scoped/ambient environment,
+shared-config INI overlay, `credential_process`) lives in `auth::aws`;
 keychain, environment, login-presenter, and refresh implementations remain in
 `opi-coding-agent`.
 
@@ -45,7 +47,7 @@ keychain, environment, login-presenter, and refresh implementations remain in
 | `openrouter` | `openrouter` | OpenAI-compatible OpenRouter profile |
 | `mistral` | `mistral` | OpenAI-compatible Mistral profile |
 | `gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
-| `bedrock` | `bedrock` | AWS Bedrock Converse streaming with SigV4 signing |
+| `bedrock` | `bedrock` | AWS Bedrock Converse streaming with SigV4 or Bearer authentication |
 | `azure_openai` | `azure` | Azure OpenAI deployment-specific Chat Completions |
 | `vertex` | `vertex` | Google Vertex AI Gemini streaming |
 

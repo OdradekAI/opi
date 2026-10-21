@@ -26,8 +26,9 @@ package 加载或内置编程工具；这些能力分别位于 `opi-agent` 和 `
 `opi-ai` 还暴露一个 unstable-0.x 的模型/鉴权 seam：`models`
 模块（`Models`）是唯一的 driver，在 `ProviderRegistry` 之上叠加 Provider 侧鉴权契约、
 OpenAI-compatible 兼容性元数据，以及全部聊天调用入口。无 IO 的凭据与 OAuth
-trait 位于本 crate；keychain、环境变量、登录 presenter 和 refresh 实现仍位于
-`opi-coding-agent`。
+trait 位于本 crate；可复用的本地 AWS 凭据来源链（scoped/ambient 环境变量、
+共享配置 INI 叠加、`credential_process`）位于 `auth::aws`；keychain、环境变量、
+登录 presenter 和 refresh 实现仍位于 `opi-coding-agent`。
 
 ## Provider
 
@@ -41,7 +42,7 @@ trait 位于本 crate；keychain、环境变量、登录 presenter 和 refresh �
 | `openrouter` | `openrouter` | OpenAI-compatible OpenRouter profile |
 | `mistral` | `mistral` | OpenAI-compatible Mistral profile |
 | `gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
-| `bedrock` | `bedrock` | AWS Bedrock Converse streaming，使用 SigV4 签名 |
+| `bedrock` | `bedrock` | AWS Bedrock Converse streaming，支持 SigV4 或 Bearer 认证 |
 | `azure_openai` | `azure` | Azure OpenAI deployment 专用 Chat Completions |
 | `vertex` | `vertex` | Google Vertex AI Gemini streaming |
 

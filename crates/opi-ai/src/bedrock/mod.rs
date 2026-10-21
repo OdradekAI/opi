@@ -1,16 +1,17 @@
 //! AWS Bedrock provider.
 //!
-//! Implements the Bedrock Converse API with SigV4 signing, event-stream
-//! parsing, and credential resolution. No live AWS calls.
+//! Implements the Bedrock Converse API with SigV4 or Bearer authentication,
+//! event-stream parsing, and the explicit proxy-placeholder signing mode.
+//! Local credential resolution lives in [`crate::auth::aws`]. No live AWS
+//! calls.
 
-pub mod credentials;
 pub mod event_stream;
 pub mod sigv4;
 
 use std::sync::Arc;
 
 use futures_util::{StreamExt, stream};
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 use tokio_util::sync::CancellationToken;
 
 use crate::bedrock::sigv4::{AwsCredentials, sign_request};
@@ -29,11 +30,105 @@ use crate::stream::{
 /// Model families supported by this provider.
 const SUPPORTED_FAMILIES: &[&str] = &["anthropic", "meta", "mistral", "amazon", "cohere"];
 
+/// Fixed nonsecret placeholder identity for the explicit
+/// proxy-placeholder-signing mode. These well-known values carry no
+/// AWS account authority; the mode exists to reach a caller-supplied local
+/// proxy without reading any real credential source, and it keeps a real
+/// SigV4 signature instead of claiming unsigned `NoAuth`.
+pub const PROXY_PLACEHOLDER_ACCESS_KEY_ID: &str = "dummy-access-key";
+/// Fixed nonsecret placeholder secret key (see
+/// [`PROXY_PLACEHOLDER_ACCESS_KEY_ID`]).
+pub const PROXY_PLACEHOLDER_SECRET_ACCESS_KEY: &str = "dummy-secret-key";
+
+/// Fixed nonsecret placeholder SigV4 credentials for a frozen region.
+///
+/// Part of the explicit proxy-placeholder-signing mode (see
+/// [`proxy_placeholder_auth`]).
+pub fn proxy_placeholder_credentials(region: &str) -> AwsCredentials {
+    AwsCredentials {
+        access_key_id: SecretString::from(PROXY_PLACEHOLDER_ACCESS_KEY_ID),
+        secret_access_key: SecretString::from(PROXY_PLACEHOLDER_SECRET_ACCESS_KEY),
+        session_token: None,
+        region: region.to_owned(),
+        expires_at: None,
+    }
+}
+
+/// Whether `base_url` is a standard AWS Bedrock runtime endpoint
+/// (`bedrock-runtime[.-fips].<region>.amazonaws.com[.cn]`).
+pub fn is_standard_bedrock_endpoint(base_url: &str) -> bool {
+    let Ok(url) = url::Url::parse(base_url) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let host = host.to_ascii_lowercase();
+    let Some(rest) = host.strip_prefix("bedrock-runtime") else {
+        return false;
+    };
+    let rest = rest.strip_prefix("-fips").unwrap_or(rest);
+    let Some(rest) = rest.strip_prefix('.') else {
+        return false;
+    };
+    let Some((region, suffix)) = rest.split_once('.') else {
+        return false;
+    };
+    !region.is_empty()
+        && !region.contains('.')
+        && (suffix == "amazonaws.com" || suffix == "amazonaws.com.cn")
+}
+
+/// Reject the explicit proxy-placeholder mode for standard AWS endpoints.
+///
+/// The mode is only lawful on a caller-supplied nonstandard endpoint: an
+/// ordinary AWS endpoint must never receive placeholder-signed traffic.
+fn validate_proxy_placeholder_endpoint(base_url: &str) -> Result<(), ProviderError> {
+    if is_standard_bedrock_endpoint(base_url) {
+        return Err(ProviderError::Config(ProviderErrorSummary::sanitized(
+            "Bedrock ProxyPlaceholderSigning requires a caller-supplied nonstandard endpoint; \
+             standard AWS endpoints reject this mode",
+        )));
+    }
+    Ok(())
+}
+
+/// Build the explicit no-real-credential proxy-placeholder prepared
+/// authentication for a caller-supplied nonstandard endpoint and frozen
+/// region.
+///
+/// The result carries fixed nonsecret placeholder SigV4 credentials (not
+/// unsigned `NoAuth` and no authenticated AWS identity), performs zero
+/// environment/store/profile/process/metadata/bearer credential discovery,
+/// and is rejected for standard AWS endpoints. This is a deliberate safety
+/// difference from raw ambient `AWS_BEDROCK_SKIP_AUTH` overrides.
+pub fn proxy_placeholder_auth(
+    endpoint: &str,
+    region: &str,
+) -> Result<crate::auth::ResolvedAuth, ProviderError> {
+    validate_proxy_placeholder_endpoint(endpoint)?;
+    Ok(crate::auth::ResolvedAuth {
+        scheme: crate::auth::AuthScheme::AwsSigV4(proxy_placeholder_credentials(region)),
+        secret: SecretString::from(""),
+        base_url: Some(endpoint.to_owned()),
+        account_id: None,
+        provenance: crate::auth::AuthProvenance {
+            source: crate::auth::AuthProvenanceSource::AwsSigV4 {
+                source: crate::auth::AwsCredentialSource::ProxyPlaceholder,
+            },
+            fallback: crate::auth::AuthFallback::NotAttempted,
+        },
+    })
+}
+
 /// Concrete AWS Bedrock provider using the Converse API.
 pub struct BedrockProvider {
     base_url: Option<String>,
     models: Vec<ModelInfo>,
     client: Arc<HttpClient>,
+    /// Dedicated HTTP/1.1 client for the explicit proxy-placeholder mode;
+    /// placeholder-authenticated sends refuse to run without it.
+    placeholder_client: Option<Arc<HttpClient>>,
 }
 
 impl BedrockProvider {
@@ -46,7 +141,19 @@ impl BedrockProvider {
             base_url,
             models,
             client,
+            placeholder_client: None,
         }
+    }
+
+    /// Attach the dedicated HTTP/1.1 client used only by the explicit
+    /// proxy-placeholder-signing mode (see [`proxy_placeholder_auth`]).
+    /// Build it with
+    /// [`TlsOptions::http1_only`](crate::http::TlsOptions::http1_only):
+    /// placeholder-authenticated sends fail typed when this client is
+    /// absent, and never fall back to the ordinary (H2-capable) client.
+    pub fn with_placeholder_client(mut self, client: Arc<HttpClient>) -> Self {
+        self.placeholder_client = Some(client);
+        self
     }
 
     /// Replace the HTTP client with a shared one (for proxy configuration
@@ -258,21 +365,80 @@ impl Provider for BedrockProvider {
             }
         }
 
-        let credentials = match auth.scheme {
-            crate::auth::AuthScheme::AwsSigV4(credentials) => credentials,
+        let placeholder_mode = matches!(
+            auth.provenance.source,
+            crate::auth::AuthProvenanceSource::AwsSigV4 {
+                source: crate::auth::AwsCredentialSource::ProxyPlaceholder,
+            }
+        );
+        if placeholder_mode {
+            // The explicit no-real-credential mode is lawful only on a
+            // caller-supplied nonstandard endpoint and only over the
+            // dedicated HTTP/1.1 placeholder client; ordinary AWS endpoints
+            // reject it and no H2-capable fallback exists.
+            let endpoint = self.base_url.clone().or_else(|| auth.base_url.clone());
+            let Some(endpoint) = endpoint else {
+                return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                    ProviderErrorSummary::attested_static(
+                        "Bedrock proxy-placeholder signing requires a caller-supplied nonstandard endpoint",
+                    ),
+                ))]));
+            };
+            if let Err(error) = validate_proxy_placeholder_endpoint(&endpoint) {
+                return Box::pin(stream::iter(vec![Err(error)]));
+            }
+        }
+
+        let mut credentials = None;
+        let mut bearer_token = None;
+        match auth.scheme {
+            crate::auth::AuthScheme::AwsSigV4(creds) => credentials = Some(creds),
+            crate::auth::AuthScheme::Bearer => bearer_token = Some(auth.secret.clone()),
             _ => {
                 return Box::pin(stream::iter(vec![Err(ProviderError::Config(
                     ProviderErrorSummary::attested_static(
-                        "Bedrock requires prepared AWS SigV4 authentication",
+                        "Bedrock requires prepared AWS SigV4 or Bearer authentication",
                     ),
                 ))]));
             }
+        }
+        // Bearer and SigV4 never attach together: exactly one attachment
+        // path runs below.
+        debug_assert!(credentials.is_some() != bearer_token.is_some());
+        let base_url = match (&credentials, &bearer_token) {
+            (Some(credentials), _) => self.runtime_url(&credentials.region),
+            (None, Some(_)) => match self.base_url.clone().or_else(|| auth.base_url.clone()) {
+                Some(base_url) => base_url,
+                // Bearer auth carries no SigV4 region, so the endpoint must
+                // come from the provider configuration or the resolver that
+                // selected the token.
+                None => {
+                    return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                        ProviderErrorSummary::attested_static(
+                            "Bedrock Bearer authentication requires a configured or resolved endpoint",
+                        ),
+                    ))]));
+                }
+            },
+            (None, None) => unreachable!("one attachment path is always selected"),
         };
-        let base_url = self.runtime_url(&credentials.region);
         let timeout = request.timeout;
         let extra_headers = request.extra_headers;
 
-        let http_client = self.client.client().clone();
+        let http_client = if placeholder_mode {
+            match &self.placeholder_client {
+                Some(client) => client.client().clone(),
+                None => {
+                    return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                        ProviderErrorSummary::attested_static(
+                            "Bedrock proxy-placeholder signing requires its dedicated HTTP/1.1 client",
+                        ),
+                    ))]));
+                }
+            }
+        } else {
+            self.client.client().clone()
+        };
 
         let snapshot = crate::stream::ProducerSnapshot::default();
         let producer_snapshot = snapshot.clone();
@@ -285,6 +451,7 @@ impl Provider for BedrockProvider {
                 let result = Self::stream_http(
                     http_client,
                     credentials,
+                    bearer_token,
                     base_url,
                     &model_id,
                     &body,
@@ -324,7 +491,8 @@ impl BedrockProvider {
     #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         client: reqwest::Client,
-        credentials: AwsCredentials,
+        credentials: Option<AwsCredentials>,
+        bearer_token: Option<SecretString>,
         base_url: String,
         model_id: &str,
         body: &serde_json::Value,
@@ -361,43 +529,68 @@ impl BedrockProvider {
             ));
         }
 
-        let mut route_headers = vec![
-            ("host".to_owned(), host),
-            ("content-type".to_owned(), "application/json".to_owned()),
-            ("x-amz-date".to_owned(), date_time.clone()),
-            (
-                "x-amz-content-sha256".to_owned(),
-                sigv4::sha256_hex(&payload),
-            ),
-        ];
-        if let Some(token) = &credentials.session_token {
-            route_headers.push((
-                "x-amz-security-token".to_owned(),
-                token.expose_secret().to_owned(),
-            ));
-        }
-        let mut headers =
-            ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
-        let signing_headers: Vec<_> = headers
-            .iter()
-            .filter(|(name, _)| !name.eq_ignore_ascii_case("x-amz-security-token"))
-            .map(|(name, value)| (name.as_str(), value.as_str()))
-            .collect();
-        let signed = sign_request(
-            "POST",
-            &path,
-            "",
-            &signing_headers,
-            &payload,
-            &credentials,
-            "bedrock",
-            &date_stamp,
-            &date_time,
-        );
-        headers.push((
-            "authorization".to_owned(),
-            signed.authorization.expose_secret().to_owned(),
-        ));
+        let headers = match (&credentials, &bearer_token) {
+            (Some(credentials), _) => {
+                // SigV4 attachment: headers are frozen before signing and
+                // every actual send re-signs only the timestamp with the same
+                // credentials.
+                let mut route_headers = vec![
+                    ("host".to_owned(), host),
+                    ("content-type".to_owned(), "application/json".to_owned()),
+                    ("x-amz-date".to_owned(), date_time.clone()),
+                    (
+                        "x-amz-content-sha256".to_owned(),
+                        sigv4::sha256_hex(&payload),
+                    ),
+                ];
+                if let Some(token) = &credentials.session_token {
+                    route_headers.push((
+                        "x-amz-security-token".to_owned(),
+                        token.expose_secret().to_owned(),
+                    ));
+                }
+                let mut headers =
+                    ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+                let signing_headers: Vec<_> = headers
+                    .iter()
+                    .filter(|(name, _)| !name.eq_ignore_ascii_case("x-amz-security-token"))
+                    .map(|(name, value)| (name.as_str(), value.as_str()))
+                    .collect();
+                let signed = sign_request(
+                    "POST",
+                    &path,
+                    "",
+                    &signing_headers,
+                    &payload,
+                    credentials,
+                    "bedrock",
+                    &date_stamp,
+                    &date_time,
+                );
+                headers.push((
+                    "authorization".to_owned(),
+                    signed.authorization.expose_secret().to_owned(),
+                ));
+                headers
+            }
+            (None, Some(token)) => {
+                // Bearer attachment (Bedrock API key): Authorization: Bearer
+                // only. No SigV4 header is attached, so the two schemes are
+                // mutually exclusive at the wire.
+                let route_headers = vec![
+                    ("host".to_owned(), host),
+                    ("content-type".to_owned(), "application/json".to_owned()),
+                ];
+                let mut headers =
+                    ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+                headers.push((
+                    "authorization".to_owned(),
+                    format!("Bearer {}", token.expose_secret()),
+                ));
+                headers
+            }
+            (None, None) => unreachable!("one attachment path is always selected"),
+        };
         let url = format!("{base_url}{path}");
         let mut req = client.post(&url);
         for (name, value) in headers {

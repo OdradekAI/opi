@@ -49,7 +49,8 @@ use futures_util::{Stream, StreamExt, stream};
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::{
-    AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth,
+    AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme,
+    AwsSigV4Credentials, ResolvedAuth,
 };
 use crate::credential::{Credential, CredentialSource, CredentialStore, CredentialStoreError};
 use crate::message::AssistantMessage;
@@ -182,12 +183,21 @@ pub enum AuthCheckKind {
 /// Explicit per-call resolution overrides for
 /// [`Models::get_auth`](crate::Models::get_auth).
 ///
-/// An explicit [`api_key`](Self::api_key) wins over every configured source:
-/// no environment, store, or resolver access happens for that call.
+/// An explicit override wins over every configured source: no environment,
+/// store, or resolver access happens for that call. At most one override may
+/// be set — the schemes are mutually exclusive attachment choices, so
+/// multiple set overrides fail as [`ModelsError::ConflictingAuthOverrides`]
+/// instead of silently preferring one.
 #[derive(Debug, Clone, Default)]
 pub struct AuthResolutionOverrides {
     /// Caller-supplied API key that replaces all configured sources.
     pub api_key: Option<secrecy::SecretString>,
+    /// Caller-supplied Bearer token that replaces all configured sources
+    /// (for example a Bedrock API key).
+    pub bearer: Option<secrecy::SecretString>,
+    /// Caller-supplied typed AWS SigV4 credential bundle that replaces all
+    /// configured sources.
+    pub aws_sigv4: Option<AwsSigV4Credentials>,
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +304,16 @@ pub enum ModelsError {
         provider: String,
         /// Typed failure reported by the selected source.
         error: Box<ProviderError>,
+    },
+    /// More than one mutually exclusive explicit auth override was supplied
+    /// for one resolution. Exactly one explicit choice may be selected; the
+    /// conflicting request is rejected before any source access.
+    #[error(
+        "conflicting explicit auth overrides for '{provider}': at most one of api_key, bearer, aws_sigv4 may be set"
+    )]
+    ConflictingAuthOverrides {
+        /// Provider whose per-call overrides conflicted.
+        provider: String,
     },
     /// A serialized store mutation settled with an unknown outcome (the
     /// worker was lost mid-mutation). The effect may or may not have landed;
@@ -882,6 +902,19 @@ impl Models {
         provider_id: &str,
         overrides: AuthResolutionOverrides,
     ) -> Result<Option<ResolvedAuth>, ModelsError> {
+        let explicit_choices = [
+            overrides.api_key.is_some(),
+            overrides.bearer.is_some(),
+            overrides.aws_sigv4.is_some(),
+        ]
+        .iter()
+        .filter(|set| **set)
+        .count();
+        if explicit_choices > 1 {
+            return Err(ModelsError::ConflictingAuthOverrides {
+                provider: provider_id.to_owned(),
+            });
+        }
         if let Some(api_key) = overrides.api_key {
             return Ok(Some(ResolvedAuth {
                 scheme: AuthScheme::ApiKey,
@@ -893,6 +926,27 @@ impl Models {
                     fallback: AuthFallback::NotAttempted,
                 },
             }));
+        }
+        if let Some(bearer) = overrides.bearer {
+            return Ok(Some(ResolvedAuth {
+                scheme: AuthScheme::Bearer,
+                secret: bearer,
+                base_url: None,
+                account_id: None,
+                provenance: AuthProvenance {
+                    source: AuthProvenanceSource::Explicit,
+                    fallback: AuthFallback::NotAttempted,
+                },
+            }));
+        }
+        if let Some(credentials) = overrides.aws_sigv4 {
+            return Ok(Some(ResolvedAuth::aws_sigv4(
+                credentials,
+                AuthProvenance {
+                    source: AuthProvenanceSource::Explicit,
+                    fallback: AuthFallback::NotAttempted,
+                },
+            )));
         }
         if let Some(resolver) = self.resolvers.get(provider_id) {
             return match resolver.resolve().await {

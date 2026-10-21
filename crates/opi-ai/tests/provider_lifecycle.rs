@@ -1042,6 +1042,7 @@ async fn assert_drop_closes_owned_http_attempt(bedrock: bool, response_started: 
                 secret_access_key: "offline-public-secret".into(),
                 session_token: None,
                 region: "us-east-1".into(),
+                expires_at: None,
             },
             Default::default(),
         )

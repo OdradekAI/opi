@@ -47,6 +47,39 @@ pub struct AwsSigV4Credentials {
     pub session_token: Option<SecretString>,
     /// Non-secret AWS region used in the SigV4 credential scope.
     pub region: String,
+    /// Source-reported credential expiry, when the selected source supplied
+    /// one (for example a `credential_process` `Expiration` field). Non-secret;
+    /// the resolver records it for lifecycle ownership and never extends it.
+    pub expires_at: Option<OffsetDateTime>,
+}
+
+impl AwsSigV4Credentials {
+    /// Build static (non-expiring) credentials with an explicit region.
+    pub fn new(
+        access_key_id: SecretString,
+        secret_access_key: SecretString,
+        region: impl Into<String>,
+    ) -> Self {
+        Self {
+            access_key_id,
+            secret_access_key,
+            session_token: None,
+            region: region.into(),
+            expires_at: None,
+        }
+    }
+
+    /// Attach an optional temporary-credential session token.
+    pub fn with_session_token(mut self, token: Option<SecretString>) -> Self {
+        self.session_token = token;
+        self
+    }
+
+    /// Attach the source-reported expiry.
+    pub fn with_expires_at(mut self, expires_at: Option<OffsetDateTime>) -> Self {
+        self.expires_at = expires_at;
+        self
+    }
 }
 
 impl std::fmt::Debug for AwsSigV4Credentials {
@@ -59,6 +92,7 @@ impl std::fmt::Debug for AwsSigV4Credentials {
                 &self.session_token.as_ref().map(|_| "<redacted>"),
             )
             .field("region", &self.region)
+            .field("expires_at", &self.expires_at)
             .finish()
     }
 }
@@ -249,12 +283,21 @@ pub enum AwsCredentialSource {
     },
     /// Standard AWS environment variables supplied the credential pair.
     Environment,
+    /// Scoped (injected per-call/per-credential) environment values supplied
+    /// the complete pair. Distinct from ambient [`Self::Environment`]: an
+    /// attempted-but-partial scoped pair fails closed and never borrows
+    /// ambient halves.
+    ScopedEnvironment,
     /// Static credentials came from an AWS shared credentials profile.
     ProfileFile,
     /// Static credentials came from an AWS shared config profile.
     ConfigFile,
     /// An AWS shared config profile's `credential_process` supplied credentials.
     CredentialProcess,
+    /// The explicit no-real-credential proxy-placeholder mode attached fixed
+    /// nonsecret placeholder SigV4 credentials on a caller-supplied
+    /// nonstandard endpoint. Zero real credential sources were read.
+    ProxyPlaceholder,
 }
 
 /// Whether auth preparation used an explicitly allowed fallback.
@@ -656,4 +699,13 @@ impl AuthContext for AmbientAuthContext {
             }),
         }
     }
+}
+
+/// Local AWS credential-source chain modules (Bedrock's selected-source
+/// coordinator; product-neutral, injectable, no live AWS calls).
+pub mod aws {
+    /// Env/INI-static-overlay/`credential_process` chain coordinator.
+    pub mod local;
+    /// Injectable `credential_process` execution seam.
+    pub mod process;
 }

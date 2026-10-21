@@ -196,6 +196,7 @@ mod tests {
             secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".into(),
             session_token: None,
             region: "us-east-1".into(),
+            expires_at: None,
         };
 
         let result = sign_request(
@@ -239,6 +240,7 @@ mod tests {
             secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".into(),
             session_token: Some("session-token-123".into()),
             region: "us-east-1".into(),
+            expires_at: None,
         };
 
         let result = sign_request(
@@ -284,6 +286,7 @@ mod tests {
             secret_access_key: "secret".into(),
             session_token: None,
             region: "us-east-1".into(),
+            expires_at: None,
         };
 
         let result = sign_request(
@@ -321,6 +324,7 @@ mod tests {
             secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".into(),
             session_token: None,
             region: "us-east-1".into(),
+            expires_at: None,
         };
         let payload = br#"{"messages":[]}"#;
         let payload_hash = sha256_hex(payload);

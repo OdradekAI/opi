@@ -1591,6 +1591,7 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
                     secret_access_key: "test-secret".into(),
                     session_token: None,
                     region: "us-east-1".into(),
+                    expires_at: None,
                 },
                 opi_ai::AuthProvenance {
                     source: opi_ai::AuthProvenanceSource::AwsSigV4 {
@@ -2285,9 +2286,7 @@ fn provider_policy_is_centralized() {
         "fn build_collection_for_listing_with_store",
         "fn build_harness_collection",
         "fn materialize_active_overrides",
-        "fn non_empty_env_var",
         "fn resolve_env_name",
-        "fn resolve_bedrock_env_credentials",
         "fn aws_credentials_path",
         "fn aws_config_path",
         "fn aws_home_dir",

@@ -576,6 +576,8 @@ async fn explicit_per_call_key_wins_over_every_source() {
 
     let overrides = opi_ai::AuthResolutionOverrides {
         api_key: Some(SecretString::from("sk-explicit-per-call")),
+        bearer: None,
+        aws_sigv4: None,
     };
     let resolved = collection
         .get_auth("prov-override", overrides)
@@ -593,6 +595,180 @@ async fn explicit_per_call_key_wins_over_every_source() {
         0,
         "explicit override must not touch any source"
     );
+}
+
+#[tokio::test]
+async fn explicit_per_call_typed_sigv4_credentials_win_without_source_access() {
+    struct CountingResolver {
+        resolves: std::sync::atomic::AtomicUsize,
+    }
+    impl AuthResolver for CountingResolver {
+        fn resolve<'a>(
+            &'a self,
+        ) -> opi_ai::credential::BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+            self.resolves.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {
+                Ok(ResolvedAuth {
+                    scheme: AuthScheme::ApiKey,
+                    secret: SecretString::from("route-resolved"),
+                    base_url: None,
+                    account_id: None,
+                    provenance: Default::default(),
+                })
+            })
+        }
+    }
+    let context = std::sync::Arc::new(CountingMapContext::new([(
+        "OPI_TEST_OVERRIDE_SIGV4_7C31",
+        "sk-from-env",
+    )]));
+    let resolver = std::sync::Arc::new(CountingResolver {
+        resolves: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let mut collection = opi_ai::Models::new();
+    collection.set_auth_context(context.clone());
+    collection
+        .register_route(
+            provider_with_model("prov-override-sigv4"),
+            resolver.clone(),
+            opi_ai::AuthProvenanceSource::Static,
+            Default::default(),
+        )
+        .expect("register");
+
+    let credentials = opi_ai::AwsSigV4Credentials {
+        access_key_id: SecretString::from("AKIAPERCALL"),
+        secret_access_key: SecretString::from("per-call-secret"),
+        session_token: None,
+        region: "eu-central-1".to_owned(),
+        expires_at: None,
+    };
+    let overrides = opi_ai::AuthResolutionOverrides {
+        api_key: None,
+        bearer: None,
+        aws_sigv4: Some(credentials),
+    };
+    let resolved = collection
+        .get_auth("prov-override-sigv4", overrides)
+        .await
+        .expect("override resolution")
+        .expect("resolved");
+    match resolved.scheme {
+        AuthScheme::AwsSigV4(credentials) => {
+            assert_eq!(credentials.access_key_id.expose_secret(), "AKIAPERCALL");
+            assert_eq!(
+                credentials.secret_access_key.expose_secret(),
+                "per-call-secret"
+            );
+            assert_eq!(credentials.region, "eu-central-1");
+        }
+        other => panic!("expected typed AWS SigV4 override, got {other:?}"),
+    }
+    assert_eq!(resolved.secret.expose_secret(), "");
+    assert_eq!(
+        resolved.provenance.source,
+        opi_ai::AuthProvenanceSource::Explicit
+    );
+    assert_eq!(context.env_reads.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        resolver.resolves.load(Ordering::SeqCst),
+        0,
+        "typed per-call override must not invoke the route resolver"
+    );
+}
+
+#[tokio::test]
+async fn explicit_per_call_bearer_token_wins_without_source_access() {
+    let context = std::sync::Arc::new(CountingMapContext::new([(
+        "OPI_TEST_OVERRIDE_BEARER_7C31",
+        "sk-from-env",
+    )]));
+    let mut collection = opi_ai::Models::new();
+    collection.set_auth_context(context.clone());
+    collection
+        .register(
+            provider_with_model("prov-override-bearer"),
+            opi_ai::AuthDescriptor::EnvApiKey {
+                env_var: "OPI_TEST_OVERRIDE_BEARER_7C31".to_owned(),
+            },
+            Default::default(),
+        )
+        .expect("register");
+
+    let overrides = opi_ai::AuthResolutionOverrides {
+        api_key: None,
+        bearer: Some(SecretString::from("bedrock-bearer-per-call")),
+        aws_sigv4: None,
+    };
+    let resolved = collection
+        .get_auth("prov-override-bearer", overrides)
+        .await
+        .expect("override resolution")
+        .expect("resolved");
+    assert_eq!(resolved.scheme, AuthScheme::Bearer);
+    assert_eq!(resolved.secret.expose_secret(), "bedrock-bearer-per-call");
+    assert_eq!(
+        resolved.provenance.source,
+        opi_ai::AuthProvenanceSource::Explicit
+    );
+    assert_eq!(context.env_reads.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn mutually_exclusive_explicit_overrides_are_a_typed_error() {
+    let mut collection = opi_ai::Models::new();
+    collection
+        .register(
+            provider_with_model("prov-override-conflict"),
+            opi_ai::AuthDescriptor::StaticApiKey {
+                value: opi_ai::SecretKey::new("static-key"),
+            },
+            Default::default(),
+        )
+        .expect("register");
+
+    let sigv4 = || opi_ai::AwsSigV4Credentials {
+        access_key_id: SecretString::from("AKIAPERCALL"),
+        secret_access_key: SecretString::from("per-call-secret"),
+        session_token: None,
+        region: "eu-central-1".to_owned(),
+        expires_at: None,
+    };
+    for (index, overrides) in [
+        opi_ai::AuthResolutionOverrides {
+            api_key: Some(SecretString::from("key")),
+            bearer: Some(SecretString::from("token")),
+            aws_sigv4: None,
+        },
+        opi_ai::AuthResolutionOverrides {
+            api_key: None,
+            bearer: Some(SecretString::from("token")),
+            aws_sigv4: Some(sigv4()),
+        },
+        opi_ai::AuthResolutionOverrides {
+            api_key: Some(SecretString::from("key")),
+            bearer: None,
+            aws_sigv4: Some(sigv4()),
+        },
+        // All three set is still exactly one typed configuration error.
+        opi_ai::AuthResolutionOverrides {
+            api_key: Some(SecretString::from("key")),
+            bearer: Some(SecretString::from("token")),
+            aws_sigv4: Some(sigv4()),
+        },
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let error = collection
+            .get_auth("prov-override-conflict", overrides)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, opi_ai::ModelsError::ConflictingAuthOverrides { .. }),
+            "case {index} must fail as a typed override conflict"
+        );
+    }
 }
 
 #[tokio::test]
