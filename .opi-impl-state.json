@@ -4867,7 +4867,7 @@
       "definition_of_done": "Through Models, selected local credentials and the migrated real Bedrock adapter, prove typed SigV4/Bearer/per-call overrides, scoped versus ambient credential pairs and explicit/scoped/ambient profile precedence. Implement static INI/config overlay and credential_process with frozen command/cwd/env, actual Version/expiry, private injected process/tree cleanup and exact Continue/Selected/Terminal; partial scoped credentials never borrow ambient values. Own the minimal Bearer/SigV4 mutual-exclusion and region/endpoint wiring missing from the current adapter. Explicit nonstandard-endpoint ProxyPlaceholderSigning uses H1 and reads no real credential source; standard AWS endpoints reject it. Local source failure/cancel means zero generation sends, redacted errors and reaped owned processes, without new process/stdio/total parity caps. This slice claims only the completed local families, not full DefaultChain or later generation retry modes.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.4",
@@ -4925,6 +4925,16 @@
           "field": "test_impact_plan",
           "reason": "retain/update the existing provider and auth fixture binaries named in verification; add only distinct source-family cases through Models and the migrated real adapter. Private resolver tests supplement this proof; record every disposition at execution.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Adding the typed credential expiry field (DoD: actual Version/expiry) to the public AwsSigV4Credentials struct requires updating its existing struct-literal constructors in these two compiling test binaries; no other changes are owned there.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Compat and authentication"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Adding ScopedEnvironment and ProxyPlaceholder to the public AwsCredentialSource provenance enum (scoped-vs-ambient pairs and the explicit proxy-placeholder mode are DoD-owned) breaks the exhaustive evidence-facts mapping in opi-agent/src/evidence.rs; only the two mirrored variants are added there.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Compat and authentication"
         }
       ],
       "tier": "workspace",
@@ -4955,7 +4965,7 @@
           "production_call_sites": [
             "opi_ai::Models::get_auth/stream -> selected AWS source -> migrated BedrockProvider::stream_prepared -> local EventStream response (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -4964,7 +4974,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "dff0743a2f20f50aec7c0fabf4ca4acb55137708",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -4982,12 +4992,139 @@
         "crates/opi-ai/tests/auth_contracts.rs",
         "crates/opi-ai/tests/bedrock_fixtures.rs",
         "crates/opi-coding-agent/src/provider_factory.rs",
-        "crates/opi-coding-agent/tests/bedrock_provider_wiring.rs"
+        "crates/opi-coding-agent/tests/bedrock_provider_wiring.rs",
+        "crates/opi-ai/tests/provider_lifecycle.rs",
+        "crates/opi-coding-agent/tests/provider_factory.rs",
+        "crates/opi-agent/src/evidence.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "9ca9edd09f8d03f5fe502f733b05babd173311ef",
+      "evidence": {
+        "task": "20.19.1",
+        "dod_sha256": "4b035b05cfbf538669402158868ec08acdb669eb53866db519650ed894ec92f3",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED (doc-check, fmt, all-target clippy, workspace tests, doc tests, rustdoc); scenario tests: opi-ai auth_contracts 33 passed, bedrock_fixtures 68 passed, opi-coding-agent bedrock_provider_wiring 8 passed",
+        "evaluator": "passed",
+        "acceptance": "P20-S19-1; Models get_auth/prepare_call -> auth::aws local chain -> migrated BedrockProvider::stream_prepared -> local EventStream responses; ProxyPlaceholderSigning H1+placeholder identity at local proxy with zero source reads; failing local source = zero generation sends"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-21T18:55:00+00:00",
+          "attempt": 1,
+          "summary": "Migrated the local AWS credential chain to auth::aws::local (typed selection, scoped/ambient pairs, explicit/scoped/ambient profile precedence, per-field INI overlay, continue/terminal corpus rules) and auth::aws::process (injectable frozen command/cwd/env runner, actual Version + RFC3339 expiry, tree cleanup retained); Models gained typed mutually exclusive SigV4/Bearer per-call overrides; Bedrock adapter attaches Bearer next to SigV4 with endpoint wiring and gained the explicit ProxyPlaceholderSigning mode (fixed nonsecret placeholder SigV4, dedicated HTTP/1.1 client, nonstandard endpoints only, zero source reads); provider_factory rewired to the migrated chain; bedrock::credentials removed; bilingual READMEs and CHANGELOG updated. Exec D.2 (sequential 7-lens, no Workflow runtime): 0 must-fix, 3 flagged-for-human (no programmatic SupportedSources declaration this slice; bedrock_auth_presence label can disagree with profile-governed runtime selection in one edge case; scoped bearer shares Environment provenance label), 2 candidate findings rejected as corpus-faithful (region tier order AWS_REGION>scoped AWS_DEFAULT_REGION; credential_process failures collapse to typed Exhausted).",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED (documentation contract, format, all-target clippy -D warnings, workspace all-targets tests, doc tests, rustdoc -D warnings)",
+            "d0_scenarios": "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures -> 33 + 68 passed; cargo test -p opi-coding-agent --test bedrock_provider_wiring -> 8 passed",
+            "d0a_artifact_truthfulness": "no artifact directory (no CLI/session/NDJSON claims); provider claims verified by wiremock assertions and a raw local-proxy capture inside the test sources; classification: verified",
+            "d2_exec": "7 lenses run sequentially (wf_ref null, runtime lacks bounded Workflow dispatch); 0 must-fix, 3 flagged_for_human, 2 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S19-1",
+                "action": "add",
+                "test": "crates/opi-ai/tests/auth_contracts.rs::explicit_per_call_typed_sigv4_credentials_win_without_source_access",
+                "interface": "Models::get_auth + AuthResolutionOverrides",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "add",
+                "test": "crates/opi-ai/tests/auth_contracts.rs::explicit_per_call_bearer_token_wins_without_source_access",
+                "interface": "Models::get_auth + AuthResolutionOverrides",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "add",
+                "test": "crates/opi-ai/tests/auth_contracts.rs::mutually_exclusive_explicit_overrides_are_a_typed_error",
+                "interface": "Models::get_auth + AuthResolutionOverrides",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "add",
+                "test": "crates/opi-ai/tests/bedrock_fixtures.rs::{complete_ambient_pair_wins_over_ambient_profile_without_explicit_selection, scoped_profile_skips_the_ambient_environment_pair, partial_scoped_pair_fails_closed_without_borrowing_ambient_halves, partial_ambient_pair_continues_to_the_ini_profile, static_ini_fields_overlay_config_and_credentials_files_per_field, partial_static_ini_pair_advances_to_credential_process, credential_process_failure_is_continue_eligible_and_exhausts_typed, blank_credential_process_continues_without_spawning, credential_process_expiry_is_retained_on_the_selected_credentials, unreadable_profile_files_continue_to_lower_sources, explicit_selection_reads_no_source_and_wins_over_auto, bearer_token_from_scoped_or_ambient_env_selects_bearer_scheme, region_precedence_spans_config_scoped_and_ambient_sources, no_local_source_resolves_to_typed_exhaustion}",
+                "interface": "auth::aws::local::resolve_local_aws_auth",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "add",
+                "test": "crates/opi-ai/tests/bedrock_fixtures.rs::{bearer_prepared_auth_streams_without_sigv4_attachment, bearer_without_any_endpoint_is_a_typed_config_error, standard_aws_endpoints_reject_proxy_placeholder_signing, proxy_placeholder_signing_without_placeholder_client_is_a_typed_error, proxy_placeholder_signing_uses_h1_and_fixed_identity_at_a_local_proxy, models_route_streams_selected_local_credentials_through_the_real_adapter, failing_local_source_resolution_sends_zero_generation_requests}",
+                "interface": "BedrockProvider::stream_prepared + Models::prepare_call",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "add",
+                "test": "crates/opi-coding-agent/tests/bedrock_provider_wiring.rs::factory_bedrock_route_resolves_local_credentials_and_streams",
+                "interface": "provider_factory::build_provider_bundle + Models::prepare_call",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "add",
+                "test": "crates/opi-ai/src/auth/aws/process.rs tests::{parsed_output_debug_redacts_credential_values, output_spec_debug_redacts_command_and_environment, parse_accepts_the_full_contract_with_rfc3339_expiry, parse_validates_version_keys_and_expiry, spawned_runner_executes_a_real_credential_process, spawned_runner_runs_in_the_frozen_cwd_and_exact_environment, spawned_runner_failures_are_typed_and_bounded, spawned_runner_real_process_failures_stay_secret_free, cancelling_real_credential_process_resolution_terminates_descendants}",
+                "interface": "auth::aws::process (parse + CredentialProcessRunner)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "update",
+                "test": "crates/opi-ai/tests/bedrock_fixtures.rs::bedrock_resolution_reports_environment_profile_config_and_process_provenance (rewritten onto AwsLocalChainInput; moved env/profile/config/process provenance cases)",
+                "interface": "auth::aws::local::resolve_local_aws_auth",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "update",
+                "test": "crates/opi-coding-agent/src/provider_factory.rs tests::{bedrock_factory_resolves_environment_and_profile_sources_per_call, partial_bedrock_sources_fail_closed_before_lower_precedence_sources, bedrock_resolution_failures_retain_distinct_closed_safe_reasons} (new precedence + error surface)",
+                "interface": "resolve_bedrock_auth",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "update",
+                "test": "crates/opi-coding-agent/tests/provider_factory.rs::provider_policy_is_centralized (removed dead env-helper tokens) + AwsSigV4Credentials constructors there and in crates/opi-ai/tests/provider_lifecycle.rs (expires_at)",
+                "interface": "provider_factory centralization inventory + AwsSigV4Credentials",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "delete",
+                "test": "crates/opi-ai/src/bedrock/credentials.rs tests::{partial_credentials_file_does_not_mix_with_complete_config_file_pair, credentials_file_pair_does_not_attach_config_file_session_token, partial_config_file_pair_does_not_fall_through_to_credential_process, partial_environment_pair_does_not_fall_through_to_profile, typed_resolution_errors_distinguish_exhaustion_incomplete_and_profile_failures, blank_credential_process_is_a_typed_configured_error, read_profile_with_session_token, read_profile_missing_returns_none, read_profile_incomplete_returns_none}",
+                "interface": "bedrock::credentials::resolve_credentials (module removed)",
+                "replacement": "static_ini_fields_overlay_config_and_credentials_files_per_field; partial_static_ini_pair_advances_to_credential_process; partial_ambient_pair_continues_to_the_ini_profile; unreadable_profile_files_continue_to_lower_sources; blank_credential_process_continues_without_spawning; no_local_source_resolves_to_typed_exhaustion (all passing)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "update",
+                "test": "crates/opi-ai/src/auth/aws/process.rs (moved spawn/timeout/output-limit/cancellation-tree/redaction tests from bedrock/credentials.rs; same runner contract)",
+                "interface": "auth::aws::process::SpawnedCredentialProcess",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-1",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/bedrock_fixtures.rs::{SigV4 signing-vector, event-stream lifecycle/cancellation, frozen-auth retry, redaction} tests and crates/opi-ai/tests/auth_contracts.rs management/mutation tests",
+                "interface": "bedrock::sigv4 + BedrockProvider + Models",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.19.2",
@@ -16393,6 +16530,16 @@
       "rejected_count": 5,
       "ran_at": "2026-10-21T16:50:32.958349+00:00",
       "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 2,
+      "ran_at": "2026-10-21T18:55:00+00:00",
+      "task_id": "20.19.1",
       "criterion_id": null
     }
   ]
