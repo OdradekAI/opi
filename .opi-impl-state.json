@@ -21,22 +21,22 @@
   "spec_files_sha256": {
     "docs/opi-spec.md": "7979f349811d5e8da8ed4b60adb0fa41175c76462a78e449fd326dd4c19cf9e1",
     "docs/opi-spec.zh.md": "6a199822c5f4233ab7c13942db87f7986ac8b0e74a68075402371476f431c005",
-    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "6703d32c597b5a9f8e32e983c5204a6b274fd4007826e71e76890d592ee3f5e3",
-    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "506e55ad2821044a9caf20923850631c72424b94247926addd2afaf60dc76f9a",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "2a1758b286ce7c5c9d7d97a3ee5aef71a53904814714c399546e4691515db603",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "0a05f8b46d53d6b54a994bf5cece4cf44ff6f4ce3be527a4b4958959bd68091a",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "9e3d6ef690c3a794bc9c47ddc2dce04840f98d8881649be1ab2e8db0df287fd5",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "7f66f588578495de614fcb73b5ad9f056c7b65375454bd311f0917d9115fa486",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "4aa6eb419fdcbb43d31ace81196129954ad418a131e3341a90d1f06aea78f71c",
-    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "3dcc76f6ec24687b3debb4906b599577038ee0132d3f54fe493d96554420072b",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "6013e1a0e98f08ee53148979aebc7e0c455cbdabb9a6768c5f5a0b1650a9952b",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "411d2f6d262b1afc22e84c73213dffd0eb890ed70e210dfa497d2a5d021cd31d",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "acb7f5f798b3384c63d36ad9af844b580755e2ea792ce3e2d32d9d3af2f15e81",
+    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "19fbf4d021c266acd31d53b0a731b080ac2af9c3774fb8e35cba4fb9e955472c",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "b74c0b09afd31bc06cf8d5d1df834a6af9d53f2d08c3653aa492ed36396c4eba",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md": "878d15231e734dc03772e1f1bd48cb8ffe2252a2818748e4b8630af43a2e8a76",
-    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md": "f0f2ca56191f3ef7295fc99b46fde3de8173c4463c38cd517d0c9b677a398ed2",
+    "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md": "61547ccfc0549018d2fd4042ade8edac3547599b412e12ea2479821b40f67a8f",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-transport-auth.md": "42e1bc90c02e958ada4d2a01db999cd906ae33ee971496c50c07ed38067cdcfb",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-runtime.md": "1328a81e561e1e1bfb2c35df788ce6d08fec2f71e14eb8abba9d57e1f03f1c7b",
     "docs/research/pi-ai-opi-ai-alignment/transcript-target-proposal.md": "25a4234507ab1c4c12d483c56bb4083172bf4d5c35dfec1dc92bc98c77a5d94e",
     "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
     "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c"
   },
-  "task_graph_confirmed_at": "2026-10-19T14:33:28.359401+00:00",
+  "task_graph_confirmed_at": "2026-10-21T08:40:07.536772+00:00",
   "current_phase": 20,
   "tasks": [
     {
@@ -3993,6 +3993,11 @@
       ],
       "inference_notes": [
         {
+          "field": "source_outcome",
+          "reason": "Historical applicability of task 20.15 only: its original DoD, standalone companions/ws topology/API/owned paths and independent-package verification declarations describe the original substrate delivery retained by section 8.4; they are not requirements to recreate that retired package, retain those paths or run nonexistent standalone gates in the current tree. Current implementation ownership is opi-ai's private WS protocol modules, with the existing public Upgrade seam. Current acceptance is partitioned: 20.16 owns consolidation acceptance plus real Models -> Codex -> Upgrade -> private codec and actual SDK-package ordinary/default/C-zlib proofs; 20.17 owns connection resources, active/idle cancellation and await cleanup; 20.34 retains full DEL-07/14 cross-slice acceptance; 20.57 owns the final assembled SDK package; 20.58 owns native platforms/MSRV/features and supply-chain qualification. Preserve this task's original DoD, status, commits, test counts, evidence/artifact identities and dependencies. Original proof may be reused only within its applicable source/artifact/behavior identity; it does not establish current artifact conformance or close later acceptance. Module/private tests and raw Upgrade-only consumers do not replace the required real public call path or package/platform proof.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.4 分发、测试处置与验收分区"
+        },
+        {
           "field": "reuse_search",
           "reason": "searched=Cargo.toml and crates/opi-ai/Cargo.toml, crates/opi-ai/src/openai_codex_responses.rs and planned src/ws, existing strict Upgrade/Ratchet frame and storage fixtures, source-pinned owned-WS lifecycle evidence; reused=existing source transport/Upgrade expectations and historical wire/storage/cancel corpus plus generic scripts/pi-sdk-conformance; gap=one neutral owned frame-PMD-Close-IO state machine and its sole strict Upgrade bridge; production_consumers=none for Ratchet or third-party/pi-ws in current manifests/source/config/public API or serialized formats, future Codex consumes through opi-ai/src/ws at20.16; nonproduction_consumers=registered WS/RDF/backend docs and immutable Ratchet research fixtures/patches retained",
           "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-24-owned-ws-profile"
@@ -4167,7 +4172,7 @@
       "title": "真实 Codex WS／Auto／continuation 公共路径",
       "crate": "workspace",
       "parent_spec_row": "DEL-07",
-      "definition_of_done": "Public default Auto and four explicit modes use real WS/PMD with temporary sessionless/no-cache operation, exact full-input plus response prefix delta and frozen noninput fields. Only success+responseID publishes continuation. Bound missing-ID full retry and pre-generation connection-limit reconnect separately, permit transport fallback only before first effective provider event, never on auth/protocol/abort. EOF/started failure preserves partial and final error, no output splice or silent SSE parity substitute.",
+      "definition_of_done": "Public default Auto and four explicit modes use real WS/PMD with temporary sessionless/no-cache operation, exact full-input plus response prefix delta and frozen noninput fields. Only success+responseID publishes continuation. Bound missing-ID full retry and pre-generation connection-limit reconnect separately, permit transport fallback only before first effective provider event, never on auth/protocol/abort. EOF/started failure preserves partial and final error, no output splice or silent SSE parity substitute. Complete the RDF-24 consolidation using the existing private frame/pmd/io implementation under crates/opi-ai/src/ws, not a second codec or revived companion. Preserve the public ws Upgrade API; the real Models -> Codex adapter -> source-qualified strict Upgrade -> private protocol owner must execute framing, PMD, window8 negotiation, ordered trailing bytes, Close and active/idle cancellation. Replace the transitional unused-code boundary with this genuine production path, not test-only wiring or constructing and dropping an unused owner. Retain the migrated corpus, Send/nonSync, partial/flush/EOF, storage, cancellation and fairness assertions plus exact compression/hidden-API/unsafe obligations. Run applicable root gates and ordinary/default/C-zlib graphs. Actual opi-ai cargo package artifacts must contain private protocol sources, required tests/fixtures/helpers and LICENSE/NOTICE; extracted private tests and fresh external Models -> real Codex -> Upgrade -> private-codec consumers run in all three graphs and are reported separately. Upgrade-only/raw-stream consumers do not close this task. Record exact registry versions/checksums/features and actual AWS-LC plus C-libz native provenance when both are selected. No public codec, test feature, doc-hidden public export, copied production source, checkout/root patch or library-lock substitution. Reuse the source-identical 7cb5f0c physical migration and valid proof; do not redo removed standalone-package gates or call that partial proof the completed Codex path. Preserve 20.15 historical delivery and 20.17/34/57/58 acceptance ownership.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -4183,28 +4188,28 @@
       "inference_notes": [
         {
           "field": "definition_of_done",
-          "reason": "Reviewed DEL-07 split, inferred target paths/names and commands require whole-graph confirmation. Public default Auto and four explicit modes use real WS/PMD with temporary sessionless/no-cache operation, exact full-input plus response prefix delta and frozen noninput fields. Only success+responseID publishes continuation. Bound missing-ID full retry and pre-generation connection-limit reconnect separately, permit transport fallback only before first effective provider event, never on auth/protocol/abort. EOF/started failure preserves partial and final error, no output splice or silent SSE parity substitute.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+          "reason": "Public default Auto and four explicit modes use real WS/PMD with temporary sessionless/no-cache operation, exact full-input plus response prefix delta and frozen noninput fields. Only success+responseID publishes continuation. Bound missing-ID full retry and pre-generation connection-limit reconnect separately, permit transport fallback only before first effective provider event, never on auth/protocol/abort. EOF/started failure preserves partial and final error, no output splice or silent SSE parity substitute. Complete the RDF-24 consolidation using the existing private frame/pmd/io implementation under crates/opi-ai/src/ws, not a second codec or revived companion. Preserve the public ws Upgrade API; the real Models -> Codex adapter -> source-qualified strict Upgrade -> private protocol owner must execute framing, PMD, window8 negotiation, ordered trailing bytes, Close and active/idle cancellation. Replace the transitional unused-code boundary with this genuine production path, not test-only wiring or constructing and dropping an unused owner. Retain the migrated corpus, Send/nonSync, partial/flush/EOF, storage, cancellation and fairness assertions plus exact compression/hidden-API/unsafe obligations. Run applicable root gates and ordinary/default/C-zlib graphs. Actual opi-ai cargo package artifacts must contain private protocol sources, required tests/fixtures/helpers and LICENSE/NOTICE; extracted private tests and fresh external Models -> real Codex -> Upgrade -> private-codec consumers run in all three graphs and are reported separately. Upgrade-only/raw-stream consumers do not close this task. Record exact registry versions/checksums/features and actual AWS-LC plus C-libz native provenance when both are selected. No public codec, test feature, doc-hidden public export, copied production source, checkout/root patch or library-lock substitution. Reuse the source-identical 7cb5f0c physical migration and valid proof; do not redo removed standalone-package gates or call that partial proof the completed Codex path. Preserve 20.15 historical delivery and 20.17/34/57/58 acceptance ownership.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.4 分发、测试处置与验收分区"
         },
         {
           "field": "reuse_search",
-          "reason": "searched=openai_codex_responses.rs existing SSE/account/managed headers and shared Responses mapper; reused=openai_codex_responses.rs existing SSE/account/managed headers and shared Responses mapper; gap=Public default Auto and four explicit modes use real WS/PMD with temporary sessionless/no-cache operation, exact full-input plus response prefix delta and frozen noninput fields",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition; repository sources named in searched clause"
+          "reason": "searched=7cb5f0c Cargo manifests, crates/opi-ai/src/ws.rs and src/ws/frame.rs,pmd.rs,io.rs, src/ws/tests, openai_codex_responses.rs, Models public calls and consumer-ws/package_slice; reused=committed private protocol owner, public strict Upgrade, original fixtures/oracle and actual SDK package harness; gap=real Models/Codex production codec execution and three-graph public packaged consumer, not another physical migration; production_consumers=none for the private codec at 7cb5f0c, as ws.rs documents and the package report records; nonproduction_consumers=src/ws/tests including Upgrade-to-codec loopback, extracted SDK private tests and external Upgrade-only consumer",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.1 归属、接口与唯一生产接入"
         },
         {
           "field": "placement",
-          "reason": "target=core; existing_home=opi-ai product-neutral model runtime; cannot_fit_fully=use existing opi-ai ownership, keep policy in current host, no new Opi crate or inward edge",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+          "reason": "target=core; existing_home=opi-ai/src/ws private protocol state and existing Codex/Models/Upgrade owners; cannot_fit_fully=not-applicable, consume the already consolidated SDK implementation with no new crate, process, independent WS release identity, public codec or fabricated second production consumer",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.1 归属、接口与唯一生产接入"
         },
         {
           "field": "surface_necessity",
-          "reason": "public_api=opi_ai Codex direct adapter, opi_ai::Models::stream/stream_simple (target); config=none, no new host policy key, existing source overrides only; state=真实 Codex WS／Auto／continuation 公共路径 source-owned state, exact transition/result/failure contract in DoD; dependency_edge=none, no internal Opi edge and dependency-neutral source change",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract"
+          "reason": "public_api=existing Models and Codex transport entry points plus retained public ws Upgrade types, no public codec/test export; config=none, existing source transport/cache/deadline inputs only; state=one existing private frame/PMD/Close/IO owner and existing P20-RESOURCES generation/lease owner, never duplicate protocol or retry policy; dependency_edge=existing exact root-managed libz-rs-sys/flate2 normal SDK dependencies and registry upstreams, no internal Opi edge or independent opi-ws dependency",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.1 归属、接口与唯一生产接入"
         },
         {
           "field": "simplification_ceiling",
-          "reason": "ceiling=existing crate and single owning mechanism, no speculative generic framework or extra compatibility layer; revisit_when=a named public conformance case or advertised native/MSRV target fails, or a second real use cannot fit the selected interface; simplification_trigger=none",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+          "reason": "ceiling=finish the sole Codex integration of the already migrated private codec without another transport driver, public codec, test-only export, framework, cap or fallback; revisit_when=an exact hidden-API/allocator/feature/source change, a named protocol or native graph counterexample, or a second real production consumer requires placement review; simplification_trigger=merge; net_deletion=7cb5f0c already removed standalone companion manifest/lock/version/release maintenance and path dependency, remaining work reuses that single implementation without recreating the package; residual_glue=source-qualified Upgrade/negotiation/tail/entropy and real Codex continuation/fallback/lease policy under existing P20-RESOURCES ownership",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.1 归属、接口与唯一生产接入"
         },
         {
           "field": "forbidden_scope",
@@ -4213,18 +4218,18 @@
         },
         {
           "field": "verification",
-          "reason": "One authoritative workspace D.1 gate, public integration test path is an inferred target. Run every created/modified binary/filter, retain valid original tests, update changed contracts, delete only after equal-or-stronger replacement. Deduplicate scenario commands already included by D.1, platform/artifact commands are gap-only. Workspace tier owns provider wire/dependency or compiling cross-crate semantic cutover, not precaution.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+          "reason": "One authoritative workspace full D.1 gate covers the private modules and ordinary private unit tests. The gap addendum binds a fresh workspace-external scratch and existing marked persistent Cargo cache at execution; placeholders are execution inputs, not literal shell arguments or permission to reuse an existing scratch. package_slice must retain private ordinary/default/C-zlib tests and separately execute the real public Codex codec chain in actual packaged consumers; current Upgrade-only PASS is insufficient. Record actual args, test execution and source identity; deduplicate unchanged evidence, never substitute private tests for public acceptance. Retain applicable root fmt/clippy/all-targets/doctest/rustdoc, extra feature graphs and exact native input evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.4 分发、测试处置与验收分区"
         },
         {
           "field": "task_owned_paths",
-          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+          "reason": "Add current private ws.rs/module/test/license/manifest and actual WS package-consumer paths needed for this slice. Models first-poll lease glue and the existing P20-RESOURCES planned codex_resources module belong to this owner; src/ws/** does not cover sibling src/ws.rs. No source spec, ledger, snapshot, new crate or public codec ownership.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.1 归属、接口与唯一生产接入"
         },
         {
           "field": "test_impact_plan",
-          "reason": "retain/update existing public Interface assertions in crates/opi-ai/tests/openai_codex_responses.rs. add only materially distinct source inputs/outcomes to those existing suites. Before red, reread full bodies and matrix41+7 disposition, record every retain/update/add/delete and passing replacement before deletion. A new file name is not evidence of duplicate behavior. Run all actually created/modified binaries/filters and reject zero-test success.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+          "reason": "retain the migrated src/ws/tests corpus, oracle/fixture/helper bytes and protocol/Send/nonSync/Close/flush/EOF/cancel/fairness assertions; update existing openai_codex_responses and consumer-ws through the actual public Models/Codex seam; add only distinct public-chain counterexamples missing from those suites. No production-source copying or public/test-only codec export, no removal of security or acceptance cases to turn the gate green. Run every changed Rust target/filter and package Python test; this planning operation changes no runtime tests.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.4 分发、测试处置与验收分区"
         },
         {
           "field": "telemetry_participation",
@@ -4260,6 +4265,21 @@
           "field": "acceptance_partition",
           "reason": "V-30 full source closure moves from 20.16 to 20.17; the earlier task proves only its named P20 production slice. Reuse predecessor behavioral proof and add only distinct assembled cases.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#新增已确认能力的验收（V-27–38） / V-30"
+        },
+        {
+          "field": "ws_consolidation_boundary",
+          "reason": "The 7cb5f0c physical migration is existing committed work to reuse, not a completed 20.16 implementation. The retained actual package proof reports public_codec_exercised=false and OPEN: task 20.16. Keep this task failing and its scenarios open until its complete production/public-package DoD and normal task evidence pass. 20.15 keeps its original object and historical independent-package evidence; 20.17 consumes the same P20-RESOURCES owner; 20.34 assembled-source, 20.57 final SDK and 20.58 native/MSRV acceptance remain separate.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.4 分发、测试处置与验收分区"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "User-approved test-layout inventory synchronization after d0574cdfd79de66f599dd829bbd6ac6e3fe12c57: explicitly own the existing public Upgrade target, its shared scripted peer/TLS fixtures and Codex target submodules. These are retained tests/helpers of the existing transport/Codex seam, not production call sites, new capabilities or changes to the DoD/dependencies.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.1 归属、接口与唯一生产接入"
+        },
+        {
+          "field": "verification",
+          "reason": "Retain the existing private codec corpus and dedicated Codex target; explicitly include tests/ws_upgrade.rs as the public Upgrade supplement now outside src/ws/tests. The existing package_slice WS addendum executes extracted private protocol tests, extracted public Upgrade tests and separate external public consumers in ordinary/default/C-zlib graphs. Upgrade-only or direct request-builder proof does not close the still-required real Models/Codex/private-codec chain, continuation or resource cleanup. No new gate or executable is introduced.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.1 归属、接口与唯一生产接入"
         }
       ],
       "tier": "workspace",
@@ -4271,18 +4291,23 @@
           ".agents/skills/opi-implement/scripts/opi-impl-smoke.ps1 full"
         ],
         "behavioral_tests": [
-          "crates/opi-ai/tests/openai_codex_responses.rs"
+          "crates/opi-ai/tests/openai_codex_responses.rs",
+          "crates/opi-ai/src/ws/tests/mod.rs",
+          "scripts/pi-sdk-conformance/consumer-ws/src/main.rs",
+          "scripts/pi-sdk-conformance/test_package_slice.py",
+          "crates/opi-ai/tests/ws_upgrade.rs"
         ],
         "snapshot_tests": [],
-        "smoke_addendum": null
+        "smoke_addendum": "python -B scripts/pi-sdk-conformance/package_slice.py --family ws --offline --scratch <new-workspace-external-directory> --target-dir <existing-marked-shared-workspace-cache>"
       },
       "acceptance_scenarios": [
         {
           "id": "AIR-036",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: published paths and request customization / AIR-036",
-          "scenario": "Codex adapter; SDK/product auto transport/delta/recovery. MUST support omitted SDK/product transport default Auto and explicit Sse/Websocket/WebsocketCached/Auto; sessionless/Disabled cache still permits temporary WS. Resolve effective transport first: omitted and explicit Auto follow the same delta rules, correcting pi’s local unnormalized default. Delta requires equal non-input fields and previous full input+actual response items as exact new-input prefix, otherwise full input. Only successful terminal+responseID publishes continuation. One missing-previous-response full retry is allowed before public output; connection-limit before generation starts permits one reconnect, as separate bounded branches. Ordinary WS→SSE only precedes first effective provider event; abort/API/auth/protocol failures never masquerade as transport loss. Output-delivered error ends that stream; high-level recovery is distinct; EOF is not success. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
+          "scenario": "Codex adapter; SDK/product auto transport/delta/recovery. MUST support omitted SDK/product transport default Auto and explicit Sse/Websocket/WebsocketCached/Auto; sessionless/Disabled cache still permits temporary WS. Resolve effective transport first: omitted and explicit Auto follow the same delta rules, correcting pi’s local unnormalized default. Delta requires equal non-input fields and previous full input+actual response items as exact new-input prefix, otherwise full input. Only successful terminal+responseID publishes continuation. One missing-previous-response full retry is allowed before public output; connection-limit before generation starts permits one reconnect, as separate bounded branches. Ordinary WS→SSE only precedes first effective provider event; abort/API/auth/protocol failures never masquerade as transport loss. Output-delivered error ends that stream; high-level recovery is distinct; EOF is not success. Related active V and current source/RDF qualify complete acceptance, host references remain excluded. RDF-24 requires the actual private SDK codec and three-graph packaged public Models/Codex chain; the committed physical migration, private loopback tests and current Upgrade-only consumer do not close this scenario.",
           "verification": [
-            "cargo test -p opi-ai --test openai_codex_responses"
+            "cargo test -p opi-ai --test openai_codex_responses",
+            "python -B scripts/pi-sdk-conformance/package_slice.py --family ws --offline --scratch <new-workspace-external-directory> --target-dir <existing-marked-shared-workspace-cache>"
           ],
           "production_call_sites": [
             "opi_ai Codex direct adapter",
@@ -4293,9 +4318,13 @@
         {
           "id": "P20-S16",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-07",
-          "scenario": "Public default Auto and four explicit modes use real WS/PMD with temporary sessionless/no-cache operation, exact full-input plus response prefix delta and frozen noninput fields. Only success+responseID publishes continuation. Bound missing-ID full retry and pre-generation connection-limit reconnect separately, permit transport fallback only before first effective provider event, never on auth/protocol/abort. EOF/started failure preserves partial and final error, no output splice or silent SSE parity substitute.",
+          "scenario": "Public default Auto and four explicit modes use real WS/PMD with temporary sessionless/no-cache operation, exact full-input plus response prefix delta and frozen noninput fields. Only success+responseID publishes continuation. Bound missing-ID full retry and pre-generation connection-limit reconnect separately, permit transport fallback only before first effective provider event, never on auth/protocol/abort. EOF/started failure preserves partial and final error, no output splice or silent SSE parity substitute. Complete the RDF-24 consolidation using the existing private frame/pmd/io implementation under crates/opi-ai/src/ws, not a second codec or revived companion. Preserve the public ws Upgrade API; the real Models -> Codex adapter -> source-qualified strict Upgrade -> private protocol owner must execute framing, PMD, window8 negotiation, ordered trailing bytes, Close and active/idle cancellation. Replace the transitional unused-code boundary with this genuine production path, not test-only wiring or constructing and dropping an unused owner. Retain the migrated corpus, Send/nonSync, partial/flush/EOF, storage, cancellation and fairness assertions plus exact compression/hidden-API/unsafe obligations. Run applicable root gates and ordinary/default/C-zlib graphs. Actual opi-ai cargo package artifacts must contain private protocol sources, required tests/fixtures/helpers and LICENSE/NOTICE; extracted private tests and fresh external Models -> real Codex -> Upgrade -> private-codec consumers run in all three graphs and are reported separately. Upgrade-only/raw-stream consumers do not close this task. Record exact registry versions/checksums/features and actual AWS-LC plus C-libz native provenance when both are selected. No public codec, test feature, doc-hidden public export, copied production source, checkout/root patch or library-lock substitution. Reuse the source-identical 7cb5f0c physical migration and valid proof; do not redo removed standalone-package gates or call that partial proof the completed Codex path. Preserve 20.15 historical delivery and 20.17/34/57/58 acceptance ownership.",
           "verification": [
-            "cargo test -p opi-ai --test openai_codex_responses"
+            "cargo test -p opi-ai --test openai_codex_responses",
+            "cargo test -p opi-ai --lib ws::",
+            "cargo test -p opi-ai --lib ws:: --features flate2/default",
+            "cargo test -p opi-ai --lib ws:: --features flate2/zlib",
+            "python -B scripts/pi-sdk-conformance/package_slice.py --family ws --offline --scratch <new-workspace-external-directory> --target-dir <existing-marked-shared-workspace-cache>"
           ],
           "production_call_sites": [
             "opi_ai Codex direct adapter",
@@ -4315,18 +4344,97 @@
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/opi-ai/Cargo.toml",
+        "crates/opi-ai/LICENSE",
+        "crates/opi-ai/NOTICE",
         "crates/opi-ai/README.md",
         "crates/opi-ai/README.zh.md",
+        "crates/opi-ai/src/codex_resources.rs",
         "crates/opi-ai/src/lib.rs",
+        "crates/opi-ai/src/models.rs",
         "crates/opi-ai/src/openai_codex_responses.rs",
         "crates/opi-ai/src/telemetry.rs",
+        "crates/opi-ai/src/ws.rs",
         "crates/opi-ai/src/ws/**",
-        "crates/opi-ai/tests/openai_codex_responses.rs"
+        "crates/opi-ai/tests/openai_codex_responses.rs",
+        "scripts/pi-sdk-conformance/consumer-ws/**",
+        "scripts/pi-sdk-conformance/package_slice.py",
+        "scripts/pi-sdk-conformance/test_package_slice.py",
+        "crates/opi-ai/tests/ws_upgrade.rs",
+        "crates/opi-ai/tests/support/ws_peer.rs",
+        "crates/opi-ai/tests/support/tls_fixtures.rs",
+        "crates/opi-ai/tests/openai_codex_responses/**"
       ],
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-21T08:26:32.233945+00:00",
+          "attempt": 0,
+          "summary": "Plan reconciliation records already executed physical-migration proof without changing task status, verified commit or Opi task evidence. The real public Codex codec chain remains OPEN.",
+          "gate_results": {
+            "evidence_kind": "reused prior execution, not newly executed by this plan",
+            "migration_commit": "7cb5f0c7b3f3db277bc4e4672b08b324dc26dfbf",
+            "verification_record": {
+              "path": "D:\\opi\\tmp\\opi-ws-merge-20261021-36ab931f\\migration-verification.json",
+              "sha256": "431fcc3add724dfee7525067a5b831cf16ee27c47ed64ded626e9ce2dbbb7661"
+            },
+            "commit_source_mapping": {
+              "path": "D:\\opi\\tmp\\opi-ws-merge-20261021-36ab931f\\commit-receipt.json",
+              "sha256": "d1673a8083538f2fb9493042437beb523e9153d5fa9579d042084b229db0fc61"
+            },
+            "ws_package_record": {
+              "path": "D:\\opi\\tmp\\opi-ws-merge-20261021-36ab931f\\ws-r2\\evidence.json",
+              "sha256": "a24cafd8b35dc6e928c5a0b7ee6ed593af975631118d13e23345ee69398ef95e"
+            },
+            "archive_sha256": "64387a3b8e824fde3d086a7a55bd508fbfcbe4187689db92c258a033010e83c1",
+            "archive_source_identity": "precommit worktree at c0f2ed85dc14d6441a698a4b5a6b348701c68d4d mapped byte-for-byte to 7cb5f0c7b3f3db277bc4e4672b08b324dc26dfbf; original archive VCS metadata is not relabeled",
+            "private_profiles": [
+              {
+                "name": "ordinary",
+                "passed": 108
+              },
+              {
+                "name": "union-default",
+                "passed": 108
+              },
+              {
+                "name": "union-c-zlib",
+                "passed": 108
+              }
+            ],
+            "external_upgrade_profiles": [
+              {
+                "name": "ordinary",
+                "passed": 6
+              },
+              {
+                "name": "union-default",
+                "passed": 6
+              },
+              {
+                "name": "union-c-zlib",
+                "passed": 6
+              }
+            ],
+            "public_codec_exercised": false,
+            "production_codex_acceptance": "OPEN: task 20.16",
+            "test_disposition": [
+              {
+                "subject": "WS ledger reconciliation",
+                "action": "none",
+                "test": "none",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.17",
@@ -4334,7 +4442,7 @@
       "title": "实例 resource generation／pool／await cleanup",
       "crate": "workspace",
       "parent_spec_row": "DEL-07",
-      "definition_of_done": "Register resource generation on first poll before auth/transform; cleanup cutoff cancels matching old prepared/connecting/busy/temporary/active-fallback work, awaits local owned exits, forbids late publish/retry/SSE. Some exact nonemptyID, None including sessionless, empty typed failure and unmatched no-op are distinct. Isolate two Models/shared leases, keep caller parent token/external owners/credentials/catalog intact, retain delivered terminal and idle reuse. Cleanup failure continues remaining release and reports unconfirmed effects; Drop starts release but never claims barrier completion.",
+      "definition_of_done": "Register resource generation on first poll before auth/transform; cleanup cutoff cancels matching old prepared/connecting/busy/temporary/active-fallback work, awaits local owned exits, forbids late publish/retry/SSE. Some exact nonemptyID, None including sessionless, empty typed failure and unmatched no-op are distinct. Isolate two Models/shared leases, keep caller parent token/external owners/credentials/catalog intact, retain delivered terminal and idle reuse. Cleanup failure continues remaining release and reports unconfirmed effects; Drop starts release but never claims barrier completion. Consume the same 20.16 private protocol Connection and P20-RESOURCES lease/generation owner, without another frame/PMD/Close state machine. Cover active and idle codec cancellation, borrowed-future drop/resume and awaited local release on the real Models/Codex path; migrated primitive tests alone cannot close session cleanup or complete DEL-07.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -4345,8 +4453,8 @@
       "inference_notes": [
         {
           "field": "definition_of_done",
-          "reason": "Reviewed DEL-07 split, inferred target paths/names and commands require whole-graph confirmation. Register resource generation on first poll before auth/transform; cleanup cutoff cancels matching old prepared/connecting/busy/temporary/active-fallback work, awaits local owned exits, forbids late publish/retry/SSE. Some exact nonemptyID, None including sessionless, empty typed failure and unmatched no-op are distinct. Isolate two Models/shared leases, keep caller parent token/external owners/credentials/catalog intact, retain delivered terminal and idle reuse. Cleanup failure continues remaining release and reports unconfirmed effects; Drop starts release but never claims barrier completion.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+          "reason": "Register resource generation on first poll before auth/transform; cleanup cutoff cancels matching old prepared/connecting/busy/temporary/active-fallback work, awaits local owned exits, forbids late publish/retry/SSE. Some exact nonemptyID, None including sessionless, empty typed failure and unmatched no-op are distinct. Isolate two Models/shared leases, keep caller parent token/external owners/credentials/catalog intact, retain delivered terminal and idle reuse. Cleanup failure continues remaining release and reports unconfirmed effects; Drop starts release but never claims barrier completion. Consume the same 20.16 private protocol Connection and P20-RESOURCES lease/generation owner, without another frame/PMD/Close state machine. Cover active and idle codec cancellation, borrowed-future drop/resume and awaited local release on the real Models/Codex path; migrated primitive tests alone cannot close session cleanup or complete DEL-07.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.4 分发、测试处置与验收分区"
         },
         {
           "field": "reuse_search",
@@ -4380,8 +4488,8 @@
         },
         {
           "field": "task_owned_paths",
-          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+          "reason": "Add sibling ws.rs for necessary private owner cancellation/cleanup glue and the already declared P20-RESOURCES codex_resources owner module; keep existing Models/session facade paths without a second resource owner.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.1 归属、接口与唯一生产接入"
         },
         {
           "field": "shared_decision",
@@ -4397,6 +4505,16 @@
           "field": "acceptance_partition",
           "reason": "V-30 full source closure moves from 20.16 to 20.17; the earlier task proves only its named P20 production slice. Reuse predecessor behavioral proof and add only distinct assembled cases.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#新增已确认能力的验收（V-27–38） / V-30"
+        },
+        {
+          "field": "ws_consolidation_boundary",
+          "reason": "Use the private SDK protocol owner supplied by 20.16 and keep P20-RESOURCES owner=20.16/consumer=20.17 unchanged. No separate companion build/package or copied protocol implementation. Preserve current generation cutoff, parent-token isolation, no-late-publication and await-cleanup criteria; 7cb5f0c primitive cancellation evidence is reusable only for its recorded input and does not close this task.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.1 归属、接口与唯一生产接入"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "User-approved test-layout inventory synchronization after d0574cdfd79de66f599dd829bbd6ac6e3fe12c57: the already-owned openai_codex_responses.rs target now declares child replay tests under tests/openai_codex_responses/. Permit that existing target subtree for later resource-cleanup regressions; retain all current cleanup/Codex acceptance, status and dependency requirements. No public WS/helper path or new production authority is added to this task.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.1 归属、接口与唯一生产接入"
         }
       ],
       "tier": "workspace",
@@ -4444,7 +4562,7 @@
         {
           "id": "P20-S17",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-07",
-          "scenario": "Register resource generation on first poll before auth/transform; cleanup cutoff cancels matching old prepared/connecting/busy/temporary/active-fallback work, awaits local owned exits, forbids late publish/retry/SSE. Some exact nonemptyID, None including sessionless, empty typed failure and unmatched no-op are distinct. Isolate two Models/shared leases, keep caller parent token/external owners/credentials/catalog intact, retain delivered terminal and idle reuse. Cleanup failure continues remaining release and reports unconfirmed effects; Drop starts release but never claims barrier completion.",
+          "scenario": "Register resource generation on first poll before auth/transform; cleanup cutoff cancels matching old prepared/connecting/busy/temporary/active-fallback work, awaits local owned exits, forbids late publish/retry/SSE. Some exact nonemptyID, None including sessionless, empty typed failure and unmatched no-op are distinct. Isolate two Models/shared leases, keep caller parent token/external owners/credentials/catalog intact, retain delivered terminal and idle reuse. Cleanup failure continues remaining release and reports unconfirmed effects; Drop starts release but never claims barrier completion. Consume the same 20.16 private protocol Connection and P20-RESOURCES lease/generation owner, without another frame/PMD/Close state machine. Cover active and idle codec cancellation, borrowed-future drop/resume and awaited local release on the real Models/Codex path; migrated primitive tests alone cannot close session cleanup or complete DEL-07.",
           "verification": [
             "cargo test -p opi-ai --test openai_codex_responses --test resource_cleanup"
           ],
@@ -4470,7 +4588,7 @@
         {
           "id": "DEL-07",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-07",
-          "scenario": "| DEL-07 | Codex WS/PMD/length-storage/continuation/pool cleanup → verify: actual provider public path including final corrected codec, real frame/upgrade corpus and resource lifetime; SSE fallback cannot substitute. |",
+          "scenario": "| DEL-07 | Strict Upgrade plus private WS/PMD/Close/owned IO inside opi-ai (RDF-24), consumed by real Codex continuation/pool cleanup → verify: frame/end-boundary/storage, Send, complete client Close, cancellation/work quanta and ordinary/feature-union SDK package consumers; final public provider/Upgrade/resource lifetime stays required, SSE fallback cannot substitute. |",
           "verification": [
             "cargo test -p opi-ai --test openai_codex_responses --test resource_cleanup"
           ],
@@ -4507,13 +4625,16 @@
         "CHANGELOG.md",
         "crates/opi-ai/README.md",
         "crates/opi-ai/README.zh.md",
+        "crates/opi-ai/src/codex_resources.rs",
         "crates/opi-ai/src/lib.rs",
         "crates/opi-ai/src/models.rs",
         "crates/opi-ai/src/openai_codex_responses.rs",
         "crates/opi-ai/src/session_resources.rs",
+        "crates/opi-ai/src/ws.rs",
         "crates/opi-ai/src/ws/**",
         "crates/opi-ai/tests/openai_codex_responses.rs",
-        "crates/opi-ai/tests/resource_cleanup.rs"
+        "crates/opi-ai/tests/resource_cleanup.rs",
+        "crates/opi-ai/tests/openai_codex_responses/**"
       ],
       "verified_at_commit": null,
       "evidence": null,
@@ -12368,7 +12489,7 @@
       "title": "workspace 外真实 package consumer 与完整 SDK 矩阵",
       "crate": "workspace",
       "parent_spec_row": "DEL-14",
-      "definition_of_done": "Run fresh workspace-external consumer using opi-ai as its sole Opi runtime dependency and ordinary Tokio/Serde/Stream dependencies, with actually packaged offline resources and registry-resolvable controlled dependency closure, no root patch/TEMP paths. Exercise every public workflow, all10 chat/1image/4classifier/42profiles/9flow paths with fake sources/transport and complete model records, two instances/shared store/cleanup/options portability/tool loop/serde. Differential fixed Pi public entrypoints use import-reviewed mock-only runner, isolated HOME/env/no credentials-triggered live/no silent install, exact source/runtime/fixture/RDF/result pins. Public failures/actual allocation/large lawful acceptance/typed policies remain observable, not helper-only proof. Reuse early external-consumer packaging checks from 20.8/12/15 and predecessor behavioral suites, adding only distinct assembled external-use cases. Own full cross-operation duration AIR-061/V-53 and callbacks AIR-059/V-51 proof including new image/classifier/deferred producers; no second implementation pass.",
+      "definition_of_done": "Run fresh workspace-external consumer using opi-ai as its sole Opi runtime dependency and ordinary Tokio/Serde/Stream dependencies, with actually packaged offline resources and registry-resolvable controlled dependency closure, no root patch/TEMP paths. Exercise every public workflow, all10 chat/1image/4classifier/42profiles/9flow paths with fake sources/transport and complete model records, two instances/shared store/cleanup/options portability/tool loop/serde. Differential fixed Pi public entrypoints use import-reviewed mock-only runner, isolated HOME/env/no credentials-triggered live/no silent install, exact source/runtime/fixture/RDF/result pins. Public failures/actual allocation/large lawful acceptance/typed policies remain observable, not helper-only proof. Reuse early external-consumer packaging checks from 20.8/12/14 and the private SDK/Codex package proof owned by 20.16, keeping 20.15 independent-package results at their original historical identity, plus predecessor behavioral suites, adding only distinct assembled external-use cases. Own full cross-operation duration AIR-061/V-53 and callbacks AIR-059/V-51 proof including new image/classifier/deferred producers; no second implementation pass. The final opi-ai artifact must include private WS sources/tests/fixtures/helpers and LICENSE/NOTICE. Revalidate the final relevant ordinary/default/C-zlib artifact graphs with separate extracted private protocol tests and real public Models/Codex/Upgrade/private-codec consumers. Upgrade-only or old companion package proof cannot close final assembled SDK acceptance; native platform/MSRV stays with 20.58.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -12458,8 +12579,8 @@
         },
         {
           "field": "verification",
-          "reason": "One authoritative workspace D.1 gate, public integration test path is an inferred target. Run every created/modified binary/filter, retain valid original tests, update changed contracts, delete only after equal-or-stronger replacement. Deduplicate scenario commands already included by D.1, platform/artifact commands are gap-only. Workspace tier owns provider wire/dependency or compiling cross-crate semantic cutover, not precaution.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+          "reason": "Workspace full D.1 remains authoritative. external_sdk owns assembled public SDK use; the gap addendum reuses package_slice WS on a fresh bound external scratch and existing marked Cargo cache for final ordinary/default/C-zlib artifact consumers and private tests. Deduplicate still-valid identical final-state proof rather than blindly rerunning predecessor suites; record actual executed args/identities. No test-only codec seam or copied source, no second implementation pass.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.4 分发、测试处置与验收分区"
         },
         {
           "field": "task_owned_paths",
@@ -12488,13 +12609,13 @@
         },
         {
           "field": "definition_of_done",
-          "reason": "Run fresh workspace-external consumer using opi-ai as its sole Opi runtime dependency and ordinary Tokio/Serde/Stream dependencies, with actually packaged offline resources and registry-resolvable controlled dependency closure, no root patch/TEMP paths. Exercise every public workflow, all10 chat/1image/4classifier/42profiles/9flow paths with fake sources/transport and complete model records, two instances/shared store/cleanup/options portability/tool loop/serde. Differential fixed Pi public entrypoints use import-reviewed mock-only runner, isolated HOME/env/no credentials-triggered live/no silent install, exact source/runtime/fixture/RDF/result pins. Public failures/actual allocation/large lawful acceptance/typed policies remain observable, not helper-only proof. Reuse early external-consumer packaging checks from 20.8/12/15 and predecessor behavioral suites, adding only distinct assembled external-use cases. Own full cross-operation duration AIR-061/V-53 and callbacks AIR-059/V-51 proof including new image/classifier/deferred producers; no second implementation pass.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+          "reason": "Run fresh workspace-external consumer using opi-ai as its sole Opi runtime dependency and ordinary Tokio/Serde/Stream dependencies, with actually packaged offline resources and registry-resolvable controlled dependency closure, no root patch/TEMP paths. Exercise every public workflow, all10 chat/1image/4classifier/42profiles/9flow paths with fake sources/transport and complete model records, two instances/shared store/cleanup/options portability/tool loop/serde. Differential fixed Pi public entrypoints use import-reviewed mock-only runner, isolated HOME/env/no credentials-triggered live/no silent install, exact source/runtime/fixture/RDF/result pins. Public failures/actual allocation/large lawful acceptance/typed policies remain observable, not helper-only proof. Reuse early external-consumer packaging checks from 20.8/12/14 and the private SDK/Codex package proof owned by 20.16, keeping 20.15 independent-package results at their original historical identity, plus predecessor behavioral suites, adding only distinct assembled external-use cases. Own full cross-operation duration AIR-061/V-53 and callbacks AIR-059/V-51 proof including new image/classifier/deferred producers; no second implementation pass. The final opi-ai artifact must include private WS sources/tests/fixtures/helpers and LICENSE/NOTICE. Revalidate the final relevant ordinary/default/C-zlib artifact graphs with separate extracted private protocol tests and real public Models/Codex/Upgrade/private-codec consumers. Upgrade-only or old companion package proof cannot close final assembled SDK acceptance; native platform/MSRV stays with 20.58.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.4 分发、测试处置与验收分区"
         },
         {
           "field": "upstream_data_contract",
-          "reason": "Own P20-RDF-21 final assembled SDK/package semantic closure and the open full-source scenarios inherited from current chronology/replay/normalizer slices. Reuse original early package proof only with its original archive/input identity; changed test resources or new operations require applicable final artifact evidence. Schema vendor gates are retired, remaining HTTP/WS controlled dependency closure is unchanged. Native/MSRV and final supply-chain proof remain 20.58.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile"
+          "reason": "Own P20-RDF-21 final assembled SDK/package semantic closure and all inherited open full-source scenarios. Reuse original early proof only within its exact archive/input identity; changed resources or new operations need final relevant artifact evidence. Schema vendor gates remain retired, HTTP/crypto use current RDF-22/23, and RDF-24 WS is private SDK protocol state plus unmodified compression, not an independent package. 20.15 old package evidence is historical; reuse valid 20.16 private/public proofs without claiming Upgrade-only or library lock as final package acceptance. Native/MSRV and final supply chain remain 20.58.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-24-owned-ws-profile"
         }
       ],
       "tier": "workspace",
@@ -12509,7 +12630,7 @@
           "crates/opi-ai/tests/external_sdk.rs"
         ],
         "snapshot_tests": [],
-        "smoke_addendum": null
+        "smoke_addendum": "python -B scripts/pi-sdk-conformance/package_slice.py --family ws --offline --scratch <new-workspace-external-directory> --target-dir <existing-marked-shared-workspace-cache>"
       },
       "acceptance_scenarios": [
         {
@@ -12775,9 +12896,10 @@
         {
           "id": "P20-S57",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-14",
-          "scenario": "Run fresh workspace-external consumer using opi-ai as its sole Opi runtime dependency and ordinary Tokio/Serde/Stream dependencies, with actually packaged offline resources and registry-resolvable controlled dependency closure, no root patch/TEMP paths. Exercise every public workflow, all10 chat/1image/4classifier/42profiles/9flow paths with fake sources/transport and complete model records, two instances/shared store/cleanup/options portability/tool loop/serde. Differential fixed Pi public entrypoints use import-reviewed mock-only runner, isolated HOME/env/no credentials-triggered live/no silent install, exact source/runtime/fixture/RDF/result pins. Public failures/actual allocation/large lawful acceptance/typed policies remain observable, not helper-only proof. Reuse early external-consumer packaging checks from 20.8/12/15 and predecessor behavioral suites, adding only distinct assembled external-use cases. Own full cross-operation duration AIR-061/V-53 and callbacks AIR-059/V-51 proof including new image/classifier/deferred producers; no second implementation pass.",
+          "scenario": "Run fresh workspace-external consumer using opi-ai as its sole Opi runtime dependency and ordinary Tokio/Serde/Stream dependencies, with actually packaged offline resources and registry-resolvable controlled dependency closure, no root patch/TEMP paths. Exercise every public workflow, all10 chat/1image/4classifier/42profiles/9flow paths with fake sources/transport and complete model records, two instances/shared store/cleanup/options portability/tool loop/serde. Differential fixed Pi public entrypoints use import-reviewed mock-only runner, isolated HOME/env/no credentials-triggered live/no silent install, exact source/runtime/fixture/RDF/result pins. Public failures/actual allocation/large lawful acceptance/typed policies remain observable, not helper-only proof. Reuse early external-consumer packaging checks from 20.8/12/14 and the private SDK/Codex package proof owned by 20.16, keeping 20.15 independent-package results at their original historical identity, plus predecessor behavioral suites, adding only distinct assembled external-use cases. Own full cross-operation duration AIR-061/V-53 and callbacks AIR-059/V-51 proof including new image/classifier/deferred producers; no second implementation pass. The final opi-ai artifact must include private WS sources/tests/fixtures/helpers and LICENSE/NOTICE. Revalidate the final relevant ordinary/default/C-zlib artifact graphs with separate extracted private protocol tests and real public Models/Codex/Upgrade/private-codec consumers. Upgrade-only or old companion package proof cannot close final assembled SDK acceptance; native platform/MSRV stays with 20.58.",
           "verification": [
-            "cargo test -p opi-ai --test external_sdk"
+            "cargo test -p opi-ai --test external_sdk",
+            "python -B scripts/pi-sdk-conformance/package_slice.py --family ws --offline --scratch <new-workspace-external-directory> --target-dir <existing-marked-shared-workspace-cache>"
           ],
           "production_call_sites": [
             "published-package-shaped opi_ai public consumer (target)",
@@ -13471,7 +13593,48 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-21T16:42:29.882533+00:00",
+          "attempt": 0,
+          "summary": "User-approved reference to ordinary test-maintenance commit d0574cdfd79de66f599dd829bbd6ac6e3fe12c57. Reusable scoped evidence only; not a task completion, Opi task-evidence replacement or new execution by this ledger synchronization. Full assembled SDK/external Codex consumer acceptance remains open.",
+          "gate_results": {
+            "evidence_kind": "referenced historical execution; no Rust/package/provider execution by this synchronization",
+            "maintenance_commit": "d0574cdfd79de66f599dd829bbd6ac6e3fe12c57",
+            "reports": [
+              {
+                "path": "docs/research/opi-ai-test-closure-results.md",
+                "sha256": "d1d0cf992787c8daba4560d290a241baa084a13ed3456f0a346f26bad7104ed3"
+              },
+              {
+                "path": "docs/research/opi-ai-test-closure-results.zh.md",
+                "sha256": "4601885d4372a825ed0a0120e7971241ac8f7976cece53b955fab074db9b4026"
+              }
+            ],
+            "receipts": [
+              {
+                "path": "E:/opi/acceptance/opi-ai-test-closure-20261021/final-checks.json",
+                "sha256": "6adda6cc943778c5581675e584710c6203e5a9ae4e870584efc95933ceebc563"
+              },
+              {
+                "path": "E:/opi/acceptance/opi-ai-test-closure-20261021/commit-line-ending-normalization.json",
+                "sha256": "3c7a646e562ecef2235af3cb3669d9e9dccb999aca0b2f980212da2fb61f2cb8"
+              },
+              {
+                "path": "E:/opi/acceptance/opi-ai-test-commit-20261022/focused-checks.json",
+                "sha256": "29778bfc4e0ef402fa0219971cbcd0e6c5ce23513b4651d0871751943999e9a7"
+              },
+              {
+                "path": "E:/opi/acceptance/opi-ai-test-commit-20261022/static-checks.json",
+                "sha256": "fc70a2ecdd3463eb0ff4ec8b1dd52e0a6b85afcb2c1ba9083a5b0c88abcd8314"
+              }
+            ],
+            "source_identity": "Full crate/three-graph WS package runs bind the precommit worktree and its archived source manifest. Commit preparation changes only ws_peer.rs CRLF to LF plus report notes; the normalization receipt binds both hashes. Fresh 93-private/16-public WS and static checks bind the LF helper. Earlier archive hashes are not relabeled as freshly packaged d0574cd artifacts.",
+            "reuse_condition": "Recheck relevant source, fixture, toolchain, target, feature graph, native provenance and artifact identity before reuse; rerun changed inputs or missing evidence only.",
+            "acceptance_boundary": "Full assembled SDK/external Codex consumer acceptance remains open. The real Codex/private codec, JWT/ADC worker path, complete adapter/profile coverage and Phase exit are not established."
+          }
+        }
+      ]
     },
     {
       "id": "20.58",
@@ -13519,13 +13682,13 @@
         },
         {
           "field": "verification",
-          "reason": "Root workspace full remains the authoritative workspace D.1 gate. The existing WS package_slice offline harness is the single gap addendum for separately built companion fmt/clippy/test/doc, source/features/unsafe/native provenance and genuine ordinary/default/C-union package consumers on the owning native runner; root full alone cannot cover a nonmember. platform_delivery verifies the real SDK graph and full original platform/MSRV tasks. No implicit cross-platform build, CI dispatch or registry publication.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8. 自有中立 WS 模块合同（RDF-24）"
+          "reason": "Root workspace full remains authoritative D.1 and includes the private WS modules/tests; no nonexistent standalone companion gate remains. package_slice WS is the gap addendum with per-run bound fresh external scratch and existing marked persistent cache for actual SDK artifact, separate private/public three-graph consumer and exact hidden/unsafe/native evidence on the owning native runner. Both AWS-LC and C-libz provenance are required when selected. platform_delivery retains full native platform/MSRV closure; Upgrade-only/local migration is not that closure. No implicit cross-platform build, CI dispatch or publication.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.4 分发、测试处置与验收分区"
         },
         {
           "field": "task_owned_paths",
-          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.",
-          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+          "reason": "Replace retired companions/ws manifest/README future ownership with actual SDK LICENSE/NOTICE and private ws.rs/module paths for necessary platform/feature/source qualification; retain root manifests, CI, package harness, evidence and bilingual SDK documentation ownership. No recreation of a standalone WS crate.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.4 分发、测试处置与验收分区"
         },
         {
           "field": "assurance_boundary",
@@ -13554,7 +13717,7 @@
         },
         {
           "field": "ws_profile_reconciliation",
-          "reason": "Only V-58/P20-GAP-WS and the necessary nonmember verification/manifest-doc ownership follow RDF-24. Preserve all scenario IDs/statuses and other scenario contents, full platform DoD, dependencies/runtime evidence/history. Source and graph changes are planning only, no20.11/20.34/20.57 or platform completion. Neutral companion is no new Agent runtime/production consumer for assurance; no plan test count is inferred from sealed research.",
+          "reason": "Update only V-58/P20-GAP-WS and necessary verification/ownership to the actual private SDK WS layout. Preserve IDs/statuses, other scenarios, platform DoD, dependencies and runtime history. 20.15 retains original independent-package contract and evidence, 20.16 owns real public codec integration, 20.17 resources and 20.57 final SDK. No private test or Upgrade-only package PASS promotes these tasks or complete V criteria; ordinary/default/C-zlib and local hidden/unsafe/native obligations remain.",
           "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-24-owned-ws-profile"
         }
       ],
@@ -13570,13 +13733,13 @@
           "crates/opi-ai/tests/platform_delivery.rs"
         ],
         "snapshot_tests": [],
-        "smoke_addendum": "python scripts/pi-sdk-conformance/package_slice.py --family ws --offline"
+        "smoke_addendum": "python -B scripts/pi-sdk-conformance/package_slice.py --family ws --offline --scratch <new-workspace-external-directory> --target-dir <existing-marked-shared-workspace-cache>"
       },
       "acceptance_scenarios": [
         {
           "id": "V-58",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#Pi 1.3.0 完整公开能力补齐（V-49–59） / V-58",
-          "scenario": "SDK-only public input: workspace 外 consumer；下方 public动作索引、三 Context、custom chat/image/classifier/deferred APIs、direct/lazy adapters、faux/test support、utility/CLI/platform 替代. Observable result and failure: 每公开动作有Rust动作或明确差异/gap；workspace外consumer证明三Context、四调用入口、custom兼容options跨Models/upsert/oldcall、native typed failures、callbacks/telemetry/platform替代。R-01–08受来源审计约束，不能靠新增cap/unknownformat/stale拒绝或“Unsupported”关覆盖；backend配置不可解除的限制单列。包资源离线、构造零I/O、Tokio/Send条件明确；尚无新SDK公开consumer的编译/运行证明，独立研究机制不替代它。 当前后端OPEN表各gap须有source expected/native结果与真实public-boundary proof；Schema argumentsError前置拒绝、去WS可配置cap均不能关闭engine/handshake/compression差异。. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery. RDF-24 additionally requires the independent nonmember WS companion and actual SDK-to-neutral-to-upstream package graph with ordinary/default/C-union consumer/native/hidden-API/unsafe/MSRV evidence; controlled Ratchet namespace and third-party/pi-ws mandatory distribution are retired, not general conformance or packaging.",
+          "scenario": "SDK-only public input: workspace 外 consumer；下方 public动作索引、三 Context、custom chat/image/classifier/deferred APIs、direct/lazy adapters、faux/test support、utility/CLI/platform 替代. Observable result and failure: 每公开动作有Rust动作或明确差异/gap；workspace外consumer证明三Context、四调用入口、custom兼容options跨Models/upsert/oldcall、native typed failures、callbacks/telemetry/platform替代。R-01–08受来源审计约束，不能靠新增cap/unknownformat/stale拒绝或“Unsupported”关覆盖；backend配置不可解除的限制单列。包资源离线、构造零I/O、Tokio/Send条件明确；尚无新SDK公开consumer的编译/运行证明，独立研究机制不替代它。 当前后端OPEN表各gap须有source expected/native结果与真实public-boundary proof；Schema argumentsError前置拒绝、去WS可配置cap均不能关闭engine/handshake/compression差异。. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery. RDF-24 additionally requires the actual opi-ai artifact containing private WS sources/tests/fixtures/helpers and LICENSE/NOTICE, with separate extracted private tests and real external Models/Codex/Upgrade/private-codec consumers in ordinary/default/C-zlib graphs on native Linux/macOS/Windows and MSRV1.97. Verify hidden-API/unsafe/allocator/Send/nonSync and actual AWS-LC plus C-libz native provenance when selected. Root full covers private module ownership; removed companion standalone/release gates retire only for the new layout. 20.15 original package identity is historical, and current Upgrade-only proof cannot close V-58. No public codec/test-only export, checkout/production-source include/root patch/library-lock substitute; general conformance and packaging obligations remain.",
           "verification": [
             "cargo test -p opi-ai --test platform_delivery"
           ],
@@ -13624,7 +13787,7 @@
         {
           "id": "P20-GAP-WS",
           "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md#5. 七组设计已确定，产品覆盖全部 OPEN",
-          "scenario": "Future full product closure, currently OPEN: RDF-24 neutral owned WS/PMD/Close/IO at companions/ws outside the seven root workspace members and exact unmodified libz-rs-sys/zlib-rs/flate2 graph, reached through actual SDK/Codex strict Upgrade and real window8 negotiation, continuation/pool/fallback/proxy/TLS, idle/active logical cancellation and awaited cleanup. Prove normal frames, malformed/truncated/early EOF and complete client Close, preserved failure partial/known usage, one terminal/permanent EOF and no output/retry after cancellation. Verify local hidden SyncPoint/ResetKeep/__internal-api/unsafe Send/noSync/pointer-allocator-end maintenance plus finite ordinary/default/C-zlib unions, explicit unsupported allocator/export/gz/nightly graphs and actual C native build/link source. Execute standalone companion gates and actual independent-package plus assembled SDK artifacts through normal external consumers on native Linux/macOS/Windows and MSRV1.97; no root patch/checkout/TEMP path/research binary/library lock or Rust1.99.1 Windows result substitutes. Preserve protocol acceptance and known nonpreemption/sync outbound boundary, no arbitrary caps or SSE parity substitute. Mechanism owner20.15, actual provider/resource owners20.16/17; complete SDK20.57 remains separate. All original relevantV/RDF/platform requirements remain; prior228/72413x3 research closes no product criterion.",
+          "scenario": "Future full product closure, currently OPEN: RDF-24 private frame/PMD/Close/IO inside opi-ai/src/ws with exact unmodified libz-rs-sys/zlib-rs/flate2 sources and finite ordinary/default/C-zlib graphs. Use actual Models -> real Codex -> strict Upgrade -> private codec with real window8, ordered trailing bytes, context/PMD, continuation/pool/fallback/proxy/TLS, idle/active logical cancellation and awaited cleanup. Keep normal and malformed/truncated/early-EOF input, complete client Close/partial-write/flush behavior, partial/known usage, one terminal/permanent EOF and no output/retry after cancellation. Verify hidden SyncPoint/ResetKeep/__internal-api, local unsafe Send/noSync, pointer rebinding, unique Box/allocator and exactly-once release; explicit unsupported allocator/export/gz/nightly unions remain unsupported. Actual opi-ai package contains private sources, tests/fixtures/helpers and LICENSE/NOTICE; extracted private tests are separate from external public Codex consumers, both run in three graphs on native Linux/macOS/Windows and MSRV1.97. Root gates replace removed nonmember companion gates, not protocol or feature-union obligations. Record actual AWS-LC and C-libz native source/build/flags/static-link evidence when both occur. No Upgrade-only/raw-stream, old standalone artifact, research checkout/source include, public test codec export/feature, root patch or library-lock substitution. Keep known allocation/backend-call and synchronous outbound nonpreemption boundaries; no arbitrary caps or SSE success substitute. 20.15 historical contract/commit/counts/artifacts remain unchanged; 20.16 owns consolidated production/package acceptance, 20.17 resource cleanup, 20.34 existing assembled closures and 20.57 final SDK. Earlier local migration or research proof closes no complete V/RDF/platform criterion.",
           "verification": [
             "cargo test -p opi-ai --test platform_delivery"
           ],
@@ -13697,22 +13860,64 @@
         "Cargo.lock",
         "Cargo.toml",
         "crates/opi-ai/Cargo.toml",
+        "crates/opi-ai/LICENSE",
+        "crates/opi-ai/NOTICE",
         "crates/opi-ai/README.md",
         "crates/opi-ai/README.zh.md",
         "crates/opi-ai/src/lib.rs",
+        "crates/opi-ai/src/ws.rs",
+        "crates/opi-ai/src/ws/**",
         "crates/opi-ai/tests/platform_delivery.rs",
         "docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md",
         "docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.zh.md",
         "docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
-        "scripts/pi-sdk-conformance/**",
-        "companions/ws/Cargo.toml",
-        "companions/ws/README.md",
-        "companions/ws/README.zh.md"
+        "scripts/pi-sdk-conformance/**"
       ],
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-21T16:42:29.882533+00:00",
+          "attempt": 0,
+          "summary": "User-approved reference to ordinary test-maintenance commit d0574cdfd79de66f599dd829bbd6ac6e3fe12c57. Reusable scoped evidence only; not a task completion, Opi task-evidence replacement or new execution by this ledger synchronization. Windows Rust 1.99.1 and WSL GNU Rust 1.97.1 evidence does not establish exact 1.97.0, native macOS, other triples or final native-platform/MSRV acceptance.",
+          "gate_results": {
+            "evidence_kind": "referenced historical execution; no Rust/package/provider execution by this synchronization",
+            "maintenance_commit": "d0574cdfd79de66f599dd829bbd6ac6e3fe12c57",
+            "reports": [
+              {
+                "path": "docs/research/opi-ai-test-closure-results.md",
+                "sha256": "d1d0cf992787c8daba4560d290a241baa084a13ed3456f0a346f26bad7104ed3"
+              },
+              {
+                "path": "docs/research/opi-ai-test-closure-results.zh.md",
+                "sha256": "4601885d4372a825ed0a0120e7971241ac8f7976cece53b955fab074db9b4026"
+              }
+            ],
+            "receipts": [
+              {
+                "path": "E:/opi/acceptance/opi-ai-test-closure-20261021/final-checks.json",
+                "sha256": "6adda6cc943778c5581675e584710c6203e5a9ae4e870584efc95933ceebc563"
+              },
+              {
+                "path": "E:/opi/acceptance/opi-ai-test-closure-20261021/commit-line-ending-normalization.json",
+                "sha256": "3c7a646e562ecef2235af3cb3669d9e9dccb999aca0b2f980212da2fb61f2cb8"
+              },
+              {
+                "path": "E:/opi/acceptance/opi-ai-test-commit-20261022/focused-checks.json",
+                "sha256": "29778bfc4e0ef402fa0219971cbcd0e6c5ce23513b4651d0871751943999e9a7"
+              },
+              {
+                "path": "E:/opi/acceptance/opi-ai-test-commit-20261022/static-checks.json",
+                "sha256": "fc70a2ecdd3463eb0ff4ec8b1dd52e0a6b85afcb2c1ba9083a5b0c88abcd8314"
+              }
+            ],
+            "source_identity": "Full crate/three-graph WS package runs bind the precommit worktree and its archived source manifest. Commit preparation changes only ws_peer.rs CRLF to LF plus report notes; the normalization receipt binds both hashes. Fresh 93-private/16-public WS and static checks bind the LF helper. Earlier archive hashes are not relabeled as freshly packaged d0574cd artifacts.",
+            "reuse_condition": "Recheck relevant source, fixture, toolchain, target, feature graph, native provenance and artifact identity before reuse; rerun changed inputs or missing evidence only.",
+            "acceptance_boundary": "Windows Rust 1.99.1 and WSL GNU Rust 1.97.1 evidence does not establish exact 1.97.0, native macOS, other triples or final native-platform/MSRV acceptance. The real Codex/private codec, JWT/ADC worker path, complete adapter/profile coverage and Phase exit are not established."
+          }
+        }
+      ]
     },
     {
       "id": "20.59",
@@ -15875,6 +16080,58 @@
           }
         ]
       }
+    },
+    {
+      "timestamp": "2026-10-21T08:26:32.239038+00:00",
+      "attempt": 0,
+      "summary": "RDF-24 consolidation reconciliation at 7cb5f0c: retain the complete 20.15 historical object; update only 20.16/17/57/58 future private-SDK ownership and acceptance. Preserve 68 task IDs/dependencies and all statuses, prior verification/evidence and phase snapshots. Seven registered source digests are refreshed in the draft; no README or evidence source is admitted.",
+      "gate_results": {
+        "test_impact": "none",
+        "runtime_execution": "none; only reuse identified earlier migration proof",
+        "source_commit": "7cb5f0c7b3f3db277bc4e4672b08b324dc26dfbf",
+        "canonical_before_sha256": "bc2dae34470b4daad21624d7d2acf13b350c0e09fa1ba1a89d1ff80fa7a171ee"
+      }
+    },
+    {
+      "timestamp": "2026-10-21T08:40:07.536772+00:00",
+      "attempt": 0,
+      "summary": "Human confirmed the complete reviewed WS reconciliation graph and selected write-only: install canonical, leave uncommitted, do not execute subsequent product tasks.",
+      "gate_results": {
+        "plan_verdict": "READY",
+        "graph_choice": "confirm-all",
+        "checkpoint_choice": "write-only",
+        "task_array_sha256": "fdaaff10300c8700e81395c099b329a36a42f878253f9b8333bdcebe2b916caa",
+        "review_record": "D:\\opi\\tmp\\opi-ws-ledger-reconcile-20261021-7cb5f0c\\plan-review.json",
+        "review_record_sha256": "88c07ffa3fc69d8c399472647821adc616dc252a0621746042de2c2ff4289528",
+        "test_impact": "none"
+      }
+    },
+    {
+      "timestamp": "2026-10-21T16:42:29.882533+00:00",
+      "summary": "Human approved the scoped test-layout/evidence inventory update following d0574cd. Add current public WS/helper/Codex-child paths to 20.16, the existing Codex-child subtree to 20.17, public Upgrade verification to 20.16, and historical evidence references to 20.57/20.58. Preserve all carried-in WS reconciliation, original graph confirmation timestamp, task meanings/statuses/dependencies/counters/commits/evidence/scenario states and registered-source pins. Write-only; no production-task selection, execution, Git checkpoint or Phase closure is authorized by this addendum.",
+      "gate_results": {
+        "maintenance_commit": "d0574cdfd79de66f599dd829bbd6ac6e3fe12c57",
+        "test_disposition": [
+          {
+            "subject": "Canonical ledger test-layout/evidence metadata only",
+            "action": "none",
+            "test": "none",
+            "interface": "not-applicable",
+            "replacement": null,
+            "slim_candidate": null
+          }
+        ],
+        "human_confirmation": "User accepted the preceding concrete bounded proposal with 同意.",
+        "plan_review": {
+          "path": "E:/opi/acceptance/opi-ai-ledger-sync-20261022/plan-review.json",
+          "sha256": "d3eb42992d05971dddcbd6eb04533030047e7a65f2563dec8ce4fda96e9e34b2",
+          "verdict": "READY",
+          "independence": "fresh-context-same-family",
+          "reviewed_draft_sha256": "a36e357028b0cead7bc86ff240d2ccd278955186dda68165935c99440dd27858",
+          "reviewed_task_array_sha256": "714c164defe27efaf3f1c70718a06006d2db29937e7afb64f2968ca9573360ae",
+          "workflow_runtime": "unavailable; documented fresh single-reviewer sequential-charter fallback, no JS Workflow execution"
+        }
+      }
     }
   ],
   "verify_runs": [
@@ -16117,6 +16374,26 @@
       "ran_at": "2026-10-20T23:40:00+08:00",
       "task_id": "20.22",
       "criterion_id": "P20-STORE"
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 4,
+      "ran_at": "2026-10-21T08:36:29.746056+00:00",
+      "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 5,
+      "ran_at": "2026-10-21T16:50:32.958349+00:00",
+      "task_id": null,
+      "criterion_id": null
     }
   ]
 }
