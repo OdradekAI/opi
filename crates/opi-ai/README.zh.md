@@ -400,7 +400,7 @@ flate2 1.1.10 优先 C 后端，其次 zlib-rs，最后 miniz_oxide。default un
 
 ### 局部协议检查
 
-迁移后的私有测试位于 `src/ws/tests`，原始 fixture 位于 `src/ws/tests/fixtures`。
+私有协议测试位于 `src/ws/tests`，原始 fixture 位于 `src/ws/tests/fixtures`。
 边界重放重新生成固定 72,413 条 PMD 语料并核对记录分类（超过 64 字节的输出
 用 SHA-256）；提取来源与 oracle 身份随 fixture 保留。三图运行同一组测试：
 
@@ -409,6 +409,11 @@ cargo test -p opi-ai --lib ws::
 cargo test -p opi-ai --lib ws:: --features flate2/default
 cargo test -p opi-ai --lib ws:: --features flate2/zlib
 ```
+
+公开 Upgrade、协商与 WSS 传输合同位于 `tests/ws_upgrade.rs`，通过调用方同样使用的
+公开 `HttpClient`/Upgrade 接口验证。运行 `cargo test -p opi-ai --test ws_upgrade`；
+SDK 包验证会在三图中分别运行该集成目标和私有测试。两层仅共享 `tests/support`
+下的脚本化 peer helper；WSS 与 TLS 集成测试使用同一份合成 TLS fixture。
 
 私有 loopback 测试将公开 Upgrade/`HttpClient` 与 codec 组装，包含双向窗口 8
 协商、有/无 context takeover 的多消息、独立 RFC 1951 decoder 及 distance-257
@@ -734,6 +739,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## 测试分层与 SDK 包
+
+私有/公开测试目录、契约 target 子模块、共享 fixture 和定向命令见[测试组织](tests/README.zh.md)。
+
+WS、TLS 和 crypto 在 `opi-ai` 内遵循相同的测试边界：
+
+| 层次 | 现有覆盖 | 定向命令 |
+| --- | --- | --- |
+| 私有状态机 | `src/ws/tests` 下的 WS framing/PMD/Close/IO | `cargo test -p opi-ai --lib ws::` |
+| 私有 key/signing 所有权 | `src/crypto` 内的 key 准入、独立验证和 worker 取消 | `cargo test -p opi-ai --lib crypto::` |
+| 公开传输接线 | 严格 Upgrade/WSS，以及 Models → Chat → HttpClient → loopback TLS | `cargo test -p opi-ai --test ws_upgrade --test tls_contract` |
+| SDK 包 | 实际 `opi-ai.crate`、解包后测试和工作区外公共消费者 | `scripts/pi-sdk-conformance/package_slice.py --family <ws\|crypto\|http> --offline ...` |
+
+模块测试就近覆盖私有状态；公共集成测试使用受支持的调用方接口，测试 helper 不暴露
+私有 codec 或 signing API。三个模块共享 SDK 的包、版本和 workspace 检查。
+打包 family 选择的是场景和依赖图，不代表分别分发的模块。解包后的私有测试、包内
+公共 Upgrade 测试和外部公共消费者分别记录；回归计数用于确认测试组完整执行，
+不能作为产品验收结论。
+
+私有 WS codec 当前仍没有生产 Codex 调用方。其测试与公开 raw Upgrade 合同不能
+证明真实 Models → Codex → Upgrade → codec 路径、continuation/pool 行为或完整
+cleanup 验收。
 
 ## 模块
 

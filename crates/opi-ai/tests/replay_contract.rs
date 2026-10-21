@@ -10,6 +10,9 @@
 //! replay-projected view. Host-impact clauses (AIR-009/041 execution,
 //! authorization, retry policy, effort stamps/V-32) stay with their owners.
 
+#[path = "replay_contract/object_wire.rs"]
+mod object_wire;
+
 use std::sync::Arc;
 
 use opi_ai::anthropic::AnthropicProvider;

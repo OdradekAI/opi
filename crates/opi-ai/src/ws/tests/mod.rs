@@ -1,8 +1,6 @@
 //! Private WebSocket protocol and loopback Upgrade regression tests.
 
 mod deflate_audit;
-#[allow(dead_code)]
-mod tls_fixtures;
 
 mod boundary;
 mod close;

@@ -434,6 +434,7 @@ async fn stream_drains_text_lifecycle_through_http() {
                 .set_body_string(text_sse_fixture())
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -453,7 +454,13 @@ async fn stream_drains_text_lifecycle_through_http() {
         account_id: None,
         provenance: opi_ai::AuthProvenance::default(),
     };
-    let events = collect_stream(provider.stream_prepared(lifecycle_text_request(), auth)).await;
+    let mut stream = provider.stream_prepared(lifecycle_text_request(), auth);
+    let mut events = Vec::new();
+    while let Some(result) = stream.next().await {
+        let event = result.expect("matched Vertex request must stream successfully");
+        assert!(!matches!(event, AssistantStreamEvent::Error { .. }));
+        events.push(event);
+    }
 
     // Lifecycle: Start -> TextDelta -> Done.
     assert!(
@@ -478,6 +485,10 @@ async fn stream_drains_text_lifecycle_through_http() {
             // Gemini `STOP` finish reason must map to the shared StopReason::Stop.
             assert_eq!(*reason, opi_ai::stream::StopReason::Stop);
             assert_eq!(message.provider, "vertex");
+            assert_eq!(
+                message.usage,
+                opi_ai::stream::Usage::reported(42, 13, 0, 0, None, None)
+            );
         }
         other => panic!("expected Done, got {other:?}"),
     }
@@ -491,6 +502,7 @@ async fn stream_drains_text_lifecycle_through_http() {
         .received_requests()
         .await
         .expect("should have recorded the provider request");
+    assert_eq!(received.len(), 1);
     let url = received[0].url.as_str();
     assert!(url.contains("projects/my-project"), "url: {url}");
     assert!(url.contains("locations/us-central1"), "url: {url}");

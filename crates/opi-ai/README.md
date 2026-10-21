@@ -483,7 +483,7 @@ the three-graph corpus, Send/Close/cancellation/fairness and package checks.
 
 ### Local protocol checks
 
-The migrated private tests live under `src/ws/tests`, with the original
+Private protocol tests live under `src/ws/tests`, with the original
 fixtures under `src/ws/tests/fixtures`. The boundary replay regenerates the fixed
 72,413-case PMD corpus and checks recorded classifications (SHA-256 for
 outputs longer than 64 bytes); extraction provenance and oracle identities
@@ -494,6 +494,13 @@ cargo test -p opi-ai --lib ws::
 cargo test -p opi-ai --lib ws:: --features flate2/default
 cargo test -p opi-ai --lib ws:: --features flate2/zlib
 ```
+
+Public Upgrade, negotiation and WSS transport contracts live in
+`tests/ws_upgrade.rs`, using the same public `HttpClient`/Upgrade interface as
+callers. Run `cargo test -p opi-ai --test ws_upgrade`; the packaged SDK checks
+run this integration target alongside the private tests in all three graphs.
+Both layers share only a scripted peer helper under `tests/support`; WSS and
+TLS integration tests use the same synthetic TLS fixtures.
 
 Private loopback tests combine public Upgrade/`HttpClient` with the codec,
 including two-direction window-8 negotiation, multiple messages with/without
@@ -886,6 +893,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## Test layers and SDK packages
+
+See [test organization](tests/README.md) for private/public directories,
+contract-target submodules, shared fixtures and focused commands.
+
+WS, TLS and crypto follow the same testing boundaries inside `opi-ai`:
+
+| Layer | Existing coverage | Focused command |
+| --- | --- | --- |
+| Private state machines | WS framing/PMD/Close/IO under `src/ws/tests` | `cargo test -p opi-ai --lib ws::` |
+| Private key/signing ownership | Key admission, independent verification and worker cancellation in `src/crypto` | `cargo test -p opi-ai --lib crypto::` |
+| Public transport integration | Strict Upgrade/WSS and Models → Chat → HttpClient → loopback TLS | `cargo test -p opi-ai --test ws_upgrade --test tls_contract` |
+| SDK package | Actual `opi-ai.crate`, extracted tests and workspace-external public consumers | `scripts/pi-sdk-conformance/package_slice.py --family <ws\|crypto\|http> --offline ...` |
+
+Module tests remain close to the private state they exercise. Public integration
+tests use supported caller interfaces; test helpers do not expose a private
+codec or signing API. All three modules share the SDK's package, version and
+workspace checks. Package families select scenarios and dependency graphs,
+not separately distributed modules. Extracted private tests, packaged public
+Upgrade tests and external public consumers are recorded separately. Their
+regression counts establish battery completeness, not product acceptance.
+
+The private WS codec still has no production Codex caller. Its tests and the
+public raw Upgrade contract do not establish the real Models → Codex →
+Upgrade → codec path, continuation/pool behavior or complete cleanup acceptance.
 
 ## Modules
 

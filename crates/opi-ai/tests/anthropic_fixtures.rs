@@ -1460,7 +1460,11 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         .and(header("anthropic-version", "2023-06-01"))
         .and(body_partial_json(serde_json::json!({
             "messages": [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}],
-            "system": "You are helpful.",
+            "system": [{
+                "type": "text",
+                "text": "You are helpful.",
+                "cache_control": {"type": "ephemeral"}
+            }],
             "max_tokens": 1024
         })))
         .respond_with(
@@ -1468,6 +1472,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
                 .set_body_string(text_fixture())
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -1498,13 +1503,20 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
     };
 
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut saw_done = false;
     while let Some(result) = stream.next().await {
-        match result {
-            Ok(event) if event.is_terminal() => break,
-            Err(_) => break,
+        match result.expect("matched text request must stream successfully") {
+            AssistantStreamEvent::Done { reason, .. } => {
+                assert_eq!(reason, opi_ai::stream::StopReason::Stop);
+                saw_done = true;
+            }
+            AssistantStreamEvent::Error { .. } => {
+                panic!("text fixture must complete with Done");
+            }
             _ => {}
         }
     }
+    assert!(saw_done, "text fixture must produce a terminal Done event");
 
     // verify() confirms the production request carried the Anthropic body,
     // x-api-key + anthropic-version headers, and the /v1/messages path.

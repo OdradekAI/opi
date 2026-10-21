@@ -21,6 +21,9 @@ use opi_ai::transcript::{
     tool_state_change_message,
 };
 
+#[path = "transcript_contract/provider_projection.rs"]
+mod provider_projection;
+
 fn tool(name: &str, description: &str) -> ToolDef {
     ToolDef {
         name: name.to_owned(),

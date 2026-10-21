@@ -22,8 +22,11 @@
 #![forbid(unsafe_code)]
 // Only the CA and one server identity are needed here; the shared fixture
 // module carries the full corpus for the TLS contract binary.
-#[allow(dead_code)]
-mod tls_fixtures;
+mod support {
+    #[allow(dead_code)]
+    pub(crate) mod tls_fixtures;
+}
+use support::tls_fixtures;
 
 use std::sync::{
     Arc, Mutex,

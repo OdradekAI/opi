@@ -8,13 +8,14 @@ runs the family's public-consumer profiles.
 Families:
 
 - ``ws`` (RDF-24): the actual ``opi-ai`` package contains the private owned
-  frame/PMD/Close/async-IO implementation and its retained protocol tests.
-  Those tests and clippy run from the extracted artifact in all three
-  feature graphs. Separate workspace-external consumers exercise only the
-  existing public HTTP Upgrade and detached raw stream. Private tests do
-  not prove a public provider/codec chain; that acceptance remains OPEN for
-  task 20.16. Both AWS-LC and, in the C-zlib union, libz-sys native provenance
-  are recorded from the consumer's actual Cargo units.
+  frame/PMD/Close/async-IO implementation and its retained protocol tests,
+  plus public Upgrade/WSS integration tests. Both suites and their clippy
+  targets run from the extracted artifact in all three feature graphs.
+  Separate workspace-external consumers exercise only the existing public
+  HTTP Upgrade and detached raw stream. These layers do not prove the real
+  Codex provider/codec chain; that acceptance remains OPEN for task 20.16.
+  Both AWS-LC and, in the C-zlib union, libz-sys native provenance are recorded
+  from the consumer's actual Cargo units.
 
 - ``crypto`` (task 20.14, RDF-23): the `consumer-crypto` template exercises
   the real public TLS/Models/Chat path (trust modes, mTLS, ALPN selection,
@@ -155,7 +156,8 @@ FAMILIES: dict[str, dict[str, Any]] = {
     },
     "ws": {
         "crate": "opi-ai",
-        "private_test_minimum": 108,
+        "private_test_minimum": 93,
+        "public_test_minimum": 15,
         "public_codec_status": "OPEN: task 20.16",
         "consumer": "consumer-ws",
         "profiles": [
@@ -429,7 +431,8 @@ def zlib_native_provenance(target: Path, messages: list[dict] | None = None,
 WS_PACKAGE_FILES = (
     "Cargo.toml", "LICENSE", "NOTICE", "src/ws.rs", "src/ws/frame.rs", "src/ws/pmd.rs", "src/ws/io.rs",
     "src/ws/tests/mod.rs", "src/ws/tests/upgrade.rs", "src/ws/tests/packaged_cases.rs",
-    "src/ws/tests/deflate_audit.rs", "src/ws/tests/tls_fixtures.rs",
+    "src/ws/tests/deflate_audit.rs",
+    "tests/ws_upgrade.rs", "tests/support/ws_peer.rs", "tests/support/tls_fixtures.rs",
     "src/ws/tests/fixtures/extract-boundary-fixtures.py",
     *(f"src/ws/tests/{name}.rs" for name in
       ("boundary", "close", "frame", "gaps", "io", "pmd", "pmd_async", "pmd_red", "replay")),
@@ -440,17 +443,19 @@ WS_PACKAGE_FILES = (
 
 
 def check_ws_package(package: Path) -> dict[str, str]:
-    """Require the retained private implementation/tests inside the real SDK."""
+    """Require private supplements and public Upgrade tests inside the real SDK."""
     for name in WS_PACKAGE_FILES:
         if not (package / name).is_file():
-            raise ValueError(f"missing private WS package file: {name}")
+            raise ValueError(f"missing WS package file: {name}")
     manifest = tomllib.loads((package / "Cargo.toml").read_text(encoding="utf-8"))
     if manifest.get("package", {}).get("name") != "opi-ai":
-        raise ValueError("private WS proof requires the extracted opi-ai package")
+        raise ValueError("WS package proof requires the extracted opi-ai package")
     if any("opi-ws" in manifest.get(key, {})
            for key in ("dependencies", "dev-dependencies", "build-dependencies")):
         raise ValueError("retired companion dependency in the SDK package")
-    paths = [package / "src/ws.rs", *sorted((package / "src/ws").rglob("*.rs"))]
+    paths = [package / "src/ws.rs", *sorted((package / "src/ws").rglob("*.rs")),
+             *(package / name for name in WS_PACKAGE_FILES if name.startswith("tests/")
+               and name.endswith(".rs"))]
     for path in paths:
         text = path.read_text(encoding="utf-8")
         if "opi_ws::" in text or "companions/ws" in text.replace("\\", "/"):
@@ -496,17 +501,17 @@ def check_ws_consumer(consumer: Path, package: Path) -> None:
             raise ValueError(f"external WS consumer must not include production source: {path}")
 
 
-def check_private_ws_report(output: str, minimum: int) -> int:
+def check_ws_test_report(output: str, minimum: int, suite: str) -> int:
     summaries = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed;", output)
     if len(summaries) != 1 or int(summaries[0][0]) < minimum or int(summaries[0][1]) != 0:
-        raise ValueError(f"packaged private WS battery must pass at least {minimum} tests")
+        raise ValueError(f"packaged {suite} suite must pass at least {minimum} tests")
     return int(summaries[0][0])
 
 
 def run_packaged_ws_checks(
     run: Any, package: Path, family: dict, caller_checksum_lock_path: Path,
 ) -> list[dict]:
-    """Run private tests from package bytes without adding a public test API."""
+    """Run both test layers from opi-ai package bytes without a public codec API."""
     profiles = []
     lock_path = package / "Cargo.lock"
     packaged_lock_sha256 = (hashlib.sha256(lock_path.read_bytes()).hexdigest()
@@ -549,17 +554,30 @@ def run_packaged_ws_checks(
         output = run(f"private-ws-test-{tag}",
                      ["cargo", "test", *manifest, "--lib", "ws::", "--offline", "--locked", *flags],
                      package)
-        passed = check_private_ws_report(output, family["private_test_minimum"])
-        run(f"private-ws-clippy-{tag}",
-            ["cargo", "clippy", *manifest, "--lib", "--offline", "--locked", *flags,
+        private_passed = check_ws_test_report(
+            output, family["private_test_minimum"], "private protocol supplements")
+        output = run(f"public-ws-test-{tag}",
+                     ["cargo", "test", *manifest, "--test", "ws_upgrade", "--offline", "--locked", *flags],
+                     package)
+        public_passed = check_ws_test_report(output, family["public_test_minimum"], "public Upgrade")
+        run(f"packaged-ws-clippy-{tag}",
+            ["cargo", "clippy", *manifest, "--lib", "--test", "ws_upgrade", "--offline", "--locked", *flags,
              "--", "-D", "warnings"], package)
-        profiles.append({"name": tag, "passed": passed,
+        profiles.append({"name": tag,
+                         "private_protocol": {
+                             "passed": private_passed,
+                             "scope": "extracted SDK private protocol supplements; not complete Codex wiring",
+                         },
+                         "public_upgrade": {
+                             "passed": public_passed,
+                             "scope": "extracted SDK public Upgrade/WSS integration; not complete Codex wiring",
+                         },
                          "graph": graph,
                          "packaged_library_lock_sha256": packaged_lock_sha256,
                          "resolved_library_lock_sha256": hashlib.sha256(lock_path.read_bytes()).hexdigest(),
                          "resolved_library_lock_missing_reviewed_identities": library_lock_missing,
                          "caller_checksum_lock": caller_checksum_lock,
-                         "scope": "extracted SDK private protocol/Upgrade tests; not a public consumer"})
+                         "scope": "extracted opi-ai regression tests; not a workspace-external consumer"})
     return profiles
 
 
@@ -623,7 +641,7 @@ def main() -> int:
         },
     }
     if args.family == "ws":
-        evidence["scope"] = "packaged SDK private WS tests plus external public Upgrade-only proof"
+        evidence["scope"] = "packaged opi-ai protocol supplements and public Upgrade tests plus external Upgrade proof"
         evidence["public_codec_status"] = family["public_codec_status"]
         evidence["public_codec_exercised"] = False
 
@@ -664,7 +682,7 @@ def main() -> int:
         }
         package = shared.unpack_package(archive, scratch / "package", prefix)
         if args.family == "ws":
-            evidence["private_ws_files"] = check_ws_package(package)
+            evidence["ws_package_files"] = check_ws_package(package)
         consumer = scratch / "consumer"
         shutil.copytree(
             HARNESS / family["consumer"],
@@ -682,7 +700,7 @@ def main() -> int:
         run("consumer-lock", ["cargo", "generate-lockfile", "--offline"], consumer)
         lock = tomllib.loads((consumer / "Cargo.lock").read_text(encoding="utf-8"))
         if args.family == "ws":
-            evidence["private_ws_profiles"] = run_packaged_ws_checks(
+            evidence["packaged_ws_profiles"] = run_packaged_ws_checks(
                 run, package, family, consumer / "Cargo.lock")
             run("private-ws-doc", ["cargo", "doc", "--manifest-path", str(package / "Cargo.toml"),
                                    "--no-deps", "--offline", "--locked"], package)

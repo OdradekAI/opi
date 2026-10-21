@@ -214,7 +214,8 @@ class WsFamilyTests(unittest.TestCase):
         ws = FAMILIES["ws"]
         self.assertEqual(ws["crate"], "opi-ai")
         self.assertNotIn("package_dir", ws)
-        self.assertEqual(ws["private_test_minimum"], 108)
+        self.assertEqual(ws["private_test_minimum"], 93)
+        self.assertEqual(ws["public_test_minimum"], 15)
         self.assertEqual(ws["public_codec_status"], "OPEN: task 20.16")
         self.assertEqual(ws["consumer"], "consumer-ws")
         self.assertEqual(ws["expected_checks"], 6)
@@ -572,6 +573,29 @@ class WsPackageBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing.*deflate_audit"):
             package_slice.check_ws_package(self.package)
 
+    def test_missing_public_upgrade_test_or_shared_fixture_fails_before_build(self):
+        for name in ["tests/ws_upgrade.rs", "tests/support/ws_peer.rs", "tests/support/tls_fixtures.rs"]:
+            path = self.package / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("retained test source", encoding="utf-8")
+            package_slice.check_ws_package(self.package)
+            path.unlink()
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "missing.*" + path.name):
+                package_slice.check_ws_package(self.package)
+            path.write_text("retained test source", encoding="utf-8")
+
+    def test_private_upgrade_can_include_only_the_packaged_shared_peer(self):
+        peer = self.package / "tests/support/ws_peer.rs"
+        peer.parent.mkdir(parents=True, exist_ok=True)
+        peer.write_text("// shared loopback test peer", encoding="utf-8")
+        upgrade = self.package / "src/ws/tests/upgrade.rs"
+        upgrade.write_text('mod peer { include!("../../../tests/support/ws_peer.rs"); }',
+                           encoding="utf-8")
+        package_slice.check_ws_package(self.package)
+        peer.write_text('include!("../../../checkout/ws_peer.rs");', encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "external|missing"):
+            package_slice.check_ws_package(self.package)
+
     def test_missing_license_or_fixture_extraction_source_fails_closed(self):
         for name in ["LICENSE", "src/ws/tests/fixtures/extract-boundary-fixtures.py"]:
             path = self.package / name
@@ -638,16 +662,20 @@ class WsPackageBoundaryTests(unittest.TestCase):
             with self.subTest(reference=reference), self.assertRaisesRegex(ValueError, "production source"):
                 package_slice.check_ws_consumer(consumer, self.package)
 
-    def test_empty_filter_or_missing_battery_is_not_private_protocol_proof(self):
-        for output in ["test result: ok. 0 passed; 0 failed; 108 filtered out;",
-                       "test result: ok. 102 passed; 0 failed; 0 ignored;"]:
-            with self.subTest(output=output), self.assertRaisesRegex(ValueError, "108"):
-                package_slice.check_private_ws_report(output, 108)
-        self.assertEqual(package_slice.check_private_ws_report(
-            "test result: ok. 108 passed; 0 failed; 0 ignored;", 108), 108)
+    def test_empty_filter_or_missing_suite_cannot_supply_either_layer(self):
+        for suite, minimum in [("private protocol supplements", 93), ("public Upgrade", 15)]:
+            for output in [f"test result: ok. 0 passed; 0 failed; {minimum} filtered out;",
+                           f"test result: ok. {minimum - 1} passed; 0 failed; 0 ignored;",
+                           f"test result: ok. {minimum} passed; 1 failed; 0 ignored;",
+                           f"test result: ok. {minimum} passed; 0 failed;\n" * 2]:
+                with self.subTest(suite=suite, output=output), self.assertRaisesRegex(ValueError, suite):
+                    package_slice.check_ws_test_report(output, minimum, suite)
+            self.assertEqual(package_slice.check_ws_test_report(
+                f"test result: ok. {minimum} passed; 0 failed; 0 ignored;", minimum, suite), minimum)
 
-    def test_private_gates_use_only_extracted_sdk_and_dependency_feature_unions(self):
+    def test_both_layers_use_extracted_sdk_and_dependency_feature_unions(self):
         commands = []
+        family = dict(package_slice.FAMILIES["ws"], private_test_minimum=93, public_test_minimum=15)
         caller_lock = Path(self.temp.name) / "caller" / "Cargo.lock"
         caller_lock.parent.mkdir()
 
@@ -682,20 +710,18 @@ class WsPackageBoundaryTests(unittest.TestCase):
                     [entry for entry in metadata["packages"] if entry["name"] != "libz-sys"]),
                     encoding="utf-8")
                 return json.dumps(metadata)
-            return "test result: ok. 108 passed; 0 failed; 0 ignored;"
+            passed = 15 if "--test" in command else 93
+            return f"test result: ok. {passed} passed; 0 failed; 0 ignored;"
 
         result = package_slice.run_packaged_ws_checks(
-            run, self.package, package_slice.FAMILIES["ws"], caller_lock)
+            run, self.package, family, caller_lock)
         self.assertEqual(len(result), 3)
         self.assertEqual(sum("metadata" in command for _, command, _ in commands), 3)
-        for name, command, _ in commands:
-            if "clippy" in name:
-                self.assertNotIn("--tests", command)
         for index, profile in enumerate(["ordinary", "union-default", "union-c-zlib"]):
-            metadata_name, metadata_command, _ = commands[index * 3]
+            metadata_name, metadata_command, _ = commands[index * 4]
             self.assertEqual(metadata_name, f"private-ws-metadata-{profile}")
             self.assertNotIn("--locked", metadata_command)
-            name, command, cwd = commands[index * 3 + 1]
+            name, command, cwd = commands[index * 4 + 1]
             self.assertEqual(name, f"private-ws-test-{profile}")
             self.assertEqual(cwd, self.package)
             self.assertIn(str(self.package / "Cargo.toml"), command)
@@ -705,6 +731,30 @@ class WsPackageBoundaryTests(unittest.TestCase):
                 self.assertIn(["flate2/default", "flate2/zlib"][index - 1], command)
             self.assertNotIn("opi-ws", " ".join(command))
             self.assertIn("--locked", command)
+            name, public_command, cwd = commands[index * 4 + 2]
+            self.assertEqual(name, f"public-ws-test-{profile}")
+            self.assertEqual(cwd, self.package)
+            self.assertIn(str(self.package / "Cargo.toml"), public_command)
+            self.assertEqual(public_command[public_command.index("--test") + 1], "ws_upgrade")
+            self.assertNotIn("--lib", public_command)
+            self.assertNotIn("ws::", public_command)
+            self.assertIn("--offline", public_command)
+            self.assertIn("--locked", public_command)
+            if index:
+                self.assertIn(["flate2/default", "flate2/zlib"][index - 1], public_command)
+            name, clippy_command, cwd = commands[index * 4 + 3]
+            self.assertEqual(name, f"packaged-ws-clippy-{profile}")
+            self.assertEqual(cwd, self.package)
+            self.assertIn("--lib", clippy_command)
+            self.assertEqual(clippy_command[clippy_command.index("--test") + 1], "ws_upgrade")
+            self.assertNotIn("--all-targets", clippy_command)
+            self.assertNotIn("--tests", clippy_command)
+            self.assertEqual(result[index]["private_protocol"]["passed"], 93)
+            self.assertEqual(result[index]["public_upgrade"]["passed"], 15)
+            self.assertIn("supplements", result[index]["private_protocol"]["scope"])
+            self.assertIn("public Upgrade", result[index]["public_upgrade"]["scope"])
+            for suite in ["private_protocol", "public_upgrade"]:
+                self.assertIn("not complete Codex wiring", result[index][suite]["scope"])
             self.assertIn("aws-lc-sys", result[index]["graph"])
             self.assertIn("resolved_library_lock_sha256", result[index])
             self.assertEqual(result[index]["caller_checksum_lock"]["sha256"],
@@ -718,7 +768,7 @@ class WsPackageBoundaryTests(unittest.TestCase):
             for entry in caller_entries]), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "checksum for libz-sys"):
             package_slice.run_packaged_ws_checks(
-                run, self.package, package_slice.FAMILIES["ws"], caller_lock)
+                run, self.package, family, caller_lock)
 
     def test_fresh_caller_checksum_lock_precedes_private_protocol_checks(self):
         repo, target, scratch = (Path(self.temp.name) / name for name in ("repo", "target", "proof"))
@@ -754,6 +804,9 @@ class WsPackageBoundaryTests(unittest.TestCase):
             self.assertEqual(package_slice.main(), 1)
         evidence = json.loads((scratch / "evidence.json").read_text(encoding="utf-8"))
         self.assertEqual(evidence["error"], "stop after fresh caller checksum lock")
+        self.assertIn("ws_package_files", evidence)
+        self.assertEqual(set(evidence["ws_package_files"]), set(package_slice.WS_PACKAGE_FILES))
+        self.assertNotIn("private_ws_files", evidence)
 
     def test_sdk_packaging_precedes_all_private_ws_gates(self):
         with tempfile.TemporaryDirectory(prefix="opi-ws-bridge-gates-") as temp:
@@ -788,7 +841,8 @@ class WsPackageBoundaryTests(unittest.TestCase):
             self.assertIn("package failed", evidence["error"])
             steps = evidence["steps"]
             names = [step["name"] for step in steps]
-            self.assertFalse(any(name.startswith(("companion-", "bridge-check", "private-ws-"))
+            self.assertFalse(any(name.startswith(("companion-", "bridge-check", "private-ws-",
+                                                  "public-ws-", "packaged-ws-"))
                                  for name in names))
             package_step = next(step for step in steps if step["name"] == "package")
             self.assertIn("opi-ai", package_step["command"])

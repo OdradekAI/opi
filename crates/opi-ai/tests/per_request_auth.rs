@@ -138,6 +138,7 @@ async fn anthropic_stream_prepared_applies_bearer_header_not_api_key_header() {
                 .set_body_string("")
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -155,9 +156,14 @@ async fn anthropic_stream_prepared_applies_bearer_header_not_api_key_header() {
     );
     drain(&mut stream).await;
 
-    // verify() fails if no request matched the `authorization: Bearer …` matcher,
-    // which proves the Bearer scheme selected the Authorization header (not x-api-key).
+    // The exact-match expectation proves the supplied Bearer token was sent.
     server.verify().await;
+    let requests = server.received_requests().await.expect("recorded requests");
+    assert_eq!(requests.len(), 1);
+    assert!(
+        !requests[0].headers.contains_key("x-api-key"),
+        "Bearer authentication must not also send an API-key header"
+    );
 }
 
 #[tokio::test]
@@ -170,6 +176,7 @@ async fn openai_chat_stream_prepared_applies_resolved_secret_to_authorization_he
                 .set_body_string("")
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -202,6 +209,7 @@ async fn openai_responses_stream_prepared_applies_resolved_secret_to_authorizati
                 .set_body_string("")
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -234,6 +242,7 @@ async fn anthropic_stream_prepared_uses_supplied_auth_at_the_wire() {
                 .set_body_string("")
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -255,6 +264,12 @@ async fn anthropic_stream_prepared_uses_supplied_auth_at_the_wire() {
 
     // verify() fails if no request matched the supplied Bearer matcher.
     server.verify().await;
+    let requests = server.received_requests().await.expect("recorded requests");
+    assert_eq!(requests.len(), 1);
+    assert!(
+        !requests[0].headers.contains_key("x-api-key"),
+        "supplied Bearer authentication must not also send an API-key header"
+    );
 }
 
 #[tokio::test]
@@ -267,6 +282,7 @@ async fn openai_chat_stream_prepared_uses_supplied_auth_at_the_wire() {
                 .set_body_string("")
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -299,6 +315,7 @@ async fn openai_responses_stream_prepared_uses_supplied_auth_at_the_wire() {
                 .set_body_string("")
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -324,11 +341,13 @@ async fn openai_codex_stream_prepared_uses_supplied_auth_at_the_wire() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(header("authorization", "Bearer prepared-codex-token"))
+        .and(header("chatgpt-account-id", "prepared-codex-account"))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_string("")
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -337,7 +356,7 @@ async fn openai_codex_stream_prepared_uses_supplied_auth_at_the_wire() {
         vec![ModelInfo::new(
             "gpt-5",
             "gpt-5",
-            WireApi::OpenAiResponses,
+            WireApi::OpenAiCodexResponses,
             ModelCapabilities::new(100_000, 4_096),
         )],
         Arc::new(HttpClient::new()),
@@ -346,7 +365,7 @@ async fn openai_codex_stream_prepared_uses_supplied_auth_at_the_wire() {
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("prepared-codex-token"),
         base_url: None,
-        account_id: None,
+        account_id: Some("prepared-codex-account".into()),
         provenance: AuthProvenance::default(),
     };
     let mut stream = provider.stream_prepared(sample_request("openai-codex:gpt-5"), resolved);

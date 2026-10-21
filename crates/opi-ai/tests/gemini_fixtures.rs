@@ -634,6 +634,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
                 .set_body_string(sse)
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -664,13 +665,26 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
     };
 
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut saw_done = false;
     while let Some(result) = stream.next().await {
-        match result {
-            Ok(event) if event.is_terminal() => break,
-            Err(_) => break,
+        match result.expect("matched text request must stream successfully") {
+            AssistantStreamEvent::Done { reason, message } => {
+                assert!(!saw_done, "text request must have one terminal event");
+                assert_eq!(reason, opi_ai::stream::StopReason::Stop);
+                assert_eq!(
+                    message.usage,
+                    opi_ai::stream::Usage::reported(5, 2, 0, 0, None, None),
+                    "HTTP usage must retain the fixture's exact token values"
+                );
+                saw_done = true;
+            }
+            AssistantStreamEvent::Error { .. } => {
+                panic!("text fixture must complete with Done");
+            }
             _ => {}
         }
     }
+    assert!(saw_done, "text fixture must produce a terminal Done event");
 
     // verify() confirms the production request carried the Gemini body
     // (contents + systemInstruction + generationConfig.maxOutputTokens), the
@@ -678,6 +692,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
     // structural path (model + :streamGenerateContent) is asserted by the
     // vertex lifecycle suite and the URL-construction unit tests above.
     server.verify().await;
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]

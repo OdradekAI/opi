@@ -21,9 +21,11 @@
 
 #![forbid(unsafe_code)]
 
-mod tls_fixtures;
+mod support {
+    pub(crate) mod tls_fixtures;
+}
 
-use tls_fixtures::*;
+use support::tls_fixtures::*;
 
 use std::{
     convert::Infallible,

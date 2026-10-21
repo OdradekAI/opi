@@ -83,6 +83,41 @@ hashes and the actual URL/regex/IDNA/ICU/Unicode dependency sources and features
 The consumer lockfile records resolved registry checksums; a repository lockfile
 does not constrain all future library consumers.
 
+## Transport families and SDK test layers
+
+`package_slice.py --family <ws|crypto|http> --offline --scratch <new-directory>
+--target-dir <existing-cache>` uses the same actual `opi-ai` Cargo package for
+each bounded transport proof. The family selects scenarios and dependency
+graphs; it does not introduce an independently packaged WS, TLS or crypto
+module. The scratch/cache, offline and source-replacement rules above apply.
+
+The WS family records three distinct layers from each ordinary/default/C-zlib
+graph:
+
+- `packaged_ws_profiles[].private_protocol`: private state-machine supplements
+  selected by `cargo test --lib ws::` inside the extracted SDK.
+- `packaged_ws_profiles[].public_upgrade`: public-interface integration tests
+  selected by `cargo test --test ws_upgrade` inside that same SDK package.
+- `profiles[]`: a separate workspace-external consumer using the packaged public
+  Upgrade interface and detached raw stream.
+
+`ws_package_files` records the packaged implementation, both test layers, shared
+test helper, fixtures and notices. Counts verify complete execution of the
+selected regression batteries; neither private codec tests nor public raw
+Upgrade tests establish the pending real Models → Codex → Upgrade → codec
+path. The crypto family retains its public Models → Chat → HttpClient → TLS
+consumer; key/signing state-machine tests remain local to `src/crypto`.
+
+Shared TLS constants live in `tests/support/tls_fixtures.rs`, alongside the
+shared peer. They are imported by the public integration targets and remain
+inside the actual package; they are not a separate zero-test Cargo target.
+
+Run harness regressions with:
+
+```powershell
+python -B -m unittest discover -s scripts/pi-sdk-conformance -p "test_package*.py"
+```
+
 ## Battery
 
 All 43 original leaf cases now exercise public Schema operations: 14 ECMA

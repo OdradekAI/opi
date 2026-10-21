@@ -3,14 +3,20 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use opi_ai::auth::{AuthScheme, ResolvedAuth};
 use opi_ai::http::HttpClient;
-use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
+use opi_ai::message::{
+    AssistantContent, AssistantMessage, InputContent, Message, ToolDef, UserMessage,
+};
 use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
 use opi_ai::{ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, WireApi};
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+#[path = "openai_codex_responses/replay.rs"]
+mod replay;
 
 fn auth(secret: &str, base_url: Option<String>, account_id: Option<String>) -> ResolvedAuth {
     ResolvedAuth {
@@ -114,6 +120,34 @@ async fn capture_stream(
         }
     }
     (captures, events, errors)
+}
+
+async fn typed_terminal(
+    provider: &dyn Provider,
+    request: Request,
+    auth: ResolvedAuth,
+) -> AssistantMessage {
+    let mut stream = provider.stream_prepared(request, auth);
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let mut terminal = None;
+        while let Some(result) = stream.next().await {
+            let event = result.expect("scripted Codex response must stream successfully");
+            assert!(terminal.is_none(), "no event may follow the terminal Done");
+            match event {
+                AssistantStreamEvent::Done { reason, message } => {
+                    assert_eq!(message.stop_reason, reason);
+                    terminal = Some(message);
+                }
+                AssistantStreamEvent::Error { .. } => {
+                    panic!("Codex response must finish with Done")
+                }
+                _ => {}
+            }
+        }
+        terminal.expect("Codex response must produce exactly one Done and EOF")
+    })
+    .await
+    .expect("Codex response must terminate within the peer deadline")
 }
 
 #[tokio::test]
@@ -447,7 +481,7 @@ async fn dedicated_codex_data_only_frames_stream_to_completion() {
         r#"data: {"type":"response.content_part.added","part":{"type":"output_text","text":""}}"#,
         r#"data: {"type":"response.output_text.delta","delta":"Hello"}"#,
         r#"data: {"type":"response.output_item.done","item":{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello"}]}}"#,
-        r#"data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":5,"output_tokens":3,"input_tokens_details":{"cached_tokens":0}}}}"#,
+        r#"data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":13,"output_tokens":9,"input_tokens_details":{"cached_tokens":4},"output_tokens_details":{"reasoning_tokens":3}}}}"#,
         "data: [DONE]",
     ]
     .join("\n\n");
@@ -459,6 +493,7 @@ async fn dedicated_codex_data_only_frames_stream_to_completion() {
                 .set_body_string(format!("{sse}\n\n"))
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
     let provider = OpenAiCodexResponsesProvider::new(
@@ -472,16 +507,24 @@ async fn dedicated_codex_data_only_frames_stream_to_completion() {
         Some("account-fixed".into()),
     );
 
-    let (captures, events, errors) = capture_stream(&provider, request(), auth).await;
+    let request = request();
+    let canonical = serde_json::to_vec(&request.context).unwrap();
+    let message = typed_terminal(&provider, request.clone(), auth).await;
 
-    assert_eq!(errors, 0, "{captures:?}");
-    assert!(events > 1, "expected stream events: {captures:?}");
-    let rendered = captures.join("\n");
-    assert!(rendered.contains("Hello"), "text delta missing: {rendered}");
-    assert!(
-        rendered.contains(r#""type":"done""#),
-        "no terminal done: {rendered}"
+    assert_eq!(message.stop_reason, StopReason::Stop);
+    assert_eq!(message.provider, "openai-codex");
+    assert_eq!(message.wire, Some(WireApi::OpenAiCodexResponses));
+    assert_eq!(message.model, "gpt-5.4");
+    assert_eq!(
+        message.content,
+        [AssistantContent::Text {
+            text: "Hello".into()
+        }]
     );
+    assert_eq!(message.usage, Usage::reported(13, 9, 4, 0, None, Some(3)));
+    assert_eq!(serde_json::to_vec(&request.context).unwrap(), canonical);
+    server.verify().await;
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -492,7 +535,7 @@ async fn dedicated_codex_incomplete_terminal_is_length_not_error() {
         r#"data: {"type":"response.output_item.added","item":{"type":"message","id":"msg_1","role":"assistant","status":"in_progress","content":[]}}"#,
         r#"data: {"type":"response.content_part.added","part":{"type":"output_text","text":""}}"#,
         r#"data: {"type":"response.output_text.delta","delta":"Hel"}"#,
-        r#"data: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":5,"output_tokens":3,"input_tokens_details":{"cached_tokens":0}}}}"#,
+        r#"data: {"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":17,"output_tokens":7,"input_tokens_details":{"cached_tokens":5},"output_tokens_details":{"reasoning_tokens":2}}}}"#,
     ]
     .join("\n\n");
     let server = MockServer::start().await;
@@ -503,6 +546,7 @@ async fn dedicated_codex_incomplete_terminal_is_length_not_error() {
                 .set_body_string(format!("{sse}\n\n"))
                 .insert_header("content-type", "text/event-stream"),
         )
+        .expect(1)
         .mount(&server)
         .await;
     let provider = OpenAiCodexResponsesProvider::new(
@@ -516,15 +560,75 @@ async fn dedicated_codex_incomplete_terminal_is_length_not_error() {
         Some("account-fixed".into()),
     );
 
-    let (captures, events, errors) = capture_stream(&provider, request(), auth).await;
+    let request = request();
+    let canonical = serde_json::to_vec(&request.context).unwrap();
+    let message = typed_terminal(&provider, request.clone(), auth).await;
 
-    assert_eq!(errors, 0, "incomplete must not error: {captures:?}");
-    assert!(events > 0, "{captures:?}");
-    let rendered = captures.join("\n");
-    assert!(
-        rendered.contains(r#""reason":"length""#),
-        "expected length stop: {rendered}"
+    assert_eq!(message.stop_reason, StopReason::Length);
+    assert_eq!(message.provider, "openai-codex");
+    assert_eq!(message.wire, Some(WireApi::OpenAiCodexResponses));
+    assert_eq!(
+        message.content,
+        [AssistantContent::Text { text: "Hel".into() }]
     );
+    assert_eq!(message.usage, Usage::reported(17, 7, 5, 0, None, Some(2)));
+    assert_eq!(serde_json::to_vec(&request.context).unwrap(), canonical);
+    server.verify().await;
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn dedicated_codex_completed_distinguishes_unreported_usage_from_reported_zero() {
+    for (usage, expected) in [
+        (None, Usage::unknown()),
+        (
+            Some(serde_json::json!({
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "input_tokens_details": {"cached_tokens": 0},
+                "output_tokens_details": {"reasoning_tokens": 0}
+            })),
+            Usage::reported(0, 0, 0, 0, None, Some(0)),
+        ),
+    ] {
+        let mut response = serde_json::json!({"status": "completed", "output": []});
+        if let Some(usage) = usage {
+            response["usage"] = usage;
+        }
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/codex/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(format!(
+                        "data: {}\n\n",
+                        serde_json::json!({"type": "response.completed", "response": response})
+                    ))
+                    .insert_header("content-type", "text/event-stream"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let provider = OpenAiCodexResponsesProvider::new(
+            Some(server.uri()),
+            vec![model(None)],
+            Arc::new(HttpClient::new()),
+        );
+        let request = request();
+        let canonical = serde_json::to_vec(&request.context).unwrap();
+        let message = typed_terminal(
+            &provider,
+            request.clone(),
+            auth("sentinel-access", None, Some("account-fixed".into())),
+        )
+        .await;
+
+        assert_eq!(message.stop_reason, StopReason::Stop);
+        assert_eq!(message.usage, expected);
+        assert_eq!(serde_json::to_vec(&request.context).unwrap(), canonical);
+        server.verify().await;
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
 }
 
 #[tokio::test]
