@@ -77,7 +77,7 @@ OpenAI-compatible profile 加入。
 | `AuthResolver` / `ResolvedAuth` | 由 driver 按调用解析的鉴权契约；attempt 开始前会冻结一次准备结果。 |
 | `ApiKind` | crate 根枚举，标注 assistant 消息携带的后端家族（`Anthropic`、`OpenAi`、`Google`、`Mistral`）。 |
 | `HttpClient` | 共享 `reqwest` client，支持连接池和显式/环境变量代理。 |
-| `ws` | 严格动态 WebSocket Upgrade 桥（`upgrade`、`WsUpgradeRequest`、`Negotiation`、`fresh_nonce`/`fresh_mask`）：请求头、nonce/mask 熵与严格的 101 校验；中立 frame/PMD/Close/IO 状态机由 `opi-ws` companion 持有。 |
+| `ws` | 公开严格动态 WebSocket Upgrade 桥（`upgrade`、`WsUpgradeRequest`、`Negotiation`、`fresh_nonce`/`fresh_mask`）：请求头、nonce/mask 熵与严格的 101 校验。Frame/PMD/Close/IO 模块为私有；Upgrade 返回原始升级流与协商 metadata。 |
 | `retry` | 采集重试唯一 owner（`AcquisitionPolicy`、`RetryAdmission`、`AcquisitionSeal`），以及产品侧重试配置、指数退避和 `Retry-After` 解析。 |
 | `Usage` / `CumulativeUsage` | token 累计和费用辅助。 |
 | `test_support::MockProvider` | 供下游测试使用的确定性 mock provider。 |
@@ -339,15 +339,82 @@ permessage-deflate 参数校验（无重复条目、无未知参数、值域合�
 的参数、client 窗口不高于提议上限）。任何违规都会在流分离前以类型化的
 `WsUpgradeError` 失败。
 
-中立协议状态机刻意位于本 crate 之外：`opi-ws` Independent Companion
-（`companions/ws`，以 path-only 开发依赖接入）拥有严格 RFC 6455 帧、消息装配、
-恰好一次 `00 00 FF FF` tail 注入的 permessage-deflate、显式 Close 交换与异步 IO
-owner。`Negotiation::driver_parameters` 返回 `Option<NegotiatedPmd>`，
-保留两个方向各自的 context-takeover 标志与窗口；调用方显式按字段映射到
-`opi_ws::io::PmdParameters`，再由分离的 `reqwest::Upgraded` 流构造
-`Driver::new`；发布包待发布授权后按 registry identity 解析该
-companion。真实 Provider 消费者（Codex WebSocket，20.16）与平台/打包验收
-（20.57/20.58）保持 OPEN。
+协议状态机位于 SDK 内部私有的 `src/ws/frame.rs`、`pmd.rs`、`io.rs` 模块。
+没有公开 codec API、test-only export 或 Cargo feature，也没有独立的包、版本与
+发布身份。公开 Upgrade 结果仍为原始 `reqwest::Upgraded` 流与协商 metadata，
+Upgrade 不构造私有 codec。`Negotiation::driver_parameters` 返回
+`Option<NegotiatedPmd>`，保留两个方向各自的 context-takeover 标志与窗口。
+私有 codec 当前尚无生产调用方。仅物理合并不能证明 Models → 真实 Codex →
+Upgrade → codec（20.16）、continuation/pool/cleanup（20.17）、最终组装 SDK
+包（20.57）或原生平台/MSRV（20.58）已验收；这些仍保持 OPEN。
+
+### 私有协议所有权
+
+| 模块 | 合同 |
+|---|---|
+| `ws::frame` | 严格客户端帧解码（保留 opcode/RSV、分片、控制帧形状、最短长度编码、64 位高位）及消息装配；存储按实际到达字节增长，类型化 fallible 预留。 |
+| `ws::pmd` | 自有 permessage-deflate：tail 前 `SyncPoint` 证明、恰好一次 `00 00 FF FF` 注入、`Z_BLOCK`/`BFINAL`/`ResetKeep` 处理、context takeover 与每 poll 有界工作量；encoder 是普通安全 `flate2` 客户端。 |
+| `ws::io` | 独占连接 owner，持有 pending read/write/decode 任务、显式 Close、调用方提供的 mask、背压与终态失败吸收。 |
+
+一个私有 `Driver` 拥有完整连接状态。借用的 `next()` future 返回完整消息
+（含 Ping/Pong/Close）；丢弃借用保留部分 frame/PMD/UTF-8 状态，可恢复同一
+owned 操作。Owner 的逻辑取消/abort/Drop 则释放资源并抑制晚输出；idle owner
+必须注册真实取消唤醒。取消借用不授权连接归池。协议层不发现 auth、不创建
+timer 或 mask 熵、不重连/重试、不决定 provider/resource policy。
+
+双向 PMD 参数按 server 值配置接收、client 值配置发送。`None` 禁用 PMD；RFC
+省略的窗口参数映射为 15。固定 encoder 内部将请求窗口 8 归一化为 9；测试
+独立核对真实 wire distance 是否满足协商的 256 字节窗口，不以配置数字为证明。
+
+显式 Close 要求双帧、写 shutdown 与对端 transport EOF，保留部分应用写，区分
+已写字节和 pending flush，保留有界 in-flight 事件，deadline 仅为调用方显式
+绝对 `tokio::time::Instant`。异常 EOF/协议/Close 超时只报一次类型化错误，丢弃
+保留的接收事件，随后接收永久 EOF；成功 Close 仍可交付保留事件。存储随实际
+接收字节增长，以 `try_reserve*` 类型化失败，从不按声明 payload 投机分配。
+IO/inflate/UTF-8/continuation 内部工作量 quota 提供协作让出，不是消息大小或
+迭代上限。分配、单次 backend 调用与同步出站编码不可硬抢占。
+
+### 压缩与维护边界
+
+未修改的依赖图为 `libz-rs-sys = 0.6.8`（关 defaults，开 `std` +
+`rust-allocator`）、实际解析 `zlib-rs 0.6.8` 与 `flate2 = 1.1.10`（关 defaults，
+开 `zlib-rs`）。decoder 使用 doc(hidden) 公开的 `inflateSyncPoint` /
+`inflateResetKeep` 及传递 zlib-rs `__internal-api`。窄范围本地 unsafe 边界在
+`src/ws/pmd.rs` 内说明：唯一 boxed `z_stream`、无 clone/自定义 allocator/
+callback/raw handle 泄漏、调用前后指针重绑定、恰好一次 `inflateEnd`，以及
+刻意的 `Send` 而非 `Sync`。没有本地 extern 声明或动态 system zlib 选择。
+压缩许可证及 source/feature/native 审查义务见 [NOTICE](NOTICE)。
+
+| Caller 图 | Encoder 后端 | Decoder 后端 |
+|---|---|---|
+| ordinary | flate2 `zlib-rs` | 直接 `libz-rs-sys` Rust 路径 |
+| `flate2/default` | flate2 `zlib-rs`，合并 default features | 直接 `libz-rs-sys` Rust 路径 |
+| `flate2/zlib` | flate2 `zlib`（原生 C `libz-sys` 构建） | 直接 `libz-rs-sys` Rust 路径 |
+
+flate2 1.1.10 优先 C 后端，其次 zlib-rs，最后 miniz_oxide。default union 只向
+图中加入 miniz_oxide，并不选用其 encoder。C-zlib native source/build/link 输入
+须另行审查。allocator 冲突、gz/gzprintf、nightly、export-symbols/prefix 与其他
+未审 union 不继承支持。隐藏 API/unsafe/feature/安全变化、接受集缩小或新的
+生产消费者均须重审。依赖升级须记录实际 source/checksum/features，并重跑
+三图语料、Send/Close/取消/公平性及打包检查。
+
+### 局部协议检查
+
+迁移后的私有测试位于 `src/ws/tests`，原始 fixture 位于 `src/ws/tests/fixtures`。
+边界重放重新生成固定 72,413 条 PMD 语料并核对记录分类（超过 64 字节的输出
+用 SHA-256）；提取来源与 oracle 身份随 fixture 保留。三图运行同一组测试：
+
+```sh
+cargo test -p opi-ai --lib ws::
+cargo test -p opi-ai --lib ws:: --features flate2/default
+cargo test -p opi-ai --lib ws:: --features flate2/zlib
+```
+
+私有 loopback 测试将公开 Upgrade/`HttpClient` 与 codec 组装，包含双向窗口 8
+协商、有/无 context takeover 的多消息、独立 RFC 1951 decoder 及 distance-257
+反控制。它们验证 `cfg(test)` 接线，不证明生产 Codex 路径或外部公开 codec。
+idle cancellation 测试等待真实 Pending read waker，在 owner 内取消，并在
+ACK 前观察 transport/PMD 释放，没有新增生产取消 API。
 
 ## 代理
 
@@ -678,4 +745,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 许可证
 
-MIT。详见 workspace [LICENSE](../../LICENSE)。
+MIT。详见包内 [LICENSE](LICENSE) 与压缩 [NOTICE](NOTICE)。

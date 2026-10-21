@@ -133,14 +133,14 @@ class FamilyGraphTests(unittest.TestCase):
         graph = package_slice.check_family_graph(metadata, self.package, self.family["graph_requirements"])
         self.assertEqual(graph["aws-lc-sys"]["version"], "0.46.0")
 
-    def test_http_gzip_does_not_require_the_ws_hidden_zlib_api(self):
+    def test_sdk_decoder_requires_hidden_zlib_api_in_http_graph_too(self):
         http = package_slice.FAMILIES["http"]
         metadata = graph_metadata(http["graph_requirements"] + [("zlib-rs", "0.6.8")],
                                   self.package / "Cargo.toml")
         metadata["resolve"]["nodes"][-1]["features"] = ["rust-allocator", "std"]
-        graph = package_slice.check_family_graph(metadata, self.package,
-                                                 http["graph_requirements"], profile_name="caller-union")
-        self.assertEqual(graph["zlib-rs"]["features"], ["rust-allocator", "std"])
+        with self.assertRaisesRegex(ValueError, "zlib-rs feature profile"):
+            package_slice.check_family_graph(metadata, self.package,
+                                             http["graph_requirements"], profile_name="caller-union")
 
     def test_http_gzip_still_rejects_unreviewed_zlib_features(self):
         http = package_slice.FAMILIES["http"]
@@ -154,10 +154,10 @@ class FamilyGraphTests(unittest.TestCase):
     def test_ws_decoder_still_requires_the_hidden_zlib_api(self):
         requirements = package_slice.FAMILIES["ws"]["profiles"][0]["graph_requirements"]
         metadata = graph_metadata(requirements, self.package / "Cargo.toml")
-        metadata["packages"][0]["name"] = "opi-ws"
-        metadata["resolve"]["nodes"][2]["features"] = ["rust-allocator", "std"]
+        next(node for node in metadata["resolve"]["nodes"]
+             if node["id"].startswith("zlib-rs "))["features"] = ["rust-allocator", "std"]
         with self.assertRaisesRegex(ValueError, "zlib-rs feature profile"):
-            package_slice.check_family_graph(metadata, self.package, requirements, "opi-ws")
+            package_slice.check_family_graph(metadata, self.package, requirements)
 
     def test_native_roots_or_tls_union_is_not_the_reviewed_http_profile(self):
         http = package_slice.FAMILIES["http"]
@@ -206,15 +206,16 @@ class FamilyRegistryTests(unittest.TestCase):
 
 
 class WsFamilyTests(unittest.TestCase):
-    """The ws family packages the standalone companion, not the SDK."""
+    """Private package checks and external public Upgrade have distinct scopes."""
 
-    def test_ws_family_registered_with_companion_shape(self):
+    def test_ws_family_uses_sdk_and_records_public_codec_as_open(self):
         from package_slice import FAMILIES
 
         ws = FAMILIES["ws"]
-        self.assertEqual(ws["kind"], "companion")
-        self.assertEqual(ws["crate"], "opi-ws")
-        self.assertEqual(ws["package_dir"], "companions/ws")
+        self.assertEqual(ws["crate"], "opi-ai")
+        self.assertNotIn("package_dir", ws)
+        self.assertEqual(ws["private_test_minimum"], 108)
+        self.assertEqual(ws["public_codec_status"], "OPEN: task 20.16")
         self.assertEqual(ws["consumer"], "consumer-ws")
         self.assertEqual(ws["expected_checks"], 6)
         self.assertEqual(
@@ -238,37 +239,54 @@ class WsFamilyTests(unittest.TestCase):
         base = Path(__file__).resolve().parent / "consumer-ws"
         manifest = (base / "Cargo.toml").read_text(encoding="utf-8")
         self.assertIn('path = "@PACKAGE@"', manifest)
-        self.assertIn('union-default = ["opi-ws/union-default"]', manifest)
-        self.assertIn('union-c-zlib = ["opi-ws/union-c-zlib"]', manifest)
+        self.assertIn('opi-ai = { path = "@PACKAGE@" }', manifest)
+        self.assertIn('union-default = ["flate2/default"]', manifest)
+        self.assertIn('union-c-zlib = ["flate2/zlib"]', manifest)
+        self.assertNotIn("opi-ws", manifest)
         source = (base / "src" / "main.rs").read_text(encoding="utf-8")
         for name in [
-            "rfc-hello-decodes",
-            "context-takeover-across-messages",
-            "driver-echo-roundtrip",
-            "close-handshake-masked-response",
-            "strict-rejection-is-terminal",
-            "cancelled-borrow-resumes",
+            "strict-upgrade-and-raw-tail-once",
+            "direction-specific-pmd-facts",
+            "reject-mismatched-accept",
+            "reject-unoffered-subprotocol",
+            "reject-unsolicited-extension",
+            "redirect-is-terminal",
         ]:
             self.assertIn(name, source, f"missing check {name}")
 
-    def test_companion_graph_uses_extracted_opi_ws(self):
+    def test_ws_graph_uses_extracted_sdk_with_crypto_and_compression(self):
         ws = package_slice.FAMILIES["ws"]
         temp = tempfile.TemporaryDirectory(prefix="opi-ws-graph-test-")
         self.addCleanup(temp.cleanup)
-        package = Path(temp.name).resolve() / "opi-ws-0.1.0"
+        package = Path(temp.name).resolve() / "opi-ai-0.8.3"
         package.mkdir()
         (package / "Cargo.toml").write_text("", encoding="utf-8")
         metadata = graph_metadata(
             ws["profiles"][0]["graph_requirements"], package / "Cargo.toml"
         )
-        # graph_metadata names the SDK entry opi-ai; rename it to opi-ws for
-        # this companion case.
-        metadata["packages"][0]["name"] = "opi-ws"
+        next(node for node in metadata["resolve"]["nodes"]
+             if node["id"].startswith("flate2 "))["features"] = ["any_impl", "any_zlib", "zlib-rs"]
         graph = package_slice.check_family_graph(
-            metadata, package, ws["profiles"][0]["graph_requirements"], "opi-ws"
+            metadata, package, ws["profiles"][0]["graph_requirements"],
+            profile_name="ordinary", ws_profile=True,
         )
         self.assertEqual(graph["libz-rs-sys"]["version"], "0.6.8")
         self.assertEqual(graph["zlib-rs"]["version"], "0.6.8")
+        self.assertEqual(graph["aws-lc-sys"]["version"], "0.46.0")
+
+    def test_ws_graph_rejects_wrong_encoder_union_and_legacy_companion(self):
+        requirements = package_slice.FAMILIES["ws"]["profiles"][0]["graph_requirements"]
+        package = Path(tempfile.gettempdir()).resolve() / "opi-ai-graph-fixture"
+        metadata = graph_metadata(requirements, package / "Cargo.toml")
+        next(node for node in metadata["resolve"]["nodes"]
+             if node["id"].startswith("flate2 "))["features"] = [
+                 "any_impl", "any_zlib", "zlib-rs", "any_c_zlib", "libz-sys", "zlib"]
+        with self.assertRaisesRegex(ValueError, "flate2 ordinary feature profile"):
+            package_slice.check_family_graph(metadata, package, requirements,
+                                             profile_name="ordinary", ws_profile=True)
+        metadata["packages"][0]["name"] = "opi-ws"
+        with self.assertRaisesRegex(ValueError, "extracted opi-ai"):
+            package_slice.check_family_graph(metadata, package, requirements)
 
     def test_zlib_native_provenance_captures_static_archive(self):
         with tempfile.TemporaryDirectory(prefix="opi-zlib-prov-") as temp:
@@ -401,6 +419,24 @@ class NativeProvenanceTests(unittest.TestCase):
         self.assertTrue(provenance["compiler_artifact"]["fresh"])
         self.assertTrue(provenance.get("compiler_invocations"))
 
+    def test_c_union_requires_both_native_units(self):
+        aws_messages, aws_id = native_fixture(self, self.target)
+        zlib_messages, zlib_id = native_fixture(self, self.target, "libz-sys")
+        metadata = {"packages": [{"name": name, "id": package_id} for name, package_id in
+                                  [("aws-lc-sys", aws_id), ("libz-sys", zlib_id)]]}
+        result = package_slice.collect_native_provenance(
+            self.target, aws_messages + zlib_messages, metadata, require_zlib=True)
+        self.assertEqual(set(result), {"aws-lc-sys", "libz-sys"})
+        for omitted in [aws_id, zlib_id]:
+            messages = [message for message in aws_messages + zlib_messages
+                        if message["package_id"] != omitted]
+            with self.subTest(omitted=omitted), self.assertRaisesRegex(ValueError, "native provenance"):
+                package_slice.collect_native_provenance(
+                    self.target, messages, metadata, require_zlib=True)
+        with self.assertRaisesRegex(ValueError, "libz-sys package"):
+            package_slice.collect_native_provenance(
+                self.target, aws_messages, {"packages": metadata["packages"][:1]}, require_zlib=True)
+
     def test_unrelated_dynamic_cache_artifact_does_not_describe_current_link(self):
         messages, package_id = native_fixture(self, self.target)
         deps = self.target / "debug/deps"
@@ -519,15 +555,213 @@ class GateCliTests(unittest.TestCase):
         self.assertEqual(env.get("CC_ENABLE_DEBUG_OUTPUT"), "1")
 
 
-class WsBridgeGateTests(unittest.TestCase):
-    def test_real_upgrade_gates_each_feature_graph_before_packaging(self):
+class WsPackageBoundaryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="opi-private-ws-package-")
+        self.addCleanup(self.temp.cleanup)
+        self.package = Path(self.temp.name).resolve() / "package"
+        for name in package_slice.WS_PACKAGE_FILES:
+            path = self.package / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("", encoding="utf-8")
+        (self.package / "Cargo.toml").write_text('[package]\nname = "opi-ai"\n', encoding="utf-8")
+
+    def test_missing_private_package_file_fails_before_build(self):
+        package_slice.check_ws_package(self.package)
+        (self.package / "src/ws/tests/deflate_audit.rs").unlink()
+        with self.assertRaisesRegex(ValueError, "missing.*deflate_audit"):
+            package_slice.check_ws_package(self.package)
+
+    def test_missing_license_or_fixture_extraction_source_fails_closed(self):
+        for name in ["LICENSE", "src/ws/tests/fixtures/extract-boundary-fixtures.py"]:
+            path = self.package / name
+            path.write_text("retained source", encoding="utf-8")
+            package_slice.check_ws_package(self.package)
+            path.unlink()
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "missing.*" + path.name):
+                package_slice.check_ws_package(self.package)
+            path.write_text("retained source", encoding="utf-8")
+
+    def test_stale_companion_or_external_production_source_is_rejected(self):
+        for reference in ['#[path = "../../../companions/ws/src/io.rs"] mod io;',
+                          'include_bytes!("../../../../../scripts/pi-sdk-conformance/fixture")']:
+            (self.package / "src/ws/tests/upgrade.rs").write_text(reference, encoding="utf-8")
+            with self.subTest(reference=reference), self.assertRaisesRegex(ValueError, "external|companion"):
+                package_slice.check_ws_package(self.package)
+
+    def test_spaced_include_macro_cannot_escape_private_package(self):
+        (self.package / "src/ws/tests/upgrade.rs").write_text(
+            'include ! ("../../../../../checkout/crates/opi-ai/src/ws/io.rs");', encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "external|missing"):
+            package_slice.check_ws_package(self.package)
+
+    def test_raw_or_computed_private_source_references_are_not_verifiable(self):
+        for reference in [
+            'include_str!(r"D:/checkout/crates/opi-ai/src/ws/io.rs");',
+            'include_str!(concat!("D:/checkout/", "crates/opi-ai/src/ws/io.rs"));',
+            '#[path = r"D:/checkout/crates/opi-ai/src/ws/io.rs"] mod codec;',
+        ]:
+            (self.package / "src/ws/tests/upgrade.rs").write_text(reference, encoding="utf-8")
+            with self.subTest(reference=reference), self.assertRaisesRegex(ValueError, "private WS"):
+                package_slice.check_ws_package(self.package)
+
+    def test_external_consumer_must_use_public_sdk_only(self):
+        consumer = Path(self.temp.name).resolve() / "consumer"
+        (consumer / "src").mkdir(parents=True)
+        manifest = consumer / "Cargo.toml"
+        manifest.write_text('[dependencies]\nopi-ai = { path = '
+                            + json.dumps(self.package.as_posix()) + ' }\n', encoding="utf-8")
+        source = consumer / "src/main.rs"
+        source.write_text("fn main() {}", encoding="utf-8")
+        package_slice.check_ws_consumer(consumer, self.package)
+        source.write_text('#[path = "D:/checkout/crates/opi-ai/src/ws/io.rs"] mod codec;',
+                          encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "production source"):
+            package_slice.check_ws_consumer(consumer, self.package)
+        source.write_text("fn main() {}", encoding="utf-8")
+        manifest.write_text('[dependencies]\nopi-ws = { path = "D:/checkout/companions/ws" }\n',
+                            encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "extracted opi-ai"):
+            package_slice.check_ws_consumer(consumer, self.package)
+
+    def test_cfg_attr_path_and_spaced_include_cannot_load_checkout_source(self):
+        consumer = Path(self.temp.name).resolve() / "consumer"
+        (consumer / "src").mkdir(parents=True)
+        (consumer / "Cargo.toml").write_text('[dependencies]\nopi-ai = { path = '
+                                            + json.dumps(self.package.as_posix()) + ' }\n',
+                                            encoding="utf-8")
+        for reference in [
+            '#[cfg_attr(all(), path = "D:/checkout/crates/opi-ai/src/ws/io.rs")] mod codec;',
+            'include ! ("D:/checkout/crates/opi-ai/src/ws/io.rs");',
+        ]:
+            (consumer / "src/main.rs").write_text(reference, encoding="utf-8")
+            with self.subTest(reference=reference), self.assertRaisesRegex(ValueError, "production source"):
+                package_slice.check_ws_consumer(consumer, self.package)
+
+    def test_empty_filter_or_missing_battery_is_not_private_protocol_proof(self):
+        for output in ["test result: ok. 0 passed; 0 failed; 108 filtered out;",
+                       "test result: ok. 102 passed; 0 failed; 0 ignored;"]:
+            with self.subTest(output=output), self.assertRaisesRegex(ValueError, "108"):
+                package_slice.check_private_ws_report(output, 108)
+        self.assertEqual(package_slice.check_private_ws_report(
+            "test result: ok. 108 passed; 0 failed; 0 ignored;", 108), 108)
+
+    def test_private_gates_use_only_extracted_sdk_and_dependency_feature_unions(self):
+        commands = []
+        caller_lock = Path(self.temp.name) / "caller" / "Cargo.lock"
+        caller_lock.parent.mkdir()
+
+        def lock_text(entries):
+            return "\n".join(
+                "[[package]]\n" + "\n".join(
+                    f"{key} = {json.dumps(entry[key])}"
+                    for key in ("name", "version", "source", "checksum"))
+                for entry in entries if entry.get("source"))
+
+        caller_entries = graph_metadata(
+            package_slice.FAMILIES["ws"]["profiles"][-1]["graph_requirements"],
+            self.package / "Cargo.toml")["packages"]
+        caller_lock.write_text(lock_text(caller_entries), encoding="utf-8")
+
+        def run(name, command, cwd):
+            commands.append((name, command, cwd))
+            if "metadata" in command:
+                profile = next(profile for profile in package_slice.FAMILIES["ws"]["profiles"]
+                               if name.endswith(profile["name"]))
+                metadata = graph_metadata(profile["graph_requirements"], self.package / "Cargo.toml")
+                selected = {"any_impl", "any_zlib", "zlib-rs"}
+                if profile["name"] == "union-default":
+                    selected |= {"default", "miniz_oxide", "runtime_detection", "rust_backend"}
+                if profile["name"] == "union-c-zlib":
+                    selected |= {"any_c_zlib", "libz-sys", "zlib"}
+                next(node for node in metadata["resolve"]["nodes"]
+                     if node["id"].startswith("flate2 "))["features"] = sorted(selected)
+                # Cargo can resolve a dependency's feature-only C union
+                # without adding libz-sys to this library's own lock.
+                (self.package / "Cargo.lock").write_text(lock_text(
+                    [entry for entry in metadata["packages"] if entry["name"] != "libz-sys"]),
+                    encoding="utf-8")
+                return json.dumps(metadata)
+            return "test result: ok. 108 passed; 0 failed; 0 ignored;"
+
+        result = package_slice.run_packaged_ws_checks(
+            run, self.package, package_slice.FAMILIES["ws"], caller_lock)
+        self.assertEqual(len(result), 3)
+        self.assertEqual(sum("metadata" in command for _, command, _ in commands), 3)
+        for name, command, _ in commands:
+            if "clippy" in name:
+                self.assertNotIn("--tests", command)
+        for index, profile in enumerate(["ordinary", "union-default", "union-c-zlib"]):
+            metadata_name, metadata_command, _ = commands[index * 3]
+            self.assertEqual(metadata_name, f"private-ws-metadata-{profile}")
+            self.assertNotIn("--locked", metadata_command)
+            name, command, cwd = commands[index * 3 + 1]
+            self.assertEqual(name, f"private-ws-test-{profile}")
+            self.assertEqual(cwd, self.package)
+            self.assertIn(str(self.package / "Cargo.toml"), command)
+            self.assertIn("--lib", command)
+            self.assertIn("ws::", command)
+            if index:
+                self.assertIn(["flate2/default", "flate2/zlib"][index - 1], command)
+            self.assertNotIn("opi-ws", " ".join(command))
+            self.assertIn("--locked", command)
+            self.assertIn("aws-lc-sys", result[index]["graph"])
+            self.assertIn("resolved_library_lock_sha256", result[index])
+            self.assertEqual(result[index]["caller_checksum_lock"]["sha256"],
+                             hashlib.sha256(caller_lock.read_bytes()).hexdigest())
+            self.assertEqual(result[index]["resolved_library_lock_missing_reviewed_identities"],
+                             ["libz-sys"] if profile == "union-c-zlib" else [])
+        # The caller lock is checksum evidence, never permission to relax
+        # the independently fixed reviewed registry identity.
+        caller_lock.write_text(lock_text([
+            dict(entry, checksum="0" * 64) if entry["name"] == "libz-sys" else entry
+            for entry in caller_entries]), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "checksum for libz-sys"):
+            package_slice.run_packaged_ws_checks(
+                run, self.package, package_slice.FAMILIES["ws"], caller_lock)
+
+    def test_fresh_caller_checksum_lock_precedes_private_protocol_checks(self):
+        repo, target, scratch = (Path(self.temp.name) / name for name in ("repo", "target", "proof"))
+        repo.mkdir()
+        (repo / "Cargo.toml").write_text('[workspace.package]\nversion = "0.8.3"\n', encoding="utf-8")
+        (target / "package").mkdir(parents=True)
+        (target / "package/opi-ai-0.8.3.crate").write_bytes(b"actual archive fixture")
+        (target / ".opi-cargo-cache.json").write_text(
+            json.dumps({"workspace": str(repo)}), encoding="utf-8")
+
+        def fake_process(command, **kwargs):
+            if command[:2] == ["cargo", "generate-lockfile"]:
+                (scratch / "consumer/Cargo.lock").write_text("version = 4\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, "command stdout", "command stderr")
+
+        def private_checks(*args):
+            checksum_lock = scratch / "consumer/Cargo.lock"
+            self.assertTrue(checksum_lock.is_file(), "private checks require a fresh caller lock first")
+            self.assertEqual(args[3], checksum_lock)
+            raise ValueError("stop after fresh caller checksum lock")
+
+        argv = [str(Path(package_slice.__file__)), "--family", "ws", "--offline",
+                "--scratch", str(scratch), "--target-dir", str(target)]
+        with mock.patch.object(package_slice, "REPO", repo), \
+                mock.patch.object(sys, "argv", argv), \
+                mock.patch.dict(os.environ, {"CARGO_HOME": str(Path(self.temp.name) / "cargo-home"),
+                                             "USERPROFILE": str(Path(self.temp.name) / "home")},
+                                clear=True), \
+                mock.patch.object(subprocess, "run", side_effect=fake_process), \
+                mock.patch.object(package_slice.shared, "unpack_package", return_value=self.package), \
+                mock.patch.object(package_slice, "run_packaged_ws_checks", side_effect=private_checks), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(package_slice.main(), 1)
+        evidence = json.loads((scratch / "evidence.json").read_text(encoding="utf-8"))
+        self.assertEqual(evidence["error"], "stop after fresh caller checksum lock")
+
+    def test_sdk_packaging_precedes_all_private_ws_gates(self):
         with tempfile.TemporaryDirectory(prefix="opi-ws-bridge-gates-") as temp:
             root = Path(temp).resolve()
             repo, target, scratch = root / "repo", root / "target", root / "proof"
-            companion = repo / "companions/ws"
-            companion.mkdir(parents=True)
-            (companion / "Cargo.toml").write_text(
-                '[package]\nname = "opi-ws"\nversion = "0.1.0"\n', encoding="utf-8")
+            repo.mkdir()
+            (repo / "Cargo.toml").write_text(
+                '[workspace.package]\nversion = "0.8.3"\n', encoding="utf-8")
             target.mkdir()
             (target / ".opi-cargo-cache.json").write_text(
                 json.dumps({"workspace": str(repo)}), encoding="utf-8")
@@ -536,8 +770,6 @@ class WsBridgeGateTests(unittest.TestCase):
                 # Stop at the packaging boundary; all real scheduling and log
                 # persistence before it still run, without invoking Cargo.
                 failed = command[:2] == ["cargo", "package"]
-                if "ws_upgrade" in command:
-                    self.assertEqual(kwargs["cwd"], repo)
                 identity = json.dumps(command)
                 return subprocess.CompletedProcess(
                     command, int(failed), "stdout " + identity, "stderr " + identity)
@@ -555,23 +787,12 @@ class WsBridgeGateTests(unittest.TestCase):
             evidence = json.loads((scratch / "evidence.json").read_text(encoding="utf-8"))
             self.assertIn("package failed", evidence["error"])
             steps = evidence["steps"]
-            bridges = [step for step in steps if step["name"].startswith("bridge-check")]
-            common = ["cargo", "test", "-p", "opi-ai", "--test", "ws_upgrade",
-                      "--offline", "--locked"]
-            expected = [
-                ("bridge-check-ordinary", common),
-                ("bridge-check-union-default", common + ["--features", "opi-ws/union-default"]),
-                ("bridge-check-union-c-zlib", common + ["--features", "opi-ws/union-c-zlib"]),
-            ]
-            self.assertEqual([(step["name"], step["command"]) for step in bridges], expected)
             names = [step["name"] for step in steps]
-            self.assertLess(names.index("companion-doc"), names.index(expected[0][0]))
-            self.assertLess(names.index(expected[-1][0]), names.index("package"))
-            for name, command in expected:
-                self.assertEqual((scratch / f"{name}.stdout").read_text(encoding="utf-8"),
-                                 "stdout " + json.dumps(command))
-                self.assertEqual((scratch / f"{name}.stderr").read_text(encoding="utf-8"),
-                                 "stderr " + json.dumps(command))
+            self.assertFalse(any(name.startswith(("companion-", "bridge-check", "private-ws-"))
+                                 for name in names))
+            package_step = next(step for step in steps if step["name"] == "package")
+            self.assertIn("opi-ai", package_step["command"])
+            self.assertEqual(evidence["public_codec_status"], "OPEN: task 20.16")
 
 
 if __name__ == "__main__":

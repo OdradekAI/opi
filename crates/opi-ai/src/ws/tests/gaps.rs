@@ -1,4 +1,4 @@
-use opi_ws::{io::Driver, pmd};
+use crate::ws::{io::Driver, pmd};
 use std::{
     future::{Future, poll_fn},
     task::Poll,

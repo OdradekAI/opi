@@ -1,4 +1,4 @@
-use opi_ws::io::{CloseState, Driver, Fault};
+use crate::ws::io::{CloseState, Driver, Fault};
 use std::{
     future::{Future, poll_fn},
     pin::Pin,
@@ -62,7 +62,7 @@ async fn peer_close_requires_explicit_masked_response_empty_stays_empty() {
     let mut driver = Driver::new(client, None).unwrap();
     peer.write_all(&[0x88, 0]).await.unwrap();
     let close = driver.next().await.unwrap().unwrap();
-    assert_eq!(close.payload, []);
+    assert!(close.payload.is_empty());
     assert_eq!(driver.close_state(), CloseState::PeerCloseReceived);
     assert!(!driver.is_terminal());
     assert!(driver.next().await.unwrap().is_none());

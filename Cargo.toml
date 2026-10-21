@@ -8,9 +8,6 @@ members = [
     "crates/opi-sandbox",
     "crates/opi-tui",
 ]
-# The neutral owned WS companion (RDF-24) builds standalone outside the root
-# workspace while remaining a path dependency for in-tree development.
-exclude = ["companions/ws"]
 resolver = "2"
 
 [workspace.package]
@@ -27,11 +24,6 @@ opi-agent = { path = "crates/opi-agent", version = "0.8.3" }
 opi-coding-agent = { path = "crates/opi-coding-agent", version = "0.8.3" }
 opi-protocol = { path = "crates/opi-protocol", version = "0.8.3" }
 opi-tui = { path = "crates/opi-tui", version = "0.8.3" }
-
-# Neutral owned WebSocket client substrate (RDF-24 Independent Companion,
-# companions/ws). Root-managed identity for the future published package;
-# workspace members reference it path-only until that identity is published.
-opi-ws = { path = "companions/ws", version = "0.1.0" }
 
 # async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "test-util", "signal", "process", "io-util", "io-std", "fs", "net"] }
@@ -53,6 +45,11 @@ thiserror = "2"
 # HTTP/SSE
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "http2"] }
 url = "2.5.8"
+# Private WebSocket protocol machinery: the decoder owns the pinned Rust
+# allocator and hidden SyncPoint/ResetKeep API; the encoder follows the
+# caller's flate2 feature union. Source/feature changes require a new audit.
+libz-rs-sys = { version = "=0.6.8", default-features = false, features = ["std", "rust-allocator"] }
+flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"] }
 
 # Private schema dialect: upstream data profile, recorded under RDF-21.
 # Preserve the selected ECMAScript API/features; consumers may unify features.

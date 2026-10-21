@@ -11,7 +11,7 @@
 //! `4629de7b1cc02382595ce445bfd989f244c5e08ff6bc7329c1f40a78d9294063`;
 //! the extractor is committed next to the fixtures.
 
-use opi_ws::pmd::Decoder;
+use crate::ws::pmd::Decoder;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -30,7 +30,7 @@ struct Seed {
 
 fn load_seeds() -> Vec<Seed> {
     let rows: Vec<Value> =
-        serde_json::from_str(include_str!("../fixtures/boundary-seeds.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/boundary-seeds.json")).unwrap();
     rows.iter()
         .map(|row| Seed {
             name: row["name"].as_str().unwrap().to_owned(),
@@ -98,7 +98,7 @@ fn corpus(seeds: &[Seed]) -> Vec<(String, Vec<u8>)> {
 fn fixed_corpus_replays_recorded_classification_and_outputs() {
     let seeds = load_seeds();
     let document: Value =
-        serde_json::from_str(include_str!("../fixtures/boundary-expectations.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/boundary-expectations.json")).unwrap();
     let summary = &document["summary"];
     let cases: HashMap<String, Value> = serde_json::from_value(document["cases"].clone()).unwrap();
     let corpus = corpus(&seeds);

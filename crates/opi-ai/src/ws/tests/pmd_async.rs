@@ -1,4 +1,4 @@
-use opi_ws::pmd::{Decoder, Encoder, Fault};
+use crate::ws::pmd::{Decoder, Encoder, Fault};
 use std::{
     future::{Future, poll_fn},
     sync::{

@@ -1,4 +1,4 @@
-use opi_ws::pmd::{Decoder, Encoder};
+use crate::ws::pmd::{Decoder, Encoder};
 #[test]
 fn complete_boundary_controls() {
     for p in [vec![0], vec![1], vec![3, 0, 0], vec![1, 0, 0, 255, 255, 0]] {
@@ -100,7 +100,7 @@ fn invalid_window_admission_is_typed() {
         assert!(Encoder::new(bits, false).is_err());
         assert!(matches!(
             Decoder::with_window_bits(bits, false),
-            Err(opi_ws::pmd::Fault::Window)
+            Err(crate::ws::pmd::Fault::Window)
         ));
     }
 }

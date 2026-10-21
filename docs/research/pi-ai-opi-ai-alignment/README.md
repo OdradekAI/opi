@@ -50,7 +50,7 @@ HTTP 已按用户选择修订为普通 crates.io reqwest0.12.28/Hyper1.9.0 的 [
 
 ## 自有中立 WS 跟进边界
 
-用户本轮选择[RDF-24](pi-1.3.0-rust-differences.md#rdf-24-owned-ws-profile)：companions/ws独立构建/版本的中立frame/PMD/Close/IO＋原版压缩，opi-ai拥有Upgrade/provider/池策略。退役Ratchet/受控补丁/namespace及third-party/pi-ws必建义务，保留旧研究资产和通用conformance/外部consumer。明确hidden SyncPoint/ResetKeep、__internal-api、本地unsafe Send/noSync、有限feature union/native构建及调度/取消边界。[已执行前轮摘要](offline-probes/owned-ws/summary.json)只证明Windows内存原型76×3=228及同72,413输入三图零差异等命名机制，不是本次plan的产品测试、真实Upgrade/包消费者或三平台/MSRV证明。20.15/16/17/57/58原有完整验收分区不变，20.11/34/57不提前完成。技术附件无既有英文counterpart，主英中合同同步采用。
+用户于2026-10-21确认将[RDF-24](pi-1.3.0-rust-differences.md#rdf-24-owned-ws-profile)的协议实现并入 `opi-ai/src/ws/` 私有frame/PMD/Close/IO模块，保留原版压缩及Upgrade/provider/池策略的内部所有权分层。独立包/版本/standalone门禁合同由真实SDK产物内测试和公共Codex消费者证明取代；不新增公开codec或测试feature。20.15的独立包交付与[前轮研究摘要](offline-probes/owned-ws/summary.json)保留原身份，迁移由20.16与真实Models→Codex→Upgrade→私有协议模块及新 `opi-ai.crate` 普通/default/C-union消费者同批验收。包内私有单测不冒充外部公共路径，旧日志不证明新依赖图；20.17/34/57/58继续拥有资源、完整协议、最终包和平台/MSRV验收。退役Ratchet/补丁/namespace的决定保留，hidden SyncPoint/ResetKeep、__internal-api、本地unsafe Send/noSync、有限feature/native及调度/取消要求不减。专项来源修订须经plan协调，不能直接刷新账本hash或把目标布局写成已交付。技术附件无既有英文counterpart，主英中合同同步采用。
 
 ## 设计收敛研究窗口（注册前）
 

@@ -1,4 +1,4 @@
-opi-ws (companion) — Agent-neutral owned WebSocket client substrate
+opi-ai — Private WebSocket client protocol modules
 
 This crate links against the following unmodified crates.io dependencies:
 

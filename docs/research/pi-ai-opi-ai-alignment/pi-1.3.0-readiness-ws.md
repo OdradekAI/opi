@@ -4,9 +4,11 @@
 
 ## 1. 明确选择
 
-当前按用户选择采用 **自有严格Upgrade＋产品crate之外的中立WS状态机＋原版crates.io压缩库**，不依赖Ratchet，不维护上游补丁。具体归属、隐藏接口/unsafe、Send/Close/取消/调度、分发及验收合同见§8（RDF-24）。
+当前按用户确认的合并方向采用 **opi-ai内自有严格Upgrade＋私有WS协议状态机＋原版crates.io压缩库**，不依赖Ratchet，不维护上游补丁。原`companions/ws`独立归属是20.15的历史交付合同；本次只修订后续归属与验收设计，不追认为迁移已经实施。具体隐藏接口/unsafe、Send/Close/取消/调度、分发及验收合同见§8（RDF-24）。
 
-该中立模块拥有frame/message/PMD/Close与IO机制，opi-ai只保留来源限定Upgrade及供应商/池策略。原§5的Ratchet适配和补丁义务由§8取代；下表和§2–4保留原实验，不能作为当前原型的新运行或产品证明。
+初始实现位于`companions/ws`。来源修订本身不执行迁移或协调账本；用户随后指定物理模块迁移先行、账本后续协调。仅完成物理迁移、编译或包内测试不关闭20.16的真实公共调用链及包消费者验收，也不使其计划自动READY。原研究的设计READY结论保留其原窗口。
+
+该私有协议模块独占frame/message/PMD/Close与IO机制，仍与同一crate中的来源限定Upgrade及供应商/池策略分层。物理迁移可先落入工作区，最终runtime/package验收仍与20.16真实公共Codex WS接入同批闭环；仅测试可达的私有codec不构成该生产路径交付。原§5的Ratchet适配和补丁义务由§8取代；下表和§2–4保留原实验，不能作为当前原型的新运行或产品证明。
 
 | 候选 | 固定事实与结果 | 决定 |
 |---|---|---|
@@ -89,11 +91,13 @@ typed 分配合同有明确边界：`Bytes::from(Vec)` 可能分配小型 shared
 
 ### 8.1 归属、接口与唯一生产接入
 
-通用RFC6455客户端frame/message/PMD/Close及异步IO owner归产品crate之外的`companions/ws/`中立库，按Independent Companion方向独立构建、测试、版本与安全维护；不依赖任何Opi crate，不加入根workspace现有七成员，不要求新进程/服务、Agent/终端/keychain、env/auth发现或宿主后台任务。目录与独立构建归属在此明确；正式registry包名/版本及发布需后续实际产物与单独授权，不能把暂定名称当现有crates.io包。当前不抽取新仓库、宣布Standalone Project或虚构第二外部生产消费者；最小Runtime的其他provider/本地执行不依赖WS服务的存在或健康。
+通用RFC6455客户端frame/message/PMD/Close及异步IO owner迁入`opi-ai`的`ws`子树，成为私有协议模块；算法与所有权合同保持，不另维持`opi-ws`的独立构建、版本或发布身份。根workspace仍是现有七成员，删除迁移后无用的companion manifest/lock及依赖声明；精确压缩依赖由root集中声明，`opi-ai`按workspace依赖消费，锁图由Cargo生成。无需新进程/服务、Agent/终端/keychain、env/auth发现或宿主后台任务；不抽取新仓库、宣布Standalone Project或虚构第二生产消费者。
 
-中立接口是一个独占Connection状态机：接收调用方已完成Upgrade的AsyncRead+AsyncWrite流、已验证的PMD参数及按序tail，提供typed frame/message、owned pending read/write/decode、显式Close/abort和可等待本地释放。借用Future仅借状态，必要Send边界由实际stream类型约束；不暴露z_stream、backend类型、自定义allocator/callback或Sync承诺。不为此新增Opi领域API、通用transport trait、executor或配置体系。现有Opi crate图不变；20.15仅在根workspace.dependencies管理opi-ai→中立包的必要版本/path开发声明，发布包以正常可分发identity解析。
+内部接口是一个独占Connection状态机：接收同crate Upgrade产生的AsyncRead+AsyncWrite流、已验证的PMD参数及按序tail，提供内部typed frame/message、owned pending read/write/decode、显式Close/abort和可等待本地释放。借用Future仅借状态，必要Send边界由实际stream类型约束；不公开codec、z_stream、backend类型、自定义allocator/callback或Sync承诺。不为迁移新增Opi领域API、通用transport trait、executor、配置体系、测试专用feature或`doc(hidden) pub`入口。迁移与20.16真实Models→Codex→Upgrade→私有协议模块接入同批关闭，不能靠`cfg(test)`接线或放宽dead-code检查把未使用实现称为生产交付。
 
-`opi-ai/src/ws/`只拥有严格动态Upgrade、URI/受保护headers、nonce/mask的合适熵来源、Accept/Connection/Upgrade/extension/subprotocol/token校验、协商与tail桥接；使用既有source-qualified proxy/TLS/redirect/retry owner。20.16拥有真实Codex Auto/continuation/fallback与resource lease，20.17消费同一P20-RESOURCES owner执行generation cutoff/await cleanup；不复制中立frame/PMD/Close状态机。只有一个实际Codex接入，测试/包harness不是第二生产消费者，不另制造shared-decision或Opi core seam。
+现有`opi_ai::ws`公开Upgrade入口及其公开请求、协商和返回类型保留；本次仅私有化frame/pmd/io实现，不把现有ws模块改为私有。
+
+`opi-ai/src/ws`的Upgrade层继续负责严格动态Upgrade、URI/受保护headers、nonce/mask的合适熵来源、Accept/Connection/Upgrade/extension/subprotocol/token校验、协商与tail桥接；使用既有source-qualified proxy/TLS/redirect/retry owner，协议模块不接管这些策略。20.16拥有真实Codex Auto/continuation/fallback与resource lease，20.17消费同一P20-RESOURCES owner执行generation cutoff/await cleanup；不复制frame/PMD/Close状态机。只有一个实际Codex接入，测试/包harness不是第二生产消费者，不另制造shared-decision或Opi core seam。
 
 ### 8.2 协议、消息结束、取消与调度
 
@@ -111,7 +115,7 @@ Job/IO/UTF-8/continuation进度由owner持有，丢弃借用future可恢复同�
 
 基准为未经修改的crates.io `libz-rs-sys=0.6.8`（default-features=false，std+rust-allocator）、实际解析`zlib-rs0.6.8`与`flate2=1.1.10`（default-features=false，zlib-rs）。普通/default-union encoder选Rust，C-zlib union encoder由libz-sys1.1.30走native C/build/link；三图decoder均固定直接Rust路径，不能称三种独立decoder。研究Tokio1.53.3不授权升级产品Tokio。产品使用root实际锁图与workspace MSRV1.97另验。
 
-inflateSyncPoint/inflateResetKeep是public callable但doc(hidden)的低层Rust导出，传递启用zlib-rs `__internal-api`；不是私有symbol抓取或源码patch，也不是普通safe flate2层的稳定PMD保证。中立库独占本地unsafe边界：init/reset/query/inflate/end调用及必要unsafe Send。固定私有Box及唯一stream、不clone、不自定义allocator/callback、不并发inflate/no Sync；每次同步调用前后绑定/清理borrow指针，上游惰性reader/writer下次dispatch前重绑定且query/reset/end不得读旧slice。constructor失败、取消、错误/Drop恰好一次release。不得以upstream Send作本地证明的替代。
+inflateSyncPoint/inflateResetKeep是public callable但doc(hidden)的低层Rust导出，传递启用zlib-rs `__internal-api`；不是私有symbol抓取或源码patch，也不是普通safe flate2层的稳定PMD保证。`opi-ai`私有协议模块独占本地unsafe边界：init/reset/query/inflate/end调用及必要unsafe Send。固定私有Box及唯一stream、不clone、不自定义allocator/callback、不并发inflate/no Sync；每次同步调用前后绑定/清理borrow指针，上游惰性reader/writer下次dispatch前重绑定且query/reset/end不得读旧slice。constructor失败、取消、错误/Drop恰好一次release。不得以upstream Send作本地证明的替代。
 
 每次压缩升级必须记录完整解析source/version/checksum/features、相关内部源码/allocator/指针及API语义审计与license/NOTICE，再跑三图、合法历史/reset、精确tail/截断、Send跨线程/非Sync、Close、取消、公平调度、存储与独立wire反例。hidden API删除/语义改变、任意callback/raw暴露、allocator改变、unsafe/安全漏洞或不能保持现有接受集时停止并重开设计，不静默fork、替换suffix heuristic或加cap。
 
@@ -121,6 +125,10 @@ inflateSyncPoint/inflateResetKeep是public callable但doc(hidden)的低层Rust�
 
 取消Ratchet core/ext/deflate依赖、补丁/namespace最小闭包及`third-party/pi-ws`必建义务；不创建同义vendor目录/假上游identity。不删除旧Ratchet研究源码、patch和原始结果；没有已激活Ratchet生产代码可在本轮删除。保留通用conformance、外部consumer、window/framing/storage/cancel安全回归，按新接口替换后才退役纯patch-apply/source-rewrite/namespace专属未来门禁。
 
-20.15以中立库独立fmt/clippy/test/doc和原始反例、严格Upgrade→from-upgraded接入及真实cargo package产物的workspace外普通/default/C-union consumer证明命名底层切片；独立包不在根workspace，单跑root full不足，package_slice的WS门禁必须包含这些补充检查。编译/引用必须来自实际可分发package identities与artifact，不用研究crate、checkout/TEMP path、consumer root patch或library lock充当分发。未取得所需产物/来源/合法本地socket证明时保持OPEN，不隐式发布或绕过。
+**20.15历史交付合同保留：** 以中立库独立fmt/clippy/test/doc和原始反例、严格Upgrade→from-upgraded接入及真实cargo package产物的workspace外普通/default/C-union consumer证明命名底层切片；当时独立包不在根workspace，单跑root full不足。原任务DoD、提交、测试计数与包artifact身份按原状态保留，不改写为新私有模块或20.16已经通过。
 
-20.16/20.17验证真实Models/Codex、合法Upgrade/窗口/Close策略、continuation/pool/fallback与idle/active取消和await cleanup；20.57复用早期工具验证最终完整SDK包，20.58的V-58/P20-GAP-WS在native Linux/macOS/Windows与MSRV1.97验证实际SDK→同一中立包→原版压缩图/真实普通与union包消费者、hidden/unsafe/native供应链及typed失败。保留所有完整V-02/30/49/58、DEL-07/14及20.11/20.34/20.57未验收边界；任何研究通过都不能把它们标met。
+**合并与20.16同批验收：** 现有codec/Close/取消/Send/非Sync/公平性单测与fixture迁入私有模块，root fmt/clippy/all-targets/doctest/rustdoc覆盖其归属；移除不再存在的独立companion门禁，不移除普通/default/C-union三图验证。实际`opi-ai` cargo package必须包含私有协议源码、所需单测/fixture/helper与license/NOTICE；提取后运行包内私有单测，明确它不是外部公共consumer。workspace外consumer只能依赖实际`opi-ai`产物，由Models→真实Codex→Upgrade→私有codec执行三图，覆盖协商/window8、尾随字节、PMD、Close与取消。当前只返回raw upgraded流的公共Upgrade接口不能独自证明codec执行；禁止研究crate、checkout/TEMP源码引用、consumer root patch、library lock、测试feature、`doc(hidden) pub`或`#[path]`生产文件替代真实产物和公共调用链。原helper/oracle可保留，不能借此编译另一份生产实现。未取得所需产物/来源/合法本地socket证明时保持OPEN，不隐式发布或绕过。
+
+package_slice须按实际`opi-ai`图校验精确压缩source/version/checksum/features与真实`__internal-api`；三图分别证明Rust默认encoder/default union及native C encoder，decoder保持直接Rust路径。C-union同时存在AWS-LC与libz-sys时，两者的实际native编译来源/输入/产物均须记录，不能只证明其中一个。原companion或SDK包摘要和运行记录保留原状态，只能复用仍有效的oracle/审计，不冒充合并后执行证据。
+
+20.16/20.17继续验证真实Models/Codex、合法Upgrade/窗口/Close策略、continuation/pool/fallback与idle/active取消和await cleanup；20.34保留完整DEL-07/14跨切片验收，20.57复用早期工具验证最终完整SDK包，20.58的V-58/P20-GAP-WS在native Linux/macOS/Windows与MSRV1.97验证实际SDK→私有WS模块→原版压缩图/真实普通与union包消费者、hidden/unsafe/native供应链及typed失败。保留所有完整V-02/30/49/58及20.11/20.34/20.57未验收边界；任何研究通过或迁移单测都不能把它们标met。本次仅修订注册来源，产品测试影响none；未修改runtime或实施账本，也未新增Rust/包/供应商运行。

@@ -10,7 +10,7 @@
 
 > 2026-10-19：用户批准的 [RDF-21](pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile) 仅取代本页 Schema 的固定 Unicode16／vendor 数据选择；其他受控后端与供应链门禁不变，旧源码／研究运行结果保留原窗口。完整 task 20.11、20.34、20.57 仍 OPEN。
 
-> 当前选择依次由[RDF-21/22/23/24](pi-1.3.0-rust-differences.md)修订：Unicode/HTTP/crypto用已声明上游profile；WS改为companions/ws自有中立状态机＋原版压缩，退役全部vendor/fork/namespace必建义务。RDF-18 trust source及产品/平台门禁保留。旧原始结果仍为历史；crypto和[WS摘要](offline-probes/owned-ws/summary.json)均非新产品运行证明。
+> 当前选择依次由[RDF-21/22/23/24](pi-1.3.0-rust-differences.md)修订：Unicode/HTTP/crypto用已声明上游profile；WS按用户确认方向合并为opi-ai私有协议状态机＋原版压缩，20.15的companions/ws交付合同与证据保留历史身份，迁移和20.16真实公共Codex WS同批验收。退役全部vendor/fork/namespace必建义务；RDF-18 trust source及产品/平台门禁保留。旧原始结果仍为历史；crypto和[WS摘要](offline-probes/owned-ws/summary.json)均非新产品运行证明。
 
 ## 1. 选择原则与适用层
 
@@ -87,7 +87,9 @@ WS classic Upgrade及明确ProxyPlaceholderSigning需要H1；Pi普通Bedrock默�
 
 ### 3.2 Codex WS
 
-选定owned严格Upgrade/glue＋产品crate之外companions/ws中立frame/message/PMD/Close/IO，使用原版libz-rs-sys0.6.8/zlib-rs0.6.8与flate2 1.1.10，见[WS§8](pi-1.3.0-readiness-ws.md#8-自有中立-ws-模块合同rdf-24)和RDF-24。根workspace七成员不变；仅新增必要opi-ai→独立包声明，不依赖Ratchet或上游补丁/namespace/third-party/pi-ws。opi-ai严格验证动态Upgrade/Accept/token/协商及tail，source proxy/TLS/auth与provider/pool/retry/fallback仍单一owner。
+选定opi-ai内owned严格Upgrade/glue＋私有frame/message/PMD/Close/IO协议模块，使用原版libz-rs-sys0.6.8/zlib-rs0.6.8与flate2 1.1.10，见[WS§8](pi-1.3.0-readiness-ws.md#8-自有中立-ws-模块合同rdf-24)和RDF-24。根workspace七成员不变；迁移后删除无用独立包manifest/lock与依赖声明，精确压缩依赖由root集中声明、opi-ai消费，不新增独立WS包身份，不依赖Ratchet或上游补丁/namespace/third-party/pi-ws。Upgrade层严格验证动态Upgrade/Accept/token/协商及tail，source proxy/TLS/auth与provider/pool/retry/fallback仍单一owner；协议模块不公开codec/backend/raw pointer API，也不增加通用transport/executor框架。
+
+原20.15独立companion fmt/clippy/test/doc、真实Upgrade及opi-ws三图产物consumer合同/提交/结果保留为历史；合并不反写其DoD或执行身份。迁移与20.16真实Models→Codex→Upgrade→私有codec同批关闭，不能仅把测试可达的孤立模块加入crate。root full覆盖迁移后的私有单测，另须普通/default/C-union三图、实际opi-ai产物内私有单测及公共调用链的外部consumer；包内单测明确不称公共consumer。当前Upgrade-only/raw流API不证明私有codec，测试feature、doc-hidden pub或#[path]生产文件不替代真实公共接入。
 
 HTTP proxy CONNECT；HTTPS proxy先outer TLS验证proxy，再CONNECT/inner TLS验证target；保留overread tunnel bytes。Pi connect15s保留连接作用域，不另猜CONNECT字节/header上限。具体来源的clear-ws proxy/redirect动作仍按同一路径验，不以proxy失败自动直连旁路。构造零source I/O、一个owned driver／背压、Text RFC／Binary replacement、Ping/Pong/Close不伪装内容；没有新增frame/message/outgoing大小拒绝。
 
@@ -95,7 +97,7 @@ HTTP proxy CONNECT；HTTPS proxy先outer TLS验证proxy，再CONNECT/inner TLS�
 
 长度先验RFC最高位与最短编码、checked转换/相加；接收存储按实际到达字节增长，不能按未收到的声明总长预分配，也不恢复固定MiB cap。真实表示／可恢复bulk分配失败typed；常规Rust allocator全进程OOM/abort不被假称完全隔离。修正范围与source identity是所选组合的一部分，遇超出有限边界的新协议需求须重开设计，不能静默另造帧解析器。
 
-取消或半帧read后销毁整个连接；不复用状态未知codec，不发布新内容/continuation。cleanup取消并await owned本地driver/timer，失败仍继续清理其他。没有2s默认close deadline，host可显式给shutdown deadline并报告pending；不把close发起当peer ACK或退款。Pi idle5min/max-age55min有来源，next-idle-acquire eviction仍为明确Rust生命周期差异。完整pool/continuation/公开调用路径和平台验收保持 V-02/30/49/58 **OPEN**。
+logical call取消或显式abort后销毁整个连接；只丢弃借用read/write future则保留同一owner中的半帧进度并可恢复，不能把状态未知codec归池，不发布迟到内容/continuation。cleanup取消并await owned本地driver/timer，失败仍继续清理其他。没有2s默认close deadline，host可显式给shutdown deadline并报告pending；不把close发起当peer ACK或退款。Pi idle5min/max-age55min有来源，next-idle-acquire eviction仍为明确Rust生命周期差异。完整pool/continuation/公开调用路径和平台验收保持 V-02/30/49/58 **OPEN**。
 
 ### 3.3 AWS：owned认证协议adapter＋无I/O codec
 
@@ -181,7 +183,7 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 
 ## 4. 供应链、平台与验证边界
 
-所有新增依赖/中立包均为已选择但待正式实施的目标，不由研究source-evidence自动准入。root workspace集中依赖与Cargo生成锁图不变；companions/ws独立workspace，需单独fmt/clippy/test/doc/MSRV，根full不能替代。Query/XML codec声明MSRV1.94.1、p256为1.65；libz-rs-sys/zlib-rs0.6.8声明1.75也不是完整closure与workspace1.97实编译，xmlparser/sha1缺MSRV不当0。所有三平台native/package图保持OPEN。
+本页依赖选择及合并修订不由研究source-evidence自动获得实施准入；历史已交付切片按其原提交/合同判断，本次不改变其账本。root workspace集中依赖与Cargo生成锁图不变；WS迁入opi-ai后由root full覆盖私有单测，不再有standalone companion fmt/clippy/test/doc门禁，但普通/default/C-union三图、hidden/unsafe/native及实际SDK产物验证仍额外必需。Query/XML codec声明MSRV1.94.1、p256为1.65；libz-rs-sys/zlib-rs0.6.8声明1.75也不是完整closure与workspace1.97实编译，xmlparser/sha1缺MSRV不当0。所有三平台native/package图保持OPEN。
 
 禁AWS默认HTTPS是为避免第二套隐式transport／provider／resolver，而不再以“避免所有aws-lc”为理由：RDF-23明确采用上游AWS-LC的C／FFI／汇编／build脚本。最终方案不引入aws-types/service runtime的直接build路径，也不为签名升级hmac/sha2；codecs传递schema/runtime-api仍可能引proc macro，实际原生／proc-macro闭包须审锁图。标准分发为非FIPS源码构建；普通／union真实包consumer须控制并记录native来源、CC/CMake/平台工具链、flags／output／链接身份，拒绝未审system来源、bindings／skip-version／target override等替换。研究用AWS_LC_SYS_USE_SYSTEM=0、poison OPENSSL_DIR并实际CC静态构建，只证明该Windows图；库lock／crate checksum不能固定所有消费者的native输入。native CPU一次初始化、OPENSSL_ia32cap与OS entropy按RDF-23明示，不承诺零初始化／零环境读取，不授权ambient身份／trust或global provider/config mutation。不能以default-features=false或“safe API”声称零native／unsafe供应链代价；FIPS／native-tls／native-roots等未测附加组合不继承union证据。不为42个profile预建42个feature/crate，不以feature flag豁免正式准入。
 
@@ -196,7 +198,7 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 | 组 | 当前设计／实际机制证据 | 仍OPEN的产品验收 |
 |---|---|---|
 | Schema | 私有 source dialect＋RDF-21 普通上游数据 profile；旧64/64、11合成错误控制、43/43叶与10包 namespace 同图保留历史身份，不追认为新图验证 | 全 normalizer/formats/refs/evaluated/UTF16 边界、public utility/consumer/cache/cancel；V-11/34/35/39/41/58 |
-| WS | RDF-24 ownedUpgrade/glue＋独立中立WS/PMD/Close/Send/取消/checked存储/调度；原版Rust压缩与有限C-union，隐藏API/本地unsafe维护。旧80/14与新228/72,413×3研究分开 | 20.15独立包门禁/真实Upgrade与普通union产物consumer；20.16/17真实Codex/pool/idle取消/cleanup，20.57最终SDK，20.58三平台/MSRV/unsafe/native供应链；V-02/30/49/58全部OPEN |
+| WS | RDF-24 ownedUpgrade/glue＋opi-ai私有WS/PMD/Close/Send/取消/checked存储/调度；原版Rust压缩与有限C-union，隐藏API/本地unsafe维护。旧80/14与新228/72,413×3研究分开 | 20.15原合同/证据保留历史；迁移与20.16真实公共Codex/continuation/pool/fallback同批关闭，三图实际opi-ai包内单测（非公共consumer）＋真实公共链外部consumer；20.17 generation cutoff/idle取消/await cleanup，20.34完整DEL-07/14，20.57最终SDK，20.58三平台/MSRV/unsafe/native供应链；完整V-02/30/49/58仍OPEN |
 | HTTP/proxy/H2/redirect | sourceowner＋RDF-22上游HTTP profile；旧20headers patch对照、redirect逐leg及16proxy观察保留原输入，显式ALPN有实测 | 上游head/buffer/trailer/chunk-extension边界、CL/TE/EOF/取消、所有source/proxy组合与publicdriver；V-01/05/09/29/30/51/55/58 |
 | TLS/trust/crypto | RDF-23原版rustls/AWS-LC safe实例profile，reference bundle/scopedroots不变；RSA/P-521每profile43项、45场景×5共225观察、10JWT与8KX控制为历史Windows研究，旧11RSA/privatepoison保留原身份 | 声明接受范围/正常与错误协商/chain/source/host隔离/取消、真实ADC与mTLS/ALPN、native来源/普通union包consumer/MSRV/三平台；不再要求fullNode算法或本地FFI；V-09/49/55/58 |
 | Auth/ADC/AWS | ownedfullsource与standard/adaptive/Smithy2026 owner；metadata0/3000ms来源已定，不将局部机制算fullchain | 所有source/9OAuth/SSO/MFA/DPoP/adaptive/retry/process-tree/rotation与ACK；V-05/09/12/43/55/58 |
@@ -207,8 +209,8 @@ V-09/39/49/55/58覆盖五JSON家族、每个external子类、metadata入口、na
 
 ## 6. 维护与发布身份
 
-Schema/HTTP/crypto继续使用RDF-21/22/23普通crates.io profile；WS按RDF-24使用自有中立package和未经修改的压缩依赖。取消Ratchet补丁/namespace闭包及third-party/pi-ws必建义务，不恢复HTTP/crypto/vendor分发或同义目录。不把自有库伪装成原Ratchet上游。实际独立包identity、精确source/version/checksum与artifact由普通外部consumer验证，不用root patch/TEMP path/library lock代替。当前无新发布/安装授权；最终完整registry/package仍由V-58和原任务验收。
+Schema/HTTP/crypto继续使用RDF-21/22/23普通crates.io profile；WS按RDF-24合并修订使用opi-ai私有协议模块和未经修改的压缩依赖。取消Ratchet补丁/namespace闭包及third-party/pi-ws必建义务，不恢复HTTP/crypto/vendor分发或同义目录，不把自有实现伪装成原Ratchet上游。精确source/version/checksum、license/NOTICE、包内源码/fixture/helper与artifact由实际opi-ai产物验证；提取后私有单测及外部Models→真实Codex→Upgrade→私有codec分别记录。两者不能用root patch、checkout/TEMP源码路径、library lock或#[path]生产文件代替。当前无新发布/安装授权；最终完整registry/package仍由V-58和原任务验收。
 
-不再要求任何受控backend namespace family；仅沿真实opi-ai→中立WS→原版压缩和现有HTTP/crypto类型图审metadata/反向features/registry/native来源。HTTP/custom transport不新增router/retry，WS不复制frame/PMD/Close owner；公共SDK不泄漏私有backend类型。根workspace成员不变，独立中立库自身构建/版本/发布门禁必须可运行；独立registry身份与发布需真实产物及单独授权，不能预先猜包数当完成。
+不再要求任何受控backend namespace family；沿真实opi-ai→私有WS模块→原版压缩和现有HTTP/crypto类型图审metadata/反向features/registry/native来源。HTTP/custom transport不新增router/retry，WS不复制frame/PMD/Close owner；公共SDK不泄漏私有backend类型。根workspace成员不变，不新增独立WS构建/版本/发布门禁；仍须普通/default/C-union三图的实际SDK产物证明，不能预先猜包数当完成。zlib-rs的真实__internal-api必须存在；C-union同时含AWS-LC和libz-sys时须分别记录实际native编译输入/来源/产物，不能按原companion分支只选其一。
 
-Unicode16/vendor、HTTP/crypto fork及Ratchet patch/namespace专属必建门禁退役，通用conformance/consumer和旧研究资产保留。普通ICU build.rs/ICU4X_DATA_DIR、ryu-js内部unsafe、AWS-LC C/FFI/assembly/build与RDF-23边界不变。WS默认decoder/encoder走Rust且含上游unsafe/SIMD，C-union encoder需native构建审查；中立库明确维护隐藏SyncPoint/ResetKeep、__internal-api和本地unsafe Send/指针/allocator/end。未审allocator/export/gz/其他图不继承支持，升级须重放语料并重审来源和接受集，不能静默fork或收面。license/NOTICE、实际包图、MSRV/三平台与20.11/20.34/20.57保持OPEN。
+Unicode16/vendor、HTTP/crypto fork及Ratchet patch/namespace专属必建门禁退役，通用conformance/consumer和旧研究资产保留。普通ICU build.rs/ICU4X_DATA_DIR、ryu-js内部unsafe、AWS-LC C/FFI/assembly/build与RDF-23边界不变。WS默认decoder/encoder走Rust且含上游unsafe/SIMD，C-union encoder需native构建审查；opi-ai私有模块明确维护隐藏SyncPoint/ResetKeep、__internal-api和本地unsafe Send/指针/allocator/end。未审allocator/export/gz/其他图不继承支持，升级须重放语料并重审来源和接受集，不能静默fork或收面。license/NOTICE、实际包图、MSRV/三平台与20.11/20.34/20.57保持OPEN。本次只修订注册来源，未改runtime/账本、未执行新产品测试，test impact none。

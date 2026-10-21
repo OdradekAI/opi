@@ -1,4 +1,4 @@
-use opi_ws::{
+use crate::ws::{
     frame::Message,
     io::{Core, Driver, Fault},
     pmd,
@@ -25,7 +25,7 @@ async fn driver_outbound_respects_negotiated_window() {
     let (client, mut peer) = tokio::io::duplex(8192);
     let mut driver = Driver::new(
         client,
-        Some(opi_ws::io::PmdParameters {
+        Some(crate::ws::io::PmdParameters {
             client_max_window_bits: 10,
             ..Default::default()
         }),
@@ -525,7 +525,7 @@ async fn drive_text_in_owned_quanta(
             }
             Poll::Ready(Err(error)) => {
                 assert!(!valid, "unexpected validation failure: {error}");
-                assert!(matches!(error, Fault::Frame(opi_ws::frame::Fault::Utf8)));
+                assert!(matches!(error, Fault::Frame(crate::ws::frame::Fault::Utf8)));
                 assert!(driver.next().await.unwrap().is_none());
                 assert!(driver.next().await.unwrap().is_none());
                 break;
@@ -624,19 +624,19 @@ async fn invalid_or_incomplete_final_utf8_is_never_published_after_many_quanta()
 
 #[test]
 fn public_messages_constructor_still_rejects_invalid_plain_text_at_fin() {
-    let mut messages = opi_ws::frame::Messages::new();
+    let mut messages = crate::ws::frame::Messages::new();
     assert!(matches!(
-        messages.receive(opi_ws::frame::Frame {
+        messages.receive(crate::ws::frame::Frame {
             fin: true,
             opcode: 1,
             compressed: false,
             payload: vec![0xff]
         }),
-        Err(opi_ws::frame::Fault::Utf8)
+        Err(crate::ws::frame::Fault::Utf8)
     ));
     assert!(
         messages
-            .receive(opi_ws::frame::Frame {
+            .receive(crate::ws::frame::Frame {
                 fin: true,
                 opcode: 1,
                 compressed: false,

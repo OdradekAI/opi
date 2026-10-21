@@ -5,12 +5,17 @@ edition = "2024"
 publish = false
 
 [dependencies]
-# The extracted real cargo package artifact of the neutral owned WS
-# companion (RDF-24); this proof consumes the distributable identity.
-opi-ws = { path = "@PACKAGE@" }
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-util", "time"] }
-serde_json = "1"
+# The actual extracted SDK artifact. The public API currently proves
+# strict Upgrade and the detached raw stream; the codec remains private.
+opi-ai = { path = "@PACKAGE@" }
+tokio = { version = "=1.52.3", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
+serde_json = "=1.0.149"
+url = "=2.5.8"
+base64 = "=0.22.1"
+aws-lc-rs = { version = "=1.18.2", default-features = false }
+# Caller-owned feature-union control; no test features enter the SDK API.
+flate2 = { version = "=1.1.10", default-features = false }
 
 [features]
-union-default = ["opi-ws/union-default"]
-union-c-zlib = ["opi-ws/union-c-zlib"]
+union-default = ["flate2/default"]
+union-c-zlib = ["flate2/zlib"]

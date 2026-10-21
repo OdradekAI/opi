@@ -35,12 +35,10 @@ secrecy = { workspace = true }
 rustls = { workspace = true }
 aws-lc-rs = { workspace = true }
 rustls-native-certs = { workspace = true }
+libz-rs-sys = { workspace = true }
+flate2 = { workspace = true }
 
 [dev-dependencies]
-# RDF-24: the neutral owned WS substrate is wired into the strict upgrade
-# bridge integration test only (path-only so `cargo package` strips it; the
-# published dependency resolves by registry identity once authorized).
-opi-ws = { path = "../../companions/ws" }
 futures-util = { workspace = true }
 tempfile = { workspace = true }
 wiremock = { workspace = true }

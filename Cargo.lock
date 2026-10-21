@@ -2084,6 +2084,7 @@ version = "0.8.3"
 dependencies = [
  "aws-lc-rs",
  "base64",
+ "flate2",
  "futures-core",
  "futures-util",
  "h2",
@@ -2092,7 +2093,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "opi-ws",
+ "libz-rs-sys",
  "regex",
  "regress",
  "reqwest",
@@ -2230,15 +2231,6 @@ dependencies = [
  "tokio",
  "tracing",
  "unicode-width",
-]
-
-[[package]]
-name = "opi-ws"
-version = "0.1.0"
-dependencies = [
- "flate2",
- "libz-rs-sys",
- "tokio",
 ]
 
 [[package]]

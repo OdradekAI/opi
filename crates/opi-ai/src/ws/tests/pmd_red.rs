@@ -1,5 +1,5 @@
-use opi_ws::pmd::Decoder;
-fn strict(payload: &[u8]) -> Result<Vec<u8>, opi_ws::pmd::Fault> {
+use crate::ws::pmd::Decoder;
+fn strict(payload: &[u8]) -> Result<Vec<u8>, crate::ws::pmd::Fault> {
     Decoder::new(false)?.decode(payload)
 }
 #[test]

@@ -1,4 +1,4 @@
-use opi_ws::{
+use crate::ws::{
     frame::{Decoder, Messages},
     pmd,
 };
@@ -12,7 +12,7 @@ fn hex(s: &str) -> Vec<u8> {
 #[test]
 fn historical_twelve_wire_fixtures_replayed_bytewise_and_coalesced() {
     let cases: serde_json::Value =
-        serde_json::from_str(include_str!("../fixtures/memory-codec-cases.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/memory-codec-cases.json")).unwrap();
     for row in cases.as_array().unwrap() {
         for size in [1, 7, usize::MAX] {
             let raw = hex(row["hex"].as_str().unwrap());
@@ -84,7 +84,7 @@ fn historical_twelve_wire_fixtures_replayed_bytewise_and_coalesced() {
 #[test]
 fn independent_python_generated_pmd_content_exact() {
     let rows: serde_json::Value =
-        serde_json::from_str(include_str!("../fixtures/python-pmd-fixtures.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/python-pmd-fixtures.json")).unwrap();
     for row in rows.as_array().unwrap() {
         let got = pmd::Decoder::new(false)
             .unwrap()
@@ -101,7 +101,7 @@ fn independent_python_generated_pmd_content_exact() {
 #[test]
 fn independent_python_history_and_bfinal_reset_fixtures() {
     let rows: serde_json::Value =
-        serde_json::from_str(include_str!("../fixtures/pmd-context-fixtures.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/pmd-context-fixtures.json")).unwrap();
     for row in rows.as_array().unwrap() {
         let mut d = pmd::Decoder::new(row["nct"].as_bool().unwrap()).unwrap();
         for (i, p) in row["payloads"].as_array().unwrap().iter().enumerate() {

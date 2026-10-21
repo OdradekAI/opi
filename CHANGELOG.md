@@ -5,9 +5,7 @@
 - `opi-ai`: `CredentialMutationOp` now distinguishes `Write`, `Delete`, and
   `Update(CredentialUpdateOp)`; custom callbacks wrap `Update`. Unconditional
   login replacement and logout can repair corrupt entries without decoding
-  their previous value. The neutral `opi-ws::io::Driver::new` now accepts
-  `Option<PmdParameters>` with separate send/receive context and window
-  settings; Upgrade callers map all four negotiated fields explicitly.
+  their previous value.
 - `opi-ai`: default `HttpClient` TLS now uses the same fixed instance AWS-LC
   profile and packaged Node roots as explicit `TlsOptions::default`, without
   inheriting the host's global provider or backend default roots.
@@ -98,7 +96,7 @@
   replay, including a timeout before the first SSE event.
 - Classic WebSocket upgrades use HTTP/1.1 with the same frozen TLS identity,
   trust and proxy inputs, while ordinary HTTP requests keep their H2 profile.
-  The neutral companion's dependency notices identify the actual Zlib licenses
+  The SDK dependency notices identify the actual Zlib licenses
   and compression backend selected by each supported feature union.
 - HTTP trailer acceptance fixtures now consume the complete HTTP tail before
   success, exposing the upstream field-count/byte boundaries and malformed or
@@ -203,9 +201,9 @@
   available_model_entries}`; compatible profiles register config-valid with
   their real env descriptor and availability is decided by the SDK check.
 
-- `opi-ws` (new Independent Companion at `companions/ws`, RDF-24 / task
-  20.15): the Agent-neutral owned WebSocket client substrate. One exclusive
-  `io::Driver` connection state machine over any upgraded
+- `opi-ai`: private `ws::frame`, `ws::pmd` and `ws::io` modules own the
+  WebSocket client substrate inside the SDK. One exclusive connection
+  state machine operates over an upgraded
   `AsyncRead + AsyncWrite` stream; strict `frame` decoding (reserved
   opcodes/RSV, fragmentation, control-frame shape, shortest length encodings,
   64-bit high bit, actual-received-byte typed fallible storage growth);
@@ -215,10 +213,14 @@
   unmodified libz-rs-sys 0.6.8 / zlib-rs 0.6.8 / flate2 1.1.10; the explicit
   client Close state machine with caller-supplied masks, retained in-flight
   events and caller-only deadlines; and the fixed 72,413-case deterministic
-  PMD boundary corpus replayed against recorded expectations. The crate is
-  standalone (not a root workspace member, no Opi dependency) with
-  `union-default`/`union-c-zlib` caller feature-union graphs; the package
-  identity/publication is deliberately not authorized yet.
+  PMD boundary corpus replayed against recorded expectations. Directional
+  PMD parameters retain both negotiated context flags and windows. The tests,
+  fixtures, license and compression NOTICE move into the SDK package; ordinary,
+  `flate2/default` and `flate2/zlib` caller feature unions retain the same
+  protocol and native maintenance boundaries. No public codec or test feature
+  is added. The codec has no production caller yet: this physical move does
+  not close real public Codex WS integration (20.16), final SDK package
+  acceptance (20.57), or native platforms/MSRV (20.58).
 - `opi-ai`: the `ws` module (RDF-24 / task 20.15), the strict dynamic
   WebSocket Upgrade bridge over the source-qualified `HttpClient`:
   request shape with pinned-entropy nonce/mask helpers, and strict typed
@@ -226,9 +228,8 @@
   6455 known vector pinned, singleton/duplicate rules, token-wise
   `Connection`/`Upgrade`, offered-only subprotocols, exact
   permessage-deflate parameter negotiation) before detaching the upgraded
-  stream. The neutral `opi-ws` substrate is consumed through a path-only
-  development dependency (stripped from `cargo package` output) until the
-  companion's registry identity is published.
+  raw stream and negotiation metadata. Upgrade does not construct the private
+  codec; provider/resource policy remains separate from protocol state.
 - `opi-ai`: the acquisition-retry owner surface (AIR-007, task 20.4):
   `AcquisitionPolicy` (per-call extra sends, hint bound, deterministic test
   jitter seed), `RetryAdmission` (1-based retry index plus the

@@ -5,7 +5,7 @@ use std::collections::TryReserveError;
 use std::fmt;
 
 #[derive(Debug)]
-pub enum Fault {
+pub(super) enum Fault {
     Protocol(&'static str),
     Storage(TryReserveError),
     Capacity,
@@ -40,7 +40,7 @@ impl From<TryReserveError> for Fault {
     }
 }
 
-pub fn checked_storage_len(current: usize, additional: usize) -> Result<usize, Fault> {
+pub(super) fn checked_storage_len(current: usize, additional: usize) -> Result<usize, Fault> {
     current
         .checked_add(additional)
         .filter(|length| *length <= isize::MAX as usize)
@@ -81,11 +81,11 @@ fn append_actual(buffer: &mut Vec<u8>, bytes: &[u8]) -> Result<(), Fault> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Frame {
-    pub fin: bool,
-    pub opcode: u8,
-    pub compressed: bool,
-    pub payload: Vec<u8>,
+pub(super) struct Frame {
+    pub(super) fin: bool,
+    pub(super) opcode: u8,
+    pub(super) compressed: bool,
+    pub(super) payload: Vec<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -96,7 +96,7 @@ struct Header {
     length: usize,
 }
 
-pub struct Decoder {
+pub(super) struct Decoder {
     pmd: bool,
     header: [u8; 10],
     header_len: usize,
@@ -109,7 +109,7 @@ pub struct Decoder {
 }
 
 impl Decoder {
-    pub fn new(pmd: bool) -> Self {
+    pub(super) fn new(pmd: bool) -> Self {
         Self {
             pmd,
             header: [0; 10],
@@ -125,7 +125,7 @@ impl Decoder {
 
     /// Convenience all-or-error batch API. Use `feed_into` for prefix delivery
     /// when a later frame in this same input chunk is malformed.
-    pub fn feed(&mut self, bytes: &[u8]) -> Result<Vec<Frame>, Fault> {
+    pub(super) fn feed(&mut self, bytes: &[u8]) -> Result<Vec<Frame>, Fault> {
         let mut complete = Vec::new();
         self.feed_into(bytes, &mut complete)?;
         Ok(complete)
@@ -133,7 +133,11 @@ impl Decoder {
 
     /// Completed frames are appended exactly once, even if a later header in
     /// this chunk fails. Errors absorb future input and release payload storage.
-    pub fn feed_into(&mut self, bytes: &[u8], complete: &mut Vec<Frame>) -> Result<(), Fault> {
+    pub(super) fn feed_into(
+        &mut self,
+        bytes: &[u8],
+        complete: &mut Vec<Frame>,
+    ) -> Result<(), Fault> {
         if self.terminal {
             return Err(Fault::Closed);
         }
@@ -258,7 +262,7 @@ impl Decoder {
     }
 
     /// Permanent EOF. It cannot reset this owner for a different connection.
-    pub fn eof(&mut self) -> Result<(), Fault> {
+    pub(super) fn eof(&mut self) -> Result<(), Fault> {
         if self.terminal {
             return Err(Fault::Closed);
         }
@@ -271,25 +275,25 @@ impl Decoder {
         Ok(())
     }
 
-    pub fn buffered_len(&self) -> usize {
+    pub(super) fn buffered_len(&self) -> usize {
         self.header_len + self.body.len()
     }
 
     /// Includes the fixed ten-byte header, even when no bytes are buffered.
-    pub fn buffered_capacity(&self) -> usize {
+    pub(super) fn buffered_capacity(&self) -> usize {
         self.header.len() + self.body.capacity()
     }
 
-    pub fn failed(&self) -> bool {
+    pub(super) fn failed(&self) -> bool {
         self.failed
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Message {
-    pub opcode: u8,
-    pub compressed: bool,
-    pub payload: Vec<u8>,
+pub(super) struct Message {
+    pub(super) opcode: u8,
+    pub(super) compressed: bool,
+    pub(super) payload: Vec<u8>,
 }
 
 /// Complete-message assembler. Compressed payloads remain opaque and require
@@ -300,7 +304,7 @@ struct Append {
 }
 
 #[derive(Default)]
-pub struct Messages {
+pub(super) struct Messages {
     // Only the IO owner may defer text validation; it cannot publish until its
     // bounded incremental validation finishes. Public constructors stay strict.
     defer_text: bool,
@@ -311,20 +315,20 @@ pub struct Messages {
 }
 
 impl Messages {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self::default()
     }
 
     /// Internal ownership transfer: the IO owner must validate all text before
     /// publication, including uncompressed messages, using its owned cursor.
-    pub(crate) fn new_deferred_text() -> Self {
+    pub(super) fn new_deferred_text() -> Self {
         Self {
             defer_text: true,
             ..Self::default()
         }
     }
 
-    pub fn receive(&mut self, frame: Frame) -> Result<Option<Message>, Fault> {
+    pub(super) fn receive(&mut self, frame: Frame) -> Result<Option<Message>, Fault> {
         if self.terminal {
             return Err(Fault::Closed);
         }
@@ -338,7 +342,7 @@ impl Messages {
     /// Only the IO owner uses this deferred append operation. A completed
     /// continuation stays owned until poll_append has copied every byte, and
     /// the owner polls that operation before accepting another frame.
-    pub(crate) fn receive_deferred(&mut self, frame: Frame) -> Result<Option<Message>, Fault> {
+    pub(super) fn receive_deferred(&mut self, frame: Frame) -> Result<Option<Message>, Fault> {
         if self.terminal {
             return Err(Fault::Closed);
         }
@@ -364,7 +368,7 @@ impl Messages {
         result
     }
 
-    pub(crate) fn poll_append(
+    pub(super) fn poll_append(
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<Option<Message>, Fault>> {
@@ -405,7 +409,7 @@ impl Messages {
         }
     }
 
-    pub(crate) fn append_progress(&self) -> Option<(usize, usize)> {
+    pub(super) fn append_progress(&self) -> Option<(usize, usize)> {
         let job = self.append.as_ref()?;
         Some((job.offset, job.frame.payload.len()))
     }
@@ -468,7 +472,7 @@ impl Messages {
         Ok(Some(message))
     }
 
-    pub fn eof(&mut self) -> Result<(), Fault> {
+    pub(super) fn eof(&mut self) -> Result<(), Fault> {
         if self.terminal {
             return Err(Fault::Closed);
         }
@@ -482,7 +486,7 @@ impl Messages {
         Ok(())
     }
 
-    pub fn failed(&self) -> bool {
+    pub(super) fn failed(&self) -> bool {
         self.failed
     }
 }

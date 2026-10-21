@@ -1,21 +1,34 @@
-//! Source-scoped strict WebSocket Upgrade bridge (RDF-24, task 20.15).
+//! Strict HTTP Upgrade bridge and private WebSocket client protocol state.
 //!
-//! This module owns only the HTTP-side upgrade: the request headers, the
-//! nonce and mask entropy, and strict validation of the 101 response
-//! (status, version, `Sec-WebSocket-Accept`, `Connection`/`Upgrade` token
-//! semantics, singleton and duplicate rules, offered-only subprotocols and
-//! extensions, exact permessage-deflate parameter negotiation). The neutral
-//! frame/message/PMD/Close/async-IO state machine is the `opi-ws` companion;
-//! [`Negotiation::driver_parameters`] hands it the validated facts, and the
-//! injected `00 00 FF FF` tail lives inside that decoder (proven exactly
-//! once and in order by its own battery).
+//! The public bridge owns the request headers, nonce and mask entropy, and
+//! strict validation of the 101 response (status, HTTP version, accept token,
+//! singleton fields, offered subprotocols and permessage-deflate parameters).
+//! It returns the detached byte stream and validated negotiation facts.
+//!
+//! Private frame, compression and async IO modules own RFC 6455 / RFC 7692
+//! protocol state. Borrowed operations retain partial progress in one exclusive
+//! connection owner; payload storage follows received bytes, compression tails
+//! are injected once, and Close completion requires both frames, write shutdown
+//! and peer EOF under the caller's deadline. Dropping the owner releases IO and
+//! compression resources without automatic protocol output.
 //!
 //! The transport stays source-qualified: the shared [`HttpClient`] keeps its
-//! explicit proxy profile, TLS profile and redirect policy. Upgrades must be
-//! issued with [`RedirectPolicy::None`] — a 3xx during upgrade is a typed
-//! failure here, never a silent follow. There is no hidden auth discovery,
-//! automatic resend, reconnect or fallback; every outgoing byte comes from
-//! the caller-queued frames.
+//! explicit proxy profile, TLS profile and redirect policy. Upgrades require
+//! [`RedirectPolicy::None`], so a 3xx is terminal. There is no hidden auth
+//! discovery, automatic resend, reconnect or fallback.
+
+// The public Upgrade bridge still returns the raw stream; these private
+// protocol operations have no production caller yet. Keep their state machines
+// compiled while allowing unused items only at these module boundaries.
+#[allow(dead_code)]
+mod frame;
+#[allow(dead_code)]
+mod io;
+#[allow(dead_code)]
+mod pmd;
+
+#[cfg(test)]
+mod tests;
 
 use crate::http::{HttpClient, RedirectPolicy};
 use base64::Engine as _;
@@ -297,8 +310,8 @@ fn negotiate_pmd(entries: &[String], offer: &PmdOffer) -> Result<NegotiatedPmd, 
 ///
 /// The client must have been built with [`RedirectPolicy::None`]: any 3xx
 /// is reported as [`WsUpgradeError::Status`] and never followed. The
-/// returned stream plus [`Negotiation::driver_parameters`] construct the
-/// neutral `opi_ws::io::Driver`.
+/// returned stream and [`Negotiation::driver_parameters`] remain caller-owned;
+/// this function does not start the private protocol state machine.
 pub async fn upgrade(
     client: &HttpClient,
     request: WsUpgradeRequest,

@@ -81,7 +81,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `AuthResolver` / `ResolvedAuth` | Driver-owned per-call auth resolution contract; one prepared result is frozen before an attempt starts. |
 | `ApiKind` | Crate-root enum tagging the backend family (`Anthropic`, `OpenAi`, `Google`, `Mistral`) carried on assistant messages. |
 | `HttpClient` | Shared `reqwest` client with pooling and explicit/env proxy support. |
-| `ws` | Strict dynamic WebSocket Upgrade bridge (`upgrade`, `WsUpgradeRequest`, `Negotiation`, `fresh_nonce`/`fresh_mask`): request headers, nonce/mask entropy, and strict 101 validation; the neutral frame/PMD/Close/IO state machine is the `opi-ws` companion. |
+| `ws` | Public strict dynamic WebSocket Upgrade bridge (`upgrade`, `WsUpgradeRequest`, `Negotiation`, `fresh_nonce`/`fresh_mask`): request headers, nonce/mask entropy, and strict 101 validation. Frame/PMD/Close/IO modules are private; Upgrade returns a raw upgraded stream and negotiation metadata. |
 | `retry` | The acquisition-retry owner (`AcquisitionPolicy`, `RetryAdmission`, `AcquisitionSeal`) plus the product-facing retry config, exponential backoff, and `Retry-After` parsing. |
 | `Usage` / `CumulativeUsage` | Token accumulation and cost helpers. |
 | `test_support::MockProvider` | Deterministic mock provider for downstream tests. |
@@ -405,18 +405,103 @@ parameters, value ranges, no parameters the offer did not include, no
 client window above the offered ceiling). Any violation is a typed
 `WsUpgradeError` before the stream detaches.
 
-The neutral protocol state machine is deliberately outside this crate: the
-`opi-ws` Independent Companion (`companions/ws`, wired here as a
-path-only development dependency) owns strict RFC 6455 frames, message
-assembly, permessage-deflate with exactly-once `00 00 FF FF` tail injection,
-the explicit Close exchange and the async IO owner. `Negotiation::
-driver_parameters` returns `Option<NegotiatedPmd>` retaining both directions'
-context-takeover flags and windows. Callers explicitly map these named fields
-into `opi_ws::io::PmdParameters` when constructing `Driver::new` over the
-detached `reqwest::Upgraded` stream;
-the published package resolves the companion by registry identity once that
-publication is authorized. The real provider consumer (Codex WebSocket,
-20.16) and platform/package acceptance (20.57/20.58) remain open.
+The protocol state machine lives in private `src/ws/frame.rs`, `pmd.rs` and
+`io.rs` modules inside this SDK. It has no public codec API, test-only export
+or Cargo feature, and no independent package/version/release identity.
+The public Upgrade result remains a raw `reqwest::Upgraded` stream plus
+negotiation metadata; Upgrade does not construct the private codec.
+`Negotiation::driver_parameters` returns `Option<NegotiatedPmd>` retaining
+both directions' context-takeover flags and windows. The private codec has
+no production caller yet. Physical consolidation alone does not establish
+Models → real Codex → Upgrade → codec behavior (20.16), continuation/pool/
+cleanup (20.17), final assembled SDK package acceptance (20.57), or native
+platform/MSRV acceptance (20.58); those remain open.
+
+### Private protocol ownership
+
+| Module | Contract |
+|---|---|
+| `ws::frame` | Strict client frame decoding (reserved opcodes/RSV, fragmentation, control-frame shape, shortest length encodings, 64-bit high bit) and message assembly with actual-received-byte, typed fallible storage growth. |
+| `ws::pmd` | Owned permessage-deflate: pre-tail `SyncPoint` proof, exactly-once `00 00 FF FF` tail injection, `Z_BLOCK`/`BFINAL`/`ResetKeep` handling, context takeover and bounded per-poll work; the encoder is an ordinary safe `flate2` client. |
+| `ws::io` | Exclusive connection owner with owned pending read/write/decode jobs, explicit Close, caller-supplied masks, backpressure and terminal failure absorption. |
+
+One private `Driver` owns all connection state. Borrowed `next()` futures
+return complete messages (including Ping/Pong/Close); dropping a borrow
+preserves partial frame/PMD/UTF-8 state so the same owned operation can
+resume. Owner cancellation/abort/Drop instead releases resources and
+suppresses late output; an idle owner must register a real cancellation
+wakeup. A cancelled borrow does not authorize returning a connection to a
+pool. The protocol layer does not discover auth, create timers or mask
+entropy, reconnect, retry, or make provider/resource-policy decisions.
+
+Directional PMD parameters configure reception from server values and
+sending from client values. `None` disables PMD; absent RFC window
+parameters map to 15. The pinned encoder normalizes requested window 8 to
+9 internally; tests independently verify actual wire distances against the
+negotiated 256-byte window rather than treating configuration digits as
+proof.
+
+Explicit Close requires both frames, write shutdown and peer transport EOF.
+It preserves partial application writes, distinguishes bytes written from
+pending flush, retains bounded in-flight events and uses only the caller's
+absolute `tokio::time::Instant` deadline. Abnormal EOF/protocol/Close-timeout
+errors occur once, discard retained receive events and then leave permanent
+receive EOF; successful Close still permits delivery of its retained event.
+Storage grows from received bytes with typed `try_reserve*` failures, never
+from speculative declared-payload allocation. Internal IO/inflate/UTF-8/
+continuation work quanta provide cooperative yielding, not message-size or
+iteration limits. Allocation, single backend calls and synchronous outbound
+encoding are not hard-preemptible.
+
+### Compression and maintenance boundaries
+
+The unmodified graph is `libz-rs-sys = 0.6.8` (defaults off, `std` +
+`rust-allocator`), resolved `zlib-rs 0.6.8`, and `flate2 = 1.1.10` (defaults
+off, `zlib-rs`). The decoder uses doc(hidden) public `inflateSyncPoint` /
+`inflateResetKeep` exports and the transitive zlib-rs `__internal-api`.
+The narrow local unsafe boundary is documented in `src/ws/pmd.rs`: a unique
+boxed `z_stream`, no clone/custom allocator/callback/raw-handle escape,
+pointer rebinding around calls, exactly-once `inflateEnd`, and deliberate
+`Send` without `Sync`. It neither adds local extern declarations nor
+selects dynamic system zlib. See [NOTICE](NOTICE) for compression licenses
+and source/feature/native audit obligations.
+
+| Caller graph | Encoder backend | Decoder backend |
+|---|---|---|
+| ordinary | flate2 `zlib-rs` | direct `libz-rs-sys` Rust path |
+| `flate2/default` | flate2 `zlib-rs` with default features unified | direct `libz-rs-sys` Rust path |
+| `flate2/zlib` | flate2 `zlib` (native C `libz-sys` build) | direct `libz-rs-sys` Rust path |
+
+flate2 1.1.10 prioritizes C backends, then zlib-rs, then miniz_oxide. The
+default union adds miniz_oxide without selecting its encoder. C-zlib native
+source/build/link inputs require separate review. Allocator conflicts,
+gz/gzprintf, nightly, export-symbols/prefix and other unreviewed unions do
+not inherit support. Reopen review for hidden-API/unsafe/feature/security
+changes, a shrinking accepted-input set or a new production consumer.
+Dependency upgrades require actual resolved source/checksum/features plus
+the three-graph corpus, Send/Close/cancellation/fairness and package checks.
+
+### Local protocol checks
+
+The migrated private tests live under `src/ws/tests`, with the original
+fixtures under `src/ws/tests/fixtures`. The boundary replay regenerates the fixed
+72,413-case PMD corpus and checks recorded classifications (SHA-256 for
+outputs longer than 64 bytes); extraction provenance and oracle identities
+remain with those fixtures. Run the same tests in all three graphs:
+
+```sh
+cargo test -p opi-ai --lib ws::
+cargo test -p opi-ai --lib ws:: --features flate2/default
+cargo test -p opi-ai --lib ws:: --features flate2/zlib
+```
+
+Private loopback tests combine public Upgrade/`HttpClient` with the codec,
+including two-direction window-8 negotiation, multiple messages with/without
+context takeover, an independent RFC 1951 decoder and a distance-257 negative
+control. They test wiring under `cfg(test)`; they do not prove a production
+Codex path or an external public codec. The idle-cancellation test waits for
+a real Pending read waker, cancels in the owner and observes transport/PMD
+release before acknowledgement, without adding a production cancellation API.
 
 ## Proxy
 
@@ -812,4 +897,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## License
 
-MIT. See the workspace [LICENSE](../../LICENSE).
+MIT. See the packaged [LICENSE](LICENSE) and compression [NOTICE](NOTICE).

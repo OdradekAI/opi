@@ -1,6 +1,6 @@
 //! Borrowed operations retain all partial frame, PMD, write and Close state in this owner.
 //! Caller queues every masked Close; only `finish_close` drives transport shutdown.
-use crate::{frame, pmd};
+use super::{frame, pmd};
 use std::{
     collections::VecDeque,
     fmt,
@@ -12,7 +12,7 @@ use std::{
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 #[derive(Debug)]
-pub enum Fault {
+pub(super) enum Fault {
     Frame(frame::Fault),
     Pmd(pmd::Fault),
     Io(io::Error),
@@ -77,7 +77,7 @@ enum Pending {
     },
 }
 
-pub struct Core {
+pub(super) struct Core {
     frame: Option<frame::Decoder>,
     messages: Option<frame::Messages>,
     pmd: Option<pmd::Decoder>,
@@ -86,7 +86,7 @@ pub struct Core {
     closed: bool,
 }
 impl Core {
-    pub fn new(pmd: bool, no_context: bool) -> Result<Self, Fault> {
+    pub(super) fn new(pmd: bool, no_context: bool) -> Result<Self, Fault> {
         Self::with_parameters(pmd.then_some(PmdParameters {
             server_no_context_takeover: no_context,
             ..PmdParameters::default()
@@ -110,7 +110,11 @@ impl Core {
         })
     }
     /// Historical synchronous mechanism API. The async owner uses `feed_byte`/`poll_pending`.
-    pub fn ingest(&mut self, bytes: &[u8], out: &mut Vec<frame::Message>) -> Result<(), Fault> {
+    pub(super) fn ingest(
+        &mut self,
+        bytes: &[u8],
+        out: &mut Vec<frame::Message>,
+    ) -> Result<(), Fault> {
         if self.terminal {
             return Err(Fault::Closed);
         }
@@ -257,7 +261,7 @@ impl Core {
         Poll::Ready(Ok(Some(message)))
     }
 
-    pub fn eof(&mut self) -> Result<(), Fault> {
+    pub(super) fn eof(&mut self) -> Result<(), Fault> {
         if self.closed {
             return Ok(());
         }
@@ -284,13 +288,13 @@ impl Core {
         }
         self.pmd = None;
     }
-    pub fn is_closed(&self) -> bool {
+    pub(super) fn is_closed(&self) -> bool {
         self.closed
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CloseState {
+pub(super) enum CloseState {
     Open,
     LocalCloseQueued,
     LocalCloseSent,
@@ -305,11 +309,11 @@ pub enum CloseState {
 /// The server fields configure reception; the client fields configure sending.
 /// Both windows must be in 8..=15; omitted RFC window parameters mean 15.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PmdParameters {
-    pub server_no_context_takeover: bool,
-    pub client_no_context_takeover: bool,
-    pub server_max_window_bits: u8,
-    pub client_max_window_bits: u8,
+pub(super) struct PmdParameters {
+    pub(super) server_no_context_takeover: bool,
+    pub(super) client_no_context_takeover: bool,
+    pub(super) server_max_window_bits: u8,
+    pub(super) client_max_window_bits: u8,
 }
 
 impl Default for PmdParameters {
@@ -323,7 +327,7 @@ impl Default for PmdParameters {
     }
 }
 
-pub struct Driver<S> {
+pub(super) struct Driver<S> {
     stream: Option<S>,
     core: Option<Core>,
     encoder: Option<pmd::Encoder>,
@@ -343,7 +347,7 @@ pub struct Driver<S> {
 }
 impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
     /// Take an upgraded stream and direction-specific PMD facts (`None` disables PMD).
-    pub fn new(stream: S, pmd: Option<PmdParameters>) -> Result<Self, Fault> {
+    pub(super) fn new(stream: S, pmd: Option<PmdParameters>) -> Result<Self, Fault> {
         Ok(Self {
             stream: Some(stream),
             core: Some(Core::with_parameters(pmd)?),
@@ -370,7 +374,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
             terminal: None,
         })
     }
-    pub fn close_state(&self) -> CloseState {
+    pub(super) fn close_state(&self) -> CloseState {
         match (
             self.terminal,
             self.peer_close,
@@ -389,7 +393,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
     }
     /// Cancellation drops only the borrow; read offsets and PMD job stay owned.
     /// Peer Close ends receive delivery but keeps the transport until `finish_close`.
-    pub async fn next(&mut self) -> Result<Option<frame::Message>, Fault> {
+    pub(super) async fn next(&mut self) -> Result<Option<frame::Message>, Fault> {
         if let Some(message) = self.ready.pop_front() {
             return Ok(Some(message));
         }
@@ -459,7 +463,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
         }
     }
     /// Caller supplies a fresh unpredictable mask. A peer response is admitted exactly once.
-    pub fn queue(
+    pub(super) fn queue(
         &mut self,
         opcode: u8,
         payload: &[u8],
@@ -553,7 +557,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
         bytes.extend(body.iter().enumerate().map(|(i, b)| *b ^ mask[i % 4]));
         Ok(bytes)
     }
-    pub async fn flush(&mut self) -> Result<(), Fault> {
+    pub(super) async fn flush(&mut self) -> Result<(), Fault> {
         poll_fn(|cx| self.poll_flush(cx)).await
     }
     fn poll_flush(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Fault>> {
@@ -609,7 +613,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
     /// At most one receive event is retained: CloseReceivePending is nonterminal
     /// backpressure; drain it via next() and resume with the same absolute deadline.
     /// Timeout is an absorbing failure. Dropping this borrowed future permits resume.
-    pub async fn finish_close(
+    pub(super) async fn finish_close(
         &mut self,
         deadline: Option<tokio::time::Instant>,
     ) -> Result<(), Fault> {
@@ -716,21 +720,21 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
         self.write = Vec::new();
         self.write_offset = 0;
     }
-    pub fn is_terminal(&self) -> bool {
+    pub(super) fn is_terminal(&self) -> bool {
         self.terminal.is_some()
     }
-    pub fn pending_write_len(&self) -> usize {
+    pub(super) fn pending_write_len(&self) -> usize {
         self.write.len()
     }
-    pub fn write_offset(&self) -> usize {
+    pub(super) fn write_offset(&self) -> usize {
         self.write_offset
     }
     /// Isolated probe observation of owner-held bounded continuation work.
-    pub fn append_progress(&self) -> Option<(usize, usize)> {
+    pub(super) fn append_progress(&self) -> Option<(usize, usize)> {
         self.core.as_ref()?.messages.as_ref()?.append_progress()
     }
     /// Isolated probe observation; no additional buffered payload or publication.
-    pub fn text_validation_progress(&self) -> Option<(usize, usize)> {
+    pub(super) fn text_validation_progress(&self) -> Option<(usize, usize)> {
         match self.core.as_ref()?.pending.as_ref()? {
             Pending::Text { message, offset } => Some((*offset, message.payload.len())),
             Pending::Inflate(_) => None,

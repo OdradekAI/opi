@@ -10,6 +10,8 @@
 
 > WS后续独立修订采用[RDF-24](pi-1.3.0-rust-differences.md#rdf-24-owned-ws-profile)：产品crate外自有中立WS/PMD/Close/IO＋原版压缩，取消Ratchet及third-party/pi-ws必建义务；[前轮机制摘要](offline-probes/owned-ws/summary.json)与旧Ratchet窗口分开，正式产品/平台均OPEN。
 
+> 2026-10-21 WS 归属修订：用户确认将已在产品 crate 外起步的协议实现并入 `opi-ai` 私有模块；此决定取代 RDF-24 的独立包、独立版本和 standalone 门禁目标，不改变协议、压缩、unsafe 或资源语义。20.15 的既有独立包交付保留原身份；迁移与 20.16 的真实 Codex WS 接入、新 SDK 产物验证同批闭环。旧 READY 和研究复审不自动证明本次图已准入或实现，新合同仍须经 `opi-implement plan` 协调。
+
 ## READY 的含义与不变门槛
 
 用户本轮明确选择：“设计 READY：关键选型和合同有依据、无未决设计阻塞；产品实施及平台验收继续明确标为 OPEN”。因此设计结论与产品覆盖是两种判定，不修改原七组覆盖的关闭条件，也不把它们重命名为通过。正式 `opi-spec` §8.1／PRIN-002／GATE-002、Placement Review 和 `opi-implement plan` 的准入权威不变；本页不审批依赖、实施或功能进入 Agent Core。
@@ -23,7 +25,7 @@
 | 组 | 设计决定／依据 | 产品覆盖与唯一验收入口 |
 |---|---|---|
 | Schema | 私有、JSON-only 的 TypeBox dialect IR evaluator；normalization、strict wire projection 与校验分离。ECMA regex 采用 crates.io regress0.12.0；URL 采用普通 url2.5.8，Unicode／IDNA 数据随受支持上游 profile（RDF-21）；JS String 仍用 ryu-js1.0.2。逐分支传播执行错误，不用标准 draft／meta admission／全 pattern guard 代替源码语义。详见 [Schema 选型](pi-1.3.0-readiness-schema.md) | **OPEN**：完整格式／refs／normalizer／公开 utility／consumer／cache/cancel；V-11/34/35/39/41/58，RDF-09/21 |
-| WS | RDF-24严格Upgrade/glue＋companions/ws独立中立frame/PMD/Close/IO，原版libz-rs-sys/zlib-rs0.6.8与flate2 1.1.10；Send/noSync、借用恢复/逻辑取消、精确tail/字典、有界调度、hidden API/unsafe与有限native union均有明确owner。不依赖Ratchet，不建vendor/namespace | **OPEN**：20.15独立构建/产物/真实Upgrade，20.16/17真实provider/continuation/pool/cleanup/proxy/TLS，20.57包、20.58平台/MSRV；V-02/30/49/58、RDF-13/18/24 |
+| WS | RDF-24严格Upgrade/glue与 `opi-ai/src/ws/` 私有frame/PMD/Close/IO模块分层，原版libz-rs-sys/zlib-rs0.6.8与flate2 1.1.10；Send/noSync、借用恢复/逻辑取消、精确tail/字典、有界调度、hidden API/unsafe与有限native union均有明确owner。不依赖Ratchet，不建vendor/namespace或新的公开codec接口 | **OPEN**：20.15原独立包证明保留历史身份；20.16同批完成私有迁移、真实provider与新SDK产物普通/default/C-union消费者，20.17继续完成资源cleanup，20.57最终包、20.58平台/MSRV；V-02/30/49/58、RDF-13/18/24 |
 | HTTP／proxy／H2／redirect | 单一 source-qualified transport／retry owner；实际 H1/H2、proxy、redirect 的方法／body／敏感 header 行为逐来源区分，不继承 reqwest 默认当 Pi 默认；普通crates.io reqwest0.12.28/Hyper1.9.0的head/buffer/trailer/chunk-extension边界按RDF-22明示，不维护HTTP fork/namespace或预分配巨大固定值。详见 [transport/auth](pi-1.3.0-readiness-transport-auth.md) | **OPEN**：所有公开路径／source 和完整 transport 组装、取消、代理、parser 接受集；V-01/05/09/29/30/51/55/58 |
 | TLS／trust／crypto | 原版rustls0.23.40＋aws-lc-rs1.18.2／aws-lc-sys0.46.0，私有safe KeyProvider／SigningKey／Signer glue，AWS-LC实例provider显式选择，不安装global或以union默认代替冻结TLS/cipher/scheme/KX/ALPN。RDF-23明示RSA1024／multiprime拒绝、P-521签名／验证／mTLS与不支持P-521 KX的区别，不要求完整Node算法。default trust仍选固定Node参考bundle，scoped extra/explicit roots按source，host roots显式选择。详见 [transport/auth](pi-1.3.0-readiness-transport-auth.md) | **OPEN**：声明密钥／协商接受范围、完整trust来源、真实ADC/mTLS/ALPN、宿主隔离／取消、native来源／普通union包consumer/MSRV／三平台；V-09/49/55/58，RDF-18/23 |
 | Auth／ADC／AWS | 保留 owned 协议／来源 adapter、明确冻结身份和 source retry／redirect／metadata timeout／进程与 store ACK 所有权；不只实现 standard 模式，不叠 generation retry。详见 [transport/auth](pi-1.3.0-readiness-transport-auth.md)和现有后端合同 | **OPEN**：完整 source chain、九 OAuth、DPoP／SSO／MFA／adaptive、进程树、rotation／并发／副作用；V-05/09/12/43/55/58 |
@@ -36,11 +38,13 @@
 
 研究中的受控数据／源码补丁必须有原始版本／源码摘要、最小 diff、生成输入／命令、补丁后摘要、license 和回归语料。它们不是未经修改的上游发布包；实现不得只声明原 crate 版本而遗漏补丁身份。使用私有模块隐藏差异；无推测性公共 trait／crate／feature 配置体系。
 
-当前源码/vendor必建义务均已由RDF-21/22/23/24取代；保留各原始实验、patch与失败历史。WS独立中立状态机与低层隐藏接口/unsafe的维护范围见§8；若需新extension/server角色、custom allocator/raw并发、未审symbol/native组合、新parser接受差异、任意cap或第二transport/retry owner，必须停止并重开设计，不能静默fork、猜suffix或收窄正常接受集。升级先审来源/算法/features，再重放语料。
+当前源码/vendor必建义务均已由RDF-21/22/23/24取代；保留各原始实验、patch与失败历史。WS私有协议状态机与低层隐藏接口/unsafe的维护范围见[WS§8](pi-1.3.0-readiness-ws.md#8-自有中立-ws-模块合同rdf-24)；若需新extension/server角色、custom allocator/raw并发、未审symbol/native组合、新parser接受差异、任意cap或第二transport/retry owner，必须停止并重开设计，不能静默fork、猜suffix或收窄正常接受集。升级先审来源/算法/features，再重放语料。
 
-当前均使用真实可分发package identity：HTTP/crypto/Schema为原版registry profile，WS是自有中立库＋原版压缩，无Ratchet/namespace闭包。中立库位于companions/ws，独立版本/workspace/门禁，不新增Opi领域crate，不提取新repo或虚构第二消费者；opi-ai只有必要依赖和私有glue。早期普通/default/C-union打包consumer及最终SDK包必须真实执行；rootpatch/TEMP path/library lock不能代替分发。旧研究不重标为新图证明，不自动publish。
+目标分发图使用真实可分发package identity：HTTP/crypto/Schema为原版registry profile，WS为SDK包内私有实现＋原版压缩，无Ratchet/namespace闭包。根workspace仍七成员，不保留独立 `opi-ws` manifest/lock/版本或公开codec；原压缩依赖进入 `opi-ai` 正常依赖图。实际 `opi-ai.crate` 提取后的私有测试与真正外部公共consumer分别记录：前者证明包内实现，后者须由Models→真实Codex→Upgrade→私有协议模块运行，不能以Upgrade-only或源码复制替代。普通/default/C-union、最终SDK包与native来源仍须真实执行；rootpatch/TEMP checkout/library lock不能代替产物。旧独立包、研究与日志不重标为新图证明，不自动publish。
 
-WS Rust默认图仍有本地unsafe wrapper、上游unsafe/SIMD；C-zlib union与AWS-LC另含native C/assembly/FFI/build工具成本。crypto继续私有safe/no-local-FFI；WS只在中立库中以公开低层Rust导出封装隐藏API/Send，不新增extern声明或system动态zlib选择。任何graph/source/allocator/pointer变化重审，记录native输入/CC/flags/link来源；未审export/gz/nightly/allocator冲突或其他native union不继承证明。构造零auth/source I/O、不改全局provider/env/subscriber/不发现ambient身份或trust等边界不变。设计READY不授予产品/供应链/MSRV/三平台准入。
+此次Placement Review依据是现有复用和维护成本，而非预期第二消费者：协议实现已按PLACE-002从产品crate外起步；当前生产SDK仅有Upgrade桥，codec通过 `ws_upgrade` 与外部包harness消费，计划中的产品消费者只有Codex。保留独占连接、frame和PMD模块深度，删除独立包身份、单独lock和非成员门禁的重复编排；新增glue仅为crate内协商参数映射与provider接入，不新增公开trait、codec、配置或测试feature。代价是所有SDK消费者的正常构建图增加现有固定压缩依赖，且合并不减少unsafe/hidden-API审查义务。实际第二生产消费者、独立发布周期或可衡量的依赖/维护损害出现时再重审包归属；未出现前不为假设复用维护独立分发合同。
+
+WS Rust默认图仍有本地unsafe wrapper、上游unsafe/SIMD；C-zlib union与AWS-LC另含native C/assembly/FFI/build工具成本。crypto继续私有safe/no-local-FFI；WS只在私有协议模块中以公开低层Rust导出封装隐藏API/Send，不新增extern声明或system动态zlib选择。任何graph/source/allocator/pointer变化重审，记录native输入/CC/flags/link来源；C图须分别证明AWS-LC和libz-sys的实际native输入，不能二选一。未审export/gz/nightly/allocator冲突或其他native union不继承证明。构造零auth/source I/O、不改全局provider/env/subscriber/不发现ambient身份或trust等边界不变。设计READY不授予产品/供应链/MSRV/三平台准入。
 
 ## 验证和独立复审
 

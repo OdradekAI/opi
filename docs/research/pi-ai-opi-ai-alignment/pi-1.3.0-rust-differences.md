@@ -19,7 +19,7 @@
 | 范围／平台 | SDK 与宿主责任、Cargo/module 与 npm/Bun、native runtime 支持面 | 可以不复制非目标符号或平台桥，但 SDK 对应功能不能随之消失 |
 | 真正能力缺口 | 尚无公开可达实现、协议接线或机械证明 | 保持未完成；不能以“Rust 惯用”“deferred”或历史子集选择关闭 |
 
-以下RDF-01–24是差异定位符，不新增AIR/V或进度账本。RDF-01–20保留身份，RDF-21/22/23分别修订Unicode/HTTP/crypto；RDF-24单独记录用户选择的自有中立WS、隐藏压缩接口/unsafe及构建/资源边界，不授权协议能力收窄。历史研究与后续实施分别记录实际执行，不能互相冒充。
+以下RDF-01–24是差异定位符，不新增AIR/V或进度账本。RDF-01–20保留身份，RDF-21/22/23分别修订Unicode/HTTP/crypto；RDF-24单独记录用户选择的自有私有WS模块、隐藏压缩接口/unsafe及构建/资源边界，不授权协议能力收窄。历史研究与后续实施分别记录实际执行，不能互相冒充。
 
 | ID | 差异 | 主分类 | 主验收导航 |
 |---|---|---|---|
@@ -46,7 +46,7 @@
 | RDF-21 | 上游 Unicode／IDNA 数据 profile | 已批准数据行为差异 | V-11/34/35/39/41/58 |
 | RDF-22 | 上游 HTTP parser/storage 接受范围 profile | 明示后端资源差异 | V-01/02/05/09/13/29/30/51/55/58 |
 | RDF-23 | 上游 crypto key/算法及原生构建 profile | 明示后端接受范围与构建差异 | V-09/49/55/58 |
-| RDF-24 | 自有中立WS、原版压缩与隐藏接口/unsafe维护 | 模块/分发与资源表达；不豁免协议能力 | V-02/04/30/49/58 |
+| RDF-24 | 自有私有WS模块、原版压缩与隐藏接口/unsafe维护 | 模块/分发与资源表达；不豁免协议能力 | V-02/04/30/49/58 |
 
 ## 逐项契约
 
@@ -205,7 +205,7 @@
 ### RDF-18 · Cargo/native 平台与 npm/Bun/browser/CLI 边界
 
 - **Pi 事实：** [`package.json`](../../../.repo/pi-1.3.0/packages/ai/package.json)公开 root/subpaths、`pi-ai` CLI 和 bun-oauth；[root export](../../../.repo/pi-1.3.0/packages/ai/src/index.ts)强调 core side-effect-free，provider/catalog 分开；[Bun bridge](../../../.repo/pi-1.3.0/packages/ai/src/bun-oauth.ts#L12)为静态打包加载 OAuth。[AuthContext](../../../.repo/pi-1.3.0/packages/ai/src/auth/context.ts#L19)存在 browser fallback，Node-only flow 仍需对应平台能力。
-- **Rust 目标：** Cargo/module/resources/host Tokio表达独立SDK，npm/Bun/browser/CLI符号和任意executor/WASM不承诺ABI。确定RDF-22普通上游HTTP接受范围profile、RDF-24 ownedUpgrade＋中立自有WS/PMD/Close/checked存储、RDF-23原版rustls/AWS-LC公开safe key/provider/signing seam及其明示key/算法profile，以及full-source AWS/ADC owner；仅RDF-23命名的crypto接受范围可有差异，不以其他ring范围/标准only/noPMD静默收面。native默认trust选固定Node参考bundle，scoped extra/explicit roots按source消费，host roots显式选择；不宣称Bun/OS/webpki同默认。原生C、有限unsafe及fork/数据/registry包维护成本明示；产品MSRV/锁图/三平台/consumer仍OPEN。保留真实executable env gate/host授权、portable well-known与无自动gcloud差异，无虚构预算/零retry/双独立gate。
+- **Rust 目标：** Cargo/module/resources/host Tokio表达独立SDK，npm/Bun/browser/CLI符号和任意executor/WASM不承诺ABI。确定RDF-22普通上游HTTP接受范围profile、RDF-24 ownedUpgrade＋opi-ai内部私有WS/PMD/Close/checked存储、RDF-23原版rustls/AWS-LC公开safe key/provider/signing seam及其明示key/算法profile，以及full-source AWS/ADC owner；仅RDF-23命名的crypto接受范围可有差异，不以其他ring范围/标准only/noPMD静默收面。native默认trust选固定Node参考bundle，scoped extra/explicit roots按source消费，host roots显式选择；不宣称Bun/OS/webpki同默认。原生C、有限unsafe及fork/数据/registry包维护成本明示；产品MSRV/锁图/三平台/consumer仍OPEN。保留真实executable env gate/host授权、portable well-known与无自动gcloud差异，无虚构预算/零retry/双独立gate。
 - **理由与分类：** packaging/runtime 桥属于平台差异；不是删除 OAuth/helper/catalog/独立 SDK 动作的理由。当前 [manifest](../../../crates/opi-ai/Cargo.toml)与[CI](../../../.github/workflows/ci.yml#L40)支持 native 依赖与 Linux/macOS/Windows 验证路线；本候选**不承诺 WASM/browser 或任意 executor 支持**，也不从源码无显式 wasm forbid 推断可用。
 - **外部 caller 影响：** Rust caller 自行装配 runtime、Stream/Serde 和 UI；无 Agent/产品 crate 前提。SDK 文档需列 native 支持面、平台相关 OAuth presenter/callback限制和正常依赖。未证明编译大小、lazy link、启动或性能收益，不为 tree-shaking 猜测加 feature。
 - **机械验证：** V-26/42/49/58 用离线 package 与 workspace 外 consumer、native 多平台组装／假传输、资源定位、构造无auth/source发现（RDF-23允许的native CPU初始化/能力输入/OS entropy单独记录）、公开工具能力映射。不能以 monorepo 内编译证明可发布，也不能用未缓存依赖的自动下载补缺。
@@ -264,14 +264,14 @@
 
 <a id="rdf-24-owned-ws-profile"></a>
 
-### RDF-24 · 自有中立 WS 与原版压缩维护 profile
+### RDF-24 · 自有私有 WS 模块与原版压缩维护 profile
 
-- **来源与替换范围：** Pi的PMD、正常窗口/协商、消息/控制帧、continuation、fallback和资源动作不因改写Rust而缩减。用户本轮选定自有WS模块；按[WS§8](pi-1.3.0-readiness-ws.md#8-自有中立-ws-模块合同rdf-24)取代Ratchet core/ext/deflate、补丁/namespace闭包及third-party/pi-ws必建计划，不创建改名vendor。旧80网络/14内存及旧patch保留原窗口，不改写为新codec结果。
-- **归属与接口：** 通用客户端frame/message/PMD/Close/owned IO置于产品crate外companions/ws/，独立构建/版本、无Opi依赖、根workspace仍七成员；opi-ai/src/ws仅是严格Upgrade/参数/tail和来源限定transport接入。Codex provider/pool/continuation/fallback与generation cleanup留20.16/20.17及现有P20-RESOURCES owner。中立库有完整独占状态机价值，不虚构第二生产消费者、不新增Opi领域框架/进程协议；不宣称已具备跨仓抽取或公开registry身份。
-- **压缩与unsafe：** 原版libz-rs-sys0.6.8（std+rust-allocator、defaults off）、实际zlib-rs0.6.8与flate2 1.1.10（zlib-rs、defaults off）。隐藏公开SyncPoint/ResetKeep及__internal-api升级敏感；中立库维护私有Box/stream、唯一init/end、调用前后指针、upstream重绑定、无callback/raw暴露和有限unsafe Send/no Sync证明。无本地extern声明/系统动态zlib选择，不声称safe-only或零unsafe。升级/feature/allocator/raw接口变化重新审查并重放语料，不能append-tail猜成功或静默补上游源码。
+- **来源与替换范围：** Pi的PMD、正常窗口/协商、消息/控制帧、continuation、fallback和资源动作不因改写Rust而缩减。保留自有WS机制，按[WS§8](pi-1.3.0-readiness-ws.md#8-自有中立-ws-模块合同rdf-24)取代Ratchet core/ext/deflate、补丁/namespace闭包及third-party/pi-ws必建计划；用户当前选择进一步把初始独立companion合并为SDK私有模块，不创建改名vendor。旧80网络/14内存及旧patch保留原窗口，不改写为新codec结果。
+- **归属与接口：** 选定目标是客户端frame/message/PMD/Close/owned IO归opi-ai/src/ws下私有frame/pmd/io模块，确认目标不等于执行迁移或协调账本；初始companions/ws合同及交付证据保留原身份，根workspace仍七成员。协议owner继续拥有独占状态机，不引入model/auth/Agent policy；相邻Upgrade层继续负责严格Upgrade/参数/tail及来源限定transport。Codex provider/pool/continuation/fallback与generation cleanup留20.16/20.17及现有P20-RESOURCES owner。撤销新布局的独立package/version/release要求，不新增公开codec、test-only export/feature、Opi领域框架或进程协议，不虚构第二生产消费者、不授权跨仓抽取或registry发布。
+- **压缩与unsafe：** 原版libz-rs-sys0.6.8（std+rust-allocator、defaults off）、实际zlib-rs0.6.8与flate2 1.1.10（zlib-rs、defaults off）。隐藏公开SyncPoint/ResetKeep及__internal-api升级敏感；私有协议模块维护私有Box/stream、唯一init/end、调用前后指针、upstream重绑定、无callback/raw暴露和有限unsafe Send/no Sync证明。无本地extern声明/系统动态zlib选择，不声称safe-only或零unsafe。升级/feature/allocator/raw接口变化重新审查并重放语料，不能append-tail猜成功或静默补上游源码。
 - **资源/caller差异：** 借用future取消可恢复owned IO/decode/UTF-8/continuation进度；logical-call取消/abort/owner Drop仍销毁并禁止归池/晚发布。idle IO由真实owner注册取消唤醒，原子flag不足。完整客户端Close含显式mask回应、partial writes/bytes-written与flush、peer/local/simultaneous及transport EOF，只有显式绝对deadline；cleanup可abort并await本地退出，不等远端无限ACK。工作量quanta不成为消息/迭代cap，不承诺分配/单底层调用硬抢占或同步outbound encode公平；原型post-Close严格性不成为新接受域豁免。
 - **有限feature/native边界：** 普通/defaultunion/C-zlibunion三图decoder都走固定Rust，C图encoder额外引native libz-sys/build/static链接来源。rust-allocator+c-allocator明确编译冲突；gz/gzprintf/nightly/export-symbols/prefix/其他backend不继承支持，symbol与C冲突需另审。普通、union真实package consumer固定并检查source/checksum/features/native输入，研究lock不能固定所有caller；不声明all-features/MSRV/跨平台已通过。
-- **证据与验收分区：** [前轮固定摘要](offline-probes/owned-ws/summary.json)为Windows/Rust1.99.1、内存/Tokio duplex：76不同函数×3图=228通过，同一72,413输入×3零差异，5运行时mutant反例和2编译负例；本次plan新增Rust测试/provider/package执行数均为0；独立审查另记1次只读cargo metadata --no-deps（无build/test/fetch），不作产品证据。20.15证明中立库独立门禁、Upgrade接入、真实打包普通/default/C-union consumer；20.16/17证明真实provider/idle取消/Close/pool；20.57仍为完整SDK包，20.58仍为native三平台/MSRV1.97/供应链。保留现有framing/window/storage/typed partial/usage/终态/EOF/取消及通用conformance；仅退役patch-apply/source-rewrite/namespace专属未来门禁。20.11/20.34/20.57及完整DEL-07/14、V均不提前验收。
+- **证据与验收分区：** [前轮固定摘要](offline-probes/owned-ws/summary.json)为Windows/Rust1.99.1、内存/Tokio duplex：76不同函数×3图=228通过，同一72,413输入×3零差异，5运行时mutant反例和2编译负例；原计划新增Rust测试/provider/package执行数均为0，原独立审查另记1次只读cargo metadata --no-deps（无build/test/fetch），不作产品证据。20.15原独立companion合同及记录的交付/验证身份保留，旧包结果不能证明新SDK图。20.16同批完成私有迁移、语料/编译负例和适用root workspace及三图检查，经真实Models → Codex → 严格Upgrade → codec，并以真实opi-ai cargo package的workspace外普通/default/C-union consumer验证，不新增公开codec或test-only feature。完成前不宣称迁移runtime/package通过；移除companion后仅退役新布局不再需要的非成员门禁/独立包义务。20.17保留session资源/idle取消/Close/pool/cleanup及完整DEL-07，20.34保留既有组装闭环，20.57仍为完整SDK包，20.58仍为native三平台/MSRV1.97/供应链。保留现有framing/window/storage/typed partial/usage/终态/EOF/取消、hidden API/unsafe/native及通用conformance，不恢复已退役patch-apply/source-rewrite/namespace义务。20.11/20.34/20.57及完整DEL-07/14、V均不提前验收。
 
 ## 差分与核准边界
 

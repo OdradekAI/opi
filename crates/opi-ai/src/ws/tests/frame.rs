@@ -1,4 +1,4 @@
-use opi_ws::frame::{Decoder, Fault, Frame, Message, Messages, checked_storage_len};
+use crate::ws::frame::{Decoder, Fault, Frame, Message, Messages, checked_storage_len};
 
 fn wire(first: u8, payload: &[u8]) -> Vec<u8> {
     let mut bytes = vec![first];

@@ -1,4 +1,4 @@
-//! Isolated mechanism prototype; pinned upstream compression, no Ratchet.
+//! Owned permessage-deflate state using the pinned upstream compression backend.
 use libz_rs_sys as z;
 use std::{
     collections::TryReserveError,
@@ -11,7 +11,7 @@ use std::{
     task::{Context, Poll, Waker},
 };
 #[derive(Debug)]
-pub enum Fault {
+pub(super) enum Fault {
     Backend(i32),
     Boundary,
     Padding,
@@ -59,18 +59,18 @@ fn append(out: &mut Vec<u8>, bytes: &[u8]) -> Result<(), Fault> {
     Ok(())
 }
 /// Unique owner: never Clone the upstream Copy z_stream; its state is one allocation.
-pub struct Decoder {
+pub(super) struct Decoder {
     stream: Box<z::z_stream>,
     initialized: bool,
     failed: bool,
     no_context: bool,
     job: Option<Job>,
     cancellation: Arc<AtomicBool>,
-    pub tail_injections: usize,
-    pub resets: usize,
-    pub poll_steps: usize,
-    pub yields: usize,
-    pub max_steps_per_poll: usize,
+    pub(super) tail_injections: usize,
+    pub(super) resets: usize,
+    pub(super) poll_steps: usize,
+    pub(super) yields: usize,
+    pub(super) max_steps_per_poll: usize,
 }
 // SAFETY: This wrapper constructs only a boxed raw stream with the pinned upstream Rust
 // allocator, null opaque pointer and no caller callbacks. The box and upstream allocations
@@ -106,11 +106,11 @@ enum Progress {
     Complete,
 }
 impl Decoder {
-    pub fn new(no_context: bool) -> Result<Self, Fault> {
+    pub(super) fn new(no_context: bool) -> Result<Self, Fault> {
         Self::with_window_bits(15, no_context)
     }
     /// Construct a raw inflater with the negotiated server window (8..=15).
-    pub fn with_window_bits(bits: u8, no_context: bool) -> Result<Self, Fault> {
+    pub(super) fn with_window_bits(bits: u8, no_context: bool) -> Result<Self, Fault> {
         if !(8..=15).contains(&bits) {
             return Err(Fault::Window);
         }
@@ -187,10 +187,10 @@ impl Decoder {
         self.stream.avail_out = 0;
         result
     }
-    pub fn decode(&mut self, payload: &[u8]) -> Result<Vec<u8>, Fault> {
+    pub(super) fn decode(&mut self, payload: &[u8]) -> Result<Vec<u8>, Fault> {
         self.decode_sync(payload, None)
     }
-    pub fn decode_limit(&mut self, payload: &[u8], limit: usize) -> Result<Vec<u8>, Fault> {
+    pub(super) fn decode_limit(&mut self, payload: &[u8], limit: usize) -> Result<Vec<u8>, Fault> {
         self.decode_sync(payload, Some(limit))
     }
     // Synchronous compatibility entry drives the exact same state machine to completion.
@@ -217,7 +217,11 @@ impl Decoder {
     }
     /// Starts an owned decode. Busy rejects a second message without damaging the first job.
     /// There is no input-size or iteration ceiling. `limit` is an explicit caller output limit.
-    pub fn start_decode(&mut self, payload: Vec<u8>, limit: Option<usize>) -> Result<(), Fault> {
+    pub(super) fn start_decode(
+        &mut self,
+        payload: Vec<u8>,
+        limit: Option<usize>,
+    ) -> Result<(), Fault> {
         if self.failed {
             return Err(Fault::Terminal);
         }
@@ -246,7 +250,7 @@ impl Decoder {
     }
     /// Executes a bounded scheduling quantum. All progress is owned by `self`, so dropping a
     /// borrowed poll future leaves a resumable job. Explicit cancellation is absorbing.
-    pub fn poll_decode(&mut self, cx: &mut Context<'_>) -> Poll<Result<Vec<u8>, Fault>> {
+    pub(super) fn poll_decode(&mut self, cx: &mut Context<'_>) -> Poll<Result<Vec<u8>, Fault>> {
         if self.failed {
             return Poll::Ready(Err(Fault::Terminal));
         }
@@ -378,24 +382,24 @@ impl Decoder {
             }
         }
     }
-    pub fn cancel(&mut self) {
+    pub(super) fn cancel(&mut self) {
         self.cancellation.store(true, Ordering::Release);
         self.failed = true;
         self.job = None;
         self.release();
     }
-    pub fn job_pending(&self) -> bool {
+    pub(super) fn job_pending(&self) -> bool {
         self.job.is_some()
     }
-    pub fn buffered_output(&self) -> usize {
+    pub(super) fn buffered_output(&self) -> usize {
         self.job.as_ref().map_or(0, |job| job.output.len())
     }
-    pub fn released(&self) -> bool {
+    pub(super) fn released(&self) -> bool {
         !self.initialized
     }
     /// Cooperative signal only: a pending decode self-wakes, but this flag cannot wake an
     /// unrelated idle socket read. The transport owner must supply that cancellation wakeup.
-    pub fn cancellation_flag(&self) -> Arc<AtomicBool> {
+    pub(super) fn cancellation_flag(&self) -> Arc<AtomicBool> {
         self.cancellation.clone()
     }
     fn release(&mut self) {
@@ -405,7 +409,7 @@ impl Decoder {
             self.initialized = false;
         }
     }
-    pub fn failed(&self) -> bool {
+    pub(super) fn failed(&self) -> bool {
         self.failed
     }
 }
@@ -415,12 +419,12 @@ impl Drop for Decoder {
     }
 }
 /// Encoder remains an ordinary safe upstream flate2 client, including caller feature union.
-pub struct Encoder {
+pub(super) struct Encoder {
     inner: Option<flate2::Compress>,
     no_context: bool,
 }
 impl Encoder {
-    pub fn new(bits: u8, no_context: bool) -> Result<Self, Fault> {
+    pub(super) fn new(bits: u8, no_context: bool) -> Result<Self, Fault> {
         if !(8..=15).contains(&bits) {
             return Err(Fault::Window);
         }
@@ -433,7 +437,7 @@ impl Encoder {
             no_context,
         })
     }
-    pub fn encode(&mut self, input: &[u8]) -> Result<Vec<u8>, Fault> {
+    pub(super) fn encode(&mut self, input: &[u8]) -> Result<Vec<u8>, Fault> {
         let result = self.encode_inner(input);
         if result.is_err() {
             self.inner = None

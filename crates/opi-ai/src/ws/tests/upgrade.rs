@@ -5,20 +5,17 @@
 //! proxy/TLS profile) and then speaks RFC 6455 frames. The tests prove the
 //! strict handshake validation (status/version/Accept/token/singleton/
 //! extension rules), the RFC 6455 §1.3 known answer vector, and the bridging
-//! of negotiated permessage-deflate parameters into the neutral `opi_ws`
+//! of negotiated permessage-deflate parameters into the private protocol
 //! connection owner, including a full masked-send and explicit-Close
 //! exchange over the detached stream.
 
-use opi_ai::http::{HttpClient, HttpClientBuilder, RedirectPolicy};
-use opi_ai::ws::{self, PmdOffer, WsUpgradeError, WsUpgradeRequest};
+use crate::http::{HttpClient, HttpClientBuilder, RedirectPolicy};
+use crate::ws::{self, PmdOffer, WsUpgradeError, WsUpgradeRequest};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use url::Url;
 
-#[path = "../../../scripts/pi-sdk-conformance/consumer-ws/src/deflate_audit.rs"]
-mod deflate_audit;
-#[allow(dead_code)]
-mod tls_fixtures;
+use super::{deflate_audit, tls_fixtures};
 
 async fn wss_peer(
     require_identity: bool,
@@ -89,7 +86,7 @@ async fn wss_peer(
 
 #[tokio::test]
 async fn wss_upgrade_uses_h1_with_default_alpn_and_frozen_mtls() {
-    use opi_ai::http::{ProxyConfig, TlsOptions};
+    use crate::http::{ProxyConfig, TlsOptions};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     for identity in [false, true] {
         let (url, peer) = wss_peer(identity).await;
@@ -143,7 +140,7 @@ async fn wss_upgrade_uses_h1_with_default_alpn_and_frozen_mtls() {
         let client = builder.build().unwrap();
         let upgraded = ws::upgrade(&client, WsUpgradeRequest::new(url)).await;
         let upgraded = upgraded.unwrap_or_else(|e| panic!("classic WSS must use H1: {e:?}"));
-        let mut driver = opi_ws::io::Driver::new(upgraded.stream, None).unwrap();
+        let mut driver = crate::ws::io::Driver::new(upgraded.stream, None).unwrap();
         assert_eq!(driver.next().await.unwrap().unwrap().payload, b"wss!");
         driver.queue(8, &[], false, ws::fresh_mask()).unwrap();
         driver.flush().await.unwrap();
@@ -160,7 +157,7 @@ async fn wss_upgrade_uses_h1_with_default_alpn_and_frozen_mtls() {
 
 #[tokio::test]
 async fn wss_upgrade_preserves_trust_rejection_before_http() {
-    use opi_ai::http::TlsOptions;
+    use crate::http::TlsOptions;
     let (url, peer) = wss_peer(false).await;
     let tls = TlsOptions::new()
         .with_explicit_roots_pem(tls_fixtures::CERT_OTHER_CA.as_bytes())
@@ -273,7 +270,7 @@ fn independent_messages(mut stream: TcpStream, expected: &[u8]) -> Result<(), St
         for (i, byte) in payload.iter_mut().enumerate() {
             *byte ^= mask[i % 4];
         }
-        let decoded = opi_ws::pmd::Decoder::new(true).unwrap().decode(&payload);
+        let decoded = crate::ws::pmd::Decoder::new(true).unwrap().decode(&payload);
         assert_eq!(
             decoded.unwrap_or_else(|e| panic!("message {message} needs forbidden history: {e}")),
             expected
@@ -360,7 +357,7 @@ async fn upgrade_window8_wire_has_independent_decode_and_distance_proof() {
                     "permessage-deflate; server_max_window_bits=8; client_max_window_bits=8{flags}"
                 );
                 let mut response = response_101(head, &[("Sec-WebSocket-Extensions", &extension)]);
-                let mut encoder = opi_ws::pmd::Encoder::new(8, no_context).unwrap();
+                let mut encoder = crate::ws::pmd::Encoder::new(8, no_context).unwrap();
                 let mut history = Vec::new();
                 for _ in 0..2 {
                     let payload = encoder.encode(&inbound).unwrap();
@@ -392,7 +389,7 @@ async fn upgrade_window8_wire_has_independent_decode_and_distance_proof() {
         let parameters = driver_parameters(&upgraded.negotiation).unwrap();
         assert_eq!(parameters.server_max_window_bits, 8);
         assert_eq!(parameters.client_max_window_bits, 8);
-        let mut driver = opi_ws::io::Driver::new(upgraded.stream, Some(parameters)).unwrap();
+        let mut driver = crate::ws::io::Driver::new(upgraded.stream, Some(parameters)).unwrap();
         for _ in 0..2 {
             assert_eq!(driver.next().await.unwrap().unwrap().payload, expected);
             driver.queue(2, &expected, true, ws::fresh_mask()).unwrap();
@@ -417,7 +414,7 @@ async fn upgrade_preserves_directional_context_and_delivers_coalesced_tail_once(
                 )],
             );
             response.extend_from_slice(&[0x82, 4, b't', b'a', b'i', b'l']);
-            let mut encoder = opi_ws::pmd::Encoder::new(15, false).unwrap();
+            let mut encoder = crate::ws::pmd::Encoder::new(15, false).unwrap();
             for _ in 0..2 {
                 let payload = encoder.encode(&server_messages).unwrap();
                 if payload.len() < 126 {
@@ -440,7 +437,7 @@ async fn upgrade_preserves_directional_context_and_delivers_coalesced_tail_once(
     assert!(pmd.client_no_context_takeover);
     assert!(!pmd.server_no_context_takeover);
     let parameters = driver_parameters(&upgraded.negotiation);
-    let mut driver = opi_ws::io::Driver::new(upgraded.stream, parameters).unwrap();
+    let mut driver = crate::ws::io::Driver::new(upgraded.stream, parameters).unwrap();
     assert_eq!(driver.next().await.unwrap().unwrap().payload, b"tail");
     for _ in 0..2 {
         assert_eq!(driver.next().await.unwrap().unwrap().payload, expected);
@@ -480,14 +477,14 @@ async fn upgrade_transfers_all_directional_pmd_parameters() {
             let parameters = driver_parameters(&upgraded.negotiation).unwrap();
             assert_eq!(
                 parameters,
-                opi_ws::io::PmdParameters {
+                crate::ws::io::PmdParameters {
                     server_no_context_takeover: server_no_context,
                     client_no_context_takeover: true,
                     server_max_window_bits: bits,
                     client_max_window_bits: bits,
                 }
             );
-            drop(opi_ws::io::Driver::new(upgraded.stream, Some(parameters)).unwrap());
+            drop(crate::ws::io::Driver::new(upgraded.stream, Some(parameters)).unwrap());
             peer.finish().unwrap();
         }
     }
@@ -636,10 +633,10 @@ fn bridge_request(url: Url, offer: bool) -> WsUpgradeRequest {
     request
 }
 
-fn driver_parameters(negotiation: &ws::Negotiation) -> Option<opi_ws::io::PmdParameters> {
+fn driver_parameters(negotiation: &ws::Negotiation) -> Option<crate::ws::io::PmdParameters> {
     negotiation
         .driver_parameters()
-        .map(|pmd| opi_ws::io::PmdParameters {
+        .map(|pmd| crate::ws::io::PmdParameters {
             server_no_context_takeover: pmd.server_no_context_takeover,
             client_no_context_takeover: pmd.client_no_context_takeover,
             server_max_window_bits: pmd.server_max_window_bits,
@@ -660,7 +657,7 @@ async fn drive_bridged_exchange(extensions: &str, expect_rsv1: bool) -> Result<(
     let parameters = driver_parameters(&upgraded.negotiation);
     assert_eq!(parameters.is_some(), expect_rsv1);
     assert!(!parameters.is_some_and(|pmd| pmd.server_no_context_takeover));
-    let mut driver = opi_ws::io::Driver::new(upgraded.stream, parameters)
+    let mut driver = crate::ws::io::Driver::new(upgraded.stream, parameters)
         .map_err(|error| format!("driver failed: {error}"))?;
     driver
         .queue(1, "桥接 canary".as_bytes(), expect_rsv1, ws::fresh_mask())
