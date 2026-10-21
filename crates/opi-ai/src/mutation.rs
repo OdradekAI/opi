@@ -5,9 +5,9 @@
 //! A mutation admitted through [`MutationQueue`] receives a generation, runs
 //! serialized per provider key, and settles into a non-secret
 //! [`MutationReceipt`] — the ACK. Dropping the wait never cancels a started
-//! mutation: it completes while the host runtime lives, and loss windows
-//! (worker panic, runtime death) surface as [`MutationOutcome::Unknown`]
-//! instead of silently claiming the old state still holds.
+//! mutation: it completes while the host runtime lives. Worker panics record
+//! [`MutationOutcome::Unknown`]; runtime loss may leave a pending operation
+//! without an ACK. Neither claims the old state still holds.
 //!
 //! [`MutationQueue::barrier`] synchronously captures the store-wide cutoff.
 //! Any number of [`crate::Models`] instances sharing one store observe the
@@ -120,11 +120,9 @@ pub trait MutationSlotView: Send + Sync {
     ) -> BoxAuthFuture<'a, Result<Option<Credential>, CredentialStoreError>>;
 }
 
-/// A caller-supplied read-modify-write operation. Receives the current
-/// credential (read under the slot's exclusion) and a [`MutationSlotView`]
-/// for post-failure re-reads, and returns the decision. Operations must be
-/// `'static` because the mutation may outlive the waiter.
-pub type CredentialMutationOp = Box<
+/// A read-modify-write callback receiving the current credential and a view
+/// for post-failure re-reads. The callback may outlive the ACK waiter.
+pub type CredentialUpdateOp = Box<
     dyn for<'a> FnOnce(
             &'a (dyn MutationSlotView + 'a),
             Option<&'a Credential>,
@@ -132,6 +130,20 @@ pub type CredentialMutationOp = Box<
         + Send
         + 'static,
 >;
+
+/// A store-owned credential mutation. Unconditional replacement/deletion
+/// never requires decoding the old entry, so either operation can repair a
+/// corrupt entry. Updates strictly read the current credential under the
+/// slot's exclusion before invoking the callback.
+pub enum CredentialMutationOp {
+    /// Replace the entry without reading its previous value.
+    Write(Credential),
+    /// Delete the entry without reading its previous value.
+    Delete,
+    /// Read-modify-write callback with a view for post-failure re-reads.
+    /// The callback must be `'static` because it may outlive the waiter.
+    Update(CredentialUpdateOp),
+}
 
 /// One queue slot execution built by a store: runs under the store's own
 /// exclusion (cross-process lock where the backing store has one), applies
@@ -154,12 +166,12 @@ pub enum MutationApplied {
 
 /// Build an unconditional write mutation (login/replace result).
 pub fn write_mutation(cred: Credential) -> CredentialMutationOp {
-    Box::new(move |_view, _current| Box::pin(async move { Ok(MutationDecision::Write(cred)) }))
+    CredentialMutationOp::Write(cred)
 }
 
 /// Build an unconditional delete mutation (logout).
 pub fn delete_mutation() -> CredentialMutationOp {
-    Box::new(move |_view, _current| Box::pin(async move { Ok(MutationDecision::Delete) }))
+    CredentialMutationOp::Delete
 }
 
 // ---------------------------------------------------------------------------
@@ -171,10 +183,18 @@ struct PendingMutation {
     ack: Option<tokio::sync::oneshot::Sender<MutationReceipt>>,
 }
 
+struct DeferredMutation {
+    prev_tail: Option<MutationGeneration>,
+    slot: MutationSlot,
+}
+
 struct QueueInner {
     next_generation: MutationGeneration,
     /// Admitted and not yet settled, keyed by generation.
     pending: BTreeMap<MutationGeneration, PendingMutation>,
+    /// Admitted slots awaiting handoff to a host Tokio runtime. Owned here,
+    /// never by an ACK waiter.
+    deferred: BTreeMap<MutationGeneration, DeferredMutation>,
     /// Settled receipts in generation order. Retained for the session; there
     /// is deliberately no default cap.
     receipts: VecDeque<MutationReceipt>,
@@ -189,6 +209,31 @@ struct QueueState {
 }
 
 impl QueueState {
+    fn start_deferred(self: &Arc<Self>) {
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let deferred = std::mem::take(&mut self.inner.lock().unwrap().deferred);
+        for (generation, DeferredMutation { prev_tail, slot }) in deferred {
+            let state = self.clone();
+            runtime.spawn(async move {
+                if let Some(prev) = prev_tail {
+                    wait_settled(&state, prev).await;
+                }
+                let settled = match std::panic::AssertUnwindSafe(async move { slot().await })
+                    .catch_unwind()
+                    .await
+                {
+                    Ok(result) => MutationSettled::Slot(result),
+                    Err(_panic) => MutationSettled::Lost(
+                        "mutation worker panicked before recording its outcome",
+                    ),
+                };
+                settle(&state, generation, settled);
+            });
+        }
+    }
+
     fn wake_all(&self) {
         let wakers = {
             let mut inner = self.inner.lock().unwrap();
@@ -272,9 +317,11 @@ async fn wait_settled(state: &QueueState, generation: MutationGeneration) {
 ///
 /// Slots execute detached on the host runtime: admission is synchronous, and
 /// dropping the returned [`MutationHandle`] cancels only the wait. If no
-/// runtime is available at admission, the slot executes inline inside the
-/// handle future (without a runtime nothing else can execute concurrently,
-/// so admission order alone is a total order).
+/// runtime is available at admission, the queue retains the slot as pending.
+/// The next submission or ACK poll inside a Tokio runtime hands retained
+/// slots to that runtime in admission order. Without that execution entry,
+/// slots remain pending even if their waiters are dropped. Barriers never
+/// start slots, and no runtime is created implicitly.
 pub struct MutationQueue {
     state: Arc<QueueState>,
 }
@@ -293,6 +340,7 @@ impl MutationQueue {
                 inner: Mutex::new(QueueInner {
                     next_generation: 1,
                     pending: BTreeMap::new(),
+                    deferred: BTreeMap::new(),
                     receipts: VecDeque::new(),
                     revisions: HashMap::new(),
                     wakers: Vec::new(),
@@ -309,7 +357,7 @@ impl MutationQueue {
     pub fn submit(&self, provider_id: &str, slot: MutationSlot) -> MutationHandle {
         let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
         let provider_id = provider_id.to_owned();
-        let (generation, prev_tail) = {
+        {
             let mut inner = self.state.inner.lock().unwrap();
             let generation = inner.next_generation;
             inner.next_generation += 1;
@@ -329,45 +377,14 @@ impl MutationQueue {
                     ack: Some(ack_tx),
                 },
             );
-            (generation, prev_tail)
-        };
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                let state = self.state.clone();
-                handle.spawn(async move {
-                    if let Some(prev) = prev_tail {
-                        wait_settled(&state, prev).await;
-                    }
-                    // Detached execution: a panic or runtime loss becomes an
-                    // Unknown receipt; the chain for this key continues.
-                    let settled = match futures_util::FutureExt::catch_unwind(
-                        std::panic::AssertUnwindSafe(slot()),
-                    )
-                    .await
-                    {
-                        Ok(result) => MutationSettled::Slot(result),
-                        Err(_panic) => MutationSettled::Lost(
-                            "mutation worker panicked before recording its outcome",
-                        ),
-                    };
-                    settle(&state, generation, settled);
-                });
-                MutationHandle {
-                    inner: MutationHandleInner::Ack(ack_rx),
-                }
-            }
-            Err(_no_runtime) => {
-                // No async context to detach into: run inline inside the
-                // handle future. Admission order alone is a total order
-                // here because nothing else can execute.
-                MutationHandle {
-                    inner: MutationHandleInner::Inline {
-                        state: Some(self.state.clone()),
-                        generation,
-                        execution: InlineExecution::NotStarted(Some(slot)),
-                    },
-                }
-            }
+            inner
+                .deferred
+                .insert(generation, DeferredMutation { prev_tail, slot });
+        }
+        self.state.start_deferred();
+        MutationHandle {
+            state: self.state.clone(),
+            ack: ack_rx,
         }
     }
 
@@ -389,11 +406,6 @@ impl MutationQueue {
     }
 }
 
-enum InlineExecution {
-    NotStarted(Option<MutationSlot>),
-    Running(BoxAuthFuture<'static, Result<MutationApplied, MutationError>>),
-}
-
 /// Why a wait ended without a receipt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("mutation worker was lost before the ACK was recorded")]
@@ -402,63 +414,16 @@ pub struct MutationAbandoned;
 /// Wait-for-ACK handle. Resolves with the mutation receipt. Dropping the
 /// handle cancels only the wait — never the mutation.
 pub struct MutationHandle {
-    inner: MutationHandleInner,
-}
-
-enum MutationHandleInner {
-    Ack(tokio::sync::oneshot::Receiver<MutationReceipt>),
-    Inline {
-        state: Option<Arc<QueueState>>,
-        generation: MutationGeneration,
-        execution: InlineExecution,
-    },
+    state: Arc<QueueState>,
+    ack: tokio::sync::oneshot::Receiver<MutationReceipt>,
 }
 
 impl Future for MutationHandle {
     type Output = Result<MutationReceipt, MutationAbandoned>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match &mut self.inner {
-            MutationHandleInner::Ack(rx) => rx.poll_unpin(cx).map_err(|_| MutationAbandoned),
-            MutationHandleInner::Inline {
-                state,
-                generation,
-                execution,
-            } => {
-                // Drive the inline slot to completion across polls; when it
-                // settles, record the receipt exactly like the detached path.
-                let poll_result = match execution {
-                    InlineExecution::NotStarted(slot) => {
-                        let slot = slot.take().expect("NotStarted slot present once");
-                        let mut fut = slot();
-                        let result = fut.as_mut().poll(cx);
-                        if result.is_pending() {
-                            *execution = InlineExecution::Running(fut);
-                        }
-                        result
-                    }
-                    InlineExecution::Running(fut) => fut.as_mut().poll(cx),
-                };
-                match poll_result {
-                    Poll::Ready(settled) => {
-                        let state = state.take().expect("inline state present once");
-                        let generation = *generation;
-                        settle(&state, generation, MutationSettled::Slot(settled));
-                        let receipt = state
-                            .inner
-                            .lock()
-                            .unwrap()
-                            .receipts
-                            .iter()
-                            .rev()
-                            .find(|r| r.generation == generation)
-                            .cloned();
-                        Poll::Ready(receipt.ok_or(MutationAbandoned))
-                    }
-                    Poll::Pending => Poll::Pending,
-                }
-            }
-        }
+        self.state.start_deferred();
+        self.ack.poll_unpin(cx).map_err(|_| MutationAbandoned)
     }
 }
 
@@ -663,12 +628,18 @@ impl InMemoryCredentialStore {
                 let state = state.clone();
                 let provider_id = provider_id.clone();
                 Box::pin(async move {
-                    let current = state.entries.lock().unwrap().get(&provider_id).cloned();
-                    let view = InMemorySlotView {
-                        state: state.clone(),
-                        provider_id: provider_id.clone(),
+                    let decision = match op {
+                        CredentialMutationOp::Write(cred) => MutationDecision::Write(cred),
+                        CredentialMutationOp::Delete => MutationDecision::Delete,
+                        CredentialMutationOp::Update(op) => {
+                            let current = state.entries.lock().unwrap().get(&provider_id).cloned();
+                            let view = InMemorySlotView {
+                                state: state.clone(),
+                                provider_id: provider_id.clone(),
+                            };
+                            op(&view, current.as_ref()).await?
+                        }
                     };
-                    let decision = op(&view, current.as_ref()).await?;
                     match decision {
                         MutationDecision::Write(cred) => {
                             state
@@ -818,9 +789,15 @@ pub(crate) fn modify_inline<'a, S: CredentialStore + ?Sized>(
     op: CredentialMutationOp,
 ) -> BoxAuthFuture<'a, Result<MutationReceipt, CredentialStoreError>> {
     Box::pin(async move {
-        let current = store.read(provider_id).await?;
-        let view = BorrowingSlotView { store, provider_id };
-        let decision = op(&view, current.as_ref()).await;
+        let decision = match op {
+            CredentialMutationOp::Write(cred) => Ok(MutationDecision::Write(cred)),
+            CredentialMutationOp::Delete => Ok(MutationDecision::Delete),
+            CredentialMutationOp::Update(op) => {
+                let current = store.read(provider_id).await?;
+                let view = BorrowingSlotView { store, provider_id };
+                op(&view, current.as_ref()).await
+            }
+        };
         let decision = decision.map_err(|error| match error {
             MutationError::Store(store_error) => store_error,
             MutationError::Operation(_) => CredentialStoreError::Backend {

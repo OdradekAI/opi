@@ -107,6 +107,13 @@ enum Progress {
 }
 impl Decoder {
     pub fn new(no_context: bool) -> Result<Self, Fault> {
+        Self::with_window_bits(15, no_context)
+    }
+    /// Construct a raw inflater with the negotiated server window (8..=15).
+    pub fn with_window_bits(bits: u8, no_context: bool) -> Result<Self, Fault> {
+        if !(8..=15).contains(&bits) {
+            return Err(Fault::Window);
+        }
         let mut owner = Self {
             stream: Box::new(z::z_stream::default()),
             initialized: false,
@@ -125,7 +132,7 @@ impl Decoder {
         let code = unsafe {
             z::inflateInit2_(
                 &mut *owner.stream,
-                -15,
+                -i32::from(bits),
                 z::zlibVersion(),
                 std::mem::size_of::<z::z_stream>() as i32,
             )

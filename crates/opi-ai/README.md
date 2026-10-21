@@ -159,6 +159,15 @@ the operation, and per-provider FIFO serializes login/logout/replace/
 refresh on one store (the production keychain bridge holds its
 cross-process lock across each slot, preserving the host locking policy).
 
+`CredentialMutationOp::{Write, Delete}` are unconditional and can replace or
+remove corrupt entries without decoding them. `Update(CredentialUpdateOp)`
+strictly reads the current value before running the callback. The existing
+`write_mutation` and `delete_mutation` helpers construct unconditional operations.
+Without a current Tokio runtime, the queue retains submissions as pending;
+an ACK poll or normal submission inside a runtime hands them to its detached
+owner. Barriers never start these operations. Runtime loss can leave pending,
+unconfirmed effects without an ACK; a worker panic records `Unknown`.
+
 `mutation_barrier` captures the store-wide cutoff synchronously — every
 `Models` instance sharing one store observes the same generations. Its
 report lists every captured mutation (pending, settled, failed, unknown)
@@ -184,16 +193,24 @@ retryable failure with budget remaining, `retry_admission()` returns the
 `[0.75, 1.0)` jitter factor). `start_attempt` refuses dispatch with a typed
 `ModelsError::RetryNotReady` before that deadline elapses, with
 `CallSealed` once the call is sealed, and with `AttemptAlreadyActive` while
-an attempt stream is still live. Seals are sticky and observable via
-`acquisition_seal()`: the first delivered stream event is the
-streaming-response handoff (`PostHandoff`; later body/EOF/parser failures
-are final), a dispatched attempt dropped without an observed outcome records
+an attempt stream is still live. Lease reservation and the sealed/readiness
+checks share one synchronization boundary. Seals are sticky and observable via
+`acquisition_seal()`: a successful streaming-response handoff is
+`PostHandoff`. OpenAI Chat preserves this fact even when its accepted response
+fails before the first SSE event; body/EOF/parser failures cannot reopen
+acquisition. The first delivered event also establishes handoff for adapters
+without an earlier transport observation. A dispatched attempt dropped without
+an observed outcome records
 `UnknownDispatch`, a spent budget records `Exhausted`, and a terminal outcome
 without any delivered event records `Finished`. Success therefore no longer
 re-opens a prepared call: schedule retries through the admission, and
 re-prepare for a new logical call. The main-loop consumer reads the
 admission, waits cancellably, and re-enters `start_attempt`; it cannot reset
 counters, skip the wait, or stack sends beyond the frozen budget.
+
+`start_attempt` reserves the lease; the adapter and its producer start only on
+the first poll. Dropping an unpolled lease sends nothing. The HTTP backend's
+protocol-NACK retries are disabled; extra sends require SDK admission.
 
 Before authentication, `prepare_call` resolves an omitted `Request.max_tokens`
 to the selected registry model's `max_output_tokens` capacity, including model
@@ -372,7 +389,10 @@ pinning. There is no server-side session chain.
 `ws::upgrade` performs the strict dynamic Upgrade over the shared,
 source-qualified `HttpClient` (explicit proxy/TLS profile, redirects must be
 disabled per client: an upgrade request against a client with a redirect
-policy fails typed instead of silently following). The bridge owns the
+policy fails typed instead of silently following). Classic Upgrade uses the
+client's private HTTP/1.1 transport, retaining the same frozen trust, mTLS
+identity and proxy configuration without source rediscovery. Ordinary requests
+retain their configured H2/H1 behavior. The bridge owns the
 request shape (`Connection: Upgrade`, `Upgrade: websocket`,
 `Sec-WebSocket-Version: 13`, a fresh 16-byte `Sec-WebSocket-Key` from the
 pinned platform entropy, offered subprotocols and an optional
@@ -390,8 +410,10 @@ The neutral protocol state machine is deliberately outside this crate: the
 path-only development dependency) owns strict RFC 6455 frames, message
 assembly, permessage-deflate with exactly-once `00 00 FF FF` tail injection,
 the explicit Close exchange and the async IO owner. `Negotiation::
-driver_parameters` hands the validated `(pmd, server_no_context_takeover)`
-facts to `opi_ws::io::Driver::from` the detached `reqwest::Upgraded` stream;
+driver_parameters` returns `Option<NegotiatedPmd>` retaining both directions'
+context-takeover flags and windows. Callers explicitly map these named fields
+into `opi_ws::io::PmdParameters` when constructing `Driver::new` over the
+detached `reqwest::Upgraded` stream;
 the published package resolves the companion by registry identity once that
 publication is authorized. The real provider consumer (Codex WebSocket,
 20.16) and platform/package acceptance (20.57/20.58) remain open.
@@ -616,6 +638,10 @@ with typed redacted failures (`HttpClientBuildError::Tls` /
 the private crypto owner above (RSA-1024, multi-prime RSA, encrypted or
 malformed keys fail typed at admission).
 
+Clients without an explicit TLS override use these same default options:
+pinned Node roots, no identity, H2-preferred ALPN and the fixed instance
+provider. They never inherit a process-global provider or backend default roots.
+
 The TLS profile itself is fixed, not caller-selectable: an explicit
 instance AWS-LC provider with TLS 1.3 + 1.2, WebPKI chain/hostname/time
 verification always on, and the declared key-exchange group order
@@ -672,13 +698,17 @@ adaptively (no byte cap is enforced below the adaptive maximum; 300 KiB
 heads are accepted), message heads are capped at 100 header fields, and
 chunked bodies allow at most 16 KiB of cumulative chunk-extension bytes
 (above that the body fails as a typed post-acceptance `StreamError`).
-Trailer sections are accepted below, at and above the upstream internal
-constants (no artificial trailer cap is enforced through this surface), and
-no SDK-side body/event caps, allocation hints or loosened
+Trailer fixtures wait for HTTP EOF: 99 fields and 16,383 cumulative trailer
+bytes are accepted, while 100 fields or 16,384 bytes and larger fixtures fail
+with a typed post-acceptance `StreamError`. Malformed and truncated trailers
+also fail instead of being hidden behind an earlier SSE terminal. These are
+upstream parser boundaries; no SDK-side body/event caps, allocation hints or loosened
 content-length/transfer-encoding/EOF validation exist. Failures keep their
 provable stage: pre-response problems surface as `Network`/`Timeout` at
-acquisition, post-acceptance body problems as `StreamError` (wrapped with
-partial assistant state when content was already delivered).
+acquisition; post-acceptance body problems retain `StreamError` or the original
+`Timeout` cause with canonical partial state and known usage. The migrated
+Chat path seals acquisition even when an accepted response fails before its
+first public event.
 
 Packaged-consumer proof: `scripts/pi-sdk-conformance/package_slice.py
 --family http --offline` packages `opi-ai`, extracts the artifact outside

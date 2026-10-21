@@ -141,6 +141,13 @@ mutation：宿主 runtime 存活期间它照常完成，第二个 waiter 重读�
 refresh 在同一 store 上串行化（生产 keychain 桥在每个 slot 全程持有
 跨进程锁，保留宿主锁策略）。
 
+`CredentialMutationOp::{Write, Delete}` 是无条件操作，无需解码旧值即可
+替换或清除损坏条目；`Update(CredentialUpdateOp)` 则先严格读取当前值再执行
+回调。现有 `write_mutation`、`delete_mutation` helper 构造无条件操作。
+没有当前 Tokio runtime 时，队列保留 pending 提交；在 runtime 内 poll ACK
+或正常提交操作才将它们交给分离的 store owner，barrier 不会启动这些操作。
+runtime 丢失可能留下无 ACK 的 pending、未确认效果；worker panic 记录为 `Unknown`。
+
 `mutation_barrier` 同步捕获 store 级 cutoff——共享同一 store 的所有
 `Models` 实例看到相同 generation。其 report 列出全部被捕获的
 mutation（pending、settled、failed、unknown），并将 cutoff 之后的
@@ -152,6 +159,10 @@ store 继承 inline 默认实现。revision 与 receipt 是进程内视图；
 
 ### 采集重试唯一 owner（AIR-007）
 
+`start_attempt` 预留 lease；adapter 及其 producer 只在第一次 poll 时启动。
+丢弃未 poll 的 lease 不发送请求；HTTP 后端的 protocol-NACK retry 已关闭，
+额外 send 必须经过 SDK admission。
+
 `prepare_call_with_policy` 为每个逻辑调用冻结一份 `AcquisitionPolicy`
 （`prepare_call` 保持默认零额外 send）。prepared call 是唯一的采集重试 owner：它对观测到的
 attempt 失败进行分类、维护每 payload 变体的 send 计数（`max_retries` 按变体计额外 send，
@@ -159,9 +170,12 @@ attempt 失败进行分类、维护每 payload 变体的 send 计数（`max_retr
 预算仍有余量时，`retry_admission()` 返回 1 起始的 `retry_index` 与 `delay_ms`（服务器 hint
 优先，受 `max_retry_delay_ms` 约束；否则 `min(500ms * 2^i, 8000ms)` 乘以 `[0.75, 1.0)`
 jitter 因子）。截止前 `start_attempt` 以类型化的 `ModelsError::RetryNotReady` 拒绝分发，
-封存后返回 `CallSealed`，attempt 流仍在活动时返回 `AttemptAlreadyActive`。封存状态具有粘性，
-可通过 `acquisition_seal()` 观测：首个交付的流事件即流式响应交接（`PostHandoff`；其后的
-body/EOF/parser 失败为终态）；已分发但未观测到结局即被 drop 的 attempt 记录为
+封存后返回 `CallSealed`，attempt 流仍在活动时返回 `AttemptAlreadyActive`。lease 预留与
+封存/readiness 检查使用同一个同步边界。封存状态具有粘性，可通过 `acquisition_seal()`
+观测：成功的流式响应交接记录为 `PostHandoff`。OpenAI Chat 即使在首个 SSE event 前发生
+已接受响应的 body 失败，也保留这一事实；body/EOF/parser 失败不能重新开启采集重试。
+没有更早传输观测的 adapter 仍由首个交付事件建立交接。已分发但未观测到结局即被 drop 的
+attempt 记录为
 `UnknownDispatch`；预算耗尽记录为 `Exhausted`；未交付任何事件的终局记录为 `Finished`。
 因此成功不再重开 prepared call：重试按 admission 调度，新逻辑调用需重新 prepare。主循环消费方
 读取 admission、可取消地等待并再次进入 `start_attempt`；无法重置计数、跳过等待或在冻结预算之外叠加 send。
@@ -313,7 +327,9 @@ OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是�
 
 `ws::upgrade` 在共享的 source-qualified `HttpClient` 上执行严格动态 Upgrade
 （显式代理/TLS profile；重定向必须按 client 关闭：对带有重定向策略的 client
-发起 Upgrade 会类型化失败，而不是静默跟随）。该桥拥有请求形状（`Connection:
+发起 Upgrade 会类型化失败，而不是静默跟随）。经典 Upgrade 使用该 client 的私有
+HTTP/1.1 传输，保留同一份冻结的 trust、mTLS 身份与代理配置，不重新发现来源；普通请求
+保持原有 H2/H1 配置。该桥拥有请求形状（`Connection:
 Upgrade`、`Upgrade: websocket`、`Sec-WebSocket-Version: 13`、来自固定平台熵源的新鲜
 16 字节 `Sec-WebSocket-Key`、已提议的 subprotocol 与可选的 `permessage-deflate`
 offer）以及 101 响应的严格校验：状态与 HTTP 版本、精确的 `Sec-WebSocket-Accept`
@@ -326,9 +342,10 @@ permessage-deflate 参数校验（无重复条目、无未知参数、值域合�
 中立协议状态机刻意位于本 crate 之外：`opi-ws` Independent Companion
 （`companions/ws`，以 path-only 开发依赖接入）拥有严格 RFC 6455 帧、消息装配、
 恰好一次 `00 00 FF FF` tail 注入的 permessage-deflate、显式 Close 交换与异步 IO
-owner。`Negotiation::driver_parameters` 把已校验的 `(pmd,
-server_no_context_takeover)` 事实交给 `opi_ws::io::Driver`（由分离的
-`reqwest::Upgraded` 流构造）；发布包待发布授权后按 registry identity 解析该
+owner。`Negotiation::driver_parameters` 返回 `Option<NegotiatedPmd>`，
+保留两个方向各自的 context-takeover 标志与窗口；调用方显式按字段映射到
+`opi_ws::io::PmdParameters`，再由分离的 `reqwest::Upgraded` 流构造
+`Driver::new`；发布包待发布授权后按 registry identity 解析该
 companion。真实 Provider 消费者（Codex WebSocket，20.16）与平台/打包验收
 （20.57/20.58）保持 OPEN。
 
@@ -505,6 +522,9 @@ FIPS；未测试的 feature union 与平台不声明支持。同步原生签名�
 `TlsConfigError` / `TlsKeyError`）；客户端身份密钥经由上方私有 crypto
 owner 准入（RSA-1024、多素数 RSA、加密或畸形密钥在准入处 typed 拒绝）。
 
+没有显式 TLS override 的客户端使用同一套默认选项：固定 Node 根、无客户端
+身份、H2 优先 ALPN 和固定实例 provider，不继承进程全局 provider 或后端默认根。
+
 TLS profile 本身固定、不可选：显式实例 AWS-LC provider，TLS 1.3 + 1.2，
 WebPKI 链/主机名/时间验证始终开启，声明密钥交换组顺序
 `X25519MLKEM768, X25519, secp256r1, secp384r1`（有意不提供 P-521 密钥
@@ -549,12 +569,15 @@ body 恰好产生一个终止性流错误，服务端观测到的发送数等于
 投递方式验证）：HTTP/1 响应头经 8 KiB 初始读缓冲解析并自适应增长（自适应
 上限之内无字节上限；300 KiB 响应头被接受），消息头最多 100 个字段，
 chunked body 累计 chunk 扩展字节至多 16 KiB（超出后 body 以类型化的
-接受后 `StreamError` 失败）。trailer 节在上游内部常量之下、之上、恰好
-处于边界值时均被接受（该表面不强制人为 trailer 上限），且不存在 SDK 侧
+接受后 `StreamError` 失败）。trailer fixture 等待 HTTP EOF：99 个字段及累计
+16,383 字节被接受，100 个字段或 16,384 字节及更大 fixture 以类型化的接受后
+`StreamError` 失败。畸形及截断 trailer 也会失败，不再被更早的 SSE 终态隐藏。
+这些是上游 parser 边界，不存在 SDK 侧
 body/事件上限、分配提示或放宽的 content-length/transfer-encoding/EOF
 校验。失败保持可证明的阶段：响应前问题在采集阶段表现为
-`Network`/`Timeout`，接受后的 body 问题表现为 `StreamError`（已交付内容时
-携带部分 assistant 状态包装）。
+`Network`/`Timeout`；接受后的 body 问题保留 `StreamError` 或原有 `Timeout`
+原因，以及 canonical partial 和已知 usage。已迁移的 Chat 路径即使在首个公共事件前
+发生已接受响应的失败，也会封存采集重试。
 
 打包消费者证明：`scripts/pi-sdk-conformance/package_slice.py --family http
 --offline` 将 `opi-ai` 打包、在工作区之外解包，并以普通与调用方特性并集

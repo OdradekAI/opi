@@ -29,9 +29,37 @@ fn peer_close(payload: &[u8]) -> Vec<u8> {
 }
 
 #[tokio::test]
+async fn close_timeout_discards_retained_receive_event_permanently() {
+    let (client, mut peer) = tokio::io::duplex(64);
+    let mut driver = Driver::new(client, None).unwrap();
+    driver.queue(8, &[], false, [1; 4]).unwrap();
+    peer.write_all(&[0x81, 1, b'x']).await.unwrap();
+    assert!(matches!(
+        driver.finish_close(None).await,
+        Err(Fault::CloseReceivePending)
+    ));
+    assert!(matches!(
+        driver.finish_close(Some(tokio::time::Instant::now())).await,
+        Err(Fault::CloseTimeout)
+    ));
+    assert_eq!(driver.close_state(), CloseState::Failed);
+    for _ in 0..2 {
+        assert!(driver.next().await.unwrap().is_none());
+    }
+    let mut sent_close = [0; 6];
+    peer.read_exact(&mut sent_close).await.unwrap();
+    assert_eq!(sent_close.as_slice(), masked(8, &[], [1; 4]));
+    assert_eq!(peer.read(&mut [0]).await.unwrap(), 0);
+    assert!(matches!(
+        driver.finish_close(None).await,
+        Err(Fault::Closed)
+    ));
+}
+
+#[tokio::test]
 async fn peer_close_requires_explicit_masked_response_empty_stays_empty() {
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     peer.write_all(&[0x88, 0]).await.unwrap();
     let close = driver.next().await.unwrap().unwrap();
     assert_eq!(close.payload, []);
@@ -70,7 +98,7 @@ async fn response_preserves_close_code_reason_and_does_not_encode_status_1005() 
     let payload = [3, 232, b'o', b'k'];
     let mask = [4, 8, 2, 6];
     let (client, mut peer) = tokio::io::duplex(32);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     peer.write_all(&peer_close(&payload)).await.unwrap();
     let event = driver.next().await.unwrap().unwrap();
     assert_eq!(event.payload, payload);
@@ -88,7 +116,7 @@ async fn response_preserves_close_code_reason_and_does_not_encode_status_1005() 
 #[tokio::test]
 async fn local_close_waits_for_peer_close_and_transport_eof_across_cancellation() {
     let (client, mut peer) = tokio::io::duplex(32);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     let mask = [7, 6, 5, 4];
     assert!(matches!(
         driver.finish_close(None).await,
@@ -127,7 +155,7 @@ async fn local_close_waits_for_peer_close_and_transport_eof_across_cancellation(
 #[tokio::test]
 async fn simultaneous_close_sends_exactly_one_frame() {
     let (client, mut peer) = tokio::io::duplex(32);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     let payload = [3, 232];
     let mask = [1, 3, 5, 7];
     driver.queue(8, &payload, false, mask).unwrap();
@@ -151,7 +179,7 @@ async fn simultaneous_close_sends_exactly_one_frame() {
 #[tokio::test]
 async fn peer_close_discards_only_completely_unsent_application_frame() {
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     driver
         .queue(2, b"must never be sent", false, [8; 4])
         .unwrap();
@@ -172,7 +200,7 @@ async fn peer_close_discards_only_completely_unsent_application_frame() {
 #[tokio::test]
 async fn peer_close_finishes_partial_application_frame_then_exact_response() {
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     let body = vec![73; 200];
     let mask = [1, 2, 3, 4];
     driver.queue(2, &body, false, mask).unwrap();
@@ -205,7 +233,7 @@ async fn peer_close_finishes_partial_application_frame_then_exact_response() {
 #[tokio::test]
 async fn peer_eof_before_response_is_abnormal_not_close_success() {
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     peer.write_all(&[0x88, 0]).await.unwrap();
     peer.shutdown().await.unwrap();
     driver.next().await.unwrap();
@@ -226,7 +254,7 @@ async fn peer_eof_before_response_is_abnormal_not_close_success() {
 #[tokio::test(start_paused = true)]
 async fn caller_deadline_bounds_missing_peer_and_is_absorbing() {
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     driver.queue(8, &[], false, [2; 4]).unwrap();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(7);
     assert!(matches!(
@@ -245,7 +273,7 @@ async fn caller_deadline_bounds_missing_peer_and_is_absorbing() {
 #[tokio::test(start_paused = true)]
 async fn caller_deadline_bounds_response_backpressure_without_hidden_remainder() {
     let (client, mut peer) = tokio::io::duplex(8);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     peer.write_all(&[0x88, 0]).await.unwrap();
     driver.next().await.unwrap();
     let mut payload = vec![3, 232];
@@ -273,7 +301,7 @@ async fn malformed_close_is_error_once_then_permanent_eof() {
         vec![0xc8, 0],
     ] {
         let (client, mut peer) = tokio::io::duplex(16);
-        let mut driver = Driver::new(client, true, false).unwrap();
+        let mut driver = Driver::new(client, Some(Default::default())).unwrap();
         peer.write_all(&wire).await.unwrap();
         assert!(driver.next().await.is_err(), "accepted {wire:x?}");
         assert_eq!(driver.close_state(), CloseState::Failed);
@@ -286,7 +314,7 @@ async fn malformed_close_is_error_once_then_permanent_eof() {
 #[tokio::test]
 async fn post_close_data_cannot_be_delivered_or_turn_into_false_completion() {
     let (client, mut peer) = tokio::io::duplex(32);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     driver.queue(8, &[], false, [0; 4]).unwrap();
     driver.flush().await.unwrap();
     peer.write_all(&[0x88, 0, 0x81, 1, b'x']).await.unwrap();
@@ -299,7 +327,7 @@ async fn post_close_data_cannot_be_delivered_or_turn_into_false_completion() {
 #[tokio::test]
 async fn owner_drop_after_peer_close_does_not_send_implicit_ack() {
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     peer.write_all(&[0x88, 0]).await.unwrap();
     driver.next().await.unwrap();
     drop(driver);
@@ -309,7 +337,7 @@ async fn owner_drop_after_peer_close_does_not_send_implicit_ack() {
 #[tokio::test]
 async fn finish_close_retains_inflight_application_and_close_events() {
     let (client, mut peer) = tokio::io::duplex(32);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     driver.queue(8, &[], false, [9; 4]).unwrap();
     peer.write_all(&[0x81, 1, b'x', 0x88, 0]).await.unwrap();
     peer.shutdown().await.unwrap();
@@ -380,8 +408,7 @@ async fn cancelled_pending_flush_with_all_close_bytes_written_accepts_peer_reply
             inner: client,
             blocked: blocked.clone(),
         },
-        false,
-        false,
+        None,
     )
     .unwrap();
     driver.queue(8, &[], false, [4; 4]).unwrap();

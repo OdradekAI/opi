@@ -45,7 +45,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures_util::future::BoxFuture;
-use futures_util::{Stream, stream};
+use futures_util::{Stream, StreamExt, stream};
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::{
@@ -733,7 +733,6 @@ impl Models {
             request,
             auth,
             route,
-            active: Arc::new(AtomicBool::new(false)),
             credential_terminal: Arc::new(AtomicBool::new(false)),
             acquisition: Arc::new(crate::retry::AcquisitionCore::new(policy)),
         })
@@ -1306,9 +1305,6 @@ pub struct PreparedProviderCall {
     request: Request,
     auth: ResolvedAuth,
     route: PreparedRoute,
-    /// At-most-one-active-attempt guard, cleared when an attempt stream reaches
-    /// a terminal event or error.
-    active: Arc<AtomicBool>,
     /// Set when an attempt reports that the frozen credential is unavailable
     /// or revoked; later attempts fail closed instead of redispatching it.
     credential_terminal: Arc<AtomicBool>,
@@ -1319,7 +1315,7 @@ pub struct PreparedProviderCall {
 
 struct AttemptStream {
     inner: EventStream,
-    active: Arc<AtomicBool>,
+    cancel: CancellationToken,
     credential_terminal: Arc<AtomicBool>,
     acquisition: Arc<crate::retry::AcquisitionCore>,
     released: bool,
@@ -1332,7 +1328,10 @@ struct AttemptStream {
 impl AttemptStream {
     fn release(&mut self) {
         if !self.released {
-            self.active.store(false, Ordering::Release);
+            // A released attempt must never poll its old producer or mutate
+            // the acquisition state after a subsequent attempt starts.
+            self.inner = Box::pin(stream::empty());
+            self.acquisition.release_attempt();
             self.released = true;
         }
     }
@@ -1343,7 +1342,18 @@ impl Stream for AttemptStream {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-        this.polled = true;
+        if this.released {
+            return Poll::Ready(None);
+        }
+        if !this.polled {
+            if this.cancel.is_cancelled() {
+                this.acquisition.note_failure(&ProviderError::Cancelled);
+                this.release();
+                return Poll::Ready(Some(Err(ProviderError::Cancelled)));
+            }
+            this.polled = true;
+            this.acquisition.note_dispatch();
+        }
         let item = this.inner.as_mut().poll_next(cx);
         match &item {
             Poll::Ready(Some(Err(cause))) => {
@@ -1442,6 +1452,10 @@ impl PreparedProviderCall {
 
     /// Start one attempt using the frozen request and authentication.
     ///
+    /// Reserves the active lease immediately. The adapter and its producer
+    /// are constructed on the stream's first poll; dropping an unpolled
+    /// lease sends nothing and leaves it available for a later start.
+    ///
     /// Reuses the prepared route and authentication; does not repeat preparation.
     /// Every attempt shares the frozen [`Request::cancel`] token: cancelling it
     /// terminates the logical call and forbids any further attempt. At most one
@@ -1474,31 +1488,36 @@ impl PreparedProviderCall {
             });
         }
         if let Err(error) = self.acquisition.check_start() {
-            if let Some(seal) = crate::retry::start_error_seal(error) {
-                return Err(ModelsError::CallSealed { seal });
-            }
-            return Err(ModelsError::RetryNotReady {
-                retry_ready_in_ms: crate::retry::start_error_ready_in_ms(error).unwrap_or_default(),
+            return Err(match error {
+                crate::retry::RetryStartError::AlreadyActive => ModelsError::AttemptAlreadyActive,
+                crate::retry::RetryStartError::Sealed(seal) => ModelsError::CallSealed { seal },
+                crate::retry::RetryStartError::NotReady { retry_ready_in_ms } => {
+                    ModelsError::RetryNotReady { retry_ready_in_ms }
+                }
             });
         }
-        if self.active.swap(true, Ordering::AcqRel) {
-            return Err(ModelsError::AttemptAlreadyActive);
+        if self.request.cancel.is_cancelled() {
+            self.acquisition.release_attempt();
+            return Err(ModelsError::CallCancelled);
         }
-        // Recheck after acquiring the slot so a concurrent terminal stream
-        // cannot release it between the first check and this attempt.
+        // Recheck revocation after atomically reserving the execution lease.
         if self.credential_terminal.load(Ordering::Acquire) {
-            self.active.store(false, Ordering::Release);
+            self.acquisition.release_attempt();
             return Err(ModelsError::CredentialTerminated {
                 provider: self.route.provider_id.clone(),
             });
         }
-        self.acquisition.note_dispatch();
-        let stream = self
-            .provider
-            .stream_prepared(self.request.clone(), self.auth.clone());
+        // Adapters may eagerly spawn their producer in `stream_prepared`.
+        // Defer that invocation too, so an unpolled lease has no effects.
+        let provider = self.provider.clone();
+        let request = self.request.clone();
+        let auth = self.auth.clone();
+        let stream = Box::pin(
+            stream::once(async move { provider.stream_prepared(request, auth) }).flatten(),
+        );
         Ok(Box::pin(AttemptStream {
             inner: stream,
-            active: self.active.clone(),
+            cancel: self.request.cancel.clone(),
             credential_terminal: self.credential_terminal.clone(),
             acquisition: self.acquisition.clone(),
             released: false,

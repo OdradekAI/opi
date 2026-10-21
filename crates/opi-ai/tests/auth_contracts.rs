@@ -817,12 +817,16 @@ async fn logout_acks_only_the_selected_local_deletion() {
     impl opi_ai::CredentialStore for FailingDeleteStore {
         fn read<'a>(
             &'a self,
-            _provider_id: &'a str,
+            provider_id: &'a str,
         ) -> opi_ai::BoxAuthFuture<
             'a,
             Result<Option<opi_ai::Credential>, opi_ai::CredentialStoreError>,
         > {
-            Box::pin(async { Ok(None) })
+            Box::pin(async move {
+                Err(opi_ai::CredentialStoreError::CorruptMarker {
+                    provider: provider_id.to_owned(),
+                })
+            })
         }
         fn write<'a>(
             &'a self,
@@ -857,6 +861,29 @@ async fn logout_acks_only_the_selected_local_deletion() {
         &error,
         opi_ai::ModelsError::CredentialStore(opi_ai::CredentialStoreError::Backend { reason, .. })
             if reason == "lock unavailable"
+    ));
+    // The inline default also skips corrupt reads for unconditional replace,
+    // while updates still reject the same corruption before their callback.
+    let written = FailingDeleteStore
+        .modify(
+            "prov-logout",
+            opi_ai::write_mutation(stored_api_key("replacement")),
+        )
+        .await
+        .unwrap();
+    assert!(matches!(written.outcome, MutationOutcome::Written { .. }));
+    let error = FailingDeleteStore
+        .modify(
+            "prov-logout",
+            opi_ai::CredentialMutationOp::Update(Box::new(|_, _| {
+                panic!("update callback must not run after a corrupt read")
+            })),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        opi_ai::CredentialStoreError::CorruptMarker { .. }
     ));
 }
 
@@ -1020,6 +1047,130 @@ fn write_op(value: &'static str) -> opi_ai::CredentialMutationOp {
     opi_ai::write_mutation(stored_api_key(value))
 }
 
+#[test]
+fn sync_entry_mutations_preserve_fifo_after_runtime_handoff() {
+    let store = InMemoryCredentialStore::new();
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let first = store.modify(
+        "prov",
+        opi_ai::CredentialMutationOp::Update(Box::new(move |_view, _current| {
+            Box::pin(async move {
+                released.await.unwrap();
+                Ok(MutationDecision::Write(stored_api_key("rotated")))
+            })
+        })),
+    );
+    let deletion = store.modify("prov", opi_ai::delete_mutation());
+    let barrier = store.mutation_barrier();
+    assert_eq!(barrier.cutoff(), 2);
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut first = first;
+        let mut deletion = deletion;
+        assert!(futures_util::poll!(&mut first).is_pending());
+        assert!(
+            futures_util::poll!(&mut deletion).is_pending(),
+            "delete must wait for the earlier admitted rotation"
+        );
+        release.send(()).unwrap();
+        assert!(matches!(
+            first.await.unwrap().outcome,
+            MutationOutcome::Written { revision: 1 }
+        ));
+        assert!(matches!(
+            deletion.await.unwrap().outcome,
+            MutationOutcome::Deleted { revision: 2 }
+        ));
+        assert!(store.read("prov").await.unwrap().is_none());
+        assert!(barrier.report().is_complete());
+    });
+}
+
+#[test]
+fn sync_entry_started_mutation_survives_waiter_drop() {
+    let store = InMemoryCredentialStore::new();
+    let (started, start) = tokio::sync::oneshot::channel::<()>();
+    let (release, released) = tokio::sync::oneshot::channel::<()>();
+    let mutation = store.modify(
+        "prov",
+        opi_ai::CredentialMutationOp::Update(Box::new(move |_view, _current| {
+            Box::pin(async move {
+                started.send(()).unwrap();
+                released.await.unwrap();
+                Ok(MutationDecision::Write(stored_api_key("committed")))
+            })
+        })),
+    );
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut mutation = mutation;
+        assert!(futures_util::poll!(&mut mutation).is_pending());
+        start.await.unwrap();
+        drop(mutation);
+        assert!(
+            release.send(()).is_ok(),
+            "store must retain the running operation"
+        );
+        let report = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            store.mutation_barrier().wait(),
+        )
+        .await
+        .expect("store-owned operation must settle");
+        assert!(report.is_complete());
+        assert!(matches!(
+            store.read("prov").await.unwrap(),
+            Some(Credential::ApiKey(_))
+        ));
+    });
+}
+
+#[test]
+fn off_runtime_submission_waits_for_explicit_runtime_execution_entry() {
+    let queue = Arc::new(MutationQueue::new());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let submitted = queue.clone();
+    let worker_calls = calls.clone();
+    let mut handle = std::thread::spawn(move || {
+        submitted.submit(
+            "prov",
+            Box::new(move || {
+                Box::pin(async move {
+                    worker_calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(opi_ai::MutationApplied::Write)
+                })
+            }),
+        )
+    })
+    .join()
+    .unwrap();
+    let waker = futures_util::task::noop_waker();
+    let mut cx = std::task::Context::from_waker(&waker);
+    assert!(std::future::Future::poll(std::pin::Pin::new(&mut handle), &mut cx).is_pending());
+    drop(handle);
+    let barrier = queue.barrier();
+    assert!(!barrier.report().is_complete());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(30), barrier.wait())
+                .await
+                .is_err(),
+            "barrier waiting must not start an admitted auth operation"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(!barrier.report().is_complete());
+        let later = queue.submit(
+            "prov",
+            Box::new(|| Box::pin(async { Ok(opi_ai::MutationApplied::Delete) })),
+        );
+        assert!(matches!(
+            later.await.unwrap().outcome,
+            MutationOutcome::Deleted { revision: 2 }
+        ));
+        assert!(barrier.report().is_complete());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    });
+}
+
 #[tokio::test]
 async fn store_mutations_serialize_in_submission_order_per_provider() {
     let store = InMemoryCredentialStore::new();
@@ -1063,13 +1214,14 @@ async fn store_mutations_serialize_in_submission_order_per_provider() {
 async fn started_mutation_survives_waiter_cancellation() {
     let store = Arc::new(InMemoryCredentialStore::new());
     let (release, released) = tokio::sync::oneshot::channel::<()>();
-    let op: opi_ai::CredentialMutationOp = Box::new(move |_view, _current| {
-        let released = released;
-        Box::pin(async move {
-            let _ = released.await;
-            Ok(MutationDecision::Write(stored_api_key("committed")))
-        })
-    });
+    let op: opi_ai::CredentialMutationOp =
+        opi_ai::CredentialMutationOp::Update(Box::new(move |_view, _current| {
+            let released = released;
+            Box::pin(async move {
+                let _ = released.await;
+                Ok(MutationDecision::Write(stored_api_key("committed")))
+            })
+        }));
     let handle = store.modify("prov", op);
 
     // Cancel the wait while the mutation is still running: dropping the
@@ -1104,23 +1256,24 @@ async fn second_waiter_reuses_committed_result_without_second_operation() {
     let store = InMemoryCredentialStore::new();
     let calls = Arc::new(AtomicUsize::new(0));
     let calls_for_op = calls.clone();
-    let op: opi_ai::CredentialMutationOp = Box::new(move |_view, current| {
-        let calls = calls_for_op.clone();
-        Box::pin(async move {
-            calls.fetch_add(1, Ordering::SeqCst);
-            match current {
-                Some(_) => Ok(MutationDecision::Keep),
-                None => Ok(MutationDecision::Write(stored_api_key("once"))),
-            }
-        })
-    });
+    let op: opi_ai::CredentialMutationOp =
+        opi_ai::CredentialMutationOp::Update(Box::new(move |_view, current| {
+            let calls = calls_for_op.clone();
+            Box::pin(async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                match current {
+                    Some(_) => Ok(MutationDecision::Keep),
+                    None => Ok(MutationDecision::Write(stored_api_key("once"))),
+                }
+            })
+        }));
     let r1 = store.modify(
         "prov",
-        Box::new(move |_view, current| {
+        opi_ai::CredentialMutationOp::Update(Box::new(move |_view, current| {
             // Distinct op object with identical single-flight semantics.
             let _ = current;
             Box::pin(async move { Ok(MutationDecision::Write(stored_api_key("once"))) })
-        }),
+        })),
     );
     let r1 = r1.await.expect("first ACK");
     let r2 = store.modify("prov", op).await.expect("second ACK");
@@ -1163,22 +1316,24 @@ async fn barrier_captures_cutoff_across_models_sharing_store() {
 async fn barrier_reports_pending_failure_unknown_and_late_writes() {
     let store = InMemoryCredentialStore::new();
     let (release, released) = tokio::sync::oneshot::channel::<()>();
-    let gated: opi_ai::CredentialMutationOp = Box::new(move |_view, _current| {
-        let released = released;
-        Box::pin(async move {
-            let _ = released.await;
-            Ok(MutationDecision::Keep)
-        })
-    });
+    let gated: opi_ai::CredentialMutationOp =
+        opi_ai::CredentialMutationOp::Update(Box::new(move |_view, _current| {
+            let released = released;
+            Box::pin(async move {
+                let _ = released.await;
+                Ok(MutationDecision::Keep)
+            })
+        }));
     let _pending = store.modify("prov-pending", gated);
 
-    let failing: opi_ai::CredentialMutationOp = Box::new(|_view, _current| {
-        Box::pin(async move {
-            Err(opi_ai::MutationError::Operation(ProviderError::AuthFailed(
-                opi_ai::provider::ProviderErrorSummary::from_untrusted("refresh failed"),
-            )))
-        })
-    });
+    let failing: opi_ai::CredentialMutationOp =
+        opi_ai::CredentialMutationOp::Update(Box::new(|_view, _current| {
+            Box::pin(async move {
+                Err(opi_ai::MutationError::Operation(ProviderError::AuthFailed(
+                    opi_ai::provider::ProviderErrorSummary::from_untrusted("refresh failed"),
+                )))
+            })
+        }));
     let failed = store
         .modify("prov-fail", failing)
         .await
@@ -1186,7 +1341,9 @@ async fn barrier_reports_pending_failure_unknown_and_late_writes() {
     assert!(matches!(failed.outcome, MutationOutcome::Failed { .. }));
 
     let panicking: opi_ai::CredentialMutationOp =
-        Box::new(|_view, _current| Box::pin(async move { panic!("worker lost") }));
+        opi_ai::CredentialMutationOp::Update(Box::new(|_view, _current| {
+            Box::pin(async move { panic!("worker lost") })
+        }));
     // Drive the panicking slot to its Unknown receipt by awaiting the handle.
     let unknown = store
         .modify("prov-panic", panicking)
@@ -1237,7 +1394,9 @@ async fn barrier_reports_pending_failure_unknown_and_late_writes() {
 async fn unknown_outcome_for_one_key_survives_another_keys_success() {
     let store = InMemoryCredentialStore::new();
     let panicking: opi_ai::CredentialMutationOp =
-        Box::new(|_view, _current| Box::pin(async move { panic!("lost") }));
+        opi_ai::CredentialMutationOp::Update(Box::new(|_view, _current| {
+            Box::pin(async move { panic!("lost") })
+        }));
     let _ = store
         .modify("prov-old", panicking)
         .await
@@ -1296,30 +1455,32 @@ async fn network_timeout_scope_excludes_lock_wait_and_ack() {
     // A slow prior slot occupies the (per-provider) serialization for far
     // longer than the second operation's own network bound.
     let (release, released) = tokio::sync::oneshot::channel::<()>();
-    let slow: opi_ai::CredentialMutationOp = Box::new(move |_view, _current| {
-        let released = released;
-        Box::pin(async move {
-            let _ = released.await;
-            Ok(MutationDecision::Keep)
-        })
-    });
+    let slow: opi_ai::CredentialMutationOp =
+        opi_ai::CredentialMutationOp::Update(Box::new(move |_view, _current| {
+            let released = released;
+            Box::pin(async move {
+                let _ = released.await;
+                Ok(MutationDecision::Keep)
+            })
+        }));
     let _slow = store.modify("prov", slow);
 
-    let bounded: opi_ai::CredentialMutationOp = Box::new(|_view, _current| {
-        Box::pin(async move {
-            // The operation's own network bound (50ms) applies only to the
-            // simulated exchange, not to the slot's lock wait or the ACK.
-            match tokio::time::timeout(
-                std::time::Duration::from_millis(50),
-                std::future::pending::<()>(),
-            )
-            .await
-            {
-                Err(_elapsed) => Ok(MutationDecision::Write(stored_api_key("after-wait"))),
-                Ok(()) => unreachable!("never resolves"),
-            }
-        })
-    });
+    let bounded: opi_ai::CredentialMutationOp =
+        opi_ai::CredentialMutationOp::Update(Box::new(|_view, _current| {
+            Box::pin(async move {
+                // The operation's own network bound (50ms) applies only to the
+                // simulated exchange, not to the slot's lock wait or the ACK.
+                match tokio::time::timeout(
+                    std::time::Duration::from_millis(50),
+                    std::future::pending::<()>(),
+                )
+                .await
+                {
+                    Err(_elapsed) => Ok(MutationDecision::Write(stored_api_key("after-wait"))),
+                    Ok(()) => unreachable!("never resolves"),
+                }
+            })
+        }));
     let bounded = store.modify("prov", bounded);
     // Let the queue admit both before releasing the slow slot.
     tokio::task::yield_now().await;

@@ -2,6 +2,15 @@
 
 ### Breaking Changes
 
+- `opi-ai`: `CredentialMutationOp` now distinguishes `Write`, `Delete`, and
+  `Update(CredentialUpdateOp)`; custom callbacks wrap `Update`. Unconditional
+  login replacement and logout can repair corrupt entries without decoding
+  their previous value. The neutral `opi-ws::io::Driver::new` now accepts
+  `Option<PmdParameters>` with separate send/receive context and window
+  settings; Upgrade callers map all four negotiated fields explicitly.
+- `opi-ai`: default `HttpClient` TLS now uses the same fixed instance AWS-LC
+  profile and packaged Node roots as explicit `TlsOptions::default`, without
+  inheriting the host's global provider or backend default roots.
 - `opi-ai`: schema regex and URL/IDNA data now follow the supported crates.io
   dependency profile instead of a fixed Unicode 16 fork (RDF-21). Newly assigned
   letters, script names and domain mappings can change schema admission,
@@ -28,8 +37,9 @@
   now refuses dispatch with new typed `ModelsError::RetryNotReady` before an
   admitted retry's readiness deadline and with `ModelsError::CallSealed`
   (`AcquisitionSeal`: `PostHandoff`/`UnknownDispatch`/`Exhausted`/`Finished`)
-  once the call is sealed. The first delivered stream event seals acquisition
-  retry, a dispatched attempt dropped without an observed outcome seals as an
+  once the call is sealed. Successful response handoff seals acquisition
+  retry, including accepted Chat responses that fail before the first SSE
+  event; a dispatched attempt dropped without an observed outcome seals as an
   unknown effect, and success no longer re-opens a prepared call — callers
   that re-dispatched a finished call (including tests) must schedule the
   admitted retries through `retry_admission()` or re-prepare. `opi-agent`
@@ -82,6 +92,28 @@
 
 ### Fixed
 
+- Acquisition checks and attempt-lease reservation share one synchronized
+  owner. A terminal attempt remains at EOF and cannot later change another
+  attempt's retry state; accepted Chat response body failures never admit a
+  replay, including a timeout before the first SSE event.
+- Classic WebSocket upgrades use HTTP/1.1 with the same frozen TLS identity,
+  trust and proxy inputs, while ordinary HTTP requests keep their H2 profile.
+  The neutral companion's dependency notices identify the actual Zlib licenses
+  and compression backend selected by each supported feature union.
+- HTTP trailer acceptance fixtures now consume the complete HTTP tail before
+  success, exposing the upstream field-count/byte boundaries and malformed or
+  truncated tails instead of ending at an earlier SSE terminal.
+- Prepared attempts defer adapter construction and dispatch until first poll;
+  dropping an unused lease sends nothing, while dropping a dispatched attempt
+  seals its unknown effect. SDK HTTP clients disable backend protocol-NACK
+  retries so every additional send requires SDK admission.
+- Credential queues retain off-runtime submissions in FIFO order until an
+  ACK poll or normal submission hands them to a host Tokio runtime. Started
+  work survives waiter cancellation; barriers only observe and wait. Failed
+  WebSocket Close now discards retained receive events and remains at EOF.
+- Package-consumer checks bind native provenance to each consumer's actual
+  Cargo units, verify registry/source identities, and reject unreviewed native
+  replacement inputs instead of accepting unrelated shared-cache archives.
 - Completion futures freeze owned calls before polling and remain `Send +
   'static` after the driver is changed or dropped; tool-registry installation
   freezes validation against the final declaration rather than assembly cache.
@@ -222,8 +254,8 @@
   chains, typed acquisition versus post-acceptance failure stages,
   single-terminal EOF without retries, the recorded hyper 1.9.0
   acceptance boundaries (8 KiB initial read buffer with adaptive growth,
-  100 head fields, 16 KiB cumulative chunk extensions, no artificial
-  trailer or head byte cap), HTTPS proxy outer TLS -> CONNECT -> inner
+  100 head fields, 16 KiB cumulative chunk extensions, upstream trailer
+  count/byte constraints and no new SDK body/event cap), HTTPS proxy outer TLS -> CONNECT -> inner
   TLS and scoped NO_PROXY bypass. Offline packaged-consumer proof via
   `scripts/pi-sdk-conformance/package_slice.py --family http --offline`
   (ordinary and caller feature-union graphs, resolved versions and

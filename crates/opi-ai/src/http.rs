@@ -176,6 +176,7 @@ impl ProxyConfig {
 #[derive(Debug)]
 pub struct HttpClient {
     inner: reqwest::Client,
+    websocket: reqwest::Client,
     max_idle_per_host: usize,
     idle_timeout: Duration,
     proxy_config: ProxyConfig,
@@ -201,6 +202,13 @@ impl HttpClient {
         &self.inner
     }
 
+    /// Classic WebSocket Upgrade uses H1 with the same frozen trust, identity,
+    /// proxy and send policy as ordinary HTTP. Its pool cannot reuse an H2
+    /// connection negotiated for another request.
+    pub(crate) fn websocket_client(&self) -> &reqwest::Client {
+        &self.websocket
+    }
+
     /// Return the pool configuration as `(max_idle_per_host, idle_timeout)`.
     pub fn pool_config(&self) -> (usize, Duration) {
         (self.max_idle_per_host, self.idle_timeout)
@@ -211,10 +219,11 @@ impl HttpClient {
         &self.proxy_config
     }
 
-    /// Return the validated TLS configuration, if one was supplied.
+    /// Return the validated TLS override, if one was supplied.
     ///
     /// The value is the frozen, redacted view of the options accepted by
-    /// [`HttpClientBuilder::tls`]; no key material is exposed.
+    /// [`HttpClientBuilder::tls`]; no key material is exposed. `None` uses
+    /// the same fixed instance profile with pinned Node roots and no identity.
     pub fn tls_options(&self) -> Option<&TlsOptions> {
         self.tls_options.as_ref()
     }
@@ -304,9 +313,9 @@ impl HttpClientBuilder {
     /// must reach this path instead of building raw rustls/reqwest
     /// transports themselves.
     ///
-    /// A client built without this entry keeps the pre-existing backend
-    /// default transport (no ambient trust, credential or proxy discovery
-    /// is added either way).
+    /// Without an override, the client uses [`TlsOptions::default`]: pinned
+    /// Node roots, no client identity and H2-preferred ALPN, always with the
+    /// fixed instance AWS-LC provider.
     pub fn tls(mut self, options: TlsOptions) -> Self {
         self.tls_options = Some(options);
         self
@@ -326,31 +335,44 @@ impl HttpClientBuilder {
     /// that want environment-derived proxies resolve them with
     /// [`proxy_from_env`] and pass an explicit [`ProxyConfig`].
     pub fn build(self) -> Result<HttpClient, HttpClientBuildError> {
-        let mut builder = reqwest::Client::builder()
-            .pool_max_idle_per_host(self.max_idle_per_host)
-            .pool_idle_timeout(Some(self.idle_timeout))
-            .redirect(self.redirect_policy.to_reqwest())
-            .no_proxy();
-
-        if let Some(ref options) = self.tls_options {
-            let frozen = options.freeze()?;
-            builder = builder.use_preconfigured_tls(frozen.config);
-            if frozen.http1_only {
+        let defaults = TlsOptions::default();
+        let frozen = self.tls_options.as_ref().unwrap_or(&defaults).freeze()?;
+        // Clone the already validated TLS state, including its instance provider
+        // and client identity. Only the classic Upgrade ALPN differs; no second
+        // trust/credential/environment discovery occurs here.
+        let websocket_config = (!frozen.http1_only).then(|| {
+            let mut config = frozen.config.clone();
+            config.alpn_protocols = vec![b"http/1.1".to_vec()];
+            config
+        });
+        let build = |config, http1_only| -> Result<reqwest::Client, HttpClientBuildError> {
+            let mut builder = reqwest::Client::builder()
+                .pool_max_idle_per_host(self.max_idle_per_host)
+                .pool_idle_timeout(Some(self.idle_timeout))
+                .retry(reqwest::retry::never())
+                .redirect(self.redirect_policy.to_reqwest())
+                .no_proxy()
+                .use_preconfigured_tls(config);
+            if http1_only {
                 builder = builder.http1_only();
             }
-        }
-
-        if let Some(ref url) = self.proxy_config.url {
-            let mut proxy = reqwest::Proxy::all(url)?;
-            if let Some(ref np) = self.proxy_config.no_proxy {
-                proxy = proxy.no_proxy(reqwest::NoProxy::from_string(np));
+            if let Some(ref url) = self.proxy_config.url {
+                let mut proxy = reqwest::Proxy::all(url)?;
+                if let Some(ref np) = self.proxy_config.no_proxy {
+                    proxy = proxy.no_proxy(reqwest::NoProxy::from_string(np));
+                }
+                builder = builder.proxy(proxy);
             }
-            builder = builder.proxy(proxy);
-        }
-
-        let inner = builder.build()?;
+            Ok(builder.build()?)
+        };
+        let inner = build(frozen.config, frozen.http1_only)?;
+        let websocket = match websocket_config {
+            Some(config) => build(config, true)?,
+            None => inner.clone(),
+        };
         Ok(HttpClient {
             inner,
+            websocket,
             max_idle_per_host: self.max_idle_per_host,
             idle_timeout: self.idle_timeout,
             proxy_config: self.proxy_config,

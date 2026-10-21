@@ -555,6 +555,7 @@ pub enum ProviderError {
 pub struct ProviderStreamFailure {
     message: crate::message::AssistantMessage,
     cause: ProviderError,
+    response_received: bool,
 }
 
 impl ProviderStreamFailure {
@@ -580,8 +581,25 @@ impl ProviderError {
     pub(crate) fn with_partial(self, message: crate::message::AssistantMessage) -> Self {
         match self {
             Self::StreamFailure(_) => self,
-            cause => Self::StreamFailure(Box::new(ProviderStreamFailure { message, cause })),
+            cause => Self::StreamFailure(Box::new(ProviderStreamFailure {
+                message,
+                cause,
+                response_received: false,
+            })),
         }
+    }
+
+    /// Carry a transport handoff fact without changing the public cause or
+    /// canonical partial. Only the private producer snapshot sets this flag.
+    pub(crate) fn after_response(mut self) -> Self {
+        if let Self::StreamFailure(failure) = &mut self {
+            failure.response_received = true;
+        }
+        self
+    }
+
+    pub(crate) fn response_received(&self) -> bool {
+        matches!(self, Self::StreamFailure(failure) if failure.response_received)
     }
 
     pub(crate) fn into_stream_parts(

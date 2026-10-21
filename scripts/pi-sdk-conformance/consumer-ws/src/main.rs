@@ -11,6 +11,8 @@ use std::future::poll_fn;
 use std::task::Poll;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+mod deflate_audit;
+
 fn hex(text: &str) -> Vec<u8> {
     (0..text.len())
         .step_by(2)
@@ -19,7 +21,18 @@ fn hex(text: &str) -> Vec<u8> {
 }
 
 fn server_frame(first: u8, payload: &[u8]) -> Vec<u8> {
-    let mut wire = vec![first, payload.len() as u8];
+    let mut wire = vec![first];
+    match payload.len() {
+        0..=125 => wire.push(payload.len() as u8),
+        126..=65535 => {
+            wire.push(126);
+            wire.extend_from_slice(&(payload.len() as u16).to_be_bytes());
+        }
+        _ => {
+            wire.push(127);
+            wire.extend_from_slice(&(payload.len() as u64).to_be_bytes());
+        }
+    }
     wire.extend_from_slice(payload);
     wire
 }
@@ -69,10 +82,11 @@ async fn context_takeover_across_messages() -> Result<(), String> {
     }
 }
 
-/// Full duplex echo: compressed text and plain binary, then peer Close.
+/// Compressed text/plain binary plus independently audited window-8 wire
+/// in both directions, with and without context takeover.
 async fn driver_echo_roundtrip() -> Result<(), String> {
     let (client, mut peer) = tokio::io::duplex(64);
-    let mut driver = opi_ws::io::Driver::new(client, true, false).map_err(|e| e.to_string())?;
+    let mut driver = opi_ws::io::Driver::new(client, Some(Default::default())).map_err(|e| e.to_string())?;
     let mut encoder = opi_ws::pmd::Encoder::new(15, false).map_err(|e| e.to_string())?;
     let compressed = encoder.encode("回环 canary".as_bytes()).map_err(|e| e.to_string())?;
     peer.write_all(&server_frame(0xc1, &compressed)).await.map_err(|e| e.to_string())?;
@@ -93,13 +107,105 @@ async fn driver_echo_roundtrip() -> Result<(), String> {
     if message.opcode != 2 || message.payload != b"binary" {
         return Err("binary corrupted".into());
     }
+    window8_roundtrip().await
+}
+
+async fn window8_roundtrip() -> Result<(), String> {
+    let mut seed = 7_u32;
+    let pattern: Vec<_> = (0..200)
+        .map(|_| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as u8
+        })
+        .collect();
+    let expected = pattern.repeat(257);
+    for no_context in [false, true] {
+        let (client, mut peer) = tokio::io::duplex(8192);
+        let parameters = opi_ws::io::PmdParameters {
+            server_no_context_takeover: no_context,
+            client_no_context_takeover: no_context,
+            server_max_window_bits: 8,
+            client_max_window_bits: 8,
+        };
+        let mut driver =
+            opi_ws::io::Driver::new(client, Some(parameters)).map_err(|e| e.to_string())?;
+        let mut encoder = opi_ws::pmd::Encoder::new(8, no_context).map_err(|e| e.to_string())?;
+        let (mut inbound_history, mut outbound_history) = (Vec::new(), Vec::new());
+        for message in 0..2 {
+            let compressed = encoder.encode(&expected).map_err(|e| e.to_string())?;
+            if no_context {
+                inbound_history.clear();
+                outbound_history.clear();
+            }
+            let (decoded, maximum) =
+                deflate_audit::decode_pmd(&compressed, &mut inbound_history, 8)?;
+            if decoded != expected || !(1..=256).contains(&maximum) {
+                return Err("inbound window8 wire content/distance mismatch".into());
+            }
+            let wire = server_frame(0xc2, &compressed);
+            // The real encoder may produce more bytes than the duplex can
+            // hold. Exercise backpressure by driving both ends together.
+            let (written, received) = tokio::join!(peer.write_all(&wire), driver.next());
+            written.map_err(|e| e.to_string())?;
+            let received = received
+                .map_err(|e| e.to_string())?
+                .ok_or("window8 message missing")?;
+            if received.payload != expected {
+                return Err("window8 receive corrupted".into());
+            }
+            driver
+                .queue(2, &expected, true, [3, 5, 7, 9])
+                .map_err(|e| e.to_string())?;
+            let receive = async {
+                let mut head = [0; 2];
+                peer.read_exact(&mut head)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                if head[0] != 0xc2 || head[1] & 128 == 0 {
+                    return Err("window8 output was not compressed and masked".to_string());
+                }
+                let length = match head[1] & 127 {
+                    126 => usize::from(peer.read_u16().await.map_err(|e| e.to_string())?),
+                    127 => usize::try_from(peer.read_u64().await.map_err(|e| e.to_string())?)
+                        .map_err(|e| e.to_string())?,
+                    n => usize::from(n),
+                };
+                let mut mask = [0; 4];
+                peer.read_exact(&mut mask)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let mut payload = vec![0; length];
+                peer.read_exact(&mut payload)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                for (i, byte) in payload.iter_mut().enumerate() {
+                    *byte ^= mask[i % 4];
+                }
+                Ok::<_, String>(payload)
+            };
+            let flush = async { driver.flush().await.map_err(|e| e.to_string()) };
+            let ((), payload) = tokio::try_join!(flush, receive)?;
+            let (decoded, maximum) = deflate_audit::decode_pmd(&payload, &mut outbound_history, 8)?;
+            if decoded != expected || !(1..=256).contains(&maximum) {
+                return Err("outbound window8 wire content/distance mismatch".into());
+            }
+            if !no_context
+                && message == 1
+                && deflate_audit::decode_pmd(&payload, &mut Vec::new(), 8).is_ok()
+            {
+                return Err("window8 takeover fixture did not depend on retained history".into());
+            }
+        }
+    }
     Ok(())
 }
 
 /// Explicit Close: peer Close, masked response, write shutdown, peer EOF.
 async fn close_handshake_masked_response() -> Result<(), String> {
     let (client, mut peer) = tokio::io::duplex(64);
-    let mut driver = opi_ws::io::Driver::new(client, false, false).map_err(|e| e.to_string())?;
+    let mut driver = opi_ws::io::Driver::new(client, None).map_err(|e| e.to_string())?;
     peer.write_all(&[0x88, 0]).await.map_err(|e| e.to_string())?;
     let close = driver
         .next()
@@ -131,7 +237,7 @@ async fn close_handshake_masked_response() -> Result<(), String> {
 /// A malformed server frame fails once, then the owner is terminal.
 async fn strict_rejection_is_terminal() -> Result<(), String> {
     let (client, mut peer) = tokio::io::duplex(64);
-    let mut driver = opi_ws::io::Driver::new(client, true, false).map_err(|e| e.to_string())?;
+    let mut driver = opi_ws::io::Driver::new(client, Some(Default::default())).map_err(|e| e.to_string())?;
     peer.write_all(&[0x41, 0, 0xc0, 0]).await.map_err(|e| e.to_string())?;
     if driver.next().await.is_ok() {
         return Err("RSV1 on continuation accepted".into());
@@ -145,7 +251,7 @@ async fn strict_rejection_is_terminal() -> Result<(), String> {
 /// The borrowed receive future is cancellable and resumes from owned state.
 async fn cancelled_borrow_resumes() -> Result<(), String> {
     let (client, mut peer) = tokio::io::duplex(64);
-    let mut driver = opi_ws::io::Driver::new(client, false, false).map_err(|e| e.to_string())?;
+    let mut driver = opi_ws::io::Driver::new(client, None).map_err(|e| e.to_string())?;
     let payload = vec![0x5a; 300];
     let mut wire = vec![0x82, 126];
     wire.extend_from_slice(&(payload.len() as u16).to_be_bytes());

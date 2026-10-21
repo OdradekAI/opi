@@ -70,10 +70,10 @@ pub use models::{
     PreparedProviderCall, PreparedRoute, SecretKey, SimpleOptions,
 };
 pub use mutation::{
-    BarrierEntry, BarrierReport, CredentialMutationOp, CredentialRevision, InMemoryCredentialStore,
-    MutationAbandoned, MutationApplied, MutationBarrier, MutationDecision, MutationError,
-    MutationGeneration, MutationHandle, MutationOutcome, MutationQueue, MutationReceipt,
-    MutationSlot, MutationSlotView, delete_mutation, write_mutation,
+    BarrierEntry, BarrierReport, CredentialMutationOp, CredentialRevision, CredentialUpdateOp,
+    InMemoryCredentialStore, MutationAbandoned, MutationApplied, MutationBarrier, MutationDecision,
+    MutationError, MutationGeneration, MutationHandle, MutationOutcome, MutationQueue,
+    MutationReceipt, MutationSlot, MutationSlotView, delete_mutation, write_mutation,
 };
 pub use provider::Provider;
 pub use provider_headers::{ProviderHeaders, ProviderHeadersError};

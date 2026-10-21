@@ -2086,6 +2086,7 @@ dependencies = [
  "base64",
  "futures-core",
  "futures-util",
+ "h2",
  "hex",
  "hmac",
  "http-body-util",

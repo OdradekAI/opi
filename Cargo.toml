@@ -124,6 +124,8 @@ tokio-rustls = "0.26"
 hyper = { version = "1", features = ["http1", "http2", "server"] }
 hyper-util = { version = "0.1", features = ["tokio", "server"] }
 http-body-util = "0.1"
+# Exact existing transitive version for protocol-NACK loopback regressions.
+h2 = "=0.4.14"
 aws-lc-rs = { version = "=1.18.2", default-features = false, features = ["aws-lc-sys", "alloc", "prebuilt-nasm"] }
 
 # env loading

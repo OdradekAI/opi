@@ -439,7 +439,8 @@ impl OpenAiChatMapper {
     }
 
     pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
-        cause.with_partial(self.partial.clone())
+        self.snapshot.record(&self.partial);
+        self.snapshot.failure(cause)
     }
 
     pub fn new(
@@ -1277,6 +1278,7 @@ impl OpenAiChatProvider {
                 &provider_id,
             ));
         }
+        snapshot.received_response();
 
         let mut byte_stream = response.bytes_stream();
         let mut buffer = String::new();

@@ -1828,6 +1828,137 @@ async fn keychain_store_reaches_production_construction() {
 
 use opi_ai::mutation::{BarrierEntry, MutationOutcome};
 
+type CorruptEntryCase = (&'static str, Option<&'static str>, Option<&'static str>);
+
+fn corrupt_entry_cases() -> [CorruptEntryCase; 4] {
+    [
+        ("malformed", Some("api_key"), Some("{ invalid")),
+        (
+            "unknown",
+            Some("api_key"),
+            Some(r#"{"version":999,"kind":"api_key","api_key":"old"}"#),
+        ),
+        ("marker-only", Some("api_key"), None),
+        ("corrupt-marker", Some("unrecognized"), Some("{ invalid")),
+    ]
+}
+
+#[tokio::test]
+async fn logout_unconditionally_removes_corrupt_entries() {
+    for (provider, marker, protected) in corrupt_entry_cases() {
+        let backend = FakeKeyringBackend::new();
+        if let Some(marker) = marker {
+            backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, provider, marker);
+        }
+        if let Some(protected) = protected {
+            backend.seed_raw(KEYCHAIN_SERVICE, provider, protected);
+        }
+        let (_dir, store) = store_with(backend.clone());
+        assert!(
+            store.read(provider).await.is_err(),
+            "fixture must be corrupt: {provider}"
+        );
+        opi_ai::Models::new()
+            .logout(&store, provider)
+            .await
+            .unwrap_or_else(|error| panic!("logout must delete {provider}: {error}"));
+        assert!(backend.raw_entry(KEYCHAIN_SERVICE, provider).is_none());
+        assert!(
+            backend
+                .raw_entry(KEYCHAIN_PRESENCE_SERVICE, provider)
+                .is_none()
+        );
+        assert!(
+            matches!(store.mutation_barrier().report().captured.as_slice(),
+            [BarrierEntry::Settled(receipt)] if matches!(receipt.outcome, MutationOutcome::Deleted { revision: 1 }))
+        );
+    }
+}
+
+#[tokio::test]
+async fn replacement_mutation_unconditionally_repairs_corrupt_entries() {
+    for (provider, marker, protected) in corrupt_entry_cases() {
+        let backend = FakeKeyringBackend::new();
+        if let Some(marker) = marker {
+            backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, provider, marker);
+        }
+        if let Some(protected) = protected {
+            backend.seed_raw(KEYCHAIN_SERVICE, provider, protected);
+        }
+        let (_dir, store) = store_with(backend);
+        assert!(
+            store.read(provider).await.is_err(),
+            "fixture must be corrupt: {provider}"
+        );
+        let receipt = store
+            .modify(provider, opi_ai::write_mutation(api_key_credential()))
+            .await
+            .unwrap();
+        assert!(
+            matches!(receipt.outcome, MutationOutcome::Written { revision: 1 }),
+            "replacement must repair {provider}: {receipt:?}"
+        );
+        assert!(
+            matches!(store.read(provider).await.unwrap(), Some(Credential::ApiKey(key)) if key.expose_secret() == API_KEY)
+        );
+    }
+}
+
+#[tokio::test]
+async fn update_mutation_rejects_corrupt_entry_before_invoking_callback() {
+    for (provider, marker, protected) in corrupt_entry_cases() {
+        let backend = FakeKeyringBackend::new();
+        if let Some(marker) = marker {
+            backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, provider, marker);
+        }
+        if let Some(protected) = protected {
+            backend.seed_raw(KEYCHAIN_SERVICE, provider, protected);
+        }
+        let (_dir, store) = store_with(backend.clone());
+        let expected = store.read(provider).await.unwrap_err();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let callback_calls = calls.clone();
+        let receipt = store
+            .modify(
+                provider,
+                opi_ai::CredentialMutationOp::Update(Box::new(move |_view, _current| {
+                    callback_calls.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async { Ok(opi_ai::MutationDecision::Delete) })
+                })),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(receipt.outcome, MutationOutcome::Failed { error }
+            if matches!(&*error, opi_ai::MutationError::Store(actual) if actual.to_string() == expected.to_string())));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            backend.raw_entry(KEYCHAIN_SERVICE, provider).as_deref(),
+            protected
+        );
+        assert_eq!(
+            backend
+                .raw_entry(KEYCHAIN_PRESENCE_SERVICE, provider)
+                .as_deref(),
+            marker
+        );
+    }
+}
+
+#[tokio::test]
+async fn unconditional_mutation_preserves_typed_backend_failures() {
+    let dir = TempDir::new().unwrap();
+    let store =
+        KeychainCredentialStore::new(Box::new(OperationalErrorBackend), dir.path().to_owned());
+    for op in [
+        opi_ai::delete_mutation(),
+        opi_ai::write_mutation(api_key_credential()),
+    ] {
+        let receipt = store.modify("provider", op).await.unwrap();
+        assert!(matches!(receipt.outcome, MutationOutcome::Failed { error }
+            if matches!(&*error, opi_ai::MutationError::Store(CredentialStoreError::Backend { provider, .. }) if provider == "provider")));
+    }
+}
+
 fn near_expiry_oauth() -> Credential {
     Credential::OAuthToken {
         access: secret("stale-access"),

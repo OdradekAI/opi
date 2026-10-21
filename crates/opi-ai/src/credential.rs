@@ -246,17 +246,24 @@ pub trait CredentialStore: Send + Sync {
     fn probe<'a>(&'a self, provider_id: &'a str) -> BoxAuthFuture<'a, CredentialSource>;
 
     /// Submit a serialized, store-owned mutation for `provider_id` and wait
-    /// for its ACK. The operation sees the current credential (read under
-    /// the slot's exclusion) plus a [`crate::mutation::MutationSlotView`] for post-failure
+    /// for its ACK. Unconditional write/delete operations do not read the
+    /// previous entry, so they can repair corrupt stored data. An update
+    /// callback sees the current credential (strictly read under the slot's
+    /// exclusion) plus a [`crate::mutation::MutationSlotView`] for post-failure
     /// re-reads, and returns a [`crate::mutation::MutationDecision`]. Dropping the returned
     /// future cancels only the wait: once a mutation starts it runs to its
-    /// recorded outcome while the host runtime lives (worker loss surfaces
-    /// as [`crate::mutation::MutationOutcome::Unknown`], never as a silent success).
+    /// recorded outcome while the host runtime lives. Worker panic records
+    /// [`crate::mutation::MutationOutcome::Unknown`]; runtime loss may leave
+    /// the operation pending without an ACK, never a silent success.
     ///
     /// Operation and store failures settle into the receipt
     /// ([`crate::mutation::MutationOutcome::Failed`]); `Err` is reserved for stores that
     /// cannot admit mutations at all. There is no default wait, receipt, or
     /// admission cap.
+    /// Queue-backed stores require a host Tokio runtime for execution. If
+    /// admitted outside one, the queue retains the pending operation until
+    /// a submission or ACK poll enters a runtime. A barrier only observes
+    /// and waits; it never starts pending operations.
     fn modify<'a>(
         &'a self,
         provider_id: &'a str,

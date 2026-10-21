@@ -1026,9 +1026,11 @@ impl KeychainCredentialStore {
         }
     }
 
-    /// Enqueue one serialized read-modify-write mutation: acquire the
-    /// cross-process lock, read the current entry, run `op`, apply the
-    /// decision under the same lock. Detached — dropping the returned
+    /// Enqueue one serialized mutation under the cross-process lock.
+    /// Updates strictly read the current entry before invoking the callback;
+    /// unconditional replacements/deletions bypass that read so corrupt
+    /// entries remain repairable. Apply the decision under the same lock.
+    /// Detached — dropping the returned
     /// handle cancels only the wait, never a started mutation.
     fn submit_mutation(&self, provider_id: &str, op: CredentialMutationOp) -> MutationHandle {
         let core = self.core.clone();
@@ -1043,15 +1045,21 @@ impl KeychainCredentialStore {
                 let op = op;
                 Box::pin(async move {
                     let _guard = lock.acquire().await.map_err(MutationError::from)?;
-                    let view = KeychainSlotView {
-                        core: core.clone(),
-                        provider_id: provider.clone(),
+                    let decision = match op {
+                        CredentialMutationOp::Write(cred) => MutationDecision::Write(cred),
+                        CredentialMutationOp::Delete => MutationDecision::Delete,
+                        CredentialMutationOp::Update(op) => {
+                            let view = KeychainSlotView {
+                                core: core.clone(),
+                                provider_id: provider.clone(),
+                            };
+                            let current = core
+                                .read_consistent_unlocked(&provider)
+                                .await
+                                .map_err(MutationError::from)?;
+                            op(&view, current.as_ref()).await?
+                        }
                     };
-                    let current = core
-                        .read_consistent_unlocked(&provider)
-                        .await
-                        .map_err(MutationError::from)?;
-                    let decision = op(&view, current.as_ref()).await?;
                     match decision {
                         MutationDecision::Write(cred) => {
                             core.write_unlocked(&provider, &cred)
@@ -1075,49 +1083,13 @@ impl KeychainCredentialStore {
     /// Enqueue one unconditional serialized write (the public
     /// `CredentialStore::write` primitive).
     fn submit_write(&self, provider_id: &str, cred: &Credential) -> MutationHandle {
-        let core = self.core.clone();
-        let lock = self.lock.clone();
-        let provider = provider_id.to_owned();
-        let cred = cred.clone();
-        self.queue.submit(
-            provider_id,
-            Box::new(move || {
-                let core = core;
-                let lock = lock;
-                let provider = provider;
-                let cred = cred;
-                Box::pin(async move {
-                    let _guard = lock.acquire().await.map_err(MutationError::from)?;
-                    core.write_unlocked(&provider, &cred)
-                        .await
-                        .map_err(MutationError::from)?;
-                    Ok(MutationApplied::Write)
-                })
-            }),
-        )
+        self.submit_mutation(provider_id, CredentialMutationOp::Write(cred.clone()))
     }
 
     /// Enqueue one unconditional serialized delete (the public
     /// `CredentialStore::delete` primitive).
     fn submit_delete(&self, provider_id: &str) -> MutationHandle {
-        let core = self.core.clone();
-        let lock = self.lock.clone();
-        let provider = provider_id.to_owned();
-        self.queue.submit(
-            provider_id,
-            Box::new(move || {
-                let core = core;
-                let lock = lock;
-                let provider = provider;
-                Box::pin(async move {
-                    let _guard = lock.acquire().await.map_err(MutationError::from)?;
-                    core.delete_unlocked(&provider)
-                        .await
-                        .map_err(MutationError::from)?;
-                    Ok(MutationApplied::Delete)
-                })
-            }),
-        )
+        self.submit_mutation(provider_id, CredentialMutationOp::Delete)
     }
 }
 
@@ -1390,7 +1362,7 @@ impl CredentialResolver {
         // atomically. Dropping this wait cannot abort it.
         let provider = provider_id.to_owned();
         let refresh_timeout = self.refresh_timeout;
-        let op: CredentialMutationOp = Box::new(
+        let op: CredentialMutationOp = CredentialMutationOp::Update(Box::new(
             move |view: &dyn MutationSlotView, current: Option<&Credential>| {
                 let oauth = oauth.clone();
                 let provider = provider.clone();
@@ -1456,7 +1428,7 @@ impl CredentialResolver {
                     }
                 })
             },
-        );
+        ));
         let receipt = self
             .store
             .modify(provider_id, op)

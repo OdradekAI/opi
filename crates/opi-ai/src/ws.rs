@@ -107,8 +107,7 @@ pub struct NegotiatedPmd {
     pub server_no_context_takeover: bool,
     /// The server acknowledged `client_no_context_takeover`.
     pub client_no_context_takeover: bool,
-    /// The server's advertised inflate window (8..=15, normalized from 8 to
-    /// 9 only when the fixed backend requires it; see the companion notes).
+    /// The server's compression window (8..=15), retained as negotiated.
     pub server_max_window_bits: u8,
     /// The server-capped deflate window for this client (present only when
     /// offered), always within 8..=15.
@@ -126,13 +125,12 @@ pub struct Negotiation {
 }
 
 impl Negotiation {
-    /// The `(pmd_enabled, server_no_context_takeover)` pair the neutral
-    /// `opi_ws::io::Driver` constructor takes for this negotiation.
-    pub fn driver_parameters(&self) -> (bool, bool) {
-        match &self.pmd {
-            Some(pmd) => (true, pmd.server_no_context_takeover),
-            None => (false, false),
-        }
+    /// The complete direction-specific PMD facts for the caller's neutral
+    /// driver mapping; `None` means compression was not negotiated.
+    /// Map both context flags and both windows by name; an omitted client
+    /// window means the RFC default of 15.
+    pub fn driver_parameters(&self) -> Option<NegotiatedPmd> {
+        self.pmd
     }
 }
 
@@ -314,7 +312,7 @@ pub async fn upgrade(
     let key = b64(nonce);
     let url = request.http_url();
     let mut builder = client
-        .client()
+        .websocket_client()
         .get(url.as_str())
         .header("Connection", "Upgrade")
         .header("Upgrade", "websocket")

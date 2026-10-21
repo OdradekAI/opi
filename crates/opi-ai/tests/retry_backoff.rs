@@ -448,6 +448,130 @@ mod acquisition {
             .await;
     }
 
+    #[tokio::test]
+    async fn real_adapter_unpolled_attempt_does_not_dispatch() {
+        let server = MockServer::start().await;
+        mount_success(&server).await;
+        let models = real_adapter_models(&server.uri()).await;
+        let call = models
+            .prepare_call("openai:gpt-4o", chat_request())
+            .await
+            .unwrap();
+        let attempt = call.start_attempt().unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "an unpolled attempt must not start the real adapter producer"
+        );
+        drop(attempt);
+        assert_eq!(call.acquisition_seal(), None);
+        drain_attempt(call.start_attempt().unwrap()).await.unwrap();
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn real_adapter_drop_after_send_seals_unknown_dispatch() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(5)))
+            .mount(&server)
+            .await;
+        let models = real_adapter_models(&server.uri()).await;
+        let call = models
+            .prepare_call("openai:gpt-4o", chat_request())
+            .await
+            .unwrap();
+        let mut attempt = call.start_attempt().unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            tokio::select! {
+                result = attempt.next() => panic!("response should remain pending: {result:?}"),
+                _ = async {
+                    while server.received_requests().await.unwrap().is_empty() {
+                        tokio::task::yield_now().await;
+                    }
+                } => {}
+            }
+        })
+        .await
+        .unwrap();
+        drop(attempt);
+        assert_eq!(
+            call.acquisition_seal(),
+            Some(AcquisitionSeal::UnknownDispatch)
+        );
+        assert!(matches!(
+            call.start_attempt(),
+            Err(ModelsError::CallSealed {
+                seal: AcquisitionSeal::UnknownDispatch
+            })
+        ));
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn successful_response_head_seals_retry_before_the_first_event() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let uri = format!("http://{}", listener.local_addr().unwrap());
+        let peer = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut bytes = Vec::new();
+            let mut buffer = [0; 4096];
+            loop {
+                let n = socket.read(&mut buffer).await.unwrap();
+                assert_ne!(n, 0);
+                bytes.extend_from_slice(&buffer[..n]);
+                if let Some(at) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
+                    let length = String::from_utf8_lossy(&bytes[..at])
+                        .lines()
+                        .find_map(|line| {
+                            line.split_once(':')
+                                .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                                .map(|(_, value)| value.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap();
+                    if bytes.len() >= at + 4 + length {
+                        break;
+                    }
+                }
+            }
+            socket.write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n").await.unwrap();
+            socket.flush().await.unwrap();
+            assert!(matches!(socket.read(&mut buffer).await, Ok(0) | Err(_)));
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(75), listener.accept())
+                    .await
+                    .is_err()
+            );
+        });
+        let models = real_adapter_models(&uri).await;
+        let mut request = chat_request();
+        request.timeout = Some(std::time::Duration::from_millis(200));
+        let call = models
+            .prepare_call_with_policy(
+                "openai:gpt-4o",
+                request,
+                AcquisitionPolicy::with_max_retries(1),
+            )
+            .await
+            .unwrap();
+        let failure = ChatStream::new(call.start_attempt().unwrap())
+            .result()
+            .await
+            .unwrap_err();
+        assert!(matches!(failure.cause(), ProviderError::Timeout));
+        assert!(!failure.message().usage.reported);
+        assert_eq!(call.acquisition_seal(), Some(AcquisitionSeal::PostHandoff));
+        assert!(call.retry_admission().is_none());
+        assert!(matches!(
+            call.start_attempt(),
+            Err(ModelsError::CallSealed {
+                seal: AcquisitionSeal::PostHandoff
+            })
+        ));
+        peer.await.unwrap();
+    }
+
     fn assistant_text(message: &AssistantMessage) -> String {
         message
             .content
@@ -667,6 +791,55 @@ mod acquisition {
         let mut request = chat_request();
         request.model = "mock:mock-model".into();
         request
+    }
+
+    #[tokio::test]
+    async fn cancellation_after_reserving_an_unpolled_lease_never_starts_the_adapter() {
+        let (models, log) = mock_models(vec![MockResponse::Events(text_response("unused"))]);
+        let request = mock_request();
+        let cancel = request.cancel.clone();
+        let call = models
+            .prepare_call("mock:mock-model", request)
+            .await
+            .unwrap();
+        let mut attempt = call.start_attempt().unwrap();
+        cancel.cancel();
+        assert!(matches!(
+            attempt.next().await,
+            Some(Err(ProviderError::Cancelled))
+        ));
+        assert!(attempt.next().await.is_none());
+        assert!(log.lock().unwrap().is_empty());
+        assert!(matches!(
+            call.start_attempt(),
+            Err(ModelsError::CallCancelled)
+        ));
+    }
+
+    #[tokio::test]
+    async fn polling_a_closed_attempt_does_not_seal_the_admitted_retry() {
+        let (models, log) = mock_models(vec![
+            MockResponse::Error(ProviderError::RateLimited {
+                retry_after_ms: Some(0),
+            }),
+            MockResponse::Events(text_response("recovered")),
+        ]);
+        let call = models
+            .prepare_call_with_policy(
+                "mock:mock-model",
+                mock_request(),
+                AcquisitionPolicy::with_max_retries(1),
+            )
+            .await
+            .unwrap();
+        let mut old_attempt = call.start_attempt().unwrap();
+        assert!(old_attempt.next().await.unwrap().is_err());
+        let next_attempt = call.start_attempt().unwrap();
+        assert!(old_attempt.next().await.is_none());
+        assert!(old_attempt.next().await.is_none());
+        assert!(call.acquisition_seal().is_none());
+        drain_attempt(next_attempt).await.unwrap();
+        assert_eq!(log.lock().unwrap().len(), 2);
     }
 
     /// A retryable failure after streaming-response handoff is final: the

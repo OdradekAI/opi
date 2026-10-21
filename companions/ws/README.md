@@ -31,14 +31,21 @@ lives in `opi-ai/src/ws`; the real consumer is the Codex WebSocket provider
   (`Ping`/`Pong`/`Close` included) and keeps partial frame, PMD and UTF-8
   state across dropped (cancelled) futures — a cancelled borrow resumes the
   same owned operation.
+- `Driver::new(stream, Option<PmdParameters>)` receives both directional
+  context-takeover flags and both negotiated windows by name. Server
+  parameters configure reception; client parameters configure sending.
+  `None` disables PMD; absent RFC window parameters map to 15. The pinned
+  encoder backend normalizes requested window 8 to 9 internally; the wire
+  window is checked independently by the Upgrade test described below.
 - Outbound frames are queued with a caller-supplied fresh mask; there is no
   hidden mask, response, timer, reconnect or retry.
 - `finish_close` completes the explicit Close: both frames, write shutdown
   and peer transport EOF are required, in-flight application events are
   retained (bounded), and the only deadline is the caller's absolute
   `tokio::time::Instant`.
-- Abnormal EOF/protocol failures surface once as typed errors, then the
-  owner is terminal.
+- Abnormal EOF/protocol/Close timeout failures surface once as typed errors,
+  discard retained receive events, then return permanent receive EOF.
+  Successful Close completion still permits delivery of its retained event.
 - Storage grows from actually received bytes with `try_reserve*` typed
   failures; declared payload lengths are never speculatively allocated, and
   there is no message-size or iteration cap (the internal 8 KiB/quantum
@@ -61,8 +68,12 @@ supported feature unions and the upstream audit obligations on upgrade.
 | Graph | Encoder backend | Decoder backend |
 |---|---|---|
 | default (ordinary) | flate2 `zlib-rs` | direct `libz-rs-sys` Rust path |
-| `union-default` | flate2 default (miniz_oxide) | direct `libz-rs-sys` Rust path |
+| `union-default` | flate2 `zlib-rs` with default features unified | direct `libz-rs-sys` Rust path |
 | `union-c-zlib` | flate2 `zlib` (native C `libz-sys` build) | direct `libz-rs-sys` Rust path |
+
+flate2 1.1.10 gives C backends priority over `zlib-rs`, then uses miniz_oxide
+only when neither is selected. The default union adds miniz_oxide to the
+dependency graph while retaining the `zlib-rs` encoder.
 
 ## Tests
 
@@ -76,6 +87,26 @@ SHA-256). The fixtures were extracted from the sealed research oracle
 (`extract-boundary-fixtures.py` records provenance). Run the same battery
 under `--features union-default` and `--features union-c-zlib` to exercise
 the caller feature unions.
+
+The root `opi-ai` test
+`upgrade_window8_wire_has_independent_decode_and_distance_proof` exercises
+the public `opi_ai::ws::upgrade` / `HttpClient` path against a loopback peer
+in ordinary/default/C-zlib graphs. It negotiates window 8 in both directions
+and audits multiple messages with and without context takeover using an
+independent RFC 1951 decoder. The audit reconstructs the original bytes,
+checks actual wire distances against the 256-byte window, and includes a
+distance-257 negative control that succeeds with window 9 and fails with
+window 8.
+
+An idle-read `cfg(test)` test registers a real pending read waker, selects
+logical cancellation in the connection owner, then drops the `Driver`.
+It observes transport and PMD release before acknowledgement and no late
+output. Dropping only a borrowed receive future remains resumable; this
+owner-cancellation test adds no production cancellation API.
+
+These are local protocol and ownership checks. Full Codex WebSocket,
+continuation, pool/cleanup integration and native platform/MSRV acceptance
+remain with their later tasks.
 
 ## Maintenance boundaries
 

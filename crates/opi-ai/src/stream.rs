@@ -677,19 +677,37 @@ impl Stream for ChatStream {
 /// Call-local canonical state, including facts that emitted no public event.
 /// Cancellation reads this snapshot before discarding buffered delivery.
 #[derive(Clone, Default)]
-pub(crate) struct ProducerSnapshot(
-    std::sync::Arc<std::sync::Mutex<Option<crate::message::AssistantMessage>>>,
-);
+pub(crate) struct ProducerSnapshot(std::sync::Arc<std::sync::Mutex<ProducerState>>);
+
+#[derive(Default)]
+struct ProducerState {
+    message: Option<crate::message::AssistantMessage>,
+    response_received: bool,
+}
 
 impl ProducerSnapshot {
     pub(crate) fn record(&self, message: &crate::message::AssistantMessage) {
-        *self.0.lock().expect("producer snapshot lock") = Some(message.clone());
+        self.0.lock().expect("producer snapshot lock").message = Some(message.clone());
     }
 
-    fn failure(&self, cause: ProviderError) -> ProviderError {
-        match self.0.lock().expect("producer snapshot lock").clone() {
-            Some(message) => cause.with_partial(message),
+    /// Freeze successful transport acquisition before reading response data.
+    pub(crate) fn received_response(&self) {
+        self.0
+            .lock()
+            .expect("producer snapshot lock")
+            .response_received = true;
+    }
+
+    pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
+        let state = self.0.lock().expect("producer snapshot lock");
+        let cause = match &state.message {
+            Some(message) => cause.with_partial(message.clone()),
             None => cause,
+        };
+        if state.response_received {
+            cause.after_response()
+        } else {
+            cause
         }
     }
 }

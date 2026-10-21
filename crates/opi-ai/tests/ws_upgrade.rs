@@ -15,13 +15,185 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use url::Url;
 
+#[path = "../../../scripts/pi-sdk-conformance/consumer-ws/src/deflate_audit.rs"]
+mod deflate_audit;
+#[allow(dead_code)]
+mod tls_fixtures;
+
+async fn wss_peer(
+    require_identity: bool,
+) -> (Url, tokio::task::JoinHandle<(Option<Vec<u8>>, usize, bool)>) {
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
+    use std::sync::Arc;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    let builder = rustls::ServerConfig::builder_with_provider(provider.clone())
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .unwrap();
+    let builder = if require_identity {
+        let mut roots = rustls::RootCertStore::empty();
+        roots
+            .add(CertificateDer::from_pem_slice(tls_fixtures::CERT_CA.as_bytes()).unwrap())
+            .unwrap();
+        builder.with_client_cert_verifier(
+            rustls::server::WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider)
+                .build()
+                .unwrap(),
+        )
+    } else {
+        builder.with_no_client_auth()
+    };
+    let mut config = builder
+        .with_single_cert(
+            vec![CertificateDer::from_pem_slice(tls_fixtures::CERT_SERVER_RSA.as_bytes()).unwrap()],
+            PrivateKeyDer::from_pem_slice(tls_fixtures::KEY_SERVER_RSA.as_bytes()).unwrap(),
+        )
+        .unwrap();
+    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = Url::parse(&format!(
+        "wss://localhost:{}/socket",
+        listener.local_addr().unwrap().port()
+    ))
+    .unwrap();
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+    let peer = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let Ok(mut stream) = acceptor.accept(stream).await else {
+            return (None, 0, false);
+        };
+        let alpn = stream.get_ref().1.alpn_protocol().map(Vec::from);
+        let authenticated = stream
+            .get_ref()
+            .1
+            .peer_certificates()
+            .is_some_and(|c| !c.is_empty());
+        if alpn.as_deref() != Some(b"http/1.1") {
+            return (alpn, 0, authenticated);
+        }
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            head.push(stream.read_u8().await.unwrap());
+        }
+        let request = RequestHead::read(&mut std::io::Cursor::new(head));
+        let mut response = response_101(&request, &[]);
+        response.extend_from_slice(&[0x82, 4, b'w', b's', b's', b'!']);
+        stream.write_all(&response).await.unwrap();
+        let mut masked = [0; 6];
+        stream.read_exact(&mut masked).await.unwrap();
+        assert_eq!(&masked[..2], &[0x88, 0x80]);
+        (alpn, 1, authenticated)
+    });
+    (url, peer)
+}
+
+#[tokio::test]
+async fn wss_upgrade_uses_h1_with_default_alpn_and_frozen_mtls() {
+    use opi_ai::http::{ProxyConfig, TlsOptions};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    for identity in [false, true] {
+        let (url, peer) = wss_peer(identity).await;
+        let mut tls = TlsOptions::new()
+            .with_extra_roots_pem(tls_fixtures::CERT_CA.as_bytes())
+            .unwrap();
+        if identity {
+            tls = tls
+                .with_client_identity_pem(
+                    tls_fixtures::CERT_CLIENT_RSA2048.as_bytes(),
+                    tls_fixtures::KEY_CLIENT_RSA2048.as_bytes(),
+                )
+                .unwrap();
+        }
+        let mut builder = HttpClientBuilder::new()
+            .tls(tls)
+            .redirects(RedirectPolicy::None);
+        let proxy = if identity {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let authority = url[url::Position::BeforeHost..url::Position::AfterPort].to_owned();
+            let port = url.port().unwrap();
+            let task = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut head = Vec::new();
+                while !head.ends_with(b"\r\n\r\n") {
+                    head.push(stream.read_u8().await.unwrap());
+                }
+                assert!(
+                    String::from_utf8(head)
+                        .unwrap()
+                        .starts_with(&format!("CONNECT {authority} HTTP/1.1\r\n"))
+                );
+                let mut target = tokio::net::TcpStream::connect(("127.0.0.1", port))
+                    .await
+                    .unwrap();
+                stream
+                    .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                    .await
+                    .unwrap();
+                let _ = tokio::io::copy_bidirectional(&mut stream, &mut target).await;
+            });
+            builder = builder.proxy(ProxyConfig {
+                url: Some(format!("http://{address}")),
+                no_proxy: None,
+            });
+            Some(task)
+        } else {
+            None
+        };
+        let client = builder.build().unwrap();
+        let upgraded = ws::upgrade(&client, WsUpgradeRequest::new(url)).await;
+        let upgraded = upgraded.unwrap_or_else(|e| panic!("classic WSS must use H1: {e:?}"));
+        let mut driver = opi_ws::io::Driver::new(upgraded.stream, None).unwrap();
+        assert_eq!(driver.next().await.unwrap().unwrap().payload, b"wss!");
+        driver.queue(8, &[], false, ws::fresh_mask()).unwrap();
+        driver.flush().await.unwrap();
+        let (alpn, http, authenticated) = peer.await.unwrap();
+        assert_eq!(alpn.as_deref(), Some(b"http/1.1".as_slice()));
+        assert_eq!(http, 1);
+        assert_eq!(authenticated, identity);
+        drop(driver);
+        if let Some(proxy) = proxy {
+            proxy.await.unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn wss_upgrade_preserves_trust_rejection_before_http() {
+    use opi_ai::http::TlsOptions;
+    let (url, peer) = wss_peer(false).await;
+    let tls = TlsOptions::new()
+        .with_explicit_roots_pem(tls_fixtures::CERT_OTHER_CA.as_bytes())
+        .unwrap();
+    let client = HttpClientBuilder::new()
+        .tls(tls)
+        .redirects(RedirectPolicy::None)
+        .build()
+        .unwrap();
+    assert!(matches!(
+        ws::upgrade(&client, WsUpgradeRequest::new(url)).await,
+        Err(WsUpgradeError::Transport(_))
+    ));
+    let (alpn, http, authenticated) = peer.await.unwrap();
+    assert_eq!(alpn, None);
+    assert_eq!(http, 0);
+    assert!(!authenticated);
+}
+
 /// What the scripted server should do after the handshake head.
 enum After101 {
     /// Complete a full exchange: read one client frame, send a peer Close,
     /// shut down the write side, then wait for the client EOF.
-    Exchange { expect_rsv1: bool },
+    Exchange {
+        expect_rsv1: bool,
+    },
     /// Immediately close the socket after the scripted head.
     Nothing,
+    IndependentMessages(Vec<u8>),
+    Window8 {
+        expected: Vec<u8>,
+        no_context: bool,
+    },
 }
 
 struct Peer {
@@ -50,6 +222,11 @@ impl Peer {
             match after {
                 After101::Nothing => Ok(()),
                 After101::Exchange { expect_rsv1 } => exchange(stream, expect_rsv1),
+                After101::IndependentMessages(expected) => independent_messages(stream, &expected),
+                After101::Window8 {
+                    expected,
+                    no_context,
+                } => window8_messages(stream, &expected, no_context),
             }
         });
         Peer {
@@ -68,6 +245,251 @@ impl Peer {
             .expect("peer thread")
             .join()
             .unwrap_or_else(|_| Err("server thread panicked".into()))
+    }
+}
+
+fn independent_messages(mut stream: TcpStream, expected: &[u8]) -> Result<(), String> {
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .unwrap();
+    for message in 0..2 {
+        let mut header = [0; 2];
+        stream.read_exact(&mut header).map_err(|e| e.to_string())?;
+        assert_eq!(header[0], 0xc2);
+        assert_ne!(header[1] & 0x80, 0);
+        let length = match header[1] & 0x7f {
+            126 => {
+                let mut length = [0; 2];
+                stream.read_exact(&mut length).map_err(|e| e.to_string())?;
+                u16::from_be_bytes(length) as usize
+            }
+            127 => return Err("unexpected large frame".into()),
+            length => length as usize,
+        };
+        let mut mask = [0; 4];
+        stream.read_exact(&mut mask).map_err(|e| e.to_string())?;
+        let mut payload = vec![0; length];
+        stream.read_exact(&mut payload).map_err(|e| e.to_string())?;
+        for (i, byte) in payload.iter_mut().enumerate() {
+            *byte ^= mask[i % 4];
+        }
+        let decoded = opi_ws::pmd::Decoder::new(true).unwrap().decode(&payload);
+        assert_eq!(
+            decoded.unwrap_or_else(|e| panic!("message {message} needs forbidden history: {e}")),
+            expected
+        );
+    }
+    Ok(())
+}
+
+fn window8_messages(
+    mut stream: TcpStream,
+    expected: &[u8],
+    no_context: bool,
+) -> Result<(), String> {
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .unwrap();
+    let mut history = Vec::new();
+    for message in 0..2 {
+        let mut head = [0; 2];
+        stream.read_exact(&mut head).map_err(|e| e.to_string())?;
+        assert_eq!(head[0], 0xc2);
+        assert_ne!(head[1] & 0x80, 0);
+        let length = match head[1] & 127 {
+            126 => {
+                let mut n = [0; 2];
+                stream.read_exact(&mut n).unwrap();
+                usize::from(u16::from_be_bytes(n))
+            }
+            127 => return Err("unexpected large frame".into()),
+            n => usize::from(n),
+        };
+        let mut mask = [0; 4];
+        stream.read_exact(&mut mask).unwrap();
+        let mut payload = vec![0; length];
+        stream.read_exact(&mut payload).unwrap();
+        for (i, byte) in payload.iter_mut().enumerate() {
+            *byte ^= mask[i % 4];
+        }
+        if no_context {
+            history.clear();
+        }
+        let (decoded, maximum) = deflate_audit::decode_pmd(&payload, &mut history, 8)?;
+        assert_eq!(decoded, expected);
+        assert!(
+            (1..=256).contains(&maximum),
+            "wire must exercise actual backreferences"
+        );
+        if !no_context && message == 1 {
+            assert!(
+                deflate_audit::decode_pmd(&payload, &mut Vec::new(), 8).is_err(),
+                "takeover fixture must really depend on prior history"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn upgrade_window8_wire_has_independent_decode_and_distance_proof() {
+    let mut seed = 7_u32;
+    let pattern: Vec<_> = (0..200)
+        .map(|_| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as u8
+        })
+        .collect();
+    let expected = pattern.repeat(257);
+    for no_context in [false, true] {
+        let inbound = expected.clone();
+        let peer = Peer::spawn(
+            After101::Window8 {
+                expected: expected.clone(),
+                no_context,
+            },
+            move |head| {
+                let flags = if no_context {
+                    "; server_no_context_takeover; client_no_context_takeover"
+                } else {
+                    ""
+                };
+                let extension = format!(
+                    "permessage-deflate; server_max_window_bits=8; client_max_window_bits=8{flags}"
+                );
+                let mut response = response_101(head, &[("Sec-WebSocket-Extensions", &extension)]);
+                let mut encoder = opi_ws::pmd::Encoder::new(8, no_context).unwrap();
+                let mut history = Vec::new();
+                for _ in 0..2 {
+                    let payload = encoder.encode(&inbound).unwrap();
+                    if no_context {
+                        history.clear();
+                    }
+                    let (decoded, maximum) =
+                        deflate_audit::decode_pmd(&payload, &mut history, 8).unwrap();
+                    assert_eq!(decoded, inbound);
+                    assert!((1..=256).contains(&maximum));
+                    if payload.len() < 126 {
+                        response.extend_from_slice(&[0xc2, payload.len() as u8]);
+                    } else {
+                        response.extend_from_slice(&[0xc2, 126]);
+                        response.extend_from_slice(
+                            &u16::try_from(payload.len()).unwrap().to_be_bytes(),
+                        );
+                    }
+                    response.extend_from_slice(&payload);
+                }
+                response
+            },
+        );
+        let request = WsUpgradeRequest::new(peer.url()).permessage_deflate(PmdOffer {
+            client_no_context_takeover: no_context,
+            client_max_window_bits: Some(Some(8)),
+        });
+        let upgraded = ws::upgrade(&upgrade_client(), request).await.unwrap();
+        let parameters = driver_parameters(&upgraded.negotiation).unwrap();
+        assert_eq!(parameters.server_max_window_bits, 8);
+        assert_eq!(parameters.client_max_window_bits, 8);
+        let mut driver = opi_ws::io::Driver::new(upgraded.stream, Some(parameters)).unwrap();
+        for _ in 0..2 {
+            assert_eq!(driver.next().await.unwrap().unwrap().payload, expected);
+            driver.queue(2, &expected, true, ws::fresh_mask()).unwrap();
+            driver.flush().await.unwrap();
+        }
+        peer.finish().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn upgrade_preserves_directional_context_and_delivers_coalesced_tail_once() {
+    let expected = b"retained-history-window:".repeat(1000);
+    let server_messages = expected.clone();
+    let peer = Peer::spawn(
+        After101::IndependentMessages(expected.clone()),
+        move |head| {
+            let mut response = response_101(
+                head,
+                &[(
+                    "Sec-WebSocket-Extensions",
+                    "permessage-deflate; client_no_context_takeover",
+                )],
+            );
+            response.extend_from_slice(&[0x82, 4, b't', b'a', b'i', b'l']);
+            let mut encoder = opi_ws::pmd::Encoder::new(15, false).unwrap();
+            for _ in 0..2 {
+                let payload = encoder.encode(&server_messages).unwrap();
+                if payload.len() < 126 {
+                    response.extend_from_slice(&[0xc2, payload.len() as u8]);
+                } else {
+                    response.extend_from_slice(&[0xc2, 126]);
+                    response
+                        .extend_from_slice(&u16::try_from(payload.len()).unwrap().to_be_bytes());
+                }
+                response.extend_from_slice(&payload);
+            }
+            response
+        },
+    );
+    let client = upgrade_client();
+    let upgraded = ws::upgrade(&client, bridge_request(peer.url(), true))
+        .await
+        .unwrap();
+    let pmd = upgraded.negotiation.pmd.unwrap();
+    assert!(pmd.client_no_context_takeover);
+    assert!(!pmd.server_no_context_takeover);
+    let parameters = driver_parameters(&upgraded.negotiation);
+    let mut driver = opi_ws::io::Driver::new(upgraded.stream, parameters).unwrap();
+    assert_eq!(driver.next().await.unwrap().unwrap().payload, b"tail");
+    for _ in 0..2 {
+        assert_eq!(driver.next().await.unwrap().unwrap().payload, expected);
+    }
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(10), driver.next())
+            .await
+            .is_err()
+    );
+    for _ in 0..2 {
+        driver.queue(2, &expected, true, ws::fresh_mask()).unwrap();
+        driver.flush().await.unwrap();
+    }
+    peer.finish().unwrap();
+}
+
+#[tokio::test]
+async fn upgrade_transfers_all_directional_pmd_parameters() {
+    for bits in [8, 9, 10, 15] {
+        for server_no_context in [false, true] {
+            let peer = Peer::spawn(After101::Nothing, move |head| {
+                let server_flag = if server_no_context {
+                    "; server_no_context_takeover"
+                } else {
+                    ""
+                };
+                let extension = format!(
+                    "permessage-deflate; client_no_context_takeover{server_flag}; server_max_window_bits={bits}; client_max_window_bits={bits}"
+                );
+                response_101(head, &[("Sec-WebSocket-Extensions", &extension)])
+            });
+            let request = WsUpgradeRequest::new(peer.url()).permessage_deflate(PmdOffer {
+                client_no_context_takeover: true,
+                client_max_window_bits: Some(None),
+            });
+            let upgraded = ws::upgrade(&upgrade_client(), request).await.unwrap();
+            let parameters = driver_parameters(&upgraded.negotiation).unwrap();
+            assert_eq!(
+                parameters,
+                opi_ws::io::PmdParameters {
+                    server_no_context_takeover: server_no_context,
+                    client_no_context_takeover: true,
+                    server_max_window_bits: bits,
+                    client_max_window_bits: bits,
+                }
+            );
+            drop(opi_ws::io::Driver::new(upgraded.stream, Some(parameters)).unwrap());
+            peer.finish().unwrap();
+        }
     }
 }
 
@@ -214,6 +636,17 @@ fn bridge_request(url: Url, offer: bool) -> WsUpgradeRequest {
     request
 }
 
+fn driver_parameters(negotiation: &ws::Negotiation) -> Option<opi_ws::io::PmdParameters> {
+    negotiation
+        .driver_parameters()
+        .map(|pmd| opi_ws::io::PmdParameters {
+            server_no_context_takeover: pmd.server_no_context_takeover,
+            client_no_context_takeover: pmd.client_no_context_takeover,
+            server_max_window_bits: pmd.server_max_window_bits,
+            client_max_window_bits: pmd.client_max_window_bits.unwrap_or(15),
+        })
+}
+
 async fn drive_bridged_exchange(extensions: &str, expect_rsv1: bool) -> Result<(), String> {
     let extensions = extensions.to_owned();
     let peer = Peer::spawn(After101::Exchange { expect_rsv1 }, move |head| {
@@ -224,10 +657,10 @@ async fn drive_bridged_exchange(extensions: &str, expect_rsv1: bool) -> Result<(
     let upgraded = ws::upgrade(&client, bridge_request(url, expect_rsv1))
         .await
         .map_err(|error| format!("upgrade failed: {error}"))?;
-    let (pmd_enabled, server_no_context) = upgraded.negotiation.driver_parameters();
-    assert_eq!(pmd_enabled, expect_rsv1);
-    assert!(!server_no_context);
-    let mut driver = opi_ws::io::Driver::new(upgraded.stream, pmd_enabled, server_no_context)
+    let parameters = driver_parameters(&upgraded.negotiation);
+    assert_eq!(parameters.is_some(), expect_rsv1);
+    assert!(!parameters.is_some_and(|pmd| pmd.server_no_context_takeover));
+    let mut driver = opi_ws::io::Driver::new(upgraded.stream, parameters)
         .map_err(|error| format!("driver failed: {error}"))?;
     driver
         .queue(1, "桥接 canary".as_bytes(), expect_rsv1, ws::fresh_mask())
@@ -398,7 +831,7 @@ async fn upgrade_accepts_token_wise_connection_lists() {
     let result = ws::upgrade(&client, WsUpgradeRequest::new(peer.url())).await;
     match result {
         Ok(upgraded) => {
-            assert_eq!(upgraded.negotiation.driver_parameters(), (false, false));
+            assert_eq!(upgraded.negotiation.driver_parameters(), None);
             drop(upgraded);
             peer.finish().unwrap();
         }

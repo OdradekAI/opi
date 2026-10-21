@@ -98,5 +98,9 @@ fn explicit_decoded_limits_allow_equality_and_reject_overflow() {
 fn invalid_window_admission_is_typed() {
     for bits in [0, 7, 16, 255] {
         assert!(Encoder::new(bits, false).is_err());
+        assert!(matches!(
+            Decoder::with_window_bits(bits, false),
+            Err(opi_ws::pmd::Fault::Window)
+        ));
     }
 }

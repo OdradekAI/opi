@@ -416,6 +416,27 @@ async fn chat_models_call(
     server_url: &str,
     client: Arc<HttpClient>,
 ) -> Result<AssistantMessage, ProviderError> {
+    chat_models_call_request(server_url, client, chat_request()).await
+}
+
+async fn chat_models_call_request(
+    server_url: &str,
+    client: Arc<HttpClient>,
+    request: Request,
+) -> Result<AssistantMessage, ProviderError> {
+    let prepared = prepare_chat_request(server_url, client, request).await;
+    let stream = prepared.start_attempt().expect("attempt start");
+    ChatStream::new(stream)
+        .result()
+        .await
+        .map_err(|failure| failure.into_parts().1)
+}
+
+async fn prepare_chat_request(
+    server_url: &str,
+    client: Arc<HttpClient>,
+    request: Request,
+) -> opi_ai::PreparedProviderCall {
     let provider = OpenAiChatProvider::with_client(
         Some(server_url.to_owned()),
         "openai".to_owned(),
@@ -437,15 +458,10 @@ async fn chat_models_call(
             },
         )
         .expect("route registration");
-    let prepared = models
-        .prepare_call("openai:gpt-4o", chat_request())
+    models
+        .prepare_call("openai:gpt-4o", request)
         .await
-        .expect("call preparation");
-    let stream: EventStream = prepared.start_attempt().expect("attempt start");
-    ChatStream::new(stream)
-        .result()
-        .await
-        .map_err(|failure| failure.into_parts().1)
+        .expect("call preparation")
 }
 
 /// Drain one attempt stream to its terminal, returning the collected error
@@ -1039,7 +1055,26 @@ async fn raw_cancel_case(
                 }
                 data.extend_from_slice(&buf[..n]);
                 if let Some(position) = data.windows(4).position(|w| w == b"\r\n\r\n") {
-                    late.fetch_add(data.len() - (position + 4), Ordering::SeqCst);
+                    let length = String::from_utf8_lossy(&data[..position])
+                        .lines()
+                        .find_map(|line| {
+                            line.split_once(':')
+                                .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                                .map(|(_, value)| value.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap();
+                    let expected = position + 4 + length;
+                    while data.len() < expected {
+                        let n = tls
+                            .read(&mut buf)
+                            .await
+                            .map_err(|_| "request body".to_owned())?;
+                        if n == 0 {
+                            return Err("truncated request body".to_owned());
+                        }
+                        data.extend_from_slice(&buf[..n]);
+                    }
+                    late.fetch_add(data.len() - expected, Ordering::SeqCst);
                     break;
                 }
             }
@@ -1097,7 +1132,7 @@ async fn raw_cancel_case(
         // readiness; the client and its identity stay owned by the task.
         let c = client.clone();
         let u = url.clone();
-        let task = tokio::spawn(async move { c.client().get(u).send().await });
+        let task = tokio::spawn(async move { chat_models_call(&u, c).await });
         if timeout(Duration::from_secs(5), ready.notified())
             .await
             .is_err()
@@ -1121,7 +1156,7 @@ async fn raw_cancel_case(
         let mut request = Box::pin({
             let c = c.clone();
             let u = url.clone();
-            async move { c.client().get(u).send().await }
+            async move { chat_models_call(&u, c).await }
         });
         tokio::select! {
             _ = ready.notified() => {}
@@ -1353,6 +1388,118 @@ async fn accepted_partial_body_cancellation_cleanup() {
 }
 
 #[tokio::test]
+async fn public_tls_partial_cancellation_preserves_known_usage_and_eof() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!(
+        "https://localhost:{}",
+        listener.local_addr().unwrap().port()
+    );
+    let config = server_config(
+        CERT_SERVER_RSA,
+        KEY_SERVER_RSA,
+        true,
+        false,
+        false,
+        &KxProfile::Declared,
+    )
+    .unwrap();
+    let acceptor = TlsAcceptor::from(Arc::new(config));
+    let peer = tokio::spawn(async move {
+        let (tcp, _) = listener.accept().await.unwrap();
+        let mut tls = acceptor.accept(tcp).await.unwrap();
+        let mut data = Vec::new();
+        let mut bytes = [0; 4096];
+        loop {
+            let n = tls.read(&mut bytes).await.unwrap();
+            assert_ne!(n, 0);
+            data.extend_from_slice(&bytes[..n]);
+            if let Some(at) = data.windows(4).position(|w| w == b"\r\n\r\n") {
+                let length = String::from_utf8_lossy(&data[..at])
+                    .lines()
+                    .find_map(|line| {
+                        line.split_once(':')
+                            .filter(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                            .map(|(_, value)| value.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap();
+                if data.len() >= at + 4 + length {
+                    break;
+                }
+            }
+        }
+        let event = concat!(
+            "data: {\"id\":\"partial-tls\",\"model\":\"gpt-4o\",",
+            "\"choices\":[{\"index\":0,\"delta\":{\"content\":\"retained\"},\"finish_reason\":null}],",
+            "\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3}}\n\n"
+        );
+        tls.write_all(format!("HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n{:x}\r\n{event}\r\n", event.len()).as_bytes()).await.unwrap();
+        tls.flush().await.unwrap();
+        // Only the connection shutdown may follow cancellation; no further
+        // business bytes or reconnect are allowed.
+        assert!(matches!(tls.read(&mut bytes).await, Ok(0) | Err(_)));
+        assert!(
+            timeout(Duration::from_millis(75), listener.accept())
+                .await
+                .is_err()
+        );
+    });
+    let request = chat_request();
+    let cancel = request.cancel.clone();
+    let client = Arc::new(build_tls_client(Trust::Explicit(CERT_CA), None, true).unwrap());
+    let call = prepare_chat_request(&url, client, request).await;
+    let mut stream = ChatStream::new(call.start_attempt().unwrap());
+    loop {
+        let event = timeout(Duration::from_secs(5), stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        if let opi_ai::AssistantStreamEvent::TextDelta { delta, partial, .. } = event {
+            assert_eq!(delta, "retained");
+            assert!(partial.usage.reported);
+            assert_eq!(
+                (partial.usage.input_tokens, partial.usage.output_tokens),
+                (7, 3)
+            );
+            break;
+        }
+    }
+    cancel.cancel();
+    let failure = timeout(Duration::from_secs(5), stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap_err();
+    assert!(matches!(failure.cause(), ProviderError::Cancelled));
+    assert_eq!(
+        failure.message().stop_reason,
+        opi_ai::stream::StopReason::Aborted
+    );
+    assert!(failure.message().usage.reported);
+    assert_eq!(
+        (
+            failure.message().usage.input_tokens,
+            failure.message().usage.output_tokens
+        ),
+        (7, 3)
+    );
+    assert!(
+        matches!(&failure.message().content[0], opi_ai::message::AssistantContent::Text { text } if text == "retained")
+    );
+    assert!(stream.next().await.is_none());
+    assert!(stream.next().await.is_none());
+    assert!(matches!(
+        call.start_attempt(),
+        Err(opi_ai::ModelsError::CallCancelled)
+    ));
+    drop(stream);
+    timeout(Duration::from_secs(5), peer)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
 async fn chat_level_cancellation_stops_the_attempt_without_extra_sends() {
     let server = start_server(
         CERT_SERVER_RSA,
@@ -1445,6 +1592,7 @@ async fn chat_level_cancellation_stops_the_attempt_without_extra_sends() {
 #[tokio::test]
 async fn instance_tls_never_installs_a_process_global_provider() {
     let before = CryptoProvider::get_default();
+    let _default_client = HttpClient::new();
     let server = start_server(
         CERT_SERVER_RSA,
         KEY_SERVER_RSA,
@@ -1463,6 +1611,30 @@ async fn instance_tls_never_installs_a_process_global_provider() {
         (Some(a), Some(b)) => assert!(Arc::ptr_eq(a, b), "global provider changed"),
         _ => panic!("global provider appeared or disappeared"),
     }
+}
+
+#[tokio::test]
+async fn default_roots_reject_unconfigured_loopback_ca_without_business_http() {
+    let server = start_server(
+        CERT_SERVER_RSA,
+        KEY_SERVER_RSA,
+        true,
+        true,
+        false,
+        KxProfile::Declared,
+    )
+    .await
+    .unwrap();
+    let error = timeout(
+        Duration::from_secs(5),
+        chat_models_error(&server.url, Arc::new(HttpClient::new())),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(error, ProviderError::Network(_)), "{error:?}");
+    assert_eq!(server.stats.http.load(Ordering::SeqCst), 0);
+    assert_eq!(server.stats.accepts.load(Ordering::SeqCst), 1);
+    server.finish().await.unwrap();
 }
 
 fn ring_control_inner() {
@@ -1526,4 +1698,144 @@ fn host_preinstalled_ring_provider_control() {
         .status()
         .expect("control subprocess");
     assert!(status.success(), "host ring control subprocess failed");
+}
+
+#[test]
+fn default_tls_ignores_host_provider_profile() {
+    if std::env::var("OPI_TLS_DEFAULT_CONTROL").as_deref() != Ok("run") {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "default_tls_ignores_host_provider_profile",
+                "--nocapture",
+            ])
+            .env("OPI_TLS_DEFAULT_CONTROL", "run")
+            .status()
+            .unwrap();
+        assert!(status.success(), "default TLS profile control failed");
+        return;
+    }
+    let mut host = rustls::crypto::aws_lc_rs::default_provider();
+    host.kx_groups = vec![rustls::crypto::aws_lc_rs::kx_group::X25519];
+    host.install_default().unwrap();
+    let before = CryptoProvider::get_default().unwrap().clone();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            for client in [
+                HttpClient::new(),
+                HttpClientBuilder::new()
+                    .tls(TlsOptions::new())
+                    .build()
+                    .unwrap(),
+            ] {
+                let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let url = format!(
+                    "https://localhost:{}",
+                    listener.local_addr().unwrap().port()
+                );
+                let peer = tokio::spawn(async move {
+                    let (mut tcp, _) = listener.accept().await.unwrap();
+                    let mut acceptor = rustls::server::Acceptor::default();
+                    let mut bytes = [0; 8192];
+                    loop {
+                        let n = tcp.read(&mut bytes).await.unwrap();
+                        assert_ne!(n, 0, "ClientHello expected");
+                        acceptor
+                            .read_tls(&mut std::io::Cursor::new(&bytes[..n]))
+                            .unwrap();
+                        if let Some(accepted) = acceptor.accept().unwrap() {
+                            return accepted.client_hello().named_groups().unwrap().to_vec();
+                        }
+                    }
+                });
+                assert!(
+                    timeout(
+                        Duration::from_secs(5),
+                        chat_models_call(&url, Arc::new(client))
+                    )
+                    .await
+                    .unwrap()
+                    .is_err()
+                );
+                assert_eq!(
+                    peer.await.unwrap(),
+                    vec![
+                        rustls::NamedGroup::X25519MLKEM768,
+                        rustls::NamedGroup::X25519,
+                        rustls::NamedGroup::secp256r1,
+                        rustls::NamedGroup::secp384r1,
+                    ]
+                );
+            }
+        });
+    assert!(Arc::ptr_eq(&before, CryptoProvider::get_default().unwrap()));
+}
+
+#[tokio::test]
+async fn h2_refused_stream_does_not_trigger_backend_retry() {
+    let mut config = ServerConfig::builder_with_provider(instance_provider(&KxProfile::Declared))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![CertificateDer::from_pem_slice(CERT_SERVER_RSA.as_bytes()).unwrap()],
+            PrivateKeyDer::from_pem_slice(KEY_SERVER_RSA.as_bytes()).unwrap(),
+        )
+        .unwrap();
+    config.alpn_protocols = vec![b"h2".to_vec()];
+    let acceptor = TlsAcceptor::from(Arc::new(config));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!(
+        "https://localhost:{}",
+        listener.local_addr().unwrap().port()
+    );
+    let sends = Arc::new(AtomicUsize::new(0));
+    let counter = sends.clone();
+    let peer = tokio::spawn(async move {
+        let (tcp, _) = listener.accept().await.unwrap();
+        let tls = acceptor.accept(tcp).await.unwrap();
+        let mut connection = h2::server::handshake(tls).await.unwrap();
+        while let Some(Ok((_request, mut respond))) = connection.accept().await {
+            if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                respond.send_reset(h2::Reason::REFUSED_STREAM);
+            } else {
+                let response = Response::builder()
+                    .status(200)
+                    .header("content-type", "text/event-stream")
+                    .body(())
+                    .unwrap();
+                let mut body = respond.send_response(response, false).unwrap();
+                body.send_data(hyper::body::Bytes::from_static(b"data: [DONE]\n\n"), true)
+                    .unwrap();
+            }
+        }
+    });
+    let client = HttpClientBuilder::new()
+        .tls(
+            TlsOptions::new()
+                .with_explicit_roots_pem(CERT_CA.as_bytes())
+                .unwrap(),
+        )
+        .build()
+        .unwrap();
+    let result = timeout(
+        Duration::from_secs(5),
+        chat_models_call(&url, Arc::new(client)),
+    )
+    .await
+    .unwrap();
+    peer.abort();
+    let _ = peer.await;
+    assert_eq!(
+        sends.load(Ordering::SeqCst),
+        1,
+        "only the SDK may admit another send"
+    );
+    assert!(
+        matches!(result, Err(ProviderError::Network(_))),
+        "{result:?}"
+    );
 }

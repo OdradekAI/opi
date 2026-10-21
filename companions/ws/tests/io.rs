@@ -9,6 +9,61 @@ use std::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[tokio::test]
+async fn driver_outbound_respects_negotiated_window() {
+    // A repeated, otherwise poorly compressible span tempts a 15-bit encoder
+    // to use distances outside the negotiated 10-bit dictionary.
+    let mut state = 1u32;
+    let mut plain = Vec::new();
+    for _ in 0..1800 {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        plain.push(state as u8);
+    }
+    plain.extend_from_within(..);
+    let (client, mut peer) = tokio::io::duplex(8192);
+    let mut driver = Driver::new(
+        client,
+        Some(opi_ws::io::PmdParameters {
+            client_max_window_bits: 10,
+            ..Default::default()
+        }),
+    )
+    .unwrap();
+    driver.queue(2, &plain, true, [3; 4]).unwrap();
+    driver.flush().await.unwrap();
+    let mut head = [0; 4];
+    peer.read_exact(&mut head).await.unwrap();
+    assert_eq!(&head[..2], &[0xc2, 0xfe]);
+    let length = u16::from_be_bytes(head[2..].try_into().unwrap()) as usize;
+    let mut mask = [0; 4];
+    peer.read_exact(&mut mask).await.unwrap();
+    let mut wire = vec![0; length];
+    peer.read_exact(&mut wire).await.unwrap();
+    for (i, byte) in wire.iter_mut().enumerate() {
+        *byte ^= mask[i % 4];
+    }
+    wire.extend_from_slice(&[0, 0, 255, 255]);
+    // Independent raw inflater, with small output slices forcing dictionary
+    // lookups through the negotiated window rather than one large output slice.
+    let mut inflater = flate2::Decompress::new_with_window_bits(false, 10);
+    let mut decoded = Vec::new();
+    while inflater.total_in() < wire.len() as u64 {
+        let mut chunk = [0; 128];
+        let before = inflater.total_out();
+        inflater
+            .decompress(
+                &wire[inflater.total_in() as usize..],
+                &mut chunk,
+                flate2::FlushDecompress::Sync,
+            )
+            .expect("outbound stream exceeded the negotiated 10-bit window");
+        decoded.extend_from_slice(&chunk[..(inflater.total_out() - before) as usize]);
+    }
+    assert_eq!(decoded, plain);
+}
+
 fn server_frame(first: u8, payload: &[u8]) -> Vec<u8> {
     assert!(payload.len() < 126);
     let mut out = vec![first, payload.len() as u8];
@@ -41,7 +96,7 @@ async fn cancelled_read_future_resumes_header_payload_and_pmd() {
         ),
     ] {
         let (client, mut peer) = tokio::io::duplex(16);
-        let mut driver = Driver::new(client, pmd, false).unwrap();
+        let mut driver = Driver::new(client, pmd.then_some(Default::default())).unwrap();
         peer.write_all(&wire[..prefix]).await.unwrap();
         let mut future = Box::pin(driver.next());
         poll_pending(&mut future).await;
@@ -61,7 +116,7 @@ async fn cancelled_read_future_resumes_header_payload_and_pmd() {
 #[tokio::test]
 async fn dropping_owner_after_cancelled_read_closes_peer() {
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut driver = Driver::new(client, true, false).unwrap();
+    let mut driver = Driver::new(client, Some(Default::default())).unwrap();
     peer.write_all(&[0x41, 3, 0xca]).await.unwrap();
     let mut future = Box::pin(driver.next());
     poll_pending(&mut future).await;
@@ -79,7 +134,7 @@ async fn malformed_frame_pmd_and_early_eof_error_once_then_permanent_none() {
         vec![0xc1, 1, 0xca],
     ] {
         let (client, mut peer) = tokio::io::duplex(16);
-        let mut driver = Driver::new(client, true, false).unwrap();
+        let mut driver = Driver::new(client, Some(Default::default())).unwrap();
         peer.write_all(&wire).await.unwrap();
         peer.shutdown().await.unwrap();
         assert!(driver.next().await.is_err(), "accepted {wire:02x?}");
@@ -121,7 +176,7 @@ async fn cancelled_backpressure_flush_resumes_exact_offset_without_reencoding() 
     let expected = masked(0xc2, &independent.encode(&payload).unwrap(), mask);
     assert!(expected.len() > 16);
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut driver = Driver::new(client, true, false).unwrap();
+    let mut driver = Driver::new(client, Some(Default::default())).unwrap();
     driver.queue(2, &payload, true, mask).unwrap();
     assert_eq!(driver.pending_write_len(), expected.len());
     let mut future = Box::pin(driver.flush());
@@ -150,7 +205,7 @@ async fn cancelled_backpressure_flush_resumes_exact_offset_without_reencoding() 
 #[tokio::test]
 async fn dropping_owner_with_pending_write_sends_no_hidden_remainder() {
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     let payload = vec![42; 1024];
     driver.queue(2, &payload, false, [9, 8, 7, 6]).unwrap();
     let mut future = Box::pin(driver.flush());
@@ -206,7 +261,7 @@ async fn queued_close_survives_late_queue_rejection_and_cancelled_flush() {
     let mask = [3, 1, 4, 1];
     let expected = masked(0x88, &payload, mask);
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut driver = Driver::new(client, true, false).unwrap();
+    let mut driver = Driver::new(client, Some(Default::default())).unwrap();
     driver.queue(8, &payload, false, mask).unwrap();
     assert!(matches!(
         driver.queue(1, b"late", false, [0; 4]),
@@ -257,7 +312,7 @@ async fn busy_queue_preserves_first_frame_and_does_not_advance_pmd_context() {
     let mut independent = pmd::Encoder::new(15, false).unwrap();
     let first_expected = masked(0xc2, &independent.encode(&payload).unwrap(), mask);
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut driver = Driver::new(client, true, false).unwrap();
+    let mut driver = Driver::new(client, Some(Default::default())).unwrap();
     driver.queue(2, &payload, true, mask).unwrap();
     assert!(matches!(
         driver.queue(2, b"must never enter encoder", true, mask),
@@ -290,7 +345,7 @@ async fn cancelled_next_after_inbound_quantum_preserves_unconsumed_read_bytes() 
     wire.extend_from_slice(&(payload.len() as u16).to_be_bytes());
     wire.extend_from_slice(&payload);
     let (client, mut peer) = tokio::io::duplex(16384);
-    let mut driver = Driver::new(client, false, false).unwrap();
+    let mut driver = Driver::new(client, None).unwrap();
     peer.write_all(&wire).await.unwrap();
     let mut future = Box::pin(driver.next());
     poll_pending(&mut future).await;
@@ -312,7 +367,7 @@ async fn cancelled_next_during_expansion_preserves_job_and_dictionary() {
         wire
     };
     let (client, mut peer) = tokio::io::duplex(16384);
-    let mut driver = Driver::new(client, true, false).unwrap();
+    let mut driver = Driver::new(client, Some(Default::default())).unwrap();
     peer.write_all(&wire(&first)).await.unwrap();
     for _ in 0..2 {
         let mut future = Box::pin(driver.next());
@@ -336,7 +391,7 @@ async fn initialized_driver_and_next_future_move_between_executor_threads() {
     wire.extend_from_slice(&(compressed.len() as u16).to_be_bytes());
     wire.extend_from_slice(&compressed);
     let (client, mut peer) = tokio::io::duplex(4096);
-    let mut driver = Driver::new(client, true, false).unwrap();
+    let mut driver = Driver::new(client, Some(Default::default())).unwrap();
     assert_send(&driver);
     let task = async move {
         let future = driver.next();
@@ -360,7 +415,7 @@ async fn owner_drop_during_pmd_job_releases_transport_without_late_result() {
     wire.extend_from_slice(&(compressed.len() as u16).to_be_bytes());
     wire.extend_from_slice(&compressed);
     let (client, mut peer) = tokio::io::duplex(8192);
-    let mut driver = Driver::new(client, true, false).unwrap();
+    let mut driver = Driver::new(client, Some(Default::default())).unwrap();
     peer.write_all(&wire).await.unwrap();
     let mut future = Box::pin(driver.next());
     poll_pending(&mut future).await;
@@ -372,7 +427,7 @@ async fn owner_drop_during_pmd_job_releases_transport_without_late_result() {
 #[tokio::test]
 async fn async_driver_preserves_accepted_prefix_before_coalesced_failure() {
     let (client, mut peer) = tokio::io::duplex(32);
-    let mut driver = Driver::new(client, true, false).unwrap();
+    let mut driver = Driver::new(client, Some(Default::default())).unwrap();
     peer.write_all(&[0x81, 1, b'x', 0xc9, 0]).await.unwrap();
     assert_eq!(driver.next().await.unwrap().unwrap().payload, b"x");
     assert!(driver.next().await.is_err());
@@ -439,7 +494,11 @@ async fn drive_text_in_owned_quanta(
     pmd_enabled: bool,
     valid: bool,
 ) -> usize {
-    let mut driver = Driver::new(ReadyInput { wire, offset: 0 }, pmd_enabled, false).unwrap();
+    let mut driver = Driver::new(
+        ReadyInput { wire, offset: 0 },
+        pmd_enabled.then_some(Default::default()),
+    )
+    .unwrap();
     let (mut validator_polls, mut previous) = (0, 0);
     loop {
         // Deliberately cancel every Pending borrowed future, including UTF8 validation.
@@ -598,7 +657,11 @@ async fn assert_owned_continuation_copy(
     opcode: u8,
     pmd_enabled: bool,
 ) {
-    let mut driver = Driver::new(ReadyInput { wire, offset: 0 }, pmd_enabled, false).unwrap();
+    let mut driver = Driver::new(
+        ReadyInput { wire, offset: 0 },
+        pmd_enabled.then_some(Default::default()),
+    )
+    .unwrap();
     let before = driver.next().await.unwrap().unwrap();
     assert_eq!(before.opcode, 9);
     assert_eq!(before.payload, b"before");

@@ -24,6 +24,7 @@ pub enum Fault {
     CloseTimeout,
     PeerEofBeforeCloseSent,
 }
+
 impl fmt::Display for Fault {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -86,14 +87,23 @@ pub struct Core {
 }
 impl Core {
     pub fn new(pmd: bool, no_context: bool) -> Result<Self, Fault> {
+        Self::with_parameters(pmd.then_some(PmdParameters {
+            server_no_context_takeover: no_context,
+            ..PmdParameters::default()
+        }))
+    }
+    fn with_parameters(pmd: Option<PmdParameters>) -> Result<Self, Fault> {
         Ok(Self {
-            frame: Some(frame::Decoder::new(pmd)),
+            frame: Some(frame::Decoder::new(pmd.is_some())),
             messages: Some(frame::Messages::new_deferred_text()),
-            pmd: if pmd {
-                Some(pmd::Decoder::new(no_context)?)
-            } else {
-                None
-            },
+            pmd: pmd
+                .map(|parameters| {
+                    pmd::Decoder::with_window_bits(
+                        parameters.server_max_window_bits,
+                        parameters.server_no_context_takeover,
+                    )
+                })
+                .transpose()?,
             pending: None,
             terminal: false,
             closed: false,
@@ -291,6 +301,28 @@ pub enum CloseState {
     Failed,
 }
 
+/// Validated client-side PMD negotiation facts, named by their RFC direction.
+/// The server fields configure reception; the client fields configure sending.
+/// Both windows must be in 8..=15; omitted RFC window parameters mean 15.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PmdParameters {
+    pub server_no_context_takeover: bool,
+    pub client_no_context_takeover: bool,
+    pub server_max_window_bits: u8,
+    pub client_max_window_bits: u8,
+}
+
+impl Default for PmdParameters {
+    fn default() -> Self {
+        Self {
+            server_no_context_takeover: false,
+            client_no_context_takeover: false,
+            server_max_window_bits: 15,
+            client_max_window_bits: 15,
+        }
+    }
+}
+
 pub struct Driver<S> {
     stream: Option<S>,
     core: Option<Core>,
@@ -310,16 +342,20 @@ pub struct Driver<S> {
     terminal: Option<bool>,
 }
 impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
-    pub fn new(stream: S, pmd: bool, no_context: bool) -> Result<Self, Fault> {
+    /// Take an upgraded stream and direction-specific PMD facts (`None` disables PMD).
+    pub fn new(stream: S, pmd: Option<PmdParameters>) -> Result<Self, Fault> {
         Ok(Self {
             stream: Some(stream),
-            core: Some(Core::new(pmd, no_context)?),
-            encoder: if pmd {
-                Some(pmd::Encoder::new(15, no_context)?)
-            } else {
-                None
-            },
-            pmd_enabled: pmd,
+            core: Some(Core::with_parameters(pmd)?),
+            encoder: pmd
+                .map(|parameters| {
+                    pmd::Encoder::new(
+                        parameters.client_max_window_bits,
+                        parameters.client_no_context_takeover,
+                    )
+                })
+                .transpose()?,
+            pmd_enabled: pmd.is_some(),
             read: [0; 4096],
             read_count: 0,
             read_offset: 0,
@@ -668,6 +704,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
     }
     fn release(&mut self, success: bool) {
         self.terminal = Some(success);
+        if !success {
+            self.ready.clear();
+        }
         self.stream = None;
         if let Some(core) = self.core.as_mut() {
             core.release();
@@ -696,5 +735,131 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
             Pending::Text { message, offset } => Some((*offset, message.payload.len())),
             Pending::Inflate(_) => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tokio::io::{AsyncReadExt, DuplexStream};
+    use tokio::sync::{Notify, oneshot};
+
+    #[derive(Default)]
+    struct Trace {
+        pending: Notify,
+        registrations: AtomicUsize,
+        drops: AtomicUsize,
+        last_waker: Mutex<Option<std::task::Waker>>,
+    }
+
+    struct ObservedIo {
+        inner: DuplexStream,
+        trace: Arc<Trace>,
+    }
+
+    impl AsyncRead for ObservedIo {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let result = Pin::new(&mut self.inner).poll_read(cx, buf);
+            if result.is_pending() {
+                self.trace.registrations.fetch_add(1, Ordering::SeqCst);
+                *self.trace.last_waker.lock().unwrap() = Some(cx.waker().clone());
+                self.trace.pending.notify_one();
+            }
+            result
+        }
+    }
+
+    impl AsyncWrite for ObservedIo {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Pin::new(&mut self.inner).poll_write(cx, buf)
+        }
+        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.inner).poll_flush(cx)
+        }
+        fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Pin::new(&mut self.inner).poll_shutdown(cx)
+        }
+    }
+
+    impl Drop for ObservedIo {
+        fn drop(&mut self) {
+            self.trace.drops.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn logical_cancel_wakes_idle_read_and_drops_transport_and_pmd_before_ack() {
+        let (client, mut peer) = tokio::io::duplex(64);
+        let trace = Arc::new(Trace::default());
+        let mut owner = Driver::new(
+            ObservedIo {
+                inner: client,
+                trace: trace.clone(),
+            },
+            Some(PmdParameters::default()),
+        )
+        .unwrap();
+        let decoder = owner.core.as_ref().unwrap().pmd.as_ref().unwrap();
+        assert!(!decoder.released());
+        let decoder_lifetime = decoder.cancellation_flag();
+        assert_eq!(Arc::strong_count(&decoder_lifetime), 2);
+        let (cancel, cancelled) = oneshot::channel();
+        let publications = Arc::new(AtomicUsize::new(0));
+        let observed = publications.clone();
+        // This is the connection owner's cancellation branch, separate from
+        // cancelling a borrowed next() future (which remains resumable).
+        let task = tokio::spawn(async move {
+            tokio::select! {
+                biased;
+                _ = cancelled => {}
+                result = owner.next() => {
+                    observed.fetch_add(1, Ordering::SeqCst);
+                    panic!("idle receive published before cancellation: {result:?}");
+                }
+            }
+            drop(owner);
+        });
+        trace.pending.notified().await;
+        assert!(trace.registrations.load(Ordering::SeqCst) > 0);
+        cancel.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(trace.drops.load(Ordering::SeqCst), 1);
+        // No compression owner remains; its unique Decoder Drop ran before
+        // local completion, which invokes inflateEnd exactly once.
+        assert_eq!(Arc::strong_count(&decoder_lifetime), 1);
+        assert_eq!(peer.read(&mut [0]).await.unwrap(), 0);
+        trace.last_waker.lock().unwrap().take().unwrap().wake();
+        tokio::task::yield_now().await;
+        assert_eq!(publications.load(Ordering::SeqCst), 0);
+        assert_eq!(trace.drops.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn driver_and_decoder_are_not_sync() {
+        // This type-inference assertion becomes ambiguous if either owner
+        // accidentally acquires Sync. It adds no dependency or unsafe code.
+        trait AmbiguousIfSync<Marker> {
+            fn check() {}
+        }
+        impl<T: ?Sized> AmbiguousIfSync<()> for T {}
+        struct IsSync;
+        impl<T: ?Sized + Sync> AmbiguousIfSync<IsSync> for T {}
+        let _ = <pmd::Decoder as AmbiguousIfSync<_>>::check;
+        let _ = <Driver<DuplexStream> as AmbiguousIfSync<_>>::check;
     }
 }

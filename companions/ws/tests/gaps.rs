@@ -18,7 +18,7 @@ fn frame(first: u8, payload: &[u8]) -> Vec<u8> {
 #[tokio::test]
 async fn peer_close_keeps_transport_for_explicit_response() {
     let (client, mut peer) = tokio::io::duplex(16);
-    let mut d = Driver::new(client, false, false).unwrap();
+    let mut d = Driver::new(client, None).unwrap();
     peer.write_all(&[0x88, 0]).await.unwrap();
     assert_eq!(d.next().await.unwrap().unwrap().opcode, 8);
     assert!(
@@ -34,7 +34,7 @@ async fn large_inflate_yields_before_returning_whole_message() {
         .unwrap();
     let wire = frame(0xc2, &compressed);
     let (client, mut peer) = tokio::io::duplex(wire.len() + 1);
-    let mut d = Driver::new(client, true, false).unwrap();
+    let mut d = Driver::new(client, Some(Default::default())).unwrap();
     peer.write_all(&wire).await.unwrap();
     let mut future = Box::pin(d.next());
     let pending = poll_fn(|cx| Poll::Ready(future.as_mut().poll(cx).is_pending())).await;

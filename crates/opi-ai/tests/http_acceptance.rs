@@ -323,9 +323,13 @@ fn sse_response_with_head_pad(pad: &[String]) -> Vec<u8> {
 /// Chunked SSE response carrying `trailer_lines` after the final chunk.
 fn sse_response_with_trailers(trailer_lines: &[String]) -> Vec<u8> {
     let mut out = sse_head(&[]);
-    out.extend_from_slice(
-        format!("{}{}\r\n0\r\n", chunk(SSE_BODY.as_bytes()), SSE_BODY).as_bytes(),
+    // Without terminal usage the mapper retains its finish reason until
+    // transport EOF, so the public result necessarily observes the trailers.
+    let body = SSE_BODY.replace(
+        ",\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}",
+        "",
     );
+    out.extend_from_slice(format!("{}{}\r\n0\r\n", chunk(body.as_bytes()), body).as_bytes());
     for line in trailer_lines {
         out.extend_from_slice(line.as_bytes());
         out.extend_from_slice(b"\r\n");
@@ -844,35 +848,129 @@ async fn response_head_header_count_boundary() {
     // counting the two standard fields this response carries, so 98 pad
     // fields (100 total) still parse and 99 (101 total) are rejected at
     // acquisition.
-    for (count, expect_success) in [(97usize, true), (98, true), (99, false)] {
-        let pad = head_pad_headers(count);
-        let response = sse_response_with_head_pad(&pad);
-        let server = start_raw(Arc::new(move |_: usize, _: &RecordedRequest| {
-            Script::coalesced(response.clone())
+    for delivery in [Delivery::Coalesced, Delivery::Bytewise] {
+        for (count, expect_success) in [
+            (97usize, true),
+            (98, true),
+            (99, false),
+            (123, false),
+            (198, false),
+        ] {
+            let pad = head_pad_headers(count);
+            let response = sse_response_with_head_pad(&pad);
+            let server = start_raw(Arc::new(move |_: usize, _: &RecordedRequest| {
+                Script::delivered(response.clone(), delivery)
+            }))
+            .await;
+            let client = plain_client(RedirectPolicy::default());
+            let outcome = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                chat_call(&server.url, client),
+            )
+            .await
+            .expect("header-count case terminates");
+            if expect_success {
+                assert_eq!(
+                    outcome
+                        .expect("100-or-fewer headers accepted")
+                        .response_id
+                        .as_deref(),
+                    Some("chatcmpl-acc")
+                );
+            } else {
+                let error = outcome.expect_err("101 headers rejected");
+                assert!(
+                    matches!(error, ProviderError::Network(_)),
+                    "header overflow must surface at acquisition: {error:?}"
+                );
+            }
+            assert_eq!(server.stats.count(), 1);
+            server.stop().await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn response_head_near_adaptive_buffer_boundary_has_typed_outcome() {
+    // TCP coalescing and the backend's spare buffer capacity affect this
+    // boundary: record actual acceptance without promising a universal
+    // equality threshold. Every outcome must terminate at the public seam.
+    for delivery in [Delivery::Coalesced, Delivery::Bytewise] {
+        for total in [417_791, 417_792, 417_793] {
+            let response = sse_response_with_head_pad(&head_pad_for_total(total, 2));
+            let server = start_raw(Arc::new(move |_, _: &RecordedRequest| {
+                Script::delivered(response.clone(), delivery)
+            }))
+            .await;
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                chat_call(&server.url, plain_client(RedirectPolicy::default())),
+            )
+            .await
+            .unwrap();
+            eprintln!(
+                "head_bytes={total} delivery={delivery:?} accepted={}",
+                result.is_ok()
+            );
+            match result {
+                Ok(message) => assert_eq!(message.response_id.as_deref(), Some("chatcmpl-acc")),
+                Err(error) => assert!(matches!(error, ProviderError::Network(_)), "{error:?}"),
+            }
+            assert_eq!(server.stats.count(), 1);
+            server.stop().await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn malformed_content_lengths_and_chunk_extension_never_succeed() {
+    for delivery in [Delivery::Coalesced, Delivery::Bytewise] {
+        for (head, acquisition) in [
+            ("content-length: 1\r\ncontent-length: 2\r\n", true),
+            ("content-length: -1\r\n", true),
+            ("content-length: 1, 2\r\n", true),
+            // TE takes precedence over CL; the non-chunked bytes must then
+            // fail in the accepted body's decoder, not at acquisition.
+            (
+                "content-length: invalid\r\ntransfer-encoding: chunked\r\n",
+                false,
+            ),
+        ] {
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n{head}\r\n{}",
+                SSE_BODY
+            )
+            .into_bytes();
+            let server = start_raw(Arc::new(move |_, _: &RecordedRequest| {
+                Script::delivered(response.clone(), delivery)
+            }))
+            .await;
+            let error = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                chat_error(&server.url, plain_client(RedirectPolicy::default())),
+            )
+            .await
+            .unwrap();
+            if acquisition {
+                assert!(matches!(error, ProviderError::Network(_)), "{error:?}");
+            } else {
+                assert!(is_post_acceptance_stream_failure(&error), "{error:?}");
+            }
+            assert_eq!(server.stats.count(), 1);
+            server.stop().await;
+        }
+        let response = sse_response_with_chunk_extension("invalid\nextension");
+        let server = start_raw(Arc::new(move |_, _: &RecordedRequest| {
+            Script::delivered(response.clone(), delivery)
         }))
         .await;
-        let client = plain_client(RedirectPolicy::default());
-        let outcome = tokio::time::timeout(
+        let error = tokio::time::timeout(
             std::time::Duration::from_secs(10),
-            chat_call(&server.url, client),
+            chat_error(&server.url, plain_client(RedirectPolicy::default())),
         )
         .await
-        .expect("header-count case terminates");
-        if expect_success {
-            assert_eq!(
-                outcome
-                    .expect("100-or-fewer headers accepted")
-                    .response_id
-                    .as_deref(),
-                Some("chatcmpl-acc")
-            );
-        } else {
-            let error = outcome.expect_err("101 headers rejected");
-            assert!(
-                matches!(error, ProviderError::Network(_)),
-                "header overflow must surface at acquisition: {error:?}"
-            );
-        }
+        .unwrap();
+        assert!(is_post_acceptance_stream_failure(&error), "{error:?}");
         assert_eq!(server.stats.count(), 1);
         server.stop().await;
     }
@@ -882,26 +980,9 @@ fn trailer_lines(count: usize) -> Vec<String> {
     (0..count).map(|i| format!("x-t{i}: trailer")).collect()
 }
 
-fn trailer_lines_sized(total_bytes: usize) -> Vec<String> {
-    // Distribute the requested total over at most 60 fields with long
-    // values, keeping the field count below the 100-field boundary so the
-    // byte axis is exercised on its own.
-    let mut lines: Vec<String> = Vec::new();
-    let mut used = 2; // final blank line
-    while used < total_bytes && lines.len() < 60 {
-        let budget = (total_bytes - used).div_ceil(60 - lines.len()).max(24);
-        let line = format!(
-            "x-t{}: {}",
-            lines.len(),
-            "p".repeat(budget.saturating_sub(12))
-        );
-        used += line.len() + 2;
-        lines.push(line);
-    }
-    lines
-}
-
 async fn assert_trailers_accepted(lines: Vec<String>, expect_success: bool, delivery: Delivery) {
+    let count = lines.len();
+    let bytes = lines.iter().map(|line| line.len() + 2).sum::<usize>() + 2;
     let response = sse_response_with_trailers(&lines);
     let server = start_raw(Arc::new(move |_: usize, _: &RecordedRequest| {
         Script::delivered(response.clone(), delivery)
@@ -913,6 +994,10 @@ async fn assert_trailers_accepted(lines: Vec<String>, expect_success: bool, deli
         chat_call(&server.url, client),
     )
     .await;
+    eprintln!(
+        "trailer_count={count} trailer_bytes={bytes} delivery={delivery:?} accepted={}",
+        matches!(&outcome, Ok(Ok(_)))
+    );
     if expect_success {
         assert_eq!(
             outcome
@@ -937,20 +1022,105 @@ async fn assert_trailers_accepted(lines: Vec<String>, expect_success: bool, deli
 
 #[tokio::test]
 async fn trailer_count_and_bytes_boundaries() {
-    // hyper 1.9.0 carries internal trailer constants (100 header fields,
-    // 16 KiB cumulative trailer bytes), but through the public HttpClient
-    // surface they are not enforced as rejections: trailer sections below,
-    // at, and above both internal constants are accepted (observed up to
-    // 400 fields and 64 KiB, coalesced and bytewise). The profile records
-    // this actual acceptance range instead of inventing an SDK-side cap;
-    // the enforced boundaries are the head field-count cap above and the
-    // cumulative chunk-extension limit below.
-    assert_trailers_accepted(trailer_lines(20), true, Delivery::Coalesced).await;
-    assert_trailers_accepted(trailer_lines(100), true, Delivery::Coalesced).await;
-    assert_trailers_accepted(trailer_lines_sized(16 * 1024), true, Delivery::Coalesced).await;
-    assert_trailers_accepted(trailer_lines_sized(16 * 1024), true, Delivery::Bytewise).await;
-    assert_trailers_accepted(trailer_lines_sized(64 * 1024), true, Delivery::Coalesced).await;
-    assert_trailers_accepted(trailer_lines_sized(64 * 1024), true, Delivery::Bytewise).await;
+    // These fixtures delay the public terminal until HTTP EOF. The pinned
+    // decoder rejects a count of 100 and a buffered trailer size of 16 KiB;
+    // no SDK quota is involved. Include both sides and the exact values.
+    for delivery in [Delivery::Coalesced, Delivery::Bytewise] {
+        for count in [20, 99, 100, 101, 125, 200, 400] {
+            assert_trailers_accepted(trailer_lines(count), count < 100, delivery).await;
+        }
+        for total in [16_383, 16_384, 16_385, 65_536] {
+            let prefix = "x-pad: ";
+            let line = format!("{prefix}{}", "p".repeat(total - prefix.len() - 4));
+            assert_trailers_accepted(vec![line], total < 16_384, delivery).await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn malformed_and_truncated_trailers_do_not_publish_success() {
+    for delivery in [Delivery::Coalesced, Delivery::Bytewise] {
+        for tail in [
+            b"invalid trailer\r\n\r\n".as_slice(),
+            b"x-tail: unfinished".as_slice(),
+        ] {
+            let mut response = sse_response_with_trailers(&[]);
+            response.truncate(response.len() - 2);
+            response.extend_from_slice(tail);
+            let server = start_raw(Arc::new(move |_, _: &RecordedRequest| {
+                Script::delivered(response.clone(), delivery)
+            }))
+            .await;
+            let error = chat_error(&server.url, plain_client(RedirectPolicy::default())).await;
+            assert!(is_post_acceptance_stream_failure(&error), "{error:?}");
+            assert_eq!(server.stats.count(), 1);
+            server.stop().await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn trailer_fixture_keeps_the_call_pending_until_the_http_tail_arrives() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let (sent, ready) = oneshot::channel();
+    let (release, tail_ready) = oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        read_request(&mut socket).await.unwrap().unwrap();
+        let mut response = sse_response_with_trailers(&[]);
+        response.truncate(response.len() - 2);
+        socket.write_all(&response).await.unwrap();
+        socket.flush().await.unwrap();
+        sent.send(()).unwrap();
+        tail_ready.await.unwrap();
+        socket.write_all(b"x-tail: observed\r\n\r\n").await.unwrap();
+        socket.shutdown().await.unwrap();
+    });
+    let mut call = Box::pin(chat_call(&url, plain_client(RedirectPolicy::default())));
+    tokio::select! {
+        result = &mut call => panic!("the unfinished HTTP response completed: {result:?}"),
+        _ = ready => {}
+    }
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), &mut call)
+            .await
+            .is_err(),
+        "the trailer fixture must not emit its public Done before HTTP EOF"
+    );
+    release.send(()).unwrap();
+    assert_eq!(
+        call.await.unwrap().response_id.as_deref(),
+        Some("chatcmpl-acc")
+    );
+    peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn chunk_extension_exact_boundary_is_stage_provable() {
+    for delivery in [Delivery::Coalesced, Delivery::Bytewise] {
+        for size in [16_383, 16_384, 16_385] {
+            let response = sse_response_with_chunk_extension(&"p".repeat(size));
+            let server = start_raw(Arc::new(move |_, _: &RecordedRequest| {
+                Script::delivered(response.clone(), delivery)
+            }))
+            .await;
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                chat_call(&server.url, plain_client(RedirectPolicy::default())),
+            )
+            .await
+            .unwrap();
+            if size < 16_384 {
+                assert_eq!(result.unwrap().response_id.as_deref(), Some("chatcmpl-acc"));
+            } else {
+                let error = result.unwrap_err();
+                assert!(is_post_acceptance_stream_failure(&error), "{error:?}");
+            }
+            assert_eq!(server.stats.count(), 1);
+            server.stop().await;
+        }
+    }
 }
 
 #[tokio::test]

@@ -2454,6 +2454,8 @@ mod phase17 {
             .await
             .expect("prepare call");
         let mut stream = prepared.start_attempt().expect("start active attempt");
+        assert!(futures_util::poll!(stream.next()).is_pending());
+        assert_eq!(dispatches.load(Ordering::SeqCst), 1);
         let task = tokio::spawn(async move { stream.next().await });
         token.cancel();
 
@@ -2530,14 +2532,16 @@ mod phase17 {
             .await
             .expect("prepare Azure call");
         let attempt = prepared.start_attempt().expect("start Azure attempt");
+        let drain = tokio::spawn(drain_to_completion(attempt));
         tokio::time::timeout(Duration::from_secs(1), request_received.notified())
             .await
             .expect("Azure request must reach the stalled server");
         token.cancel();
 
-        let error = tokio::time::timeout(Duration::from_secs(1), drain_to_completion(attempt))
+        let error = tokio::time::timeout(Duration::from_secs(1), drain)
             .await
             .expect("attempt drain must not wait for HTTP after cancellation")
+            .expect("attempt drain task must not panic")
             .expect_err("cancelled attempt must drain to Err(CallFailure)");
         assert!(
             matches!(error.cause(), ProviderError::Cancelled),

@@ -288,26 +288,12 @@ impl AcquisitionSeal {
 /// Refusal reason returned by [`AcquisitionCore::check_start`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RetryStartError {
+    /// A prior attempt still owns the call's execution lease.
+    AlreadyActive,
     /// The call is sealed; no further attempt may be dispatched.
     Sealed(AcquisitionSeal),
     /// The admitted retry is not ready yet; the caller must keep waiting.
     NotReady { retry_ready_in_ms: u64 },
-}
-
-/// Why [`AcquisitionCore::check_start`] refused a start, split from the
-/// seal so callers can name both without matching the core enum.
-pub(crate) fn start_error_seal(error: RetryStartError) -> Option<AcquisitionSeal> {
-    match error {
-        RetryStartError::Sealed(seal) => Some(seal),
-        RetryStartError::NotReady { .. } => None,
-    }
-}
-
-pub(crate) fn start_error_ready_in_ms(error: RetryStartError) -> Option<u64> {
-    match error {
-        RetryStartError::Sealed(_) => None,
-        RetryStartError::NotReady { retry_ready_in_ms } => Some(retry_ready_in_ms),
-    }
 }
 
 /// The per-logical-call acquisition state machine (crate-private).
@@ -324,6 +310,8 @@ pub(crate) struct AcquisitionCore {
 
 struct AcquisitionInner {
     policy: AcquisitionPolicy,
+    /// The single execution lease shares the lock with admission and sealing.
+    active: bool,
     /// Index of the current payload variant. Adaptation (the bounded
     /// strict-prefer downgrade) is owned by later tasks; every current
     /// acquisition episode stays on variant 0.
@@ -352,6 +340,7 @@ impl AcquisitionCore {
         Self {
             inner: Mutex::new(AcquisitionInner {
                 policy,
+                active: false,
                 variant_index: 0,
                 variants_used: 0,
                 retries_admitted: 0,
@@ -363,13 +352,16 @@ impl AcquisitionCore {
         }
     }
 
-    /// Enforce the start preconditions: a sealed call refuses dispatch, and a
-    /// start before the admitted retry deadline refuses dispatch without
-    /// consuming anything. A start at or after the deadline clears it.
+    /// Check admission and reserve the single execution lease in one critical
+    /// section. Sealing/readiness cannot change between admission and taking
+    /// the lease. Refusals consume neither the lease nor a send.
     pub(crate) fn check_start(&self) -> Result<(), RetryStartError> {
         let mut inner = self.inner.lock().expect("acquisition core poisoned");
         if let Some(seal) = inner.sealed {
             return Err(RetryStartError::Sealed(seal));
+        }
+        if inner.active {
+            return Err(RetryStartError::AlreadyActive);
         }
         if let Some(ready_at) = inner.ready_at {
             let now = Instant::now();
@@ -380,7 +372,14 @@ impl AcquisitionCore {
             }
             inner.ready_at = None;
         }
+        inner.active = true;
         Ok(())
+    }
+
+    /// Release an observed terminal or an unpolled lease. Terminal state is
+    /// recorded before this release, under the same acquisition owner.
+    pub(crate) fn release_attempt(&self) {
+        self.inner.lock().expect("acquisition core poisoned").active = false;
     }
 
     /// Record that an attempt was dispatched (the first dispatch marks the
@@ -426,6 +425,9 @@ impl AcquisitionCore {
     /// budget is spent, `Finished` for a classified final failure).
     pub(crate) fn note_failure(&self, cause: &ProviderError) {
         let mut inner = self.inner.lock().expect("acquisition core poisoned");
+        if cause.response_received() && inner.sealed.is_none() {
+            inner.sealed = Some(AcquisitionSeal::PostHandoff);
+        }
         if inner.sealed.is_some() {
             // Already sealed (for example post-handoff): the failure is final.
             inner.admission = None;
@@ -520,5 +522,65 @@ impl JitterRng {
     /// covers the source's `[0.75, 1.0)` backoff factor.
     fn fraction_percent(&mut self) -> u64 {
         self.next_u64() % 25
+    }
+}
+
+#[cfg(test)]
+mod acquisition_tests {
+    use super::{AcquisitionCore, AcquisitionPolicy, AcquisitionSeal, RetryStartError};
+    use crate::provider::ProviderError;
+    use std::sync::{Arc, Barrier};
+
+    #[test]
+    fn concurrent_start_checks_reserve_exactly_one_attempt() {
+        let core = Arc::new(AcquisitionCore::new(AcquisitionPolicy::default()));
+        let start = Arc::new(Barrier::new(3));
+        let checked = Arc::new(Barrier::new(3));
+        let workers = (0..2)
+            .map(|_| {
+                let core = core.clone();
+                let start = start.clone();
+                let checked = checked.clone();
+                std::thread::spawn(move || {
+                    start.wait();
+                    let admitted = core.check_start().is_ok();
+                    checked.wait();
+                    admitted
+                })
+            })
+            .collect::<Vec<_>>();
+        start.wait();
+        checked.wait();
+        let admitted = workers
+            .into_iter()
+            .map(|worker| usize::from(worker.join().unwrap()))
+            .sum::<usize>();
+        assert_eq!(
+            admitted, 1,
+            "the acquisition check must reserve its lease atomically"
+        );
+    }
+
+    #[test]
+    fn released_attempt_cannot_bypass_the_recorded_failure_deadline_or_seal() {
+        let core = AcquisitionCore::new(AcquisitionPolicy::with_max_retries(1));
+        core.check_start().unwrap();
+        assert!(matches!(
+            core.check_start(),
+            Err(RetryStartError::AlreadyActive)
+        ));
+        core.note_failure(&ProviderError::RateLimited {
+            retry_after_ms: Some(10_000),
+        });
+        core.release_attempt();
+        assert!(matches!(
+            core.check_start(),
+            Err(RetryStartError::NotReady { .. })
+        ));
+        core.note_handoff();
+        assert!(matches!(
+            core.check_start(),
+            Err(RetryStartError::Sealed(AcquisitionSeal::PostHandoff))
+        ));
     }
 }
