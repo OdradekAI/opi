@@ -5323,7 +5323,7 @@
       "definition_of_done": "Complete modern/legacy SSO, SSOOIDC refresh/GetRoleCredentials, login_session SignIn refresh and ES256 DPoP through Models -> selected source -> real Bedrock adapter. Preserve source cache paths/identities, 5min/30s windows, actual expiry, still-valid token behavior, per-key revision/receipt and store-owned rotation/ACK/barrier/late-write fencing; token caches and temporary credentials have distinct identities. Integrate SSO/login as role sources and close the complete Env -> explicit SSO -> INI -> process -> web identity -> ECS or IMDS chain with exact Continue/Selected/Terminal, source/profile precedence, cache single-flight/file invalidation and zero generation sends after selected failure. Reuse 20.19.1/2 evidence and add distinct full-chain compositions, not duplicate implementations. This slice owns complete V-09/AIR-023 source coverage; all generation retry modes remain 20.20 and full protocol options remain 20.42. Admit only the selected signing/cache dependencies needed here.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.19.2",
         "20.22"
@@ -5383,6 +5383,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-STORE; role=consumer; owner_task=20.22; module=opi_ai::auth; interface=CredentialStore atomic update/ACK/mutation_barrier; representation=state machine; consumer_tasks=20.19.3,20.21.1,20.21.3,20.23,20.24,20.25,20.26,20.27,20.28,20.29,20.30,20.31; criterion_ids=AIR-063,V-12; legacy_paths=waiter-owned refresh product protocol duplication; closure_test=crates/opi-ai/tests/auth_contracts.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Later-discovered necessary paths appended with evidence: endpoint.rs gained the SSO portal/OIDC/SignIn endpoint builders (the pinned table requires per-service endpoints next to the existing STS builder; the SignIn host is a documented opi default behind the injectable override because the corpus pins only the /v1/token path); process.rs owns the AIR-023 CredentialProcessPolicy exposure declared in the DoD; test_support.rs FakeSourceTransport already records sends for the new families; evidence.rs needs the Sso/LoginSession provenance arms (exhaustive match over opi_ai provenance); provider_factory.rs constructs the new AwsLocalChainInput fields and owns the shared AwsSourceCache + MutationQueue + Arc transport per Bedrock bundle (cross-call single-flight and windows are part of the DoD); its test file mirrors the resolve_bedrock_auth signature.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md#3.3 AWS：owned认证协议adapter＋无I/O codec"
         }
       ],
       "tier": "workspace",
@@ -5411,7 +5416,7 @@
           "production_call_sites": [
             "opi_ai::Models::get_auth/stream -> selected AWS source -> migrated BedrockProvider::stream_prepared -> local EventStream response (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-09",
@@ -5423,7 +5428,7 @@
           "production_call_sites": [
             "opi_ai::Models::get_auth/stream -> selected AWS source -> migrated BedrockProvider::stream_prepared -> local EventStream response (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-023",
@@ -5435,7 +5440,7 @@
           "production_call_sites": [
             "opi_ai::Models::get_auth/stream -> selected AWS source -> migrated BedrockProvider::stream_prepared -> local EventStream response (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -5444,7 +5449,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "9133d51d0aacc92c14651bd8aff5d81867a3fb4f",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -5464,12 +5469,70 @@
         "crates/opi-ai/src/lib.rs",
         "crates/opi-ai/src/models.rs",
         "crates/opi-ai/tests/auth_contracts.rs",
-        "crates/opi-ai/tests/bedrock_fixtures.rs"
+        "crates/opi-ai/tests/bedrock_fixtures.rs",
+        "crates/opi-ai/src/auth/aws/endpoint.rs",
+        "crates/opi-ai/src/auth/aws/process.rs",
+        "crates/opi-ai/src/test_support.rs",
+        "crates/opi-agent/src/evidence.rs",
+        "crates/opi-coding-agent/src/provider_factory.rs",
+        "crates/opi-coding-agent/tests/provider_factory.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "d7f9e7577f9b7dc779a86b6f3d9af9f924cb7dca",
+      "evidence": {
+        "task": "20.19.3",
+        "dod_sha256": "c4476c3551c00257984777211ffb20163a11b63dbc4130c6e494163fe630c7a7",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED (doc-check, fmt, all-target clippy, workspace tests, doc tests, rustdoc); scenario tests: opi-ai auth_contracts 34 passed (1 new mutation-owner closure), bedrock_fixtures 110 passed (19 new SSO/login/chain tests incl. real loopback ES256 DPoP), lib 319 passed, opi-coding-agent bedrock_provider_wiring 8 passed",
+        "evaluator": "passed",
+        "acceptance": "P20-S19, V-09, AIR-023; Models get_auth -> auth::aws chain (explicit SSO selection, INI sso_session/legacy/login_session order, env pair and process precedence) -> SSO OIDC refresh/GetRoleCredentials and SignIn ES256 DPoP refresh -> BedrockProvider::stream_prepared; near-expiry passive refreshes register into the shared MutationQueue and complete after the caller leaves; source failure = typed terminal with zero generation sends"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-22T05:40:00+00:00",
+          "attempt": 1,
+          "summary": "Closed the complete source chain with new auth::aws::{cache,sso,login} modules. Chain order now Env -> explicit SSO (scoped init fields only; any-field-presence selects; incomplete = typed IncompleteSsoConfiguration terminal) -> INI family extended to assume-role -> static -> web identity -> process -> SSO (modern sso_session via [sso-session] config sections with explicit-field precedence; legacy inline) -> login_session -> env web identity -> ECS or IMDS. SSO: standard token cache with SHA-1 file names (modern session-name keys, legacy upper-cased start-URL keys — opi-documented default), near-expiry tokens returned as-is with a single throttled passive refresh (5min window/30s per-session throttle) registered into the shared credential MutationQueue (awaitable via barrier after the caller leaves), expired modern tokens refresh actively through OIDC POST /token with typed denials (incl. slowdown/throttle) keeping unexpired tokens on failure, successful refreshes write the standard cache file with write failures ignored, legacy tokens never refresh (re-login), federation GET /federation/credentials with x-amz-sso_bearer_token and epoch-millisecond expiry, missing/invalid/denied = typed terminal with zero generation sends. login_session: standard login cache (SHA-256 of trimmed session; ~/.aws/login dir is an opi-documented default), SignIn POST /v1token refresh with owned ES256 DPoP proof (dpop+JWT/JWK x/y/jti/iat/htu/htm, deterministic RFC 6979, injected clock/jti), AWS credentials extracted from the accessToken JSON, account provenance frozen to the cache, rotated refresh tokens written back with in-memory retention on write failure, bad/missing cache + DPoP failure + the four-code AccessDenied family terminal, other failures keep unexpired tokens and continue the chain once expired. New injectable AwsSourceCache (single-flight, windows/throttle, per-key revisions with distinct sub-token vs temporary identities, explicit invalidation, mutation-owner registration with PassiveRefreshDeps Arc transport/clock/jti); AwsLocalChainInput gained source_cache/clock/dpop_jti/sso+login cache dirs/sso+oidc+signin endpoint overrides; ScopedAwsEnv gained five explicit-init SSO fields; CredentialSource + evidence facts gained Sso/LoginSession; CredentialProcessPolicy exposes the 10s/64KiB budgets as declared opi caller policy (AIR-023); provider_factory owns one shared cache+queue+Arc transport per Bedrock bundle. Dependencies: p256=0.13.2 (ecdsa/pem/std) and sha1=0.10.6 (std) exact per the pinned table; closure adds 18 pure-Rust crates (RustCrypto elliptic-curve stack), no build scripts, no native code. Real loopback test verifies the ES256 DPoP signature cryptographically against the embedded JWK. Auth-source sends remain single-send per attempt (retry modes are 20.20). Exec D.2 (sequential 7-lens, wf_ref null): 0 must-fix, 5 flagged_for_human (SignIn host signin.{region}.amazonaws.com is an opi-documented default behind the injectable override — corpus pins only /v1/token; SSO legacy cache-key case rule and login cache dir are opi-documented defaults; single-send auth-source retry deferred to 20.20; passive-refresh snapshot capture vs in-flight rotation race is corpus-acknowledged via the memoize-lock caveat; explicit SSO is scoped/init-only per the corpus reading), 2 rejected (SSO service retry now — owned by 20.20; STS result memoization — no corpus pin for this slice).",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED (documentation contract, format, all-target clippy -D warnings, workspace all-targets tests, doc tests, rustdoc -D warnings); one prior run hit a transient credential_store flake and a rustdoc broken-intra-doc-link, both fixed/verified before the passing run",
+            "d0_scenarios": "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures -> 34 + 110 passed; cargo test -p opi-coding-agent --test bedrock_provider_wiring -> 8 passed; cargo test -p opi-ai (lib) -> 319 passed",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified by injectable-transport send logs and raw loopback captures with cryptographic DPoP verification inside the test sources; classification: verified",
+            "d2_exec": "7 lenses run sequentially (wf_ref null); 0 must-fix, 5 flagged_for_human, 2 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S19/V-09/AIR-023",
+                "action": "add",
+                "test": "crates/opi-ai/tests/bedrock_fixtures.rs::{explicit_sso_absent_continues_to_ini_static, explicit_sso_incomplete_is_terminal_with_zero_sends, explicit_sso_resolves_with_getrole_wire, ini_modern_sso_resolves_via_sso_session_section, ini_sso_incomplete_is_terminal, sso_near_expiry_uses_old_token_and_registers_passive_refresh, sso_passive_refresh_failure_keeps_old_token, sso_expired_token_refresh_denied_is_terminal, sso_legacy_expired_token_is_terminal_relogin, sso_getrole_denial_is_typed_terminal_with_zero_generation_sends, sso_throttle_suppresses_immediate_second_passive_refresh, login_session_bad_cache_is_terminal, login_session_refresh_dpop_wire_and_rotation, login_access_denied_family_is_terminal, login_other_failure_with_expired_token_continues_chain, login_unexpired_token_refresh_failure_keeps_old, chain_order_env_pair_beats_explicit_sso, chain_order_ini_process_beats_sso_and_login, signin_dpop_over_real_http_to_local_server} + cache.rs/sso.rs/login.rs/endpoint.rs unit tests (single-flight, revisions, invalidate, passive registration/throttle/no-owner, cache names, token-file roundtrip, DPoP shape+signature, base64url reference vectors)",
+                "interface": "auth::aws::{cache,sso,login,local}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-STORE",
+                "action": "add",
+                "test": "crates/opi-ai/tests/auth_contracts.rs::source_passive_refresh_registers_through_the_mutation_owner (consumer closure: near-expiry refresh registers into the shared MutationQueue; barrier observes completion after the caller leaves)",
+                "interface": "auth::aws::cache::AwsSourceCache + mutation::MutationQueue",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19",
+                "action": "update",
+                "test": "crates/opi-ai/tests/bedrock_fixtures.rs chain_input helper + LocalChainBedrockResolver + chain_source mapping extended with the new input fields and provenance arms",
+                "interface": "auth::aws::local",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19",
+                "action": "retain",
+                "test": "all 91 pre-existing bedrock_fixtures tests, 33 pre-existing auth_contracts tests, bedrock_provider_wiring (8), provider_factory (53), credential_store (47), and the full pre-existing lib suite",
+                "interface": "Models + provider_factory + bedrock adapter",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.20",
@@ -16610,6 +16673,16 @@
       "rejected_count": 1,
       "ran_at": "2026-10-22T04:10:00+00:00",
       "task_id": "20.19.2",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 5,
+      "rejected_count": 2,
+      "ran_at": "2026-10-22T05:40:00+00:00",
+      "task_id": "20.19.3",
       "criterion_id": null
     }
   ]
