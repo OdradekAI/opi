@@ -826,3 +826,24 @@ gcloud 发现。`VertexProvider` 同时服务 API-key Express
 ADC 路由（需要 project/location，`global` 固定共享域名）；产品路由
 依次优先存储凭据/`GOOGLE_CLOUD_API_KEY`、配置的 access-token 环境变
 量、ADC 链。
+
+### ADC external-account 联邦与可执行 supplier（P20-S21-2）
+
+`auth::adc` 同时拥有 `external_account` 联邦家族。file/url supplier 保留
+subject token 原始文本（不 trim）或命名的 JSON 字段；AWS（`aws1`）来源
+解析 region 与安全凭据（环境变量优先，其次 security-credentials 端点，
+可选 IMDSv2 session token；每条 IMDS 腿单发送），并以 SigV4 签名序列化的
+`GetCallerIdentity` 请求 —— `x-goog-cloud-target-resource` 按上游在签名
+之后合并。certificate 来源解析其配置（显式 location >
+`GOOGLE_API_CERTIFICATE_CONFIG` > well-known gcloud 路径），校验 leaf 与
+chain，按精确 leaf 顺序规则构造 base64(DER) JSON 链 token，并经冻结
+TLS profile 准入的**源作用域 mTLS transport** 交换。executable supplier
+在任何 cache 读取与 spawn **之前**检查
+`GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1`，将命令解析为直引号感知
+argv（绝不进 shell），合并 stdout/stderr，校验响应模式（token-type URN、
+配置 output_file 时的 `expiration_time`、过期），malformed cache 为终局、
+过期 cache 为 miss，超时收割进程组，且绝不改写 output_file。RFC8693 STS
+交换默认 `https://sts.{universe_domain}/v1/token`，confidential 客户端用
+HTTP Basic，无客户端认证时 workforce user project 进入 `options` form
+字段。溯源经 `AdcCredentialSource::ExternalAccount` 非机密分类供应者；
+`impersonated_service_account` 在模拟任务交付前保持类型化未准入。

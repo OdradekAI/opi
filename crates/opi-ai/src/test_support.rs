@@ -469,3 +469,32 @@ impl crate::auth::aws::source_http::AwsSourceTransport for NeverTransport {
         async { Err(crate::auth::aws::source_http::SourceHttpError::Transport) }.boxed()
     }
 }
+
+/// Write a one-shot executable helper script for the current platform and
+/// return the ADC-executable command string (a quote-aware direct argv; the
+/// caller never parses it through a shell). Acceptance test sources stay
+/// platform-neutral by delegating the platform split to this helper.
+pub fn portable_executable_script(
+    dir: &std::path::Path,
+    name: &str,
+    unix_body: &str,
+    #[allow(unused_variables)] windows_body: &str,
+) -> String {
+    #[cfg(unix)]
+    {
+        let path = dir.join(format!("{name}.sh"));
+        std::fs::write(&path, format!("#!/bin/sh\n{unix_body}\n")).expect("write helper script");
+        format!("sh \"{}\"", path.display())
+    }
+    #[cfg(windows)]
+    {
+        let path = dir.join(format!("{name}.ps1"));
+        std::fs::write(&path, format!("{windows_body}\n")).expect("write helper script");
+        format!("powershell -NoProfile -File \"{}\"", path.display())
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (dir, name, unix_body, windows_body);
+        unimplemented!("portable executable helpers support unix and windows");
+    }
+}

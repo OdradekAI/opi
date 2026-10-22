@@ -997,3 +997,29 @@ Bearer ADC routes (project/location required, `global` pins the shared
 domain); the product route prefers a stored credential or
 `GOOGLE_CLOUD_API_KEY`, then the configured access-token env, then the
 ADC chain.
+
+### ADC external-account federation and the executable supplier (P20-S21-2)
+
+`auth::adc` also owns the `external_account` federation families. File and
+URL suppliers keep the raw subject-token text (no trim) or the named JSON
+field; an AWS (`aws1`) source resolves region and security credentials
+(environment first, else the security-credentials endpoint with an optional
+IMDSv2 session token; every IMDS leg is a single send) and signs a
+serialized `GetCallerIdentity` request — `x-goog-cloud-target-resource` is
+merged after signing, as upstream. The certificate source resolves its
+configuration (explicit location > `GOOGLE_API_CERTIFICATE_CONFIG` >
+well-known gcloud path), validates leaf and chain, builds the base64(DER)
+JSON chain token with the exact leaf-order rules, and exchanges over a
+source-scoped mTLS transport admitted through the frozen TLS profile. The
+executable supplier checks `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1`
+before the output-file cache and any spawn, parses the command into a
+direct quote-aware argv, merges stdout/stderr, validates the response
+schema (token-type URNs, `expiration_time` when an output file is
+configured, expiry), treats a malformed cache as terminal and a stale one
+as a miss, reaps the process group on timeout, and never rewrites the
+output file. The RFC8693 STS exchange defaults to
+`https://sts.{universe_domain}/v1/token`, uses HTTP Basic for confidential
+clients, and flows a workforce user project into the `options` form field
+without client authentication. Provenance classifies the supplier through
+`AdcCredentialSource::ExternalAccount`; `impersonated_service_account`
+stays typed-unadmitted until the impersonation task.

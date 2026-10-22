@@ -379,6 +379,32 @@ pub enum AdcCredentialSource {
     /// The explicitly selected direct metadata source served the token from
     /// the scoped instance metadata endpoint.
     DirectMetadata,
+    /// An `external_account` credentials file federated a subject token
+    /// through the RFC8693 STS exchange. `supplier` classifies the
+    /// credential source; `workforce_user_project` mirrors the file's
+    /// non-secret workforce field.
+    ExternalAccount {
+        /// Credential-source classification (non-secret).
+        supplier: ExternalAccountSupplier,
+        /// Non-secret `workforce_pool_user_project`, when set.
+        workforce_user_project: Option<String>,
+    },
+}
+
+/// Credential-source classification for the ADC `external_account` family
+/// (task 20.21.2). Non-secret provenance only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalAccountSupplier {
+    /// File-sourced subject token.
+    File,
+    /// URL-sourced subject token.
+    Url,
+    /// Certificate source with an mTLS STS leg.
+    Certificate,
+    /// AWS (aws1) subject credentials.
+    Aws,
+    /// Executable (pluggable) supplier.
+    Executable,
 }
 
 /// Whether auth preparation used an explicitly allowed fallback.
@@ -785,11 +811,17 @@ impl AuthContext for AmbientAuthContext {
 /// Local AWS credential-source chain modules (Bedrock's selected-source
 /// coordinator; product-neutral, injectable, no live AWS calls).
 pub mod adc {
+    /// Cancelable executable (pluggable) supplier.
+    pub mod executable;
+    /// `external_account` family coordinator (RFC8693 STS exchange).
+    pub mod external;
     /// Explicitly selected direct GCP metadata source.
     pub mod metadata;
     /// ADC native credential families (service account, authorized user,
     /// external account authorized user) and the chain coordinator.
     pub mod native;
+    /// Subject-token suppliers (file/URL/certificate/aws1).
+    pub mod subject;
 }
 pub mod aws {
     /// Regional STS endpoint resolution (partition/override arithmetic).

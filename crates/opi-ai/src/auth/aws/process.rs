@@ -388,7 +388,7 @@ async fn read_bounded_process_output(
     Ok(output)
 }
 
-async fn terminate_tree_and_reap(child: &mut Child, root_pid: Option<u32>) {
+pub(crate) async fn terminate_tree_and_reap(child: &mut Child, root_pid: Option<u32>) {
     if let Some(root_pid) = root_pid {
         terminate_process_tree(root_pid).await;
     }

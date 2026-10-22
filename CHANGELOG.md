@@ -2,6 +2,47 @@
 
 ### Breaking Changes
 
+- `opi-ai`: ADC external-account federation and the cancelable executable
+  supplier complete the `external_account` family (task 20.21.2). The new
+  `auth::adc::{external,subject,executable}` modules own the pinned
+  `google-auth-library@10.6.2` contracts: file and URL subject-token
+  suppliers keep the raw text (no trim) or the named JSON field; an AWS
+  (`aws1`) source resolves its region (`AWS_REGION` > `AWS_DEFAULT_REGION` >
+  `region_url` with the availability-zone suffix stripped) and security
+  credentials (environment first, else the security-credentials endpoint
+  with an optional IMDSv2 session-token PUT at the fixed 300 s TTL, one
+  token fetch per supplier leg, every IMDS leg a single send), then signs a
+  serialized `GetCallerIdentity` request with SigV4 through the existing
+  signing primitive — `x-goog-cloud-target-resource` is merged after
+  signing, exactly as upstream — and percent-encodes the
+  `JSON.stringify({url, method, headers})` subject token. The certificate
+  source resolves its configuration (`certificate_config_location` >
+  `GOOGLE_API_CERTIFICATE_CONFIG` > the well-known gcloud path), validates
+  leaf and chain through the rustls parser, builds the base64(DER) JSON
+  chain subject token with the exact leaf-order rules (absent → prepended,
+  first → kept, later → typed failure), and exchanges over a source-scoped
+  mTLS transport built from the frozen TLS profile (the identity never
+  rides another leg). The executable (pluggable) supplier checks the
+  `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1` admission gate **before**
+  the output-file cache and any spawn, parses the command into a direct
+  quote-aware argv (never a shell), merges stdout and stderr, validates the
+  response schema (version/success/token-type URN with its token field,
+  `expiration_time` required when an output file is configured, expiry),
+  treats a malformed cache as terminal but a stale one as a miss, reuses the
+  crate's private bounded-process mechanism (process group, kill-on-drop,
+  tree reaping on timeout), and never rewrites the `output_file`. The
+  RFC8693 STS exchange (`grant_type=token-exchange`, audience,
+  `subject_token`, `subject_token_type`, scope) defaults to
+  `https://sts.{universe_domain}/v1/token`, uses HTTP Basic when the file
+  carries `client_id`/`client_secret`, and flows a workforce
+  `workforce_pool_user_project` into the non-standard `options` form field
+  only without client authentication; exchanges run the fixed Gaxios retry
+  budget. A new `AdcCredentialSource::ExternalAccount` provenance variant
+  classifies the supplier non-secretly;
+  `impersonated_service_account` remains typed-unadmitted (task 20.21.3).
+  The ADC owner's canonical-endpoint override now also pins the external
+  exchange URL. Acceptance test sources gain a platform-neutral executable
+  helper through `test_support::portable_executable_script`.
 - `opi-ai`: Vertex generation auth gains the pinned ADC native families and
   the dual-mode wire (task 20.21.1). The new `auth::adc` module owns the
   exact contracts from the locked `google-auth-library@10.6.2` /

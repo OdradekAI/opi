@@ -30,8 +30,10 @@
 //! explicit path the portable well-known file (`%APPDATA%\gcloud\...` on
 //! Windows, `$HOME/.config/gcloud/...` elsewhere) is consulted; a missing
 //! well-known file means "not configured" and performs **zero** network work
-//! (no metadata, BIOS, or gcloud discovery). Families delivered by later
-//! tasks (`impersonated_service_account`, `external_account`) fail typed.
+//! (no metadata, BIOS, or gcloud discovery). The `external_account`
+//! federation families are owned by the sibling `external`, `subject`, and
+//! `executable` modules (task 20.21.2);
+//! `impersonated_service_account` fails typed (task 20.21.3).
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -44,6 +46,7 @@ use crate::auth::{AdcCredentialSource, AuthContext};
 use crate::credential::BoxAuthFuture;
 use crate::http::{HttpClient, HttpClientBuilder, RedirectPolicy};
 
+use super::external::{self as external, ExternalAccountFile, resolve_external_account};
 use super::metadata::resolve_direct_metadata_token;
 
 /// Canonical Google OAuth 2.0 token endpoint (hardcoded in the source's
@@ -162,6 +165,66 @@ pub enum AdcResolutionError {
     /// A 200 response did not carry the required token fields.
     #[error("token exchange response is missing the access token")]
     InvalidTokenResponse,
+    /// The external-account credential source is structurally invalid
+    /// (mutually exclusive keys, unsupported formats or versions, missing
+    /// sub-keys). Terminal at parse time.
+    #[error("ADC external_account credential_source is invalid: {reason}")]
+    CredentialSourceInvalid {
+        /// Stable non-secret reason.
+        reason: &'static str,
+    },
+    /// `workforce_pool_user_project` was set for a non-workforce audience.
+    #[error("workforce_pool_user_project should not be set for non-workforce pool credentials")]
+    WorkforceProjectInvalid,
+    /// A subject-token supplier failed (file read/parse, URL status or
+    /// body, certificate material).
+    #[error("the external-account subject token is unavailable: {reason}")]
+    SubjectTokenUnavailable {
+        /// Stable non-secret reason.
+        reason: String,
+    },
+    /// The certificate source could not be located, read, or parsed.
+    #[error("the certificate credential source is unavailable: {reason}")]
+    CertificateSourceUnavailable {
+        /// Stable non-secret reason.
+        reason: &'static str,
+    },
+    /// An AWS subject leg failed (region or security credentials).
+    #[error("the AWS subject credential source is unavailable: {reason}")]
+    AwsSubjectUnavailable {
+        /// Stable non-secret reason.
+        reason: &'static str,
+    },
+    /// The executable admission gate is not set to `1`.
+    #[error(
+        "pluggable-auth executables must be explicitly allowed via GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1"
+    )]
+    ExecutablesNotAllowed,
+    /// Spawning the executable failed.
+    #[error("the executable could not be spawned")]
+    ExecutableSpawnFailed,
+    /// The executable or its response reported a failure
+    /// (non-zero exit or `success=false`).
+    #[error("the executable failed with code {code}: {message}")]
+    ExecutableFailed {
+        /// Reported exit/response code.
+        code: String,
+        /// Merged stdout/stderr or response message (bounded).
+        message: String,
+    },
+    /// The executable exceeded its configured timeout; the process group
+    /// was reaped.
+    #[error("the executable failed to finish within the timeout specified")]
+    ExecutableTimeout,
+    /// The executable (or cache) response is structurally invalid.
+    #[error("the executable response is invalid: {reason}")]
+    ExecutableResponseInvalid {
+        /// Stable non-secret reason.
+        reason: &'static str,
+    },
+    /// A successful executable response is expired.
+    #[error("the executable response is expired")]
+    ExecutableResponseExpired,
 }
 
 impl AdcResolutionError {
@@ -248,6 +311,19 @@ impl ReqwestAdcTransport {
                 .build()
                 .expect("source transport construction should not fail with valid defaults"),
         }
+    }
+
+    /// Build a source transport with an explicit TLS configuration
+    /// (certificate-source mTLS: the identity rides only the STS exchange).
+    pub fn with_tls(
+        options: crate::tls::TlsOptions,
+    ) -> Result<Self, crate::http::HttpClientBuildError> {
+        Ok(Self {
+            client: HttpClientBuilder::new()
+                .redirects(RedirectPolicy::None)
+                .tls(options)
+                .build()?,
+        })
     }
 }
 
@@ -427,6 +503,8 @@ impl std::fmt::Debug for AdcResolvedToken {
 /// One parsed credentials file family.
 #[derive(Clone)]
 enum AdcFamily {
+    /// An `external_account` federation file (task 20.21.2).
+    External(ExternalAccountFile),
     ServiceAccount {
         client_email: String,
         private_key_pem: String,
@@ -513,9 +591,9 @@ fn parse_adc_file(contents: &str, path: &str) -> Result<AdcFamily, AdcResolution
         "impersonated_service_account" => Err(AdcResolutionError::FamilyNotAdmitted {
             family: "impersonated_service_account",
         }),
-        "external_account" => Err(AdcResolutionError::FamilyNotAdmitted {
-            family: "external_account",
-        }),
+        "external_account" => Ok(AdcFamily::External(external::parse_external_account(
+            &json,
+        )?)),
         other => Err(AdcResolutionError::UnknownType {
             found: other.to_owned(),
         }),
@@ -760,6 +838,7 @@ async fn exchange_family(
     token_endpoint: Option<&str>,
     universe_domain: Option<&str>,
     scopes: &[String],
+    input: &AdcNativeInput<'_>,
 ) -> Result<AdcResolvedToken, AdcResolutionError> {
     let now = clock.now();
     let scope = scopes
@@ -768,6 +847,7 @@ async fn exchange_family(
         .collect::<Vec<_>>()
         .join(" ");
     match family {
+        AdcFamily::External(file) => resolve_external_account(file, input, scopes).await,
         AdcFamily::ServiceAccount {
             client_email,
             private_key_pem,
@@ -930,6 +1010,10 @@ pub struct AdcNativeInput<'a> {
     /// Requested scopes (space-joined into the JWT `scope` / metadata
     /// `scopes` parameter). Defaults to [`CLOUD_PLATFORM_SCOPE`].
     pub scopes: &'a [String],
+    /// Extra trust roots (PEM) for the certificate-source mTLS transport.
+    /// `None` uses the pinned default roots; tests and pinned deployments
+    /// can admit a loopback or private root for the STS leg only.
+    pub certificate_extra_roots_pem: Option<&'a [u8]>,
 }
 
 impl<'a> AdcNativeInput<'a> {
@@ -950,6 +1034,7 @@ impl<'a> AdcNativeInput<'a> {
             token_endpoint: None,
             universe_domain: None,
             scopes: &[],
+            certificate_extra_roots_pem: None,
         }
     }
 }
@@ -1011,6 +1096,7 @@ pub async fn resolve_adc_native_with_refresh(
                 input.token_endpoint,
                 input.universe_domain,
                 &scopes,
+                input,
             )
             .await?;
             Ok(Some(token))
@@ -1049,6 +1135,7 @@ pub async fn resolve_adc_native_with_refresh(
                 input.token_endpoint,
                 input.universe_domain,
                 &scopes,
+                input,
             )
             .await?;
             Ok(Some(token))
@@ -1153,6 +1240,7 @@ impl AdcNativeOwner {
             token_endpoint: self.token_endpoint.as_deref(),
             universe_domain: self.universe_domain.as_deref(),
             scopes: &self.scopes,
+            certificate_extra_roots_pem: None,
         };
         let resolved = resolve_adc_native_with_refresh(&input, refresh_override.as_ref()).await?;
         let token = resolved.ok_or(AdcResolutionError::NotConfigured)?;
