@@ -92,6 +92,7 @@ impl AgentProviderFailure {
                 | ProviderError::Config(summary)
                 | ProviderError::ProviderSide(summary)
                 | ProviderError::UnsupportedCapability(summary) => Some(summary),
+                ProviderError::ServiceFault { detail, .. } => Some(detail),
                 ProviderError::RateLimited { .. }
                 | ProviderError::Timeout
                 | ProviderError::CredentialNeeded { .. }

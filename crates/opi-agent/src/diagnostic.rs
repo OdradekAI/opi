@@ -781,6 +781,22 @@ impl From<&opi_ai::provider::ProviderError> for Diagnostic {
                 "provider returned an error response",
             )
             .details(serde_json::json!({ "provider_error": message })),
+            ProviderError::ServiceFault {
+                status,
+                error_name,
+                retry_after_ms,
+                ..
+            } => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_SIDE,
+                SOURCE_PROVIDER,
+                "provider returned a service error response",
+            )
+            .details(serde_json::json!({
+                "status": status,
+                "error_name": error_name,
+                "retry_after_ms": retry_after_ms,
+            })),
             ProviderError::UnsupportedCapability(message) => Diagnostic::new(
                 Severity::Error,
                 code::CODE_PROVIDER_CAPABILITY_INVALID,

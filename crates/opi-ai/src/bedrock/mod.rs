@@ -6,6 +6,7 @@
 //! calls.
 
 pub mod event_stream;
+pub mod retry;
 pub mod sigv4;
 
 use std::sync::Arc;
@@ -19,7 +20,7 @@ use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::model_info::WireApi;
 use crate::provider::{
-    EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
+    AttemptContext, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
 };
 use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
@@ -124,17 +125,23 @@ pub fn proxy_placeholder_auth(
 /// Concrete AWS Bedrock provider using the Converse API.
 pub struct BedrockProvider {
     base_url: Option<String>,
-    models: Vec<ModelInfo>,
     client: Arc<HttpClient>,
     /// Dedicated HTTP/1.1 client for the explicit proxy-placeholder mode;
     /// placeholder-authenticated sends refuse to run without it.
     placeholder_client: Option<Arc<HttpClient>>,
+    models: Vec<ModelInfo>,
+    /// The frozen AWS retry configuration (task 20.20): standard/adaptive
+    /// mode, the Smithy2026 constants branch, and the total attempt budget.
+    /// Frozen at construction; never resampled from ambient state.
+    retry: retry::SmithyRetryConfig,
 }
 
 impl BedrockProvider {
     /// Construct a credential-free Bedrock wire adapter.
     ///
     /// AWS credentials arrive only through per-call prepared authentication.
+    /// Retry defaults to the pinned protocol default (standard mode, legacy
+    /// constants, 3 total attempts).
     pub fn new(base_url: Option<String>, client: Arc<HttpClient>) -> Self {
         let models = model_catalog();
         Self {
@@ -142,7 +149,17 @@ impl BedrockProvider {
             models,
             client,
             placeholder_client: None,
+            retry: retry::SmithyRetryConfig::default(),
         }
+    }
+
+    /// Freeze an explicit AWS retry configuration
+    /// (see [`SmithyRetryConfig`](retry::SmithyRetryConfig)). Construction
+    /// never samples ambient process state: resolve scoped inputs through
+    /// [`retry::resolve_smithy_retry_config`] first.
+    pub fn with_retry_config(mut self, retry: retry::SmithyRetryConfig) -> Self {
+        self.retry = retry;
+        self
     }
 
     /// Attach the dedicated HTTP/1.1 client used only by the explicit
@@ -325,6 +342,33 @@ impl Provider for BedrockProvider {
 
     fn models(&self) -> &[ModelInfo] {
         &self.models
+    }
+
+    /// The frozen AWS retry protocol default for ordinary prepared calls
+    /// (standard/legacy/3-total unless the bundle froze another
+    /// configuration).
+    fn acquisition_policy_default(&self) -> crate::retry::AcquisitionPolicy {
+        self.retry.acquisition_policy()
+    }
+
+    fn stream_attempt(
+        &self,
+        mut request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: AttemptContext,
+    ) -> EventStream {
+        // The source stamps its retry-observability headers on every send:
+        // one stable invocation id per logical call and the per-attempt
+        // `attempt=N; max=M` counter. They join the signed header set like
+        // any other request header.
+        request
+            .extra_headers
+            .push(("amz-sdk-invocation-id".to_owned(), attempt.invocation_id));
+        request.extra_headers.push((
+            "amz-sdk-request".to_owned(),
+            format!("attempt={}; max={}", attempt.attempt, attempt.max_attempts),
+        ));
+        self.stream_prepared(request, auth)
     }
 
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
@@ -1340,20 +1384,43 @@ fn serialize_converse_messages(messages: &[crate::message::Message]) -> serde_js
 // Error mapping
 // ---------------------------------------------------------------------------
 
-/// Map an HTTP status code + headers to a bodyless, credential-safe error.
+/// Map an HTTP status + headers to a bodyless, credential-safe error.
+///
+/// Auth rejections (401/403) keep their typed authentication identity; every
+/// other failure carries the structured service fault (status plus the
+/// `x-amzn-errortype` wire name) so the acquisition owner can classify
+/// retryability through the source's exact trait/name rules (task 20.20):
+/// 429/throttling names are THROTTLING, the transient names/statuses and the
+/// modeled `$retryable` trait (ModelNotReady) are TRANSIENT, bare 5xx are
+/// SERVER_ERROR (never blanket-retried), and client faults like
+/// ModelTimeout (408, no trait) are CLIENT_ERROR.
 pub fn map_bedrock_status(
     status: reqwest::StatusCode,
     headers: &reqwest::header::HeaderMap,
 ) -> ProviderError {
-    match status.as_u16() {
-        401 | 403 => ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected()),
-        429 => ProviderError::RateLimited {
-            retry_after_ms: crate::retry::parse_retry_after(headers),
-        },
-        408 | 504 => ProviderError::Timeout,
-        code => ProviderError::ProviderSide(ProviderErrorSummary::sanitized(format!(
-            "Bedrock HTTP {code}"
-        ))),
+    let code = status.as_u16();
+    if code == 401 || code == 403 {
+        return ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected());
+    }
+    let error_name = headers
+        .get("x-amzn-errortype")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.split(':').next().unwrap_or(value).trim().to_owned())
+        .filter(|name| !name.is_empty());
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    let retry_after_ms = retry::parse_smithy_retry_after(headers, now);
+    let detail = match &error_name {
+        Some(name) => ProviderErrorSummary::sanitized(format!("Bedrock {name} (HTTP {code})")),
+        None => ProviderErrorSummary::sanitized(format!("Bedrock HTTP {code}")),
+    };
+    ProviderError::ServiceFault {
+        status: code,
+        error_name,
+        retry_after_ms,
+        detail,
     }
 }
 

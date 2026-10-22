@@ -123,7 +123,7 @@ pub fn parse_http_date_delay(s: &str) -> Option<u64> {
 }
 
 /// Parse IMF-fixdate format: `Day, DD Mon YYYY HH:MM:SS GMT`
-fn parse_imf_fixdate(s: &str) -> Option<u64> {
+pub(crate) fn parse_imf_fixdate(s: &str) -> Option<u64> {
     // Expected format: "Fri, 23 May 2026 12:00:00 GMT"
     let s = s.trim();
     let parts: Vec<&str> = s.split(',').collect();
@@ -191,16 +191,37 @@ fn date_to_unix(year: u32, month: u32, day: u32, hour: u32, minute: u32, second:
 // Acquisition owner (task 20.4, AIR-007 / P20-ACQUISITION)
 // ---------------------------------------------------------------------------
 
+/// Which retry-family rules the acquisition owner applies (task 20.20).
+///
+/// `Helper` keeps the AIR-007 helper-family behavior (408/409/429/>=500 &
+/// `x-should-retry`, `min(500ms * 2^i, 8s)` backoff with `[0.75, 1.0)`
+/// jitter, 60-second advisory-hint bound). `Smithy` applies the pinned AWS
+/// Smithy V2 modes for Bedrock through
+/// [`SmithyRetryConfig`](crate::bedrock::retry::SmithyRetryConfig):
+/// exact error-trait/network classification, the per-call quota, the
+/// bounded `+5s` hint rule, and (adaptive) the CUBIC client-side rate
+/// limiter. The helper 60-second hint bound and helper jitter are never
+/// applied to Smithy modes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RetrySourcePolicy {
+    /// Helper/Codex family rules (the default for every non-AWS wire).
+    Helper,
+    /// AWS Smithy V2 rules with the frozen mode/flavor/attempt budget.
+    Smithy(crate::bedrock::retry::SmithyRetryConfig),
+}
+
 /// Per-logical-call acquisition policy frozen at
 /// [`Models::prepare_call_with_policy`](crate::Models::prepare_call_with_policy).
 ///
 /// `max_retries` counts **extra sends per payload-variant acquisition
 /// episode**: an ordinary HTTP acquisition performs at most `1 + max_retries`
 /// sends of the frozen variant. The override order is per-call, then protocol
-/// default (helper/Codex adapters default to `0`); provider profiles are a
-/// later concern. `max_retry_delay_ms` bounds only the server-advisory hint
-/// (default 60 seconds); an explicit zero disables that upper-bound check but
-/// still honors hints. `jitter_seed` pins the backoff jitter for deterministic
+/// default (helper/Codex adapters default to `0`, Bedrock to its frozen
+/// Smithy configuration); provider profiles are a later concern.
+/// `max_retry_delay_ms` bounds only the server-advisory hint (default 60
+/// seconds; helper sources only — Smithy sources use the source's bounded
+/// `+5s` rule); an explicit zero disables that upper-bound check but still
+/// honors hints. `jitter_seed` pins the backoff jitter for deterministic
 /// tests; production leaves it `None` for per-call entropy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcquisitionPolicy {
@@ -208,10 +229,20 @@ pub struct AcquisitionPolicy {
     /// request).
     pub max_retries: u32,
     /// Upper bound applied to server-advisory retry hints, in milliseconds.
-    /// `0` disables the bound (hints are used as-is).
+    /// `0` disables the bound (hints are used as-is). Helper sources only;
+    /// Smithy sources always use the source's bounded `+5s` hint rule.
     pub max_retry_delay_ms: u64,
     /// Deterministic jitter seed for tests; `None` uses per-call entropy.
     pub jitter_seed: Option<u64>,
+    /// Which retry-family rules apply (task 20.20). Defaults to the helper
+    /// family; Bedrock providers freeze their resolved
+    /// [`SmithyRetryConfig`](crate::bedrock::retry::SmithyRetryConfig)
+    /// here.
+    pub source: RetrySourcePolicy,
+    /// Time source for the adaptive rate limiter when `source` is an
+    /// adaptive Smithy config. Production uses the wall clock; deterministic
+    /// tests script manual ticks.
+    pub smithy_clock: crate::bedrock::retry::SmithyClock,
 }
 
 impl Default for AcquisitionPolicy {
@@ -220,6 +251,8 @@ impl Default for AcquisitionPolicy {
             max_retries: 0,
             max_retry_delay_ms: 60_000,
             jitter_seed: None,
+            source: RetrySourcePolicy::Helper,
+            smithy_clock: crate::bedrock::retry::SmithyClock::default(),
         }
     }
 }
@@ -308,6 +341,42 @@ pub(crate) struct AcquisitionCore {
     inner: Mutex<AcquisitionInner>,
 }
 
+/// Per-attempt Smithy mode state (task 20.20). One instance per logical
+/// call; the quota and rate limiter never outlive the call.
+struct SmithyAttemptState {
+    config: crate::bedrock::retry::SmithyRetryConfig,
+    quota: crate::bedrock::retry::SmithyRetryQuota,
+    limiter: crate::bedrock::retry::AdaptiveRateLimiter,
+    completed_retries: u32,
+    spent: Option<u32>,
+    refunded: bool,
+}
+
+impl SmithyAttemptState {
+    fn new(
+        config: crate::bedrock::retry::SmithyRetryConfig,
+        clock: crate::bedrock::retry::SmithyClock,
+    ) -> Self {
+        // The limiter only gates sends in adaptive mode; a dormant instance
+        // keeps the state shape uniform for standard mode.
+        let limiter = crate::bedrock::retry::AdaptiveRateLimiter::new(clock);
+        Self {
+            config,
+            quota: crate::bedrock::retry::SmithyRetryQuota::default(),
+            limiter,
+            completed_retries: 0,
+            spent: None,
+            refunded: false,
+        }
+    }
+
+    /// The limiter's current wall-clock seconds (used to schedule the
+    /// post-backoff send-token wait).
+    fn limiter_wall_secs(&self) -> f64 {
+        self.limiter.wall_secs()
+    }
+}
+
 struct AcquisitionInner {
     policy: AcquisitionPolicy,
     /// The single execution lease shares the lock with admission and sealing.
@@ -322,6 +391,8 @@ struct AcquisitionInner {
     /// Extra sends admitted in the current variant. The shared counter is
     /// what callers cannot reset.
     retries_admitted: u32,
+    /// Attempts whose start was reserved (1-based wire attempt numbers).
+    dispatches: u32,
     /// Deadline before which `start_attempt` refuses dispatch.
     ready_at: Option<Instant>,
     /// The admission awaiting the caller's next start, if any.
@@ -329,6 +400,8 @@ struct AcquisitionInner {
     /// Sticky sealed state; the first seal wins.
     sealed: Option<AcquisitionSeal>,
     jitter: JitterRng,
+    /// Smithy mode state when the frozen policy selects the AWS family.
+    smithy: Option<SmithyAttemptState>,
 }
 
 impl AcquisitionCore {
@@ -337,6 +410,13 @@ impl AcquisitionCore {
             Some(seed) => JitterRng(seed),
             None => JitterRng::from_entropy(),
         };
+        let smithy = match &policy.source {
+            RetrySourcePolicy::Helper => None,
+            RetrySourcePolicy::Smithy(config) => Some(SmithyAttemptState::new(
+                config.clone(),
+                policy.smithy_clock.clone(),
+            )),
+        };
         Self {
             inner: Mutex::new(AcquisitionInner {
                 policy,
@@ -344,10 +424,12 @@ impl AcquisitionCore {
                 variant_index: 0,
                 variants_used: 0,
                 retries_admitted: 0,
+                dispatches: 0,
                 ready_at: None,
                 admission: None,
                 sealed: None,
                 jitter,
+                smithy,
             }),
         }
     }
@@ -372,8 +454,25 @@ impl AcquisitionCore {
             }
             inner.ready_at = None;
         }
+        inner.dispatches += 1;
         inner.active = true;
         Ok(())
+    }
+
+    /// The wire-visible attempt context for the reserved attempt: 1-based
+    /// attempt number, the frozen total budget, and the episode's invocation
+    /// id (task 20.20, `amz-sdk-request`/`amz-sdk-invocation-id`).
+    pub(crate) fn attempt_context(&self, invocation_id: &str) -> crate::provider::AttemptContext {
+        let inner = self.inner.lock().expect("acquisition core poisoned");
+        let max_attempts = match &inner.policy.source {
+            RetrySourcePolicy::Helper => inner.policy.max_retries.saturating_add(1),
+            RetrySourcePolicy::Smithy(config) => config.max_attempts,
+        };
+        crate::provider::AttemptContext {
+            invocation_id: invocation_id.to_owned(),
+            attempt: inner.dispatches.max(1),
+            max_attempts,
+        }
     }
 
     /// Release an observed terminal or an unpolled lease. Terminal state is
@@ -393,9 +492,19 @@ impl AcquisitionCore {
 
     /// Record a successful streaming-response handoff: the first delivered
     /// stream item seals acquisition retry, even before the first public
-    /// content event.
+    /// content event. In Smithy mode the success also refunds the retry
+    /// quota and (adaptive) updates the measured/CUBIC send rate.
     pub(crate) fn note_handoff(&self) {
         let mut inner = self.inner.lock().expect("acquisition core poisoned");
+        if let Some(state) = inner.smithy.as_mut()
+            && !state.refunded
+        {
+            state.refunded = true;
+            if state.config.mode == crate::bedrock::retry::SmithyRetryMode::Adaptive {
+                state.limiter.update_client_sending_rate(false);
+            }
+            state.quota.refund(state.spent);
+        }
         if inner.sealed.is_none() {
             inner.sealed = Some(AcquisitionSeal::PostHandoff);
         }
@@ -433,6 +542,10 @@ impl AcquisitionCore {
             inner.admission = None;
             return;
         }
+        if inner.smithy.is_some() {
+            Self::note_smithy_failure(&mut inner, cause);
+            return;
+        }
         if !cause.is_retryable() {
             inner.admission = None;
             inner.sealed = Some(AcquisitionSeal::Finished);
@@ -450,6 +563,69 @@ impl AcquisitionCore {
         inner.ready_at = Some(Instant::now() + Duration::from_millis(delay_ms));
         inner.admission = Some(RetryAdmission {
             retry_index: inner.retries_admitted,
+            delay_ms,
+        });
+    }
+
+    /// The Smithy branch of [`AcquisitionCore::note_failure`]: exact
+    /// classification, the source's attempt/quota admission pair, the
+    /// bounded hint rule, and (adaptive) the send-token wait folded into the
+    /// readiness deadline.
+    fn note_smithy_failure(inner: &mut AcquisitionInner, cause: &ProviderError) {
+        use crate::bedrock::retry::SmithyErrorClass;
+
+        let class = crate::bedrock::retry::classify_attempt_failure(cause);
+        if !class.is_retryable() {
+            inner.admission = None;
+            inner.sealed = Some(AcquisitionSeal::Finished);
+            return;
+        }
+        let state = inner
+            .smithy
+            .as_mut()
+            .expect("smithy branch requires smithy state");
+        let next = state.completed_retries + 1;
+        if next >= state.config.max_attempts {
+            inner.admission = None;
+            inner.sealed = Some(AcquisitionSeal::Exhausted);
+            return;
+        }
+        let cost = crate::bedrock::retry::smithy_capacity_cost(class, state.config.smithy_2026);
+        if !state.quota.has_capacity(cost) {
+            // The source refuses the refresh token here; the spent budget
+            // surfaces with the last failure.
+            inner.admission = None;
+            inner.sealed = Some(AcquisitionSeal::Exhausted);
+            return;
+        }
+        state.quota.acquire(cost);
+        state.spent = Some(cost);
+        let adaptive = state.config.mode == crate::bedrock::retry::SmithyRetryMode::Adaptive;
+        if adaptive {
+            state
+                .limiter
+                .update_client_sending_rate(class == SmithyErrorClass::Throttling);
+        }
+        let hint = cause.retry_after_ms();
+        let unit = inner.jitter.fraction_unit();
+        let mut delay_ms = crate::bedrock::retry::smithy_backoff_delay_ms(
+            state.completed_retries,
+            class,
+            state.config.smithy_2026,
+            hint,
+            unit,
+        );
+        if adaptive {
+            // The source sleeps the backoff first, then waits for a send
+            // token with the bucket refilled at that later moment.
+            let at_secs = state.limiter_wall_secs() + delay_ms as f64 / 1000.0;
+            delay_ms += state.limiter.send_token_wait_ms(at_secs);
+        }
+        state.completed_retries += 1;
+        inner.retries_admitted = state.completed_retries;
+        inner.ready_at = Some(Instant::now() + Duration::from_millis(delay_ms));
+        inner.admission = Some(RetryAdmission {
+            retry_index: state.completed_retries,
             delay_ms,
         });
     }
@@ -499,6 +675,26 @@ fn retry_delay_ms(
 
 /// SplitMix64 jitter source. Not cryptographic; it only decorrelates backoff
 /// waits. Seeded deterministically for tests, from process entropy otherwise.
+/// Test-support preview: the first full-jitter unit draw (`[0, 1)`) a
+/// seeded Smithy policy will consume. Mirrors the private [`JitterRng`]
+/// sequence so fixtures can assert exact source delays.
+#[doc(hidden)]
+pub fn smithy_unit_jitter_preview(seed: u64) -> f64 {
+    smithy_unit_jitter_draw(seed, 0)
+}
+
+/// Test-support: the zero-based `index`th full-jitter unit draw of a seeded
+/// Smithy policy (the first retry consumes draw 0, the second draw 1, ...).
+#[doc(hidden)]
+pub fn smithy_unit_jitter_draw(seed: u64, index: u32) -> f64 {
+    let mut rng = JitterRng(seed);
+    let mut draw = 0.0;
+    for _ in 0..=index {
+        draw = rng.fraction_unit();
+    }
+    draw
+}
+
 struct JitterRng(u64);
 
 impl JitterRng {
@@ -522,6 +718,13 @@ impl JitterRng {
     /// covers the source's `[0.75, 1.0)` backoff factor.
     fn fraction_percent(&mut self) -> u64 {
         self.next_u64() % 25
+    }
+
+    /// Uniform unit jitter in `[0, 1)` for the Smithy full-jitter backoff.
+    fn fraction_unit(&mut self) -> f64 {
+        // 53 random mantissa bits over 2^53 covers f64's exact integer
+        // range, matching the source's Math.random() span.
+        (self.next_u64() >> 11) as f64 / 9_007_199_254_740_992.0
     }
 }
 

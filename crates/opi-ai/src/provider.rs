@@ -14,6 +14,21 @@ use crate::stream::AssistantStreamEvent;
 
 pub use crate::model_info::ModelInfo;
 
+/// Per-attempt dispatch context for providers that stamp retry-observability
+/// wire headers (task 20.20, `amz-sdk-invocation-id`/`amz-sdk-request`).
+///
+/// One invocation id is generated per logical call; the 1-based attempt
+/// index and the frozen total budget advance per send of the frozen payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttemptContext {
+    /// The logical call's stable invocation identifier.
+    pub invocation_id: String,
+    /// 1-based attempt index within the episode.
+    pub attempt: u32,
+    /// The frozen total attempt budget.
+    pub max_attempts: u32,
+}
+
 /// Provider trait — each concrete provider (Anthropic, OpenAI, etc.) implements this.
 ///
 /// Runtime catalog refresh is an object-safe substrate. The coding agent has
@@ -42,6 +57,29 @@ pub trait Provider: Send + Sync {
     /// credential variant. Every variant is prepared once by the collection
     /// and reused unchanged across retry attempts.
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream;
+
+    /// Dispatch one attempt with its wire-visible attempt context (task
+    /// 20.20). The default ignores the context and reuses
+    /// [`stream_prepared`](Self::stream_prepared); AWS wires override it to
+    /// stamp the source's per-attempt `amz-sdk-invocation-id` and
+    /// `amz-sdk-request` headers onto the signed request.
+    fn stream_attempt(
+        &self,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        _attempt: AttemptContext,
+    ) -> EventStream {
+        self.stream_prepared(request, auth)
+    }
+
+    /// The provider's protocol-default acquisition policy for ordinary
+    /// [`prepare_call`](crate::Models::prepare_call) entries (AIR-007).
+    /// Helper/Codex wires default to zero extra sends; a provider that owns a
+    /// retry protocol (Bedrock's frozen Smithy configuration) returns it
+    /// here. An explicit per-call policy still overrides this default.
+    fn acquisition_policy_default(&self) -> crate::retry::AcquisitionPolicy {
+        crate::retry::AcquisitionPolicy::default()
+    }
 
     /// Replace this provider's effective model catalog before it is shared.
     ///
@@ -539,6 +577,22 @@ pub enum ProviderError {
     },
     #[error("provider error: {0}")]
     ProviderSide(ProviderErrorSummary),
+    /// A structured service-model failure carrying the wire status and error
+    /// name (task 20.20). AWS wires surface this so the acquisition owner can
+    /// classify through the source's exact trait/name rules; other consumers
+    /// see the same taxonomy category as [`ProviderSide`](Self::ProviderSide).
+    #[error("service fault {status}: {detail}")]
+    ServiceFault {
+        /// The HTTP status code of the failed response.
+        status: u16,
+        /// The wire service error type name, when exposed.
+        #[doc(hidden)]
+        error_name: Option<String>,
+        /// Server-advised retry delay in milliseconds, when present.
+        retry_after_ms: Option<u64>,
+        /// Redacted human-readable detail.
+        detail: ProviderErrorSummary,
+    },
     #[error("unsupported capability: {0}")]
     UnsupportedCapability(ProviderErrorSummary),
     #[error("cancelled")]
@@ -618,6 +672,16 @@ impl ProviderError {
         if let Self::StreamFailure(failure) = self {
             return failure.cause.is_retryable();
         }
+        if let Self::ServiceFault {
+            status, error_name, ..
+        } = self
+        {
+            // The taxonomy-layer projection of the source's classification;
+            // the acquisition owner re-classifies exactly through the frozen
+            // mode rules.
+            return crate::bedrock::retry::classify_service_failure(*status, error_name.as_deref())
+                .is_retryable();
+        }
         matches!(
             self,
             ProviderError::RateLimited { .. } | ProviderError::Timeout | ProviderError::Network(_)
@@ -645,6 +709,7 @@ impl ProviderError {
             }
             ProviderError::Timeout | ProviderError::Network(_) => ProviderErrorCategory::Network,
             ProviderError::RateLimited { .. } => ProviderErrorCategory::RateLimit,
+            ProviderError::ServiceFault { .. } => ProviderErrorCategory::Provider,
             ProviderError::ProviderSide(_) => ProviderErrorCategory::Provider,
             ProviderError::StreamError(_) => ProviderErrorCategory::Stream,
             ProviderError::UnsupportedCapability(_) => ProviderErrorCategory::Capability,
@@ -662,6 +727,7 @@ impl ProviderError {
         match self {
             ProviderError::StreamFailure(failure) => failure.cause.retry_after_ms(),
             ProviderError::RateLimited { retry_after_ms } => *retry_after_ms,
+            ProviderError::ServiceFault { retry_after_ms, .. } => *retry_after_ms,
             _ => None,
         }
     }

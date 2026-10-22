@@ -2,6 +2,51 @@
 
 ### Breaking Changes
 
+- `opi-ai`: Bedrock generation sends retry through the pinned AWS Smithy V2
+  modes (task 20.20). The new `bedrock::retry` module owns the exact
+  algorithm from the locked `@smithy/core@3.33.3` retry middleware and the
+  Bedrock error model: `standard` and `adaptive` are the two known modes
+  (an unknown mode is a typed configuration failure, never `Unsupported`
+  and never silently standard), the Smithy2026 constants are an explicit
+  frozen branch, and scoped `AWS_RETRY_MODE`/`retry_mode` and
+  `AWS_MAX_ATTEMPTS`/`max_attempts` inputs resolve with the source's
+  environment-over-profile-over-default precedence (shared-config entries
+  read through a minimal profile-section reader) without sampling ambient
+  process state. Failure classification is exact through a new structured
+  `ProviderError::ServiceFault` variant (HTTP status plus the
+  `x-amzn-errortype` wire name): 429 and throttling names are THROTTLING,
+  the modeled `$retryable` trait (`ModelNotReadyException`), transient
+  names, transport timeouts/network failures, and statuses 500/502/503/504
+  are TRANSIENT, bare other 5xx are SERVER_ERROR, and client faults
+  including `ModelTimeoutException` on 408 are CLIENT_ERROR — no blanket
+  408/409/501/505 retry and no helper 60-second hint cap on Smithy. The
+  acquisition owner (`AcquisitionPolicy` gains a `RetrySourcePolicy`:
+  helper rules stay the default; `Smithy(SmithyRetryConfig)` applies the
+  AWS family) enforces the source's admission pair (retryable class,
+  `count+1 < max_attempts`, per-call quota capacity) with the per-logical-
+  call quota starting at 500 (costs 5/10, or 5/14 with 2026 constants;
+  success refunds the spent cost or +1), full-jitter backoff
+  `floor(u * min(base * 2^count, 20s))` on the 100/500ms (50/1000ms in
+  2026) bases, server hints (`Retry-After` seconds/HTTP-dates/` GMT, N`
+  and `x-amz-retry-after` milliseconds) bounded by
+  `max(delay, min(hint, delay + 5s))`, and adaptive mode's CUBIC
+  client-side rate limiter (beta 0.7/scale 0.4/smooth 0.8 EWMA over
+  half-second buckets, multiplicative cut on throttling, cubic recovery,
+  send-token waits folded into the same cancellable readiness deadline;
+  injectable `SmithyClock` for deterministic tests). Ordinary
+  `Models::prepare_call` now freezes the provider's protocol default
+  (`Provider::acquisition_policy_default`; Bedrock = its frozen Smithy
+  config, helper/Codex wires keep zero extras), and each Bedrock send
+  stamps the wire `amz-sdk-invocation-id` (one uuid v4 per logical call,
+  threaded through the new `Provider::stream_attempt` dispatch with its
+  `AttemptContext`) and `amz-sdk-request: attempt=N; max=M` headers while
+  re-signing SigV4 with a fresh timestamp over the byte-identical frozen
+  payload and credential. Auth-source exchanges never draw from the
+  generation quota; the two send families stay separately counted. The
+  `uuid` workspace dependency gains the `v4` feature. Migrated callers:
+  `opi-agent` diagnostics/summaries and the interactive auth presenter map
+  the new `ServiceFault` variant (same provider-side category and
+  presentation as `ProviderSide`).
 - `opi-ai`: the local AWS chain closes the SSO and login-session families
   and the complete source cache (task 20.19.3). The chain order is now
   Env -> explicit SSO -> INI (assume-role -> static -> web identity ->

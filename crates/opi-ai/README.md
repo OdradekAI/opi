@@ -188,7 +188,9 @@ policy.
 ### Acquisition retry owner (AIR-007)
 
 `prepare_call_with_policy` freezes an `AcquisitionPolicy` per logical call
-(`prepare_call` keeps the default of zero extra sends). The prepared call is
+(ordinary `prepare_call` freezes the provider's protocol default: zero extra
+sends for helper/Codex wires, the frozen AWS Smithy configuration for
+Bedrock). The prepared call is
 the one acquisition-retry owner: it classifies observed attempt failures,
 keeps the per-payload-variant send counters (`max_retries` counts extra sends
 per variant, so an ordinary episode performs at most `1 + max_retries`
@@ -937,3 +939,33 @@ Upgrade → codec path, continuation/pool behavior or complete cleanup acceptanc
 ## License
 
 MIT. See the packaged [LICENSE](LICENSE) and compression [NOTICE](NOTICE).
+
+### AWS Smithy V2 retry modes (Bedrock)
+
+Bedrock generation sends retry through the pinned AWS modes
+(`bedrock::retry`): `standard` and `adaptive` are the two known modes (an
+unknown `retry_mode` is a typed configuration failure, never `Unsupported`
+and never silently standard), and the Smithy2026 constants are an explicit
+frozen branch on the construction-time configuration. Scoped inputs resolve
+`AWS_RETRY_MODE`/`retry_mode` and `AWS_MAX_ATTEMPTS`/`max_attempts` with the
+source's precedence (environment, then shared-config profile, then the
+standard/legacy/3-total default) and never sample ambient process state.
+Classification is exact: 429 and the throttling error names are THROTTLING;
+the `$retryable` trait (`ModelNotReadyException`), the transient names,
+transport timeouts/network failures, and statuses 500/502/503/504 are
+TRANSIENT; bare other 5xx are SERVER_ERROR and client faults
+(`ModelTimeoutException` on 408, 409, 403, 400 without a trait) are
+CLIENT_ERROR — no blanket `>=500` retry and no helper 60-second hint cap.
+The per-call quota starts at 500 tokens (costs 5/10, or 5/14 with 2026
+constants; success refunds), `floor(u * min(base * 2^count, 20s))` full
+jitter runs on the 100/500ms (50/1000ms in 2026) bases, and server hints
+(`Retry-After` seconds/dates and `x-amz-retry-after` milliseconds) adjust
+with the bounded `max(delay, min(hint, delay + 5s))` rule. Adaptive mode
+adds the CUBIC client-side rate limiter (measured-rate EWMA over half-second
+buckets, multiplicative cut on throttling, cubic recovery) whose send-token
+wait folds into the same cancellable readiness deadline. Each send stamps
+the wire `amz-sdk-invocation-id` (one uuid per logical call) and
+`amz-sdk-request: attempt=N; max=M` headers and re-signs SigV4 with a fresh
+timestamp while the frozen credential and payload stay byte-identical;
+source-exchange sends and generation sends are counted separately and the
+quota never spans calls.

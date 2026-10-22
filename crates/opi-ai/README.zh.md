@@ -168,7 +168,8 @@ store 继承 inline 默认实现。revision 与 receipt 是进程内视图；
 额外 send 必须经过 SDK admission。
 
 `prepare_call_with_policy` 为每个逻辑调用冻结一份 `AcquisitionPolicy`
-（`prepare_call` 保持默认零额外 send）。prepared call 是唯一的采集重试 owner：它对观测到的
+（普通 `prepare_call` 冻结 provider 的协议默认：helper/Codex wire 为零额外
+send，Bedrock 为其冻结的 AWS Smithy 配置）。prepared call 是唯一的采集重试 owner：它对观测到的
 attempt 失败进行分类、维护每 payload 变体的 send 计数（`max_retries` 按变体计额外 send，
 普通 episode 至多 `1 + max_retries` 次）、计算 source-qualified 等待并封存状态。可重试失败且
 预算仍有余量时，`retry_admission()` 返回 1 起始的 `retry_index` 与 `delay_ms`（服务器 hint
@@ -778,3 +779,26 @@ cleanup 验收。
 ## 许可证
 
 MIT。详见包内 [LICENSE](LICENSE) 与压缩 [NOTICE](NOTICE)。
+
+### AWS Smithy V2 重试模式（Bedrock）
+
+Bedrock 生成发送按锁定的 AWS 模式重试（`bedrock::retry`）：`standard` 与
+`adaptive` 是仅有的已知模式（未知 `retry_mode` 是类型化配置失败，绝不
+Unsupported 或静默 standard），Smithy2026 常量是构造期配置上的显式冻结分支。
+Scoped 输入按来源优先级（环境、共享配置 profile、standard/legacy/3 总次数默认）
+解析 `AWS_RETRY_MODE`/`retry_mode` 与 `AWS_MAX_ATTEMPTS`/`max_attempts`，
+绝不采样 ambient 进程状态。分类完全精确：429 与限流错误名为 THROTTLING；
+`$retryable` trait（`ModelNotReadyException`）、瞬态名单、传输超时/网络失败
+以及 500/502/503/504 为 TRANSIENT；其余裸 5xx 为 SERVER_ERROR，客户端错误
+（408 的 `ModelTimeoutException`、409、403、无 trait 的 400）为 CLIENT_ERROR
+——没有整段 `>=500` 重试，也不套 helper 的 60 秒 hint 上限。每次调用的配额从
+500 token 起步（成本 5/10，2026 常量为 5/14；成功返还），
+`floor(u * min(base * 2^count, 20s))` 全抖动退避基于 100/500ms（2026 为
+50/1000ms）基数，服务器 hint（`Retry-After` 秒/日期与 `x-amz-retry-after`
+毫秒）按 `max(delay, min(hint, delay + 5s))` 有界调整。adaptive 模式追加
+CUBIC 客户端限速器（半秒桶 EWMA 实测速率、限流乘性削减、立方恢复），
+其 send-token 等待并入同一可取消的 readiness 截止。每次发送在线上标记
+`amz-sdk-invocation-id`（每逻辑调用一个 uuid）与
+`amz-sdk-request: attempt=N; max=M` 头，并以新时间戳重签 SigV4，而冻结的
+凭据与 payload 保持字节一致；来源交换发送与生成发送分开计数，配额从不
+跨调用。

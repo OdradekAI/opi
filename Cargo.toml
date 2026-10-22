@@ -80,7 +80,7 @@ schemars = "1.2"
 jsonschema = "0.28"
 
 # IDs/time
-uuid = { version = "1", features = ["v7"] }
+uuid = { version = "1", features = ["v4", "v7"] }
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
 # file search

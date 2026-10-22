@@ -262,6 +262,17 @@ fn provider_metadata(error: &ProviderError) -> serde_json::Value {
             serde_json::json!({ "variant": "rate_limited", "retry_after_ms": retry_after_ms })
         }
         ProviderError::Timeout => serde_json::json!({ "variant": "timeout" }),
+        ProviderError::ServiceFault {
+            status,
+            error_name,
+            retry_after_ms,
+            ..
+        } => serde_json::json!({
+            "variant": "service_fault",
+            "status": status,
+            "error_name": error_name,
+            "retry_after_ms": retry_after_ms,
+        }),
         ProviderError::RequestFailed(summary) => serde_json::json!({
             "variant": "request_failed",
             "summary": summary.as_str(),
@@ -346,6 +357,7 @@ fn provider_summary(error: &ProviderError) -> Option<&ProviderErrorSummary> {
         | ProviderError::Config(summary)
         | ProviderError::ProviderSide(summary)
         | ProviderError::UnsupportedCapability(summary) => Some(summary),
+        ProviderError::ServiceFault { detail, .. } => Some(detail),
         ProviderError::RateLimited { .. }
         | ProviderError::Timeout
         | ProviderError::CredentialNeeded { .. }

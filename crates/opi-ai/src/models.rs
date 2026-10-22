@@ -681,8 +681,12 @@ impl Models {
         spec: &str,
         request: Request,
     ) -> Result<PreparedProviderCall, ModelsError> {
-        self.prepare_call_with_policy(spec, request, crate::retry::AcquisitionPolicy::default())
-            .await
+        // Ordinary entries freeze the provider's protocol-default
+        // acquisition policy (helper/Codex wires default to zero extra
+        // sends; Bedrock freezes its resolved Smithy configuration).
+        let (provider_ref, _model) = self.registry.resolve(spec)?;
+        let policy = provider_ref.acquisition_policy_default();
+        self.prepare_call_with_policy(spec, request, policy).await
     }
 
     /// Resolve one canonical `provider:model` route, validate the request,
@@ -755,6 +759,7 @@ impl Models {
             route,
             credential_terminal: Arc::new(AtomicBool::new(false)),
             acquisition: Arc::new(crate::retry::AcquisitionCore::new(policy)),
+            invocation_id: uuid::Uuid::new_v4().to_string(),
         })
     }
 
@@ -1365,6 +1370,9 @@ pub struct PreparedProviderCall {
     /// The acquisition-retry owner: per-variant send counters, retry
     /// admission, readiness deadline, and sealed states.
     acquisition: Arc<crate::retry::AcquisitionCore>,
+    /// The logical call's stable retry-invocation identifier (the wire
+    /// `amz-sdk-invocation-id`; task 20.20).
+    invocation_id: String,
 }
 
 struct AttemptStream {
@@ -1566,8 +1574,9 @@ impl PreparedProviderCall {
         let provider = self.provider.clone();
         let request = self.request.clone();
         let auth = self.auth.clone();
+        let attempt = self.acquisition.attempt_context(&self.invocation_id);
         let stream = Box::pin(
-            stream::once(async move { provider.stream_prepared(request, auth) }).flatten(),
+            stream::once(async move { provider.stream_attempt(request, auth, attempt) }).flatten(),
         );
         Ok(Box::pin(AttemptStream {
             inner: stream,

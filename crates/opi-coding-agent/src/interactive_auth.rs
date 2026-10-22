@@ -290,7 +290,9 @@ fn present_provider_error(error: &ProviderError) -> String {
         ProviderError::Config(_)
         | ProviderError::MissingWireRoute { .. }
         | ProviderError::WireCompatMismatch { .. } => "authentication configuration failed",
-        ProviderError::ProviderSide(_) => "authentication provider failed",
+        ProviderError::ProviderSide(_) | ProviderError::ServiceFault { .. } => {
+            "authentication provider failed"
+        }
         ProviderError::UnsupportedCapability(_) => "authentication is not supported",
         ProviderError::Cancelled => "authentication cancelled",
         ProviderError::LoginCancelled { provider_id } => {
