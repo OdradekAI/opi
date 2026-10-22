@@ -6147,7 +6147,7 @@
       "definition_of_done": "Complete impersonated_service_account recursive source_credentials, target/delegates/cloud-platform/lifetime/RFC3339 expiry, and external-account optional IAM impersonation through the same real Vertex public call. Preserve source/target identity separation and all supported family compositions without a new depth cap. Finish identity/config/resource/target/delegate/audience/scope/project/quota/endpoint/TLS cache keys, single-flight, one5min refresh window, short-TTL use for the current call, late-publication fencing and identity-unverified recovery restrictions. Own full five JSON families, every external subtype, explicit direct metadata, configured presence and Express source coverage by reusing 20.21.1/2 proof plus distinct recursive/cache cases. Validate final Vertex Authorization/target/quota/source provenance; returning a token alone cannot close the slice. Full generation protocol coverage remains 20.41.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.21.2",
         "20.22"
@@ -6235,7 +6235,7 @@
           "production_call_sites": [
             "opi_ai::Models::get_auth/stream -> selected ADC source -> migrated VertexProvider::stream_prepared -> local SSE response (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -6244,7 +6244,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "23dd2a3",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -6260,10 +6260,87 @@
         "crates/opi-ai/tests/auth_contracts.rs",
         "crates/opi-ai/tests/vertex_fixtures.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "5086aa6dd8d67d2928a32051709d16cb6b50a297",
+      "evidence": {
+        "task": "20.21.3",
+        "dod_sha256": "fadf858a12b5df1d296604adea86baedae32e7fc3d7effef3ee9334fa419450d",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED; scenario tests: opi-ai auth_contracts 105 passed (19 new), vertex_fixtures 43 passed (4 new through-Models), lib 326 passed, test_hermeticity 15 passed",
+        "evaluator": "passed",
+        "acceptance": "P20-S21; Models get_auth -> AdcNativeOwner (keyed single-flight cache, 5-min eager window, short-TTL current-call service, generation fencing) -> recursive source_credentials through the same adapter -> IAM generateAccessToken (reconstructed endpoint, delegates/scope/lifetime, RFC3339 expireTime) or external STS then IAM -> VertexProvider stream_prepared (the impersonated token rides the Bearer header, x-goog-user-project from the impersonated file, Impersonated provenance keeping source and target separate); stable_identity governs automatic whole-call recovery; ordinary retries reuse the frozen token"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-23T03:30:00+00:00",
+          "attempt": 1,
+          "summary": "Delivered impersonation, recursive composition and the keyed access cache. Corpus: restored read-only google-auth-library@10.6.2 into a fresh temp dir (never executed, never committed) and verified every constant from source: googleauth.fromImpersonatedJSON (required source_credentials + service_account_impersonation_url, 256-char DOS bound, target regex (?<target>[^/]+):(generateAccessToken|generateIdToken)$, targetScopes = this.scopes || json.scopes || default, delegates/lifetime spread from json), impersonated.js (constructor default lifetime 3600 up to 43200 extended, endpoint default https://iamcredentials.{universeDomain}, universe from source unless explicit with RangeError on mismatch, refreshToken: sourceClient.getAccessToken() then POST {endpoint}/v1/projects/-/serviceAccounts/{target}:generateAccessToken with body {delegates, scope, lifetime+\"s\"} through sourceClient.request (the source access token rides the Bearer header), response accessToken + expireTime parsed by Date.parse, error wrapping \"unable to impersonate\"), baseexternalclient (optional service_account_impersonation_url: STS scope forced to [DEFAULT_OAUTH_SCOPE] when set, then POST to the RAW url with the federated token on the Bearer header and body {scope: getScopesArray(), lifetime: token_lifetime_seconds||3600+\"s\"} with NO delegates, expiry from expireTime, config-lifetime flag), oauth2common/gaxios RETRY_CONFIG (same fixed budget as prior tasks), authclient eagerRefreshThresholdMillis (5min) and the #pendingAccessToken single-flight (refreshAccessTokenAsync shares one in-flight promise). Implementation: new auth/adc/impersonation.rs (family parse with typed ImpersonationConfigInvalid/TargetInvalid/UniverseMismatch/ResponseInvalid, recursive resolution through a new native::exchange_family_for_value entry over the shared family dispatcher with the impersonation arm boxed (async recursion has no static bound; no depth cap added), endpoint reconstruction from the effective universe, RFC3339 expireTime, refresh-credential rotation forwarded from embedded EAU sources, provenance Impersonated{source: Box, target_principal, delegates: len, quota_project}); new auth/adc/cache.rs (AdcCacheKey 10-part grammar from §3.4 with DefaultHasher digest, AdcTokenCache with per-key tokio-mutex single-flight, post-flight re-read so merged waiters see the published token and acquisitions run under the generation visible at their start, short-TTL fallback serving a still-valid cached token when the one acquisition attempt fails, generation fencing on invalidate; EAGER_REFRESH + token_needs_refresh moved here from native); native.rs (impersonated_service_account admitted, parse_adc_json split for recursion, AdcNativeInput.impersonation_endpoint + builders, AdcNativeOwner rebuilt over the keyed cache with with_impersonation_endpoint/invalidate, rotation adoption retained, stable_identity() on AdcResolvedToken returning the impersonation target only); external.rs (impersonation URL validated at parse, token_lifetime_seconds parsed, forced cloud-platform STS scope when impersonating, post-STS IAM leg at the raw URL or override wrapping the federation provenance); auth.rs (Impersonated variant); vertex.rs (quota arm). Dev incidents: two design bugs found and fixed by the failing tests before any commit - cache waiters initially re-checked a pre-flight stale snapshot (causing double acquisitions and a gated-transport hang; fixed by post-flight re-read), and the gated test transport needed a disarm+release mechanism; one 20.21.2 executable test needed a second scripted reply because the file it uses for IMPERSONATED_EMAIL now legitimately activates the IAM leg. The 20.21.2 typed-unadmitted gate test was superseded (family admitted; 19 stronger tests own it) and the 20.21.1 future-families test dropped its impersonated row. Zero manifest/dependency/config changes; no live endpoints dialed. Exec D.2 (7 lenses, evaluator inline): 0 must-fix, 5 flagged_for_human (json.scopes substitutes only when the request carried exactly the default singleton - an explicit cloud-platform request is indistinguishable; the source leg re-exchanges per impersonated refresh rather than caching the source client separately as Node does; stable_identity returns None for plain service_account files because the classification carries no client_email - fail-closed for whole-call recovery; the corpus endpoint constructor option is not modeled, the canonical impersonation_endpoint override pins the leg instead; credentials without any expiry refresh per call per the 20.21.1 owner policy where Node treats absent expiry as never-expired), 1 rejected (a process-global shared token cache: §3.4 scopes the cache per source, so the owner-local keyed cache is the contract).",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED (after fmt, clippy fixes, hermeticity scope-literal fix via CLOUD_PLATFORM_SCOPE, and full-path rustdoc links)",
+            "d0_scenarios": "cargo test -p opi-ai --test auth_contracts --test vertex_fixtures -> 105 + 43 passed; lib 326 passed; test_hermeticity 15 passed",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified via scripted-transport request captures and wiremock matchers with exact expect(1) counts (source refresh form, reconstructed IAM URL, source credential on the Bearer header, delegates/scope/lifetime body, forced STS scope, no-delegates external body), real process-free recursion via three scripted legs, gated-transport proofs of single-flight and fencing, RFC3339 parsing against fixed instants; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 5 flagged_for_human, 1 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S21",
+                "action": "add",
+                "test": "crates/opi-ai/tests/auth_contracts.rs::adc_impersonation (19 tests: impersonated_missing_source_credentials_is_typed, impersonated_missing_impersonation_url_is_typed, impersonated_target_principal_unextractable_is_typed, impersonated_url_too_long_is_typed, impersonated_malformed_delegates_and_lifetime_are_typed, impersonated_reconstructs_the_wire_request_from_the_universe, impersonated_lifetime_and_scopes_come_from_the_file, impersonated_service_account_source_flows_identity, impersonated_recursive_nesting_has_no_new_depth_cap, impersonated_universe_mismatch_is_typed_and_match_flows, impersonated_response_and_rejection_are_typed, external_impersonation_flows_after_sts_with_forced_scope, external_impersonation_defaults_and_validates_the_url, cache_keys_discriminate_every_source_dimension, owner_single_flight_merges_concurrent_resolutions, owner_short_ttl_token_serves_the_current_call_without_looping, owner_late_refresh_does_not_publish_after_invalidation, stable_identity_reports_the_wire_principal_only, cache_serves_fresh_tokens_and_single_flights_per_key)",
+                "interface": "auth::adc impersonation + cache public surface",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21",
+                "action": "add",
+                "test": "crates/opi-ai/tests/vertex_fixtures.rs::adc_impersonation::{impersonated_authorized_user_streams_bearer_with_quota_and_provenance, owner_caches_the_impersonated_chain_across_streams, external_federation_then_impersonation_streams_bearer, impersonation_failure_sends_zero_generation}",
+                "interface": "Models -> resolver -> VertexProvider through-Models path",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21",
+                "action": "add",
+                "test": "crates/opi-ai/src/auth/adc/cache.rs tests::eager_window_matches_the_five_minute_threshold (moved from native.rs where it lived since 20.21.1)",
+                "interface": "cache eager window",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21-2",
+                "action": "update",
+                "test": "crates/opi-ai/tests/auth_contracts.rs::adc_external::executable_stale_cache_spawns_with_source_env scripts a second reply because its file carries service_account_impersonation_url for the IMPERSONATED_EMAIL env assertion, which now legitimately activates the IAM leg after the STS exchange",
+                "interface": "external executable supplier + IAM composition",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21-1",
+                "action": "update",
+                "test": "crates/opi-ai/tests/auth_contracts.rs::adc_native::adc_unknown_and_future_families_fail_typed drops its impersonated_service_account row (family admitted by 20.21.3; unknown-type and external_account rows retained)",
+                "interface": "ADC family dispatch",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21-2",
+                "action": "delete",
+                "test": "crates/opi-ai/tests/auth_contracts.rs::adc_external::impersonated_service_account_stays_unadmitted (typed-unadmitted gate for the then-future family)",
+                "interface": "ADC family admission",
+                "replacement": "superseded by adc_impersonation (19 tests) and vertex adc_impersonation (4 through-Models tests) proving the admitted family end to end",
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-STORE",
+                "action": "retain",
+                "test": "all pre-existing store/mutation corpora unchanged",
+                "interface": "unrelated owners",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ],
+      "dod_sha256": "fadf858a12b5df1d296604adea86baedae32e7fc3d7effef3ee9334fa419450d"
     },
     {
       "id": "20.22",
@@ -16941,6 +17018,16 @@
       "rejected_count": 3,
       "ran_at": "2026-10-23T01:30:00+00:00",
       "task_id": "20.21.2",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 5,
+      "rejected_count": 1,
+      "ran_at": "2026-10-23T03:30:00+00:00",
+      "task_id": "20.21.3",
       "criterion_id": null
     }
   ]
