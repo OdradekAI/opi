@@ -5543,7 +5543,7 @@
       "definition_of_done": "Implement all pinned retry modes and scoped retry_mode/max_attempts/shared config, exact error traits/network classification, quota/rate lifetime and cancellable jitter/hint timing. No known mode becomes Unsupported or silently standard, no blanket408/409/501/505 retry and no helper60s cap imposed on Smithy. Actual public Bedrock fixture counts source exchange versus generation sends and preserves same credential with fresh signature timestamps.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.4",
         "20.19.3"
@@ -5598,6 +5598,16 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-ACQUISITION; role=consumer; owner_task=20.4; module=opi_ai::retry; interface=PreparedCall::start_attempt; representation=state machine; consumer_tasks=20.11,20.16,20.20,20.34,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.51; criterion_ids=AIR-007,V-05; legacy_paths=Agent main-loop duplicate acquisition scheduling, product summary new-call recovery is retained; closure_test=crates/opi-ai/tests/retry_backoff.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Later-discovered necessary paths with evidence: provider.rs owns the ProviderError taxonomy and the Provider dispatch trait that the pinned Smithy V2 classification and per-attempt wire headers must flow through (ServiceFault status/name + stream_attempt attempt context; the acquisition owner from 20.4 already spans retry.rs+models.rs+provider.rs); models.rs owns prepare_call and PreparedProviderCall where the per-logical-call policy, quota lifetime, and episode invocation id are frozen; provider_factory.rs builds the Bedrock bundle and must resolve/freeze the scoped retry_mode/max_attempts shared-config inputs at construction without ambient sampling; root Cargo.toml widens the existing uuid workspace dep features with v4 for the pinned amz-sdk-invocation-id wire header (pure Rust, no new dependency).",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#338 AWS retry; sdk-consumer-contract.md#UX-16"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Required caller migration for the new ProviderError::ServiceFault variant (non_exhaustive-adjacent exhaustive matches downstream): opi-agent diagnostic.rs maps provider errors to Diagnostic codes/severities (ServiceFault rides CODE_PROVIDER_SIDE with status/error_name/retry_after_ms details); loop_types.rs and provider_public_safety.rs expose redaction-safe summaries (the variant detail); opi-coding-agent interactive_auth.rs presents the same message as ProviderSide. These edits only add the new arm to existing exhaustive matches; no behavior of other variants changed. The earlier provider_factory.rs append proved unnecessary (the product bundle consumes the BedrockProvider protocol default without an explicit config edit) and no edit was made there. The append was recorded after the edits were discovered by workspace clippy during Phase C verification, not before; recorded here honestly per the append-only field contract.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#DEL-13 necessary consumer migration"
         }
       ],
       "tier": "workspace",
@@ -5626,7 +5636,7 @@
           "production_call_sites": [
             "opi_ai Bedrock public request-acquisition owner (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -5635,7 +5645,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "9d5ff6ec56b8b4d59bb0506b4e3360fa8e8fda40",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -5645,12 +5655,80 @@
         "crates/opi-ai/src/lib.rs",
         "crates/opi-ai/src/retry.rs",
         "crates/opi-ai/tests/bedrock_fixtures.rs",
-        "crates/opi-ai/tests/retry_backoff.rs"
+        "crates/opi-ai/tests/retry_backoff.rs",
+        "crates/opi-ai/src/provider.rs",
+        "crates/opi-ai/src/models.rs",
+        "crates/opi-coding-agent/src/provider_factory.rs",
+        "Cargo.toml",
+        "crates/opi-agent/src/diagnostic.rs",
+        "crates/opi-agent/src/loop_types.rs",
+        "crates/opi-agent/tests/provider_public_safety.rs",
+        "crates/opi-coding-agent/src/interactive_auth.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "90f840be8a2de2322cbd06903078a72cb3398509",
+      "evidence": {
+        "task": "20.20",
+        "dod_sha256": "ded6d192933eaef9054c63b51600ae572f836a603afce1de8b6211e91936a56c",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED (doc-check, fmt, all-target clippy, workspace tests, doc tests, rustdoc); scenario tests: opi-ai bedrock_fixtures 123 passed (13 new Smithy-mode tests incl. exact seeded delays, wire headers, frozen auth), retry_backoff 57 passed (17 new pure/classification/config/limiter tests), lib 319 passed; opi-ai+opi-agent+opi-coding-agent suites 4433 passed / 0 failed",
+        "evaluator": "passed",
+        "acceptance": "P20-S20; Models get_auth -> acquisition owner (RetrySourcePolicy::Smithy) -> BedrockProvider stream_attempt with amz-sdk-invocation-id/amz-sdk-request -> BedrockProvider::stream_prepared; standard/adaptive/Smithy2026 exact classification/quota/backoff/hint/limiter through the public prepared-call path; unknown mode typed-fails; source resolutions vs generation sends counted separately with fresh SigV4 timestamps on the frozen credential"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-22T19:30:00+00:00",
+          "attempt": 1,
+          "summary": "Implemented the pinned AWS Smithy V2 retry family through the public acquisition owner. Corpus re-verification: the research temp cache was empty, so the pinned @smithy/core@3.33.3 and @aws-sdk/client-bedrock-runtime@3.1127.0 packages were restored read-only into a fresh temp directory (npm pack + tar extract; no execution, no repo writes) and every constant verified from source: DEFAULT_RETRY_DELAY_BASE 100 / THROTTLING_RETRY_DELAY_BASE 500 (2026: 50/1000), quota 500 / RETRY_COST 5 / TIMEOUT_RETRY_COST 10 (2026: 14/5, modifiedCostType THROTTLING), NO_RETRY_INCREMENT 1, MAXIMUM_RETRY_DELAY 20s, hint rule max(delay, min(hint, delay+5s)), backoff floor(u*min(base*2^count,20s)) with count = completed retries, THROTTLING name list (14 names), TRANSIENT names [TimeoutError, RequestTimeout, RequestTimeoutException] + statuses [500,502,503,504], adaptive DefaultRateLimiter (beta 0.7, scaleConstant 0.4, smooth 0.8, minCapacity 1, minFillRate 0.5, half-second EWMA buckets, cubic throttle beta*rate / cubic success 0.4*(t-throttle-W)^3+lastMaxRate with W=cbrt(lastMaxRate*(1-beta)/0.4), newRate<=2*measured, bucket enabled only after first throttle, getSendToken deficit/fillRate wait), parseRetryAfterHeader (Retry-After numeric/HTTP-date/\" GMT, N\" + x-amz-retry-after ms, per-header fallthrough), amz-sdk-invocation-id (uuid v4 per episode) + amz-sdk-request attempt=N; max=M per send, config env AWS_RETRY_MODE/AWS_MAX_ATTEMPTS over profile retry_mode/max_attempts over default 3/standard, and Bedrock $retryable only on ModelNotReadyException (ModelTimeoutException has no trait). New bedrock::retry module (config resolution incl. a minimal profile-section reader, classification, quota, backoff/hint math, AdaptiveRateLimiter with injectable SmithyClock); ProviderError gains the structured ServiceFault {status, error_name, retry_after_ms, detail} variant with map_bedrock_status now reading x-amzn-errortype (401/403 stay AuthFailed; 408 ModelTimeout is now correctly non-retryable ClientError instead of the old Timeout approximation; 504/500 ride ServiceFault as transient statuses); AcquisitionPolicy gains RetrySourcePolicy (Helper default / Smithy(SmithyRetryConfig)) + smithy_clock and the per-call Smithy state (quota, limiter, completed retries, refund-on-handoff); Provider gains acquisition_policy_default (ordinary prepare_call freezes the protocol default: Bedrock = frozen Smithy config, helper/Codex = zero extras) and stream_attempt(AttemptContext) (Bedrock stamps amz-sdk-* into the signed header set); PreparedProviderCall generates the per-call uuid v4 invocation id. uuid workspace dep gains the v4 feature. Migrated callers: opi-agent diagnostic/loop_types/provider_public_safety and opi-coding-agent interactive_auth add the ServiceFault arm to existing exhaustive matches (same provider-side category/presentation). provider_factory needed no edit (product bundle consumes the BedrockProvider protocol default; the earlier owned-path append is recorded as unused). Exec D.2 (7 lenses sequential, evaluator workflow applied inline): 0 must-fix, 6 flagged_for_human (retry-after vs x-amz-retry-after precedence is deterministic retry-after-first because Rust HeaderMap has no enumeration order - the JS source iterates response-header insertion order; parseInt leniency \"3x\"->3 emulated while negative max_attempts clamp to 0 instead of the source negative header print; manual-clock tick scripting for adaptive unit tests is order-brittle and documented; the \" GMT, N\" hint form is implemented but the JS Date.parse fallback for other non-GMT formats is not (implementation-defined); auth-source exchange retry counts remain unpinned in the registered corpus so STS/SSO/OIDC/SignIn exchanges stay single-send (ECS/IMDS fixed budgets shipped in 20.19.2) - no fabricated counts; a full 100-send quota-exhaustion fixture is impractical due to backoff delays so exhaustion is covered by the pure quota math plus the admission pair), 3 rejected (auth-source standard-3 retry now - no pinned counts, fabrication; exposing AcquisitionCore publicly for tests - seam widening for test convenience; uuid v7 for the invocation id - v4 is the pinned source form). One environment incident: E: hit 100% full mid-verification causing cargo rmeta I/O errors; space freed externally before any cache deletion was attempted (the sanctioned prune tool found no eligible caches and no cargo clean or manual deletion was performed).",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED after fixing one rustdoc private-intra-doc-link; one prior run aborted on a full E: drive (transient environment condition, no cache deletion)",
+            "d0_scenarios": "cargo test -p opi-ai --test bedrock_fixtures --test retry_backoff -> 123 + 57 passed; cargo test -p opi-ai (lib) -> 319 passed; combined opi-ai+opi-agent+opi-coding-agent suites 4433 passed / 0 failed",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified inside test sources via wiremock request captures (headers, bodies, SigV4 dates, send counts) and seeded-jitter exact-delay assertions; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 6 flagged_for_human, 3 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S20",
+                "action": "add",
+                "test": "crates/opi-ai/tests/bedrock_fixtures.rs::smithy_retry::{transient_retries_with_exact_delays_wire_headers_and_frozen_auth, throttling_uses_500ms_base_and_bounds_hints_to_five_second_headroom, model_timeout_408_has_no_trait_and_is_never_retried, model_not_ready_carries_the_retryable_trait_and_retries, bare_5xx_501_and_505_are_never_blanket_retried, attempts_exhausted_seals_the_call_after_three_sends, readiness_deadline_and_cancellation_keep_waits_cancellable, adaptive_first_throttle_gates_the_next_send_with_a_token_wait, scoped_retry_config_wires_mode_and_attempts_through_the_provider, redirect_response_is_not_followed_and_counts_as_one_send, smithy_2026_constants_branch_is_exact, map_bedrock_status_keeps_auth_rejections_typed, source_exchanges_and_generation_sends_stay_separately_counted}",
+                "interface": "Models prepare/PreparedProviderCall + bedrock::retry",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S20",
+                "action": "add",
+                "test": "crates/opi-ai/tests/retry_backoff.rs::smithy::{config_defaults_standard_legacy_three, config_env_wins_over_profile_then_default, config_unknown_mode_fails_typed_never_silent_standard, config_bad_max_attempts_fails_typed, config_max_attempts_parses_leading_integer_like_source, mode_parse_accepts_only_published_names, classification_table_matches_source, transport_classification_maps_timeout_network_rate_limited, backoff_exact_values_for_seeded_unit, backoff_hint_bounded_to_five_second_headroom, quota_costs_and_refunds_per_flavor, hint_headers_parse_seconds_date_and_amz_milliseconds, profile_reader_extracts_retry_entries, smithy_policy_maps_total_attempts_to_extra_sends, seeded_policy_preview_matches_first_unit_draw, adaptive_limiter_disabled_until_first_throttle, adaptive_limiter_cut_and_recovery_math}",
+                "interface": "bedrock::retry pure surface",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S20",
+                "action": "update",
+                "test": "crates/opi-ai/tests/bedrock_fixtures.rs::{throttling_mapped_to_rate_limited, throttling_parses_retry_after_header, timeout_mapped_correctly, server_error_mapped_to_provider_side, bedrock_resolves_once_per_logical_call_and_reuses_frozen_auth_for_retry, separate_bedrock_logical_calls_resolve_fresh_credentials} + finish_timeout_attempt/finish_provider_side_attempt helpers: status mapping now rides ServiceFault (corpus-exact: 408 ModelTimeout non-retryable, 500/504 transient statuses, 501 SERVER_ERROR)",
+                "interface": "bedrock map_bedrock_status",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S20",
+                "action": "update",
+                "test": "crates/opi-agent/tests/provider_public_safety.rs + diagnostic/loop_types/interactive_auth matches gained the ServiceFault arm (required caller migration, DEL-13)",
+                "interface": "ProviderError taxonomy consumers",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-ACQUISITION",
+                "action": "retain",
+                "test": "all 40 pre-existing retry_backoff helper-family tests and the full pre-existing acquisition corpus unchanged (helper defaults and backoff untouched)",
+                "interface": "retry.rs helper family",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.21.1",
@@ -16683,6 +16761,16 @@
       "rejected_count": 2,
       "ran_at": "2026-10-22T05:40:00+00:00",
       "task_id": "20.19.3",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 6,
+      "rejected_count": 3,
+      "ran_at": "2026-10-22T19:30:00+00:00",
+      "task_id": "20.20",
       "criterion_id": null
     }
   ]
