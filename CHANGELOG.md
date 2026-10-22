@@ -2,6 +2,46 @@
 
 ### Breaking Changes
 
+- `opi-ai`: Vertex generation auth gains the pinned ADC native families and
+  the dual-mode wire (task 20.21.1). The new `auth::adc` module owns the
+  exact contracts from the locked `google-auth-library@10.6.2` /
+  `gaxios@7.1.4` / `@google/genai@2.21.0` / `gcp-metadata@8.1.2` sources:
+  a `service_account` file signs an RS256 JWT (alg-only header; claims
+  `iss`/`scope`/`aud`/`iat`/`exp = iat+3600`) through the RDF-23 crypto
+  owner and exchanges it at the canonical
+  `https://oauth2.googleapis.com/token` endpoint (the file's `token_uri`
+  never becomes a credential destination); an `authorized_user` file
+  refreshes with all four form fields and keeps `quota_project_id`
+  separately (it rides the generation request as `x-goog-user-project`); an
+  `external_account_authorized_user` file refreshes with HTTP Basic client
+  auth at its validated `token_url` or the default
+  `https://sts.{universe_domain}/v1/oauthtoken` endpoint, and a returned
+  refresh token replaces the owner's copy in place (the ADC file is never
+  rewritten by default). The explicitly selected direct metadata source
+  serves `GET .../service-accounts/default/token` with the
+  `Metadata-Flavor: Google` exchange in both directions, the frozen
+  residency timeout (`true` → none, otherwise 3000 ms), and the measured
+  single-send timeout. Token exchanges run the fixed Gaxios call
+  configuration (POST admitted, 3 extra retries, 2 no-response retries,
+  statuses 1xx/408/429/5xx, 100/500/1500 ms delays) through an injectable
+  transport with redirects terminal; they never enter the generation retry
+  owner. File selection keeps the source's precedence: an explicit
+  `GOOGLE_APPLICATION_CREDENTIALS` path (scoped or ambient) is terminal on
+  read/parse failure, the portable well-known file
+  (`%APPDATA%\gcloud\...` / `$HOME/.config/gcloud/...`) means not
+  configured when absent — missing configured credentials never trigger
+  metadata, BIOS, or gcloud discovery, and the not-yet-admitted families
+  (`impersonated_service_account`, `external_account`) fail typed. A new
+  `AuthProvenanceSource::Adc` variant carries the non-secret source facts
+  (family, quota project, rotation). `VertexProvider` now serves both
+  pinned wire modes: API-key Express (`x-goog-api-key` on the
+  project/location-less `aiplatform.googleapis.com/v1/publishers/...`
+  collection URL, `location = "global"` pins the shared domain on the
+  ADC route) and Bearer ADC with project/location; the provider factory's
+  vertex route resolves store credential/`GOOGLE_CLOUD_API_KEY` (Express) →
+  configured access-token env (Bearer) → ADC chain → typed
+  `CredentialNeeded`, with the Gemini key never reused for Vertex and a
+  half-configured project/location pair a typed construction error.
 - `opi-ai`: Bedrock generation sends retry through the pinned AWS Smithy V2
   modes (task 20.20). The new `bedrock::retry` module owns the exact
   algorithm from the locked `@smithy/core@3.33.3` retry middleware and the

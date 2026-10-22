@@ -150,3 +150,173 @@ fn vertex_url_does_not_contain_access_token() {
     assert!(!url.contains("super-secret-token"));
     assert!(url.contains("proj"));
 }
+
+// ---------------------------------------------------------------------------
+// ADC source wiring and Express construction (task 20.21.1)
+// ---------------------------------------------------------------------------
+
+mod adc_wiring {
+    use opi_ai::auth::AuthScheme;
+    use opi_ai::provider::ProviderError;
+    use opi_coding_agent::config::OpiConfig;
+    use opi_coding_agent::credential_store::{
+        BackendError, CredentialResolver, KeychainCredentialStore, KeyringBackend,
+    };
+    use std::sync::Arc;
+
+    /// Env-var guard: restores the original value on drop (serialized host-env
+    /// mutation, same pattern as tests/provider_factory.rs).
+    struct EnvVarGuard {
+        key: &'static str,
+        original: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let guard = Self {
+                key,
+                original: std::env::var_os(key),
+            };
+            unsafe { std::env::set_var(key, value) };
+            guard
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.original {
+                Some(value) => unsafe { std::env::set_var(self.key, value) },
+                None => unsafe { std::env::remove_var(self.key) },
+            }
+        }
+    }
+
+    /// Backend with no entries: drives resolution through the env sources.
+    struct AbsentBackend;
+
+    impl KeyringBackend for AbsentBackend {
+        fn get(&self, _service: &str, _provider_id: &str) -> Result<Option<String>, BackendError> {
+            Ok(None)
+        }
+        fn set(
+            &self,
+            _service: &str,
+            _provider_id: &str,
+            _value: &str,
+        ) -> Result<(), BackendError> {
+            Ok(())
+        }
+        fn delete(&self, _service: &str, _provider_id: &str) -> Result<(), BackendError> {
+            Ok(())
+        }
+    }
+
+    fn test_resolver() -> CredentialResolver {
+        let dir = tempfile::tempdir().unwrap();
+        let store = KeychainCredentialStore::new(Box::new(AbsentBackend), dir.path().to_path_buf());
+        CredentialResolver::new(
+            Arc::new(store),
+            Arc::new(|name: &str| std::env::var(name).ok()),
+        )
+    }
+
+    /// Host-env serialization: these tests mutate process environment
+    /// variables and must not race each other.
+    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    fn vertex_config(project: Option<&str>, location: Option<&str>) -> OpiConfig {
+        let mut config = OpiConfig::default();
+        config.defaults.model = "vertex:gemini-2.5-flash".to_owned();
+        config.providers.vertex.project = project.map(str::to_owned);
+        config.providers.vertex.location = location.map(str::to_owned);
+        config
+    }
+
+    #[tokio::test]
+    async fn google_cloud_api_key_env_selects_express_api_key_auth() {
+        let _env = ENV_LOCK.lock().await;
+        let _guard = EnvVarGuard::set("GOOGLE_CLOUD_API_KEY", "express-key");
+        let (_provider, resolver) =
+            opi_coding_agent::provider_factory::build_runtime_route_for_tests(
+                &vertex_config(None, None),
+                "vertex",
+                &test_resolver(),
+            )
+            .expect("express route builds");
+        let auth = resolver.resolve().await.expect("api key resolves");
+        assert!(matches!(auth.scheme, AuthScheme::ApiKey));
+    }
+
+    #[tokio::test]
+    async fn access_token_env_still_selects_bearer_when_no_api_key() {
+        let _env = ENV_LOCK.lock().await;
+        let _guard = EnvVarGuard::set("VERTEX_ACCESS_TOKEN", "tok");
+        let _guard_key = EnvVarGuard::set("GOOGLE_CLOUD_API_KEY", "");
+        let (_provider, resolver) =
+            opi_coding_agent::provider_factory::build_runtime_route_for_tests(
+                &vertex_config(Some("p1"), Some("us-central1")),
+                "vertex",
+                &test_resolver(),
+            )
+            .expect("vertex route builds");
+        let auth = resolver.resolve().await.expect("bearer resolves");
+        assert!(matches!(auth.scheme, AuthScheme::Bearer));
+    }
+
+    #[tokio::test]
+    async fn malformed_selected_adc_file_fails_typed_before_generation() {
+        let _env = ENV_LOCK.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let creds = dir.path().join("adc.json");
+        std::fs::write(&creds, "{broken").unwrap();
+        let _guard = EnvVarGuard::set("GOOGLE_APPLICATION_CREDENTIALS", creds.to_str().unwrap());
+        let (_provider, resolver) =
+            opi_coding_agent::provider_factory::build_runtime_route_for_tests(
+                &vertex_config(Some("p1"), Some("us-central1")),
+                "vertex",
+                &test_resolver(),
+            )
+            .expect("route builds lazily");
+        let error = resolver
+            .resolve()
+            .await
+            .expect_err("terminal parse failure");
+        assert!(matches!(error, ProviderError::Config(_)));
+    }
+
+    #[tokio::test]
+    async fn no_sources_reports_credential_needed() {
+        let _env = ENV_LOCK.lock().await;
+        let _guard_key = EnvVarGuard::set("GOOGLE_CLOUD_API_KEY", "");
+        let _guard_token = EnvVarGuard::set("VERTEX_ACCESS_TOKEN", "");
+        let _guard_adc = EnvVarGuard::set("GOOGLE_APPLICATION_CREDENTIALS", "");
+        let (_provider, resolver) =
+            opi_coding_agent::provider_factory::build_runtime_route_for_tests(
+                &vertex_config(Some("p1"), Some("us-central1")),
+                "vertex",
+                &test_resolver(),
+            )
+            .expect("route builds");
+        let error = resolver.resolve().await.expect_err("no source configured");
+        assert!(matches!(
+            error,
+            ProviderError::CredentialNeeded { provider_id } if provider_id == "vertex"
+        ));
+    }
+
+    #[test]
+    fn express_provider_builds_without_project_and_location() {
+        use opi_coding_agent::provider_factory::build_provider;
+        let provider = build_provider(&vertex_config(None, None)).expect("express builds");
+        assert_eq!(provider.id(), "vertex");
+    }
+
+    #[test]
+    fn half_configured_project_location_is_a_typed_config_error() {
+        use opi_coding_agent::provider_factory::build_provider;
+        let error = build_provider(&vertex_config(Some("p1"), None))
+            .err()
+            .expect("half-configured vertex fails");
+        assert!(error.to_string().contains("project"));
+    }
+}

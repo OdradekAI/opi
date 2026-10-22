@@ -35,6 +35,10 @@ pub struct VertexProvider {
     models: Vec<ModelInfo>,
     inner: GeminiProvider,
     client: Arc<HttpClient>,
+    /// API-key Express mode: project/location-less wire routed to the global
+    /// `aiplatform.googleapis.com` collection endpoint with
+    /// `x-goog-api-key` (pinned `@google/genai` Express behavior).
+    express: bool,
 }
 
 impl fmt::Debug for VertexProvider {
@@ -48,10 +52,10 @@ impl fmt::Debug for VertexProvider {
 }
 
 impl VertexProvider {
-    /// Create a new Vertex AI provider.
+    /// Create a new Vertex AI provider (ADC/Bearer mode with project and
+    /// location).
     pub fn new(project: String, location: String, base_url: Option<String>) -> Self {
-        let base_url =
-            base_url.unwrap_or_else(|| format!("https://{location}-aiplatform.googleapis.com"));
+        let base_url = base_url.unwrap_or_else(|| default_vertex_base_url(&location));
         let inner = GeminiProvider::new(None);
         let models = model_catalog();
         Self {
@@ -61,7 +65,31 @@ impl VertexProvider {
             models,
             inner,
             client: Arc::new(HttpClient::new()),
+            express: false,
         }
+    }
+
+    /// Create the API-key Express provider (no project/location): requests
+    /// go to `{base}/v1/publishers/google/models/{model}:streamGenerateContent`
+    /// with the `x-goog-api-key` header.
+    pub fn express(base_url: Option<String>) -> Self {
+        let base_url = base_url.unwrap_or_else(|| "https://aiplatform.googleapis.com".to_owned());
+        let inner = GeminiProvider::new(None);
+        let models = model_catalog();
+        Self {
+            project: String::new(),
+            location: String::new(),
+            base_url,
+            models,
+            inner,
+            client: Arc::new(HttpClient::new()),
+            express: true,
+        }
+    }
+
+    /// Whether this provider routes Express (API-key) requests.
+    pub fn is_express(&self) -> bool {
+        self.express
     }
 
     /// Create from config with explicit model list.
@@ -71,8 +99,7 @@ impl VertexProvider {
         models: Vec<String>,
         base_url: Option<String>,
     ) -> Self {
-        let base_url =
-            base_url.unwrap_or_else(|| format!("https://{location}-aiplatform.googleapis.com"));
+        let base_url = base_url.unwrap_or_else(|| default_vertex_base_url(&location));
         let inner = GeminiProvider::new(None);
         let model_list = models
             .iter()
@@ -94,6 +121,7 @@ impl VertexProvider {
             models: model_list,
             inner,
             client: Arc::new(HttpClient::new()),
+            express: false,
         }
     }
 
@@ -103,7 +131,18 @@ impl VertexProvider {
     }
 
     /// Build the Vertex AI streaming URL for a given model.
+    ///
+    /// Express (API-key) mode drops the project/location resource prefix and
+    /// routes to the collection endpoint; `location = "global"` keeps the
+    /// project prefix on the global domain.
     pub fn build_vertex_url(&self, model_id: &str) -> String {
+        if self.express {
+            return format!(
+                "{base}/v1/publishers/google/models/{model}:streamGenerateContent?alt=sse",
+                base = self.base_url,
+                model = model_id,
+            );
+        }
         format!(
             "{base}/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:streamGenerateContent?alt=sse",
             base = self.base_url,
@@ -158,13 +197,21 @@ impl Provider for VertexProvider {
     }
 
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
-        let secret = auth.secret.expose_secret();
-        let access_token = match auth.scheme {
-            crate::auth::AuthScheme::Bearer => secret.to_string(),
-            crate::auth::AuthScheme::ApiKey | crate::auth::AuthScheme::AwsSigV4(_) => {
+        // Two pinned wire modes: an API key selects Express (x-goog-api-key,
+        // collection URL); a Bearer token rides the ADC/project/location URL
+        // plus the ADC file's quota project header when present.
+        let auth_mode = match auth.scheme {
+            crate::auth::AuthScheme::Bearer => VertexAuthMode::Bearer {
+                token: auth.secret.expose_secret().to_string(),
+                quota_project: quota_project_of(&auth).map(str::to_owned),
+            },
+            crate::auth::AuthScheme::ApiKey => VertexAuthMode::Express {
+                api_key: auth.secret.expose_secret().to_string(),
+            },
+            crate::auth::AuthScheme::AwsSigV4(_) => {
                 return Box::pin(stream::iter(vec![Err(ProviderError::Config(
                     ProviderErrorSummary::attested_static(
-                        "Vertex accepts only Bearer authentication",
+                        "Vertex accepts Bearer or API-key authentication",
                     ),
                 ))]));
             }
@@ -176,7 +223,18 @@ impl Provider for VertexProvider {
             .unwrap_or(&request.model)
             .to_string();
 
-        let url = self.build_vertex_url(&model_id);
+        let url = if self.express {
+            self.build_vertex_url(&model_id)
+        } else {
+            match &auth_mode {
+                VertexAuthMode::Express { .. } => format!(
+                    "{base}/v1/publishers/google/models/{model}:streamGenerateContent?alt=sse",
+                    base = self.base_url,
+                    model = model_id,
+                ),
+                VertexAuthMode::Bearer { .. } => self.build_vertex_url(&model_id),
+            }
+        };
         let requested_model = model_id;
         let body = match self.inner.build_request_body(&request) {
             Ok(body) => body,
@@ -197,7 +255,7 @@ impl Provider for VertexProvider {
             let run = async {
                 let result = stream_vertex_http(
                     http_client,
-                    access_token,
+                    auth_mode,
                     &url,
                     requested_model,
                     &body,
@@ -229,11 +287,38 @@ impl Provider for VertexProvider {
     }
 }
 
-/// HTTP streaming with Vertex-specific URL and `Authorization: Bearer` header.
+/// One pinned Vertex wire-auth mode.
+#[derive(Clone)]
+enum VertexAuthMode {
+    /// ADC/Bearer route token plus the ADC file's non-secret quota project.
+    Bearer {
+        token: String,
+        quota_project: Option<String>,
+    },
+    /// API-key Express mode (`x-goog-api-key`).
+    Express { api_key: String },
+}
+
+/// The non-secret quota project carried by an ADC provenance source, when the
+/// selected family reported one.
+fn quota_project_of(auth: &crate::auth::ResolvedAuth) -> Option<&str> {
+    match &auth.provenance.source {
+        crate::auth::AuthProvenanceSource::Adc {
+            source:
+                crate::auth::AdcCredentialSource::AuthorizedUser { quota_project }
+                | crate::auth::AdcCredentialSource::ExternalAccountAuthorizedUser {
+                    quota_project, ..
+                },
+        } => quota_project.as_deref(),
+        _ => None,
+    }
+}
+
+/// HTTP streaming with Vertex-specific URL and auth headers.
 #[allow(clippy::too_many_arguments)]
 async fn stream_vertex_http(
     http_client: reqwest::Client,
-    access_token: String,
+    auth_mode: VertexAuthMode,
     url: &str,
     requested_model: String,
     body: &serde_json::Value,
@@ -243,10 +328,24 @@ async fn stream_vertex_http(
     snapshot: crate::stream::ProducerSnapshot,
     tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
 ) -> Result<(), ProviderError> {
-    let route_headers = vec![
-        ("authorization".to_owned(), format!("Bearer {access_token}")),
-        ("content-type".to_owned(), "application/json".to_owned()),
-    ];
+    let mut route_headers = Vec::with_capacity(3);
+    match &auth_mode {
+        VertexAuthMode::Bearer {
+            token,
+            quota_project,
+        } => {
+            route_headers.push(("authorization".to_owned(), format!("Bearer {token}")));
+            // The quota header is provider-managed when the ADC source owns
+            // it; callers cannot override a provider-managed route header.
+            if let Some(quota_project) = quota_project {
+                route_headers.push(("x-goog-user-project".to_owned(), quota_project.clone()));
+            }
+        }
+        VertexAuthMode::Express { api_key } => {
+            route_headers.push(("x-goog-api-key".to_owned(), api_key.clone()));
+        }
+    }
+    route_headers.push(("content-type".to_owned(), "application/json".to_owned()));
     let headers = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
     let mut req = http_client.post(url);
     for (name, value) in headers {
@@ -358,6 +457,16 @@ async fn stream_vertex_http(
     }
     .await;
     result.map_err(|cause| mapper.failure(cause))
+}
+
+/// Default base URL for a location: `global` pins the shared domain, every
+/// other location gets its regional subdomain.
+fn default_vertex_base_url(location: &str) -> String {
+    if location == "global" {
+        "https://aiplatform.googleapis.com".to_owned()
+    } else {
+        format!("https://{location}-aiplatform.googleapis.com")
+    }
 }
 
 fn map_vertex_status(

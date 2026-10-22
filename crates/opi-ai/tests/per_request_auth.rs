@@ -458,13 +458,65 @@ async fn azure_rejects_bearer_scheme_before_the_wire() {
     .await;
 }
 
+/// Pinned @google/genai contract (task 20.21.1): an API key selects the
+/// Vertex Express wire — the project/location-less collection URL with the
+/// `x-goog-api-key` header — even when the provider was built with a
+/// project. The old opi-only typed rejection is superseded.
 #[tokio::test]
-async fn vertex_rejects_api_key_scheme_before_the_wire() {
+async fn vertex_api_key_selects_the_express_wire() {
+    use futures_util::StreamExt;
+    use wiremock::matchers::{header, method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
     let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/v1/publishers/google/models/gemini-2.5-flash:streamGenerateContent",
+        ))
+        .and(query_param("alt", "sse"))
+        .and(header("x-goog-api-key", "resolved-vertex-token"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(
+                    "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}\n\ndata: \"done\"\n\n",
+                )
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
     let provider = VertexProvider::new("proj".into(), "loc".into(), Some(server.uri()));
     let resolved = ResolvedAuth {
         scheme: AuthScheme::ApiKey,
         secret: SecretString::from("resolved-vertex-token"),
+        base_url: None,
+        account_id: None,
+        provenance: AuthProvenance::default(),
+    };
+    let mut stream = provider.stream_prepared(sample_request("vertex:gemini-2.5-flash"), resolved);
+    let event = stream
+        .next()
+        .await
+        .expect("express request should produce an event")
+        .expect("matched Express request must stream");
+    assert!(
+        !matches!(event, opi_ai::stream::AssistantStreamEvent::Error { .. }),
+        "Express request streams instead of failing"
+    );
+}
+
+#[tokio::test]
+async fn vertex_rejects_sigv4_scheme_before_the_wire() {
+    let server = MockServer::start().await;
+    let provider = VertexProvider::new("proj".into(), "loc".into(), Some(server.uri()));
+    let resolved = ResolvedAuth {
+        scheme: AuthScheme::AwsSigV4(opi_ai::auth::AwsSigV4Credentials::new(
+            SecretString::from("ak"),
+            SecretString::from("sk"),
+            "us-east-1",
+        )),
+        secret: SecretString::from(""),
         base_url: None,
         account_id: None,
         provenance: AuthProvenance::default(),

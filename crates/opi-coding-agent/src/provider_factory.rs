@@ -1080,15 +1080,18 @@ fn build_list_models_metadata(
         }
         "vertex" => {
             let vertex = &config.providers.vertex;
-            if vertex.project.is_none() {
-                return Err(ListModelsError::Config(
-                    "vertex provider requires project".into(),
-                ));
-            }
-            if vertex.location.is_none() {
-                return Err(ListModelsError::Config(
-                    "vertex provider requires location".into(),
-                ));
+            match (vertex.project.is_some(), vertex.location.is_some()) {
+                (true, true) | (false, false) => {}
+                (true, false) => {
+                    return Err(ListModelsError::Config(
+                        "vertex provider requires location when project is set".into(),
+                    ));
+                }
+                (false, true) => {
+                    return Err(ListModelsError::Config(
+                        "vertex provider requires project when location is set".into(),
+                    ));
+                }
             }
             let models = if vertex.models.is_empty() {
                 opi_ai::vertex::model_catalog()
@@ -1937,32 +1940,8 @@ fn build_runtime_adapter(
             )
         }
         "vertex" => {
-            let vertex_config = &config.providers.vertex;
-            let project = vertex_config.project.as_deref().ok_or_else(|| {
-                ProviderBuildError::Config("vertex provider requires project".into())
-            })?;
-            let location = vertex_config.location.as_deref().ok_or_else(|| {
-                ProviderBuildError::Config("vertex provider requires location".into())
-            })?;
-            let provider = if vertex_config.models.is_empty() {
-                opi_ai::vertex::VertexProvider::new(
-                    project.into(),
-                    location.into(),
-                    vertex_config.base_url.clone(),
-                )
-            } else {
-                opi_ai::vertex::VertexProvider::from_config(
-                    project.into(),
-                    location.into(),
-                    vertex_config.models.clone(),
-                    vertex_config.base_url.clone(),
-                )
-            }
-            .with_client(build_proxied_client(vertex_config.proxy.as_ref())?);
-            (
-                Box::new(provider) as Box<dyn Provider>,
-                WireApi::GoogleVertex,
-            )
+            let provider = vertex_adapter(&config.providers.vertex)?;
+            (provider, WireApi::GoogleVertex)
         }
         "copilot" => {
             return Err(ProviderBuildError::Config(
@@ -2009,9 +1988,194 @@ fn build_runtime_route(
     if provider_id == "bedrock" {
         return build_bedrock(config);
     }
+    if provider_id == "vertex" {
+        return build_vertex_route(config, resolver);
+    }
     let provider = build_runtime_adapter(config, provider_id)?;
     let auth_resolver = route_auth_resolver(config, provider_id, resolver);
     Ok((provider, auth_resolver))
+}
+
+/// Test/diagnostic seam over [`build_runtime_route`] (the crate-private
+/// policy owner); production callers go through the harness collection
+/// builder.
+#[doc(hidden)]
+pub fn build_runtime_route_for_tests(
+    config: &OpiConfig,
+    provider_id: &str,
+    resolver: &CredentialResolver,
+) -> Result<ProviderAuthPair, ProviderBuildError> {
+    build_runtime_route(config, provider_id, resolver)
+}
+
+use opi_ai::auth::adc::native::{AdcNativeOwner, AdcResolutionError, ScopedAdcEnv};
+
+/// Lazy per-call auth resolver for the vertex route.
+///
+/// Source precedence follows the pinned provider contract: a stored
+/// credential or `GOOGLE_CLOUD_API_KEY` selects API-key Express auth; the
+/// configured access-token env selects a static Bearer; otherwise the ADC
+/// native chain (explicit `GOOGLE_APPLICATION_CREDENTIALS` file, then the
+/// portable well-known file) exchanges a Bearer at `prepare_call`. Missing
+/// configured credentials report [`ProviderError::CredentialNeeded`] and
+/// never trigger metadata discovery; a selected ADC file that cannot be read
+/// or parsed fails typed before any generation send.
+struct VertexAuthResolver {
+    resolver: CredentialResolver,
+    access_token_env: String,
+    /// Shared ADC owner: cross-call token cache (fixed 5-minute eager
+    /// window) and in-place refresh-token rotation without rewriting the
+    /// credentials file.
+    adc: Arc<AdcNativeOwner>,
+}
+
+impl opi_ai::AuthResolver for VertexAuthResolver {
+    fn resolve<'a>(
+        &'a self,
+    ) -> opi_ai::BoxAuthFuture<'a, Result<opi_ai::ResolvedAuth, ProviderError>> {
+        Box::pin(async move { self.resolve_inner().await })
+    }
+}
+
+impl VertexAuthResolver {
+    async fn resolve_inner(&self) -> Result<opi_ai::ResolvedAuth, ProviderError> {
+        // Stored credential first, then GOOGLE_CLOUD_API_KEY (Gemini keys are
+        // never reused for Vertex).
+        if let Some(key) = self
+            .resolver
+            .resolve_api_key("vertex", "GOOGLE_CLOUD_API_KEY")
+            .await
+            .map_err(|error| {
+                ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+                    format!("credential store error: {error}"),
+                ))
+            })?
+        {
+            let provenance = key.provenance();
+            return Ok(opi_ai::ResolvedAuth {
+                scheme: opi_ai::AuthScheme::ApiKey,
+                secret: key.value,
+                base_url: None,
+                account_id: None,
+                provenance,
+            });
+        }
+        // Configured static access token (default VERTEX_ACCESS_TOKEN).
+        if let Some(token) = self.resolver.env_value(&self.access_token_env) {
+            return Ok(opi_ai::ResolvedAuth {
+                scheme: opi_ai::AuthScheme::Bearer,
+                secret: secrecy::SecretString::from(token),
+                base_url: None,
+                account_id: None,
+                provenance: opi_ai::AuthProvenance {
+                    source: opi_ai::AuthProvenanceSource::Environment {
+                        name: self.access_token_env.clone(),
+                    },
+                    fallback: opi_ai::AuthFallback::NotAttempted,
+                },
+            });
+        }
+        // ADC native chain; NotConfigured is a missing credential, every
+        // configured-but-failing source is a typed failure.
+        let token = self
+            .adc
+            .resolve_token()
+            .await
+            .map_err(map_vertex_adc_error)?;
+        Ok(opi_ai::ResolvedAuth {
+            scheme: opi_ai::AuthScheme::Bearer,
+            secret: token.access_token,
+            base_url: None,
+            account_id: None,
+            provenance: opi_ai::AuthProvenance {
+                source: opi_ai::AuthProvenanceSource::Adc {
+                    source: token.source,
+                },
+                fallback: opi_ai::AuthFallback::NotAttempted,
+            },
+        })
+    }
+}
+
+fn map_vertex_adc_error(error: AdcResolutionError) -> ProviderError {
+    match error {
+        AdcResolutionError::NotConfigured => ProviderError::CredentialNeeded {
+            provider_id: "vertex".into(),
+        },
+        other => ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+            other.safe_summary(),
+        )),
+    }
+}
+
+/// Build the vertex dispatchable route: the real adapter plus the lazy
+/// multi-source auth resolver.
+fn build_vertex_route(
+    config: &OpiConfig,
+    resolver: &CredentialResolver,
+) -> Result<ProviderAuthPair, ProviderBuildError> {
+    use opi_ai::auth::adc::native::{
+        AdcAuthSelection, AdcNativeOwner, ReqwestAdcTransport, SystemAdcClock,
+    };
+
+    let vertex_config = &config.providers.vertex;
+    let provider = vertex_adapter(vertex_config)?;
+    let adc = Arc::new(
+        AdcNativeOwner::new(
+            AdcAuthSelection::Auto,
+            Arc::new(ReqwestAdcTransport::new()),
+            Arc::new(SystemAdcClock),
+        )
+        .with_scoped(ScopedAdcEnv::default()),
+    );
+    let auth_resolver = Arc::new(VertexAuthResolver {
+        resolver: resolver.clone(),
+        access_token_env: resolve_env_name(&vertex_config.access_token_env, "VERTEX_ACCESS_TOKEN"),
+        adc,
+    });
+    Ok((provider, auth_resolver))
+}
+
+/// Construct the vertex adapter. Both project and location select the
+/// ADC/Bearer regional (or global) wire; neither selects the API-key Express
+/// wire; exactly one is a typed config error.
+fn vertex_adapter(
+    vertex_config: &crate::config::VertexProviderConfig,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    match (
+        vertex_config.project.as_deref(),
+        vertex_config.location.as_deref(),
+    ) {
+        (Some(project), Some(location)) => {
+            let provider = if vertex_config.models.is_empty() {
+                opi_ai::vertex::VertexProvider::new(
+                    project.to_owned(),
+                    location.to_owned(),
+                    vertex_config.base_url.clone(),
+                )
+            } else {
+                opi_ai::vertex::VertexProvider::from_config(
+                    project.to_owned(),
+                    location.to_owned(),
+                    vertex_config.models.clone(),
+                    vertex_config.base_url.clone(),
+                )
+            };
+            Ok(Box::new(provider.with_client(build_proxied_client(
+                vertex_config.proxy.as_ref(),
+            )?)))
+        }
+        (None, None) => Ok(Box::new(
+            opi_ai::vertex::VertexProvider::express(vertex_config.base_url.clone())
+                .with_client(build_proxied_client(vertex_config.proxy.as_ref())?),
+        )),
+        (Some(_), None) => Err(ProviderBuildError::Config(
+            "vertex provider requires location when project is set".into(),
+        )),
+        (None, Some(_)) => Err(ProviderBuildError::Config(
+            "vertex provider requires project when location is set".into(),
+        )),
+    }
 }
 
 struct BedrockAuthResolver {

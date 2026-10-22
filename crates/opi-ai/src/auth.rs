@@ -265,6 +265,12 @@ pub enum AuthProvenanceSource {
         /// Typed non-secret source reported by the Bedrock resolver.
         source: AwsCredentialSource,
     },
+    /// ADC (Google Application Default Credentials) native-chain source
+    /// selected for the prepared Vertex call.
+    Adc {
+        /// Typed non-secret source reported by the ADC resolver.
+        source: AdcCredentialSource,
+    },
 }
 
 /// Non-secret source selected by the local AWS credential resolver.
@@ -343,6 +349,36 @@ pub enum WebIdentityRoute {
     /// The environment-driven chain segment
     /// (`AWS_WEB_IDENTITY_TOKEN_FILE`/`AWS_ROLE_ARN`).
     Environment,
+}
+
+/// Non-secret source selected by the ADC (Google Application Default
+/// Credentials) native chain for a prepared Vertex call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdcCredentialSource {
+    /// A `service_account` credentials file exchanged its RS256 JWT
+    /// assertion for an OAuth access token at the canonical token endpoint.
+    ServiceAccount,
+    /// An `authorized_user` credentials file refreshed its token at the
+    /// canonical Google token endpoint. `quota_project` carries the file's
+    /// non-secret `quota_project_id` (sent as `x-goog-user-project`).
+    AuthorizedUser {
+        /// Non-secret quota project from the credentials file.
+        quota_project: Option<String>,
+    },
+    /// An `external_account_authorized_user` credentials file refreshed its
+    /// token at its validated `token_url` (or the default STS oauthtoken
+    /// endpoint) with HTTP Basic client authentication. `rotated` reports
+    /// that the exchange returned a replacement refresh token; the owner
+    /// replaced it in place and never rewrites the ADC file by default.
+    ExternalAccountAuthorizedUser {
+        /// Non-secret quota project from the credentials file.
+        quota_project: Option<String>,
+        /// Whether the latest refresh returned a new refresh token.
+        rotated: bool,
+    },
+    /// The explicitly selected direct metadata source served the token from
+    /// the scoped instance metadata endpoint.
+    DirectMetadata,
 }
 
 /// Whether auth preparation used an explicitly allowed fallback.
@@ -748,6 +784,13 @@ impl AuthContext for AmbientAuthContext {
 
 /// Local AWS credential-source chain modules (Bedrock's selected-source
 /// coordinator; product-neutral, injectable, no live AWS calls).
+pub mod adc {
+    /// Explicitly selected direct GCP metadata source.
+    pub mod metadata;
+    /// ADC native credential families (service account, authorized user,
+    /// external account authorized user) and the chain coordinator.
+    pub mod native;
+}
 pub mod aws {
     /// Regional STS endpoint resolution (partition/override arithmetic).
     pub mod cache;

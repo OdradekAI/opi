@@ -1118,6 +1118,10 @@ impl Models {
                 source: Some("aws credential chain".to_owned()),
                 kind: AuthCheckKind::ApiKey,
             })),
+            AuthProvenanceSource::Adc { .. } => Ok(Some(AuthCheck {
+                source: Some("google application default credentials".to_owned()),
+                kind: AuthCheckKind::ApiKey,
+            })),
             AuthProvenanceSource::Explicit => Ok(Some(AuthCheck {
                 source: Some("explicit per-call credential".to_owned()),
                 kind: AuthCheckKind::ApiKey,

@@ -802,3 +802,27 @@ CUBIC 客户端限速器（半秒桶 EWMA 实测速率、限流乘性削减、�
 `amz-sdk-request: attempt=N; max=M` 头，并以新时间戳重签 SigV4，而冻结的
 凭据与 payload 保持字节一致；来源交换发送与生成发送分开计数，配额从不
 跨调用。
+
+### ADC 原生来源与 Vertex 双模式 wire（P20-S21-1）
+
+Vertex 认证按锁定的 ADC 家族解析（`auth::adc`）：`service_account`
+文件以 RS256 JWT 断言（仅 alg 头、`exp = iat + 3600`）在 canonical
+Google token 端点交换；`authorized_user` 文件以四个 form 字段刷新并
+独立保留 `quota_project_id`（随生成请求发送
+`x-goog-user-project`）；`external_account_authorized_user` 文件以
+HTTP Basic 客户端认证在其经校验的 `token_url` 或默认 STS oauthtoken
+端点刷新，返回的新 refresh token 在 owner 内原地替换、默认不写回
+ADC 文件。显式选择的 direct metadata 来源以
+`Metadata-Flavor: Google` 双向校验提供 instance token，超时按冻结的
+residency（resident：无超时，否则 3000ms；超时按实测语料为单发送
+终局失败）。交换在可注入 transport 上运行固定 Gaxios 重试配置
+（允许 POST、额外 3 次、no-response 2 次、状态 1xx/408/429/5xx、
+100/500/1500ms 延迟），绝不进入生成重试 owner；redirect 为终局。
+显式 `GOOGLE_APPLICATION_CREDENTIALS` 文件读/解析失败即终局；
+well-known 文件（Windows `%APPDATA%\gcloud\...`、Unix
+`$HOME/.config/gcloud/...`）缺失表示未配置——绝不触发 metadata 或
+gcloud 发现。`VertexProvider` 同时服务 API-key Express
+（`x-goog-api-key`、无 project/location 的 collection URL）与 Bearer
+ADC 路由（需要 project/location，`global` 固定共享域名）；产品路由
+依次优先存储凭据/`GOOGLE_CLOUD_API_KEY`、配置的 access-token 环境变
+量、ADC 链。

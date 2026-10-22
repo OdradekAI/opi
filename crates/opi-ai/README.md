@@ -969,3 +969,31 @@ the wire `amz-sdk-invocation-id` (one uuid per logical call) and
 timestamp while the frozen credential and payload stay byte-identical;
 source-exchange sends and generation sends are counted separately and the
 quota never spans calls.
+
+### ADC native sources and the Vertex dual-mode wire (P20-S21-1)
+
+Vertex authentication resolves through the pinned ADC families
+(`auth::adc`): a `service_account` file exchanges an RS256 JWT assertion
+(alg-only header, `exp = iat + 3600`) at the canonical Google token
+endpoint; an `authorized_user` file refreshes with its four form fields
+and keeps `quota_project_id` separately (sent as `x-goog-user-project`);
+an `external_account_authorized_user` file refreshes with HTTP Basic
+client auth at its validated `token_url` or the default STS oauthtoken
+endpoint, and a rotated refresh token replaces the owner's copy in place
+without rewriting the ADC file. The explicitly selected direct metadata
+source serves the instance token with the `Metadata-Flavor: Google`
+exchange and the frozen residency timeout (resident: none, otherwise
+3000 ms; a timeout is a single-send terminal failure per the measured
+corpus). Exchanges run the fixed Gaxios retry configuration (POST
+admitted, 3 extra retries, 2 no-response retries, statuses 1xx/408/429/
+5xx, 100/500/1500 ms delays) through an injectable transport and never
+enter the generation retry owner; redirects are terminal. An explicit
+`GOOGLE_APPLICATION_CREDENTIALS` file is terminal on read/parse failure;
+a missing well-known file (`%APPDATA%\gcloud\...` on Windows,
+`$HOME/.config/gcloud/...` elsewhere) means not configured — never
+metadata or gcloud discovery. `VertexProvider` serves API-key Express
+(`x-goog-api-key` on the project/location-less collection URL) and
+Bearer ADC routes (project/location required, `global` pins the shared
+domain); the product route prefers a stored credential or
+`GOOGLE_CLOUD_API_KEY`, then the configured access-token env, then the
+ADC chain.
