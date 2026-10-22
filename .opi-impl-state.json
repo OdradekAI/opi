@@ -5739,7 +5739,7 @@
       "definition_of_done": "Through Models -> selected ADC source -> migrated real Vertex adapter, implement service_account RSA/JWT canonical token exchange, authorized_user form refresh, external_account_authorized_user Basic/token_url/default STS oauthtoken and actual expiry/rotated-token ACK without rewriting the ADC source file by default. Own the missing minimal Vertex API-key Express versus Bearer/project/location wiring. Keep configured file-presence checks separate from explicit/default direct metadata: missing configured credentials never cause metadata/BIOS/gcloud discovery, while the explicitly selected metadata path verifies Flavor/expiry/residency true0/false3000ms. Preserve scoped well-known paths and project/location/quota distinctions; invalid/missing/parse failures of explicit files are terminal. Public calls capture source identity, refresh through injected local endpoints and fail before generation on selected source error; no shell login, construction I/O or invented total limits.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.4",
@@ -5803,6 +5803,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-STORE; role=consumer; owner_task=20.22; module=opi_ai::auth; interface=CredentialStore atomic update/ACK/mutation_barrier; representation=state machine; consumer_tasks=20.19.3,20.21.1,20.21.3,20.23,20.24,20.25,20.26,20.27,20.28,20.29,20.30,20.31; criterion_ids=AIR-063,V-12; legacy_paths=waiter-owned refresh product protocol duplication; closure_test=crates/opi-ai/tests/auth_contracts.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Required caller/test migration: the pinned @google/genai 2.21.0 vertex adapter contract (restored read-only from the locked npm tarball) makes an API key select the Vertex Express wire (x-goog-api-key on the project/location-less collection URL) instead of the previous opi-only typed rejection. The existing per_request_auth test vertex_rejects_api_key_scheme_before_the_wire asserted the old rejection; it is updated to assert the pinned Express routing (and the AwsSigV4 scheme keeps the typed rejection). No other test in the binary changes.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md google-vertex row (API key Express 或 ADC project/location 模式)"
         }
       ],
       "tier": "workspace",
@@ -5833,7 +5838,7 @@
           "production_call_sites": [
             "opi_ai::Models::get_auth/stream -> selected ADC source -> migrated VertexProvider::stream_prepared -> local SSE response (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -5842,7 +5847,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "172c711f0ab40030988c1fc431c129b3472f2672",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -5858,12 +5863,89 @@
         "crates/opi-ai/tests/auth_contracts.rs",
         "crates/opi-ai/tests/vertex_fixtures.rs",
         "crates/opi-coding-agent/src/provider_factory.rs",
-        "crates/opi-coding-agent/tests/vertex_provider_wiring.rs"
+        "crates/opi-coding-agent/tests/vertex_provider_wiring.rs",
+        "crates/opi-ai/tests/per_request_auth.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "69dd520d753aa1fc2a38a9ad80deac65ad0851b0",
+      "evidence": {
+        "task": "20.21.1",
+        "dod_sha256": "b393c68837a4e693f19daa1d72110b25c51b01d27ec1c69d9185998bed7da1c3",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED (doc-check, fmt, all-target clippy, workspace tests, doc tests, rustdoc); scenario tests: opi-ai auth_contracts 54 passed (20 new ADC selection/family/retry/metadata tests), vertex_fixtures 35 passed (7 new through-Models loopback tests: Express, authorized-user Bearer+quota, fail-before-generation, service-account exchange shape + single resolution, 503 retry delay, redirect terminal, explicit direct metadata), vertex_provider_wiring 15 passed (6 new factory precedence/Express construction tests), per_request_auth 13 passed (updated to the pinned Express routing, SigV4 rejection retained); opi-ai lib 323 passed (4 new native unit tests)",
+        "evaluator": "passed",
+        "acceptance": "P20-S21-1; Models get_auth -> VertexAuthResolver -> AdcNativeOwner resolve_adc_native -> token exchange/metadata -> VertexProvider stream_prepared; store/GOOGLE_CLOUD_API_KEY -> access_token_env -> ADC file precedence; explicit-file terminal semantics; zero metadata discovery on missing configuration; real expiry with the 5-minute eager window and in-place refresh-token rotation; source resolutions separate from generation sends"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-22T21:20:00+00:00",
+          "attempt": 1,
+          "summary": "Implemented the pinned ADC native families and the Vertex dual-mode wire through the public path. Corpus: restored read-only npm tarballs for the exact locked versions (google-auth-library@10.6.2 via the pi 1.3.0 lock, gaxios@7.1.4, @google/genai@2.21.0, gcp-metadata@8.1.2) into a fresh temp dir (never executed, never committed) and verified every constant from source: canonical token endpoint hardcoded in gtoken getToken (file token_uri never a destination) with jwt-bearer grant, JWT header alg-only and claims iss/scope/aud/exp=iat+3600 (cloud-platform scope default from genai vertex buildGoogleAuthOptions), authorized_user 4-field form refresh + quota_project_id kept separately, external_account_authorized_user Basic client auth + validated token_url or default https://sts.{universeDomain=googleapis.com}/v1/oauthtoken + in-place refresh-token rotation (never rewriting the file), Gaxios fixed retry (extra 3, noResponse 2, POST admitted via oauth2common/gtoken configs, ranges 1xx/408/429/5xx, delays 100/500/1500ms from the attempt-based formula, MAX_SAFE caps), gcp-metadata base/Flavor/expiry with requestTimeout()=residency?0:3000 and the measured single-send timeout (5.1 forbids deriving 4 sends from noResponseRetries=3), genai Express URL (apiKey && !project -> https://aiplatform.googleapis.com/ collection base; global -> shared domain) with x-goog-api-key header, pi vertex resolve precedence (stored key -> GOOGLE_CLOUD_API_KEY -> ADC file+project+location), and the ADC file selection (explicit GOOGLE_APPLICATION_CREDENTIALS terminal on failure; well-known %APPDATA%/HOME .config/gcloud paths; platform split). New auth::adc::{native,metadata} modules (families, AdcAuthSelection/ScopedAdcEnv, injectable AdcSourceTransport with ReqwestAdcTransport redirect-none, AdcClock with FixedAdcClock scriptable, AdcNativeInput + stateless resolve_adc_native, AdcNativeOwner with the 5-minute eager cache window and in-place rotation); AdcResolutionError typed set (NotConfigured/MalformedJson/UnknownType/MissingField naming family+field/FamilyNotAdmitted for impersonated+external_account/ReadFailed/InvalidTokenUrl/KeyRejected/ExchangeRejected{status,attempts}/ExchangeNetwork/ExchangeTimeout/Redirected/MetadataFlavor/InvalidTokenResponse); auth.rs gains AuthProvenanceSource::Adc + AdcCredentialSource (family, quota, rotation) and models.rs check_auth maps it to a non-network check; vertex.rs gains VertexAuthMode (Express x-goog-api-key vs Bearer + provider-managed x-goog-user-project from ADC provenance), VertexProvider::express constructor, express collection URL for ApiKey even on project-built providers, and location=global shared-domain base; provider_factory gains the vertex multi-source route (VertexAuthResolver: resolve_api_key store/GOOGLE_CLOUD_API_KEY Express -> access_token_env Bearer -> ADC owner -> CredentialNeeded; vertex_adapter with project+location/express/neither + typed half-configured error; listing arm relaxed consistently; build_runtime_route_for_tests doc-hidden seam). Zero dependency/manifest/config-file changes (RSA signing reuses the 20.13 crypto owner; scopes default CLOUD_PLATFORM_SCOPE). Exec D.2 (7 lenses sequential, evaluator workflow applied inline): 0 must-fix, 8 flagged_for_human (token-exchange redirects terminal typed - Node follow-20 not verified to the token-POST level, revisit at 20.21.3 redirect scenarios, fail-closed against credential/body leak; single-send-on-timeout measured only for the metadata GET and extrapolated to token POSTs as the same Gaxios timeout class; Gaxios retry delays are real wall-clock sleeps with no injectable sleeper - the exhaustion test sleeps 2.1s; opi-agent evidence.rs maps Adc provenance through the catch-all to UnsupportedAuthProvenance - AdcSourceFacts deferred to the evidence/five-family task; auth_descriptor_for doctor hint still names only VERTEX_ACCESS_TOKEN; multi-region us/eu aiplatform.{location}.rep.googleapis.com URL variant not implemented - base_url override covers, revisit on a named need; store-persisted rotation ACK (P20-STORE consumer wiring) deferred - owner-internal replace only per the DoD default; service_account field requirements limited to client_email+private_key - the source JWT.fromJSON token_uri validation was not re-verified to field level and the exchange URL is canonical regardless), 3 rejected (exposing crypto fixtures pub for integration tests - non-secret synthetic copies embedded instead; config.rs keys for ADC selection - fixed env names match the pinned provider resolve; metadata health probing in check_auth - forbidden by the corpus). C.1a append: opi-ai tests/per_request_auth.rs (required test migration - the pinned @google/genai contract makes API key select the Express wire, superseding the old typed-rejection assertion; updated to assert Express routing with the SigV4 rejection retained). Two development incidents resolved mid-task: an early broken helper briefly dialed the real aiplatform endpoint from vertex_fixtures (AuthFailed observed, no credential sent beyond the public test token) - fixed by routing the mock-backed provider through register_route; test_hermeticity caught scope-URL literals in test assertions - replaced with the public CLOUD_PLATFORM_SCOPE constant.",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED (after fmt, a clippy doc-comment fix, hermeticity scope-constant fix, and a rustdoc link fix)",
+            "d0_scenarios": "cargo test -p opi-ai --test auth_contracts --test vertex_fixtures -> 54 + 35 passed; cargo test -p opi-coding-agent --test vertex_provider_wiring -> 15 passed; opi-ai lib 323 passed",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified via wiremock request captures (paths, form bodies, Basic/authorization/x-goog-api-key/Metadata-Flavor headers, send counts) and scripted-transport budgets; clock-scripted expiry/rotation; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 8 flagged_for_human, 3 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S21-1",
+                "action": "add",
+                "test": "crates/opi-ai/tests/auth_contracts.rs::adc_native::{adc_auto_without_any_file_is_not_configured_and_sends_nothing, adc_explicit_env_file_parse_failure_is_terminal, adc_well_known_unix_path_is_used_when_env_is_unset, adc_scoped_env_file_shadows_well_known, adc_unknown_and_future_families_fail_typed, adc_missing_required_field_names_the_field, adc_service_account_jws_shape_and_canonical_exchange, adc_rejected_private_key_is_a_typed_failure_with_zero_sends, adc_external_authorized_user_uses_basic_auth_and_default_sts_url, adc_external_authorized_user_token_url_and_universe_domain, owner_reuses_fresh_tokens_and_refreshes_after_the_eager_window, owner_rotation_replaces_the_refresh_token_in_place, adc_status_retry_is_three_extra_with_gaxios_ranges, adc_status_exhaustion_and_non_retryable_statuses, adc_no_response_budget_is_two_extra, adc_redirect_on_exchange_is_terminal, metadata_token_carries_flavor_scope_and_expiry, metadata_residency_true_disables_the_timeout, metadata_wrong_flavor_is_typed_and_timeout_is_single_send, metadata_base_honors_scoped_host_env}",
+                "interface": "auth::adc public surface",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21-1",
+                "action": "add",
+                "test": "crates/opi-ai/tests/vertex_fixtures.rs::adc_vertex::{express_api_key_uses_key_header_and_projectless_url, adc_authorized_user_end_to_end_bearer_and_quota_header, adc_source_failure_fails_before_generation, adc_service_account_loopback_exchange_shape_and_single_resolution, token_503_then_success_retries_with_the_first_fixed_delay, token_redirect_is_terminal_and_generation_is_never_contacted, direct_metadata_selected_explicitly_streams_bearer}",
+                "interface": "Models -> resolver -> VertexProvider through-Models path",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21-1",
+                "action": "add",
+                "test": "crates/opi-coding-agent/tests/vertex_provider_wiring.rs::adc_wiring::{google_cloud_api_key_env_selects_express_api_key_auth, access_token_env_still_selects_bearer_when_no_api_key, malformed_selected_adc_file_fails_typed_before_generation, no_sources_reports_credential_needed, express_provider_builds_without_project_and_location, half_configured_project_location_is_a_typed_config_error}",
+                "interface": "provider factory vertex route",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21-1",
+                "action": "add",
+                "test": "crates/opi-ai/src/auth/adc/native.rs unit tests {well_known_layouts_follow_the_platform_split, gaxios_delay_matches_the_fixed_formula, gaxios_status_ranges_are_exact, eager_window_matches_the_five_minute_threshold}",
+                "interface": "private constants (platform split both layouts, delay formula, status ranges, eager threshold)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21-1",
+                "action": "update",
+                "test": "crates/opi-ai/tests/per_request_auth.rs: vertex_rejects_api_key_scheme_before_the_wire superseded by vertex_api_key_selects_the_express_wire per the pinned @google/genai contract; vertex_rejects_sigv4_scheme_before_the_wire added to retain the typed rejection for SigV4",
+                "interface": "VertexProvider scheme handling",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21-1",
+                "action": "update",
+                "test": "vertex URL fixtures now cover express collection URL and global-domain base (existing regional/custom-base cases retained)",
+                "interface": "VertexProvider URL builder",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-STORE",
+                "action": "retain",
+                "test": "all pre-existing store/mutation/acquisition corpora unchanged",
+                "interface": "unrelated owners",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.21.2",
@@ -16771,6 +16853,16 @@
       "rejected_count": 3,
       "ran_at": "2026-10-22T19:30:00+00:00",
       "task_id": "20.20",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 8,
+      "rejected_count": 3,
+      "ran_at": "2026-10-22T21:20:00+00:00",
+      "task_id": "20.21.1",
       "criterion_id": null
     }
   ]
