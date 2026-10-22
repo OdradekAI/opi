@@ -107,6 +107,13 @@ syn = { version = "2", features = ["full", "visit"] }
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+# Private AWS STS protocol codecs (task 20.19.2, rust-backends §3.3): no I/O,
+# no env/fs/network/trace, default features off. aws-smithy-xml's Document/
+#ScopedDecoder reads only xmlparser-prechecked markup; xmlparser is also a
+# direct dependency for the owned full lexical/structure precheck.
+aws-smithy-query = { version = "=0.62.1", default-features = false }
+aws-smithy-xml = { version = "=0.62.1", default-features = false }
+xmlparser = "=0.13.5"
 # CSPRNG for PKCE code_verifier/state (Phase 14.2 OAuth)
 rand = "0.8"
 

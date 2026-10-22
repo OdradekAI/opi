@@ -2019,6 +2019,7 @@ async fn resolve_bedrock_auth(
         AwsAuthSelection, AwsLocalChainInput, ScopedAwsEnv, resolve_local_aws_auth,
     };
     use opi_ai::auth::aws::process::SpawnedCredentialProcess;
+    use opi_ai::auth::aws::source_http::ReqwestSourceTransport;
 
     // The configured pair is a selected typed source: attempted-but-incomplete
     // fails closed and never falls through to ambient sources.
@@ -2078,6 +2079,11 @@ async fn resolve_bedrock_auth(
     let credentials_file = aws_credentials_path();
     let config_file = aws_config_path();
     let process = SpawnedCredentialProcess;
+    // Real auth-source HTTP transport: STS/web-identity/ECS/IMDS legs run
+    // on the controlled client with redirects disabled; no presenter is
+    // injected at the product boundary, so profile-required MFA terminates
+    // typed instead of prompting.
+    let transport = ReqwestSourceTransport::new();
     let input = AwsLocalChainInput {
         selection,
         scoped: ScopedAwsEnv::empty(),
@@ -2085,6 +2091,9 @@ async fn resolve_bedrock_auth(
         credentials_file: credentials_file.as_deref(),
         config_file: config_file.as_deref(),
         process: &process,
+        transport: &transport,
+        mfa: None,
+        sts_endpoint: None,
         region: bedrock_config.region.as_deref(),
         default_region: "us-east-1",
     };

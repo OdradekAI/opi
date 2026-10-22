@@ -2,6 +2,46 @@
 
 ### Breaking Changes
 
+- `opi-ai`: the local AWS chain extends to the STS/web-identity and
+  remote source families (task 20.19.2). The shared-config INI family follows
+  the verified `resolveProfileData` order (assume-role/source-profile →
+  static → web-identity → `credential_process`); `role_arn` requires exactly
+  one of `source_profile`/`credential_source` (ambiguous or incomplete role
+  configuration, profile cycles, and unsupported `credential_source` values
+  are continue-eligible), nested source profiles resolve statically-first
+  with cycle detection, `credential_source` routes Environment/EcsContainer/
+  Ec2InstanceMetadata providers, and a profile-required MFA without an
+  injected presenter is a typed terminal failure (`TerminalReason`,
+  `MfaPresenterMissing`). STS `AssumeRole` exchanges POST the pinned
+  `aws-smithy-query`-encoded form signed with the *source* credentials
+  (service `sts`, regional endpoint from `auth::aws::endpoint`, explicit
+  override wins, China partition `.cn` suffix); responses pass an owned
+  `xmlparser` lexical/structure/DTD precheck that fully collects text/CDATA
+  segments and the pinned `aws-smithy-xml` reader gates structure, with
+  expiration/`AssumedRoleUser`/subject/audience/provider metadata retained
+  (account id from the ARN) and `ErrorResponse` denials kept as typed,
+  secret-free status/code/request-id. Web identity reads the selected token
+  file (`web_identity_token_file` profile key or the environment segment
+  `AWS_WEB_IDENTITY_TOKEN_FILE`/`AWS_ROLE_ARN`/`AWS_ROLE_SESSION_NAME`) and
+  exchanges anonymously — never source SigV4; unreadable files, STS denials,
+  and invalid responses are terminal. The remote segment resolves ECS
+  (relative URI preferred over full URI, token file preferred over direct
+  token, https-any-host/loopback/link-local http host rules, 1s per attempt,
+  at most four modern sends with a 1000ms delay, then exactly one legacy
+  send; a selected ECS segment never falls through to IMDS and an invalid
+  endpoint is terminal) and IMDS (v2 token first, token 400 stops the
+  request, timeout/403/404/405 enable v1 mode for subsequent legs with other
+  token failures one-shot v1 fallback, `AWS_EC2_METADATA_DISABLED` gates the
+  default remote branch and the v1 fallback, 401 on the role/credential legs
+  clears the token state and refetches, 1s/zero retries per leg, IPv4/IPv6
+  endpoint mode with override). All STS/web-identity/ECS/IMDS sends run on
+  the new injectable `auth::aws::source_http` transport (controlled client,
+  redirects refused as typed errors) so auth-source sends stay separate from
+  generation attempts; resolution cancellation releases in-flight exchanges.
+  `AwsLocalChainInput` gains required `transport`, `mfa`, and `sts_endpoint`
+  fields; `ScopedAwsEnv` gains the web-identity, ECS, and IMDS keys;
+  `AwsCredentialSource` adds `AssumeRole`/`WebIdentity`/`EcsContainer`/
+  `Ec2InstanceMetadata` provenance (mirrored by `opi-agent` evidence facts).
 - `opi-ai`: the local AWS credential chain moved from
   `bedrock::credentials` to `auth::aws::local`/`auth::aws::process` and now
   follows the verified locked-Node source rules (task 20.19.1): an explicit

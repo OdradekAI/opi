@@ -1083,8 +1083,38 @@ pub enum AwsCredentialSourceFacts {
     ConfigFile,
     /// AWS shared config `credential_process`.
     CredentialProcess,
+    /// A shared-config profile's `role_arn` exchange at STS (assume-role).
+    AssumeRole {
+        /// Owning shared-config profile name.
+        profile: String,
+    },
+    /// A web-identity token file exchange at STS without source SigV4.
+    WebIdentity {
+        /// Route: shared-config profile or environment segment.
+        route: WebIdentityRouteFacts,
+    },
+    /// ECS container metadata provider.
+    EcsContainer {
+        /// Whether the legacy one-send provider produced the bundle.
+        legacy: bool,
+    },
+    /// EC2 instance metadata (IMDS) provider.
+    Ec2InstanceMetadata,
     /// Explicit no-real-credential proxy-placeholder SigV4 mode.
     ProxyPlaceholder,
+}
+
+/// Route a web-identity selection took.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "route", rename_all = "snake_case")]
+pub enum WebIdentityRouteFacts {
+    /// The shared-config profile's `web_identity_token_file`.
+    Profile {
+        /// Profile name.
+        profile: String,
+    },
+    /// The environment-driven chain segment.
+    Environment,
 }
 
 /// Redacted text that is safe to serialize across an evidence sink boundary.
@@ -1216,6 +1246,31 @@ fn auth_source_facts(
                 AwsCredentialSource::ConfigFile => AwsCredentialSourceFacts::ConfigFile,
                 AwsCredentialSource::CredentialProcess => {
                     AwsCredentialSourceFacts::CredentialProcess
+                }
+                AwsCredentialSource::AssumeRole { profile } => {
+                    AwsCredentialSourceFacts::AssumeRole {
+                        profile: profile.clone(),
+                    }
+                }
+                AwsCredentialSource::WebIdentity { route } => {
+                    AwsCredentialSourceFacts::WebIdentity {
+                        route: match route {
+                            opi_ai::auth::WebIdentityRoute::Profile(profile) => {
+                                WebIdentityRouteFacts::Profile {
+                                    profile: profile.clone(),
+                                }
+                            }
+                            opi_ai::auth::WebIdentityRoute::Environment => {
+                                WebIdentityRouteFacts::Environment
+                            }
+                        },
+                    }
+                }
+                AwsCredentialSource::EcsContainer { legacy } => {
+                    AwsCredentialSourceFacts::EcsContainer { legacy: *legacy }
+                }
+                AwsCredentialSource::Ec2InstanceMetadata => {
+                    AwsCredentialSourceFacts::Ec2InstanceMetadata
                 }
                 AwsCredentialSource::ProxyPlaceholder => AwsCredentialSourceFacts::ProxyPlaceholder,
             },

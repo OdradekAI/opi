@@ -352,3 +352,120 @@ impl Provider for MockProvider {
         Ok(())
     }
 }
+
+/// Scriptable fake for the AWS auth-source HTTP transport.
+///
+/// Records every send (method/url/headers/body/timeout) and replays scripted
+/// responses in order; unscripted sends replay `default`. Header and body
+/// values stay out of `Debug` output — requests carry credential material.
+#[derive(Default)]
+pub struct FakeSourceTransport {
+    sends: std::sync::Mutex<Vec<crate::auth::aws::source_http::SourceHttpRequest>>,
+    responses: std::sync::Mutex<
+        std::collections::VecDeque<
+            Result<
+                crate::auth::aws::source_http::SourceHttpResponse,
+                crate::auth::aws::source_http::SourceHttpError,
+            >,
+        >,
+    >,
+    default: std::sync::Mutex<
+        Option<
+            Result<
+                crate::auth::aws::source_http::SourceHttpResponse,
+                crate::auth::aws::source_http::SourceHttpError,
+            >,
+        >,
+    >,
+}
+
+impl FakeSourceTransport {
+    /// Script the responses replayed in send order.
+    pub fn new(
+        responses: Vec<
+            Result<
+                crate::auth::aws::source_http::SourceHttpResponse,
+                crate::auth::aws::source_http::SourceHttpError,
+            >,
+        >,
+    ) -> Self {
+        Self {
+            responses: std::sync::Mutex::new(responses.into_iter().collect()),
+            ..Self::default()
+        }
+    }
+
+    /// A transport that fails every send with a transport error.
+    pub fn default_never() -> Self {
+        Self::default()
+    }
+
+    /// Number of sends observed so far.
+    pub fn send_count(&self) -> usize {
+        self.sends.lock().expect("send log").len()
+    }
+
+    /// One recorded send (panic-free assertions: index must exist).
+    pub fn send_at(&self, index: usize) -> crate::auth::aws::source_http::SourceHttpRequest {
+        self.sends.lock().expect("send log")[index].clone()
+    }
+
+    /// A snapshot of all recorded sends.
+    pub fn sends_snapshot(&self) -> Vec<crate::auth::aws::source_http::SourceHttpRequest> {
+        self.sends.lock().expect("send log").clone()
+    }
+}
+
+impl crate::auth::aws::source_http::AwsSourceTransport for FakeSourceTransport {
+    fn send(
+        &self,
+        request: crate::auth::aws::source_http::SourceHttpRequest,
+    ) -> futures_util::future::BoxFuture<
+        '_,
+        Result<
+            crate::auth::aws::source_http::SourceHttpResponse,
+            crate::auth::aws::source_http::SourceHttpError,
+        >,
+    > {
+        use futures_util::FutureExt as _;
+        self.sends.lock().expect("send log").push(request);
+        let response = self
+            .responses
+            .lock()
+            .expect("response queue")
+            .pop_front()
+            .or_else(|| self.default.lock().expect("default").clone())
+            .unwrap_or(Err(
+                crate::auth::aws::source_http::SourceHttpError::Transport,
+            ));
+        async move { response }.boxed()
+    }
+}
+
+impl std::fmt::Debug for FakeSourceTransport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FakeSourceTransport")
+            .field("sends", &self.send_count())
+            .finish()
+    }
+}
+
+/// A source transport that always fails (for fixtures that must never
+/// perform a real exchange).
+pub struct NeverTransport;
+
+impl crate::auth::aws::source_http::AwsSourceTransport for NeverTransport {
+    fn send(
+        &self,
+        _request: crate::auth::aws::source_http::SourceHttpRequest,
+    ) -> futures_util::future::BoxFuture<
+        '_,
+        Result<
+            crate::auth::aws::source_http::SourceHttpResponse,
+            crate::auth::aws::source_http::SourceHttpError,
+        >,
+    > {
+        use futures_util::FutureExt as _;
+        async { Err(crate::auth::aws::source_http::SourceHttpError::Transport) }.boxed()
+    }
+}

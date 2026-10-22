@@ -25,6 +25,11 @@ tracing = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+# Private STS protocol codecs: form-query writer, bounded XML reader, and the
+# lexical/structure precheck tokenizer (rust-backends §3.3 fixed selection).
+aws-smithy-query = { workspace = true }
+aws-smithy-xml = { workspace = true }
+xmlparser = { workspace = true }
 regex = { workspace = true }
 regress = { workspace = true }
 unicode-normalization = { workspace = true }

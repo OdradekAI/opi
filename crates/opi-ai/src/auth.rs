@@ -294,10 +294,42 @@ pub enum AwsCredentialSource {
     ConfigFile,
     /// An AWS shared config profile's `credential_process` supplied credentials.
     CredentialProcess,
+    /// A profile's `role_arn` exchange at STS supplied temporary
+    /// credentials signed by a resolved source profile or
+    /// `credential_source` provider.
+    AssumeRole {
+        /// Owning shared-config profile name.
+        profile: String,
+    },
+    /// A web-identity token file exchange at STS supplied temporary
+    /// credentials without source SigV4.
+    WebIdentity {
+        /// Where the selected token file/role came from.
+        route: WebIdentityRoute,
+    },
+    /// The ECS container metadata provider supplied credentials; `legacy`
+    /// distinguishes the one-send legacy provider from the modern fixed
+    /// budget provider.
+    EcsContainer {
+        /// Whether the legacy provider produced the bundle.
+        legacy: bool,
+    },
+    /// The EC2 instance metadata (IMDS) provider supplied credentials.
+    Ec2InstanceMetadata,
     /// The explicit no-real-credential proxy-placeholder mode attached fixed
     /// nonsecret placeholder SigV4 credentials on a caller-supplied
     /// nonstandard endpoint. Zero real credential sources were read.
     ProxyPlaceholder,
+}
+
+/// Route a web-identity selection took.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WebIdentityRoute {
+    /// The shared-config profile's `web_identity_token_file`.
+    Profile(String),
+    /// The environment-driven chain segment
+    /// (`AWS_WEB_IDENTITY_TOKEN_FILE`/`AWS_ROLE_ARN`).
+    Environment,
 }
 
 /// Whether auth preparation used an explicitly allowed fallback.
@@ -704,8 +736,18 @@ impl AuthContext for AmbientAuthContext {
 /// Local AWS credential-source chain modules (Bedrock's selected-source
 /// coordinator; product-neutral, injectable, no live AWS calls).
 pub mod aws {
-    /// Env/INI-static-overlay/`credential_process` chain coordinator.
+    /// Regional STS endpoint resolution (partition/override arithmetic).
+    pub mod endpoint;
+    /// Env/INI/role/web-identity/remote chain coordinator.
     pub mod local;
+    /// ECS and IMDS metadata credential providers.
+    pub mod metadata;
     /// Injectable `credential_process` execution seam.
     pub mod process;
+    /// STS `AssumeRole` exchange and pinned Query/XML codecs.
+    pub mod role;
+    /// Injectable auth-source HTTP transport.
+    pub mod source_http;
+    /// STS `AssumeRoleWithWebIdentity` exchange.
+    pub mod web_identity;
 }

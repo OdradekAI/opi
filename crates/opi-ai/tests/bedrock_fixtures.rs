@@ -2041,6 +2041,9 @@ impl AuthResolver for LocalChainBedrockResolver {
                 credentials_file: self.credentials_file.as_deref(),
                 config_file: self.config_file.as_deref(),
                 process: &runner,
+                transport: &NEVER_TRANSPORT,
+                mfa: None,
+                sts_endpoint: None,
                 region: None,
                 default_region: "us-east-1",
             };
@@ -2166,6 +2169,9 @@ async fn failing_local_source_resolution_sends_zero_generation_requests() {
                         access_key_id: Some(SecretString::from("SCOPED_ACCESS_ONLY")),
                         ..ScopedAwsEnv::empty()
                     },
+                    transport: &NEVER_TRANSPORT,
+                    mfa: None,
+                    sts_endpoint: None,
                     ambient: &ambient,
                     credentials_file: None,
                     config_file: None,
@@ -2219,12 +2225,13 @@ async fn failing_local_source_resolution_sends_zero_generation_requests() {
 
 use opi_ai::auth::aws::local::{
     AwsAuthSelection, AwsLocalChainInput, CredentialResolutionError, CredentialSource,
-    ScopedAwsEnv, resolve_local_aws_auth,
+    ScopedAwsEnv, WebIdentityRoute, resolve_local_aws_auth,
 };
 use opi_ai::auth::aws::process::{
     CredentialProcessOutput, CredentialProcessRunner, CredentialProcessSpec,
 };
 use opi_ai::auth::{AuthContext, AuthContextError};
+use opi_ai::test_support::FakeSourceTransport;
 use secrecy::ExposeSecret;
 
 /// Injected ambient environment for chain tests: no process-env access.
@@ -2290,10 +2297,16 @@ fn chain_input<'a>(
         credentials_file,
         config_file,
         process,
+        transport: &NEVER_TRANSPORT,
+        mfa: None,
+        sts_endpoint: None,
         region: None,
         default_region: "us-east-1",
     }
 }
+
+/// Transport used by chain tests that never expect a source exchange.
+static NEVER_TRANSPORT: opi_ai::test_support::NeverTransport = opi_ai::test_support::NeverTransport;
 
 async fn chain_source(input: &AwsLocalChainInput<'_>) -> CredentialSource {
     let auth = resolve_local_aws_auth(input)
@@ -2318,6 +2331,10 @@ async fn chain_source(input: &AwsLocalChainInput<'_>) -> CredentialSource {
         AwsCredentialSource::ProfileFile => CredentialSource::ProfileFile,
         AwsCredentialSource::ConfigFile => CredentialSource::ConfigFile,
         AwsCredentialSource::CredentialProcess => CredentialSource::CredentialProcess,
+        AwsCredentialSource::AssumeRole { profile } => CredentialSource::AssumeRole { profile },
+        AwsCredentialSource::WebIdentity { route } => CredentialSource::WebIdentity { route },
+        AwsCredentialSource::EcsContainer { legacy } => CredentialSource::EcsContainer { legacy },
+        AwsCredentialSource::Ec2InstanceMetadata => CredentialSource::Ec2InstanceMetadata,
         AwsCredentialSource::ProxyPlaceholder => unreachable!("no placeholder in chain tests"),
     }
 }
@@ -3075,4 +3092,1660 @@ async fn bedrock_wrong_prepared_auth_error_does_not_expose_secret() {
         .expect_err("wrong auth must fail closed");
     assert!(matches!(error, ProviderError::Config(_)));
     assert!(!format!("{error:?} {error}").contains(secret));
+}
+
+// ===========================================================================
+// Task 20.19.2: STS AssumeRole / web identity / ECS / IMDS source families.
+// ===========================================================================
+
+use opi_ai::auth::aws::endpoint::sts_endpoint_url;
+use opi_ai::auth::aws::local::TerminalReason;
+use opi_ai::auth::aws::role::MfaTokenPresenter;
+use opi_ai::auth::aws::source_http::{
+    AwsSourceTransport, ReqwestSourceTransport, SourceHttpError, SourceHttpMethod,
+    SourceHttpRequest, SourceHttpResponse,
+};
+
+fn rfc3339(value: &str) -> time::OffsetDateTime {
+    time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339).unwrap()
+}
+
+fn sigv4_of(auth: &ResolvedAuth) -> &opi_ai::auth::AwsSigV4Credentials {
+    match &auth.scheme {
+        AuthScheme::AwsSigV4(credentials) => credentials,
+        other => panic!("expected SigV4 scheme, got {other:?}"),
+    }
+}
+
+fn sts_success_xml(creds: &str, role_arn: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+<AssumeRoleResult>
+<Credentials>
+<AccessKeyId>{creds}ACCESS</AccessKeyId>
+<SecretAccessKey>{creds}SECRET</SecretAccessKey>
+<SessionToken>{creds}SESSION</SessionToken>
+<Expiration>2027-06-01T12:00:00Z</Expiration>
+</Credentials>
+<AssumedRoleUser>
+<Arn>{role_arn}</Arn>
+<AssumedRoleId>AROAFIXTUREROLEID</AssumedRoleId>
+</AssumedRoleUser>
+</AssumeRoleResult>
+<ResponseMetadata><RequestId>sts-request-1</RequestId></ResponseMetadata>
+</AssumeRoleResponse>"#
+    )
+}
+
+fn web_identity_success_xml(token_subject: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<AssumeRoleWithWebIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+<AssumeRoleWithWebIdentityResult>
+<Subject>{token_subject}</Subject>
+<Audience>fixture-audience</Audience>
+<Provider>fixture-provider</Provider>
+<Credentials>
+<AccessKeyId>WEBACCESS</AccessKeyId>
+<SecretAccessKey>WEBSECRET</SecretAccessKey>
+<SessionToken>WEBSESSION</SessionToken>
+<Expiration>2027-07-01T12:00:00Z</Expiration>
+</Credentials>
+<AssumedRoleUser>
+<Arn>arn:aws:sts::123456789012:assumed-role/web-role/session</Arn>
+<AssumedRoleId>AROAWEBROLEID</AssumedRoleId>
+</AssumedRoleUser>
+</AssumeRoleWithWebIdentityResult>
+<ResponseMetadata><RequestId>sts-request-2</RequestId></ResponseMetadata>
+</AssumeRoleWithWebIdentityResponse>"#
+    )
+}
+
+fn sts_error_xml(code: &str) -> String {
+    format!(
+        r#"<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+<Error><Type>Sender</Type><Code>{code}</Code><Message>denied detail</Message></Error>
+<RequestId>sts-request-denied</RequestId>
+</ErrorResponse>"#
+    )
+}
+
+fn source_response(
+    status: u16,
+    body: impl Into<String>,
+) -> Result<SourceHttpResponse, SourceHttpError> {
+    Ok(SourceHttpResponse {
+        status,
+        body: body.into().into_bytes(),
+    })
+}
+
+/// A role profile plus a static source profile shared by the INI tests.
+fn write_role_profiles(dir: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let credentials = dir.join("credentials");
+    std::fs::write(
+        &credentials,
+        "[source-prof]\naws_access_key_id=SOURCE_ACCESS\naws_secret_access_key=SOURCE_SECRET\naws_session_token=SOURCE_SESSION\n\
+         [role-prof]\naws_access_key_id=ROLE_OWN_STATIC_ACCESS\naws_secret_access_key=ROLE_OWN_STATIC_SECRET\n",
+    )
+    .unwrap();
+    let config = dir.join("config");
+    std::fs::write(
+        &config,
+        "[profile role-prof]\nrole_arn=arn:aws:iam::123456789012:role/fixture\nrole_session_name=fixture-session\nexternal_id=fixture-external\nduration_seconds=3600\nsource_profile=source-prof\nregion=us-west-2\n",
+    )
+    .unwrap();
+    (credentials, config)
+}
+
+fn recorded_send(transport: &FakeSourceTransport, index: usize) -> SourceHttpRequest {
+    transport.send_at(index)
+}
+
+fn body_of(send: &SourceHttpRequest) -> String {
+    String::from_utf8(send.body.clone().unwrap_or_default()).unwrap()
+}
+
+fn header_of<'h>(send: &'h SourceHttpRequest, name: &str) -> Option<&'h str> {
+    send.headers
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
+fn assert_sigv4_signed_with(send: &SourceHttpRequest, access_key_id: &str) {
+    let authorization = header_of(send, "Authorization")
+        .expect("source SigV4 Authorization header")
+        .to_owned();
+    assert!(
+        authorization.starts_with("AWS4-HMAC-SHA256 Credential="),
+        "SigV4 credential header expected: {authorization}"
+    );
+    assert!(
+        authorization.contains(&format!("Credential={access_key_id}/")),
+        "source credentials must sign the exchange: {authorization}"
+    );
+}
+
+struct FixtureMfa;
+
+impl MfaTokenPresenter for FixtureMfa {
+    fn token_code(
+        &self,
+        _serial: &str,
+    ) -> Result<String, opi_ai::auth::aws::role::MfaPresentationError> {
+        Ok("123456".to_owned())
+    }
+}
+
+#[tokio::test]
+async fn ini_assume_role_wins_over_static_and_signs_source_profile_credentials() {
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        sts_success_xml(
+            "ROLE",
+            "arn:aws:sts::123456789012:assumed-role/fixture/fixture-session",
+        ),
+    )]);
+    let dir = tempfile::tempdir().unwrap();
+    let (credentials, config) = write_role_profiles(dir.path());
+
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("role-prof".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("assume-role resolves");
+
+    assert_eq!(transport.send_count(), 1, "exactly one STS exchange");
+    let send = recorded_send(&transport, 0);
+    assert_eq!(send.method, SourceHttpMethod::Post);
+    assert_eq!(send.url, "https://sts.us-west-2.amazonaws.com/");
+    assert_eq!(
+        header_of(&send, "Content-Type").unwrap(),
+        "application/x-www-form-urlencoded"
+    );
+    let body = body_of(&send);
+    for expected in [
+        "Action=AssumeRole",
+        "Version=2011-06-15",
+        "RoleArn=arn%3Aaws%3Aiam%3A%3A123456789012%3Arole%2Ffixture",
+        "RoleSessionName=fixture-session",
+        "ExternalId=fixture-external",
+        "DurationSeconds=3600",
+    ] {
+        assert!(
+            body.contains(expected),
+            "form body missing {expected}: {body}"
+        );
+    }
+    assert!(
+        !body.contains("ROLE_OWN_STATIC"),
+        "role profile's own static keys must not be sent: {body}"
+    );
+    assert_sigv4_signed_with(&send, "SOURCE_ACCESS");
+
+    assert_eq!(
+        auth.provenance.source,
+        AuthProvenanceSource::AwsSigV4 {
+            source: AwsCredentialSource::AssumeRole {
+                profile: "role-prof".to_owned()
+            }
+        }
+    );
+    assert_eq!(
+        sigv4_of(&auth).access_key_id.expose_secret(),
+        "ROLEACCESS",
+        "temporary credentials replace the source pair"
+    );
+    assert_eq!(
+        sigv4_of(&auth).expires_at,
+        Some(rfc3339("2027-06-01T12:00:00Z")),
+        "STS expiration is retained"
+    );
+    assert_eq!(auth.account_id.as_deref(), Some("123456789012"));
+    assert!(
+        runner.calls.lock().unwrap().is_empty(),
+        "process must not run for a resolved role"
+    );
+}
+
+#[tokio::test]
+async fn assume_role_requires_exactly_one_of_source_profile_or_credential_source() {
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_DISABLED",
+        "true",
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::default_never();
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(
+        &credentials,
+        "[both]\nrole_arn=arn:aws:iam::123456789012:role/fixture\nsource_profile=source-prof\ncredential_source=Environment\n\
+         [neither]\nrole_arn=arn:aws:iam::123456789012:role/fixture\n",
+    )
+    .unwrap();
+
+    for profile in ["both", "neither"] {
+        let input = chain_input(
+            &ambient,
+            Some(credentials.as_path()),
+            None,
+            &runner,
+            AwsAuthSelection::Profile(profile.to_owned()),
+            ScopedAwsEnv::empty(),
+        )
+        .with_source_transport(&transport);
+        let error = resolve_local_aws_auth(&input)
+            .await
+            .expect_err("ambiguous role configuration continues and exhausts");
+        assert!(
+            matches!(error, CredentialResolutionError::Exhausted),
+            "expected typed exhaustion, got {error:?}"
+        );
+    }
+    assert_eq!(
+        transport.send_count(),
+        0,
+        "no STS sends for ambiguous roles"
+    );
+}
+
+#[tokio::test]
+async fn nested_source_profiles_resolve_and_cycles_continue() {
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![
+        source_response(
+            200,
+            sts_success_xml(
+                "INNER",
+                "arn:aws:sts::123456789012:assumed-role/inner/inner-session",
+            ),
+        ),
+        source_response(
+            200,
+            sts_success_xml(
+                "OUTER",
+                "arn:aws:sts::123456789012:assumed-role/outer/outer-session",
+            ),
+        ),
+    ]);
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(
+        &credentials,
+        "[base]\naws_access_key_id=BASE_ACCESS\naws_secret_access_key=BASE_SECRET\n",
+    )
+    .unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile outer]\nrole_arn=arn:aws:iam::123456789012:role/outer\nsource_profile=inner\nregion=us-west-2\n\
+         [profile inner]\nrole_arn=arn:aws:iam::123456789012:role/inner\nsource_profile=base\n\
+         [profile loop-a]\nrole_arn=arn:aws:iam::123456789012:role/a\nsource_profile=loop-b\n\
+         [profile loop-b]\nrole_arn=arn:aws:iam::123456789012:role/b\nsource_profile=loop-a\n",
+    )
+    .unwrap();
+
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("outer".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("nested assume-role resolves");
+    assert_eq!(sigv4_of(&auth).access_key_id.expose_secret(), "OUTERACCESS");
+    assert_eq!(transport.send_count(), 2, "inner then outer STS exchanges");
+    assert_sigv4_signed_with(&recorded_send(&transport, 0), "BASE_ACCESS");
+    assert_sigv4_signed_with(&recorded_send(&transport, 1), "INNERACCESS");
+
+    let cycling_ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_DISABLED",
+        "true",
+    )]));
+    let cycling = chain_input(
+        &cycling_ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("loop-a".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let error = resolve_local_aws_auth(&cycling)
+        .await
+        .expect_err("profile cycles are continue-eligible");
+    assert!(matches!(error, CredentialResolutionError::Exhausted));
+    assert_eq!(transport.send_count(), 2, "cycles send nothing");
+}
+
+#[tokio::test]
+async fn mfa_serial_without_presenter_is_typed_terminal() {
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_DISABLED",
+        "true",
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::default_never();
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(
+        &credentials,
+        "[source-prof]\naws_access_key_id=SOURCE_ACCESS\naws_secret_access_key=SOURCE_SECRET\n",
+    )
+    .unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile role-prof]\nrole_arn=arn:aws:iam::123456789012:role/fixture\nsource_profile=source-prof\nmfa_serial=arn:aws:iam::123456789012:mfa/fixture\ncredential_process=fixture-process\nregion=us-west-2\n",
+    )
+    .unwrap();
+
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("role-prof".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("MFA without presenter must terminate");
+    assert!(
+        matches!(
+            error,
+            CredentialResolutionError::Terminal {
+                reason: TerminalReason::MfaPresenterMissing,
+                ..
+            }
+        ),
+        "expected MFA terminal, got {error:?}"
+    );
+    assert_eq!(transport.send_count(), 0);
+    assert!(
+        runner.calls.lock().unwrap().is_empty(),
+        "terminal role failure must not fall through to credential_process"
+    );
+}
+
+#[tokio::test]
+async fn mfa_presenter_supplies_serial_number_and_token_code() {
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        sts_success_xml(
+            "MFA",
+            "arn:aws:sts::123456789012:assumed-role/fixture/fixture-session",
+        ),
+    )]);
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(
+        &credentials,
+        "[source-prof]\naws_access_key_id=SOURCE_ACCESS\naws_secret_access_key=SOURCE_SECRET\n",
+    )
+    .unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile role-prof]\nrole_arn=arn:aws:iam::123456789012:role/fixture\nsource_profile=source-prof\nmfa_serial=arn:aws:iam::123456789012:mfa/fixture\nregion=us-west-2\n",
+    )
+    .unwrap();
+
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("role-prof".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_mfa(Some(&FixtureMfa));
+    resolve_local_aws_auth(&input)
+        .await
+        .expect("MFA-presented assume-role resolves");
+
+    let body = body_of(&recorded_send(&transport, 0));
+    assert!(
+        body.contains("SerialNumber=arn%3Aaws%3Aiam%3A%3A123456789012%3Amfa%2Ffixture"),
+        "MFA serial must be encoded: {body}"
+    );
+    assert!(
+        body.contains("TokenCode=123456"),
+        "presenter token code: {body}"
+    );
+}
+
+#[tokio::test]
+async fn credential_source_routes_environment_ecs_and_imds_sources() {
+    let ambient = MapAuthContext(std::collections::HashMap::from([
+        ("AWS_ACCESS_KEY_ID", "ENV_ACCESS"),
+        ("AWS_SECRET_ACCESS_KEY", "ENV_SECRET"),
+        (
+            "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+            "http://169.254.170.2/v2/creds",
+        ),
+    ]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(&credentials, "").unwrap();
+
+    // Environment credential_source: the ambient pair signs the exchange.
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile env-role]\nrole_arn=arn:aws:iam::123456789012:role/fixture\ncredential_source=Environment\nregion=us-west-2\n",
+    )
+    .unwrap();
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        sts_success_xml(
+            "ENVROLE",
+            "arn:aws:sts::123456789012:assumed-role/fixture/s",
+        ),
+    )]);
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("env-role".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    resolve_local_aws_auth(&input)
+        .await
+        .expect("environment credential_source resolves");
+    assert_eq!(transport.send_count(), 1);
+    assert_sigv4_signed_with(&recorded_send(&transport, 0), "ENV_ACCESS");
+
+    // EcsContainer credential_source: the ECS provider feeds the signing pair.
+    std::fs::write(
+        &config,
+        "[profile ecs-role]\nrole_arn=arn:aws:iam::123456789012:role/fixture\ncredential_source=EcsContainer\nregion=us-west-2\n",
+    )
+    .unwrap();
+    let transport = FakeSourceTransport::new(vec![
+        source_response(
+            200,
+            r#"{"AccessKeyId":"ECSACCESS","SecretAccessKey":"ECSSECRET","Token":"ECSSESSION","Expiration":"2027-08-01T00:00:00Z"}"#,
+        ),
+        source_response(
+            200,
+            sts_success_xml(
+                "ECSROLE",
+                "arn:aws:sts::123456789012:assumed-role/fixture/s",
+            ),
+        ),
+    ]);
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("ecs-role".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("ECS credential_source resolves");
+    assert_eq!(transport.send_count(), 2);
+    assert_eq!(
+        recorded_send(&transport, 0).url,
+        "http://169.254.170.2/v2/creds"
+    );
+    assert_sigv4_signed_with(&recorded_send(&transport, 1), "ECSACCESS");
+    assert!(
+        matches!(
+            auth.provenance.source,
+            AuthProvenanceSource::AwsSigV4 {
+                source: AwsCredentialSource::AssumeRole { .. }
+            }
+        ),
+        "assume-role provenance wraps the resolved source"
+    );
+
+    // Ec2InstanceMetadata credential_source: the IMDS provider feeds the pair.
+    std::fs::write(
+        &config,
+        "[profile imds-role]\nrole_arn=arn:aws:iam::123456789012:role/fixture\ncredential_source=Ec2InstanceMetadata\nregion=us-west-2\n",
+    )
+    .unwrap();
+    let transport = FakeSourceTransport::new(vec![
+        source_response(200, "imds-token"),
+        source_response(200, "imds-role\n"),
+        source_response(
+            200,
+            r#"{"Code":"Success","AccessKeyId":"IMDSACCESS","SecretAccessKey":"IMDSSECRET","Token":"IMDSSESSION","Expiration":"2027-09-01T00:00:00Z"}"#,
+        ),
+        source_response(
+            200,
+            sts_success_xml(
+                "IMDSROLE",
+                "arn:aws:sts::123456789012:assumed-role/fixture/s",
+            ),
+        ),
+    ]);
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("imds-role".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    resolve_local_aws_auth(&input)
+        .await
+        .expect("IMDS credential_source resolves");
+    assert_eq!(transport.send_count(), 4);
+    assert_eq!(
+        recorded_send(&transport, 0).url,
+        "http://169.254.169.254/latest/api/token"
+    );
+    assert_sigv4_signed_with(&recorded_send(&transport, 3), "IMDSACCESS");
+
+    // Unsupported credential_source values are continue-eligible.
+    std::fs::write(
+        &config,
+        "[profile bad-role]\nrole_arn=arn:aws:iam::123456789012:role/fixture\ncredential_source=Unsupported\nregion=us-west-2\n",
+    )
+    .unwrap();
+    let transport = FakeSourceTransport::default_never();
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("bad-role".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("unsupported credential_source continues");
+    assert!(matches!(error, CredentialResolutionError::Exhausted));
+}
+
+#[tokio::test]
+async fn sts_denial_is_typed_terminal_with_code_and_request_id() {
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport =
+        FakeSourceTransport::new(vec![source_response(403, sts_error_xml("AccessDenied"))]);
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(
+        &credentials,
+        "[source-prof]\naws_access_key_id=SOURCE_ACCESS\naws_secret_access_key=SOURCE_SECRET\n",
+    )
+    .unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile role-prof]\nrole_arn=arn:aws:iam::123456789012:role/fixture\nsource_profile=source-prof\ncredential_process=fixture-process\nregion=us-west-2\n",
+    )
+    .unwrap();
+
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("role-prof".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("STS denial is terminal");
+    let rendered = error.to_string();
+    match error {
+        CredentialResolutionError::Terminal { reason, .. } => match reason {
+            TerminalReason::StsDenied {
+                status,
+                code,
+                request_id,
+            } => {
+                assert_eq!(status, Some(403));
+                assert_eq!(code.as_deref(), Some("AccessDenied"));
+                assert_eq!(request_id.as_deref(), Some("sts-request-denied"));
+            }
+            other => panic!("expected StsDenied, got {other:?}"),
+        },
+        other => panic!("expected Terminal, got {other:?}"),
+    }
+    assert!(rendered.contains("AccessDenied"), "{rendered}");
+    assert!(
+        !rendered.contains("denied detail"),
+        "raw STS message must not reach diagnostics: {rendered}"
+    );
+    assert!(
+        runner.calls.lock().unwrap().is_empty(),
+        "STS denial must not fall through"
+    );
+}
+
+#[tokio::test]
+async fn web_identity_from_ini_profile_reads_token_file_and_omits_source_sigv4() {
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        web_identity_success_xml("fixture-subject"),
+    )]);
+    let dir = tempfile::tempdir().unwrap();
+    let token_file = dir.path().join("token.jwt");
+    std::fs::write(&token_file, "fixture-web-identity-token\n").unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(&credentials, "").unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile web-prof]\nrole_arn=arn:aws:iam::123456789012:role/web\nweb_identity_token_file=REPLACED_BY_TEST\nregion=us-west-2\n",
+    )
+    .unwrap();
+    // Token file path with an absolute path in the config.
+    std::fs::write(
+        &config,
+        format!(
+            "[profile web-prof]\nrole_arn=arn:aws:iam::123456789012:role/web\nrole_session_name=web-session\nweb_identity_token_file={}\nregion=us-west-2\n",
+            token_file.display()
+        ),
+    )
+    .unwrap();
+
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("web-prof".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("web identity resolves");
+
+    assert_eq!(transport.send_count(), 1);
+    let send = recorded_send(&transport, 0);
+    let body = body_of(&send);
+    for expected in [
+        "Action=AssumeRoleWithWebIdentity",
+        "Version=2011-06-15",
+        "RoleArn=arn%3Aaws%3Aiam%3A%3A123456789012%3Arole%2Fweb",
+        "RoleSessionName=web-session",
+        "WebIdentityToken=fixture-web-identity-token",
+    ] {
+        assert!(body.contains(expected), "web identity body: {body}");
+    }
+    assert!(
+        header_of(&send, "Authorization").is_none(),
+        "web identity never signs with source SigV4"
+    );
+    assert_eq!(
+        auth.provenance.source,
+        AuthProvenanceSource::AwsSigV4 {
+            source: AwsCredentialSource::WebIdentity {
+                route: WebIdentityRoute::Profile("web-prof".to_owned())
+            }
+        }
+    );
+    assert_eq!(auth.account_id.as_deref(), Some("123456789012"));
+    assert!(
+        runner.calls.lock().unwrap().is_empty(),
+        "web identity precedes credential_process"
+    );
+}
+
+#[tokio::test]
+async fn web_identity_token_file_failure_is_terminal() {
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_DISABLED",
+        "true",
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::default_never();
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(&credentials, "").unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        format!(
+            "[profile web-prof]\nrole_arn=arn:aws:iam::123456789012:role/web\nweb_identity_token_file={}\ncredential_process=fixture-process\nregion=us-west-2\n",
+            dir.path().join("missing-token.jwt").display()
+        ),
+    )
+    .unwrap();
+
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("web-prof".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("unreadable token file is terminal");
+    assert!(
+        matches!(
+            error,
+            CredentialResolutionError::Terminal {
+                reason: TerminalReason::TokenFileUnreadable,
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+    assert_eq!(transport.send_count(), 0);
+    assert!(runner.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn ambient_web_identity_env_fields_exchange_after_ini_misses() {
+    let token_dir = tempfile::tempdir().unwrap();
+    let token_path = token_dir.path().join("ambient-token.jwt");
+    std::fs::write(&token_path, "ambient-token").unwrap();
+    let leaked_token_path: &'static str = Box::leak(
+        token_path
+            .to_str()
+            .expect("utf-8 path")
+            .to_owned()
+            .into_boxed_str(),
+    );
+    let ambient = MapAuthContext(std::collections::HashMap::from([
+        ("AWS_WEB_IDENTITY_TOKEN_FILE", leaked_token_path),
+        ("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/env"),
+        ("AWS_ROLE_SESSION_NAME", "env-session"),
+        ("AWS_REGION", "us-west-2"),
+    ]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        web_identity_success_xml("env-subject"),
+    )]);
+    let dir = tempfile::tempdir().unwrap();
+    // Default profile has only a region: the INI family misses, then the
+    // chain-level ambient web identity segment runs.
+    let credentials = dir.path().join("credentials");
+    std::fs::write(&credentials, "").unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(&config, "[default]\nregion=us-west-2\n").unwrap();
+
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("ambient web identity resolves");
+
+    assert_eq!(transport.send_count(), 1);
+    let body = body_of(&recorded_send(&transport, 0));
+    assert!(body.contains("WebIdentityToken=ambient-token"), "{body}");
+    assert!(body.contains("RoleSessionName=env-session"), "{body}");
+    assert_eq!(
+        auth.provenance.source,
+        AuthProvenanceSource::AwsSigV4 {
+            source: AwsCredentialSource::WebIdentity {
+                route: WebIdentityRoute::Environment
+            }
+        }
+    );
+
+    // Missing role configuration is continue-eligible: no exchange, exhaustion.
+    let ambient_missing = MapAuthContext(std::collections::HashMap::from([
+        ("AWS_WEB_IDENTITY_TOKEN_FILE", "/nonexistent/token"),
+        ("AWS_REGION", "us-west-2"),
+        ("AWS_EC2_METADATA_DISABLED", "true"),
+    ]));
+    let transport_missing = FakeSourceTransport::default_never();
+    let input = chain_input(
+        &ambient_missing,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport_missing);
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("incomplete ambient web identity continues");
+    assert!(matches!(error, CredentialResolutionError::Exhausted));
+    assert_eq!(transport_missing.send_count(), 0);
+}
+
+#[tokio::test]
+async fn ecs_relative_uri_and_token_file_take_precedence() {
+    let ambient = MapAuthContext(std::collections::HashMap::from([
+        (
+            "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+            "/v2/fixture-creds",
+        ),
+        (
+            "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+            "https://full.example.invalid/creds",
+        ),
+        ("AWS_CONTAINER_AUTHORIZATION_TOKEN", "direct-token"),
+    ]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let token_file = dir.path().join("ecs-token");
+    std::fs::write(&token_file, "file-token\n").unwrap();
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        r#"{"AccessKeyId":"ECSACCESS","SecretAccessKey":"ECSSECRET","Token":"ECSSESSION","Expiration":"2027-10-01T00:00:00Z"}"#,
+    )]);
+
+    let scoped = ScopedAwsEnv {
+        container_authorization_token_file: Some(token_file.display().to_string()),
+        ..ScopedAwsEnv::empty()
+    };
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        scoped,
+    )
+    .with_source_transport(&transport);
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("ECS credentials resolve");
+
+    assert_eq!(transport.send_count(), 1);
+    let send = recorded_send(&transport, 0);
+    assert_eq!(send.url, "http://169.254.170.2/v2/fixture-creds");
+    assert_eq!(header_of(&send, "Authorization").unwrap(), "file-token");
+    assert_eq!(
+        auth.provenance.source,
+        AuthProvenanceSource::AwsSigV4 {
+            source: AwsCredentialSource::EcsContainer { legacy: false }
+        }
+    );
+    assert_eq!(sigv4_of(&auth).access_key_id.expose_secret(), "ECSACCESS");
+    assert_eq!(
+        sigv4_of(&auth).expires_at,
+        Some(rfc3339("2027-10-01T00:00:00Z")),
+        "ECS expiration is retained"
+    );
+}
+
+#[tokio::test]
+async fn ecs_full_uri_https_is_allowed_and_http_requires_metadata_or_loopback_host() {
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+
+    // https full URI: any host is allowed.
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        "https://credentials.example.invalid/creds",
+    )]));
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        r#"{"AccessKeyId":"HTTPSACCESS","SecretAccessKey":"HTTPSSECRET"}"#,
+    )]);
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    resolve_local_aws_auth(&input)
+        .await
+        .expect("https full URI resolves");
+    assert_eq!(transport.send_count(), 1);
+
+    // Plain http to an arbitrary host is a typed terminal rejection.
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        "http://credentials.example.invalid/creds",
+    )]));
+    let transport = FakeSourceTransport::default_never();
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("http full URI to a non-metadata host is terminal");
+    assert!(
+        matches!(
+            error,
+            CredentialResolutionError::Terminal {
+                reason: TerminalReason::InvalidContainerEndpoint,
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+    assert_eq!(transport.send_count(), 0, "no sends for invalid endpoints");
+}
+
+#[tokio::test]
+async fn ecs_modern_budget_then_legacy_single_send_and_no_imds_fallthrough() {
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+        "/v2/creds",
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    // Modern provider: three transport failures then success on send 4.
+    let transport = FakeSourceTransport::new(vec![
+        Err(SourceHttpError::Transport),
+        Err(SourceHttpError::Transport),
+        Err(SourceHttpError::Transport),
+        source_response(
+            200,
+            r#"{"AccessKeyId":"RETRYACCESS","SecretAccessKey":"RETRYSECRET"}"#,
+        ),
+    ]);
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("modern ECS retries within its fixed budget");
+    assert_eq!(
+        transport.send_count(),
+        4,
+        "modern budget is at most four sends"
+    );
+    assert_eq!(sigv4_of(&auth).access_key_id.expose_secret(), "RETRYACCESS");
+
+    // Modern exhaustion falls to legacy exactly once; legacy failure ends the
+    // chain without consulting IMDS.
+    let transport = FakeSourceTransport::new(vec![
+        Err(SourceHttpError::Transport),
+        Err(SourceHttpError::Transport),
+        Err(SourceHttpError::Transport),
+        Err(SourceHttpError::Transport),
+        Err(SourceHttpError::Transport),
+    ]);
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("ECS exhaustion ends the chain");
+    assert!(
+        matches!(error, CredentialResolutionError::Exhausted),
+        "{error:?}"
+    );
+    assert_eq!(
+        transport.send_count(),
+        5,
+        "four modern sends plus exactly one legacy send, and no IMDS leg"
+    );
+    for send in transport.sends_snapshot() {
+        assert!(
+            !send.url.contains("169.254.169.254"),
+            "ECS failure must not fall through to IMDS: {}",
+            send.url
+        );
+    }
+}
+
+#[tokio::test]
+async fn imds_v2_token_role_and_credential_legs_resolve() {
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![
+        source_response(200, "fixture-imds-token"),
+        source_response(200, "imds-role\nother-role\n"),
+        source_response(
+            200,
+            r#"{"Code":"Success","Type":"AWS-HMAC","AccessKeyId":"IMDSACCESS","SecretAccessKey":"IMDSSECRET","Token":"IMDSSESSION","Expiration":"2027-11-01T00:00:00Z"}"#,
+        ),
+    ]);
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let auth = resolve_local_aws_auth(&input).await.expect("IMDS resolves");
+
+    assert_eq!(transport.send_count(), 3);
+    let token_put = recorded_send(&transport, 0);
+    assert_eq!(token_put.method, SourceHttpMethod::Put);
+    assert_eq!(token_put.url, "http://169.254.169.254/latest/api/token");
+    assert_eq!(
+        header_of(&token_put, "x-aws-ec2-metadata-token-ttl-seconds").unwrap(),
+        "21600"
+    );
+    let role_get = recorded_send(&transport, 1);
+    assert_eq!(
+        role_get.url,
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+    );
+    assert_eq!(
+        header_of(&role_get, "x-aws-ec2-metadata-token").unwrap(),
+        "fixture-imds-token"
+    );
+    let creds_get = recorded_send(&transport, 2);
+    assert_eq!(
+        creds_get.url,
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials/imds-role"
+    );
+    assert_eq!(
+        auth.provenance.source,
+        AuthProvenanceSource::AwsSigV4 {
+            source: AwsCredentialSource::Ec2InstanceMetadata
+        }
+    );
+    assert_eq!(sigv4_of(&auth).access_key_id.expose_secret(), "IMDSACCESS");
+    assert_eq!(
+        sigv4_of(&auth).expires_at,
+        Some(rfc3339("2027-11-01T00:00:00Z"))
+    );
+}
+
+#[tokio::test]
+async fn imds_token_404_enables_v1_mode_for_subsequent_legs() {
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![
+        source_response(404, ""),
+        source_response(200, "v1-role"),
+        source_response(
+            200,
+            r#"{"AccessKeyId":"V1ACCESS","SecretAccessKey":"V1SECRET","Token":"V1SESSION","Expiration":"2027-12-01T00:00:00Z"}"#,
+        ),
+    ]);
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("v1 fallback resolves");
+
+    assert_eq!(transport.send_count(), 3);
+    for leg in [1_usize, 2] {
+        let send = recorded_send(&transport, leg);
+        assert!(
+            header_of(&send, "x-aws-ec2-metadata-token").is_none(),
+            "v1 legs carry no token header"
+        );
+    }
+    assert_eq!(sigv4_of(&auth).access_key_id.expose_secret(), "V1ACCESS");
+}
+
+#[tokio::test]
+async fn imds_v1_disable_and_token_400_branches() {
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+
+    // The disable env gates the default remote branch entirely: no IMDS leg
+    // runs at all (the fixed node chain behavior).
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_DISABLED",
+        "true",
+    )]));
+    let transport = FakeSourceTransport::default_never();
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("a disabled remote segment ends the chain");
+    assert!(
+        matches!(error, CredentialResolutionError::Exhausted),
+        "{error:?}"
+    );
+    assert_eq!(
+        transport.send_count(),
+        0,
+        "no remote leg runs when disabled"
+    );
+
+    // Token 400 stops that request: no v1 fallback, no further legs.
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let transport = FakeSourceTransport::new(vec![source_response(400, "")]);
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("token 400 stops the request");
+    assert!(
+        matches!(error, CredentialResolutionError::Exhausted),
+        "{error:?}"
+    );
+    assert_eq!(transport.send_count(), 1);
+
+    // "false" does not disable IMDS.
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_DISABLED",
+        "false",
+    )]));
+    let transport = FakeSourceTransport::new(vec![
+        source_response(404, ""),
+        source_response(200, "v1-role"),
+        source_response(
+            200,
+            r#"{"AccessKeyId":"FALSEACCESS","SecretAccessKey":"FALSESECRET"}"#,
+        ),
+    ]);
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    resolve_local_aws_auth(&input)
+        .await
+        .expect("AWS_EC2_METADATA_DISABLED=false keeps IMDS enabled");
+}
+
+#[tokio::test]
+async fn imds_v1_role_401_clears_token_state_and_refetches() {
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![
+        source_response(404, ""),            // token miss -> v1 mode
+        source_response(401, ""),            // v1 role list denied
+        source_response(200, "fresh-token"), // re-fetch v2 token
+        source_response(200, "imds-role"),
+        source_response(
+            200,
+            r#"{"AccessKeyId":"REFRESHACCESS","SecretAccessKey":"REFRESHSECRET"}"#,
+        ),
+    ]);
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("401 clears the token state and retries with a fresh token");
+
+    assert_eq!(transport.send_count(), 5);
+    let role_retry = recorded_send(&transport, 3);
+    assert_eq!(
+        header_of(&role_retry, "x-aws-ec2-metadata-token").unwrap(),
+        "fresh-token"
+    );
+    assert_eq!(
+        sigv4_of(&auth).access_key_id.expose_secret(),
+        "REFRESHACCESS"
+    );
+}
+
+#[tokio::test]
+async fn imds_ipv6_endpoint_mode_is_selected() {
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE",
+        "IPv6",
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![
+        source_response(200, "token"),
+        source_response(200, "role"),
+        source_response(
+            200,
+            r#"{"AccessKeyId":"V6ACCESS","SecretAccessKey":"V6SECRET"}"#,
+        ),
+    ]);
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    resolve_local_aws_auth(&input)
+        .await
+        .expect("IPv6 IMDS resolves");
+    assert_eq!(
+        recorded_send(&transport, 0).url,
+        "http://[fd00:ec2::254]/latest/api/token"
+    );
+}
+
+#[tokio::test]
+async fn dropping_resolution_cancels_inflight_source_exchange() {
+    struct HangingTransport {
+        dropped: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
+    struct DropGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for DropGuard {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    impl AwsSourceTransport for HangingTransport {
+        fn send(
+            &self,
+            _request: SourceHttpRequest,
+        ) -> futures_util::future::BoxFuture<'_, Result<SourceHttpResponse, SourceHttpError>>
+        {
+            let guard = DropGuard(self.dropped.clone());
+            Box::pin(async move {
+                let _keep = guard;
+                std::future::pending::<()>().await;
+                unreachable!("pending never resolves")
+            })
+        }
+    }
+
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+        "/v2/creds",
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let dropped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let transport = HangingTransport {
+        dropped: dropped.clone(),
+    };
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+
+    // Drive the resolution on a select branch, then abandon it: dropping
+    // the owning future must release the in-flight exchange.
+    let mut resolution = Box::pin(resolve_local_aws_auth(&input));
+    tokio::select! {
+        _ = &mut resolution => panic!("hanging transport never resolves"),
+        _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
+    }
+    drop(resolution);
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(
+        dropped.load(std::sync::atomic::Ordering::SeqCst),
+        "dropping the resolution future must release the owned source exchange"
+    );
+}
+
+#[tokio::test]
+async fn sts_exchange_over_real_http_to_local_server() {
+    // Real transport + real form body + real XML parse over loopback HTTP.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind local STS");
+    let addr = listener.local_addr().expect("local STS addr");
+    let endpoint = format!("http://{addr}");
+
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept STS request");
+        let mut request = Vec::new();
+        let mut buf = [0_u8; 4096];
+        loop {
+            let read = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                .await
+                .expect("read STS request");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&buf[..read]);
+            if let Some(header_end) = find_subslice(&request, b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&request[..header_end]).to_string();
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        if !name.trim().eq_ignore_ascii_case("Content-Length") {
+                            return None;
+                        }
+                        value.trim().parse::<usize>().ok()
+                    })
+                    .unwrap_or(0);
+                if request.len() >= header_end + 4 + content_length {
+                    break;
+                }
+            }
+        }
+        let response = sts_success_xml(
+            "LOCAL",
+            "arn:aws:sts::123456789012:assumed-role/fixture/local",
+        );
+        let mut bytes = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            response.len()
+        )
+        .into_bytes();
+        bytes.extend_from_slice(response.as_bytes());
+        tokio::io::AsyncWriteExt::write_all(&mut socket, &bytes)
+            .await
+            .expect("write STS response");
+        request
+    });
+
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = ReqwestSourceTransport::new();
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(
+        &credentials,
+        "[source-prof]\naws_access_key_id=LOCAL_SOURCE_ACCESS\naws_secret_access_key=LOCAL_SOURCE_SECRET\n",
+    )
+    .unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile role-prof]\nrole_arn=arn:aws:iam::123456789012:role/fixture\nsource_profile=source-prof\nregion=us-west-2\n",
+    )
+    .unwrap();
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("role-prof".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_sts_endpoint(Some(&endpoint));
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("real STS exchange resolves");
+
+    assert_eq!(sigv4_of(&auth).access_key_id.expose_secret(), "LOCALACCESS");
+    let request = server.await.expect("server finished");
+    let request_text = String::from_utf8_lossy(&request);
+    assert!(
+        request_text.starts_with("POST / HTTP/1.1"),
+        "STS request line: {request_text}"
+    );
+    assert!(
+        request_text.contains("content-type: application/x-www-form-urlencoded")
+            || request_text.contains("Content-Type: application/x-www-form-urlencoded"),
+        "form content type: {request_text}"
+    );
+    assert!(
+        request_text.contains("Action=AssumeRole&Version=2011-06-15"),
+        "query-encoded body: {request_text}"
+    );
+    assert!(
+        request_text
+            .to_ascii_lowercase()
+            .contains("authorization: aws4-hmac-sha256"),
+        "source SigV4 over real HTTP: {request_text}"
+    );
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+#[tokio::test]
+async fn ecs_full_uri_over_real_http_to_loopback() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind local ECS");
+    let addr = listener.local_addr().expect("local ECS addr");
+
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept ECS request");
+        let mut request = Vec::new();
+        let mut buf = [0_u8; 1024];
+        loop {
+            let read = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                .await
+                .expect("read ECS request");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&buf[..read]);
+            if request.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+        }
+        let body = r#"{"AccessKeyId":"LOOPECSACCESS","SecretAccessKey":"LOOPECSSECRET","Token":"LOOPECSSESSION","Expiration":"2028-01-01T00:00:00Z"}"#;
+        let bytes = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .into_bytes();
+        tokio::io::AsyncWriteExt::write_all(&mut socket, &bytes)
+            .await
+            .expect("write ECS response");
+        request
+    });
+
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        // http to loopback is an allowed host per the fixed endpoint rules.
+        Box::leak(format!("http://{addr}/ecs-creds").into_boxed_str()) as &'static str,
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = ReqwestSourceTransport::new();
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("loopback ECS resolves over real HTTP");
+
+    assert_eq!(
+        sigv4_of(&auth).access_key_id.expose_secret(),
+        "LOOPECSACCESS"
+    );
+    let request = server.await.expect("server finished");
+    let request_text = String::from_utf8_lossy(&request);
+    assert!(
+        request_text.starts_with("GET /ecs-creds HTTP/1.1"),
+        "ECS request line: {request_text}"
+    );
+}
+
+#[tokio::test]
+async fn terminal_sts_failure_through_models_sends_zero_generation_requests() {
+    // Source exchange sends and generation sends are separate: an STS denial
+    // may spend source legs but must never dispatch a generation request.
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport =
+        FakeSourceTransport::new(vec![source_response(403, sts_error_xml("AccessDenied"))]);
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(
+        &credentials,
+        "[source-prof]\naws_access_key_id=ZERO_ACCESS\naws_secret_access_key=ZERO_SECRET\n",
+    )
+    .unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile role-prof]\nrole_arn=arn:aws:iam::123456789012:role/fixture\nsource_profile=source-prof\nregion=us-west-2\n",
+    )
+    .unwrap();
+    let input = chain_input(
+        &ambient,
+        Some(credentials.as_path()),
+        Some(config.as_path()),
+        &runner,
+        AwsAuthSelection::Profile("role-prof".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+
+    // The chain itself is the authority: the typed terminal error from the
+    // STS denial must surface before any generation dispatch (the
+    // Models-level zero-send behavior for failed local resolution is proven
+    // by failing_local_source_resolution_sends_zero_generation_requests).
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("STS denial is terminal");
+    assert!(matches!(error, CredentialResolutionError::Terminal { .. }));
+    assert_eq!(transport.send_count(), 1, "one source leg spent");
+}
+
+#[test]
+fn sts_endpoint_rules_follow_partition_and_override() {
+    assert_eq!(
+        sts_endpoint_url("us-west-2", None),
+        "https://sts.us-west-2.amazonaws.com"
+    );
+    assert_eq!(
+        sts_endpoint_url("cn-north-1", None),
+        "https://sts.cn-north-1.amazonaws.com.cn"
+    );
+    assert_eq!(
+        sts_endpoint_url("us-west-2", Some("https://sts.example.invalid")),
+        "https://sts.example.invalid",
+        "explicit override wins"
+    );
 }
