@@ -5135,7 +5135,7 @@
       "definition_of_done": "Extend the same selected-source coordinator through Models -> real Bedrock adapter with STS AssumeRole and web identity plus ECS/IMDS. Prove source_profile versus credential_source exclusivity, nested local profiles/cycles, role/session/externalId/duration/MFA and missing-presenter failure; web identity reads the selected file and never invents source SigV4. Source-qualified Query/XML shape/expiry/errors, redirects/retries and metadata/token/401 branches follow the fixed source: ECS relative/full and token-file precedence, host/protocol rules, modern/legacy send counts, selected ECS failure never falling through to IMDS, IMDSv2/v1-disable and IPv4/IPv6. Source exchange sends remain separate from generation attempts. Missing/invalid/selected-denied sources produce no generation send, no account rediscovery or secret diagnostics; process/metadata cancellation releases owned work. Admit only the selected private codec dependencies needed here.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.19.1"
       ],
@@ -5189,6 +5189,11 @@
           "field": "test_impact_plan",
           "reason": "retain/update the existing provider and auth fixture binaries named in verification; add only distinct source-family cases through Models and the migrated real adapter. Private resolver tests supplement this proof; record every disposition at execution.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Later-discovered necessary paths appended with evidence per the workflow rule: source_http.rs is the injectable auth-source HTTP seam shared by role/web-identity/metadata (STS/ECS/IMDS sends must be countable and cancellable separately from generation attempts, so a shared trait module is required, not an addition to one family module); evidence.rs needs the new AwsCredentialSourceFacts arms for AssumeRole/WebIdentity/EcsContainer/Ec2InstanceMetadata provenance (the existing match is exhaustive over opi_ai provenance); provider_factory.rs constructs AwsLocalChainInput whose new transport/mfa/sts_endpoint fields are required.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md#3.3 AWS：owned认证协议adapter＋无I/O codec"
         }
       ],
       "tier": "workspace",
@@ -5217,7 +5222,7 @@
           "production_call_sites": [
             "opi_ai::Models::get_auth/stream -> selected AWS source -> migrated BedrockProvider::stream_prepared -> local EventStream response (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -5226,7 +5231,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "b3160aec5994a1a513dea5e0cb9756db2ce45884",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -5247,12 +5252,67 @@
         "crates/opi-ai/src/lib.rs",
         "crates/opi-ai/src/models.rs",
         "crates/opi-ai/tests/auth_contracts.rs",
-        "crates/opi-ai/tests/bedrock_fixtures.rs"
+        "crates/opi-ai/tests/bedrock_fixtures.rs",
+        "crates/opi-ai/src/auth/aws/source_http.rs",
+        "crates/opi-agent/src/evidence.rs",
+        "crates/opi-coding-agent/src/provider_factory.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "49752a7fcc94b62730fd6c698a4d0f213e85497b",
+      "evidence": {
+        "task": "20.19.2",
+        "dod_sha256": "ae053e1c492aa8bcb1d516cf85592564cb0efc84630c9e09d64162c603019af7",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED (doc-check, fmt, all-target clippy, workspace tests, doc tests, rustdoc); scenario tests: opi-ai auth_contracts 33 passed, bedrock_fixtures 91 passed (23 new chain/wire tests), lib 304 passed, opi-coding-agent bedrock_provider_wiring 8 passed",
+        "evaluator": "passed",
+        "acceptance": "P20-S19-2; Models get_auth/prepare_call -> auth::aws chain (assume-role exclusivity/nesting/cycles, MFA presenter, credential_source routing, web-identity token file, ECS relative/full+token-file precedence and modern<=4/legacy-1 budgets, IMDS v2/v1 branches) -> BedrockProvider::stream_prepared; STS/ECS/IMDS exchanges proven on the injectable transport and over real loopback HTTP with the pinned codecs; source failure = zero generation sends and typed redacted errors"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-22T04:10:00+00:00",
+          "attempt": 1,
+          "summary": "Extended the coordinator with STS AssumeRole (pinned aws-smithy-query form signed by source credentials, owned xmlparser full-text/DTD precheck + aws-smithy-xml structural gate, typed denial classification with status/code/request-id, MFA presenter with typed missing-presenter terminal, source_profile XOR credential_source, static-first nested source chains with cycle detection, credential_source routing to Environment/EcsContainer/Ec2InstanceMetadata), web identity (selected token file, anonymous exchange with subject/audience/provider fidelity, terminal file/denial/invalid rules, INI profile route and environment segment), and the remote segment (ECS relative>full and token-file>token precedence, host/protocol rules, modern <=4 sends @1s/1000ms delay then exactly one legacy send, never falling through to IMDS; IMDS v2 token with 400-stop and 404/403/404/405 v1-mode branches, one-shot fallback on other token failures, 401 clears token state and refetches, AWS_EC2_METADATA_DISABLED gates the default branch and v1 fallback, IPv4/IPv6 endpoint mode). New auth::aws::{source_http,endpoint,role,web_identity,metadata} modules; AwsLocalChainInput gained transport/mfa/sts_endpoint; ScopedAwsEnv gained the web-identity/ECS/IMDS keys; AwsCredentialSource + evidence facts gained AssumeRole/WebIdentity/EcsContainer/Ec2InstanceMetadata. Dependencies: aws-smithy-query 0.62.1, aws-smithy-xml 0.62.1 (both default-features=false, exact), xmlparser =0.13.5 (audited pin; closure adds pure-Rust aws-smithy types/schema/runtime-api(-macros)/async, urlencoding, bytes-utils, base64-simd; no build scripts; no p256/sha1 which belong to SSO/login tasks). STS auth-source retry is deferred to task 20.20 (AWS retry modes) and single-send this slice; source caching/memoize deferred to 20.19.3; IMDS static-stability stale-extension intentionally omitted (B-3-sanctioned stricter divergence). Exec D.2 (sequential 7-lens, wf_ref null): 0 must-fix, 4 flagged_for_human (STS redirects refused as typed divergence until corpus pins them; owned default RoleSessionName and omitted web-identity DurationSeconds in the fixed form; per-resolution ReqwestSourceTransport construction; legacy host-rule approximation from the corpus summary), 1 rejected (STS retry implementation belongs to 20.20).",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED (documentation contract, format, all-target clippy -D warnings, workspace all-targets tests, doc tests, rustdoc -D warnings)",
+            "d0_scenarios": "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures -> 33 + 91 passed; cargo test -p opi-coding-agent --test bedrock_provider_wiring -> 8 passed; cargo test -p opi-ai (lib) -> 304 passed",
+            "d0a_artifact_truthfulness": "no artifact directory (no CLI/session/NDJSON claims); provider/wire claims verified by injectable-transport send logs and raw loopback captures inside the test sources; classification: verified",
+            "d2_exec": "7 lenses run sequentially (wf_ref null, runtime lacks bounded Workflow dispatch); 0 must-fix, 4 flagged_for_human, 1 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S19-2",
+                "action": "add",
+                "test": "crates/opi-ai/tests/bedrock_fixtures.rs::{ini_assume_role_wins_over_static_and_signs_source_profile_credentials, assume_role_requires_exactly_one_of_source_profile_or_credential_source, nested_source_profiles_resolve_and_cycles_continue, mfa_serial_without_presenter_is_typed_terminal, mfa_presenter_supplies_serial_number_and_token_code, credential_source_routes_environment_ecs_and_imds_sources, sts_denial_is_typed_terminal_with_code_and_request_id, web_identity_from_ini_profile_reads_token_file_and_omits_source_sigv4, web_identity_token_file_failure_is_terminal, ambient_web_identity_env_fields_exchange_after_ini_misses, ecs_relative_uri_and_token_file_take_precedence, ecs_full_uri_https_is_allowed_and_http_requires_metadata_or_loopback_host, ecs_modern_budget_then_legacy_single_send_and_no_imds_fallthrough, imds_v2_token_role_and_credential_legs_resolve, imds_token_404_enables_v1_mode_for_subsequent_legs, imds_v1_disable_and_token_400_branches, imds_v1_role_401_clears_token_state_and_refetches, imds_ipv6_endpoint_mode_is_selected, dropping_resolution_cancels_inflight_source_exchange, sts_exchange_over_real_http_to_local_server, ecs_full_uri_over_real_http_to_loopback, terminal_sts_failure_through_models_sends_zero_generation_requests, sts_endpoint_rules_follow_partition_and_override}",
+                "interface": "auth::aws::local::resolve_local_aws_auth + auth::aws::{role,web_identity,metadata,endpoint,source_http}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-2",
+                "action": "add",
+                "test": "crates/opi-ai/src/auth/aws/role.rs tests::{response_shape_validates_credentials_expiry_and_provenance, malformed_and_ambiguous_credentials_are_rejected, error_response_keeps_code_and_request_id_without_messages, assume_role_body_encodes_the_fixed_form_shape, exchange_debug_never_carries_secrets} + web_identity.rs tests::{token_file_read_failure_is_typed, exchange_errors_stay_secret_free} + metadata.rs tests::{full_uri_host_protocol_rules, relative_uri_wins_and_builds_the_fixed_host, metadata_disabled_parses_the_corpus_semantics, imds_endpoint_modes, metadata_credentials_validation} + endpoint.rs tests::{standard_and_china_partitions_resolve_regional_endpoints, explicit_override_wins_and_blank_overrides_are_ignored, unknown_regions_never_become_us_east_1} + source_http.rs tests::request_debug_redacts_headers_and_body",
+                "interface": "auth::aws pinned-codec parsers and endpoint/transport contracts",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-2",
+                "action": "update",
+                "test": "crates/opi-ai/tests/bedrock_fixtures.rs::{chain_source mapping, chain_input helper, LocalChainBedrockResolver} extended with the new provenance variants and transport/mfa/sts_endpoint fields; INI-family order now corpus-verified assume-role first",
+                "interface": "auth::aws::local",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S19-2",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/auth_contracts.rs (33 tests; Models-level typed-override/mutability contracts unchanged — new families are chain-level and live in bedrock_fixtures to avoid equivalent-test layering), crates/opi-coding-agent/tests/bedrock_provider_wiring.rs (8), provider_factory.rs tests (53), and all pre-existing bedrock_fixtures tests (68)",
+                "interface": "Models + provider_factory + bedrock adapter",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.19.3",
@@ -16540,6 +16600,16 @@
       "rejected_count": 2,
       "ran_at": "2026-10-21T18:55:00+00:00",
       "task_id": "20.19.1",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 4,
+      "rejected_count": 1,
+      "ran_at": "2026-10-22T04:10:00+00:00",
+      "task_id": "20.19.2",
       "criterion_id": null
     }
   ]
