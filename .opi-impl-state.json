@@ -5956,7 +5956,7 @@
       "definition_of_done": "Use the same ADC coordinator for file/URL text-or-JSON/header suppliers, aws1 subject credentials, certificate and executable sources -> RFC8693 STS -> real Vertex adapter. AWS subject acquisition owns its source-defined region/env/IMDS and serialized SigV4 GetCallerIdentity request; it does not call AWS STS or reuse the Bedrock profile/SSO/process chain. Certificate source proves mutually exclusive config, leaf/DER/trust_chain and source-scoped mTLS. Executable admission env gate precedes cache/spawn; direct quoted argv, merged stdout/stderr, valid/malformed/stale caches, source30s/5-120s timing and process-tree cleanup are observable, and output_file is not rewritten. Preserve audience/subject type/workforce/confidential fields and selected identity; failed supplier/STS yields zero generation sends and no alternate account. This slice closes direct-token federation; optional IAM impersonation composition belongs to 20.21.3. Reuse only the existing private process mechanism, not a new public runner interface.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.19.1",
         "20.21.1"
@@ -6011,6 +6011,11 @@
           "field": "test_impact_plan",
           "reason": "retain/update the existing provider and auth fixture binaries named in verification; add only distinct source-family cases through Models and the migrated real adapter. Private resolver tests supplement this proof; record every disposition at execution.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Required caller migrations outside the pre-admitted set: (1) auth/aws/process.rs - terminate_tree_and_reap widened to pub(crate) so the executable supplier reuses the existing private bounded-process mechanism (process group + kill_on_drop + tree reaping) as the DoD mandates, without a new public runner interface; (2) test_support.rs - new portable_executable_script helper moves the unix/windows spawn split out of acceptance test sources because the Phase 17 hermeticity guard rejects conditional-compilation attributes in acceptance files; (3) tests/fixtures/adc-external - committed synthetic non-secret X.509 v3 PEM fixtures (CA, loopback server, two leafs + key) generated with openssl for the source-scoped mTLS handshake proof and chain-order rules.",
+          "source": "task 20.21.2 DoD: \"Reuse only the existing private process mechanism, not a new public runner interface\" + test_hermeticity platform-neutrality guard"
         }
       ],
       "tier": "workspace",
@@ -6039,7 +6044,7 @@
           "production_call_sites": [
             "opi_ai::Models::get_auth/stream -> selected ADC source -> migrated VertexProvider::stream_prepared -> local SSE response (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -6048,7 +6053,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "79ca727",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -6063,12 +6068,75 @@
         "crates/opi-ai/src/models.rs",
         "crates/opi-ai/src/vertex.rs",
         "crates/opi-ai/tests/auth_contracts.rs",
-        "crates/opi-ai/tests/vertex_fixtures.rs"
+        "crates/opi-ai/tests/vertex_fixtures.rs",
+        "crates/opi-ai/src/auth/aws/process.rs",
+        "crates/opi-ai/src/test_support.rs",
+        "crates/opi-ai/tests/fixtures/adc-external"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "cf6a483add55d9cbfb7e9e4347be02b4478b5f10",
+      "evidence": {
+        "task": "20.21.2",
+        "dod_sha256": "9c7247f464438de2655cadd69ee3ffb134521837960c04239bc0f213260154e9",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED (doc-check, fmt, all-target clippy, workspace tests, doc tests, rustdoc); scenario tests: opi-ai auth_contracts 87 passed (33 new), vertex_fixtures 39 passed (4 new through-Models), opi-ai lib 326 passed, test_hermeticity 15 passed",
+        "evaluator": "passed",
+        "acceptance": "P20-S21-2; Models get_auth -> AdcNativeOwner -> external coordinator -> supplier -> RFC8693 STS (mTLS-scoped for certificate) -> VertexProvider stream_prepared; admission gate precedes cache and spawn; malformed cache terminal, stale cache miss; AWS env-first region/credentials with single-send IMDS; audience/subject-type/workforce/confidential fields preserved; failed supplier/STS -> zero generation sends; impersonation URL preserved without exchange"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-23T01:30:00+00:00",
+          "attempt": 1,
+          "summary": "Delivered the external_account federation families and the cancelable executable supplier through the public path. Corpus: restored read-only npm tarballs (google-auth-library@10.6.2, gaxios@7.1.4) into a fresh temp dir (never executed, never committed) and verified every constant from source: baseexternalclient (STS grant urn:ietf:params:oauth:grant-type:token-exchange + requested access_token URN, default token_url https://sts.{universeDomain}/v1/token, workforce audience regex //iam.googleapis.com/locations/*/workforcePools/*/providers/.+ with workforcePoolUserProject only valid there and only without client auth flowing into the non-standard options form field, expires_in -> now+expires_in, 5min eager threshold, pendingAccessToken single-flight NOT ported [flagged]), identitypoolclient (file/url/certificate mutually exclusive pairs, format json needs subject_token_field_name, text default), file supplier (realpath+isFile, raw text no trim, json field), url supplier (GET with configured headers, gaxios retry config -> default budget), certificatesubjecttokensupplier (XOR use_default vs location, resolution order location > GOOGLE_API_CERTIFICATE_CONFIG > well-known CLOUDSDK_CONFIG|APPDATA|HOME/.config + gcloud/certificate_config.json, config cert_configs.workload cert_path/key_path, X509Certificate+createPrivateKey parse, subject token JSON.stringify of base64 DER chain with leaf-position rules, mTLS agent scoped to the STS exchange), awsclient + awsrequestsigner + defaultawssecuritycredentialssupplier (environment_id ^aws\\d+$ with only aws1 supported, regional_cred_verification_url required with default https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15, region AWS_REGION>AWS_DEFAULT_REGION>region_url stripping the last char, creds env AK+SK(+token) > role list then {url}/{role} json, IMDSv2 PUT ttl 300 with token headers per supplier leg and no retry config on IMDS legs, SigV4 with service from host first label and x-goog-cloud-target-resource merged AFTER signing, subject token encodeURIComponent(JSON.stringify({url,method,headers}))), pluggable-auth-client/handler/executable-response (gate GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES===1 checked before cache read and spawn, timeout default 30s validated 5-120s at construction, argv regex quote-aware with outer-quote strip only, cache realpath/isFile/empty -> miss, malformed JSON cache -> ExecutableResponseError terminal, valid-but-expired/unsuccessful -> miss, response validation version/success required + version<=1 + token_type in {saml2->saml_response, id_token/jwt->id_token} + error code+message both + expiration_time required when output_file + isExpired on unix seconds, merged stdout+stderr via data appenders, nonzero exit -> ExecutableError, timeout -> kill child), oauth2common RETRY_CONFIG (retry:true + methods -> gaxios default budget 3/2/ranges/delays). Implementation: new auth/adc/{subject,external,executable}.rs (subject suppliers + rustls RootCertStore structural validation + identity re-encode + AWS supplier with single-send IMDS + js_encode_uri_component + SigV4 via the existing public bedrock::sigv4::sign_request primitive [service/chain reuse, not the profile/SSO/process chain]; coordinator with typed CredentialSourceInvalid/WorkforceProjectInvalid/SubjectTokenUnavailable/CertificateSourceUnavailable/AwsSubjectUnavailable/ExecutablesNotAllowed/ExecutableSpawnFailed/ExecutableFailed/ExecutableTimeout/ExecutableResponseInvalid{reason}/ExecutableResponseExpired variants; executable supplier reusing the aws process module terminate_tree_and_reap now pub(crate), process_group(0) + kill_on_drop + per-stream merged output). native.rs: external_account arm dispatches to the coordinator (impersonated_service_account stays FamilyNotAdmitted), ReqwestAdcTransport::with_tls for the certificate-scoped mTLS leg, AdcNativeInput.certificate_extra_roots_pem (test/pinned-deployment extra trust for the STS leg only), canonical-endpoint override now pins the external exchange too. auth.rs: ExternalAccountSupplier {File,Url,Certificate,Aws,Executable} + AdcCredentialSource::ExternalAccount{supplier,workforce_user_project}. test_support: portable_executable_script moves the unix/windows spawn split out of acceptance sources (the Phase 17 guard rejects cfg attributes there). Fixtures: synthetic non-secret openssl-generated X.509 v3 PEMs (CA + 127.0.0.1 server + two leafs + key; v1 drafts were rejected by rustls UnsupportedCertVersion and regenerated with basicConstraints). Tests: 33 new auth_contracts (config/workforce/confidential/Basic/options userProject/default+override endpoints/sts budget+rejection, file text-no-trim + json field, url supplier GET+headers+terminal status, aws fixed-vector subject decoded and verified incl. unsigned target-resource + session token in SignedHeaders, IMDSv2 flow with region strip and per-leg token, aws2/missing-url typed, certificate mTLS over a real loopback rustls server requiring a CA-chained client cert [plain transport untouched], config resolution order env-then-CLOUDSDK_CONFIG well-known, XOR, chain leaf-order rules, executable gate before cache+spawn with marker absence, fresh-cache no-spawn, stale-cache spawn with all five GOOGLE_EXTERNAL_ACCOUNT_* env vars + impersonated email, malformed-cache terminal, failure code+message, invalid token_type, missing expiration_time, version 2, nonzero exit with merged output, timeout kill at the 5s floor with frozen marker proving process-group reaping, parse-time 5-120s range) + 4 vertex through-Models (file supplier Bearer+provenance, STS failure -> zero generation requests, real executable end-to-end, aws env Bearer). Zero manifest/dependency/config changes. Dev incident (honest record): before the canonical-endpoint override covered the external exchange, one certificate test iteration POSTed once to the real https://sts.googleapis.com/v1/token with a synthetic subject token and received 400 (no credentials sent, no retry loop); fixed immediately by honoring the input endpoint override for every external source and re-verified on the loopback server only. Exec D.2 (7 lenses sequential, evaluator applied inline): 0 must-fix, 9 flagged_for_human (redirect-terminal for the URL supplier consistent with 20.21.1 fail-closed policy, revisit at 20.21.3; certificate keys limited to the frozen RDF-23 TLS profile - P-256 leaf keys typed KeyRejected where Node accepts any parseable key, revisit trigger a named EC workload need; chain structural validation via the rustls/webpki parser not full X509Certificate semantic parity; IMDS region/role strings not trimmed for byte parity; merged stdout/stderr reassembled per-stream not byte-interleaved; timeout test floor 5s with unix killpg and Windows taskkill /T /F tree reaping instead of job objects; child env = real parent env + the five additions matching Node semantics; output_file not-rewritten proven by absence of any write path rather than a byte-identity assertion; single-flight pendingAccessToken not ported, owner semantics unchanged), 3 rejected (aws-lc-rs unstable feature for X509 bindings; new public process-runner trait forbidden by the DoD; shell-based command execution). C.1a appends recorded with reasons (process.rs pub(crate) reuse, test_support platform split, fixtures dir).",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED (after fmt, clippy fixes, hermeticity platform-neutrality and URL-literal fixes, and the mTLS fixture v3 regeneration)",
+            "d0_scenarios": "cargo test -p opi-ai --test auth_contracts --test vertex_fixtures -> 87 + 39 passed; lib 326 passed; test_hermeticity 15 passed",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified via scripted-transport request captures (IMDS PUT ttl/token headers, role URL join, STS form fields incl. options userProject), a real loopback rustls server requiring a CA-chained client certificate for the mTLS claim, fixed-vector subject decoding, real process spawns with env dumps and marker files; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 9 flagged_for_human, 3 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S21-2",
+                "action": "add",
+                "test": "crates/opi-ai/tests/auth_contracts.rs::adc_external (33 tests: external_file_supplier_text_exchanges_at_sts, external_file_supplier_json_field_and_raw_text_no_trim, external_file_text_keeps_raw_bytes_without_trim, external_universe_domain_and_explicit_token_url, external_confidential_client_uses_basic, external_workforce_user_project_flows_into_options_field, external_workforce_project_on_non_workforce_audience_is_typed, external_missing_audience_is_missing_field, external_token_url_invalid_is_typed, external_identity_pool_source_exclusivity_is_typed, external_json_format_requires_field_name, external_sts_rejection_and_retry_budget, impersonated_service_account_stays_unadmitted, external_url_supplier_get_with_headers_then_sts, external_url_supplier_terminal_status_is_typed_with_zero_sts, external_aws_env_credentials_and_region_fixed_vector, external_aws_imds_flow_with_v2_token_and_region_strip, external_aws_env_id_v2_is_typed_unsupported, external_aws_missing_regional_url_is_typed, external_aws_missing_region_url_when_needed_is_typed, external_certificate_mtls_exchange, external_certificate_config_resolution_order_and_xor, external_certificate_env_and_well_known_resolution, external_certificate_missing_everywhere_is_typed, external_certificate_chain_leaf_order_rules, parse_command_quotes_and_segments, executable_gate_precedes_cache_and_spawn, executable_fresh_cache_avoids_spawn, executable_stale_cache_spawns_with_source_env, executable_malformed_cache_is_typed_terminal, executable_failure_and_validation_rules, executable_timeout_kills_the_process_group, executable_timeout_range_is_parse_time)",
+                "interface": "auth::adc external family public surface",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21-2",
+                "action": "add",
+                "test": "crates/opi-ai/tests/vertex_fixtures.rs::adc_external::{external_file_supplier_streams_bearer, external_sts_failure_sends_zero_generation, external_executable_streams_bearer, external_aws_env_streams_bearer}",
+                "interface": "Models -> resolver -> VertexProvider through-Models path",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21-2",
+                "action": "add",
+                "test": "crates/opi-ai/src/auth/adc/external.rs tests::workforce_audience_pattern_is_exact + executable.rs units {parse_command_matches_the_source_semantics, impersonated_email_extracts_from_the_generate_url}",
+                "interface": "private predicates (workforce regex, argv parser, email extraction)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S21-1",
+                "action": "update",
+                "test": "crates/opi-ai/tests/auth_contracts.rs::adc_native::adc_unknown_and_future_families_fail_typed now accepts the typed external_account missing-field class (family admitted by 20.21.2); impersonated_service_account and unknown types keep the original arms",
+                "interface": "ADC family dispatch",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-STORE",
+                "action": "retain",
+                "test": "all pre-existing store/mutation/acquisition corpora unchanged",
+                "interface": "unrelated owners",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.21.3",
@@ -16863,6 +16931,16 @@
       "rejected_count": 3,
       "ran_at": "2026-10-22T21:20:00+00:00",
       "task_id": "20.21.1",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 9,
+      "rejected_count": 3,
+      "ran_at": "2026-10-23T01:30:00+00:00",
+      "task_id": "20.21.2",
       "criterion_id": null
     }
   ]
