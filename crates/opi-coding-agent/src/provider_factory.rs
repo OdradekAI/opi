@@ -36,6 +36,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use opi_ai::auth::aws::cache::{AwsSourceCache, RandomDpopJti, SystemSourceClock};
+use opi_ai::auth::aws::source_http::ReqwestSourceTransport;
+
 use crate::config::{
     BedrockProviderConfig, CustomProviderConfig, OpenAiCompatibleProviderConfig, OpiConfig,
     build_http_client,
@@ -375,6 +378,18 @@ fn aws_config_path() -> Option<PathBuf> {
         .ok()
         .map(PathBuf::from)
         .or_else(|| aws_home_dir().map(|h| h.join(".aws").join("config")))
+}
+
+/// Standard SSO token-cache directory (`~/.aws/sso/cache`).
+fn aws_sso_cache_dir() -> Option<PathBuf> {
+    aws_home_dir().map(|h| h.join(".aws").join("sso").join("cache"))
+}
+
+/// Standard login cache directory. The corpus pins the file naming
+/// (SHA-256 of the trimmed session) but not the directory; `~/.aws/login`
+/// is the documented opi default behind the injectable chain input.
+fn aws_login_cache_dir() -> Option<PathBuf> {
+    aws_home_dir().map(|h| h.join(".aws").join("login"))
 }
 
 /// Home directory for AWS shared-credential path resolution.
@@ -2001,25 +2016,38 @@ fn build_runtime_route(
 
 struct BedrockAuthResolver {
     config: Arc<BedrockProviderConfig>,
+    /// Cross-call source cache: single-flight lookups, the 5-minute/30-second
+    /// refresh windows, and near-expiry background refreshes registered with
+    /// the same credential mutation owner used by the product store.
+    source_cache: Arc<AwsSourceCache>,
+    /// Shared source transport (also the passive-refresh dependency).
+    transport: Arc<ReqwestSourceTransport>,
 }
+
+/// Process-wide clock/jti singletons for the Bedrock source chain.
+static SYSTEM_SOURCE_CLOCK: SystemSourceClock = SystemSourceClock;
+static RANDOM_DPPO_JTI: RandomDpopJti = RandomDpopJti;
 
 impl opi_ai::AuthResolver for BedrockAuthResolver {
     fn resolve<'a>(
         &'a self,
     ) -> opi_ai::BoxAuthFuture<'a, Result<opi_ai::ResolvedAuth, ProviderError>> {
-        Box::pin(async move { resolve_bedrock_auth(&self.config).await })
+        Box::pin(async move {
+            resolve_bedrock_auth(&self.config, &self.source_cache, &self.transport).await
+        })
     }
 }
 
 async fn resolve_bedrock_auth(
     bedrock_config: &BedrockProviderConfig,
+    source_cache: &Arc<AwsSourceCache>,
+    source_transport: &Arc<ReqwestSourceTransport>,
 ) -> Result<opi_ai::ResolvedAuth, ProviderError> {
     use opi_ai::auth::AmbientAuthContext;
     use opi_ai::auth::aws::local::{
         AwsAuthSelection, AwsLocalChainInput, ScopedAwsEnv, resolve_local_aws_auth,
     };
     use opi_ai::auth::aws::process::SpawnedCredentialProcess;
-    use opi_ai::auth::aws::source_http::ReqwestSourceTransport;
 
     // The configured pair is a selected typed source: attempted-but-incomplete
     // fails closed and never falls through to ambient sources.
@@ -2078,12 +2106,13 @@ async fn resolve_bedrock_auth(
     let ambient = AmbientAuthContext;
     let credentials_file = aws_credentials_path();
     let config_file = aws_config_path();
-    let process = SpawnedCredentialProcess;
-    // Real auth-source HTTP transport: STS/web-identity/ECS/IMDS legs run
-    // on the controlled client with redirects disabled; no presenter is
-    // injected at the product boundary, so profile-required MFA terminates
-    // typed instead of prompting.
-    let transport = ReqwestSourceTransport::new();
+    let process = SpawnedCredentialProcess::default();
+    let sso_cache_dir = aws_sso_cache_dir();
+    let login_cache_dir = aws_login_cache_dir();
+    // Real auth-source HTTP transport: STS/web-identity/ECS/IMDS/SSO/SignIn
+    // legs run on the controlled client with redirects disabled; no
+    // presenter is injected at the product boundary, so profile-required
+    // MFA terminates typed instead of prompting.
     let input = AwsLocalChainInput {
         selection,
         scoped: ScopedAwsEnv::empty(),
@@ -2091,9 +2120,17 @@ async fn resolve_bedrock_auth(
         credentials_file: credentials_file.as_deref(),
         config_file: config_file.as_deref(),
         process: &process,
-        transport: &transport,
+        transport: source_transport.as_ref(),
         mfa: None,
         sts_endpoint: None,
+        source_cache: Some(source_cache.as_ref()),
+        clock: &SYSTEM_SOURCE_CLOCK,
+        dpop_jti: &RANDOM_DPPO_JTI,
+        sso_cache_dir: sso_cache_dir.as_deref(),
+        login_cache_dir: login_cache_dir.as_deref(),
+        sso_endpoint: None,
+        oidc_endpoint: None,
+        signin_endpoint: None,
         region: bedrock_config.region.as_deref(),
         default_region: "us-east-1",
     };
@@ -2142,8 +2179,25 @@ fn build_bedrock(config: &OpiConfig) -> Result<ProviderAuthPair, ProviderBuildEr
     let bedrock_config = &config.providers.bedrock;
     let client = build_proxied_client(bedrock_config.proxy.as_ref())?;
     let provider = opi_ai::bedrock::BedrockProvider::new(bedrock_config.base_url.clone(), client);
+    // One shared source cache and mutation owner per Bedrock provider
+    // bundle: cross-call single-flight, the fixed refresh windows, and
+    // observable background refreshes (the queue retains pending work
+    // until a submission or ACK poll enters a runtime).
+    let mutation_queue = Arc::new(opi_ai::mutation::MutationQueue::new());
+    let transport = Arc::new(ReqwestSourceTransport::new());
+    let source_cache = Arc::new(
+        AwsSourceCache::with_mutation_queue(mutation_queue).with_passive_deps(Arc::new(
+            opi_ai::auth::aws::cache::PassiveRefreshDeps {
+                transport: transport.clone(),
+                clock: Arc::new(SystemSourceClock),
+                jti: Arc::new(RandomDpopJti),
+            },
+        )),
+    );
     let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(BedrockAuthResolver {
         config: Arc::new(bedrock_config.clone()),
+        source_cache,
+        transport,
     });
     Ok((Box::new(provider), auth))
 }
@@ -2576,9 +2630,13 @@ mod tests {
             ..Default::default()
         };
 
-        let auth = resolve_bedrock_auth(&config)
-            .await
-            .expect("configured source resolves");
+        let auth = resolve_bedrock_auth(
+            &config,
+            &std::sync::Arc::new(opi_ai::auth::aws::cache::AwsSourceCache::new()),
+            &std::sync::Arc::new(opi_ai::auth::aws::source_http::ReqwestSourceTransport::new()),
+        )
+        .await
+        .expect("configured source resolves");
         match &auth.provenance.source {
             opi_ai::AuthProvenanceSource::AwsSigV4 {
                 source:
@@ -2612,9 +2670,13 @@ mod tests {
             &credentials_file,
             &config_file,
         );
-        let auth = resolve_bedrock_auth(&config)
-            .await
-            .expect("configured pair resolves without a blank optional token");
+        let auth = resolve_bedrock_auth(
+            &config,
+            &std::sync::Arc::new(opi_ai::auth::aws::cache::AwsSourceCache::new()),
+            &std::sync::Arc::new(opi_ai::auth::aws::source_http::ReqwestSourceTransport::new()),
+        )
+        .await
+        .expect("configured pair resolves without a blank optional token");
         assert!(matches!(
             auth.provenance.source,
             opi_ai::AuthProvenanceSource::AwsSigV4 {
@@ -2782,7 +2844,14 @@ mod tests {
             .expect("listing collection");
             assert!(listing.registry().get_provider("bedrock").is_none());
             assert!(matches!(
-                resolve_bedrock_auth(&config).await,
+                resolve_bedrock_auth(
+                    &config,
+                    &std::sync::Arc::new(opi_ai::auth::aws::cache::AwsSourceCache::new()),
+                    &std::sync::Arc::new(
+                        opi_ai::auth::aws::source_http::ReqwestSourceTransport::new()
+                    ),
+                )
+                .await,
                 Err(opi_ai::provider::ProviderError::Config(_))
             ));
 
@@ -2796,7 +2865,14 @@ mod tests {
                 super::BedrockAuthPresence::MissingConfigPair { secret_env: None }
             );
             assert!(matches!(
-                resolve_bedrock_auth(&token_only_config).await,
+                resolve_bedrock_auth(
+                    &token_only_config,
+                    &std::sync::Arc::new(opi_ai::auth::aws::cache::AwsSourceCache::new()),
+                    &std::sync::Arc::new(
+                        opi_ai::auth::aws::source_http::ReqwestSourceTransport::new()
+                    ),
+                )
+                .await,
                 Err(opi_ai::provider::ProviderError::Config(_))
             ));
         }
@@ -2810,9 +2886,13 @@ mod tests {
                 &credentials_file,
                 &config_file,
             );
-            let auth = resolve_bedrock_auth(&BedrockProviderConfig::default())
-                .await
-                .expect("partial ambient pair continues to the default profile");
+            let auth = resolve_bedrock_auth(
+                &BedrockProviderConfig::default(),
+                &std::sync::Arc::new(opi_ai::auth::aws::cache::AwsSourceCache::new()),
+                &std::sync::Arc::new(opi_ai::auth::aws::source_http::ReqwestSourceTransport::new()),
+            )
+            .await
+            .expect("partial ambient pair continues to the default profile");
             assert!(matches!(
                 auth.provenance.source,
                 opi_ai::AuthProvenanceSource::AwsSigV4 {

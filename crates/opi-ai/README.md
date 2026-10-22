@@ -31,9 +31,11 @@ those live in `opi-agent` and `opi-coding-agent`.
 with provider-side auth contracts, OpenAI-compatible compatibility metadata,
 and stream/complete dispatch. IO-free credential and OAuth traits live here;
 the reusable local AWS credential-source chain (scoped/ambient environment,
-shared-config INI overlay with assume-role and web identity, `credential_process`,
-and the remote ECS/IMDS segment, exchanging through the pinned STS Query/XML
-codecs) lives in `auth::aws`;
+explicit SSO and login-session segments, shared-config INI overlay with
+assume-role and web identity, `credential_process`, and the remote ECS/IMDS
+segment, exchanging through the pinned STS Query/XML codecs, the SSO OIDC and
+SignIn ES256 DPoP flows, and the single-flight source cache) lives in
+`auth::aws`;
 keychain, environment, login-presenter, and refresh implementations remain in
 `opi-coding-agent`.
 

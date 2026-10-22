@@ -1698,3 +1698,92 @@ async fn mutation_queue_admits_synchronously_before_any_await() {
     let report = barrier_after.wait().await;
     assert!(report.is_complete());
 }
+
+// ---------------------------------------------------------------------------
+// Task 20.19.3: source near-expiry refresh registers through the shared
+// credential mutation owner (P20-STORE consumer closure).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn source_passive_refresh_registers_through_the_mutation_owner() {
+    use opi_ai::auth::aws::cache::{
+        AwsSourceCache, CacheIdentity, PassiveRefreshDeps, SourceCacheValue, SsoRefreshMaterial,
+        SsoTokenSnapshot,
+    };
+    use opi_ai::auth::aws::source_http::{
+        AwsSourceTransport, SourceHttpRequest, SourceHttpResponse,
+    };
+    use secrecy::SecretString;
+
+    struct DenyingTransport;
+    impl AwsSourceTransport for DenyingTransport {
+        fn send(
+            &self,
+            _request: SourceHttpRequest,
+        ) -> opi_ai::BoxAuthFuture<
+            'static,
+            Result<SourceHttpResponse, opi_ai::auth::aws::source_http::SourceHttpError>,
+        > {
+            Box::pin(async { Err(opi_ai::auth::aws::source_http::SourceHttpError::Transport) })
+        }
+    }
+
+    struct FixedClock(time::OffsetDateTime);
+    impl opi_ai::auth::aws::cache::SourceClock for FixedClock {
+        fn now(&self) -> time::OffsetDateTime {
+            self.0
+        }
+    }
+    struct FixedJti;
+    impl opi_ai::auth::aws::cache::DpopJtiSource for FixedJti {
+        fn next_jti(&self) -> String {
+            "jti".to_owned()
+        }
+    }
+
+    let queue = std::sync::Arc::new(opi_ai::mutation::MutationQueue::new());
+    let cache = AwsSourceCache::with_mutation_queue(queue.clone()).with_passive_deps(
+        std::sync::Arc::new(PassiveRefreshDeps {
+            transport: std::sync::Arc::new(DenyingTransport),
+            clock: std::sync::Arc::new(FixedClock(
+                time::OffsetDateTime::from_unix_timestamp(0).unwrap(),
+            )),
+            jti: std::sync::Arc::new(FixedJti),
+        }),
+    );
+    let identity = CacheIdentity::SsoToken {
+        cache_key: "session".to_owned(),
+    };
+    cache.store(
+        identity.clone(),
+        SourceCacheValue::SsoToken(SsoTokenSnapshot {
+            access_token: SecretString::from("token"),
+            expires_at: time::OffsetDateTime::from_unix_timestamp(120).unwrap(),
+            refresh: Some(SsoRefreshMaterial {
+                client_id: "client".to_owned(),
+                client_secret: SecretString::from("secret"),
+                refresh_token: SecretString::from("refresh"),
+            }),
+            modern: true,
+        }),
+    );
+
+    let barrier_before = queue.barrier();
+    let spawned = cache.maybe_spawn_passive(
+        identity,
+        time::OffsetDateTime::from_unix_timestamp(0).unwrap(),
+        Box::new(|| {
+            Box::pin(async { Ok(opi_ai::mutation::MutationApplied::Keep) })
+                as opi_ai::BoxAuthFuture<
+                    'static,
+                    Result<opi_ai::mutation::MutationApplied, opi_ai::mutation::MutationError>,
+                >
+        }),
+    );
+    assert!(spawned, "near-expiry refresh registers with the owner");
+    let barrier_after = queue.barrier();
+    assert!(barrier_after.cutoff() > barrier_before.cutoff());
+    // The original caller may leave; the barrier still observes completion.
+    let report = barrier_after.wait().await;
+    assert!(report.is_complete());
+}

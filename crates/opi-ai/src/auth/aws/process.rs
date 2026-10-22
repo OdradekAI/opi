@@ -208,18 +208,50 @@ pub trait CredentialProcessRunner: Send + Sync {
     ) -> BoxAuthFuture<'a, Result<CredentialProcessOutput, CredentialProcessError>>;
 }
 
-/// Local credential processes are given ten seconds and at most 64 KiB of
-/// stdout. The budget must absorb cold shell startup on loaded hosts (a
-/// Windows PowerShell cold start alone can exceed three seconds), so the
-/// process itself is only expected to finish well inside the window. These
-/// are declared opi policy, not a Pi parity default. Cancellation kills and
-/// reaps the spawned shell before its detached cleanup task exits.
-const CREDENTIAL_PROCESS_TIMEOUT: Duration = Duration::from_secs(10);
-const CREDENTIAL_PROCESS_MAX_STDOUT: usize = 64 * 1024;
+/// Declared opi policy for one spawned `credential_process`: how long the
+/// frozen command may run and how much stdout it may produce. The locked
+/// Node corpus has no explicit timeout/output cap here, so these budgets
+/// are an opi caller policy (AIR-023), not an SDK parity default: callers
+/// inject their own values; the default below is the opi-declared budget
+/// (it must absorb cold shell startup on loaded hosts — a Windows
+/// PowerShell cold start alone can exceed three seconds).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CredentialProcessPolicy {
+    /// Maximum wall-clock runtime of the spawned process.
+    pub timeout: Duration,
+    /// Maximum accepted stdout size in bytes.
+    pub max_stdout: usize,
+}
+
+impl Default for CredentialProcessPolicy {
+    fn default() -> Self {
+        Self {
+            timeout: Duration::from_secs(10),
+            max_stdout: 64 * 1024,
+        }
+    }
+}
+
 const PROCESS_TREE_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Default [`CredentialProcessRunner`] that really spawns the frozen command.
-pub struct SpawnedCredentialProcess;
+/// Default [`CredentialProcessRunner`] that really spawns the frozen
+/// command under the injected [`CredentialProcessPolicy`].
+#[derive(Default)]
+pub struct SpawnedCredentialProcess {
+    policy: CredentialProcessPolicy,
+}
+
+impl SpawnedCredentialProcess {
+    /// Build the runner with an explicit caller policy.
+    pub fn with_policy(policy: CredentialProcessPolicy) -> Self {
+        Self { policy }
+    }
+
+    /// The injected policy (non-secret; observable for diagnostics).
+    pub fn policy(&self) -> CredentialProcessPolicy {
+        self.policy
+    }
+}
 
 struct CancelProcessOnDrop {
     cancellation: CancellationToken,
@@ -239,12 +271,13 @@ impl CredentialProcessRunner for SpawnedCredentialProcess {
         &'a self,
         spec: &'a CredentialProcessSpec,
     ) -> BoxAuthFuture<'a, Result<CredentialProcessOutput, CredentialProcessError>> {
-        Box::pin(async move { run_spawned_credential_process(spec).await })
+        Box::pin(async move { run_spawned_credential_process(spec, self.policy).await })
     }
 }
 
 async fn run_spawned_credential_process(
     spec: &CredentialProcessSpec,
+    policy: CredentialProcessPolicy,
 ) -> Result<CredentialProcessOutput, CredentialProcessError> {
     let cancellation = CancellationToken::new();
     let mut cancel_on_drop = CancelProcessOnDrop {
@@ -252,10 +285,9 @@ async fn run_spawned_credential_process(
         armed: true,
     };
     let spec = spec.clone();
-    let task =
-        tokio::spawn(
-            async move { run_spawned_credential_process_inner(&spec, cancellation).await },
-        );
+    let task = tokio::spawn(async move {
+        run_spawned_credential_process_inner(&spec, cancellation, policy).await
+    });
     let result = task.await.map_err(|_| CredentialProcessError::Join)?;
     cancel_on_drop.armed = false;
     result
@@ -264,6 +296,7 @@ async fn run_spawned_credential_process(
 async fn run_spawned_credential_process_inner(
     spec: &CredentialProcessSpec,
     cancellation: CancellationToken,
+    policy: CredentialProcessPolicy,
 ) -> Result<CredentialProcessOutput, CredentialProcessError> {
     let mut command_builder = if cfg!(windows) {
         let mut builder = Command::new("powershell");
@@ -290,7 +323,7 @@ async fn run_spawned_credential_process_inner(
         .map_err(|_| CredentialProcessError::Spawn)?;
     let root_pid = child.id();
 
-    let output = read_bounded_process_output(&mut child, root_pid, cancellation).await?;
+    let output = read_bounded_process_output(&mut child, root_pid, cancellation, policy).await?;
     let parsed = parse_credential_process_output(&output);
     if parsed.is_err() {
         terminate_tree_and_reap(&mut child, root_pid).await;
@@ -302,14 +335,15 @@ async fn read_bounded_process_output(
     child: &mut Child,
     root_pid: Option<u32>,
     cancellation: CancellationToken,
+    policy: CredentialProcessPolicy,
 ) -> Result<Vec<u8>, CredentialProcessError> {
     let Some(mut stdout) = child.stdout.take() else {
         terminate_tree_and_reap(child, root_pid).await;
         return Err(CredentialProcessError::Output);
     };
-    let deadline = Instant::now() + CREDENTIAL_PROCESS_TIMEOUT;
+    let deadline = Instant::now() + policy.timeout;
     let mut output = Vec::new();
-    let mut limited_stdout = (&mut stdout).take((CREDENTIAL_PROCESS_MAX_STDOUT + 1) as u64);
+    let mut limited_stdout = (&mut stdout).take((policy.max_stdout + 1) as u64);
     let read_result = tokio::select! {
         _ = cancellation.cancelled() => {
             terminate_tree_and_reap(child, root_pid).await;
@@ -325,7 +359,7 @@ async fn read_bounded_process_output(
         terminate_tree_and_reap(child, root_pid).await;
         return Err(CredentialProcessError::Output);
     }
-    if output.len() > CREDENTIAL_PROCESS_MAX_STDOUT {
+    if output.len() > policy.max_stdout {
         terminate_tree_and_reap(child, root_pid).await;
         return Err(CredentialProcessError::OutputLimit);
     }
@@ -505,7 +539,7 @@ mod tests {
             format!("printf '{output}'")
         };
         let spec = CredentialProcessSpec::inherit(command);
-        let parsed = SpawnedCredentialProcess
+        let parsed = SpawnedCredentialProcess::default()
             .run(&spec)
             .await
             .expect("credential process runs");
@@ -543,7 +577,7 @@ mod tests {
             cwd: Some(dir.path().to_path_buf()),
             env: ProcessEnv::Exact(BTreeMap::from([(path_var.to_owned(), inherited_path)])),
         };
-        let parsed = SpawnedCredentialProcess
+        let parsed = SpawnedCredentialProcess::default()
             .run(&spec)
             .await
             .expect("frozen cwd/env run");
@@ -555,7 +589,10 @@ mod tests {
         let _process_lock = CREDENTIAL_PROCESS_TEST_LOCK.lock().await;
         let exit = CredentialProcessSpec::inherit("exit 9");
         assert_eq!(
-            SpawnedCredentialProcess.run(&exit).await.unwrap_err(),
+            SpawnedCredentialProcess::default()
+                .run(&exit)
+                .await
+                .unwrap_err(),
             CredentialProcessError::Exit
         );
 
@@ -566,7 +603,10 @@ mod tests {
         };
         let timeout = CredentialProcessSpec::inherit(timeout_command);
         assert_eq!(
-            SpawnedCredentialProcess.run(&timeout).await.unwrap_err(),
+            SpawnedCredentialProcess::default()
+                .run(&timeout)
+                .await
+                .unwrap_err(),
             CredentialProcessError::Timeout
         );
 
@@ -577,7 +617,10 @@ mod tests {
         };
         let limit = CredentialProcessSpec::inherit(output_command);
         assert_eq!(
-            SpawnedCredentialProcess.run(&limit).await.unwrap_err(),
+            SpawnedCredentialProcess::default()
+                .run(&limit)
+                .await
+                .unwrap_err(),
             CredentialProcessError::OutputLimit
         );
     }
@@ -590,7 +633,7 @@ mod tests {
         } else {
             r#"printf '{"Version":2,"AccessKeyId":"AKIA_VERSION_CANARY","SecretAccessKey":"version-secret-canary"}'"#
         };
-        let error = SpawnedCredentialProcess
+        let error = SpawnedCredentialProcess::default()
             .run(&CredentialProcessSpec::inherit(command))
             .await
             .unwrap_err();
@@ -657,7 +700,8 @@ mod tests {
             )
         };
         let task_spec = CredentialProcessSpec::inherit(command);
-        let task = tokio::spawn(async move { SpawnedCredentialProcess.run(&task_spec).await });
+        let task =
+            tokio::spawn(async move { SpawnedCredentialProcess::default().run(&task_spec).await });
 
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             while !started.exists() {

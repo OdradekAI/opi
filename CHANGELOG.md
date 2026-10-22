@@ -2,6 +2,53 @@
 
 ### Breaking Changes
 
+- `opi-ai`: the local AWS chain closes the SSO and login-session families
+  and the complete source cache (task 20.19.3). The chain order is now
+  Env -> explicit SSO -> INI (assume-role -> static -> web identity ->
+  process -> SSO -> login_session) -> environment web identity -> ECS or
+  IMDS: any explicit-init SSO field (scoped start URL/account/region/role/
+  session) selects the SSO segment — a partially given selection is a typed
+  terminal (`IncompleteSsoConfiguration`), never "unconfigured" — and a
+  profile's SSO fields or `login_session` key select inside the INI family.
+  SSO resolves modern `sso_session` profiles (config-file `[sso-session]`
+  sections, explicit fields win) and legacy inline profiles through the
+  standard token cache (SHA-1 file names; modern keys are session names,
+  legacy keys are upper-cased start URLs): a near-expiry token is returned
+  as-is with a single throttled background refresh (5-minute window,
+  per-session 30-second throttle) registered into the shared credential
+  mutation owner; an expired modern token refreshes actively through SSO
+  OIDC `POST /token` (denials typed with their standard code, including
+  slowdown/throttle), a failed refresh with an unexpired token keeps the
+  old token, a successful refresh writes the standard cache file with the
+  write failure ignored, and legacy tokens never refresh (re-login). The
+  federation exchange is `GET /federation/credentials` with the
+  `x-amz-sso_bearer_token` header and epoch-millisecond expiry; missing
+  values, invalid payloads, and denials are typed terminal failures that
+  never discover another identity (zero generation sends).
+  `login_session` reads the standard login cache (SHA-256 of the trimmed
+  session name), refreshes through SignIn `POST /v1/token` with an owned
+  ES256 DPoP proof (RFC 9449 `typ:dpop+JWT` header with JWK `x`/`y`,
+  `jti`/`iat`/`htu`/`htm` payload, deterministic RFC 6979 signature,
+  injected clock/`jti` source), extracts the three AWS credentials from
+  the access token, keeps account provenance frozen to the cache, and
+  writes rotated refresh tokens back (the in-memory cache keeps the
+  rotation even when the file write fails, so the unique token is never
+  lost): a bad/missing selected cache, DPoP failure, and the terminal
+  AccessDenied family stop; other refresh failures keep a still-valid
+  token and, once expired, continue the chain. The new injectable
+  `auth::aws::cache::AwsSourceCache` owns single-flight active lookups,
+  the refresh windows and throttle, per-key revisions (sub-token caches
+  and outer temporary credentials keep distinct identities and receipts),
+  explicit invalidation, and mutation-owner registration (awaitable via
+  the queue barrier after the caller leaves); `AwsLocalChainInput` gains
+  `source_cache`, `clock`, `dpop_jti`, the SSO/login cache directories,
+  and SSO/OIDC/SignIn endpoint overrides (`ScopedAwsEnv` gains the five
+  explicit-init SSO fields); `AwsCredentialSource` adds `Sso`/
+  `LoginSession` provenance (mirrored by `opi-agent` evidence facts);
+  `credential_process` budgets become the injectable
+  `CredentialProcessPolicy` (AIR-023 declared opi policy). Dependencies:
+  `p256 =0.13.2` (ES256 DPoP/JWK) and `sha1 =0.10.6` (standard SSO cache
+  file-name hash only) per the pinned table.
 - `opi-ai`: the local AWS chain extends to the STS/web-identity and
   remote source families (task 20.19.2). The shared-config INI family follows
   the verified `resolveProfileData` order (assume-role/source-profile →

@@ -27,8 +27,9 @@ package 加载或内置编程工具；这些能力分别位于 `opi-agent` 和 `
 模块（`Models`）是唯一的 driver，在 `ProviderRegistry` 之上叠加 Provider 侧鉴权契约、
 OpenAI-compatible 兼容性元数据，以及全部聊天调用入口。无 IO 的凭据与 OAuth
 trait 位于本 crate；可复用的本地 AWS 凭据来源链（scoped/ambient 环境变量、
-共享配置 INI 叠加（assume-role 与 web identity）、`credential_process`、以及远端 ECS/IMDS 来源段，
-经锁定的 STS Query/XML codec 交换）位于 `auth::aws`；
+显式 SSO 与 login_session 段、共享配置 INI 叠加（assume-role 与 web identity）、
+`credential_process`、以及远端 ECS/IMDS 来源段，经锁定的 STS Query/XML codec、
+SSO OIDC 与 SignIn ES256 DPoP 流程、单飞来源缓存交换）位于 `auth::aws`；
 keychain、环境变量、
 登录 presenter 和 refresh 实现仍位于 `opi-coding-agent`。
 

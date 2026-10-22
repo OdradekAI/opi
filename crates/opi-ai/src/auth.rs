@@ -307,6 +307,19 @@ pub enum AwsCredentialSource {
         /// Where the selected token file/role came from.
         route: WebIdentityRoute,
     },
+    /// The SSO source family (explicit init fields or a shared-config
+    /// profile plus its `sso-session` section) supplied credentials.
+    Sso {
+        /// Owning shared-config profile name; `None` for the explicit
+        /// init segment.
+        profile: Option<String>,
+    },
+    /// A login session (`login_session` profile key) supplied credentials
+    /// through the SignIn refresh with the owned ES256 DPoP proof.
+    LoginSession {
+        /// Trimmed session name.
+        session: String,
+    },
     /// The ECS container metadata provider supplied credentials; `legacy`
     /// distinguishes the one-send legacy provider from the modern fixed
     /// budget provider.
@@ -737,9 +750,11 @@ impl AuthContext for AmbientAuthContext {
 /// coordinator; product-neutral, injectable, no live AWS calls).
 pub mod aws {
     /// Regional STS endpoint resolution (partition/override arithmetic).
+    pub mod cache;
     pub mod endpoint;
     /// Env/INI/role/web-identity/remote chain coordinator.
     pub mod local;
+    pub mod login;
     /// ECS and IMDS metadata credential providers.
     pub mod metadata;
     /// Injectable `credential_process` execution seam.
@@ -748,6 +763,7 @@ pub mod aws {
     pub mod role;
     /// Injectable auth-source HTTP transport.
     pub mod source_http;
+    pub mod sso;
     /// STS `AssumeRoleWithWebIdentity` exchange.
     pub mod web_identity;
 }

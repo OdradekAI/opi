@@ -114,6 +114,12 @@ hex = "0.4"
 aws-smithy-query = { version = "=0.62.1", default-features = false }
 aws-smithy-xml = { version = "=0.62.1", default-features = false }
 xmlparser = "=0.13.5"
+# Owned AWS SSO/SignIn protocol crypto (task 20.19.3, rust-backends §3.3):
+# p256 provides ES256 DPoP proofs/JWK coordinates (deterministic RFC 6979
+# signatures; clock/jti injected), sha1 only reproduces the standard SSO
+# cache-file name hash. Neither signs AWS requests.
+p256 = { version = "=0.13.2", default-features = false, features = ["ecdsa", "pem", "std"] }
+sha1 = { version = "=0.10.6", default-features = false, features = ["std"] }
 # CSPRNG for PKCE code_verifier/state (Phase 14.2 OAuth)
 rand = "0.8"
 

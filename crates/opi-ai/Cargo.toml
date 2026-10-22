@@ -30,6 +30,9 @@ hex = { workspace = true }
 aws-smithy-query = { workspace = true }
 aws-smithy-xml = { workspace = true }
 xmlparser = { workspace = true }
+p256 = { workspace = true }
+sha1 = { workspace = true }
+rand = { workspace = true }
 regex = { workspace = true }
 regress = { workspace = true }
 unicode-normalization = { workspace = true }

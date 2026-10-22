@@ -42,7 +42,9 @@ use std::path::Path;
 
 use secrecy::SecretString;
 
+use crate::auth::aws::cache::{AwsSourceCache, DpopJtiSource, SourceClock};
 use crate::auth::aws::endpoint::sts_endpoint_url;
+use crate::auth::aws::login::resolve_login_session;
 use crate::auth::aws::metadata::{self, EcsInputs, ImdsInputs};
 use crate::auth::aws::process::{
     CredentialProcessOutput, CredentialProcessRunner, CredentialProcessSpec,
@@ -51,6 +53,7 @@ use crate::auth::aws::role::{
     MfaTokenPresenter, RoleAssumption, StsExchange, StsExchangeError, assume_role,
 };
 use crate::auth::aws::source_http::AwsSourceTransport;
+use crate::auth::aws::sso::{SsoProfileConfig, resolve_sso_source};
 use crate::auth::aws::web_identity::{
     WebIdentityError, assume_role_with_web_identity, read_web_identity_token,
 };
@@ -119,6 +122,53 @@ pub enum TerminalReason {
     /// A selected metadata source returned an invalid credential payload.
     #[error("the metadata source returned an invalid credential payload")]
     InvalidSourceResponse,
+    /// An SSO selection was partially configured (fields present but
+    /// incomplete). Never treated as "unconfigured".
+    #[error("the SSO configuration is incomplete")]
+    IncompleteSsoConfiguration,
+    /// The SSO token is unreadable, invalid, or expired without a refresh
+    /// path (legacy tokens never refresh; a fresh login is required).
+    #[error("the SSO token is unreadable, invalid, or expired")]
+    InvalidSsoToken,
+    /// The SSO service denied an exchange; status/code/request-id are
+    /// retained (OAuth error codes including slowdown/throttle).
+    #[error("SSO denied the exchange (status {}, code {}, request id {})",
+        status.map(|s| s.to_string()).unwrap_or_else(|| "unknown".into()),
+        code.as_deref().unwrap_or("unknown"),
+        request_id.as_deref().unwrap_or("unknown"))]
+    SsoDenied {
+        /// HTTP status code when observed.
+        status: Option<u16>,
+        /// Standard error code when present.
+        code: Option<String>,
+        /// Response request id when present.
+        request_id: Option<String>,
+    },
+    /// A 2xx SSO response did not satisfy the fixed shape.
+    #[error("the SSO response was invalid")]
+    InvalidSsoResponse,
+    /// The SSO exchange failed at the transport level.
+    #[error("the SSO exchange failed at the transport level")]
+    SsoTransport,
+    /// A selected login session's cache is missing or unusable.
+    #[error("the login session cache is missing or invalid")]
+    LoginCacheInvalid,
+    /// The owned ES256 DPoP proof could not be built or signed.
+    #[error("the DPoP proof failed")]
+    DpopFailed,
+    /// SignIn denied the refresh with the terminal AccessDenied family.
+    #[error("SignIn denied the refresh (status {}, code {})",
+        status.map(|s| s.to_string()).unwrap_or_else(|| "unknown".into()),
+        code.as_deref().unwrap_or("unknown"))]
+    LoginDenied {
+        /// HTTP status code when observed.
+        status: Option<u16>,
+        /// Error code when present.
+        code: Option<String>,
+    },
+    /// A 2xx SignIn response did not satisfy the fixed shape.
+    #[error("the SignIn response was invalid")]
+    InvalidLoginResponse,
 }
 
 impl CredentialResolutionError {
@@ -172,6 +222,19 @@ pub enum CredentialSource {
         /// Where the selected token file/role came from.
         route: crate::auth::WebIdentityRoute,
     },
+    /// The SSO source family (explicit init fields or a shared-config
+    /// profile plus its `sso-session` section) supplied the bundle.
+    Sso {
+        /// Owning shared-config profile name; `None` for the explicit
+        /// init segment.
+        profile: Option<String>,
+    },
+    /// A login session (`login_session` profile key) supplied the bundle
+    /// through the SignIn refresh with the owned ES256 DPoP proof.
+    LoginSession {
+        /// Trimmed session name.
+        session: String,
+    },
     /// The ECS container metadata provider supplied the bundle; `legacy`
     /// distinguishes the one-send legacy container provider from the modern
     /// fixed-budget provider.
@@ -205,6 +268,8 @@ impl From<CredentialSource> for AwsCredentialSource {
             CredentialSource::CredentialProcess => Self::CredentialProcess,
             CredentialSource::AssumeRole { profile } => Self::AssumeRole { profile },
             CredentialSource::WebIdentity { route } => Self::WebIdentity { route },
+            CredentialSource::Sso { profile } => Self::Sso { profile },
+            CredentialSource::LoginSession { session } => Self::LoginSession { session },
             CredentialSource::EcsContainer { legacy } => Self::EcsContainer { legacy },
             CredentialSource::Ec2InstanceMetadata => Self::Ec2InstanceMetadata,
         }
@@ -248,6 +313,17 @@ pub struct ScopedAwsEnv {
     pub container_authorization_token: Option<SecretString>,
     /// Scoped `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`.
     pub container_authorization_token_file: Option<String>,
+    /// Scoped explicit-init SSO start URL (no ambient counterpart: the
+    /// fixed chain treats these as init fields, not environment values).
+    pub sso_start_url: Option<String>,
+    /// Scoped explicit-init SSO account id.
+    pub sso_account_id: Option<String>,
+    /// Scoped explicit-init SSO region.
+    pub sso_region: Option<String>,
+    /// Scoped explicit-init SSO role name.
+    pub sso_role_name: Option<String>,
+    /// Scoped explicit-init modern SSO session name.
+    pub sso_session: Option<String>,
     /// Scoped `AWS_EC2_METADATA_DISABLED` (parsed semantics).
     pub ec2_metadata_disabled: Option<bool>,
     /// Scoped `AWS_METADATA_SERVICE_ENDPOINT`.
@@ -310,6 +386,24 @@ pub struct AwsLocalChainInput<'a> {
     pub mfa: Option<&'a dyn MfaTokenPresenter>,
     /// Explicit STS endpoint override (tests and pinned deployments).
     pub sts_endpoint: Option<&'a str>,
+    /// Shared source cache (single-flight, refresh windows, mutation-owner
+    /// registration). Required for the SSO/login families.
+    pub source_cache: Option<&'a AwsSourceCache>,
+    /// Injectable clock for expiry windows.
+    pub clock: &'a dyn SourceClock,
+    /// Injectable DPoP `jti` source.
+    pub dpop_jti: &'a dyn DpopJtiSource,
+    /// Optional injected standard SSO token-cache directory.
+    pub sso_cache_dir: Option<&'a Path>,
+    /// Optional injected standard login cache directory.
+    pub login_cache_dir: Option<&'a Path>,
+    /// SSO portal endpoint override.
+    pub sso_endpoint: Option<&'a str>,
+    /// SSO OIDC endpoint override.
+    pub oidc_endpoint: Option<&'a str>,
+    /// SignIn endpoint override. The default construction is a documented
+    /// opi default (the corpus pins the wire path, not the host).
+    pub signin_endpoint: Option<&'a str>,
     /// Explicit region option (highest region precedence).
     pub region: Option<&'a str>,
     /// Region of last resort when no source named one.
@@ -326,6 +420,42 @@ impl<'a> AwsLocalChainInput<'a> {
     /// Attach the MFA presenter.
     pub fn with_mfa(mut self, mfa: Option<&'a dyn MfaTokenPresenter>) -> Self {
         self.mfa = mfa;
+        self
+    }
+
+    /// Attach a shared source cache (SSO/login families).
+    pub fn with_source_cache(mut self, cache: Option<&'a AwsSourceCache>) -> Self {
+        self.source_cache = cache;
+        self
+    }
+
+    /// Attach an injectable clock.
+    pub fn with_clock(mut self, clock: &'a dyn SourceClock) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    /// Attach the DPoP `jti` source.
+    pub fn with_dpop_jti(mut self, jti: &'a dyn DpopJtiSource) -> Self {
+        self.dpop_jti = jti;
+        self
+    }
+
+    /// Attach the standard SSO token-cache directory.
+    pub fn with_sso_cache_dir(mut self, dir: Option<&'a Path>) -> Self {
+        self.sso_cache_dir = dir;
+        self
+    }
+
+    /// Attach the standard login cache directory.
+    pub fn with_login_cache_dir(mut self, dir: Option<&'a Path>) -> Self {
+        self.login_cache_dir = dir;
+        self
+    }
+
+    /// Pin the SignIn endpoint.
+    pub fn with_signin_endpoint(mut self, endpoint: Option<&'a str>) -> Self {
+        self.signin_endpoint = endpoint;
         self
     }
 
@@ -420,6 +550,42 @@ pub(crate) fn bedrock_runtime_url(region: &str) -> String {
     format!("https://bedrock-runtime.{region}.amazonaws.com")
 }
 
+/// Build the explicit-init SSO selection from scoped fields (the fixed
+/// chain treats these as init fields, not ambient environment values).
+/// `Err(Terminal)` marks an incomplete selection.
+async fn explicit_sso_config(
+    input: &AwsLocalChainInput<'_>,
+) -> Result<Option<SsoProfileConfig>, CredentialResolutionError> {
+    let scoped = &input.scoped;
+    if scoped.sso_start_url.is_none()
+        && scoped.sso_account_id.is_none()
+        && scoped.sso_region.is_none()
+        && scoped.sso_role_name.is_none()
+        && scoped.sso_session.is_none()
+    {
+        return Ok(None);
+    }
+    if input.source_cache.is_none() {
+        return Err(CredentialResolutionError::Terminal {
+            credential_source: CredentialSource::Sso { profile: None },
+            reason: TerminalReason::IncompleteSsoConfiguration,
+        });
+    }
+    build_sso_config(
+        input,
+        scoped.sso_session.as_deref(),
+        scoped.sso_start_url.as_deref(),
+        scoped.sso_region.as_deref(),
+        scoped.sso_account_id.as_deref(),
+        scoped.sso_role_name.as_deref(),
+    )
+    .await
+    .map_err(|()| CredentialResolutionError::Terminal {
+        credential_source: CredentialSource::Sso { profile: None },
+        reason: TerminalReason::IncompleteSsoConfiguration,
+    })
+}
+
 async fn resolve_auto(
     input: &AwsLocalChainInput<'_>,
     explicit_profile: Option<String>,
@@ -438,6 +604,19 @@ async fn resolve_auto(
         && let Some(auth) = resolve_environment_pair(input).await?
     {
         return Ok(auth);
+    }
+
+    // Chain segment 2: explicit SSO (scoped init fields only; a partially
+    // given selection is terminal). A governing profile skips this segment:
+    // profile SSO is handled inside the INI family.
+    if governing_profile.is_none()
+        && let Some(sso) = explicit_sso_config(input).await?
+    {
+        let (credentials, _sso_region) = resolve_sso_source(input, &sso, None).await?;
+        return Ok(ResolvedAuth::aws_sigv4(
+            credentials,
+            source_provenance(CredentialSource::Sso { profile: None }),
+        ));
     }
 
     let profile_name = governing_profile
@@ -615,6 +794,12 @@ struct ProfileProperties {
     web_identity_token_file: Option<String>,
     source_profile: Option<String>,
     credential_source: Option<String>,
+    sso_session: Option<String>,
+    sso_start_url: Option<String>,
+    sso_account_id: Option<String>,
+    sso_region: Option<String>,
+    sso_role_name: Option<String>,
+    login_session: Option<String>,
     /// Whether the access key id (identity anchor) came from the credentials
     /// file (`true`) or the config file (`false`).
     access_key_from_credentials_file: bool,
@@ -671,6 +856,12 @@ impl ProfileProperties {
             && self.web_identity_token_file.is_none()
             && self.source_profile.is_none()
             && self.credential_source.is_none()
+            && self.sso_session.is_none()
+            && self.sso_start_url.is_none()
+            && self.sso_account_id.is_none()
+            && self.sso_region.is_none()
+            && self.sso_role_name.is_none()
+            && self.login_session.is_none()
     }
 
     /// Overlay `upper` onto `self` field-by-field; non-blank `upper` values
@@ -706,6 +897,12 @@ impl ProfileProperties {
         );
         merge(&mut self.source_profile, upper.source_profile);
         merge(&mut self.credential_source, upper.credential_source);
+        merge(&mut self.sso_session, upper.sso_session);
+        merge(&mut self.sso_start_url, upper.sso_start_url);
+        merge(&mut self.sso_account_id, upper.sso_account_id);
+        merge(&mut self.sso_region, upper.sso_region);
+        merge(&mut self.sso_role_name, upper.sso_role_name);
+        merge(&mut self.login_session, upper.login_session);
         self
     }
 }
@@ -779,11 +976,121 @@ fn parse_profile_properties(
             "web_identity_token_file" => props.web_identity_token_file = Some(value),
             "source_profile" => props.source_profile = Some(value),
             "credential_source" => props.credential_source = Some(value),
+            "sso_session" => props.sso_session = Some(value),
+            "sso_start_url" => props.sso_start_url = Some(value),
+            "sso_account_id" => props.sso_account_id = Some(value),
+            "sso_region" => props.sso_region = Some(value),
+            "sso_role_name" => props.sso_role_name = Some(value),
+            "login_session" => props.login_session = Some(value),
             _ => {}
         }
     }
 
     (!props.is_empty()).then_some(props)
+}
+
+/// One `[sso-session NAME]` section from the shared config file.
+#[derive(Debug, Clone, Default)]
+struct SsoSessionData {
+    start_url: Option<String>,
+    region: Option<String>,
+}
+
+/// Read one `[sso-session NAME]` section from the config file. Missing
+/// sections and unreadable files contribute no data (`None` distinguishes
+/// "absent" from an empty section).
+async fn read_sso_session_data(
+    input: &AwsLocalChainInput<'_>,
+    session: &str,
+) -> Option<SsoSessionData> {
+    let path = input.config_file?;
+    let contents = tokio::fs::read_to_string(path).await.ok()?;
+    let target_header = format!("[sso-session {session}]");
+    let mut in_target = false;
+    let mut data = SsoSessionData::default();
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if line.starts_with('[') {
+            if in_target {
+                break;
+            }
+            in_target = line == target_header;
+            continue;
+        }
+        if !in_target {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim().to_string();
+        match key.trim() {
+            "sso_start_url" => data.start_url = Some(value),
+            "sso_region" => data.region = Some(value),
+            _ => {}
+        }
+    }
+    Some(data)
+}
+
+/// Build the validated SSO config from merged profile properties (INI
+/// family) or scoped init fields (explicit segment). `Ok(None)` means no
+/// SSO fields were given (continue); `Err(())` marks an incomplete
+/// selection (terminal).
+async fn build_sso_config(
+    input: &AwsLocalChainInput<'_>,
+    session: Option<&str>,
+    start_url: Option<&str>,
+    sso_region: Option<&str>,
+    account_id: Option<&str>,
+    role_name: Option<&str>,
+) -> Result<Option<SsoProfileConfig>, ()> {
+    fn non_empty(value: Option<&str>) -> Option<&str> {
+        value.filter(|v| !v.trim().is_empty())
+    }
+    let session = non_empty(session);
+    let start_url = non_empty(start_url);
+    let sso_region = non_empty(sso_region);
+    let account_id = non_empty(account_id);
+    let role_name = non_empty(role_name);
+    if session.is_none()
+        && start_url.is_none()
+        && sso_region.is_none()
+        && account_id.is_none()
+        && role_name.is_none()
+    {
+        return Ok(None);
+    }
+    let (start_url, region) = if let Some(session) = session {
+        // Modern selection: the session section supplies the start URL and
+        // region unless the selection itself carries them (explicit init
+        // fields win; a profile without a section still resolves when the
+        // values are inline).
+        let data = read_sso_session_data(input, session)
+            .await
+            .unwrap_or_default();
+        let section_start = non_empty(data.start_url.as_deref());
+        let section_region = non_empty(data.region.as_deref());
+        (
+            start_url.or(section_start).ok_or(())?.to_owned(),
+            sso_region.or(section_region).ok_or(())?.to_owned(),
+        )
+    } else {
+        (
+            start_url.ok_or(())?.to_owned(),
+            sso_region.ok_or(())?.to_owned(),
+        )
+    };
+    Ok(Some(SsoProfileConfig {
+        start_url,
+        region,
+        account_id: account_id.ok_or(())?.to_owned(),
+        role_name: role_name.ok_or(())?.to_owned(),
+        session: session.map(str::to_owned),
+    }))
 }
 
 /// INI family in the verified `resolveProfileData` order:
@@ -930,6 +1237,61 @@ async fn resolve_ini_profile(
         }
         // Every credential_process failure is continue-eligible in the fixed
         // Node corpus.
+    }
+
+    // SSO from the profile (after process in the fixed INI order). Any SSO
+    // field present makes the selection selected: an incomplete
+    // configuration is terminal, never "unconfigured".
+    if let Some(config) = build_sso_config(
+        input,
+        merged.sso_session.as_deref(),
+        merged.sso_start_url.as_deref(),
+        merged.sso_region.as_deref(),
+        merged.sso_account_id.as_deref(),
+        merged.sso_role_name.as_deref(),
+    )
+    .await
+    .map_err(|()| CredentialResolutionError::Terminal {
+        credential_source: CredentialSource::Sso {
+            profile: Some(profile_name.to_owned()),
+        },
+        reason: TerminalReason::IncompleteSsoConfiguration,
+    })? && input.source_cache.is_some()
+    {
+        let (credentials, _sso_region) =
+            resolve_sso_source(input, &config, Some(profile_name)).await?;
+        return Ok((
+            Some(ResolvedAuth::aws_sigv4(
+                credentials,
+                source_provenance(CredentialSource::Sso {
+                    profile: Some(profile_name.to_owned()),
+                }),
+            )),
+            Some(region),
+        ));
+    }
+
+    // login_session closes the INI family. A missing key continues; a
+    // selected session's bad cache, DPoP failure, and the terminal
+    // AccessDenied family stop; an expired-token refresh failure raises the
+    // default continue-eligible error.
+    if let Some(session) = merged
+        .login_session
+        .as_deref()
+        .filter(|session| !session.trim().is_empty())
+        && input.source_cache.is_some()
+        && let Some(credentials) =
+            resolve_login_session(input, session, profile_name, &region).await?
+    {
+        return Ok((
+            Some(ResolvedAuth::aws_sigv4(
+                credentials,
+                source_provenance(CredentialSource::LoginSession {
+                    session: session.trim().to_owned(),
+                }),
+            )),
+            Some(region),
+        ));
     }
 
     Ok((None, merged.region.clone().filter(|r| !r.trim().is_empty())))

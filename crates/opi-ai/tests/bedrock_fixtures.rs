@@ -2044,6 +2044,14 @@ impl AuthResolver for LocalChainBedrockResolver {
                 transport: &NEVER_TRANSPORT,
                 mfa: None,
                 sts_endpoint: None,
+                source_cache: None,
+                clock: &SYSTEM_SOURCE_CLOCK,
+                dpop_jti: &RANDOM_DPPO_JTI,
+                sso_cache_dir: None,
+                login_cache_dir: None,
+                sso_endpoint: None,
+                oidc_endpoint: None,
+                signin_endpoint: None,
                 region: None,
                 default_region: "us-east-1",
             };
@@ -2172,6 +2180,14 @@ async fn failing_local_source_resolution_sends_zero_generation_requests() {
                     transport: &NEVER_TRANSPORT,
                     mfa: None,
                     sts_endpoint: None,
+                    source_cache: None,
+                    clock: &SYSTEM_SOURCE_CLOCK,
+                    dpop_jti: &RANDOM_DPPO_JTI,
+                    sso_cache_dir: None,
+                    login_cache_dir: None,
+                    sso_endpoint: None,
+                    oidc_endpoint: None,
+                    signin_endpoint: None,
                     ambient: &ambient,
                     credentials_file: None,
                     config_file: None,
@@ -2300,6 +2316,14 @@ fn chain_input<'a>(
         transport: &NEVER_TRANSPORT,
         mfa: None,
         sts_endpoint: None,
+        source_cache: None,
+        clock: &SYSTEM_SOURCE_CLOCK,
+        dpop_jti: &RANDOM_DPPO_JTI,
+        sso_cache_dir: None,
+        login_cache_dir: None,
+        sso_endpoint: None,
+        oidc_endpoint: None,
+        signin_endpoint: None,
         region: None,
         default_region: "us-east-1",
     }
@@ -2307,6 +2331,10 @@ fn chain_input<'a>(
 
 /// Transport used by chain tests that never expect a source exchange.
 static NEVER_TRANSPORT: opi_ai::test_support::NeverTransport = opi_ai::test_support::NeverTransport;
+static SYSTEM_SOURCE_CLOCK: opi_ai::auth::aws::cache::SystemSourceClock =
+    opi_ai::auth::aws::cache::SystemSourceClock;
+static RANDOM_DPPO_JTI: opi_ai::auth::aws::cache::RandomDpopJti =
+    opi_ai::auth::aws::cache::RandomDpopJti;
 
 async fn chain_source(input: &AwsLocalChainInput<'_>) -> CredentialSource {
     let auth = resolve_local_aws_auth(input)
@@ -2333,6 +2361,8 @@ async fn chain_source(input: &AwsLocalChainInput<'_>) -> CredentialSource {
         AwsCredentialSource::CredentialProcess => CredentialSource::CredentialProcess,
         AwsCredentialSource::AssumeRole { profile } => CredentialSource::AssumeRole { profile },
         AwsCredentialSource::WebIdentity { route } => CredentialSource::WebIdentity { route },
+        AwsCredentialSource::Sso { profile } => CredentialSource::Sso { profile },
+        AwsCredentialSource::LoginSession { session } => CredentialSource::LoginSession { session },
         AwsCredentialSource::EcsContainer { legacy } => CredentialSource::EcsContainer { legacy },
         AwsCredentialSource::Ec2InstanceMetadata => CredentialSource::Ec2InstanceMetadata,
         AwsCredentialSource::ProxyPlaceholder => unreachable!("no placeholder in chain tests"),
@@ -4747,5 +4777,1162 @@ fn sts_endpoint_rules_follow_partition_and_override() {
         sts_endpoint_url("us-west-2", Some("https://sts.example.invalid")),
         "https://sts.example.invalid",
         "explicit override wins"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.19.3: SSO / login_session source families and the full chain.
+// ---------------------------------------------------------------------------
+
+use opi_ai::auth::aws::cache::{
+    AwsSourceCache, CacheIdentity, DpopJtiSource, PassiveRefreshDeps, SourceCacheValue,
+    SourceClock, SsoRefreshMaterial, SsoTokenSnapshot,
+};
+use opi_ai::auth::aws::login::{
+    login_cache_file_name, read_login_cache_file, write_login_cache_file,
+};
+use opi_ai::auth::aws::sso::{read_sso_token_file, write_sso_token_file};
+/// Fixed clock for refresh-window tests.
+struct FakeClock(time::OffsetDateTime);
+
+impl SourceClock for FakeClock {
+    fn now(&self) -> time::OffsetDateTime {
+        self.0
+    }
+}
+
+/// Deterministic DPoP `jti` source.
+struct CountingJti(std::sync::atomic::AtomicUsize);
+
+impl DpopJtiSource for CountingJti {
+    fn next_jti(&self) -> String {
+        let value = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        format!("jti-{value}")
+    }
+}
+
+fn modern_sso_token_file(dir: &std::path::Path, expires_at: &str) {
+    write_sso_token_file(
+        dir,
+        "sess-a",
+        &SsoTokenSnapshot {
+            access_token: secrecy::SecretString::from("SSO_TOKEN"),
+            expires_at: rfc3339(expires_at),
+            refresh: Some(SsoRefreshMaterial {
+                client_id: "oidc-client".to_owned(),
+                client_secret: secrecy::SecretString::from("oidc-secret"),
+                refresh_token: secrecy::SecretString::from("oidc-refresh"),
+            }),
+            modern: true,
+        },
+    )
+    .unwrap();
+}
+
+fn sso_scoped(start_url: &str, session: Option<&str>) -> ScopedAwsEnv {
+    ScopedAwsEnv {
+        sso_start_url: Some(start_url.to_owned()),
+        sso_account_id: Some("123456789012".to_owned()),
+        sso_region: Some("us-east-1".to_owned()),
+        sso_role_name: Some("Engineering".to_owned()),
+        sso_session: session.map(str::to_owned),
+        ..ScopedAwsEnv::empty()
+    }
+}
+
+fn role_credentials_body(expiration_ms: i64) -> String {
+    format!(
+        r#"{{"roleCredentials":{{"accessKeyId":"SSO_AKID","secretAccessKey":"SSO_SAK","sessionToken":"SSO_SESSION","expiration":{expiration_ms}}}}}"#
+    )
+}
+
+fn bearer_of(request: &SourceHttpRequest) -> String {
+    request
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("x-amz-sso_bearer_token"))
+        .map(|(_, value)| value.clone())
+        .expect("bearer header present")
+}
+
+fn login_cache_key_pair() -> (p256::SecretKey, String) {
+    let secret = p256::SecretKey::random(&mut rand::rngs::OsRng);
+    use p256::elliptic_curve::pkcs8::EncodePrivateKey;
+    let pem = secret
+        .to_pkcs8_pem(p256::pkcs8::LineEnding::LF)
+        .unwrap()
+        .to_string();
+    (secret, pem)
+}
+
+fn write_login_cache(
+    dir: &std::path::Path,
+    session: &str,
+    pem: &str,
+    access_token: Option<&str>,
+    expires_at: Option<&str>,
+) {
+    write_login_cache_file(
+        dir,
+        session,
+        &opi_ai::auth::aws::cache::LoginTokenSnapshot {
+            client_id: "signin-client".to_owned(),
+            refresh_token: secrecy::SecretString::from("signin-refresh"),
+            signing_key: secrecy::SecretString::from(pem.to_owned()),
+            account: Some("123456789012".to_owned()),
+            access_token: access_token.map(secrecy::SecretString::from),
+            expires_at: expires_at.map(rfc3339),
+        },
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn explicit_sso_absent_continues_to_ini_static() {
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(
+        &credentials,
+        "[default]\naws_access_key_id = INI_ACCESS\naws_secret_access_key = INI_SECRET\n",
+    )
+    .unwrap();
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::default_never();
+    let input = chain_input(
+        &ambient,
+        Some(&credentials),
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let source = chain_source(&input).await;
+    assert_eq!(source, CredentialSource::ProfileFile);
+    assert_eq!(transport.send_count(), 0);
+}
+
+#[tokio::test]
+async fn explicit_sso_incomplete_is_terminal_with_zero_sends() {
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::default_never();
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv {
+            sso_start_url: Some("https://start.example".to_owned()),
+            ..ScopedAwsEnv::empty()
+        },
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti);
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("incomplete explicit SSO selection terminates");
+    match error {
+        CredentialResolutionError::Terminal {
+            reason: TerminalReason::IncompleteSsoConfiguration,
+            ..
+        } => {}
+        other => panic!("expected incomplete SSO terminal, got {other:?}"),
+    }
+    assert_eq!(transport.send_count(), 0);
+}
+
+#[tokio::test]
+async fn explicit_sso_resolves_with_getrole_wire() {
+    let dir = tempfile::tempdir().unwrap();
+    modern_sso_token_file(dir.path(), "2030-01-01T04:00:00Z");
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        role_credentials_body(1_900_000_000_000),
+    )]);
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        sso_scoped("https://start.example", Some("sess-a")),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_sso_cache_dir(Some(dir.path()));
+    let auth = resolve_local_aws_auth(&input).await.expect("SSO resolves");
+    let AuthProvenanceSource::AwsSigV4 { source } = auth.provenance.source else {
+        panic!("expected SigV4 provenance");
+    };
+    assert_eq!(source, AwsCredentialSource::Sso { profile: None });
+    assert_eq!(transport.send_count(), 1);
+    let send = transport.send_at(0);
+    assert_eq!(
+        send.method,
+        opi_ai::auth::aws::source_http::SourceHttpMethod::Get
+    );
+    assert_eq!(
+        send.url,
+        "https://portal.sso.us-east-1.amazonaws.com/federation/credentials?role_name=Engineering&account_id=123456789012"
+    );
+    assert_eq!(bearer_of(&send), "SSO_TOKEN");
+}
+
+#[tokio::test]
+async fn ini_modern_sso_resolves_via_sso_session_section() {
+    let dir = tempfile::tempdir().unwrap();
+    modern_sso_token_file(dir.path(), "2030-01-01T04:00:00Z");
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile corp]\nsso_session = sess-a\nsso_account_id = 123456789012\nsso_role_name = Engineering\n\
+         [sso-session sess-a]\nsso_start_url = https://start.example\nsso_region = us-east-1\n",
+    )
+    .unwrap();
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        role_credentials_body(1_900_000_000_000),
+    )]);
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("corp".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_sso_cache_dir(Some(dir.path()));
+    let source = chain_source(&input).await;
+    assert_eq!(
+        source,
+        CredentialSource::Sso {
+            profile: Some("corp".to_owned())
+        }
+    );
+}
+
+#[tokio::test]
+async fn ini_sso_incomplete_is_terminal() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(&config, "[profile corp]\nsso_account_id = 123456789012\n").unwrap();
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::default_never();
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("corp".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_sso_cache_dir(Some(dir.path()));
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("incomplete profile SSO terminates");
+    match error {
+        CredentialResolutionError::Terminal {
+            reason: TerminalReason::IncompleteSsoConfiguration,
+            ..
+        } => {}
+        other => panic!("expected incomplete SSO terminal, got {other:?}"),
+    }
+    assert_eq!(transport.send_count(), 0);
+}
+
+#[tokio::test]
+async fn sso_near_expiry_uses_old_token_and_registers_passive_refresh() {
+    let dir = tempfile::tempdir().unwrap();
+    // Token expires in 2 minutes: inside the 5-minute window.
+    modern_sso_token_file(dir.path(), "2030-01-01T00:02:00Z");
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    // Sends: federation GET (old token). The passive OIDC refresh runs on
+    // the mutation-owner runtime through its own transport.
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        role_credentials_body(1_900_000_000_000),
+    )]);
+    let passive_transport = std::sync::Arc::new(FakeSourceTransport::new(vec![source_response(
+        200,
+        r#"{"accessToken":"SSO_TOKEN_2","expiresIn":28800,"refreshToken":"oidc-refresh-2","tokenType":"Bearer"}"#,
+    )]));
+    let queue = std::sync::Arc::new(opi_ai::mutation::MutationQueue::new());
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let cache = AwsSourceCache::with_mutation_queue(queue.clone()).with_passive_deps(
+        std::sync::Arc::new(PassiveRefreshDeps {
+            transport: passive_transport.clone(),
+            clock: std::sync::Arc::new(FakeClock(rfc3339("2030-01-01T00:00:00Z"))),
+            jti: std::sync::Arc::new(CountingJti(std::sync::atomic::AtomicUsize::new(0))),
+        }),
+    );
+    let barrier_before = queue.barrier();
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        sso_scoped("https://start.example", Some("sess-a")),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_sso_cache_dir(Some(dir.path()));
+    let auth = resolve_local_aws_auth(&input).await.expect("SSO resolves");
+    let _ = auth;
+    // The federation GET used the OLD token (passive refresh stays background).
+    assert_eq!(bearer_of(&transport.send_at(0)), "SSO_TOKEN");
+    // The passive refresh was registered into the mutation owner and runs
+    // to completion even though the caller already left.
+    let barrier_after = queue.barrier();
+    assert!(barrier_after.cutoff() > barrier_before.cutoff());
+    let report = barrier_after.wait().await;
+    assert!(report.is_complete());
+    assert_eq!(passive_transport.send_count(), 1);
+    assert_eq!(
+        passive_transport.send_at(0).url,
+        "https://oidc.us-east-1.amazonaws.com/token"
+    );
+    // The standard cache file now holds the refreshed token.
+    let file = read_sso_token_file(dir.path(), "sess-a").unwrap().unwrap();
+    assert_eq!(
+        secrecy::ExposeSecret::expose_secret(&file.snapshot.access_token),
+        "SSO_TOKEN_2"
+    );
+}
+
+#[tokio::test]
+async fn sso_passive_refresh_failure_keeps_old_token() {
+    let dir = tempfile::tempdir().unwrap();
+    modern_sso_token_file(dir.path(), "2030-01-01T00:02:00Z");
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    // Chain sends: only the federation GET with the old token. The passive
+    // OIDC refresh fails (slow_down) on the mutation-owner transport; its
+    // failure is swallowed and the old token stays usable.
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        role_credentials_body(1_900_000_000_000),
+    )]);
+    let passive_transport = std::sync::Arc::new(FakeSourceTransport::new(vec![source_response(
+        400,
+        r#"{"error":"slow_down","error_description":"try later"}"#,
+    )]));
+    let queue = std::sync::Arc::new(opi_ai::mutation::MutationQueue::new());
+    let cache = AwsSourceCache::with_mutation_queue(queue.clone()).with_passive_deps(
+        std::sync::Arc::new(PassiveRefreshDeps {
+            transport: passive_transport.clone(),
+            clock: std::sync::Arc::new(FakeClock(rfc3339("2030-01-01T00:00:00Z"))),
+            jti: std::sync::Arc::new(CountingJti(std::sync::atomic::AtomicUsize::new(0))),
+        }),
+    );
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        sso_scoped("https://start.example", Some("sess-a")),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_sso_cache_dir(Some(dir.path()));
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("old token stays usable");
+    let _ = auth;
+    assert_eq!(transport.send_count(), 1);
+    assert_eq!(bearer_of(&transport.send_at(0)), "SSO_TOKEN");
+    let barrier = queue.barrier();
+    let report = barrier.wait().await;
+    assert!(report.is_complete());
+    assert_eq!(passive_transport.send_count(), 1);
+    // The failed refresh wrote nothing: the cache file keeps the old token.
+    let file = read_sso_token_file(dir.path(), "sess-a").unwrap().unwrap();
+    assert_eq!(
+        secrecy::ExposeSecret::expose_secret(&file.snapshot.access_token),
+        "SSO_TOKEN"
+    );
+}
+
+#[tokio::test]
+async fn sso_expired_token_refresh_denied_is_terminal() {
+    let dir = tempfile::tempdir().unwrap();
+    modern_sso_token_file(dir.path(), "2029-12-31T23:00:00Z");
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport =
+        FakeSourceTransport::new(vec![source_response(400, r#"{"error":"invalid_grant"}"#)]);
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        sso_scoped("https://start.example", Some("sess-a")),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_sso_cache_dir(Some(dir.path()));
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("expired token with denied refresh terminates");
+    match error {
+        CredentialResolutionError::Terminal {
+            reason: TerminalReason::SsoDenied {
+                code: Some(code), ..
+            },
+            ..
+        } => assert_eq!(code, "invalid_grant"),
+        other => panic!("expected SSO denial terminal, got {other:?}"),
+    }
+    assert_eq!(transport.send_count(), 1, "no federation GET after denial");
+}
+
+#[tokio::test]
+async fn sso_legacy_expired_token_is_terminal_relogin() {
+    let dir = tempfile::tempdir().unwrap();
+    // Legacy cache file: no refresh material.
+    write_sso_token_file(
+        dir.path(),
+        &"HTTPS://LEGACY.EXAMPLE".to_uppercase(),
+        &SsoTokenSnapshot {
+            access_token: secrecy::SecretString::from("LEGACY"),
+            expires_at: rfc3339("2029-12-31T23:00:00Z"),
+            refresh: None,
+            modern: false,
+        },
+    )
+    .unwrap();
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::default_never();
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        sso_scoped("https://legacy.example", None),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_sso_cache_dir(Some(dir.path()));
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("legacy expired token requires re-login");
+    match error {
+        CredentialResolutionError::Terminal {
+            reason: TerminalReason::InvalidSsoToken,
+            ..
+        } => {}
+        other => panic!("expected invalid SSO token terminal, got {other:?}"),
+    }
+    assert_eq!(transport.send_count(), 0);
+}
+
+#[tokio::test]
+async fn sso_getrole_denial_is_typed_terminal_with_zero_generation_sends() {
+    let dir = tempfile::tempdir().unwrap();
+    modern_sso_token_file(dir.path(), "2030-01-01T04:00:00Z");
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![source_response(403, "{}")]);
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        sso_scoped("https://start.example", Some("sess-a")),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_sso_cache_dir(Some(dir.path()));
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("selected SSO denial never discovers another identity");
+    match error {
+        CredentialResolutionError::Terminal {
+            reason: TerminalReason::SsoDenied {
+                status: Some(403), ..
+            },
+            ..
+        } => {}
+        other => panic!("expected SSO denial terminal, got {other:?}"),
+    }
+    assert_eq!(
+        transport.send_count(),
+        1,
+        "exactly the denied federation GET"
+    );
+}
+
+#[tokio::test]
+async fn login_session_bad_cache_is_terminal() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(&config, "[profile corp]\nlogin_session = my-session\n").unwrap();
+    let login_dir = dir.path().join("login");
+    std::fs::create_dir_all(&login_dir).unwrap();
+    std::fs::write(
+        login_dir.join(format!("{}.json", login_cache_file_name("my-session"))),
+        "{not json",
+    )
+    .unwrap();
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::default_never();
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("corp".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_login_cache_dir(Some(&login_dir));
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("selected session with bad cache terminates");
+    match error {
+        CredentialResolutionError::Terminal {
+            reason: TerminalReason::LoginCacheInvalid,
+            ..
+        } => {}
+        other => panic!("expected login cache terminal, got {other:?}"),
+    }
+    assert_eq!(transport.send_count(), 0);
+}
+
+#[tokio::test]
+async fn login_session_refresh_dpop_wire_and_rotation() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_secret, pem) = login_cache_key_pair();
+    let config = dir.path().join("config");
+    std::fs::write(&config, "[profile corp]\nlogin_session = my-session\n").unwrap();
+    let login_dir = dir.path().join("login");
+    std::fs::create_dir_all(&login_dir).unwrap();
+    write_login_cache(&login_dir, "my-session", &pem, None, None);
+    let access_token_json = r#"{"accessKeyId":"LOGIN_AKID","secretAccessKey":"LOGIN_SAK","sessionToken":"LOGIN_SESSION"}"#;
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        format!(
+            r#"{{"accessToken":{},"expiresIn":28800,"refreshToken":"signin-refresh-2"}}"#,
+            serde_json::to_string(access_token_json).unwrap()
+        ),
+    )]);
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("corp".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_login_cache_dir(Some(&login_dir));
+    let source = chain_source(&input).await;
+    assert_eq!(
+        source,
+        CredentialSource::LoginSession {
+            session: "my-session".to_owned()
+        }
+    );
+    // The SignIn refresh carried the owned DPoP proof over the fixed wire.
+    assert_eq!(transport.send_count(), 1);
+    let send = transport.send_at(0);
+    assert_eq!(send.url, "https://signin.us-east-1.amazonaws.com/v1/token");
+    let proof = send
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("dpop"))
+        .map(|(_, value)| value.clone())
+        .expect("DPoP header");
+    assert_dpop_proof_shape(
+        &proof,
+        "jti-0",
+        1893456000,
+        "https://signin.us-east-1.amazonaws.com/v1/token",
+    );
+    let body: serde_json::Value =
+        serde_json::from_slice(send.body.as_ref().expect("body")).unwrap();
+    assert_eq!(body["clientId"], "signin-client");
+    assert_eq!(body["grantType"], "refresh_token");
+    assert_eq!(body["refreshToken"], "signin-refresh");
+    // The rotated refresh token was written back to the standard cache.
+    let file = read_login_cache_file(&login_dir, "my-session")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        secrecy::ExposeSecret::expose_secret(&file.refresh_token),
+        "signin-refresh-2"
+    );
+    assert!(file.access_token.is_some());
+}
+
+/// Assert the fixed DPoP proof shape and verify its ES256 signature against
+/// the JWK embedded in the proof header.
+fn assert_dpop_proof_shape(proof: &str, jti: &str, iat: i64, htu: &str) {
+    use p256::ecdsa::signature::Verifier;
+    let parts: Vec<&str> = proof.split('.').collect();
+    assert_eq!(parts.len(), 3, "three-segment DPoP JWT");
+    let decode = |value: &str| {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let mut out = Vec::new();
+        let mut buffer = 0u32;
+        let mut bits = 0u32;
+        for ch in value.bytes() {
+            let index = ALPHABET.iter().position(|a| *a == ch).unwrap() as u32;
+            buffer = (buffer << 6) | index;
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                out.push((buffer >> bits) as u8);
+            }
+        }
+        out
+    };
+    let header: serde_json::Value = serde_json::from_slice(&decode(parts[0])).unwrap();
+    assert_eq!(header["typ"], "dpop+JWT");
+    assert_eq!(header["alg"], "ES256");
+    assert_eq!(header["jwk"]["kty"], "EC");
+    assert_eq!(header["jwk"]["crv"], "P-256");
+    let payload: serde_json::Value = serde_json::from_slice(&decode(parts[1])).unwrap();
+    assert_eq!(payload["jti"], jti);
+    assert_eq!(payload["iat"], iat);
+    assert_eq!(payload["htu"], htu);
+    assert_eq!(payload["htm"], "POST");
+    use p256::elliptic_curve::sec1::FromEncodedPoint;
+    let x = decode(header["jwk"]["x"].as_str().unwrap());
+    let y = decode(header["jwk"]["y"].as_str().unwrap());
+    let mut sec1 = vec![0x04];
+    sec1.extend(x);
+    sec1.extend(y);
+    let point = p256::EncodedPoint::from_bytes(&sec1).unwrap();
+    let public = p256::PublicKey::from_encoded_point(&point).unwrap();
+    let verifying = p256::ecdsa::VerifyingKey::from(&public);
+    let signature = p256::ecdsa::Signature::from_slice(&decode(parts[2])).unwrap();
+    verifying
+        .verify(format!("{}.{}", parts[0], parts[1]).as_bytes(), &signature)
+        .expect("ES256 signature verifies");
+}
+
+#[tokio::test]
+async fn login_access_denied_family_is_terminal() {
+    for code in [
+        "AccessDeniedException",
+        "TokenExpired",
+        "UserCredentialsChanged",
+        "InsufficientPermissions",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let (_secret, pem) = login_cache_key_pair();
+        let config = dir.path().join("config");
+        std::fs::write(&config, "[profile corp]\nlogin_session = my-session\n").unwrap();
+        let login_dir = dir.path().join("login");
+        std::fs::create_dir_all(&login_dir).unwrap();
+        write_login_cache(&login_dir, "my-session", &pem, None, None);
+        let ambient = MapAuthContext(std::collections::HashMap::new());
+        let runner = ScriptedProcessRunner {
+            calls: std::sync::Mutex::new(Vec::new()),
+            result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+        };
+        let transport = FakeSourceTransport::new(vec![source_response(
+            403,
+            format!(r#"{{"code":"{code}","message":"denied"}}"#),
+        )]);
+        let cache = AwsSourceCache::new();
+        let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+        let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+        let input = chain_input(
+            &ambient,
+            None,
+            Some(&config),
+            &runner,
+            AwsAuthSelection::Profile("corp".to_owned()),
+            ScopedAwsEnv::empty(),
+        )
+        .with_source_transport(&transport)
+        .with_source_cache(Some(&cache))
+        .with_clock(&clock)
+        .with_dpop_jti(&jti)
+        .with_login_cache_dir(Some(&login_dir));
+        let error = resolve_local_aws_auth(&input)
+            .await
+            .unwrap_err_or_ok("denied")
+            .expect_err(&format!("terminal AccessDenied family: {code}"));
+        match error {
+            CredentialResolutionError::Terminal {
+                reason:
+                    TerminalReason::LoginDenied {
+                        status: Some(403),
+                        code: Some(observed),
+                    },
+                ..
+            } => assert_eq!(observed, code),
+            other => panic!("expected login denial terminal for {code}, got {other:?}"),
+        }
+    }
+}
+
+/// Small helper keeping `expect_err` available on Result<_, E>.
+trait UnwrapOrOk<T, E> {
+    fn unwrap_err_or_ok(self, message: &str) -> Result<T, E>;
+}
+
+impl<T, E> UnwrapOrOk<T, E> for Result<T, E> {
+    fn unwrap_err_or_ok(self, _message: &str) -> Result<T, E> {
+        self
+    }
+}
+
+#[tokio::test]
+async fn login_other_failure_with_expired_token_continues_chain() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_secret, pem) = login_cache_key_pair();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile corp]\nlogin_session = my-session\nregion = us-east-1\n",
+    )
+    .unwrap();
+    let login_dir = dir.path().join("login");
+    std::fs::create_dir_all(&login_dir).unwrap();
+    // Cached access token already expired.
+    let access_token_json = r#"{"accessKeyId":"LOGIN_AKID","secretAccessKey":"LOGIN_SAK","sessionToken":"LOGIN_SESSION"}"#;
+    write_login_cache(
+        &login_dir,
+        "my-session",
+        &pem,
+        Some(access_token_json),
+        Some("2029-12-31T23:00:00Z"),
+    );
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_DISABLED",
+        "true",
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    // Unclassified refresh failure (500 without a code): the expired token
+    // raises the default continue-eligible error.
+    let transport = FakeSourceTransport::new(vec![source_response(500, "{}")]);
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("corp".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_login_cache_dir(Some(&login_dir));
+    let error = resolve_local_aws_auth(&input)
+        .await
+        .expect_err("chain advances past the failed login segment");
+    // The chain continued to its end: exhaustion, not a terminal error.
+    assert!(
+        matches!(error, CredentialResolutionError::Exhausted),
+        "expected continue-eligible exhaustion, got {error:?}"
+    );
+    assert_eq!(transport.send_count(), 1, "only the failed refresh ran");
+}
+
+#[tokio::test]
+async fn login_unexpired_token_refresh_failure_keeps_old() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_secret, pem) = login_cache_key_pair();
+    let config = dir.path().join("config");
+    std::fs::write(&config, "[profile corp]\nlogin_session = my-session\n").unwrap();
+    let login_dir = dir.path().join("login");
+    std::fs::create_dir_all(&login_dir).unwrap();
+    let access_token_json = r#"{"accessKeyId":"LOGIN_AKID","secretAccessKey":"LOGIN_SAK","sessionToken":"LOGIN_SESSION"}"#;
+    // Cached access token still valid for 2 minutes (inside the window, but
+    // no mutation owner is attached: the refresh failure must keep it).
+    write_login_cache(
+        &login_dir,
+        "my-session",
+        &pem,
+        Some(access_token_json),
+        Some("2030-01-01T00:02:00Z"),
+    );
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::default_never();
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("corp".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_login_cache_dir(Some(&login_dir));
+    let source = chain_source(&input).await;
+    assert_eq!(
+        source,
+        CredentialSource::LoginSession {
+            session: "my-session".to_owned()
+        },
+        "the still-valid cached token is used without any send"
+    );
+    assert_eq!(transport.send_count(), 0);
+}
+
+#[tokio::test]
+async fn chain_order_env_pair_beats_explicit_sso() {
+    let dir = tempfile::tempdir().unwrap();
+    modern_sso_token_file(dir.path(), "2030-01-01T04:00:00Z");
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::default_never();
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        ScopedAwsEnv {
+            access_key_id: Some(secrecy::SecretString::from("ENV_ACCESS")),
+            secret_access_key: Some(secrecy::SecretString::from("ENV_SECRET")),
+            ..sso_scoped("https://start.example", Some("sess-a"))
+        },
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_sso_cache_dir(Some(dir.path()));
+    let source = chain_source(&input).await;
+    assert_eq!(source, CredentialSource::ScopedEnvironment);
+    assert_eq!(transport.send_count(), 0, "the env pair wins before SSO");
+}
+
+#[tokio::test]
+async fn chain_order_ini_process_beats_sso_and_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile corp]\ncredential_process = echo-process\nsso_session = sess-a\nsso_account_id = 1\nsso_role_name = r\nlogin_session = my-session\n",
+    )
+    .unwrap();
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::default_never();
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("corp".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti);
+    let source = chain_source(&input).await;
+    assert_eq!(source, CredentialSource::CredentialProcess);
+    assert_eq!(
+        transport.send_count(),
+        0,
+        "process precedes SSO/login in the INI order"
+    );
+}
+
+#[tokio::test]
+async fn sso_throttle_suppresses_immediate_second_passive_refresh() {
+    let queue = std::sync::Arc::new(opi_ai::mutation::MutationQueue::new());
+    let cache = AwsSourceCache::with_mutation_queue(queue.clone());
+    let identity = CacheIdentity::SsoToken {
+        cache_key: "k".to_owned(),
+    };
+    cache.store(
+        identity.clone(),
+        SourceCacheValue::SsoToken(SsoTokenSnapshot {
+            access_token: secrecy::SecretString::from("token"),
+            expires_at: rfc3339("2030-01-01T00:02:00Z"),
+            refresh: Some(SsoRefreshMaterial {
+                client_id: "c".to_owned(),
+                client_secret: secrecy::SecretString::from("s"),
+                refresh_token: secrecy::SecretString::from("r"),
+            }),
+            modern: true,
+        }),
+    );
+    let make_slot = || {
+        Box::new(move || {
+            Box::pin(async { Ok(opi_ai::mutation::MutationApplied::Keep) })
+                as opi_ai::BoxAuthFuture<
+                    'static,
+                    Result<opi_ai::mutation::MutationApplied, opi_ai::mutation::MutationError>,
+                >
+        }) as opi_ai::mutation::MutationSlot
+    };
+    let now = rfc3339("2030-01-01T00:00:00Z");
+    assert!(cache.maybe_spawn_passive(identity.clone(), now, make_slot()));
+    // The 30-second throttle suppresses a same-instant second attempt.
+    assert!(!cache.maybe_spawn_passive(identity.clone(), now, make_slot()));
+    // Let the first slot settle, then the throttle window governs alone.
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    assert!(
+        !cache.maybe_spawn_passive(identity.clone(), now, make_slot()),
+        "same-instant attempt stays throttled after settle"
+    );
+    let later = now + time::Duration::seconds(31);
+    assert!(cache.maybe_spawn_passive(identity, later, make_slot()));
+}
+
+#[tokio::test]
+async fn signin_dpop_over_real_http_to_local_server() {
+    // Real transport + real ES256 DPoP proof over loopback HTTP; the proof
+    // signature is verified against the JWK embedded in the proof header.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind local SignIn");
+    let addr = listener.local_addr().expect("local SignIn addr");
+    let endpoint = format!("http://{addr}");
+
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept SignIn request");
+        let mut request = Vec::new();
+        let mut buf = [0_u8; 4096];
+        loop {
+            let read = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                .await
+                .expect("read SignIn request");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&buf[..read]);
+            if let Some(header_end) = find_subslice(&request, b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&request[..header_end]).to_string();
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        if !name.trim().eq_ignore_ascii_case("Content-Length") {
+                            return None;
+                        }
+                        value.trim().parse::<usize>().ok()
+                    })
+                    .unwrap_or(0);
+                if request.len() >= header_end + 4 + content_length {
+                    break;
+                }
+            }
+        }
+        let access_token_json = r#"{"accessKeyId":"LOCALLOGIN","secretAccessKey":"LOGINSECRET","sessionToken":"LOGINSESSION"}"#;
+        let response = format!(
+            r#"{{"accessToken":{},"expiresIn":28800,"refreshToken":"signin-refresh-2"}}"#,
+            serde_json::to_string(access_token_json).unwrap()
+        );
+        let mut bytes = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            response.len()
+        )
+        .into_bytes();
+        bytes.extend_from_slice(response.as_bytes());
+        tokio::io::AsyncWriteExt::write_all(&mut socket, &bytes)
+            .await
+            .expect("write SignIn response");
+        request
+    });
+
+    let dir = tempfile::tempdir().unwrap();
+    let (_secret, pem) = login_cache_key_pair();
+    let config = dir.path().join("config");
+    std::fs::write(&config, "[profile corp]\nlogin_session = my-session\n").unwrap();
+    let login_dir = dir.path().join("login");
+    std::fs::create_dir_all(&login_dir).unwrap();
+    write_login_cache(&login_dir, "my-session", &pem, None, None);
+
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = opi_ai::auth::aws::source_http::ReqwestSourceTransport::new();
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("corp".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_dpop_jti(&jti)
+    .with_login_cache_dir(Some(&login_dir))
+    .with_signin_endpoint(Some(&endpoint));
+    let auth = resolve_local_aws_auth(&input)
+        .await
+        .expect("login resolves");
+    let AuthProvenanceSource::AwsSigV4 { source } = auth.provenance.source else {
+        panic!("expected SigV4 provenance");
+    };
+    assert_eq!(
+        source,
+        AwsCredentialSource::LoginSession {
+            session: "my-session".to_owned()
+        }
+    );
+
+    let request_text = String::from_utf8(server.await.expect("server finished")).unwrap();
+    let proof = request_text
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.trim()
+                .eq_ignore_ascii_case("dpop")
+                .then(|| value.trim().to_owned())
+        })
+        .expect("DPoP header over real HTTP");
+    assert_dpop_proof_shape(&proof, "jti-0", 1893456000, &format!("{endpoint}/v1/token"));
+    assert!(
+        request_text.contains("POST /v1/token"),
+        "real SignIn request: {request_text}"
     );
 }

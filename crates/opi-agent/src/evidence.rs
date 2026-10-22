@@ -1093,6 +1093,19 @@ pub enum AwsCredentialSourceFacts {
         /// Route: shared-config profile or environment segment.
         route: WebIdentityRouteFacts,
     },
+    /// The SSO source family (explicit init fields or a shared-config
+    /// profile plus its `sso-session` section).
+    Sso {
+        /// Owning shared-config profile name; `None` for the explicit
+        /// init segment.
+        profile: Option<String>,
+    },
+    /// A login session (`login_session` profile key) through the SignIn
+    /// refresh with the owned ES256 DPoP proof.
+    LoginSession {
+        /// Trimmed session name.
+        session: String,
+    },
     /// ECS container metadata provider.
     EcsContainer {
         /// Whether the legacy one-send provider produced the bundle.
@@ -1250,6 +1263,14 @@ fn auth_source_facts(
                 AwsCredentialSource::AssumeRole { profile } => {
                     AwsCredentialSourceFacts::AssumeRole {
                         profile: profile.clone(),
+                    }
+                }
+                AwsCredentialSource::Sso { profile } => AwsCredentialSourceFacts::Sso {
+                    profile: profile.clone(),
+                },
+                AwsCredentialSource::LoginSession { session } => {
+                    AwsCredentialSourceFacts::LoginSession {
+                        session: session.clone(),
                     }
                 }
                 AwsCredentialSource::WebIdentity { route } => {
