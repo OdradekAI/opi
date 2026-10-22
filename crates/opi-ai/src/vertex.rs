@@ -308,7 +308,8 @@ fn quota_project_of(auth: &crate::auth::ResolvedAuth) -> Option<&str> {
                 crate::auth::AdcCredentialSource::AuthorizedUser { quota_project }
                 | crate::auth::AdcCredentialSource::ExternalAccountAuthorizedUser {
                     quota_project, ..
-                },
+                }
+                | crate::auth::AdcCredentialSource::Impersonated { quota_project, .. },
         } => quota_project.as_deref(),
         _ => None,
     }

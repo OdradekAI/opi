@@ -1023,3 +1023,29 @@ clients, and flows a workforce user project into the `options` form field
 without client authentication. Provenance classifies the supplier through
 `AdcCredentialSource::ExternalAccount`; `impersonated_service_account`
 stays typed-unadmitted until the impersonation task.
+
+### ADC impersonation, recursive composition and the keyed cache (P20-S21-3)
+
+`auth::adc::impersonation` owns the `impersonated_service_account` family:
+`source_credentials` resolves recursively through the same adapter with no
+new depth cap, the target principal is extracted from the
+`service_account_impersonation_url` (bounded, typed failure otherwise), and
+the raw URL never becomes the wire destination — the IAM
+`generateAccessToken` request is reconstructed from the effective universe
+domain (an explicit `universe_domain` disagreeing with the source's fails
+typed before any leg). The body keeps delegates, the target scope array and
+`"{seconds}s"` lifetime; the response `expireTime` is RFC3339; source and
+target identities stay separate in the `Impersonated` provenance with the
+file's quota project riding `x-goog-user-project`. An `external_account`
+file's optional impersonation URL activates after the STS exchange with the
+forced cloud-platform scope, wrapping the federation source in the same
+`Impersonated` provenance. `auth::adc::cache` centralizes the owner's token
+store under the pinned key grammar (config digest plus principal/target,
+delegates, audience, scopes, project, quota, endpoint, universe,
+TLS/mTLS identity) with single-flight acquisitions, one 5-minute eager
+window, short-TTL current-call service without refresh loops, and
+generation fencing so a refresh completing after an invalidation never
+publishes. Sources without stable wire principals are identity-unverified
+(`stable_identity() == None`): an automatic whole-call recovery must not
+reuse them across a source change; ordinary provider retries keep the
+frozen per-call token.

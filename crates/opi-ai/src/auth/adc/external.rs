@@ -36,6 +36,8 @@ const DEFAULT_STS_TOKEN_ENDPOINT: &str = "https://sts.{universe_domain}/v1/token
 
 /// Fixed Gaxios budget for the STS token exchange (the source's
 /// `StsCredentials.RETRY_CONFIG` enables the default configuration).
+use super::native::CLOUD_PLATFORM_SCOPE;
+
 const STS_BUDGET: GaxiosBudget = GaxiosBudget {
     extra_retries: 3,
     no_response: 2,
@@ -124,8 +126,12 @@ pub(crate) struct ExternalAccountFile {
     pub client_secret: Option<SecretString>,
     /// `workforce_pool_user_project` (workforce audiences only).
     pub workforce_pool_user_project: Option<String>,
-    /// `service_account_impersonation_url`, parsed and preserved only.
+    /// `service_account_impersonation_url` (validated: ≤ 256 chars with an
+    /// extractable target principal). `None` skips the impersonation leg.
     pub service_account_impersonation_url: Option<String>,
+    /// `service_account_impersonation.token_lifetime_seconds`
+    /// (default 3600 when the URL is set and no lifetime is configured).
+    pub impersonation_lifetime_secs: Option<u64>,
     /// Selected credential source.
     pub credential_source: ExternalCredentialSource,
 }
@@ -406,6 +412,26 @@ pub(crate) fn parse_external_account(
         parse_identity_pool_source(source)?
     };
 
+    let service_account_impersonation_url = json
+        .get("service_account_impersonation_url")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    if let Some(url) = &service_account_impersonation_url {
+        // The corpus bounds the URL (DOS guard) and requires an extractable
+        // target principal; admission happens before any network leg.
+        if url.len() > 256
+            || crate::auth::adc::impersonation::target_principal_from_url(url).is_none()
+        {
+            return Err(AdcResolutionError::ImpersonationTargetInvalid);
+        }
+    }
+    let impersonation_lifetime_secs = json
+        .get("service_account_impersonation")
+        .and_then(|value| value.get("token_lifetime_seconds"))
+        .and_then(|value| value.as_u64())
+        .filter(|secs| *secs > 0);
+
     Ok(ExternalAccountFile {
         audience,
         subject_token_type,
@@ -413,11 +439,8 @@ pub(crate) fn parse_external_account(
         client_id,
         client_secret,
         workforce_pool_user_project,
-        service_account_impersonation_url: json
-            .get("service_account_impersonation_url")
-            .and_then(|value| value.as_str())
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned),
+        service_account_impersonation_url,
+        impersonation_lifetime_secs,
         credential_source,
     })
 }
@@ -615,6 +638,14 @@ pub(crate) async fn resolve_external_account(
     // The canonical-endpoint override (tests and pinned deployments) wins
     // over the file-derived URL for every external source.
     let token_url = input.token_endpoint.unwrap_or(file.token_url.as_str());
+    // With optional IAM impersonation the STS exchange runs the forced
+    // cloud-platform scope the corpus pins (generateAccessToken requires
+    // iam or cloud-platform on the federated token).
+    let sts_scopes: Vec<String> = if file.service_account_impersonation_url.is_some() {
+        vec![CLOUD_PLATFORM_SCOPE.to_owned()]
+    } else {
+        scopes.to_vec()
+    };
     let (access_token, expires_in) = match certificate {
         None => {
             exchange_sts(
@@ -622,7 +653,7 @@ pub(crate) async fn resolve_external_account(
                 &file.audience,
                 &subject_token,
                 &file.subject_token_type,
-                scopes,
+                &sts_scopes,
                 &StsClientAuth {
                     client_id: file.client_id.as_deref(),
                     client_secret: file.client_secret.as_ref(),
@@ -658,7 +689,7 @@ pub(crate) async fn resolve_external_account(
                 &file.audience,
                 &subject_token,
                 &file.subject_token_type,
-                scopes,
+                &sts_scopes,
                 &StsClientAuth {
                     client_id: file.client_id.as_deref(),
                     client_secret: file.client_secret.as_ref(),
@@ -670,14 +701,89 @@ pub(crate) async fn resolve_external_account(
         }
     };
 
+    let federation_source = AdcCredentialSource::ExternalAccount {
+        supplier,
+        workforce_user_project: file.workforce_pool_user_project.clone(),
+    };
+    let Some(impersonation_url) = file.service_account_impersonation_url.as_deref() else {
+        return Ok(AdcResolvedToken {
+            access_token: SecretString::from(access_token),
+            expires_at: expires_in.map(|secs| now + time::Duration::seconds(secs)),
+            quota_project: None,
+            rotated_refresh_token: None,
+            source: federation_source,
+        });
+    };
+
+    // Optional IAM impersonation: the federated token exchanges for a
+    // service-account token at the configured URL (validated at parse).
+    // The external path sends no delegates (the corpus body is scope +
+    // lifetime only) and the requested scopes — defaulting to
+    // cloud-platform — become the impersonated token's scopes.
+    let target_principal =
+        crate::auth::adc::impersonation::target_principal_from_url(impersonation_url)
+            .expect("validated at parse time")
+            .to_owned();
+    let url = input
+        .impersonation_endpoint
+        .map(str::to_owned)
+        .unwrap_or_else(|| impersonation_url.to_owned());
+    let lifetime = file.impersonation_lifetime_secs.unwrap_or(3600);
+    let body = serde_json::json!({
+        "scope": scopes,
+        "lifetime": format!("{lifetime}s"),
+    });
+    let request = crate::auth::adc::native::AdcSourceRequest {
+        method: "POST".to_owned(),
+        url,
+        headers: vec![
+            ("authorization".to_owned(), format!("Bearer {access_token}")),
+            ("content-type".to_owned(), "application/json".to_owned()),
+        ],
+        body: Some(body.to_string()),
+        timeout: None,
+    };
+    let (response, sends) = send_with_gaxios_retry(input.transport, request, &STS_BUDGET).await?;
+    if response.status != 200 {
+        return Err(AdcResolutionError::ExchangeRejected {
+            status: response.status,
+            attempts: sends,
+        });
+    }
+    let json: serde_json::Value = serde_json::from_slice(&response.body).map_err(|_| {
+        AdcResolutionError::ImpersonationResponseInvalid {
+            reason: "the impersonation response is not valid JSON",
+        }
+    })?;
+    let impersonated_token = json
+        .get("accessToken")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .ok_or(AdcResolutionError::ImpersonationResponseInvalid {
+            reason: "the impersonation response carries no accessToken",
+        })?;
+    let expire_time = json
+        .get("expireTime")
+        .and_then(|value| value.as_str())
+        .ok_or(AdcResolutionError::ImpersonationResponseInvalid {
+            reason: "the impersonation response carries no expireTime",
+        })?;
+    let expires_at =
+        time::OffsetDateTime::parse(expire_time, &time::format_description::well_known::Rfc3339)
+            .map_err(|_| AdcResolutionError::ImpersonationResponseInvalid {
+                reason: "the impersonation expireTime is not valid RFC3339",
+            })?;
+
     Ok(AdcResolvedToken {
-        access_token: SecretString::from(access_token),
-        expires_at: expires_in.map(|secs| now + time::Duration::seconds(secs)),
+        access_token: SecretString::from(impersonated_token),
+        expires_at: Some(expires_at),
         quota_project: None,
         rotated_refresh_token: None,
-        source: AdcCredentialSource::ExternalAccount {
-            supplier,
-            workforce_user_project: file.workforce_pool_user_project.clone(),
+        source: AdcCredentialSource::Impersonated {
+            source: Box::new(federation_source),
+            target_principal,
+            delegates: 0,
+            quota_project: None,
         },
     })
 }

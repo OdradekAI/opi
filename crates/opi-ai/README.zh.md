@@ -847,3 +847,25 @@ argv（绝不进 shell），合并 stdout/stderr，校验响应模式（token-ty
 HTTP Basic，无客户端认证时 workforce user project 进入 `options` form
 字段。溯源经 `AdcCredentialSource::ExternalAccount` 非机密分类供应者；
 `impersonated_service_account` 在模拟任务交付前保持类型化未准入。
+
+### ADC 模拟、递归组合与分键缓存（P20-S21-3）
+
+`auth::adc::impersonation` 拥有 `impersonated_service_account` 家族：
+`source_credentials` 经同一 adapter 递归解析（不新增深度上限），target
+principal 从 `service_account_impersonation_url` 提取（越界/无法提取为
+typed 失败），文件的原始 URL 绝不作为 wire 目的地 —— IAM
+`generateAccessToken` 请求按有效 universe domain 重建（显式
+`universe_domain` 与 source 不一致时在任何网络腿之前 typed 失败）。body
+保留 delegates、target scope 数组与 `"{seconds}s"` lifetime；响应
+`expireTime` 按 RFC3339 解析；source 与 target 身份在 `Impersonated`
+溯源中保持分离，文件 quota project 经 `x-goog-user-project` 随生成请求。
+`external_account` 文件的可选模拟 URL 在 STS 交换后激活（强制
+cloud-platform scope），并把联邦 source 包进同一 `Impersonated` 溯源。
+`auth::adc::cache` 按钉定 key 语法（config digest 加 principal/target、
+delegates、audience、scopes、project、quota、endpoint、universe、
+TLS/mTLS identity）集中 owner 的 token 存储：单 flight 获取、一次 5 分钟
+eager 窗口、短 TTL token 服务当前调用且不循环刷新、失效后完成的晚
+refresh 经 generation fencing 绝不发布。无稳定 wire principal 的来源为
+identity-unverified（`stable_identity() == None`）：automatic whole-call
+recovery 不得跨 source 变更复用；provider 普通重试继续复用冻结的
+per-call token。

@@ -389,6 +389,23 @@ pub enum AdcCredentialSource {
         /// Non-secret `workforce_pool_user_project`, when set.
         workforce_user_project: Option<String>,
     },
+    /// An impersonated access token from IAM `generateAccessToken`
+    /// (task 20.21.3): either an `impersonated_service_account` file or an
+    /// `external_account` file with `service_account_impersonation_url`.
+    /// `source` keeps the resolved source identity and `target_principal`
+    /// the impersonated one — the two never collapse; `delegates` is the
+    /// delegation-chain length, and `quota_project` carries the
+    /// impersonated file's non-secret `quota_project_id`.
+    Impersonated {
+        /// The resolved source credential identity.
+        source: Box<AdcCredentialSource>,
+        /// The impersonated target service-account email.
+        target_principal: String,
+        /// Number of delegates in the chain.
+        delegates: usize,
+        /// Non-secret quota project from the impersonated file.
+        quota_project: Option<String>,
+    },
 }
 
 /// Credential-source classification for the ADC `external_account` family
@@ -812,9 +829,11 @@ impl AuthContext for AmbientAuthContext {
 /// coordinator; product-neutral, injectable, no live AWS calls).
 pub mod adc {
     /// Cancelable executable (pluggable) supplier.
+    pub mod cache;
     pub mod executable;
     /// `external_account` family coordinator (RFC8693 STS exchange).
     pub mod external;
+    pub mod impersonation;
     /// Explicitly selected direct GCP metadata source.
     pub mod metadata;
     /// ADC native credential families (service account, authorized user,

@@ -46,7 +46,9 @@ use crate::auth::{AdcCredentialSource, AuthContext};
 use crate::credential::BoxAuthFuture;
 use crate::http::{HttpClient, HttpClientBuilder, RedirectPolicy};
 
+use super::cache::{AdcCacheKey, AdcTokenCache};
 use super::external::{self as external, ExternalAccountFile, resolve_external_account};
+use super::impersonation::{self as impersonation, ImpersonatedFile};
 use super::metadata::resolve_direct_metadata_token;
 
 /// Canonical Google OAuth 2.0 token endpoint (hardcoded in the source's
@@ -72,9 +74,6 @@ const GAXIOS_NO_RESPONSE_RETRIES: usize = 2;
 
 /// Fixed first-retry delay (`retryDelay` default 100 ms, multiplier 2).
 const GAXIOS_RETRY_DELAY_MS: u64 = 100;
-
-/// The eager refresh threshold shared by the ADC owners (5 minutes).
-const EAGER_REFRESH: Duration = Duration::from_secs(5 * 60);
 
 /// JWT lifetime used by the source (`exp = iat + 3600`).
 const JWT_LIFETIME_SECS: i64 = 3600;
@@ -225,6 +224,28 @@ pub enum AdcResolutionError {
     /// A successful executable response is expired.
     #[error("the executable response is expired")]
     ExecutableResponseExpired,
+    /// The impersonated-family configuration is structurally invalid
+    /// (delegates, lifetime, or scopes shape).
+    #[error("the impersonated_service_account file is invalid: {reason}")]
+    ImpersonationConfigInvalid {
+        /// Stable non-secret reason.
+        reason: &'static str,
+    },
+    /// The `service_account_impersonation_url` carries no extractable
+    /// target principal, or exceeds the 256-character bound.
+    #[error("the service_account_impersonation_url carries no valid target principal")]
+    ImpersonationTargetInvalid,
+    /// An explicit `universe_domain` disagrees with the source credentials'
+    /// universe (the source's credential-leak guard).
+    #[error("the impersonated universe domain does not match the source credentials")]
+    ImpersonationUniverseMismatch,
+    /// The IAM `generateAccessToken` response is invalid (missing
+    /// `accessToken` or a non-RFC3339 `expireTime`).
+    #[error("the impersonation response is invalid: {reason}")]
+    ImpersonationResponseInvalid {
+        /// Stable non-secret reason.
+        reason: &'static str,
+    },
 }
 
 impl AdcResolutionError {
@@ -481,6 +502,23 @@ pub struct AdcResolvedToken {
     pub source: AdcCredentialSource,
 }
 
+impl AdcResolvedToken {
+    /// The stable wire principal this token acts as, when the source
+    /// proves one (`Some` only for impersonation targets). A `None`
+    /// source is **identity-unverified**: an automatic whole-call recovery
+    /// must not silently reuse it across a source change — the input
+    /// subject path staying the same does not prove the actual principal
+    /// did.
+    pub fn stable_identity(&self) -> Option<&str> {
+        match &self.source {
+            AdcCredentialSource::Impersonated {
+                target_principal, ..
+            } => Some(target_principal),
+            _ => None,
+        }
+    }
+}
+
 impl std::fmt::Debug for AdcResolvedToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AdcResolvedToken")
@@ -505,6 +543,8 @@ impl std::fmt::Debug for AdcResolvedToken {
 enum AdcFamily {
     /// An `external_account` federation file (task 20.21.2).
     External(ExternalAccountFile),
+    /// An `impersonated_service_account` file (task 20.21.3).
+    Impersonated(ImpersonatedFile),
     ServiceAccount {
         client_email: String,
         private_key_pem: String,
@@ -549,51 +589,56 @@ fn parse_adc_file(contents: &str, path: &str) -> Result<AdcFamily, AdcResolution
         serde_json::from_str(contents).map_err(|_| AdcResolutionError::MalformedJson {
             path: path.to_owned(),
         })?;
+    parse_adc_json(&json)
+}
+
+/// Dispatch one parsed credentials JSON object to its family. Shared by the
+/// file reader and the recursive `source_credentials` embedded in
+/// `impersonated_service_account` files (task 20.21.3).
+fn parse_adc_json(json: &serde_json::Value) -> Result<AdcFamily, AdcResolutionError> {
     match json
         .get("type")
         .and_then(|value| value.as_str())
         .unwrap_or("")
     {
         "service_account" => Ok(AdcFamily::ServiceAccount {
-            client_email: required_str(&json, "client_email", "service_account")?,
-            private_key_pem: required_str(&json, "private_key", "service_account")?,
+            client_email: required_str(json, "client_email", "service_account")?,
+            private_key_pem: required_str(json, "private_key", "service_account")?,
         }),
         "authorized_user" => Ok(AdcFamily::AuthorizedUser {
-            client_id: required_str(&json, "client_id", "authorized_user")?,
+            client_id: required_str(json, "client_id", "authorized_user")?,
             client_secret: SecretString::from(required_str(
-                &json,
+                json,
                 "client_secret",
                 "authorized_user",
             )?),
             refresh_token: SecretString::from(required_str(
-                &json,
+                json,
                 "refresh_token",
                 "authorized_user",
             )?),
-            quota_project: optional_str(&json, "quota_project_id"),
+            quota_project: optional_str(json, "quota_project_id"),
         }),
         "external_account_authorized_user" => Ok(AdcFamily::ExternalAccountAuthorizedUser {
-            client_id: required_str(&json, "client_id", "external_account_authorized_user")?,
+            client_id: required_str(json, "client_id", "external_account_authorized_user")?,
             client_secret: SecretString::from(required_str(
-                &json,
+                json,
                 "client_secret",
                 "external_account_authorized_user",
             )?),
             refresh_token: SecretString::from(required_str(
-                &json,
+                json,
                 "refresh_token",
                 "external_account_authorized_user",
             )?),
-            token_url: optional_str(&json, "token_url"),
-            universe_domain: optional_str(&json, "universe_domain"),
-            quota_project: optional_str(&json, "quota_project_id"),
+            token_url: optional_str(json, "token_url"),
+            universe_domain: optional_str(json, "universe_domain"),
+            quota_project: optional_str(json, "quota_project_id"),
         }),
-        "impersonated_service_account" => Err(AdcResolutionError::FamilyNotAdmitted {
-            family: "impersonated_service_account",
-        }),
-        "external_account" => Ok(AdcFamily::External(external::parse_external_account(
-            &json,
-        )?)),
+        "impersonated_service_account" => Ok(AdcFamily::Impersonated(
+            impersonation::parse_impersonated(json)?,
+        )),
+        "external_account" => Ok(AdcFamily::External(external::parse_external_account(json)?)),
         other => Err(AdcResolutionError::UnknownType {
             found: other.to_owned(),
         }),
@@ -676,7 +721,7 @@ pub(crate) struct GaxiosBudget {
     pub(crate) no_response: usize,
 }
 
-const TOKEN_BUDGET: GaxiosBudget = GaxiosBudget {
+pub(crate) const TOKEN_BUDGET: GaxiosBudget = GaxiosBudget {
     extra_retries: GAXIOS_EXTRA_RETRIES,
     no_response: GAXIOS_NO_RESPONSE_RETRIES,
 };
@@ -848,6 +893,17 @@ async fn exchange_family(
         .join(" ");
     match family {
         AdcFamily::External(file) => resolve_external_account(file, input, scopes).await,
+        AdcFamily::Impersonated(file) => {
+            // Boxed: the recursion (impersonated → source → impersonated …)
+            // has no static depth bound by contract.
+            Box::pin(impersonation::resolve_impersonated(
+                file,
+                input,
+                scopes,
+                refresh_override,
+            ))
+            .await
+        }
         AdcFamily::ServiceAccount {
             client_email,
             private_key_pem,
@@ -987,6 +1043,29 @@ async fn exchange_family(
     }
 }
 
+/// Parse one embedded credentials JSON value (an impersonated file's
+/// `source_credentials`) and exchange it through the same adapter — the
+/// recursive composition entry with no added depth cap.
+pub(crate) async fn exchange_family_for_value(
+    json: &serde_json::Value,
+    refresh_override: Option<&SecretString>,
+    input: &AdcNativeInput<'_>,
+    scopes: &[String],
+) -> Result<AdcResolvedToken, AdcResolutionError> {
+    let family = parse_adc_json(json)?;
+    exchange_family(
+        &family,
+        refresh_override,
+        input.transport,
+        input.clock,
+        input.token_endpoint,
+        input.universe_domain,
+        scopes,
+        input,
+    )
+    .await
+}
+
 // ---------------------------------------------------------------------------
 // Public resolution entry + owner
 // ---------------------------------------------------------------------------
@@ -1014,6 +1093,11 @@ pub struct AdcNativeInput<'a> {
     /// `None` uses the pinned default roots; tests and pinned deployments
     /// can admit a loopback or private root for the STS leg only.
     pub certificate_extra_roots_pem: Option<&'a [u8]>,
+    /// Canonical override for the IAM `generateAccessToken` leg (tests and
+    /// pinned deployments); pins the impersonation exchanges of both the
+    /// `impersonated_service_account` family and the external-account
+    /// optional impersonation.
+    pub impersonation_endpoint: Option<&'a str>,
 }
 
 impl<'a> AdcNativeInput<'a> {
@@ -1035,7 +1119,21 @@ impl<'a> AdcNativeInput<'a> {
             universe_domain: None,
             scopes: &[],
             certificate_extra_roots_pem: None,
+            impersonation_endpoint: None,
         }
+    }
+
+    /// Override the canonical token endpoint (tests and pinned deployments).
+    pub fn with_token_endpoint(mut self, endpoint: Option<&'a str>) -> Self {
+        self.token_endpoint = endpoint;
+        self
+    }
+
+    /// Override the canonical impersonation endpoint (tests and pinned
+    /// deployments).
+    pub fn with_impersonation_endpoint(mut self, endpoint: Option<&'a str>) -> Self {
+        self.impersonation_endpoint = endpoint;
+        self
     }
 }
 
@@ -1044,13 +1142,6 @@ fn default_scopes(scopes: &[String]) -> Vec<String> {
         vec![CLOUD_PLATFORM_SCOPE.to_owned()]
     } else {
         scopes.to_vec()
-    }
-}
-
-fn token_needs_refresh(expires_at: Option<OffsetDateTime>, now: OffsetDateTime) -> bool {
-    match expires_at {
-        None => true,
-        Some(expiry) => now + EAGER_REFRESH >= expiry,
     }
 }
 
@@ -1143,13 +1234,13 @@ pub async fn resolve_adc_native_with_refresh(
     }
 }
 
-/// Owner of one ADC native selection: caches the resolved token across
-/// logical calls with the fixed 5-minute eager window and replaces a rotated
-/// refresh token in place (the ADC file is never rewritten by default).
-///
-/// Concurrent resolves may both exchange (single-flight is a later owner's
-/// contract); the cache is only consulted and stored under short critical
-/// sections, never across an await.
+/// Owner of one ADC native selection: the resolved token is cached across
+/// logical calls under the pinned key grammar (config digest, scopes,
+/// endpoints, universe) with single-flight acquisitions, the fixed
+/// 5-minute eager window, short-TTL current-call service, and
+/// late-publication fencing through [`AdcTokenCache::invalidate`]. A rotated
+/// refresh token replaces the owner's copy in place (the ADC file is never
+/// rewritten by default).
 pub struct AdcNativeOwner {
     selection: AdcAuthSelection,
     scoped: ScopedAdcEnv,
@@ -1157,14 +1248,15 @@ pub struct AdcNativeOwner {
     transport: Arc<dyn AdcSourceTransport>,
     clock: Arc<dyn AdcClock>,
     token_endpoint: Option<String>,
+    impersonation_endpoint: Option<String>,
     universe_domain: Option<String>,
     scopes: Vec<String>,
+    cache: AdcTokenCache,
     state: Mutex<AdcOwnerState>,
 }
 
 #[derive(Default)]
 struct AdcOwnerState {
-    token: Option<AdcResolvedToken>,
     refresh: Option<SecretString>,
 }
 
@@ -1183,8 +1275,10 @@ impl AdcNativeOwner {
             transport,
             clock,
             token_endpoint: None,
+            impersonation_endpoint: None,
             universe_domain: None,
             scopes: Vec::new(),
+            cache: AdcTokenCache::new(),
             state: Mutex::new(AdcOwnerState::default()),
         }
     }
@@ -1207,6 +1301,13 @@ impl AdcNativeOwner {
         self
     }
 
+    /// Override the canonical impersonation endpoint (tests and pinned
+    /// deployments).
+    pub fn with_impersonation_endpoint(mut self, endpoint: Option<String>) -> Self {
+        self.impersonation_endpoint = endpoint;
+        self
+    }
+
     /// Override the universe domain.
     pub fn with_universe_domain(mut self, domain: Option<String>) -> Self {
         self.universe_domain = domain;
@@ -1219,37 +1320,68 @@ impl AdcNativeOwner {
         self
     }
 
-    /// Resolve (or reuse) the access token for this selection.
+    /// The pinned cache key for this owner's fixed configuration.
+    fn cache_key(&self) -> AdcCacheKey {
+        let config = match &self.selection {
+            AdcAuthSelection::CredentialsFile(path) => path.to_string_lossy().into_owned(),
+            AdcAuthSelection::Auto => "auto".to_owned(),
+            AdcAuthSelection::DirectMetadata { residency } => {
+                format!("metadata:{residency:?}")
+            }
+        };
+        AdcCacheKey::from_parts(
+            &config,
+            None,
+            &[],
+            None,
+            &self.scopes,
+            None,
+            None,
+            self.token_endpoint.as_deref(),
+            self.universe_domain.as_deref(),
+            None,
+        )
+    }
+
+    /// Resolve (or reuse) the access token for this selection. Concurrent
+    /// resolves merge into one in-flight acquisition; a still-valid
+    /// short-TTL token serves the current call when its refresh fails.
     pub async fn resolve_token(&self) -> Result<AdcResolvedToken, AdcResolutionError> {
         let now = self.clock.now();
-        {
-            let state = self.state.lock().expect("owner state lock");
-            if let Some(token) = &state.token
-                && !token_needs_refresh(token.expires_at, now)
-            {
-                return Ok(token.clone());
-            }
-        }
+        let key = self.cache_key();
         let refresh_override = self.state.lock().expect("owner state lock").refresh.clone();
-        let input = AdcNativeInput {
-            selection: self.selection.clone(),
-            scoped: &self.scoped,
-            ambient: self.ambient.as_ref(),
-            transport: self.transport.as_ref(),
-            clock: self.clock.as_ref(),
-            token_endpoint: self.token_endpoint.as_deref(),
-            universe_domain: self.universe_domain.as_deref(),
-            scopes: &self.scopes,
-            certificate_extra_roots_pem: None,
-        };
-        let resolved = resolve_adc_native_with_refresh(&input, refresh_override.as_ref()).await?;
-        let token = resolved.ok_or(AdcResolutionError::NotConfigured)?;
-        let mut state = self.state.lock().expect("owner state lock");
+        let token = self
+            .cache
+            .resolve(key, now, || async {
+                let input = AdcNativeInput {
+                    selection: self.selection.clone(),
+                    scoped: &self.scoped,
+                    ambient: self.ambient.as_ref(),
+                    transport: self.transport.as_ref(),
+                    clock: self.clock.as_ref(),
+                    token_endpoint: self.token_endpoint.as_deref(),
+                    universe_domain: self.universe_domain.as_deref(),
+                    scopes: &self.scopes,
+                    certificate_extra_roots_pem: None,
+                    impersonation_endpoint: self.impersonation_endpoint.as_deref(),
+                };
+                let resolved =
+                    resolve_adc_native_with_refresh(&input, refresh_override.as_ref()).await?;
+                resolved.ok_or(AdcResolutionError::NotConfigured)
+            })
+            .await?;
         if token.rotated_refresh_token.is_some() {
-            state.refresh = token.rotated_refresh_token.clone();
+            self.state.lock().expect("owner state lock").refresh =
+                token.rotated_refresh_token.clone();
         }
-        state.token = Some(token.clone());
         Ok(token)
+    }
+
+    /// Invalidate the cached token for this selection (source replacement
+    /// or invalidation): the next resolve re-acquires, and a refresh still
+    /// in flight under the old generation never publishes.
+    pub fn invalidate(&self) {
+        self.cache.invalidate(self.cache_key());
     }
 }
 
@@ -1290,15 +1422,5 @@ mod tests {
         for status in [200, 301, 400, 401, 403, 409] {
             assert!(!gaxios_retry_status(status), "{status} is terminal");
         }
-    }
-
-    #[test]
-    fn eager_window_matches_the_five_minute_threshold() {
-        let now = OffsetDateTime::from_unix_timestamp(1_000_000).unwrap();
-        let fresh = Some(now + time::Duration::seconds(301));
-        let stale = Some(now + time::Duration::seconds(299));
-        assert!(!token_needs_refresh(fresh, now));
-        assert!(token_needs_refresh(stale, now));
-        assert!(token_needs_refresh(None, now));
     }
 }
