@@ -284,13 +284,9 @@ fn assert_url_safe_no_pad(value: &str, expected_len: usize) {
 }
 
 fn assert_loopback_redirect(redirect_uri: &str) {
-    let redirect = reqwest::Url::parse(redirect_uri).expect("valid redirect URI");
-    assert_eq!(redirect.scheme(), "http");
-    assert_eq!(redirect.host_str(), Some("127.0.0.1"));
-    assert!(redirect.port().is_some());
-    assert_eq!(redirect.path(), "/");
-    assert_eq!(redirect.query(), None);
-    assert_eq!(redirect.fragment(), None);
+    // Codex legacy pins the fixed CLI-shared redirect (pi REDIRECT_URI):
+    // host localhost, port 1455, path /auth/callback.
+    assert_eq!(redirect_uri, "http://localhost:1455/auth/callback");
 }
 
 /// The SDK Anthropic flow names `localhost` with the `/callback` path

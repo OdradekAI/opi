@@ -18,6 +18,7 @@
 //! never in a pre-subtracted stored expiry).
 
 pub mod anthropic;
+pub mod codex;
 
 use std::borrow::Cow;
 use std::future::Future;
@@ -159,6 +160,21 @@ pub struct PkceLoginConfig {
     /// (paste-back only). `None` keeps bind failure a typed error for flows
     /// without a manual-only fallback.
     pub manual_only_redirect_uri: Option<String>,
+    /// What a failed bind of the preferred callback port does. Anthropic
+    /// retries a free loopback port (pi `startOAuthCallbackServer` port-0
+    /// fallback); Codex legacy goes straight to paste-back with the fixed
+    /// redirect URI (pi `.catch(() => undefined)`).
+    pub bind_fallback: CallbackBindFallback,
+}
+
+/// Behavior when the preferred callback port cannot be bound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallbackBindFallback {
+    /// Retry on a free loopback port (Anthropic ladder).
+    FreePort,
+    /// No server: paste-back only, with the flow's fixed redirect URI
+    /// (Codex legacy: bind 1455 or paste).
+    ManualOnly,
 }
 
 /// Why the loopback callback arm failed. Carries a static discriminant so
@@ -228,15 +244,23 @@ struct TokenResponse {
     expires_in: Option<i64>,
 }
 
-/// Bind the callback listener: the preferred port first, then a free loopback
-/// port, and finally `Ok(None)` (paste-back only) when both fail. Flows with
-/// no preferred port treat a free-port bind failure as the typed error they
+/// Bind the callback listener per the flow's fallback policy: the preferred
+/// port first, then `FreePort` retries a free loopback port (both failing is
+/// the typed bind error), while `ManualOnly` returns `Ok(None)` so the login
+/// continues paste-back only with the fixed redirect URI. Flows with no
+/// preferred port treat a free-port bind failure as the typed error they
 /// always were.
-async fn bind_preferred_then_free(preferred: Option<u16>) -> io::Result<Option<TcpListener>> {
+async fn bind_callback_listener(
+    preferred: Option<u16>,
+    fallback: CallbackBindFallback,
+) -> io::Result<Option<TcpListener>> {
     if let Some(port) = preferred
         && let Ok(listener) = TcpListener::bind(("127.0.0.1", port)).await
     {
         return Ok(Some(listener));
+    }
+    if fallback == CallbackBindFallback::ManualOnly {
+        return Ok(None);
     }
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     Ok(Some(listener))
@@ -274,7 +298,10 @@ pub async fn run_pkce_login<'a>(
         None => FlowBudget::new(config.timeout)?,
     };
     let listener = budget
-        .wait(bind_preferred_then_free(config.preferred_callback_port))
+        .wait(bind_callback_listener(
+            config.preferred_callback_port,
+            config.bind_fallback,
+        ))
         .await
         .inspect_err(|error| {
             if matches!(error, ProviderError::Timeout) {
@@ -542,13 +569,28 @@ pub async fn exchange_authorization_code(
     })
 }
 
+/// Field policy for a refresh response. Lenient keeps the product's RFC
+/// 6749 §6 tolerance (a missing `refresh_token` reuses the old one, a
+/// missing `expires_in` yields `expires_at = None`); Strict is pi
+/// `readTokenResponse`: `access_token`, `refresh_token`, and `expires_in`
+/// are all required (Codex legacy).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RefreshFieldPolicy {
+    /// Reuse the old refresh token / keep `expires_at = None` when absent.
+    Lenient,
+    /// Require the full token triple; anything missing is a typed error.
+    Strict,
+}
+
 /// Refresh an OAuth credential by exchanging its refresh token. On 401/403
 /// from the token endpoint the credential is revoked (non-retryable, no
-/// auto-relogin). A missing `refresh_token` in the response reuses the old
-/// one (RFC 6749 §6); a missing `expires_in` yields `expires_at = None`
-/// (documented always-refresh). The stored expiry is always the real service
+/// auto-relogin). Under `Lenient`, a missing `refresh_token` in the response
+/// reuses the old one (RFC 6749 §6) and a missing `expires_in` yields
+/// `expires_at = None` (documented always-refresh); `Strict` fails typed on
+/// any missing field. The stored expiry is always the real service
 /// expiry: the single five-minute near-expiry correction is
 /// [`OAuthCredential::needs_refresh`](crate::auth::OAuthCredential::needs_refresh).
+#[allow(clippy::too_many_arguments)] // flat scalar refresh inputs; a params struct would not deepen the seam
 pub async fn refresh_oauth_token(
     client: &reqwest::Client,
     token_url: &str,
@@ -557,6 +599,7 @@ pub async fn refresh_oauth_token(
     provider_id: &str,
     base_url: Option<String>,
     encoding: TokenRequestEncoding,
+    policy: RefreshFieldPolicy,
 ) -> Result<OAuthCredential, ProviderError> {
     let refresh_secret: &str = cred.refresh.expose_secret();
     let resp = match encoding {
@@ -601,18 +644,28 @@ pub async fn refresh_oauth_token(
         .json()
         .await
         .map_err(|e| provider_config_error(format!("refresh response parse failed: {e}")))?;
-    let refresh = token
-        .refresh_token
-        .map(|s| SecretString::new(s.into_boxed_str()))
-        .unwrap_or_else(|| cred.refresh.clone());
-    let expires_at = token
-        .expires_in
-        .map(|secs| {
+    let refresh = match token.refresh_token {
+        Some(s) => SecretString::new(s.into_boxed_str()),
+        None => match policy {
+            RefreshFieldPolicy::Lenient => cred.refresh.clone(),
+            RefreshFieldPolicy::Strict => {
+                return Err(provider_config_error(
+                    "refresh response missing refresh_token",
+                ));
+            }
+        },
+    };
+    let expires_at = match (token.expires_in, policy) {
+        (Some(secs), _) => Some(
             OffsetDateTime::now_utc()
                 .checked_add(time::Duration::seconds(secs))
-                .ok_or_else(|| provider_config_error("refresh expires_in out of range"))
-        })
-        .transpose()?;
+                .ok_or_else(|| provider_config_error("refresh expires_in out of range"))?,
+        ),
+        (None, RefreshFieldPolicy::Lenient) => None,
+        (None, RefreshFieldPolicy::Strict) => {
+            return Err(provider_config_error("refresh response missing expires_in"));
+        }
+    };
     Ok(OAuthCredential {
         access: SecretString::new(token.access_token.into_boxed_str()),
         refresh,
@@ -1057,6 +1110,7 @@ mod tests {
             callback_path: "/callback".to_owned(),
             redirect_host: "localhost".to_owned(),
             manual_only_redirect_uri: Some("http://localhost:53692/callback".to_owned()),
+            bind_fallback: CallbackBindFallback::FreePort,
         };
         assert_eq!(
             redirect_uri_for(&config, None).unwrap(),

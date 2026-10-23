@@ -887,3 +887,24 @@ store 运行流程：只有等到 store ACK 之后才报告成功，写失败按
 未知 mutation 结果保持诚实的 pending。不发生自动浏览器启动、keychain
 读取、环境回退或远程撤销。`opi-coding-agent` 只保留宿主策略（TUI
 presenter、终端挂起、keychain store）并注册 SDK 流。
+
+### SDK OAuth（OpenAI Codex legacy）（P20-S24）
+
+`auth::oauth::codex` 拥有钉定 pi 1.3.0 `openai-codex.ts` 的 Codex 登录机制：
+token 交换与刷新为 form 编码；浏览器路径使用与 Codex CLI 共享的固定
+`http://localhost:1455/auth/callback` redirect URI——端口被占用时直接退到
+纯手贴且 redirect URI 不变，绝不换空闲端口（`bind_fallback` 二选一：
+Anthropic 空闲端口阶梯或 Codex 手贴阶梯）；authorize URL 携带生产 scope、
+S256 PKCE、独立 state 与 `id_token_add_organizations`/
+`codex_cli_simplified_flow`/`originator=opi`。设备码路径钉定 OpenAI
+`deviceauth` 端点：JSON 请求体、403/404 pending 怪癖回退、结构化
+pending/slow_down 码与 RFC 8628 +5 秒退避（增量与上限仍由宿主套件钉
+定）、`access_denied`/`expired_token` 先于状态回退的类型化分类、15 分钟
+设备预算，以及用服务器签发的 `authorization_code` + `code_verifier` 面向
+托管设备 redirect URI 的交换。刷新按 pi `readTokenResponse` 严格
+（`RefreshFieldPolicy::Strict`：三个字段全必需），并从访问令牌 JWT 重新
+提取 ChatGPT account id（登录与刷新一致的 `AccountIdMissing` 类型化失
+败）。endpoint（`base_url`）随凭据穿过刷新。`Models::login` 以与
+Anthropic 相同的 store-ACK 语义注册 `openai-codex`。`opi-coding-agent`
+在编译期切换：产品 Codex provider、设备轮询与 account id 提取被删除，
+改用 SDK 机制（注册表与测试经 re-export）。

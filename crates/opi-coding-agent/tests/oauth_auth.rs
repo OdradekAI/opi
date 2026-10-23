@@ -1544,6 +1544,7 @@ async fn pkce_total_budget_bounds_token_response_body_after_headers() {
 
 #[tokio::test]
 async fn pkce_cancellation_is_biased_and_prevents_exchange_and_persistence() {
+    let _port1455 = codex_1455_guard().await;
     for provider_kind in BROWSER_PKCE_PROVIDERS {
         let server = MockServer::start().await;
         mount_token_stub(
@@ -1984,12 +1985,24 @@ async fn refresh_token_endpoint_unknown_error_code_is_closed_and_redacted() {
 
 #[tokio::test]
 async fn codex_oauth_provider_id_is_codex() {
+    let _port1455 = codex_1455_guard().await;
     let provider = codex_provider("https://token.example".to_owned(), Duration::from_secs(60));
     assert_eq!(provider.id(), "openai-codex");
 }
 
+/// Serialize browser-method Codex logins inside this binary: the CLI-shared
+/// port 1455 is the only callback port (paste-back fallback, never a free
+/// port), so two parallel browser logins would push one onto the manual-only
+/// path and starve the callback assertions.
+static CODEX_1455_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn codex_1455_guard() -> tokio::sync::MutexGuard<'static, ()> {
+    CODEX_1455_LOCK.lock().await
+}
+
 #[tokio::test]
 async fn codex_login_manual_code_wins_drives_token_post_and_returns_credential() {
+    let _port1455 = codex_1455_guard().await;
     let server = MockServer::start().await;
     let access = codex_jwt(Some("account-browser"));
     mount_token_stub(&server, 200, token_body(&access, "codex-rtk", 3600)).await;
@@ -2030,6 +2043,7 @@ async fn codex_login_manual_code_wins_drives_token_post_and_returns_credential()
 
 #[tokio::test]
 async fn codex_login_callback_wins_completes_token_exchange_and_returns_credential() {
+    let _port1455 = codex_1455_guard().await;
     let server = MockServer::start().await;
     let access = codex_jwt(Some("account-callback"));
     mount_token_stub(&server, 200, token_body(&access, "codex-rtk", 3600)).await;
@@ -2058,6 +2072,7 @@ async fn codex_login_callback_wins_completes_token_exchange_and_returns_credenti
 
 #[tokio::test]
 async fn codex_login_state_mismatch_rejects_callback_and_notifies_failure() {
+    let _port1455 = codex_1455_guard().await;
     let server = MockServer::start().await;
     mount_token_stub(
         &server,
@@ -2090,6 +2105,7 @@ async fn codex_login_state_mismatch_rejects_callback_and_notifies_failure() {
 
 #[tokio::test]
 async fn codex_login_timeout_returns_error_without_token_exchange() {
+    let _port1455 = codex_1455_guard().await;
     let server = MockServer::start().await;
     let provider = codex_provider(
         format!("{}/oauth/token", server.uri()),
@@ -2107,9 +2123,12 @@ async fn codex_login_timeout_returns_error_without_token_exchange() {
 }
 
 #[tokio::test]
-async fn codex_refresh_preserves_base_url_and_handles_missing_refresh_token() {
+async fn codex_refresh_requires_refresh_token_and_expires_in() {
+    let _port1455 = codex_1455_guard().await;
     let server = MockServer::start().await;
-    // Response omits refresh_token -> Codex reuses the old one (rotation-optional).
+    // pi readTokenResponse requires the full token triple: a refresh response
+    // missing refresh_token (and separately expires_in) is a typed error,
+    // never a credential (pi openai-codex.ts).
     let new_access = codex_jwt(Some("account-refreshed"));
     Mock::given(method("POST"))
         .and(path("/oauth/token"))
@@ -2128,15 +2147,46 @@ async fn codex_refresh_preserves_base_url_and_handles_missing_refresh_token() {
         "codex-rtk-old",
         Some("https://enterprise".to_owned()),
     );
+    let error = provider
+        .refresh(&cred)
+        .await
+        .expect_err("missing refresh_token");
+    assert!(matches!(error, AiProviderError::Config(_)), "{error:?}");
+}
+
+#[tokio::test]
+async fn codex_refresh_preserves_base_url_and_reextracts_account_id() {
+    let _port1455 = codex_1455_guard().await;
+    let server = MockServer::start().await;
+    let new_access = codex_jwt(Some("account-refreshed"));
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "access_token": new_access,
+            "refresh_token": "codex-rtk-new",
+            "expires_in": 3600,
+        })))
+        .mount(&server)
+        .await;
+    let provider = codex_provider(
+        format!("{}/oauth/token", server.uri()),
+        Duration::from_secs(60),
+    );
+    let cred = oauth_cred(
+        "codex-old",
+        "codex-rtk-old",
+        Some("https://enterprise".to_owned()),
+    );
     let refreshed = provider.refresh(&cred).await.expect("refresh");
     assert_eq!(refreshed.access.expose_secret(), new_access);
-    assert_eq!(refreshed.refresh.expose_secret(), "codex-rtk-old");
+    assert_eq!(refreshed.refresh.expose_secret(), "codex-rtk-new");
     assert_eq!(refreshed.base_url.as_deref(), Some("https://enterprise"));
     assert_eq!(refreshed.account_id.as_deref(), Some("account-refreshed"));
 }
 
 #[tokio::test]
 async fn openai_codex_login_rejects_token_without_chatgpt_account_id() {
+    let _port1455 = codex_1455_guard().await;
     let server = MockServer::start().await;
     let missing_account_jwt = codex_jwt(None);
     mount_token_stub(
@@ -2170,6 +2220,7 @@ async fn openai_codex_login_rejects_token_without_chatgpt_account_id() {
 
 #[tokio::test]
 async fn openai_codex_refresh_rejects_token_without_chatgpt_account_id() {
+    let _port1455 = codex_1455_guard().await;
     let server = MockServer::start().await;
     let missing_account_jwt = codex_jwt(None);
     Mock::given(method("POST"))
@@ -2209,6 +2260,7 @@ async fn openai_codex_refresh_rejects_token_without_chatgpt_account_id() {
 
 #[tokio::test]
 async fn codex_login_does_not_leak_verifier_or_tokens_into_error_strings() {
+    let _port1455 = codex_1455_guard().await;
     let server = MockServer::start().await;
     mount_token_stub(
         &server,
@@ -3103,6 +3155,7 @@ async fn capture_codex_factory_sse(body: String) -> Vec<String> {
 
 #[tokio::test]
 async fn openai_codex_bounded_redaction_scenario() {
+    let _port1455 = codex_1455_guard().await;
     const ACCESS: &str = "sentinel-bounded-access";
     const REFRESH: &str = "sentinel-bounded-refresh";
     const AUTH_CODE: &str = "sentinel-bounded-authorization-code";
@@ -4997,6 +5050,7 @@ async fn logout_store_failure_stays_typed() {
 
 #[tokio::test]
 async fn all_builtin_flows_support_manual_fallback() {
+    let _port1455 = codex_1455_guard().await;
     // --- Anthropic PKCE: manual code ---
     let server_a = MockServer::start().await;
     mount_token_stub(&server_a, 200, token_body("atk-anth", "rtk-anth", 3600)).await;

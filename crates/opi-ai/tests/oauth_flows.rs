@@ -40,6 +40,8 @@ struct ScriptedPresenter {
     on_present: Mutex<Option<PresentHook>>,
     forced_method: Mutex<Option<OAuthLoginMethod>>,
     offered_methods: Mutex<Vec<OAuthLoginMethod>>,
+    /// Presented device codes: (user_code, verification_uri).
+    device_codes: Mutex<Vec<(String, String)>>,
     success_at: Mutex<Option<Instant>>,
     failures: Mutex<Vec<String>>,
 }
@@ -144,9 +146,13 @@ impl LoginPresenter for ScriptedPresenter {
 
     fn present_device_code<'a>(
         &'a self,
-        _user_code: &'a str,
-        _verification_uri: &'a str,
+        user_code: &'a str,
+        verification_uri: &'a str,
     ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+        self.device_codes
+            .lock()
+            .unwrap()
+            .push((user_code.to_owned(), verification_uri.to_owned()));
         Box::pin(async { Ok(()) })
     }
 
@@ -1044,4 +1050,468 @@ async fn login_performs_no_browser_or_ambient_fallback() {
     drop(login);
     assert!(server.received_requests().await.unwrap().is_empty());
     assert!(presenter.failures.lock().unwrap().is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI Codex legacy (Phase 20.24) — pi openai-codex.ts
+// ---------------------------------------------------------------------------
+
+use opi_ai::auth::oauth::codex::{
+    CODEX_DEVICE_REDIRECT_URI, CODEX_REDIRECT_URI, CodexOAuthProvider,
+};
+
+const CODEX_DEVICE_VERIFICATION: &str = "https://auth.openai.com/codex/device";
+
+fn codex_flow(
+    server: &MockServer,
+    browser_timeout: Duration,
+    device_timeout: Duration,
+) -> CodexOAuthProvider {
+    let base = server.uri();
+    CodexOAuthProvider::new_with_device_endpoints(
+        format!("{base}/oauth/authorize"),
+        format!("{base}/oauth/token"),
+        format!("{base}/deviceauth/usercode"),
+        format!("{base}/deviceauth/token"),
+        CODEX_DEVICE_VERIFICATION.to_owned(),
+        CODEX_DEVICE_REDIRECT_URI.to_owned(),
+        "codex-client-id".to_owned(),
+        browser_timeout,
+        device_timeout,
+    )
+}
+
+/// A synthetic Codex access token: JWT-shaped with the ChatGPT account claim
+/// (pi `getAccountId`).
+fn codex_jwt(account_id: Option<&str>) -> String {
+    use base64::Engine as _;
+    let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let header = engine.encode(br#"{"alg":"RS256"}"#);
+    let payload = match account_id {
+        Some(id) => format!(r#"{{"https://api.openai.com/auth":{{"chatgpt_account_id":"{id}"}}}}"#),
+        None => "{}".to_owned(),
+    };
+    let payload = engine.encode(payload.as_bytes());
+    format!("{header}.{payload}.signature")
+}
+
+fn codex_presenter() -> Arc<ScriptedPresenter> {
+    let presenter = Arc::new(ScriptedPresenter::default());
+    {
+        let hook = ScriptedPresenter::echo_redirect_hook();
+        *presenter.on_present.lock().unwrap() = Some(hook);
+    }
+    presenter
+}
+
+async fn mount_codex_token_success(server: &MockServer, access: &str) {
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": access,
+            "refresh_token": "codex-refresh-1",
+            "expires_in": 3600,
+        })))
+        .mount(server)
+        .await;
+}
+
+async fn mount_codex_device_start(server: &MockServer, interval: serde_json::Value) {
+    Mock::given(method("POST"))
+        .and(path("/deviceauth/usercode"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "device_auth_id": "device-auth-1",
+            "user_code": "PUBLIC-CODE",
+            "interval": interval,
+        })))
+        .mount(server)
+        .await;
+}
+
+/// Mount the device token poll endpoint's completed authorization: 200 with
+/// the authorization code and the server-issued verifier.
+async fn mount_codex_device_poll_complete(server: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path("/deviceauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "authorization_code": "device-code-1",
+            "code_verifier": "device-verifier-from-server",
+        })))
+        .mount(server)
+        .await;
+}
+
+/// Mount a never-ending terminal classification on the poll endpoint.
+async fn mount_codex_device_poll_status(server: &MockServer, status: u16, body: serde_json::Value) {
+    Mock::given(method("POST"))
+        .and(path("/deviceauth/token"))
+        .respond_with(ResponseTemplate::new(status).set_body_json(body))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn codex_browser_login_posts_form_token_request_with_fixed_redirect() {
+    let server = MockServer::start().await;
+    let access = codex_jwt(Some("acct-123"));
+    mount_codex_token_success(&server, &access).await;
+    let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
+    let presenter = codex_presenter();
+
+    let credential = flow.login(presenter.as_ref()).await.expect("login failed");
+
+    assert_eq!(credential.access.expose_secret(), access);
+    assert_eq!(credential.refresh.expose_secret(), "codex-refresh-1");
+    assert_eq!(credential.account_id.as_deref(), Some("acct-123"));
+
+    let requests = server.received_requests().await.unwrap();
+    let token_req = requests.last().expect("token request");
+    assert_eq!(
+        token_req.headers.get("content-type").unwrap(),
+        "application/x-www-form-urlencoded"
+    );
+    let body = String::from_utf8(token_req.body.clone()).unwrap();
+    let pairs: std::collections::BTreeMap<String, String> = body
+        .split('&')
+        .map(|pair| {
+            let (k, v) = pair.split_once('=').unwrap();
+            (k.to_owned(), v.replace("%3A", ":").replace("%2F", "/"))
+        })
+        .collect();
+    assert_eq!(pairs["grant_type"], "authorization_code");
+    assert_eq!(pairs["client_id"], "codex-client-id");
+    assert_eq!(pairs["redirect_uri"], CODEX_REDIRECT_URI);
+    assert!(
+        pairs["code_verifier"].len() >= 43,
+        "{:?}",
+        pairs["code_verifier"]
+    );
+}
+
+#[tokio::test]
+async fn codex_authorize_url_carries_pkce_state_and_codex_params() {
+    let server = MockServer::start().await;
+    mount_codex_token_success(&server, &codex_jwt(Some("acct-123"))).await;
+    let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
+    let presenter = codex_presenter();
+
+    flow.login(presenter.as_ref()).await.expect("login failed");
+
+    let url = presenter.last_authorize_url();
+    assert!(url.starts_with(&format!("{}/oauth/authorize?", server.uri())));
+    let state = ScriptedPresenter::query_param(&url, "state").expect("state");
+    assert!(
+        !state.is_empty()
+            && state != ScriptedPresenter::query_param(&url, "code_challenge").unwrap()
+    );
+    assert_eq!(
+        ScriptedPresenter::query_param(&url, "code_challenge_method").as_deref(),
+        Some("S256")
+    );
+    assert_eq!(
+        ScriptedPresenter::query_param(&url, "redirect_uri").as_deref(),
+        Some(CODEX_REDIRECT_URI)
+    );
+    assert_eq!(
+        ScriptedPresenter::query_param(&url, "scope").as_deref(),
+        Some("openid profile email offline_access")
+    );
+    assert_eq!(
+        ScriptedPresenter::query_param(&url, "id_token_add_organizations").as_deref(),
+        Some("true")
+    );
+    assert_eq!(
+        ScriptedPresenter::query_param(&url, "codex_cli_simplified_flow").as_deref(),
+        Some("true")
+    );
+    assert_eq!(
+        ScriptedPresenter::query_param(&url, "originator").as_deref(),
+        Some("opi")
+    );
+}
+
+#[tokio::test]
+async fn codex_busy_1455_falls_back_to_manual_paste_with_fixed_redirect() {
+    let server = MockServer::start().await;
+    // Hold the CLI-shared port so the SDK must fall back paste-back only —
+    // never to a free loopback port (pi `.catch(() => undefined)`).
+    let _occupier = TcpListener::bind(("127.0.0.1", 1455)).expect("hold 1455");
+    let access = codex_jwt(Some("acct-123"));
+    mount_codex_token_success(&server, &access).await;
+    let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
+    let presenter = codex_presenter();
+
+    let credential = flow.login(presenter.as_ref()).await.expect("login failed");
+    assert_eq!(credential.account_id.as_deref(), Some("acct-123"));
+
+    // The manual paste echoed the authorize URL (redirect fixed at 1455) and
+    // the exchange kept the same fixed redirect URI.
+    let requests = server.received_requests().await.unwrap();
+    let token_req = requests.last().expect("token request");
+    let body = String::from_utf8(token_req.body.clone()).unwrap();
+    let redirect = body
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("redirect_uri="))
+        .expect("redirect_uri param");
+    assert_eq!(redirect, "http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback");
+}
+
+#[tokio::test]
+async fn codex_device_flow_presents_user_code_and_exchanges_with_server_verifier() {
+    let server = MockServer::start().await;
+    mount_codex_device_start(&server, serde_json::json!(0)).await;
+    mount_codex_device_poll_complete(&server).await;
+    let access = codex_jwt(Some("acct-device"));
+    mount_codex_token_success(&server, &access).await;
+    let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
+    let presenter = Arc::new(ScriptedPresenter::default());
+    *presenter.forced_method.lock().unwrap() = Some(OAuthLoginMethod::DeviceCode);
+
+    let credential = match flow.login(presenter.as_ref()).await {
+        Ok(c) => c,
+        Err(e) => {
+            for r in server.received_requests().await.unwrap() {
+                eprintln!(
+                    "REQ {} {} body={}",
+                    r.method,
+                    r.url.path(),
+                    String::from_utf8_lossy(&r.body)
+                );
+            }
+            panic!("device login failed: {e:?}");
+        }
+    };
+    assert_eq!(credential.account_id.as_deref(), Some("acct-device"));
+
+    let devices = presenter.device_codes.lock().unwrap().clone();
+    assert_eq!(
+        devices,
+        vec![(
+            "PUBLIC-CODE".to_owned(),
+            CODEX_DEVICE_VERIFICATION.to_owned()
+        )]
+    );
+
+    let requests = server.received_requests().await.unwrap();
+    let token_req = requests.last().expect("token exchange");
+    let body = String::from_utf8(token_req.body.clone()).unwrap();
+    assert!(body.contains("code=device-code-1"), "{body}");
+    assert!(
+        body.contains("code_verifier=device-verifier-from-server"),
+        "{body}"
+    );
+    assert!(
+        body.contains(&format!(
+            "redirect_uri={}",
+            urlencode(CODEX_DEVICE_REDIRECT_URI)
+        )),
+        "{body}"
+    );
+}
+
+fn urlencode(value: &str) -> String {
+    // Minimal RFC 3986 percent-encoding of the characters reqwest encodes.
+    let mut out = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn codex_device_denied_and_expired_are_typed_without_body_echo() {
+    for code in ["deviceauth_access_denied", "expired_token"] {
+        let server = MockServer::start().await;
+        mount_codex_device_start(&server, serde_json::json!(0)).await;
+        mount_codex_device_poll_status(
+            &server,
+            403,
+            serde_json::json!({"error": {"code": code}, "secret": "device-secret"}),
+        )
+        .await;
+        let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
+        let presenter = Arc::new(ScriptedPresenter::default());
+        *presenter.forced_method.lock().unwrap() = Some(OAuthLoginMethod::DeviceCode);
+
+        let error = flow.login(presenter.as_ref()).await.expect_err("denied");
+        assert!(
+            matches!(error, ProviderError::CredentialRevoked { .. }),
+            "{code}: {error:?}"
+        );
+        assert!(!format!("{error:?}").contains("device-secret"));
+    }
+}
+
+#[tokio::test]
+async fn codex_device_invalid_interval_is_typed_before_any_poll() {
+    let server = MockServer::start().await;
+    mount_codex_device_start(&server, serde_json::json!("not-a-number")).await;
+    let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
+    let presenter = Arc::new(ScriptedPresenter::default());
+    *presenter.forced_method.lock().unwrap() = Some(OAuthLoginMethod::DeviceCode);
+
+    let error = flow
+        .login(presenter.as_ref())
+        .await
+        .expect_err("invalid interval");
+    assert!(matches!(error, ProviderError::Config(_)), "{error:?}");
+    // The token poll endpoint was never reached.
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .all(|r| r.url.path() != "/deviceauth/token")
+    );
+}
+
+#[tokio::test]
+async fn codex_device_usercode_404_is_typed() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/deviceauth/usercode"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+            "detail": "not enabled server-secret"
+        })))
+        .mount(&server)
+        .await;
+    let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
+    let presenter = Arc::new(ScriptedPresenter::default());
+    *presenter.forced_method.lock().unwrap() = Some(OAuthLoginMethod::DeviceCode);
+
+    let error = flow
+        .login(presenter.as_ref())
+        .await
+        .expect_err("404 usercode");
+    assert!(matches!(error, ProviderError::AuthFailed(_)), "{error:?}");
+    assert!(!format!("{error:?}").contains("server-secret"));
+}
+
+#[tokio::test]
+async fn codex_device_budget_exhaustion_times_out() {
+    let server = MockServer::start().await;
+    mount_codex_device_start(&server, serde_json::json!(30)).await;
+    Mock::given(method("POST"))
+        .and(path("/deviceauth/token"))
+        .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({
+            "error": "deviceauth_authorization_pending"
+        })))
+        .mount(&server)
+        .await;
+    // Poll interval 30s inside a 250ms device budget: the first sleep exhausts it.
+    let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_millis(250));
+    let presenter = Arc::new(ScriptedPresenter::default());
+    *presenter.forced_method.lock().unwrap() = Some(OAuthLoginMethod::DeviceCode);
+
+    let error = flow.login(presenter.as_ref()).await.expect_err("timeout");
+    assert!(matches!(error, ProviderError::Timeout), "{error:?}");
+    assert!(
+        presenter
+            .failures
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|f| f.contains("timed out"))
+    );
+}
+
+#[tokio::test]
+async fn codex_refresh_requires_all_token_fields_and_reextracts_account_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": codex_jwt(Some("acct-new")),
+            "expires_in": 3600,
+        })))
+        .mount(&server)
+        .await;
+    let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
+    let cred = OAuthCredential {
+        base_url: Some("https://chatgpt.example.test/backend".to_owned()),
+        ..stored_credential()
+    };
+
+    let error = flow
+        .refresh(&cred)
+        .await
+        .expect_err("missing refresh_token");
+    assert!(matches!(error, ProviderError::Config(_)), "{error:?}");
+
+    // Strict success: full triple, endpoint (base_url) preserved, account id
+    // re-extracted from the new access token.
+    let server2 = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": codex_jwt(Some("acct-new")),
+            "refresh_token": "codex-refresh-2",
+            "expires_in": 3600,
+        })))
+        .mount(&server2)
+        .await;
+    let flow2 = codex_flow(&server2, Duration::from_secs(30), Duration::from_secs(30));
+    let refreshed = flow2.refresh(&cred).await.expect("refresh ok");
+    assert_eq!(refreshed.refresh.expose_secret(), "codex-refresh-2");
+    assert_eq!(
+        refreshed.base_url.as_deref(),
+        Some("https://chatgpt.example.test/backend")
+    );
+    assert_eq!(refreshed.account_id.as_deref(), Some("acct-new"));
+    assert!(refreshed.expires_at.is_some());
+}
+
+#[tokio::test]
+async fn codex_credential_without_account_id_is_typed() {
+    let server = MockServer::start().await;
+    // Access token carries no chatgpt_account_id claim: pi credentialsFromToken
+    // throws; the SDK must fail typed and never yield a credential.
+    mount_codex_token_success(&server, &codex_jwt(None)).await;
+    let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
+    let presenter = codex_presenter();
+
+    let error = flow
+        .login(presenter.as_ref())
+        .await
+        .expect_err("no account id");
+    assert!(
+        matches!(error, ProviderError::AccountIdMissing { .. }),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn codex_models_login_acks_the_store_write() {
+    let server = MockServer::start().await;
+    let access = codex_jwt(Some("acct-models"));
+    mount_codex_token_success(&server, &access).await;
+    let store = FakeStore::new();
+    let store_handle = store.clone();
+    let presenter = codex_presenter();
+    let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
+    let mut models = Models::new();
+    models.register_oauth_flow("openai-codex", Arc::new(flow));
+    models.set_credential_store(store);
+
+    let credential = models
+        .login("openai-codex", presenter.as_ref())
+        .await
+        .expect("login");
+    assert_eq!(credential.account_id.as_deref(), Some("acct-models"));
+    let expected_access = credential.access.expose_secret().to_owned();
+
+    let stored = store_handle.entry("openai-codex").expect("stored");
+    match stored {
+        Credential::OAuthToken { access, .. } => {
+            assert_eq!(access.expose_secret(), expected_access);
+        }
+        other => panic!("unexpected stored kind: {other:?}"),
+    }
+    assert!(presenter.success_at.lock().unwrap().is_some());
 }

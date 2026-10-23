@@ -1072,3 +1072,26 @@ typed, and unknown mutation outcomes stay honestly pending. No automatic
 browser launch, keychain read, environment fallback, or remote revocation
 happens. `opi-coding-agent` keeps only host policy (TUI presenter, terminal
 suspension, keychain store) and registers the SDK flow.
+
+### SDK OAuth (OpenAI Codex legacy) (P20-S24)
+
+`auth::oauth::codex` owns the Codex login mechanism pinned to pi 1.3.0's
+`openai-codex.ts`: form-encoded token exchange and refresh, and the
+fixed `http://localhost:1455/auth/callback` redirect URI shared with the
+Codex CLI — a failed bind falls back to paste-back only with that same URI,
+never a free port (`bind_fallback` selects the Anthropic free-port ladder or
+the Codex manual-only ladder). The browser authorize URL carries the
+production scopes, S256 PKCE, an independent state, and the
+`id_token_add_organizations`/`codex_cli_simplified_flow`/`originator=opi`
+flags. The device-code path pins OpenAI's `deviceauth` endpoints: JSON
+bodies, the 403/404 pending quirk, structured pending/slow_down codes with
+the RFC 8628 +5s backoff, typed denied/expired classification, the bounded
+15-minute budget, and the exchange of the server-issued
+`authorization_code` + `code_verifier` against the hosted device redirect
+URI. Refresh is strict per pi `readTokenResponse` (all three token fields
+required) and re-extracts the ChatGPT account id from the access-token JWT
+(typed `AccountIdMissing` on login and refresh alike). The endpoint
+(`base_url`) rides the credential through refresh. `Models::login`
+registers `openai-codex` with the same store-ACK semantics as Anthropic.
+`opi-coding-agent` cut over compiling: the product Codex protocol duplicate
+was deleted in favor of the SDK mechanism.
