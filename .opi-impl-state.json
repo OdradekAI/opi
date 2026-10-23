@@ -7276,7 +7276,7 @@
       "definition_of_done": "Public login to injected presenter/fake HTTP to acknowledged store to actual selected SDK request verifies device denied/expired terminal outcomes, enterprise/proxy endpoint, availableModelIds and login-only policy activation. Test applicable invalid/state/PKCE/denial/expiry/callback/cancel/refresh failures, one Rust5min near-expiry correction, actual service expiry and shared transaction rotation. No automatic browser/keychain/global runtime/account fallback or remote rollback. Replace product protocol duplicate with SDK mechanism and injected UI/keychain adapter in this compiling cutover.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.12",
@@ -7362,7 +7362,7 @@
             "opi_ai selected GitHub Copilot OAuth adapter (target)",
             "opi_coding_agent::login_oauth/credential_store"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -7373,7 +7373,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "93a11ce2d5f542bae5fc3b383da0a920a9c77a17",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -7434,12 +7434,83 @@
         "crates/opi-coding-agent/tests/*oauth*",
         "crates/opi-coding-agent/tests/*provider*",
         "crates/opi-coding-agent/tests/*rpc*",
-        "crates/opi-coding-agent/tests/*session*"
+        "crates/opi-coding-agent/tests/*session*",
+        "crates/opi-ai/src/auth.rs",
+        "crates/opi-ai/src/credential.rs",
+        "crates/opi-ai/tests/auth_contracts.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-coding-agent/tests/credential_store.rs",
+        "crates/opi-coding-agent/tests/doctor_cli.rs",
+        "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+        "crates/opi-coding-agent/tests/interactive_auth.rs",
+        "crates/opi-coding-agent/tests/list_models.rs",
+        "crates/opi-coding-agent/tests/oauth_auth.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "90acfe7ee52da97ce7809aa0590dc3a4d9f3670e",
+      "evidence": {
+        "task": "20.26",
+        "dod_sha256": "7930f8b0b78f6f9e4733b77cdb9e76b93c3e106d1c095867a67242840afb0bc9",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED; opi-ai oauth_flows 64 passed (20 new copilot tests incl. 4 pure-contract units), auth_contracts/provider_collection updated for the envelope fields; opi-coding-agent oauth_auth 123, credential_store 48 (new proxy-ep resolver test), interactive_auth 12; zero manifest changes",
+        "evaluator": "passed",
+        "acceptance": "P20-S26; public login (host /login github-copilot via the registry, and Models::login store-ACK) -> prompt_text enterprise domain (typed rejection of garbage, zero traffic) -> device-code flow with pinned client/scope, strict response fields and http(s) verification_uri -> poll with wait-before-first-poll, server slow_down interval, typed denied/expired terminals and closed unknown codes -> strict Copilot token exchange (401/403 revoked) -> models discovery with bounded 429 retries and pi catalog semantics -> login-only policy activation (whitelist-gated, progress-notified) -> credential with real expiry, enterprise domain and available model ids persisted through the ACK queue -> refresh re-exchanges and re-discovers without policy; per-request base URL derived from the token proxy endpoint with the legacy stored base_url still winning; no browser/keychain/env/account fallback, no automatic policy action on refresh"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-24T02:40:00+00:00",
+          "attempt": 1,
+          "summary": "Delivered the SDK GitHub Copilot OAuth flow and cut the host over to it. Corpus: the in-tree read-only pi 1.3.0 github-copilot.ts (507 lines) verified line by line plus device-code.ts (the poll loop contract already conformed by the 20.24 codex flow: 1s minimum interval, 5s default, slow_down +5s or the server interval, expires_in deadline, waitBeforeFirstPoll), providers/github-copilot.models.ts (the policy whitelist source), sdk-contracts rows 72/142, matrix rows 188/308 and spec-draft L345-347. Row 142 pins: client Iv1.b507a08c87ecfe98 with read:user against github.com or an explicit enterprise domain whose three endpoints derive from one hostname, GitHub access token stored in the refresh slot, the copilot_internal/v2 token exchange for a short-lived bearer, expires minus five minutes, proxy-endpoint-derived base URLs, availableModelIds discovery, login-only policy activation, and refresh re-discovering metadata without enabling anything. Implementation: new auth::oauth::copilot (GitHubCopilotOAuthProvider with production/with_http_client/new_with_endpoints constructors and a with_policy_whitelist builder; normalize_enterprise_domain, copilot_urls_for_domain, base_url_from_token and request_base_url as pure pub functions; strict device/exchange validation; the pi catalog parser with picker/policy semantics, individual-endpoint-only fallback and the whitelist gate; bounded 429 retries honoring Retry-After seconds or an Rfc2822 HTTP-date; login-only policy POSTs with chat-policy intent headers; a refresh that re-normalizes the stored domain, re-exchanges with one models attempt and never touches policy); LoginPresenter gained default-implemented prompt_text (blank = the public deployment; typed rejection of a non-empty unparseable answer before any traffic) and notify_progress; OAuthCredential and the SDK Credential::OAuthToken envelope gained the non-secret enterprise_domain and available_model_ids fields; TuiLoginPresenter answers prompt_text through the existing manual-line subprocess; the host registry registers the SDK provider with the host catalog ids as the policy whitelist and an endpoint-origin models fallback; resolved_oauth derives the Copilot request base from the token proxy endpoint with a legacy stored base_url still winning (pre-cutover credentials never change endpoints); the product CopilotOAuthProvider device poll, exchange and endpoints.api protocol are deleted. Development alternated test-writing and implementation within the task (all tests landed before the commit). Dev incidents fixed en route: wiremock expect(n) mounts never expire so the 429-then-200 sequence needs up_to_n_times(1); base_url_from_token originally stripped the proxy. prefix instead of rewriting it to api. (caught by the pure unit); the strict expires_in requirement broke every legacy device fixture (host mount helper now injects expires_in; the raw body-delay fixtures patched by hand); the pi waitBeforeFirstPoll one-second floor invalidated the sub-second host budget tests, whose budgets and response delays were re-timed (100ms -> 1.2-2s classes); the initial cancellation race around the exchange violated the pinned post-token-cancel-ignored contract and was reverted; the first host models-base closure reached for the production individual default under endpoint overrides and was rebuilt with the exchange-origin fallback; clippy collapsed two nested ifs and required ModelsBaseUrlFn/EnterpriseUrlsFn aliases. Under full-workspace load oauth_auth flaked twice on unrelated pre-existing timing tests (codex state mismatch with a 60s budget once; the binary wall time grew ~10x because the new copilot tests pay the 1s pre-poll floor), each passing standalone and the exact workspace command plus smoke full passing on the settled machine - same class as the 20.23/20.24 recorded flakes. Documentation repair: the CHANGELOG entries for 20.23-20.25 had silently no-opped on missing anchors in those sessions (the bilingual README sections were committed correctly); this task restored all three and added the 20.26 entry, with the repair noted in the commit message. Exec D.2 (7 lenses, evaluator inline): 0 must-fix, 9 flagged_for_human (real expiry plus the single five-minute needs_refresh instead of pi's store-time minus five minutes; denied/expired typed CredentialRevoked and unknown codes closed AuthFailed instead of pi's generic message, per the retained Rust safety contract; the 300s total budget pi lacks; error bodies never echoed; prompt_text/notify_progress are default-implemented presenter additions; the policy whitelist is host-injected because opi-ai bundles no Copilot catalog; the host v1 envelope drops enterprise_domain/available_model_ids until the host registration task extends the schema; the legacy-stored-base_url-wins precedence in resolved_oauth protects pre-cutover credentials where pi derives token-first; the waitBeforeFirstPoll 1s floor forced re-timed host budget tests and inflates binary wall time under load), 0 rejected. C.1a appends the 10 mechanical ripple paths listed in task_owned_paths.",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED",
+            "d0_scenarios": "cargo test -p opi-ai --test oauth_flows 64 passed (20 new copilot tests); cargo test --workspace --all-targets 243 binaries ok; oauth_auth 123, credential_store 48, interactive_auth 12, interactive_tui_auth 14",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified via wiremock request captures (device form body with the pinned client id and read:user scope, poll bodies, exchange bearer/headers, models bearer and X-GitHub-Api-Version, policy body {\"state\":\"enabled\"} with chat-policy intent headers), raw TCP body-delay servers for the cancellation and budget boundary probes, zero-request negative assertions, presenter notify reasons for typed failures, and pure unit pins for normalize_enterprise_domain/copilot_urls_for_domain/base_url_from_token/request_base_url/catalog parsing; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 9 flagged_for_human, 0 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S26",
+                "action": "add",
+                "test": "crates/opi-ai/tests/oauth_flows.rs (16 HTTP tests: login persists tokens/models/real expiry, models login ACK, enterprise prompt normalizes+derives, invalid domain typed before traffic, untrusted verification_uri typed, denied/expired typed terminals, unknown poll code closed, slow_down server interval, exchange 401 revoked, token fields strict, models 429 retry and exhaustion, login-only policy activation with progress, refresh re-discovers without policy, refresh 401; plus 4 pure units: normalize variants, urls shape, base-url precedence, catalog parsing variants)",
+                "interface": "auth::oauth::copilot SDK surface + LoginPresenter::prompt_text/notify_progress + credential envelope",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S26",
+                "action": "add",
+                "test": "crates/opi-coding-agent/tests/credential_store.rs: github_copilot_resolves_request_base_from_token_proxy_endpoint (proxy-ep derivation and legacy precedence at the resolver)",
+                "interface": "host per-request auth resolution",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S26",
+                "action": "update",
+                "test": "crates/opi-coding-agent/tests/oauth_auth.rs: the copilot slice runs the SDK flow (mounts gain expires_in and the empty catalog; the exchange mock serves models; budgets/delays re-timed for the 1s pre-poll floor; unknown poll code now closed AuthFailed; base_url assertions moved to None/derived contract); interactive_auth.rs dispatcher tests mount the models discovery and assert the new request sequence; all host fixtures map the envelope fields mechanically",
+                "interface": "host registry/login_oauth/dispatcher over the SDK flow",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S26",
+                "action": "delete",
+                "test": "product CopilotOAuthProvider protocol (device poll, exchange, endpoints.api) removed from crates/opi-coding-agent/src/oauth.rs; its behaviors are covered equal-or-stronger by the SDK tests above plus the retained host cancellation/budget/redaction tests",
+                "interface": "host OAuth provider",
+                "replacement": "crates/opi-ai/src/auth/oauth/copilot.rs + oauth_flows.rs copilot section",
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-STORE",
+                "action": "retain",
+                "test": "credential_store.rs remaining tests unchanged in behavior",
+                "interface": "store owner",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ],
+      "dod_sha256": "7930f8b0b78f6f9e4733b77cdb9e76b93c3e106d1c095867a67242840afb0bc9"
     },
     {
       "id": "20.27",
@@ -17258,6 +17329,16 @@
       "rejected_count": 1,
       "ran_at": "2026-10-23T09:30:00+00:00",
       "task_id": "20.25",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 9,
+      "rejected_count": 0,
+      "ran_at": "2026-10-24T02:40:00+00:00",
+      "task_id": "20.26",
       "criterion_id": null
     }
   ]
