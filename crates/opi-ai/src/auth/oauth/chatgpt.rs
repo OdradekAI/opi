@@ -130,6 +130,8 @@ fn chatgpt_credential_from(
         base_url: None,
         account_id: None,
         client_id: Some(client_id.to_owned()),
+        enterprise_domain: None,
+        available_model_ids: None,
     })
 }
 

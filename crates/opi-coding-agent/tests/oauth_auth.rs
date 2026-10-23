@@ -51,8 +51,8 @@ use opi_coding_agent::credential_store::{
 };
 use opi_coding_agent::harness::CodingHarness;
 use opi_coding_agent::oauth::{
-    AnthropicOAuthProvider, CodexOAuthProvider, CopilotOAuthProvider, OAuthProviderRegistry,
-    RegistryError, TuiLoginPresenter, login_oauth,
+    AnthropicOAuthProvider, CodexOAuthProvider, CopilotUrls, GitHubCopilotOAuthProvider,
+    OAuthProviderRegistry, RegistryError, TuiLoginPresenter, login_oauth,
 };
 use opi_coding_agent::policy::ToolSelection;
 use opi_coding_agent::provider_factory::build_provider_with_oauth;
@@ -485,6 +485,8 @@ fn oauth_cred(access: &str, refresh: &str, base_url: Option<String>) -> OAuthCre
         base_url,
         account_id: None,
         client_id: None,
+        enterprise_domain: None,
+        available_model_ids: None,
     }
 }
 
@@ -608,6 +610,8 @@ fn oauth_credential(access: &str, expires_at: Option<OffsetDateTime>) -> Credent
         base_url: None,
         account_id: None,
         client_id: None,
+        enterprise_domain: None,
+        available_model_ids: None,
     }
 }
 
@@ -700,6 +704,8 @@ impl OAuthProvider for MockOAuthProvider {
                 base_url,
                 account_id,
                 client_id: None,
+                enterprise_domain: None,
+                available_model_ids: None,
             })
         })
     }
@@ -3520,6 +3526,8 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
         base_url: Some("https://enterprise.githubcopilot.com".into()),
         account_id: None,
         client_id: None,
+        enterprise_domain: None,
+        available_model_ids: None,
     };
     store.write("github-copilot", &cred).await.unwrap();
     assert!(
@@ -3544,6 +3552,8 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
         base_url: None,
         account_id: None,
         client_id: None,
+        enterprise_domain: None,
+        available_model_ids: None,
     };
     store.write("anthropic", &anthropic_cred).await.unwrap();
     assert!(resolver.has_oauth_credential("anthropic").await.unwrap());
@@ -3566,6 +3576,8 @@ async fn openai_codex_resolver_propagates_account_id_without_secret_logging() {
                 base_url: None,
                 account_id: Some("account-resolved".into()),
                 client_id: None,
+                enterprise_domain: None,
+                available_model_ids: None,
             },
         )
         .await
@@ -3584,21 +3596,42 @@ async fn openai_codex_resolver_propagates_account_id_without_secret_logging() {
 }
 
 // ===========================================================================
-// Slice 4 閳?CopilotOAuthProvider (GitHub device-code)
+// Slice 4 閳?GitHub Copilot (SDK device-code flow)
 // ===========================================================================
 
-fn copilot_provider(server_uri: String, total_budget: Duration) -> CopilotOAuthProvider {
-    CopilotOAuthProvider::new(
-        format!("{server_uri}/device/code"),
-        format!("{server_uri}/login/oauth/access_token"),
-        format!("{server_uri}/copilot_internal/v2/token"),
-        "copilot-client-id".to_owned(),
-        "read:user".to_owned(),
+fn copilot_provider(server_uri: String, total_budget: Duration) -> GitHubCopilotOAuthProvider {
+    let models_uri = server_uri.clone();
+    GitHubCopilotOAuthProvider::new_with_endpoints(
+        CopilotUrls {
+            device_code_url: format!("{server_uri}/device/code"),
+            access_token_url: format!("{server_uri}/login/oauth/access_token"),
+            copilot_token_url: format!("{server_uri}/copilot_internal/v2/token"),
+        },
+        std::sync::Arc::new(opi_ai::auth::oauth::copilot::copilot_urls_for_domain),
+        std::sync::Arc::new(move |_token: &str, _domain: Option<&str>| models_uri.clone()),
+        Vec::new(),
         total_budget,
+        reqwest::Client::new(),
     )
 }
 
-async fn mount_device_auth(server: &MockServer, body: serde_json::Value) {
+/// The SDK flow discovers models metadata after the token exchange; every
+/// completing copilot login needs the (empty) catalog mount.
+async fn mount_copilot_models_empty(server: &MockServer) {
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": []})))
+        .mount(server)
+        .await;
+}
+
+async fn mount_device_auth(server: &MockServer, mut body: serde_json::Value) {
+    // The SDK flow requires a finite device lifetime (pi
+    // `DeviceCodeResponse.expires_in`); older fixture bodies omitted it.
+    body.as_object_mut()
+        .expect("device auth body is an object")
+        .entry("expires_in")
+        .or_insert(json!(900));
     Mock::given(method("POST"))
         .and(path("/device/code"))
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
@@ -3617,6 +3650,9 @@ async fn mount_device_poll(server: &MockServer, body: serde_json::Value, times: 
 }
 
 async fn mount_copilot_token(server: &MockServer, status: u16, body: serde_json::Value) {
+    // Every test that mounts an exchange also serves the post-exchange
+    // models discovery (the SDK flow fetches the account catalog).
+    mount_copilot_models_empty(server).await;
     Mock::given(method("GET"))
         .and(path("/copilot_internal/v2/token"))
         .respond_with(ResponseTemplate::new(status).set_body_json(body))
@@ -3640,10 +3676,12 @@ async fn copilot_login_success_exchanges_github_token_for_copilot_token() {
     let cred = provider.login(&presenter).await.expect("login");
     assert_eq!(cred.access.expose_secret(), "copilot-tok");
     assert_eq!(cred.refresh.expose_secret(), "ghub-123");
-    assert_eq!(
-        cred.base_url.as_deref(),
-        Some("https://api.githubcopilot.com")
-    );
+    // The SDK credential never stores a base URL: the request base is
+    // derived per request from the Copilot token's proxy endpoint (the
+    // `endpoints.api` field of the legacy product protocol is gone).
+    assert_eq!(cred.base_url.as_deref(), None);
+    assert_eq!(cred.enterprise_domain.as_deref(), None);
+    assert_eq!(cred.available_model_ids.as_deref(), Some(&[][..]));
     assert!(cred.expires_at.is_some());
     let dc = presenter.captured_device_codes.lock().unwrap().clone();
     assert_eq!(dc[0].0, "ABCD-WXYZ");
@@ -3743,7 +3781,9 @@ async fn copilot_login_slow_down_is_non_terminal_and_gated_by_budget() {
     // sleep, the flow times out during that sleep rather than returning a
     // CredentialRevoked denial 閳?proving slow_down was handled as a backoff.
     mount_device_poll(&server, json!({"error":"slow_down"}), None).await;
-    let provider = copilot_provider(server.uri(), Duration::from_millis(80));
+    // The SDK waits one poll interval before the first poll (pi
+    // `waitBeforeFirstPoll`), so the budget must cover that 1s floor wait.
+    let provider = copilot_provider(server.uri(), Duration::from_millis(1500));
     let presenter = MockLoginPresenter::new();
     let err = provider
         .login(&presenter)
@@ -3882,7 +3922,8 @@ async fn copilot_total_budget_bounds_initial_authorization_body_after_headers() 
             "device_code":"dc",
             "user_code":"UC",
             "verification_uri":"https://x",
-            "interval":0
+            "interval":0,
+            "expires_in":900
         }),
         Duration::from_millis(250),
     );
@@ -3916,7 +3957,8 @@ async fn copilot_cancellation_is_installed_before_initial_response_body() {
             "device_code":"dc",
             "user_code":"UC",
             "verification_uri":"https://x",
-            "interval":0
+            "interval":0,
+            "expires_in":900
         }),
         Duration::from_millis(750),
     );
@@ -3983,7 +4025,8 @@ async fn copilot_total_budget_bounds_final_exchange_after_poll_response_delay() 
             "device_code":"dc",
             "user_code":"UC",
             "verification_uri":"https://x",
-            "interval":0
+            "interval":0,
+            "expires_in":900
         }),
     )
     .await;
@@ -3992,7 +4035,7 @@ async fn copilot_total_budget_bounds_final_exchange_after_poll_response_delay() 
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_json(json!({"access_token":"ghub"}))
-                .set_delay(Duration::from_millis(60)),
+                .set_delay(Duration::from_millis(100)),
         )
         .mount(&server)
         .await;
@@ -4004,11 +4047,13 @@ async fn copilot_total_budget_bounds_final_exchange_after_poll_response_delay() 
                     "token":"cop",
                     "expires_at":copilot_expires_soon()
                 }))
-                .set_delay(Duration::from_millis(80)),
+                .set_delay(Duration::from_secs(2)),
         )
         .mount(&server)
         .await;
-    let provider = copilot_provider(server.uri(), Duration::from_millis(100));
+    // Budget: 1s pre-poll wait + 100ms poll delay leaves ~200ms, far below
+    // the 2s exchange body delay — the budget bounds the exchange.
+    let provider = copilot_provider(server.uri(), Duration::from_millis(1300));
     let presenter = MockLoginPresenter::new();
 
     let error = provider
@@ -4033,7 +4078,8 @@ async fn copilot_total_budget_bounds_final_exchange_body_after_headers() {
             "device_code":"dc",
             "user_code":"UC",
             "verification_uri":"https://x",
-            "interval":0
+            "interval":0,
+            "expires_in":900
         }),
         Duration::ZERO,
     );
@@ -4050,10 +4096,12 @@ async fn copilot_total_budget_bounds_final_exchange_body_after_headers() {
             "token":"cop",
             "expires_at":copilot_expires_soon()
         }),
-        Duration::from_millis(250),
+        Duration::from_millis(500),
     );
     let server = RawBodyDelayServer::start(vec![device_route, poll_route, exchange_route]).await;
-    let provider = copilot_provider(server.uri().to_owned(), Duration::from_millis(100));
+    // Budget: 1s pre-poll wait + fast poll leaves ~200ms for the exchange,
+    // below its 500ms body delay — the budget bounds the body decode.
+    let provider = copilot_provider(server.uri().to_owned(), Duration::from_millis(1200));
     let presenter = MockLoginPresenter::new();
 
     let error = provider
@@ -4139,7 +4187,8 @@ async fn copilot_post_token_cancellation_is_ignored_during_bounded_final_exchang
             "device_code":"dc",
             "user_code":"UC",
             "verification_uri":"https://x",
-            "interval":0
+            "interval":0,
+            "expires_in":900
         }),
     )
     .await;
@@ -4159,7 +4208,10 @@ async fn copilot_post_token_cancellation_is_ignored_during_bounded_final_exchang
         })
         .mount(&server)
         .await;
-    let provider = copilot_provider(server.uri(), Duration::from_millis(500));
+    mount_copilot_models_empty(&server).await;
+    // Budget must clear the SDK's 1s pre-poll wait (pi
+    // `waitBeforeFirstPoll`) before the exchange begins.
+    let provider = copilot_provider(server.uri(), Duration::from_secs(2));
     let presenter = MockLoginPresenter::new();
     let cancel = presenter.login_cancelled_sender();
 
@@ -4237,11 +4289,13 @@ async fn copilot_poll_unknown_error_code_is_closed_and_redacted() {
 
     let error = provider.login(&presenter).await.expect_err("poll error");
 
+    // The SDK maps an unrecognized OAuth error code to a closed typed
+    // authorization failure (codex parity); the provider's code never leaks.
     match &error {
-        AiProviderError::Config(message) => {
+        AiProviderError::AuthFailed(message) => {
             assert_eq!(message.as_str(), "[REDACTED]");
         }
-        other => panic!("expected Config, got {other:?}"),
+        other => panic!("expected AuthFailed, got {other:?}"),
     }
     assert_oauth_error_surfaces_are_redacted(&error, Some(&presenter), &[DEVICE_CODE]);
 }
@@ -4478,6 +4532,8 @@ fn stored_oauth(access: &str, refresh: &str, base_url: Option<String>) -> Creden
         base_url,
         account_id: None,
         client_id: None,
+        enterprise_domain: None,
+        available_model_ids: None,
     }
 }
 

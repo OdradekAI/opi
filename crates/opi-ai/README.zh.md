@@ -935,3 +935,26 @@ scope 含 direct 标志、`expires_in` 正有限、login 要求 `id_token` 存�
 （Decisions classifier）绝不能把它当 API key 解析。宿主调用点机械映
 射新字段（`client_id: None`）；经宿主信封持久化它属于宿主 ChatGPT
 注册任务。
+
+### SDK OAuth（GitHub Copilot）（P20-S26）
+
+`auth::oauth::copilot` 钉定 pi 1.3.0 `github-copilot.ts`。流程以新的
+`LoginPresenter::prompt_text` 询问 GitHub Enterprise URL/域名开始
+（空=github.com；非空且不可解析在任何 HTTP 之前类型化失败），并按 pi
+`getUrls` 从规范化 hostname 派生全部三个端点。GitHub 设备码流使用固定
+client `Iv1.b507a08c87ecfe98` + `read:user`，严格校验响应、要求
+`verification_uri` 为 http(s) URL、首轮轮询前等待一个 interval、
+`slow_down` 优先服务端 interval（否则 +5s），`access_denied`/
+`expired_token` 为类型化终端吊销，未知码闭合。Copilot token 交换严格
+（401/403 吊销）；请求 base URL 每次请求从 token 的 `proxy-ep=` 提示派生
+（`proxy.`→`api.`），回退企业域与 individual 默认——绝不存储。模型元数据
+以限界 429 重试发现（login 2 次/5s，refresh 单次）并按 pi picker/policy
+语义解析（enabled-policy 回退仅 individual 端点；宿主注入的静态目录白名
+单决定 login 可对哪些 unconfigured 模型以 `{"state":"enabled"}`
+chat-policy POST 激活，先 `notify_progress`）。策略激活仅限 login：
+refresh 重换存储的 GitHub token、重发现元数据、绝不触碰策略。凭据新增非
+密 `enterprise_domain` 与 `available_model_ids`（宿主 v1 信封暂不持久
+化），存真实服务过期并保留唯一 5 分钟 `needs_refresh` 校正，GitHub
+token 留在 refresh 槽。产品 `CopilotOAuthProvider` 协议复制品删除；宿主
+注册 SDK 流并以静态目录为策略白名单，请求 base 从 token 派生（legacy
+存储 `base_url` 仍优先，保证切换前的凭据不换端点）。

@@ -20,6 +20,7 @@
 pub mod anthropic;
 pub mod chatgpt;
 pub mod codex;
+pub mod copilot;
 
 use std::borrow::Cow;
 use std::future::Future;
@@ -712,6 +713,8 @@ pub async fn exchange_authorization_code(
         ),
         base_url: None,
         account_id: None,
+        enterprise_domain: None,
+        available_model_ids: None,
         client_id: None,
     })
 }
@@ -820,6 +823,8 @@ pub async fn refresh_oauth_token(
         base_url,
         account_id: cred.account_id.clone(),
         client_id: cred.client_id.clone(),
+        enterprise_domain: cred.enterprise_domain.clone(),
+        available_model_ids: cred.available_model_ids.clone(),
     })
 }
 

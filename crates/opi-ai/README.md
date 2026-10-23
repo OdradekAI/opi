@@ -1129,3 +1129,36 @@ API-key-only consumers (the Decisions classifier) can never resolve this
 subscription credential as an API key. Host call sites map the new field
 mechanically; persisting it through the host envelope belongs to the host
 ChatGPT registration task.
+
+### SDK OAuth (GitHub Copilot) (P20-S26)
+
+`auth::oauth::copilot` is pinned to pi 1.3.0's `github-copilot.ts`. The
+flow starts with the new `LoginPresenter::prompt_text` asking for a
+GitHub Enterprise URL/domain (blank = `github.com`; a non-empty
+unparseable answer fails typed before any HTTP) and derives all three
+endpoints from the normalized hostname like pi `getUrls`. The GitHub
+device-code flow uses the fixed client `Iv1.b507a08c87ecfe98` with
+`read:user`, strictly validates the response, requires an http(s)
+`verification_uri`, waits one interval before the first poll, honors the
+server interval on `slow_down` (else +5s), and treats
+`access_denied`/`expired_token` as typed terminal revocations with
+unknown codes closed. The Copilot token exchange is strict (401/403
+revoked) and the request base URL is derived per request from the
+token's `proxy-ep=` hint, then the enterprise domain, then the
+individual default — never stored. Models metadata is discovered with
+bounded 429 retries (login 2/5s, refresh a single attempt) and parsed
+with pi's picker/policy semantics (the enabled-policy fallback only on
+the individual endpoint; the static-catalog whitelist — injected by the
+host — gates which unconfigured models login enables via
+`{"state":"enabled"}` chat-policy POSTs after a `notify_progress`).
+Policy activation is login-only: refresh re-exchanges the stored GitHub
+token and re-discovers the metadata without touching policy.
+Credentials gained non-secret `enterprise_domain` and
+`available_model_ids` fields (the host v1 envelope deliberately does
+not persist them yet), store the real service expiry with the single
+five-minute `needs_refresh` correction, and keep the GitHub token in
+the refresh slot. The product's `CopilotOAuthProvider` protocol
+duplicate is deleted; the host registers the SDK provider with its
+static catalog as the policy whitelist and derives the Copilot request
+base from the token (a legacy stored `base_url` still wins so
+pre-cutover credentials never change endpoints).

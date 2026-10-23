@@ -482,6 +482,8 @@ async fn listing_uses_selected_credential_kind_and_source_label() {
                 base_url: None,
                 account_id: None,
                 client_id: None,
+                enterprise_domain: None,
+                available_model_ids: None,
             },
         )
         .await

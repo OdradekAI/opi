@@ -411,6 +411,83 @@
   and its refresh network bound is now 15s, scoped to the HTTP exchange
   only — lock waits and the ACK are outside it.
 ### Added
+- `opi-ai`: the GitHub Copilot OAuth flow is now SDK-owned (task
+  20.26), pinned to pi 1.3.0's `github-copilot.ts`. The new
+  `auth::oauth::copilot` module runs the GitHub device-code flow (fixed
+  client `Iv1.b507a08c87ecfe98`, `read:user`) against `github.com` or a
+  user-entered GitHub Enterprise domain: the new
+  `LoginPresenter::prompt_text` (blank = the public deployment; a
+  non-empty unparseable answer fails typed before any HTTP) is
+  normalized to a bare hostname and all three endpoints are derived from
+  it like pi `getUrls`. The device response is strictly validated and
+  its `verification_uri` must be an http(s) URL; polling waits one
+  interval before the first poll and honors the server interval on
+  `slow_down` (else RFC 8628 +5s), with `access_denied`/`expired_token`
+  as typed terminal revocations and unknown codes closed. The exchanged
+  short-lived Copilot token is strict (`token` + absolute `expires_at`;
+  401/403 revoked); the request base URL is derived per request from the
+  token's `proxy-ep=` hint (`proxy.` -> `api.`), falling back to
+  `https://copilot-api.<domain>` and the individual default - the
+  product's `endpoints.api` protocol is deleted. The account's models
+  metadata is discovered with bounded 429 retries (`Retry-After` seconds
+  or HTTP-date; login 2/5s, refresh a single attempt) and parsed like pi
+  (tool-call-less models filtered, picker/policy semantics, the
+  enabled-policy fallback only on the individual endpoint, the host's
+  static catalog gating which unconfigured models login may enable via
+  `{"state":"enabled"}` chat-policy POSTs after a `notify_progress`).
+  Policy activation is login-only: refresh re-exchanges the stored
+  GitHub token, re-discovers the metadata and never touches policy.
+  Credentials gained non-secret `enterprise_domain` and
+  `available_model_ids` fields on `OAuthCredential`/`Credential::OAuthToken`
+  (the host v1 keychain envelope deliberately does not persist them
+  yet), store the real service expiry with the single five-minute
+  `needs_refresh` correction, and keep the GitHub token in the refresh
+  slot. The product `CopilotOAuthProvider` protocol duplicate is
+  deleted; the host registry registers the SDK provider with the host
+  catalog as the policy whitelist, the TUI presenter answers
+  `prompt_text` through the existing line-reader subprocess, and the
+  per-request resolver derives the Copilot base URL from the token (a
+  legacy stored `base_url` still wins so pre-cutover credentials never
+  change endpoints).
+- `opi-ai`: the OpenAI ChatGPT direct OAuth flow landed in the SDK
+  (task 20.25), pinned to pi 1.3.0's `openai-chatgpt.ts`. The new
+  `auth::oauth::chatgpt` module registers a dynamic client per login
+  (`client_id=dynamic_agent_client`) and requires OpenAI's issued client
+  id on every callback and pasted URL: the form exchange and every later
+  refresh reuse it, the credential persists it (`client_id` on
+  `OAuthCredential`/`Credential::OAuthToken`), and a stored credential
+  without it fails typed with a reconnect error. The authorize URL
+  carries the production scopes, S256 PKCE, an independent state and
+  nonce, the RFC 8707 `resource=https://api.openai.com/v1` parameter,
+  `agent_name_hint` (default `opi`), and the installation's stable
+  `ext_agent_host_id=urn:uuid:<lowercase>`. The redirect is the fixed
+  `http://127.0.0.1:1455/auth/callback`: a failed bind is a typed
+  terminal error (`CallbackBindFallback::Required`; never a free port or
+  paste-back ladder), while the bound server races a strictly validated
+  manual input that must be the full redirect URL with the same origin
+  and path, matching state, and the issued client id. The token response
+  is validated per pi `credentialFromTokenResponse` (direct-grant scope,
+  positive finite `expires_in`, `id_token` present on login only); the
+  stored expiry is the real service expiry with the single five-minute
+  `needs_refresh` correction. `run_pkce_login` was refactored into the
+  shared `run_pkce_login_with` seam (Anthropic/Codex behavior identical).
+- `opi-ai`: the OpenAI Codex legacy OAuth flow migrated into the SDK
+  (task 20.24), pinned to pi 1.3.0's `openai-codex.ts`. The new
+  `auth::oauth::codex` module owns the browser PKCE flow
+  (localhost:1455 with paste-back fallback) and the device-code flow
+  (structured pending/slow_down codes, 403/404 pending quirk, 15-minute
+  device budget, JWT `codex_account_id` extraction on login and refresh,
+  strict refresh fields); the host switched to the SDK provider and its
+  endpoint-derived registration, deleting the product Codex flow.
+  `mod.rs` gained `CallbackBindFallback::{FreePort,ManualOnly}` and
+  `RefreshFieldPolicy::{Lenient,Strict}` on `refresh_oauth_token`.
+- `opi-ai`: the Anthropic OAuth flow migrated into the SDK (task 20.23),
+  pinned to pi 1.3.0's `anthropic.ts`: PKCE S256 with copy-code and
+  browser-callback methods, the 53692 preferred loopback port with a
+  free-port fallback, form-encoded token exchange, strict token
+  response fields, refresh reuse of the stored client id, and
+  `Models::login` persisting through the store-owned ACK queue. The
+  host re-exports the SDK provider.
 - `opi-ai`: store-owned credential mutations with ACKs and a synchronous
   mutation barrier (P20-STORE / task 20.22). New `mutation` module:
   `CredentialStore::modify` submits a serialized read-modify-write whose

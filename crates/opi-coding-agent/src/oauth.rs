@@ -33,10 +33,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
-use opi_ai::auth::oauth::{
-    FlowBudget, login_cancelled, no_redirect_client, oauth_error_class, token_endpoint_error,
-    within_optional_budget,
-};
 // PKCE primitives moved to the SDK; re-exported here because the host test
 // suites pin their RFC 7636 behavior through this path.
 pub use opi_ai::auth::oauth::{code_challenge_s256, generate_code_verifier, generate_state};
@@ -47,11 +43,9 @@ pub use opi_ai::auth::oauth::codex::{
     CODEX_DEVICE_REDIRECT_URI, CODEX_DEVICE_TIMEOUT, CODEX_DEVICE_TOKEN_URL,
     CODEX_DEVICE_USER_CODE_URL, CODEX_DEVICE_VERIFICATION_URI, CodexOAuthProvider,
 };
-use opi_ai::auth::{LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider};
+use opi_ai::auth::{LoginPresenter, OAuthLoginMethod, OAuthProvider};
 use opi_ai::credential::{BoxAuthFuture, CredentialStore, CredentialStoreError};
 use opi_ai::provider::ProviderError;
-use secrecy::{ExposeSecret, SecretString};
-use time::OffsetDateTime;
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, ChildStdout, Command};
 use tokio_util::sync::CancellationToken;
@@ -62,10 +56,6 @@ fn safe_provider_summary(message: impl AsRef<str>) -> opi_ai::provider::Provider
 
 fn provider_config_error(message: impl AsRef<str>) -> ProviderError {
     ProviderError::Config(safe_provider_summary(message))
-}
-
-fn provider_network_error(message: impl AsRef<str>) -> ProviderError {
-    ProviderError::Network(safe_provider_summary(message))
 }
 
 // FlowBudget, the PKCE primitives, the loopback bind ladder, the shared PKCE
@@ -95,8 +85,6 @@ pub(crate) struct CopilotOAuthEndpointConfig {
     device_authorization_url: String,
     token_url: String,
     copilot_token_url: String,
-    client_id: String,
-    scope: String,
     login_timeout: Duration,
 }
 
@@ -134,8 +122,6 @@ impl OAuthEndpointConfig {
                 device_authorization_url: "https://github.com/login/device/code".to_owned(),
                 token_url: "https://github.com/login/oauth/access_token".to_owned(),
                 copilot_token_url: "https://api.github.com/copilot_internal/v2/token".to_owned(),
-                client_id: "Iv1.b507a08c87ecfe98".to_owned(),
-                scope: "read:user".to_owned(),
                 login_timeout: LOGIN_TIMEOUT,
             },
             codex: CodexOAuthEndpointConfig {
@@ -169,8 +155,6 @@ impl OAuthEndpointConfig {
                 device_authorization_url: format!("{base_url}/copilot/device/code"),
                 token_url: format!("{base_url}/copilot/oauth/token"),
                 copilot_token_url: format!("{base_url}/copilot/token"),
-                client_id: "Iv1.b507a08c87ecfe98".to_owned(),
-                scope: "read:user".to_owned(),
                 login_timeout,
             },
             codex: CodexOAuthEndpointConfig {
@@ -192,455 +176,15 @@ impl OAuthEndpointConfig {
 // and is re-exported above; this host module keeps only host policy.
 
 // ---------------------------------------------------------------------------
-// CopilotOAuthProvider (GitHub device-code, then Copilot token exchange)
+// GitHub Copilot — the device-code flow, Copilot token exchange, models
+// discovery and login-only policy activation are SDK-owned
+// (`opi_ai::auth::oauth::copilot`), re-exported below; this host module
+// keeps only host policy and the production presenter.
 // ---------------------------------------------------------------------------
 
-/// Upper bound for device-authorization polling intervals (RFC 8628
-/// recommends 5-60s); a hostile value must not overflow `tokio::time::sleep`
-/// or a slow-down increment.
-const MAX_DEVICE_INTERVAL: Duration = Duration::from_secs(600);
-
-const COPILOT_USER_AGENT: &str = "GitHubCopilotChat/0.35.0";
-const COPILOT_EDITOR_VERSION: &str = "vscode/1.107.0";
-const COPILOT_PLUGIN_VERSION: &str = "copilot-chat/0.35.0";
-const COPILOT_INTEGRATION_ID: &str = "vscode-chat";
-
-/// Device-authorization response (RFC 8628). `device_code` is secret; only
-/// `user_code` and `verification_uri` reach the presenter.
-#[derive(serde::Deserialize)]
-struct DeviceAuthorizationBody {
-    device_code: String,
-    user_code: String,
-    verification_uri: String,
-    #[serde(default)]
-    interval: Option<u64>,
-}
-
-/// Device token-poll response. On success carries `access_token`; while the
-/// user has not yet authorized, carries an OAuth `error` code instead.
-#[derive(serde::Deserialize)]
-struct DeviceTokenBody {
-    #[serde(default)]
-    access_token: Option<String>,
-    #[serde(default)]
-    error: Option<String>,
-}
-
-/// Outcome of one device token-poll iteration.
-enum DevicePollOutcome {
-    /// `authorization_pending`: sleep `interval`, retry.
-    Pending,
-    /// `slow_down`: increase `interval` by 5s (RFC 8628 §3.5), retry.
-    SlowDown,
-    /// `access_denied`: the user denied the request.
-    Denied,
-    /// `expired_token`: the device code expired.
-    Expired,
-    /// Success: the GitHub access token (long-lived; stored as the refresh
-    /// credential so a later refresh re-exchanges it for a fresh Copilot token).
-    Token(String),
-}
-
-/// Copilot token-exchange response. `expires_at` is an ABSOLUTE unix timestamp
-/// (seconds), not a relative duration. `endpoints.api` is the per-credential
-/// base URL (enterprise hosts); absent on some responses.
-#[derive(serde::Deserialize)]
-struct CopilotTokenBody {
-    token: String,
-    expires_at: i64,
-    #[serde(default)]
-    endpoints: Option<CopilotEndpoints>,
-}
-
-#[derive(serde::Deserialize)]
-struct CopilotEndpoints {
-    #[serde(default)]
-    api: Option<String>,
-}
-
-/// Poll the device token endpoint once, classifying the response.
-async fn poll_device_token(
-    client: &reqwest::Client,
-    token_url: &str,
-    device_code: &str,
-    client_id: &str,
-    budget: FlowBudget,
-) -> Result<DevicePollOutcome, ProviderError> {
-    let params = [
-        ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-        ("device_code", device_code),
-        ("client_id", client_id),
-    ];
-    let resp = budget
-        .wait(
-            client
-                .post(token_url)
-                .header("accept", "application/json")
-                .header("user-agent", COPILOT_USER_AGENT)
-                .form(&params)
-                .send(),
-        )
-        .await?
-        .map_err(|_| provider_network_error("device token poll failed"))?;
-    // GitHub returns 200 with an `error` body for pending/denied/expired and
-    // 200 with `access_token` on success; tolerate either status by parsing
-    // the body. The device_code is never surfaced on any path here.
-    let body: DeviceTokenBody = budget
-        .wait(resp.json())
-        .await?
-        .map_err(|e| provider_config_error(format!("device token response parse failed: {e}")))?;
-    if let Some(token) = body.access_token {
-        return Ok(DevicePollOutcome::Token(token));
-    }
-    match body.error.as_deref() {
-        Some("authorization_pending") => Ok(DevicePollOutcome::Pending),
-        Some("slow_down") => Ok(DevicePollOutcome::SlowDown),
-        Some("access_denied") => Ok(DevicePollOutcome::Denied),
-        Some("expired_token") => Ok(DevicePollOutcome::Expired),
-        Some(other) => Err(provider_config_error(format!(
-            "device authorization error: {}",
-            oauth_error_class(other)
-        ))),
-        None => Err(provider_config_error(
-            "device token response has no access_token and no error",
-        )),
-    }
-}
-
-/// GitHub Copilot OAuth provider using the device-code flow (RFC 8628), then
-/// exchanging the GitHub token for a short-lived Copilot token. Unlike the PKCE
-/// providers it NEVER calls `present_auth_url` or `await_manual_code`; the only
-/// presenter call is `present_device_code(user_code, verification_uri)`. The
-/// `device_code` is secret (it grants token issuance) and never leaves the poll
-/// loop. `login` is bounded by `total_budget`; a hung poll or inter-poll sleep
-/// yields `ProviderError::Timeout`.
-pub struct CopilotOAuthProvider {
-    device_authorization_url: String,
-    token_url: String,
-    copilot_token_url: String,
-    client_id: String,
-    scope: String,
-    client: reqwest::Client,
-    total_budget: Duration,
-}
-
-impl CopilotOAuthProvider {
-    fn with_services(endpoints: &CopilotOAuthEndpointConfig, client: reqwest::Client) -> Self {
-        Self {
-            device_authorization_url: endpoints.device_authorization_url.clone(),
-            token_url: endpoints.token_url.clone(),
-            copilot_token_url: endpoints.copilot_token_url.clone(),
-            client_id: endpoints.client_id.clone(),
-            scope: endpoints.scope.clone(),
-            client,
-            total_budget: endpoints.login_timeout,
-        }
-    }
-
-    /// Construct with configurable endpoints, the device-flow `scope`, and a
-    /// total login budget (bounds polling + inter-poll sleeps).
-    pub fn new(
-        device_authorization_url: String,
-        token_url: String,
-        copilot_token_url: String,
-        client_id: String,
-        scope: String,
-        total_budget: Duration,
-    ) -> Self {
-        Self {
-            device_authorization_url,
-            token_url,
-            copilot_token_url,
-            client_id,
-            scope,
-            client: no_redirect_client(),
-            total_budget,
-        }
-    }
-
-    /// Exchange a GitHub access token for a Copilot token (shared by login +
-    /// refresh). `base_url` fallback preserves an existing base_url when the
-    /// response omits `endpoints.api`. 401/403 -> CredentialRevoked.
-    async fn exchange_copilot_token(
-        client: &reqwest::Client,
-        copilot_token_url: &str,
-        github_token: &str,
-        base_url_fallback: Option<String>,
-        budget: Option<FlowBudget>,
-    ) -> Result<(SecretString, Option<OffsetDateTime>, Option<String>), ProviderError> {
-        let resp = within_optional_budget(
-            budget,
-            client
-                .get(copilot_token_url)
-                .header("accept", "application/json")
-                .header("user-agent", COPILOT_USER_AGENT)
-                .header("Editor-Version", COPILOT_EDITOR_VERSION)
-                .header("Editor-Plugin-Version", COPILOT_PLUGIN_VERSION)
-                .header("Copilot-Integration-Id", COPILOT_INTEGRATION_ID)
-                .bearer_auth(github_token)
-                .send(),
-        )
-        .await?
-        .map_err(|_| provider_network_error("copilot token exchange failed"))?;
-        let status = resp.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            let _ = within_optional_budget(budget, resp.text()).await?;
-            return Err(ProviderError::CredentialRevoked {
-                provider_id: "github-copilot".to_owned(),
-            });
-        }
-        if !status.is_success() {
-            let body = within_optional_budget(budget, resp.text())
-                .await?
-                .unwrap_or_default();
-            return Err(token_endpoint_error(status, &body));
-        }
-        let body: CopilotTokenBody =
-            within_optional_budget(budget, resp.json())
-                .await?
-                .map_err(|e| {
-                    provider_config_error(format!("copilot token response parse failed: {e}"))
-                })?;
-        let expires_at = OffsetDateTime::from_unix_timestamp(body.expires_at).ok();
-        let base_url = body.endpoints.and_then(|e| e.api).or(base_url_fallback);
-        Ok((
-            SecretString::new(body.token.into_boxed_str()),
-            expires_at,
-            base_url,
-        ))
-    }
-}
-
-impl OAuthProvider for CopilotOAuthProvider {
-    fn id(&self) -> &str {
-        "github-copilot"
-    }
-
-    fn login<'a>(
-        &'a self,
-        presenter: &'a dyn LoginPresenter,
-    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
-        let da_url = self.device_authorization_url.clone();
-        let token_url = self.token_url.clone();
-        let copilot_token_url = self.copilot_token_url.clone();
-        let client_id = self.client_id.clone();
-        let scope = self.scope.clone();
-        let client = self.client.clone();
-        let total_budget = self.total_budget;
-        Box::pin(async move {
-            let budget = FlowBudget::new(total_budget)?;
-            let mut cancellation = presenter.await_login_cancelled();
-            // 1. Device-authorization request.
-            let params = [("client_id", client_id.as_str()), ("scope", scope.as_str())];
-            let resp = tokio::select! {
-                biased;
-                cancelled = cancellation.as_mut() => {
-                    cancelled?;
-                    return Err(login_cancelled(presenter, "github-copilot"));
-                }
-                response = budget.wait(
-                    client
-                        .post(&da_url)
-                        .header("accept", "application/json")
-                        .header("user-agent", COPILOT_USER_AGENT)
-                        .form(&params)
-                        .send(),
-                ) => match response {
-                    Ok(response) => response,
-                    Err(ProviderError::Timeout) => {
-                        presenter.notify_failure("device authorization timed out");
-                        return Err(ProviderError::Timeout);
-                    }
-                    Err(error) => return Err(error),
-                }
-            }
-            .map_err(|_| provider_network_error("device authorization request failed"))?;
-            let status = resp.status();
-            if !status.is_success() {
-                let body = tokio::select! {
-                    biased;
-                    cancelled = cancellation.as_mut() => {
-                        cancelled?;
-                        return Err(login_cancelled(presenter, "github-copilot"));
-                    }
-                    body = budget.wait(resp.text()) => match body {
-                        Ok(body) => body.unwrap_or_default(),
-                        Err(ProviderError::Timeout) => {
-                            presenter.notify_failure("device authorization timed out");
-                            return Err(ProviderError::Timeout);
-                        }
-                        Err(error) => return Err(error),
-                    }
-                };
-                presenter.notify_failure("device authorization request failed");
-                return Err(token_endpoint_error(status, &body));
-            }
-            let da: DeviceAuthorizationBody = tokio::select! {
-                biased;
-                cancelled = cancellation.as_mut() => {
-                    cancelled?;
-                    return Err(login_cancelled(presenter, "github-copilot"));
-                }
-                body = budget.wait(resp.json()) => match body {
-                    Ok(body) => body.map_err(|e| {
-                        provider_config_error(format!("device authorization parse failed: {e}"))
-                    })?,
-                    Err(ProviderError::Timeout) => {
-                        presenter.notify_failure("device authorization timed out");
-                        return Err(ProviderError::Timeout);
-                    }
-                    Err(error) => return Err(error),
-                }
-            };
-            // device_code is SECRET — local only, never passed to the presenter
-            // or formatted into any error.
-            let device_code = da.device_code;
-            let user_code = da.user_code;
-            let verification_uri = da.verification_uri;
-            let mut interval = da
-                .interval
-                .filter(|secs| *secs <= MAX_DEVICE_INTERVAL.as_secs())
-                .map(Duration::from_secs)
-                .unwrap_or_else(|| Duration::from_secs(5));
-
-            // 2. Present the public user_code (NEVER the device_code).
-            tokio::select! {
-                biased;
-                cancelled = cancellation.as_mut() => {
-                    cancelled?;
-                    return Err(login_cancelled(presenter, "github-copilot"));
-                }
-                presented = presenter.present_device_code(&user_code, &verification_uri) => {
-                    presented?;
-                }
-                _ = budget.elapsed() => {
-                    presenter.notify_failure("device authorization timed out");
-                    return Err(ProviderError::Timeout);
-                }
-            }
-
-            // 3. Poll until a token, a terminal error, or the total budget elapses.
-            let github_token = loop {
-                let outcome = tokio::select! {
-                    biased;
-                    cancelled = cancellation.as_mut() => {
-                        cancelled?;
-                        return Err(login_cancelled(presenter, "github-copilot"));
-                    }
-                    r = poll_device_token(&client, &token_url, &device_code, &client_id, budget) => match r {
-                        Ok(o) => o,
-                        Err(ProviderError::Timeout) => {
-                            presenter.notify_failure("device authorization timed out");
-                            return Err(ProviderError::Timeout);
-                        }
-                        Err(e) => {
-                            presenter.notify_failure("device authorization failed");
-                            return Err(e);
-                        }
-                    },
-                    _ = budget.elapsed() => {
-                        presenter.notify_failure("device authorization timed out");
-                        return Err(ProviderError::Timeout);
-                    }
-                };
-                match outcome {
-                    DevicePollOutcome::Pending | DevicePollOutcome::SlowDown => {
-                        if matches!(outcome, DevicePollOutcome::SlowDown) {
-                            // RFC 8628 §3.5: increase by exactly 5 seconds,
-                            // persistently (not reset on the next pending).
-                            interval = interval
-                                .saturating_add(Duration::from_secs(5))
-                                .min(MAX_DEVICE_INTERVAL);
-                        }
-                        tokio::select! {
-                            biased;
-                            cancelled = cancellation.as_mut() => {
-                                cancelled?;
-                                return Err(login_cancelled(presenter, "github-copilot"));
-                            }
-                            _ = tokio::time::sleep(interval) => {}
-                            _ = budget.elapsed() => {
-                                presenter.notify_failure("device authorization timed out");
-                                return Err(ProviderError::Timeout);
-                            }
-                        }
-                    }
-                    DevicePollOutcome::Denied => {
-                        presenter.notify_failure("device authorization denied");
-                        return Err(ProviderError::CredentialRevoked {
-                            provider_id: "github-copilot".to_owned(),
-                        });
-                    }
-                    DevicePollOutcome::Expired => {
-                        presenter.notify_failure("device code expired");
-                        return Err(ProviderError::CredentialRevoked {
-                            provider_id: "github-copilot".to_owned(),
-                        });
-                    }
-                    DevicePollOutcome::Token(github_token) => break github_token,
-                }
-            };
-
-            // 4. Exchange the GitHub token for a short-lived Copilot token.
-            let (access, expires_at, base_url) = match Self::exchange_copilot_token(
-                &client,
-                &copilot_token_url,
-                &github_token,
-                None,
-                Some(budget),
-            )
-            .await
-            {
-                Ok(triple) => triple,
-                Err(ProviderError::Timeout) => {
-                    presenter.notify_failure("device authorization timed out");
-                    return Err(ProviderError::Timeout);
-                }
-                Err(e) => {
-                    presenter.notify_failure("token exchange failed");
-                    return Err(e);
-                }
-            };
-            let cred = OAuthCredential {
-                access,
-                refresh: SecretString::new(github_token.into_boxed_str()),
-                expires_at,
-                base_url,
-                account_id: None,
-                client_id: None,
-            };
-            presenter.notify_success();
-            Ok(cred)
-        })
-    }
-
-    fn refresh<'a>(
-        &'a self,
-        cred: &'a OAuthCredential,
-    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
-        let copilot_token_url = self.copilot_token_url.clone();
-        let client = self.client.clone();
-        Box::pin(async move {
-            let github_token: &str = cred.refresh.expose_secret();
-            let (access, expires_at, base_url) = Self::exchange_copilot_token(
-                &client,
-                &copilot_token_url,
-                github_token,
-                cred.base_url.clone(),
-                None,
-            )
-            .await?;
-            Ok(OAuthCredential {
-                access,
-                refresh: cred.refresh.clone(),
-                expires_at,
-                base_url,
-                account_id: None,
-                client_id: None,
-            })
-        })
-    }
-}
+pub use opi_ai::auth::oauth::copilot::{
+    COPILOT_DEFAULT_BASE_URL, CopilotUrls, GitHubCopilotOAuthProvider,
+};
 
 // ---------------------------------------------------------------------------
 // TuiLoginPresenter — production LoginPresenter
@@ -1083,6 +627,24 @@ impl LoginPresenter for TuiLoginPresenter {
         Box::pin(async move { self.manual_input.cancel_active_and_wait().await })
     }
 
+    fn prompt_text<'a>(
+        &'a self,
+        message: &'a str,
+        placeholder: &'a str,
+    ) -> BoxAuthFuture<'a, Result<String, ProviderError>> {
+        Box::pin(async move {
+            println!("{message}");
+            print!("Domain [default {placeholder}]: ");
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+            let line = self.manual_input.read_line().await?;
+            Ok(line.trim().to_owned())
+        })
+    }
+
+    fn notify_progress(&self, message: &str) {
+        println!("{message}");
+    }
+
     fn notify_success(&self) {
         println!("Login successful.");
     }
@@ -1174,9 +736,47 @@ impl OAuthProviderRegistry {
                 codex.device_timeout,
             )))
             .expect("codex OAuth provider id is unique in a fresh registry");
+        // The Copilot flow is the SDK device-code provider: the config's
+        // endpoints override the public deployment, enterprise domains
+        // derive `https://{domain}/...` like pi `getUrls`, and the host's
+        // static catalog gates login-time policy activation.
+        let copilot = &endpoints.copilot;
+        let policy_whitelist = crate::github_copilot::github_copilot_catalog()
+            .into_iter()
+            .map(|model| model.id)
+            .collect::<Vec<String>>();
+        // Models base: the token's proxy endpoint wins (pi `toAuth`), then
+        // the enterprise domain; a token without either hint falls back to
+        // the configured exchange endpoint's origin, which keeps offline
+        // endpoint overrides on their own server.
+        let exchange_origin = copilot
+            .copilot_token_url
+            .rsplit_once("/copilot")
+            .map(|(origin, _)| origin.to_owned())
+            .unwrap_or_else(|| copilot.copilot_token_url.clone());
         registry
-            .register(Arc::new(CopilotOAuthProvider::with_services(
-                &endpoints.copilot,
+            .register(Arc::new(GitHubCopilotOAuthProvider::new_with_endpoints(
+                CopilotUrls {
+                    device_code_url: copilot.device_authorization_url.clone(),
+                    access_token_url: copilot.token_url.clone(),
+                    copilot_token_url: copilot.copilot_token_url.clone(),
+                },
+                Arc::new(opi_ai::auth::oauth::copilot::copilot_urls_for_domain),
+                {
+                    let exchange_origin = exchange_origin.clone();
+                    Arc::new(move |token: &str, domain: Option<&str>| {
+                        if let Some(url) = opi_ai::auth::oauth::copilot::base_url_from_token(token)
+                        {
+                            return url;
+                        }
+                        if domain.is_some() {
+                            return opi_ai::auth::oauth::copilot::request_base_url(None, domain);
+                        }
+                        exchange_origin.clone()
+                    })
+                },
+                policy_whitelist,
+                copilot.login_timeout,
                 client,
             )))
             .expect("copilot OAuth provider id is unique in a fresh registry");

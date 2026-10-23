@@ -244,6 +244,8 @@ impl OAuthProvider for BlockingRefreshProvider {
                 base_url: None,
                 account_id: None,
                 client_id: None,
+                enterprise_domain: None,
+                available_model_ids: None,
             })
         })
     }
@@ -440,6 +442,8 @@ fn oauth_credential() -> Credential {
         base_url: Some(COPILOT_BASE_URL.to_owned()),
         account_id: None,
         client_id: None,
+        enterprise_domain: None,
+        available_model_ids: None,
     }
 }
 
@@ -513,6 +517,8 @@ async fn oauth_envelope_round_trips_and_preserves_base_url() {
             expires_at,
             account_id,
             client_id: _,
+            enterprise_domain: None,
+            available_model_ids: None,
         } => {
             assert_eq!(access.expose_secret(), ACCESS);
             assert_eq!(refresh.expose_secret(), REFRESH);
@@ -538,6 +544,8 @@ async fn oauth_envelope_round_trips_optional_account_id() {
                 base_url: None,
                 account_id: Some("account-123".into()),
                 client_id: None,
+                enterprise_domain: None,
+                available_model_ids: None,
             },
         )
         .await
@@ -1209,6 +1217,8 @@ async fn oauth_refresh_serializes_against_public_write_on_the_same_lock_path() {
                 base_url: None,
                 account_id: None,
                 client_id: None,
+                enterprise_domain: None,
+                available_model_ids: None,
             },
         )
         .await
@@ -1972,6 +1982,8 @@ fn near_expiry_oauth() -> Credential {
         base_url: None,
         account_id: None,
         client_id: None,
+        enterprise_domain: None,
+        available_model_ids: None,
     }
 }
 
@@ -2176,4 +2188,73 @@ async fn store_barrier_reports_rotation_pending_and_late_writes() {
         store.probe("other-provider").await.is_present(),
         "fenced late write completed (never aborted by the barrier)"
     );
+}
+
+#[tokio::test]
+async fn github_copilot_resolves_request_base_from_token_proxy_endpoint() {
+    // pi `toAuth`: the Copilot token's proxy endpoint wins, then the stored
+    // enterprise domain, then the individual default; a legacy stored
+    // `base_url` still wins over derivation so pre-cutover credentials never
+    // change endpoints.
+    let (_dir, store) = store_with(FakeKeyringBackend::new());
+    let store = Arc::new(store);
+    let resolver = CredentialResolver::new(store.clone(), Arc::new(|_: &str| None));
+    let registry = opi_coding_agent::oauth::OAuthProviderRegistry::registry_with_builtins();
+    let oauth = registry.lookup("github-copilot").expect("copilot provider");
+    let cred = |access: &str, base_url: Option<String>, enterprise: Option<String>| {
+        Credential::OAuthToken {
+            access: SecretString::new(access.to_owned().into_boxed_str()),
+            refresh: SecretString::new("offline-refresh".to_owned().into_boxed_str()),
+            expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::hours(1)),
+            base_url,
+            account_id: None,
+            client_id: None,
+            enterprise_domain: enterprise,
+            available_model_ids: None,
+        }
+    };
+
+    // Token proxy endpoint: `proxy.<host>` becomes `https://api.<host>`.
+    store
+        .write(
+            "github-copilot",
+            &cred(
+                "tid=1;exp=2;proxy-ep=proxy.individual.githubcopilot.com",
+                None,
+                None,
+            ),
+        )
+        .await
+        .unwrap();
+    let resolved = resolver
+        .resolve_oauth("github-copilot", oauth.clone())
+        .await
+        .expect("resolved");
+    assert_eq!(
+        resolved.base_url.as_deref(),
+        Some("https://api.individual.githubcopilot.com")
+    );
+
+    // (The enterprise-domain fallback and the token-wins-over-enterprise
+    // precedence are unit-pinned in opi-ai's oauth_flows: the host v1
+    // envelope deliberately does not persist `enterprise_domain` yet, so
+    // it cannot survive this store round-trip.)
+
+    // Legacy stored base URL wins over derivation.
+    store
+        .write(
+            "github-copilot",
+            &cred(
+                "tid=1;exp=2;proxy-ep=proxy.individual.githubcopilot.com",
+                Some("https://legacy.example".into()),
+                None,
+            ),
+        )
+        .await
+        .unwrap();
+    let resolved = resolver
+        .resolve_oauth("github-copilot", oauth)
+        .await
+        .expect("resolved");
+    assert_eq!(resolved.base_url.as_deref(), Some("https://legacy.example"));
 }

@@ -615,9 +615,12 @@ fn encode_credential(cred: &Credential) -> Zeroizing<String> {
             expires_at,
             base_url,
             account_id,
-            // The host envelope has no client_id field yet; flows with
-            // dynamic client registration keep it in the in-memory shape.
+            // The host envelope has no client_id/enterprise_domain/
+            // available_model_ids fields yet; the flows keep them in the
+            // in-memory shape.
             client_id: _,
+            enterprise_domain: _,
+            available_model_ids: _,
         } => (
             "oauth",
             EnvelopeFields {
@@ -698,6 +701,8 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
                 base_url,
                 account_id,
                 client_id: None,
+                enterprise_domain: None,
+                available_model_ids: None,
             })
         }
         _ => Err(CredentialStoreError::UnknownEnvelope {
@@ -1495,6 +1500,8 @@ impl CredentialResolver {
                 base_url,
                 account_id,
                 client_id,
+                enterprise_domain,
+                available_model_ids,
             })) => Ok(Some(OAuthCredential {
                 access,
                 refresh,
@@ -1502,6 +1509,8 @@ impl CredentialResolver {
                 base_url,
                 account_id,
                 client_id,
+                enterprise_domain,
+                available_model_ids,
             })),
             Ok(Some(Credential::ApiKey(_))) => {
                 Err(CredentialStoreError::UnexpectedCredentialKind {
@@ -1562,10 +1571,25 @@ impl CredentialResolver {
 /// Build the resolved auth for a stored (already committed) OAuth
 /// credential. Never triggers a refresh.
 fn resolved_oauth(provider_id: &str, cred: &OAuthCredential) -> ResolvedAuth {
+    // GitHub Copilot derives its per-request base URL from the issued
+    // Copilot token's proxy endpoint (pi `toAuth`): the token hint wins,
+    // then a stored enterprise domain, then the individual default. A
+    // legacy stored `base_url` (pre-cutover `endpoints.api`) still wins over
+    // the fallbacks so existing credentials never change endpoints.
+    let base_url = if provider_id == "github-copilot" {
+        cred.base_url.clone().or_else(|| {
+            Some(opi_ai::auth::oauth::copilot::request_base_url(
+                Some(cred.access.expose_secret()),
+                cred.enterprise_domain.as_deref(),
+            ))
+        })
+    } else {
+        cred.base_url.clone()
+    };
     ResolvedAuth {
         scheme: AuthScheme::Bearer,
         secret: cred.access.clone(),
-        base_url: cred.base_url.clone(),
+        base_url,
         account_id: cred.account_id.clone(),
         provenance: oauth_provenance(provider_id),
     }
@@ -1582,6 +1606,8 @@ fn credential_as_oauth(credential: &Credential) -> Option<OAuthCredential> {
             base_url,
             account_id,
             client_id,
+            enterprise_domain,
+            available_model_ids,
         } => Some(OAuthCredential {
             access: access.clone(),
             refresh: refresh.clone(),
@@ -1589,6 +1615,8 @@ fn credential_as_oauth(credential: &Credential) -> Option<OAuthCredential> {
             base_url: base_url.clone(),
             account_id: account_id.clone(),
             client_id: client_id.clone(),
+            enterprise_domain: enterprise_domain.clone(),
+            available_model_ids: available_model_ids.clone(),
         }),
         Credential::ApiKey(_) => None,
     }

@@ -397,5 +397,7 @@ async fn exchange_copy_code(
         base_url: None,
         account_id: None,
         client_id: None,
+        enterprise_domain: None,
+        available_model_ids: None,
     })
 }

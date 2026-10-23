@@ -443,7 +443,8 @@ async fn dispatcher_runs_concrete_github_copilot_login_and_logout() {
             "device_code": "copilot-device-secret",
             "user_code": "COPILOT-PUBLIC",
             "verification_uri": format!("{}/copilot/verify", server.uri()),
-            "interval": 0
+            "interval": 0,
+            "expires_in": 900
         })))
         .mount(&server)
         .await;
@@ -458,9 +459,13 @@ async fn dispatcher_runs_concrete_github_copilot_login_and_logout() {
         .and(path("/copilot/token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "token": "copilot-access",
-            "expires_at": time::OffsetDateTime::now_utc().unix_timestamp() + 3600,
-            "endpoints": {"api":"https://api.githubcopilot.test"}
+            "expires_at": time::OffsetDateTime::now_utc().unix_timestamp() + 3600
         })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": []})))
         .mount(&server)
         .await;
     let root = tempfile::tempdir().unwrap();
@@ -483,7 +488,9 @@ async fn dispatcher_runs_concrete_github_copilot_login_and_logout() {
     };
     assert_eq!(access.expose_secret(), "copilot-access");
     assert_eq!(refresh.expose_secret(), "github-token");
-    assert_eq!(base_url.as_deref(), Some("https://api.githubcopilot.test"));
+    // The SDK credential never stores a base URL: the request base is
+    // derived per request from the Copilot token's proxy endpoint.
+    assert_eq!(base_url.as_deref(), None);
     assert_eq!(
         presenter.captured_device_codes.lock().unwrap().as_slice(),
         &[(
@@ -501,6 +508,7 @@ async fn dispatcher_runs_concrete_github_copilot_login_and_logout() {
             ("POST", "/copilot/device/code"),
             ("POST", "/copilot/oauth/token"),
             ("GET", "/copilot/token"),
+            ("GET", "/models"),
         ]
     );
     assert_eq!(
@@ -657,7 +665,8 @@ async fn dispatcher_runs_concrete_openai_codex_device_login_and_logout() {
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "device_auth_id": "codex-device-secret",
             "user_code": "CODEX-PUBLIC",
-            "interval": 0
+            "interval": 0,
+            "expires_in": 900
         })))
         .mount(&server)
         .await;
@@ -1052,7 +1061,8 @@ async fn browser_and_copilot_cancellation_restore_terminal_without_persistence()
             "device_code": "copilot-device",
             "user_code": "COPILOT-CODE",
             "verification_uri": "https://example.invalid/device",
-            "interval": 60
+            "interval": 60,
+            "expires_in": 900
         })))
         .mount(&server)
         .await;
@@ -1154,7 +1164,8 @@ async fn dispatcher_device_flows_never_call_manual_code() {
             "device_code": "copilot-device",
             "user_code": "COPILOT-CODE",
             "verification_uri": format!("{}/copilot/verify", copilot_server.uri()),
-            "interval": 0
+            "interval": 0,
+            "expires_in": 900
         })))
         .mount(&copilot_server)
         .await;
@@ -1171,6 +1182,11 @@ async fn dispatcher_device_flows_never_call_manual_code() {
             "token":"copilot-token",
             "expires_at":time::OffsetDateTime::now_utc().unix_timestamp() + 3600
         })))
+        .mount(&copilot_server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": []})))
         .mount(&copilot_server)
         .await;
     let root = tempfile::tempdir().unwrap();

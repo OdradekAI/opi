@@ -538,6 +538,13 @@ pub struct OAuthCredential {
     /// issued id and refresh must reuse it); `None` for flows with a fixed
     /// client id. Non-secret.
     pub client_id: Option<String>,
+    /// GitHub Enterprise domain the flow authenticated against (GitHub
+    /// Copilot; `None` means the public `github.com` deployment). Non-secret.
+    pub enterprise_domain: Option<String>,
+    /// Model ids the account can use, as discovered from the provider's
+    /// models metadata (GitHub Copilot: picker/policy-filtered ids unioned
+    /// with the models enabled at login). Non-secret.
+    pub available_model_ids: Option<Vec<String>>,
 }
 
 impl std::fmt::Debug for OAuthCredential {
@@ -549,6 +556,8 @@ impl std::fmt::Debug for OAuthCredential {
             .field("base_url", &self.base_url)
             .field("account_id", &self.account_id)
             .field("client_id", &self.client_id)
+            .field("enterprise_domain", &self.enterprise_domain)
+            .field("available_model_ids", &self.available_model_ids)
             .finish()
     }
 }
@@ -575,6 +584,8 @@ impl From<OAuthCredential> for Credential {
             base_url: o.base_url,
             account_id: o.account_id,
             client_id: o.client_id,
+            enterprise_domain: o.enterprise_domain,
+            available_model_ids: o.available_model_ids,
         }
     }
 }
@@ -683,6 +694,30 @@ pub trait LoginPresenter: Send + Sync {
     /// Device-code providers must not call this method; they present the public
     /// user code through [`present_device_code`](Self::present_device_code).
     fn await_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<String, ProviderError>>;
+
+    /// Ask the user one free-text question during login (GitHub Copilot:
+    /// the GitHub Enterprise URL/domain, blank for `github.com`).
+    ///
+    /// The default returns an empty string so presenters without text input
+    /// keep each provider's public default (for Copilot, `github.com`); the
+    /// flow still type-rejects an invalid non-empty answer. Only public
+    /// display text travels through `message`/`placeholder` — never secrets.
+    fn prompt_text<'a>(
+        &'a self,
+        message: &'a str,
+        placeholder: &'a str,
+    ) -> BoxAuthFuture<'a, Result<String, ProviderError>> {
+        Box::pin(async move {
+            let _ = (message, placeholder);
+            Ok(String::new())
+        })
+    }
+
+    /// Report non-terminal progress during a login (GitHub Copilot:
+    /// "Enabling models..."). Purely informational; the default is a no-op.
+    fn notify_progress(&self, message: &str) {
+        let _ = message;
+    }
 
     /// Cancel an abandoned manual-code read and wait until any external input
     /// reader has terminated.

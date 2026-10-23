@@ -71,6 +71,14 @@ pub enum Credential {
         /// registration, e.g. OpenAI ChatGPT direct). Non-secret and
         /// optional for version-1 decode compatibility.
         client_id: Option<String>,
+        /// GitHub Enterprise domain the flow authenticated against (GitHub
+        /// Copilot; `None` is the public `github.com` deployment). Non-secret
+        /// and optional for version-1 decode compatibility.
+        enterprise_domain: Option<String>,
+        /// Model ids the account can use per the provider's models metadata
+        /// (GitHub Copilot). Non-secret and optional for version-1 decode
+        /// compatibility.
+        available_model_ids: Option<Vec<String>>,
     },
 }
 
@@ -86,6 +94,8 @@ impl std::fmt::Debug for Credential {
                 base_url,
                 account_id,
                 client_id,
+                enterprise_domain,
+                available_model_ids,
                 ..
             } => f
                 .debug_struct("Credential::OAuthToken")
@@ -95,6 +105,8 @@ impl std::fmt::Debug for Credential {
                 .field("base_url", base_url)
                 .field("account_id", account_id)
                 .field("client_id", client_id)
+                .field("enterprise_domain", enterprise_domain)
+                .field("available_model_ids", available_model_ids)
                 .finish(),
         }
     }
