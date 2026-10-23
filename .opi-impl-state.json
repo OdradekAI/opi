@@ -7088,7 +7088,7 @@
       "definition_of_done": "Public login to injected presenter/fake HTTP to acknowledged store to actual selected SDK request verifies dynamic_agent_client registration, PKCE/state, issued client_id, fixed1455 bind terminal failure, validated pastedURL, agentName and stable device identity, real expiry and API-key-only Decisions filter. Test applicable invalid/state/PKCE/denial/expiry/callback/cancel/refresh failures, one Rust5min near-expiry correction, actual service expiry and shared transaction rotation. No automatic browser/keychain/global runtime/account fallback or remote rollback. Keep host UI and storage backend optional.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.12",
@@ -7173,7 +7173,7 @@
             "opi_ai::Models::{login,get_auth,check_auth} (target)",
             "opi_ai selected OpenAI ChatGPT OAuth adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -7183,7 +7183,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "bd8b95c5900b6df4952506468b9cc1ec3dba77f0",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -7192,12 +7192,80 @@
         "crates/opi-ai/src/auth/oauth/**",
         "crates/opi-ai/src/lib.rs",
         "crates/opi-ai/src/models.rs",
-        "crates/opi-ai/tests/oauth_flows.rs"
+        "crates/opi-ai/tests/oauth_flows.rs",
+        "crates/opi-ai/src/auth.rs",
+        "crates/opi-ai/src/credential.rs",
+        "crates/opi-ai/tests/auth_contracts.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-coding-agent/src/credential_store.rs",
+        "crates/opi-coding-agent/src/oauth.rs",
+        "crates/opi-coding-agent/tests/credential_store.rs",
+        "crates/opi-coding-agent/tests/doctor_cli.rs",
+        "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+        "crates/opi-coding-agent/tests/list_models.rs",
+        "crates/opi-coding-agent/tests/oauth_auth.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "3c82312a1ee4e7571d0199009b185c621046a691",
+      "evidence": {
+        "task": "20.25",
+        "dod_sha256": "46444f515bc7c6bbc3024f3c6eadd07360b007dc77e3eab891d7b8008f513917",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED; opi-ai oauth_flows 44 passed (11 new chatgpt tests), auth_contracts/provider_collection updated for the envelope field; opi-coding-agent oauth_auth 123, credential_store 47; zero manifest changes",
+        "evaluator": "passed",
+        "acceptance": "P20-S25; public Models::login -> SDK chatgpt flow with injected presenter and fake loopback HTTP -> dynamic_agent_client authorize URL with scopes/resource/nonce/agent_name_hint/urn:uuid device identity -> fixed 1455 bind with terminal busy failure -> callback or strictly validated pasted full URL carrying code+state+issued client id -> form exchange with the issued id and resource -> strict token response (direct scope, positive finite expires_in, id_token presence on login) -> real-expiry credential persisting the issued client id through the store-ACK mutation; refresh reuses the stored client id and re-validates; typed failures for missing UUID/issued-id/scope/id_token or bad expires with no store write; no browser/keychain/env/account fallback"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-23T08:20:00+00:00",
+          "attempt": 1,
+          "summary": "B.2 gate passed: user approved execution, task commit, and ledger checkpoint for the OpenAI ChatGPT direct SDK OAuth flow per the B.1 contract."
+        },
+        {
+          "timestamp": "2026-10-23T09:30:00+00:00",
+          "attempt": 1,
+          "summary": "Delivered the SDK OpenAI ChatGPT direct OAuth flow. Corpus: the in-tree read-only pi 1.3.0 openai-chatgpt.ts verified line by line plus sdk-contracts row 141 and matrix row 307. Row 141 pins: dynamic_agent_client registration with the issued client id on the callback, authorize=auth.openai.com/api/accounts/authorize with PKCE/state/nonce and resource=api.openai.com/v1, scope resource.invoke chatgpt.tokens.use.direct, host getDeviceId must be a UUID lowercased into urn:uuid, agentName configurable, the fixed 127.0.0.1:1455/auth/callback whose bind failure errors directly (never the Codex fallback), manual paste as the full same-origin/path URL with state and client_id (never a bare code), strict credentialFromTokenResponse (access/refresh/scope with the direct flag, positive finite expires, id_token presence on login only), refresh along the stored clientId and resource, and the classifier being unusable for the direct token. Implementation: new auth::oauth::chatgpt (OpenAiChatGptOAuthProvider with production/with_http_client/new_with_endpoints constructors, agent_host_id UUID validation before any bind, the strict response validator shared by login and refresh, and a reconnect-typed refresh without the stored client id); mod.rs gained CallbackBindFallback::Required (bind failure is a typed terminal error with an attested_static crate-owned message plus a fixed notify reason) and the run_pkce_login_with seam (InputParser + ExchangeHook; AuthzInput carries code plus issued client id; accept_one_callback now takes the parser so the 200/400 browser response stays parse-driven; Anthropic/Codex adapters are byte-identical base hooks); OAuthCredential and the SDK Credential::OAuthToken envelope gained the non-secret optional client_id (decode-compatible, account_id precedent) so Models::login persists the issued id; the persisted envelope is always the OAuth kind, which is the SDK-level API-key-only (Decisions) filter evidence - the classifier-side gating belongs to the AIR-028/058 classifier tasks whose files are outside this task's owned paths. Development alternated test-writing and implementation within the task (all tests landed before the commit). Dev incidents fixed en route: the generic-runner closure failed higher-ranked lifetime checking (replaced by a plain fn base_exchange, the documented pattern for HRTB Fn params); ProviderErrorSummary redacts all provider_config_error text via from_untrusted, so message-content assertions were impossible and the tests assert variant + fixed notify reasons instead, with the one user-visible local bind diagnostic routed through attested_static; the first heuristic client_id ripple patcher misfired on boundary braces (files restored to HEAD and re-patched with exact contexts; 17 host fixture sites plus 6 host src sites map the field mechanically, client_id: None, with the in-memory OAuth pass-throughs in credential_store.rs preserving it and the on-disk host envelope intentionally not carrying it yet - that extension belongs to the host ChatGPT registration task); callback test drivers originally sent a literal {state} placeholder (state mismatch fired before the client_id check) and now interpolate the real state; the shared 1455 lock now covers the five codex browser tests too because a ChatGPT Required bind must see the port free. Under full-workspace load, three oauth_auth timing-budget tests flaked once with a different set each run (load average 15 during the attempts); each passes standalone and the exact workspace command plus smoke full passed on the settled machine. Exec D.2 (7 lenses, evaluator inline): 0 must-fix, 6 flagged_for_human (the agent_name_hint override constructor path is asserted only through the default opi value; chatgpt-specific cancellation during the method-free race is covered at the runner level by the anthropic/codex cancellation tests rather than a dedicated chatgpt test; pi has no total login budget where the product keeps the 300s cap as flagged since 20.23; pi echoes the callback error parameter text where the product types the denial without echoing; pi pre-subtracts a 3-minute expiry margin where the product stores the real expiry with the single 5-minute needs_refresh correction per the adopted expiry row; the host on-disk envelope drops client_id until the host chatgpt registration task extends the schema), 1 rejected (a free-port or paste-back bind fallback for the chatgpt browser path: pi and row 141 pin bind-1455-or-terminate). C.1a appends the 11 mechanical ripple paths listed in task_owned_paths.",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED",
+            "d0_scenarios": "cargo test -p opi-ai --test oauth_flows 44 passed (11 new chatgpt tests); cargo test --workspace --all-targets PASSED; oauth_auth 123, credential_store 47",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified via wiremock request captures (form bodies incl. grant_type/client_id=issued/code_verifier/redirect_uri/resource and refresh bodies), a real loopback TCP occupier and GET drivers on 127.0.0.1:1455 for the terminal bind and callback paths, zero-request negative assertions via received_requests, and presenter notify reasons for typed failures; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 6 flagged_for_human, 1 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S25",
+                "action": "add",
+                "test": "crates/opi-ai/tests/oauth_flows.rs (11 chatgpt tests: chatgpt_authorize_url_carries_dynamic_client_resource_and_host_identity, chatgpt_exchange_posts_issued_client_id_and_resource_as_form, chatgpt_callback_with_issued_client_id_completes_login, chatgpt_busy_1455_is_typed_terminal_without_interaction, chatgpt_manual_paste_rejects_foreign_origin_and_bare_code, chatgpt_error_param_paste_is_typed_denial, chatgpt_callback_without_client_id_is_typed, chatgpt_device_id_must_be_a_present_uuid_before_any_traffic, chatgpt_token_response_contract_violations_are_typed, chatgpt_refresh_reuses_stored_client_id_and_resource_and_revalidates, chatgpt_models_login_acks_the_store_write_as_an_oauth_envelope)",
+                "interface": "auth::oauth::chatgpt SDK surface + Models::login + credential envelope",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S25",
+                "action": "update",
+                "test": "crates/opi-ai/tests/oauth_flows.rs: the five codex browser tests now hold the shared 1455 lock; crates/opi-ai/tests/auth_contracts.rs and provider_collection.rs fixtures gained client_id: None",
+                "interface": "shared runner + envelope field",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S25",
+                "action": "update",
+                "test": "opi-coding-agent src/test fixtures map the envelope field mechanically (client_id: None; in-memory pass-throughs preserve it)",
+                "interface": "host credential mapping over the SDK envelope",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-STORE",
+                "action": "retain",
+                "test": "credential_store.rs 47 tests unchanged in behavior",
+                "interface": "store owner",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.26",
@@ -17180,6 +17248,16 @@
       "rejected_count": 1,
       "ran_at": "2026-10-23T08:05:00+00:00",
       "task_id": "20.24",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 6,
+      "rejected_count": 1,
+      "ran_at": "2026-10-23T09:30:00+00:00",
+      "task_id": "20.25",
       "criterion_id": null
     }
   ]
