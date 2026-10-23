@@ -77,7 +77,7 @@ OpenAI-compatible profile 加入。
 | `ChatModelRecord` / `SimpleOptions` / `ChatCall` | 调用方持有的完整 chat record（provider id、裸模型 id、精确 wire），无需目录成员即可调用；中性 simple options；构造时捕获输入、首次 poll 才启动鉴权的惰性普通调用 owner。 |
 | `PreparedProviderCall` / `PreparedRoute` | `Models::prepare_call` 返回的不透明 logical-call 状态，以及公开的已脱敏 route facts。`route`、`auth_provenance` 与 `start_attempt` 是 prepared-call 生命周期 API。 |
 | `CredentialStore` / `Credential` / `CredentialSource` | 无 IO、object-safe 的凭据持久化与已脱敏三态探测契约。 |
-| `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | 与 flow 无关的 boxed-future OAuth 契约；具体 flow 位于 `opi-coding-agent`。 |
+| `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | 与具体流程无关的 boxed-future OAuth 契约；SDK Anthropic 流（`auth::oauth`）已落位本 crate，其余流程在各自任务迁移。 |
 | `AuthResolver` / `ResolvedAuth` | 由 driver 按调用解析的鉴权契约；attempt 开始前会冻结一次准备结果。 |
 | `ApiKind` | crate 根枚举，标注 assistant 消息携带的后端家族（`Anthropic`、`OpenAi`、`Google`、`Mistral`）。 |
 | `HttpClient` | 共享 `reqwest` client，支持连接池和显式/环境变量代理。 |
@@ -869,3 +869,21 @@ refresh 经 generation fencing 绝不发布。无稳定 wire principal 的来源
 identity-unverified（`stable_identity() == None`）：automatic whole-call
 recovery 不得跨 source 变更复用；provider 普通重试继续复用冻结的
 per-call token。
+
+### SDK OAuth（Anthropic）与 store-ACK 的 `Models::login`（P20-S23）
+
+`auth::oauth` 拥有钉定 pi 1.3.0 wire 形状的 Anthropic 登录机制：token
+请求为 JSON（`Content-Type`/`Accept: application/json`），在总登录预算内
+施加 30 秒单请求上限；authorize URL 携带精确 scope、S256 PKCE 与独立的
+随机 state；回调阶梯首选 `127.0.0.1:53692` 加 `/callback` 路径（redirect
+URI 写 `localhost`），失败退到空闲 loopback 端口，最后退到纯手贴。第二种
+登录方式 copy-code 面向托管 `oauth/code/callback` 页面，接受手贴的
+`code`、`code#state`、query 串或重定向 URL。token 端点与流程失败保持全
+遮蔽的产品摘要——闭合 OAuth 错误类也不外显，上游 body 无法回显。过期时
+间按真实服务过期存储；唯一的 5 分钟近过期校正保留在
+`OAuthCredential::needs_refresh`。`Models::register_oauth_flow` +
+`Models::login(provider, presenter)` 以注入的 presenter 与附着的凭据
+store 运行流程：只有等到 store ACK 之后才报告成功，写失败按类型浮出，
+未知 mutation 结果保持诚实的 pending。不发生自动浏览器启动、keychain
+读取、环境回退或远程撤销。`opi-coding-agent` 只保留宿主策略（TUI
+presenter、终端挂起、keychain store）并注册 SDK 流。

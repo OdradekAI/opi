@@ -83,7 +83,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `ChatModelRecord` / `SimpleOptions` / `ChatCall` | Complete caller-owned chat record (provider id, bare model id, exact wire) usable without catalog membership; neutral simple options; the lazy ordinary-call owner that captures input at construction and starts auth on first poll. |
 | `PreparedProviderCall` / `PreparedRoute` | Opaque logical-call state returned by `Models::prepare_call`, plus its public redacted route facts. `route`, `auth_provenance`, and `start_attempt` are the prepared-call lifecycle APIs. |
 | `CredentialStore` / `Credential` / `CredentialSource` | IO-free, object-safe credential persistence and redacted three-state probe contracts. |
-| `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | Flow-independent boxed-future OAuth contracts; concrete flows live in `opi-coding-agent`. |
+| `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | Flow-independent boxed-future OAuth contracts; the SDK Anthropic flow (`auth::oauth`) lives here, later flows migrate in their own tasks. |
 | `AuthResolver` / `ResolvedAuth` | Driver-owned per-call auth resolution contract; one prepared result is frozen before an attempt starts. |
 | `ApiKind` | Crate-root enum tagging the backend family (`Anthropic`, `OpenAi`, `Google`, `Mistral`) carried on assistant messages. |
 | `HttpClient` | Shared `reqwest` client with pooling and explicit/env proxy support. |
@@ -1049,3 +1049,26 @@ publishes. Sources without stable wire principals are identity-unverified
 (`stable_identity() == None`): an automatic whole-call recovery must not
 reuse them across a source change; ordinary provider retries keep the
 frozen per-call token.
+
+### SDK OAuth (Anthropic) and store-acknowledged `Models::login` (P20-S23)
+
+`auth::oauth` owns the Anthropic login mechanism pinned to pi 1.3.0's wire
+shapes: token requests are JSON (`Content-Type`/`Accept: application/json`)
+with a 30-second per-request deadline inside the total login budget, the
+authorize URL carries the exact scopes plus S256 PKCE and an independent
+random state, and the callback ladder prefers `127.0.0.1:53692` with the
+`/callback` path (redirect URI names `localhost`), falls back to a free
+loopback port, and finally to paste-back only. A second login method,
+copy-code, authorizes against the hosted `oauth/code/callback` page and
+accepts a pasted `code`, `code#state`, query, or redirect URL. Token-endpoint
+and flow failures keep the fully redacted product summaries — the closed
+OAuth error class never surfaces and upstream bodies cannot echo back.
+Expiry is stored as the real service expiry; the single five-minute
+near-expiry correction stays `OAuthCredential::needs_refresh`.
+`Models::register_oauth_flow` + `Models::login(provider, presenter)` run a
+flow against an injected presenter and the attached credential store:
+success is reported only after the awaited store ACK, failed writes surface
+typed, and unknown mutation outcomes stay honestly pending. No automatic
+browser launch, keychain read, environment fallback, or remote revocation
+happens. `opi-coding-agent` keeps only host policy (TUI presenter, terminal
+suspension, keychain store) and registers the SDK flow.

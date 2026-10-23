@@ -23,7 +23,6 @@
 //! Part of the **unstable 0.x extension substrate**. Breaking changes may occur
 //! between minor versions without a major version bump.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::future::Future;
 use std::io;
@@ -34,20 +33,27 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
+use opi_ai::auth::oauth::{
+    FlowBudget, PkceLoginConfig, TokenRequestEncoding, exchange_authorization_code,
+    login_cancelled, no_redirect_client, oauth_error_class, refresh_oauth_token, run_pkce_login,
+    token_endpoint_error, within_optional_budget,
+};
+// PKCE primitives moved to the SDK; re-exported here because the host test
+// suites pin their RFC 7636 behavior through this path.
+pub use opi_ai::auth::oauth::{code_challenge_s256, generate_code_verifier, generate_state};
+// The Anthropic flow is SDK-owned; re-exported for the registry and tests.
+pub use opi_ai::auth::oauth::anthropic::AnthropicOAuthProvider;
 use opi_ai::auth::{LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider};
 use opi_ai::credential::{BoxAuthFuture, CredentialStore, CredentialStoreError};
 use opi_ai::provider::ProviderError;
 use secrecy::{ExposeSecret, SecretString};
 use time::OffsetDateTime;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::io::AsyncReadExt;
 use tokio::process::{Child, ChildStdout, Command};
 use tokio_util::sync::CancellationToken;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use rand::RngCore;
-use sha2::{Digest, Sha256};
 
 fn safe_provider_summary(message: impl AsRef<str>) -> opi_ai::provider::ProviderErrorSummary {
     opi_ai::provider::ProviderErrorSummary::from_untrusted(message.as_ref())
@@ -65,314 +71,10 @@ fn provider_auth_error(message: impl AsRef<str>) -> ProviderError {
     ProviderError::AuthFailed(safe_provider_summary(message))
 }
 
-/// PKCE `code_verifier` length in raw bytes before base64url encoding. 48 bytes
-/// encode to 64 URL-safe characters, within the RFC 7636 [43, 128] range.
-const CODE_VERIFIER_BYTES: usize = 48;
-
-/// One absolute deadline shared by every stage of a login flow.
-#[derive(Clone, Copy)]
-struct FlowBudget {
-    deadline: tokio::time::Instant,
-}
-
-impl FlowBudget {
-    fn new(duration: Duration) -> Result<Self, ProviderError> {
-        let deadline = tokio::time::Instant::now()
-            .checked_add(duration)
-            .ok_or_else(|| provider_config_error("OAuth login timeout is too large"))?;
-        Ok(Self { deadline })
-    }
-
-    async fn wait<F: Future>(&self, future: F) -> Result<F::Output, ProviderError> {
-        tokio::time::timeout_at(self.deadline, future)
-            .await
-            .map_err(|_| ProviderError::Timeout)
-    }
-
-    async fn elapsed(&self) {
-        tokio::time::sleep_until(self.deadline).await;
-    }
-}
-
-async fn within_optional_budget<F: Future>(
-    budget: Option<FlowBudget>,
-    future: F,
-) -> Result<F::Output, ProviderError> {
-    match budget {
-        Some(budget) => budget.wait(future).await,
-        None => Ok(future.await),
-    }
-}
-
-fn login_cancelled(presenter: &dyn LoginPresenter, provider_id: &'static str) -> ProviderError {
-    presenter.notify_failure("login cancelled");
-    ProviderError::LoginCancelled {
-        provider_id: provider_id.to_owned(),
-    }
-}
-
-/// Generate a cryptographically random PKCE `code_verifier` (43-128 char
-/// URL-safe string) using the OS CSPRNG.
-pub fn generate_code_verifier() -> String {
-    let mut bytes = [0u8; CODE_VERIFIER_BYTES];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    URL_SAFE_NO_PAD.encode(bytes)
-}
-
-/// Compute the S256 PKCE `code_challenge` = base64url(sha256(verifier)) with no
-/// padding, per RFC 7636.
-pub fn code_challenge_s256(verifier: &str) -> String {
-    let hash = Sha256::digest(verifier.as_bytes());
-    URL_SAFE_NO_PAD.encode(hash)
-}
-
-/// Generate a cryptographically random opaque `state` token for CSRF protection
-/// in the authorization-code flow.
-pub fn generate_state() -> String {
-    let mut bytes = [0u8; 24];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    URL_SAFE_NO_PAD.encode(bytes)
-}
-
-// ---------------------------------------------------------------------------
-// Loopback binding (PKCE callback)
-// ---------------------------------------------------------------------------
-
-/// Bind a TCP listener on `127.0.0.1:0` (loopback ONLY, never `0.0.0.0`) for
-/// the PKCE authorization-code callback. The ephemeral port is discovered by
-/// the provider and embedded in the authorize URL's `redirect_uri`. Loopback
-/// binding keeps the callback server off the LAN.
-async fn bind_loopback() -> io::Result<TcpListener> {
-    TcpListener::bind("127.0.0.1:0").await
-}
-
-// ---------------------------------------------------------------------------
-// Shared PKCE authorization-code runner (Anthropic + Codex)
-// ---------------------------------------------------------------------------
-
-/// Configuration for one PKCE authorization-code login. Held by the thin
-/// provider wrappers and passed by value into the shared runner.
-struct PkceLoginConfig {
-    provider_id: &'static str,
-    authorize_url: String,
-    token_url: String,
-    client_id: String,
-    authorize_params: Vec<(String, String)>,
-    client: reqwest::Client,
-    timeout: Duration,
-}
-
-/// Why the loopback callback arm failed. Carries a static discriminant so
-/// `notify_failure` can receive a fixed reason string (never the secret code).
-enum CallbackFail {
-    Input(PkceInputError),
-    Io(io::Error),
-}
-
-#[derive(Clone, Copy)]
-enum PkceInputError {
-    MalformedUrl,
-    MalformedQueryEscape,
-    InvalidUtf8,
-    MissingCode,
-    MissingState,
-    DuplicateCode,
-    DuplicateState,
-    StateMismatch,
-}
-
-impl PkceInputError {
-    fn provider_error(self) -> ProviderError {
-        let message = match self {
-            Self::MalformedUrl => "oauth redirect URL malformed",
-            Self::MalformedQueryEscape => "oauth redirect query escape malformed",
-            Self::InvalidUtf8 => "oauth redirect query is not valid UTF-8",
-            Self::MissingCode => "oauth redirect missing code",
-            Self::MissingState => "oauth redirect missing state",
-            Self::DuplicateCode => "oauth redirect has duplicate code",
-            Self::DuplicateState => "oauth redirect has duplicate state",
-            Self::StateMismatch => "oauth state mismatch",
-        };
-        provider_config_error(message)
-    }
-}
-
-#[derive(Clone, Copy)]
-enum PkceInputKind {
-    Callback,
-    Manual,
-}
-
-/// The outcome of the 3-way `select!` race (callback vs manual-code vs timeout).
-/// Distinct variants let `notify_failure` receive a fixed, non-secret reason.
-enum LoginOutcome {
-    CallbackCode(String),
-    ManualCode(String),
-    Cancelled,
-    Timeout,
-    CallbackInput(PkceInputError),
-    CallbackIo(io::Error),
-    ManualInput(PkceInputError),
-    Manual(ProviderError),
-}
-
-/// Token-endpoint JSON response. `refresh_token` and `expires_in` are optional
-/// per RFC 6749; the caller validates presence per flow (login requires both,
-/// refresh accepts absence).
-#[derive(serde::Deserialize)]
-struct TokenResponse {
-    access_token: String,
-    #[serde(default)]
-    refresh_token: Option<String>,
-    #[serde(default)]
-    expires_in: Option<i64>,
-}
-
-/// Run the PKCE authorization-code login: bind loopback, build the authorize
-/// URL, race callback/manual-code/timeout, then exchange the code for tokens.
-/// `base_url` is `None` for PKCE flows (Anthropic/Codex have no per-credential
-/// base URL); the caller does not override it.
-async fn run_pkce_login<'a>(
-    config: PkceLoginConfig,
-    presenter: &'a dyn LoginPresenter,
-    finalize_credential: fn(OAuthCredential) -> Result<OAuthCredential, ProviderError>,
-    cancellation: Option<BoxAuthFuture<'a, Result<(), ProviderError>>>,
-    existing_budget: Option<FlowBudget>,
-) -> Result<OAuthCredential, ProviderError> {
-    let budget = match existing_budget {
-        Some(budget) => budget,
-        None => FlowBudget::new(config.timeout)?,
-    };
-    let listener = budget
-        .wait(bind_loopback())
-        .await
-        .inspect_err(|error| {
-            if matches!(error, ProviderError::Timeout) {
-                presenter.notify_failure("timeout");
-            }
-        })?
-        .map_err(|e| provider_config_error(format!("oauth loopback bind failed: {e}")))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| provider_config_error(format!("oauth loopback local_addr failed: {e}")))?
-        .port();
-    let verifier = generate_code_verifier();
-    let challenge = code_challenge_s256(&verifier);
-    let state = generate_state();
-    let redirect_uri = format!("http://127.0.0.1:{port}/");
-    let mut authorize_url = format!(
-        "{}?response_type=code&client_id={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}",
-        config.authorize_url,
-        url_encode(&config.client_id),
-        url_encode(&redirect_uri),
-        challenge,
-        state,
-    );
-    for (name, value) in &config.authorize_params {
-        authorize_url.push('&');
-        authorize_url.push_str(name);
-        authorize_url.push('=');
-        authorize_url.push_str(&url_encode(value));
-    }
-
-    budget
-        .wait(presenter.present_auth_url(&authorize_url))
-        .await
-        .inspect_err(|error| {
-            if matches!(error, ProviderError::Timeout) {
-                presenter.notify_failure("timeout");
-            }
-        })??;
-
-    let mut cancellation = cancellation.unwrap_or_else(|| presenter.await_login_cancelled());
-    let outcome = tokio::select! {
-        biased;
-        cancelled = cancellation.as_mut() => {
-            cancelled?;
-            LoginOutcome::Cancelled
-        },
-        res = accept_one_callback(&listener, &state) => match res {
-            Ok(code) => LoginOutcome::CallbackCode(code),
-            Err(CallbackFail::Input(error)) => LoginOutcome::CallbackInput(error),
-            Err(CallbackFail::Io(e)) => LoginOutcome::CallbackIo(e),
-        },
-        res = presenter.await_manual_code() => match res {
-            Ok(input) => match normalize_pkce_input(&input, &state, PkceInputKind::Manual) {
-                Ok(code) => LoginOutcome::ManualCode(code),
-                Err(error) => LoginOutcome::ManualInput(error),
-            },
-            Err(e) => LoginOutcome::Manual(e),
-        },
-        _ = budget.elapsed() => LoginOutcome::Timeout,
-    };
-    // The listener is no longer needed: drop it so the port is freed and a
-    // stale callback from a prior login cannot land on a still-bound socket.
-    drop(listener);
-    if !matches!(
-        outcome,
-        LoginOutcome::ManualCode(_) | LoginOutcome::ManualInput(_) | LoginOutcome::Manual(_)
-    ) && let Err(error) = presenter.cancel_manual_code().await
-    {
-        presenter.notify_failure("manual code cleanup failed");
-        return Err(error);
-    }
-
-    let code = match outcome {
-        LoginOutcome::CallbackCode(code) | LoginOutcome::ManualCode(code) => code,
-        LoginOutcome::Cancelled => {
-            return Err(login_cancelled(presenter, config.provider_id));
-        }
-        LoginOutcome::Timeout => {
-            presenter.notify_failure("timeout");
-            return Err(ProviderError::Timeout);
-        }
-        LoginOutcome::CallbackInput(error) => {
-            presenter.notify_failure(match error {
-                PkceInputError::StateMismatch => "state mismatch",
-                _ => "callback parse error",
-            });
-            return Err(error.provider_error());
-        }
-        LoginOutcome::CallbackIo(e) => {
-            presenter.notify_failure("callback IO error");
-            return Err(provider_config_error(format!(
-                "oauth callback IO error: {e}"
-            )));
-        }
-        LoginOutcome::ManualInput(error) => {
-            presenter.notify_failure("manual redirect error");
-            return Err(error.provider_error());
-        }
-        LoginOutcome::Manual(e) => {
-            presenter.notify_failure("manual code error");
-            return Err(e);
-        }
-    };
-
-    // Token exchange runs OUTSIDE the select so a timeout firing mid-POST
-    // cannot drop the POST future and consume the auth code irrecoverably.
-    match exchange_authorization_code(&config, &code, &redirect_uri, &verifier, budget)
-        .await
-        .and_then(finalize_credential)
-    {
-        Ok(cred) => {
-            presenter.notify_success();
-            Ok(cred)
-        }
-        Err(e) => {
-            presenter.notify_failure(if matches!(e, ProviderError::Timeout) {
-                "timeout"
-            } else {
-                "token exchange failed"
-            });
-            Err(e)
-        }
-    }
-}
-
-fn accept_oauth_credential(credential: OAuthCredential) -> Result<OAuthCredential, ProviderError> {
-    Ok(credential)
-}
+// FlowBudget, the PKCE primitives, the loopback bind ladder, the shared PKCE
+// runner, callback/manual parsing, the token transport, and the Anthropic
+// provider moved to the SDK (`opi_ai::auth::oauth`); the imports above carry
+// the re-exports this host module still uses.
 
 fn require_codex_account_id(
     mut credential: OAuthCredential,
@@ -406,343 +108,13 @@ fn require_codex_account_id(
     Ok(credential)
 }
 
-/// Exchange an authorization code for tokens (PKCE login). Requires both
-/// `refresh_token` and `expires_in` on login (hard error otherwise — never
-/// produce a non-refreshable or always-refreshing credential). Returns a
-/// credential with `base_url = None`; PKCE providers derive no base URL.
-async fn exchange_authorization_code(
-    config: &PkceLoginConfig,
-    code: &str,
-    redirect_uri: &str,
-    verifier: &str,
-    budget: FlowBudget,
-) -> Result<OAuthCredential, ProviderError> {
-    let params = [
-        ("grant_type", "authorization_code"),
-        ("code", code),
-        ("redirect_uri", redirect_uri),
-        ("client_id", config.client_id.as_str()),
-        ("code_verifier", verifier),
-    ];
-    let resp = budget
-        .wait(config.client.post(&config.token_url).form(&params).send())
-        .await?
-        .map_err(|_| provider_network_error("token exchange failed"))?;
-    let status = resp.status();
-    if !status.is_success() {
-        let body = budget.wait(resp.text()).await?.unwrap_or_default();
-        return Err(token_endpoint_error(status, &body));
-    }
-    let token: TokenResponse = budget
-        .wait(resp.json())
-        .await?
-        .map_err(|e| provider_config_error(format!("token response parse failed: {e}")))?;
-    let refresh = token
-        .refresh_token
-        .ok_or_else(|| provider_config_error("token response missing refresh_token"))?;
-    let expires_in = token
-        .expires_in
-        .ok_or_else(|| provider_config_error("token response missing expires_in"))?;
-    Ok(OAuthCredential {
-        access: SecretString::new(token.access_token.into_boxed_str()),
-        refresh: SecretString::new(refresh.into_boxed_str()),
-        expires_at: Some(
-            OffsetDateTime::now_utc()
-                .checked_add(time::Duration::seconds(expires_in))
-                .ok_or_else(|| provider_config_error("token response expires_in out of range"))?,
-        ),
-        base_url: None,
-        account_id: None,
-    })
-}
-
-/// Accept a single loopback callback, parse `code`+`state` from the query,
-/// validate `state` against the expected CSRF token, and write a minimal HTTP
-/// 200 response (no secret) before resolving. Single-accept: the listener is
-/// dropped by the caller after this returns.
-async fn accept_one_callback(
-    listener: &TcpListener,
-    expected_state: &str,
-) -> Result<String, CallbackFail> {
-    let (mut stream, _) = listener.accept().await.map_err(CallbackFail::Io)?;
-    let mut buf: Vec<u8> = Vec::with_capacity(1024);
-    let mut tmp = [0u8; 1024];
-    loop {
-        let n = stream.read(&mut tmp).await.map_err(CallbackFail::Io)?;
-        if n == 0 {
-            break;
-        }
-        buf.extend_from_slice(&tmp[..n]);
-        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
-            break;
-        }
-        if buf.len() > 8192 {
-            return Err(CallbackFail::Input(PkceInputError::MalformedUrl));
-        }
-    }
-    // Parse and validate the request before telling the browser the login
-    // succeeded (C-4.1). A valid callback gets 200 + "Login complete"; an
-    // invalid or state-mismatched callback gets a fixed secret-free 400. A
-    // response is written and flushed before resolving on this path so a racing
-    // manual-code-wins cancellation leaves a clean response. (An earlier read
-    // error or an oversize request aborts without a response.)
-    let req =
-        std::str::from_utf8(&buf).map_err(|_| CallbackFail::Input(PkceInputError::InvalidUtf8))?;
-    let target = req
-        .split(' ')
-        .nth(1)
-        .ok_or(CallbackFail::Input(PkceInputError::MalformedUrl))?;
-    let code_result = normalize_pkce_input(target, expected_state, PkceInputKind::Callback);
-    let (status_line, body) = match &code_result {
-        Ok(_) => (
-            "HTTP/1.1 200 OK",
-            "Login complete, you may close this window.",
-        ),
-        Err(_) => (
-            "HTTP/1.1 400 Bad Request",
-            "Login failed, return to the terminal.",
-        ),
-    };
-    let resp = format!(
-        "{status_line}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        body.len(),
-        body
-    );
-    stream
-        .write_all(resp.as_bytes())
-        .await
-        .map_err(CallbackFail::Io)?;
-    stream.flush().await.map_err(CallbackFail::Io)?;
-    code_result.map_err(CallbackFail::Input)
-}
-
-/// Refresh an OAuth credential by exchanging its refresh token. Used by the
-/// PKCE providers (Anthropic, Codex). `base_url` is preserved verbatim (PKCE
-/// providers have no per-credential base URL derivation). On 401/403 from the
-/// token endpoint the credential is revoked (non-retryable, no auto-relogin).
-/// A missing `refresh_token` in the response reuses the old one (RFC 6749 §6);
-/// a missing `expires_in` yields `expires_at = None` (documented always-refresh).
-async fn refresh_oauth_token(
-    client: &reqwest::Client,
-    token_url: &str,
-    client_id: &str,
-    cred: &OAuthCredential,
-    provider_id: &str,
-    base_url: Option<String>,
-) -> Result<OAuthCredential, ProviderError> {
-    let refresh_secret: &str = cred.refresh.expose_secret();
-    let params = [
-        ("grant_type", "refresh_token"),
-        ("refresh_token", refresh_secret),
-        ("client_id", client_id),
-    ];
-    let resp = client
-        .post(token_url)
-        .form(&params)
-        .send()
-        .await
-        .map_err(|_| provider_network_error("token refresh failed"))?;
-    let status = resp.status();
-    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        // Drain the body without surfacing it; a revoked credential is a typed
-        // non-retryable error with no token interpolation.
-        let _ = resp.text().await;
-        return Err(ProviderError::CredentialRevoked {
-            provider_id: provider_id.to_owned(),
-        });
-    }
-    if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(token_endpoint_error(status, &body));
-    }
-    let token: TokenResponse = resp
-        .json()
-        .await
-        .map_err(|e| provider_config_error(format!("refresh response parse failed: {e}")))?;
-    let refresh = token
-        .refresh_token
-        .map(|s| SecretString::new(s.into_boxed_str()))
-        .unwrap_or_else(|| cred.refresh.clone());
-    let expires_at = token
-        .expires_in
-        .map(|secs| {
-            OffsetDateTime::now_utc()
-                .checked_add(time::Duration::seconds(secs))
-                .ok_or_else(|| provider_config_error("refresh expires_in out of range"))
-        })
-        .transpose()?;
-    Ok(OAuthCredential {
-        access: SecretString::new(token.access_token.into_boxed_str()),
-        refresh,
-        expires_at,
-        base_url,
-        account_id: cred.account_id.clone(),
-    })
-}
-
-/// Return a fixed class for a recognized OAuth protocol error code, or one
-/// fixed unknown class. Arbitrary server strings never cross this boundary.
-fn oauth_error_class(code: &str) -> &'static str {
-    match code {
-        "invalid_request" => "invalid_request",
-        "invalid_client" => "invalid_client",
-        "invalid_grant" => "invalid_grant",
-        "unauthorized_client" => "unauthorized_client",
-        "unsupported_grant_type" => "unsupported_grant_type",
-        "invalid_scope" => "invalid_scope",
-        "authorization_pending" => "authorization_pending",
-        "slow_down" => "slow_down",
-        "access_denied" => "access_denied",
-        "expired_token" => "expired_token",
-        "invalid_token" => "invalid_token",
-        "insufficient_scope" => "insufficient_scope",
-        "server_error" => "server_error",
-        "temporarily_unavailable" => "temporarily_unavailable",
-        _ => "unknown_oauth_error",
-    }
-}
-
-/// Build a non-retryable auth error from a token-endpoint non-2xx response.
-/// Only a closed OAuth protocol error class is surfaced: descriptions, unknown
-/// codes, and raw bodies can echo submitted authorization or credential data.
-fn token_endpoint_error(status: reqwest::StatusCode, body: &str) -> ProviderError {
-    #[derive(serde::Deserialize)]
-    struct OAuthError {
-        #[serde(default)]
-        error: Option<String>,
-    }
-    let parsed: Option<OAuthError> = serde_json::from_str(body).ok();
-    let code = parsed
-        .as_ref()
-        .and_then(|e| e.error.as_deref())
-        .unwrap_or("");
-    let msg = format!("token endpoint: {status} {}", oauth_error_class(code));
-    provider_auth_error(msg)
-}
-
-/// Percent-encode a query value (RFC 3986 unreserved set kept). Used to build
-/// the authorize URL so `redirect_uri`/`client_id` are correctly encoded.
-fn url_encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for &b in s.as_bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                out.push(b as char);
-            }
-            _ => out.push_str(&format!("%{:02X}", b)),
-        }
-    }
-    out
-}
-
-/// Normalize either a raw manually pasted code or a redirect URL. Callback
-/// input is always treated as a redirect target; manual input is treated as a
-/// redirect URL only when it starts with an HTTP(S) scheme.
-fn normalize_pkce_input(
-    input: &str,
-    expected_state: &str,
-    kind: PkceInputKind,
-) -> Result<String, PkceInputError> {
-    if matches!(kind, PkceInputKind::Manual) && input.trim().is_empty() {
-        return Err(PkceInputError::MissingCode);
-    }
-    let is_redirect = match kind {
-        PkceInputKind::Callback => true,
-        PkceInputKind::Manual => {
-            input
-                .get(..7)
-                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("http://"))
-                || input
-                    .get(..8)
-                    .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"))
-        }
-    };
-    if !is_redirect {
-        return Ok(input.to_owned());
-    }
-
-    let url_input = if matches!(kind, PkceInputKind::Callback) && input.starts_with('/') {
-        Cow::Owned(format!("http://127.0.0.1{input}"))
-    } else {
-        Cow::Borrowed(input)
-    };
-    let url = reqwest::Url::parse(&url_input).map_err(|_| PkceInputError::MalformedUrl)?;
-    let query = url.query().unwrap_or("");
-    let mut code = None;
-    let mut state = None;
-    for pair in query.split('&') {
-        let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
-        match name {
-            "code" if code.is_some() => return Err(PkceInputError::DuplicateCode),
-            "code" => code = Some(value),
-            "state" if state.is_some() => return Err(PkceInputError::DuplicateState),
-            "state" => state = Some(value),
-            _ => {}
-        }
-    }
-    let code = code
-        .filter(|value| !value.is_empty())
-        .ok_or(PkceInputError::MissingCode)?;
-    let state = state
-        .filter(|value| !value.is_empty())
-        .ok_or(PkceInputError::MissingState)?;
-    let code = strict_percent_decode(code)?;
-    let state = strict_percent_decode(state)?;
-    if state != expected_state {
-        return Err(PkceInputError::StateMismatch);
-    }
-    Ok(code)
-}
-
-/// Strictly percent-decode a query value, rejecting malformed escapes and
-/// decoded byte sequences that are not UTF-8.
-fn strict_percent_decode(s: &str) -> Result<String, PkceInputError> {
-    let bytes = s.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' {
-            if i + 2 >= bytes.len() {
-                return Err(PkceInputError::MalformedQueryEscape);
-            }
-            let (Some(h), Some(l)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) else {
-                return Err(PkceInputError::MalformedQueryEscape);
-            };
-            out.push(h * 16 + l);
-            i += 3;
-            continue;
-        }
-        if bytes[i] == b'+' {
-            out.push(b' ');
-            i += 1;
-            continue;
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8(out).map_err(|_| PkceInputError::InvalidUtf8)
-}
-
-fn hex_val(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
-}
-
-/// Build a reqwest client that does NOT follow redirects, so a 302
-/// echo-redirect from a token endpoint cannot leak the `code_verifier`.
-fn no_redirect_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .expect("valid reqwest client")
-}
+// Token exchange/refresh transport and all parsing helpers moved to the SDK
+// (`opi_ai::auth::oauth`): JSON and form encodings, callback/manual
+// normalization, strict percent-decoding, and the closed token-endpoint
+// error classes.
 
 pub(crate) fn production_oauth_client() -> reqwest::Client {
-    no_redirect_client()
+    opi_ai::auth::oauth::production_oauth_client()
 }
 
 #[derive(Clone)]
@@ -851,100 +223,8 @@ impl OAuthEndpointConfig {
     }
 }
 
-// ---------------------------------------------------------------------------
-// AnthropicOAuthProvider (PKCE)
-// ---------------------------------------------------------------------------
-
-/// Anthropic OAuth provider using PKCE authorization-code with a `127.0.0.1`
-/// loopback callback. Endpoints are configurable so tests point them at a
-/// `wiremock` server. The factory supplies a lazy Bearer credential source;
-/// `AnthropicProvider` applies the OAuth beta header for that auth scheme.
-pub struct AnthropicOAuthProvider {
-    authorize_url: String,
-    token_url: String,
-    client_id: String,
-    client: reqwest::Client,
-    timeout: Duration,
-}
-
-impl AnthropicOAuthProvider {
-    fn with_services(endpoints: &AnthropicOAuthEndpointConfig, client: reqwest::Client) -> Self {
-        Self {
-            authorize_url: endpoints.authorize_url.clone(),
-            token_url: endpoints.token_url.clone(),
-            client_id: endpoints.client_id.clone(),
-            client,
-            timeout: endpoints.login_timeout,
-        }
-    }
-
-    /// Construct with configurable endpoints and a login timeout. Builds a
-    /// redirect-`none` HTTP client for the token exchange.
-    pub fn new(
-        authorize_url: String,
-        token_url: String,
-        client_id: String,
-        timeout: Duration,
-    ) -> Self {
-        Self {
-            authorize_url,
-            token_url,
-            client_id,
-            client: no_redirect_client(),
-            timeout,
-        }
-    }
-}
-
-impl OAuthProvider for AnthropicOAuthProvider {
-    fn id(&self) -> &str {
-        "anthropic"
-    }
-
-    fn login<'a>(
-        &'a self,
-        presenter: &'a dyn LoginPresenter,
-    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
-        let config = PkceLoginConfig {
-            provider_id: "anthropic",
-            authorize_url: self.authorize_url.clone(),
-            token_url: self.token_url.clone(),
-            client_id: self.client_id.clone(),
-            authorize_params: vec![
-                ("code".into(), "true".into()),
-                (
-                    "scope".into(),
-                    "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload".into(),
-                ),
-            ],
-            client: self.client.clone(),
-            timeout: self.timeout,
-        };
-        Box::pin(async move {
-            run_pkce_login(config, presenter, accept_oauth_credential, None, None).await
-        })
-    }
-
-    fn refresh<'a>(
-        &'a self,
-        cred: &'a OAuthCredential,
-    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
-        let token_url = self.token_url.clone();
-        let client_id = self.client_id.clone();
-        let client = self.client.clone();
-        Box::pin(async move {
-            refresh_oauth_token(
-                &client,
-                &token_url,
-                &client_id,
-                cred,
-                "anthropic",
-                cred.base_url.clone(),
-            )
-            .await
-        })
-    }
-}
+// AnthropicOAuthProvider moved to the SDK (`opi_ai::auth::oauth::anthropic`)
+// and is re-exported above; this host module keeps only host policy.
 
 // ---------------------------------------------------------------------------
 // CodexOAuthProvider (browser PKCE + device-code)
@@ -1326,10 +606,16 @@ async fn run_codex_device_login_flow(
         authorize_params: Vec::new(),
         client: provider.client.clone(),
         timeout: provider.device_timeout,
+        token_encoding: TokenRequestEncoding::Form,
+        preferred_callback_port: None,
+        callback_path: "/".to_owned(),
+        redirect_host: "127.0.0.1".to_owned(),
+        manual_only_redirect_uri: None,
     };
     let credential = exchange_authorization_code(
         &exchange_config,
         &token.authorization_code,
+        "",
         &provider.device_redirect_uri,
         &token.code_verifier,
         budget,
@@ -1416,6 +702,11 @@ impl OAuthProvider for CodexOAuthProvider {
                         ],
                         client: self.client.clone(),
                         timeout: self.browser_timeout,
+                        token_encoding: TokenRequestEncoding::Form,
+                        preferred_callback_port: None,
+                        callback_path: "/".to_owned(),
+                        redirect_host: "127.0.0.1".to_owned(),
+                        manual_only_redirect_uri: None,
                     };
                     run_pkce_login(
                         config,
@@ -1430,6 +721,9 @@ impl OAuthProvider for CodexOAuthProvider {
                     run_codex_device_login_flow(self, presenter, device_budget, &mut cancellation)
                         .await
                 }
+                OAuthLoginMethod::CopyCode => Err(provider_config_error(
+                    "OAuth provider 'openai-codex' supplied an invalid login method",
+                )),
             }
         })
     }
@@ -1449,6 +743,7 @@ impl OAuthProvider for CodexOAuthProvider {
                 cred,
                 "openai-codex",
                 cred.base_url.clone(),
+                TokenRequestEncoding::Form,
             )
             .await?;
             require_codex_account_id(credential)
@@ -2254,27 +1549,42 @@ impl LoginPresenter for TuiLoginPresenter {
         let provider_id = provider_id.to_owned();
         let methods = methods.to_vec();
         Box::pin(async move {
-            if provider_id != "openai-codex"
-                || methods != [OAuthLoginMethod::Browser, OAuthLoginMethod::DeviceCode]
-                || default != OAuthLoginMethod::Browser
-            {
+            // pi login methods: Anthropic offers browser + copy-code, Codex
+            // offers browser + device code. Anything else is a typed
+            // configuration failure.
+            let (provider_label, second) = match (provider_id.as_str(), methods.as_slice()) {
+                ("anthropic", [OAuthLoginMethod::Browser, OAuthLoginMethod::CopyCode]) => {
+                    ("Anthropic", "Copy code login (headless)")
+                }
+                ("openai-codex", [OAuthLoginMethod::Browser, OAuthLoginMethod::DeviceCode]) => {
+                    ("OpenAI Codex", "Device code login (headless)")
+                }
+                _ => {
+                    return Err(provider_config_error(format!(
+                        "OAuth provider '{provider_id}' supplied unsupported login methods"
+                    )));
+                }
+            };
+            if default != OAuthLoginMethod::Browser {
                 return Err(provider_config_error(format!(
-                    "OAuth provider '{provider_id}' supplied unsupported login methods"
+                    "OAuth provider '{provider_id}' supplied an invalid default login method"
                 )));
             }
-            println!("Select OpenAI Codex login method:");
+            println!("Select {provider_label} login method:");
             println!("  1. Browser login (default)");
-            println!("  2. Device code login (headless)");
+            println!("  2. {second}");
             print!("Choice [1]: ");
             let _ = std::io::Write::flush(&mut std::io::stdout());
             let line = self.manual_input.read_line().await?;
             match line.trim() {
                 "" | "1" => Ok(OAuthLoginMethod::Browser),
-                "2" => Ok(OAuthLoginMethod::DeviceCode),
+                "2" => Ok(methods[1]),
                 "q" | "quit" | "cancel" => Err(ProviderError::LoginCancelled {
-                    provider_id: "openai-codex".to_owned(),
+                    provider_id: provider_id.to_owned(),
                 }),
-                _ => Err(provider_config_error("invalid OpenAI Codex login method")),
+                _ => Err(provider_config_error(format!(
+                    "invalid {provider_label} login method"
+                ))),
             }
         })
     }
@@ -2395,8 +1705,11 @@ impl OAuthProviderRegistry {
     ) -> Self {
         let mut registry = Self::new();
         registry
-            .register(Arc::new(AnthropicOAuthProvider::with_services(
-                &endpoints.anthropic,
+            .register(Arc::new(AnthropicOAuthProvider::with_http_client(
+                endpoints.anthropic.authorize_url.clone(),
+                endpoints.anthropic.token_url.clone(),
+                endpoints.anthropic.client_id.clone(),
+                endpoints.anthropic.login_timeout,
                 client.clone(),
             )))
             .expect("anthropic OAuth provider id is unique in a fresh registry");
@@ -2593,12 +1906,17 @@ mod tests {
     use super::{
         AnthropicOAuthProvider, CodexOAuthProvider, ManualInputBroker, ManualIoFuture,
         ManualLineProcess, ManualLineProcessSpawner, ManualProcessError, TuiLoginPresenter,
-        bind_loopback,
     };
 
     #[tokio::test]
     async fn bind_loopback_binds_loopback_address() {
-        let listener = bind_loopback().await.expect("loopback bind");
+        // The bind ladder (preferred 53692, then a free loopback port, then
+        // paste-back) moved to the SDK with the Anthropic flow; the unit
+        // guard that the callback socket stays on loopback moves with it.
+        // Here we pin the SDK's free-port fallback shape from the host side.
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("loopback bind");
         let addr = listener.local_addr().expect("local_addr");
         assert!(addr.ip().is_loopback(), "non-loopback bind: {addr}");
         assert_eq!(addr.ip(), std::net::Ipv4Addr::new(127, 0, 0, 1));

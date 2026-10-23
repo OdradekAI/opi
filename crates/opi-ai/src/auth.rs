@@ -575,8 +575,15 @@ impl From<OAuthCredential> for Credential {
 /// Login methods offered by an OAuth provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OAuthLoginMethod {
+    /// Browser authorization-code flow with a loopback callback and a
+    /// paste-back fallback.
     Browser,
+    /// Device-code flow: the user visits a verification URI and types a
+    /// public code; no paste-back happens on this machine.
     DeviceCode,
+    /// Copy-code flow: the provider's web page shows a one-time code the
+    /// user pastes back (optionally `code#state`); no loopback callback.
+    CopyCode,
 }
 
 /// Object-safe OAuth provider contract.
@@ -824,6 +831,10 @@ impl AuthContext for AmbientAuthContext {
         }
     }
 }
+
+/// SDK OAuth flows (Anthropic first): injectable presenter + HTTP + store,
+/// pinned to pi 1.3.0 wire shapes.
+pub mod oauth;
 
 /// Local AWS credential-source chain modules (Bedrock's selected-source
 /// coordinator; product-neutral, injectable, no live AWS calls).

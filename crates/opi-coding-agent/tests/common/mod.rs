@@ -287,7 +287,7 @@ fn extract_port_from_url(url: &str) -> Option<u16> {
     let host_port = after_scheme.split('/').next().unwrap_or("");
     let (host, port) = host_port.rsplit_once(':')?;
     let host = host.trim_start_matches('[').trim_end_matches(']');
-    if host != "127.0.0.1" && host != "::1" {
+    if host != "127.0.0.1" && host != "localhost" && host != "::1" {
         return None;
     }
     port.parse().ok()

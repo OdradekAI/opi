@@ -394,7 +394,7 @@ async fn outer_tui_same_provider_login_retries_pending_turn_once() {
     assert_eq!(result.capture.retries, 1);
     assert_eq!(result.capture.presenter_constructions, 1);
     assert_last_system_message(&result, "[/login: anthropic succeeded]");
-    assert_eq!(presenter_counts(&evidence), (0, 1, 1, 1, 0));
+    assert_eq!(presenter_counts(&evidence), (1, 1, 1, 1, 0));
     assert_eq!(result.capture.terminal_transitions, ["suspend", "resume"]);
     assert_eq!(result.store_writes, 1);
     assert!(result.stored_anthropic);
@@ -493,7 +493,7 @@ async fn outer_tui_presenter_failure_does_not_retry() {
         &result,
         "[authentication command failed: authentication configuration failed]",
     );
-    assert_eq!(presenter_counts(&evidence), (0, 1, 0, 0, 0));
+    assert_eq!(presenter_counts(&evidence), (1, 1, 0, 0, 0));
     assert_eq!(result.capture.terminal_transitions, ["suspend", "resume"]);
     assert!(server.received_requests().await.unwrap().is_empty());
     assert_eq!(result.store_writes, 0);
@@ -523,7 +523,7 @@ async fn outer_tui_oauth_failure_does_not_retry() {
         &result,
         "[authentication command failed: authentication failed]",
     );
-    assert_eq!(presenter_counts(&evidence), (0, 1, 1, 0, 1));
+    assert_eq!(presenter_counts(&evidence), (1, 1, 1, 0, 1));
     assert_eq!(result.capture.terminal_transitions, ["suspend", "resume"]);
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
@@ -555,7 +555,7 @@ async fn outer_tui_store_failure_does_not_retry() {
         &result,
         "[authentication command failed: authentication configuration failed]",
     );
-    assert_eq!(presenter_counts(&evidence), (0, 1, 1, 0, 1));
+    assert_eq!(presenter_counts(&evidence), (1, 1, 1, 0, 1));
     assert_eq!(result.capture.terminal_transitions, ["suspend", "resume"]);
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
@@ -619,7 +619,7 @@ async fn outer_tui_terminal_restore_failure_does_not_retry() {
         "terminal restore failed"
     );
     assert_negative(&result);
-    assert_eq!(presenter_counts(&evidence), (0, 1, 1, 1, 0));
+    assert_eq!(presenter_counts(&evidence), (1, 1, 1, 1, 0));
     assert_eq!(result.capture.terminal_transitions, ["suspend", "resume"]);
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
@@ -674,7 +674,7 @@ async fn outer_tui_second_normal_prompt_invalidates_pending_credential_turn() {
         1
     );
     assert_last_system_message(&result, "[/login: anthropic succeeded]");
-    assert_eq!(presenter_counts(&evidence), (0, 1, 1, 1, 0));
+    assert_eq!(presenter_counts(&evidence), (1, 1, 1, 1, 0));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -740,7 +740,7 @@ async fn outer_tui_retry_credential_needed_does_not_rearm_or_retry_twice() {
         1,
         "the retry failure must not re-arm credential remediation"
     );
-    assert_eq!(presenter_counts(&evidence), (0, 2, 2, 2, 0));
+    assert_eq!(presenter_counts(&evidence), (2, 2, 2, 2, 0));
     assert_eq!(server.received_requests().await.unwrap().len(), 2);
 }
 
@@ -789,7 +789,7 @@ async fn outer_tui_non_text_output_before_credential_needed_prevents_retry() {
             .all(|message| !message.starts_with("[credential needed"))
     );
     assert_last_system_message(&result, "[/login: anthropic succeeded]");
-    assert_eq!(presenter_counts(&evidence), (0, 1, 1, 1, 0));
+    assert_eq!(presenter_counts(&evidence), (1, 1, 1, 1, 0));
 }
 
 #[tokio::test(flavor = "current_thread")]

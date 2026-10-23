@@ -293,6 +293,18 @@ fn assert_loopback_redirect(redirect_uri: &str) {
     assert_eq!(redirect.fragment(), None);
 }
 
+/// The SDK Anthropic flow names `localhost` with the `/callback` path
+/// (pi CALLBACK_HOST/CALLBACK_PATH); the port is the bind ladder's choice.
+fn assert_anthropic_redirect(redirect_uri: &str) {
+    let redirect = reqwest::Url::parse(redirect_uri).expect("valid redirect URI");
+    assert_eq!(redirect.scheme(), "http");
+    assert_eq!(redirect.host_str(), Some("localhost"));
+    assert!(redirect.port().is_some());
+    assert_eq!(redirect.path(), "/callback");
+    assert_eq!(redirect.query(), None);
+    assert_eq!(redirect.fragment(), None);
+}
+
 fn assert_content_type(request: &wiremock::Request, expected: &str) {
     assert_eq!(
         request
@@ -391,24 +403,18 @@ async fn dispatcher_runs_concrete_anthropic_login_and_logout() {
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].method.as_str(), "POST");
     assert_eq!(requests[0].url.path(), "/anthropic/token");
-    assert_content_type(&requests[0], "application/x-www-form-urlencoded");
-    let token_form = decoded_form_pairs(&requests[0].body);
-    let redirect_uri = token_form["redirect_uri"].clone();
-    let verifier = token_form["code_verifier"].clone();
-    assert_loopback_redirect(&redirect_uri);
-    assert_url_safe_no_pad(&verifier, 64);
-    assert_eq!(
-        token_form,
-        BTreeMap::from([
-            ("client_id".to_owned(), ANTHROPIC_CLIENT_ID.to_owned()),
-            ("code".to_owned(), "anthropic-code".to_owned()),
-            ("code_verifier".to_owned(), verifier.clone()),
-            ("grant_type".to_owned(), "authorization_code".to_owned()),
-            ("redirect_uri".to_owned(), redirect_uri.clone()),
-        ])
-    );
+    // 20.23: the SDK flow posts JSON (pi postJson) and carries the state in
+    // the token body alongside the PKCE verifier (32 bytes -> 43 chars).
+    assert_content_type(&requests[0], "application/json");
+    let token_body: serde_json::Value =
+        serde_json::from_slice(&requests[0].body).expect("JSON token body");
+    let redirect_uri = token_body["redirect_uri"].as_str().unwrap().to_owned();
+    let verifier = token_body["code_verifier"].as_str().unwrap().to_owned();
+    assert_anthropic_redirect(&redirect_uri);
+    assert_url_safe_no_pad(&verifier, 43);
     let authorize_query = decoded_query_pairs(&authorize_url);
     let state = authorize_query["state"].clone();
+    assert_eq!(token_body["state"].as_str().unwrap(), state);
     let challenge = authorize_query["code_challenge"].clone();
     assert_url_safe_no_pad(&state, 32);
     assert_url_safe_no_pad(&challenge, 43);
@@ -606,7 +612,9 @@ async fn dispatcher_runs_concrete_openai_codex_browser_login_and_logout() {
     let redirect_uri = token_form["redirect_uri"].clone();
     let verifier = token_form["code_verifier"].clone();
     assert_loopback_redirect(&redirect_uri);
-    assert_url_safe_no_pad(&verifier, 64);
+    // The shared SDK PKCE primitive generates 32 random bytes (pi pkce.ts),
+    // base64url-encoded without padding to 43 characters.
+    assert_url_safe_no_pad(&verifier, 43);
     assert_eq!(
         token_form,
         BTreeMap::from([

@@ -325,6 +325,13 @@ pub enum ModelsError {
         /// Redacted, non-secret loss detail.
         detail: String,
     },
+    /// [`login`](Models::login) was asked to run a provider that has no
+    /// registered OAuth flow.
+    #[error("no OAuth flow registered for provider '{provider}'")]
+    UnknownOAuthFlow {
+        /// Provider whose flow was requested.
+        provider: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +360,9 @@ pub struct Models {
     resolvers: HashMap<String, Arc<dyn AuthResolver>>,
     /// Per-route non-secret source classification used to build auth provenance.
     sources: HashMap<String, AuthProvenanceSource>,
+    /// Registered SDK OAuth flows keyed by provider id; the login command
+    /// dispatches here and persists through the attached credential store.
+    oauth_flows: HashMap<String, std::sync::Arc<dyn crate::auth::OAuthProvider>>,
     /// Typed custom chat API registrations keyed by exact [`ApiId`]. Entries
     /// are captured (cloned `Arc`s) at call creation, so later registration
     /// changes never mutate an existing call.
@@ -380,6 +390,7 @@ impl Models {
             probed: HashMap::new(),
             resolvers: HashMap::new(),
             sources: HashMap::new(),
+            oauth_flows: HashMap::new(),
             chat_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
@@ -403,6 +414,7 @@ impl Models {
             probed: HashMap::new(),
             resolvers: HashMap::new(),
             sources: HashMap::new(),
+            oauth_flows: HashMap::new(),
             chat_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
@@ -823,6 +835,80 @@ impl Models {
     /// ([`set_probe`](Self::set_probe)).
     pub fn set_credential_store(&mut self, store: std::sync::Arc<dyn CredentialStore>) {
         self.credential_store = Some(store);
+    }
+
+    /// Register the SDK OAuth flow serving [`login`](Self::login) for one
+    /// provider. Registering classifies the provider as store-backed OAuth
+    /// for [`check_auth`](Self::check_auth) (`OAuth` kind, no refresh); it
+    /// performs no network, store, or environment access.
+    pub fn register_oauth_flow(
+        &mut self,
+        provider_id: &str,
+        flow: std::sync::Arc<dyn crate::auth::OAuthProvider>,
+    ) {
+        self.sources.insert(
+            provider_id.to_owned(),
+            AuthProvenanceSource::OAuth {
+                kind: provider_id.to_owned(),
+            },
+        );
+        self.oauth_flows.insert(provider_id.to_owned(), flow);
+    }
+
+    /// Run the provider's registered OAuth login and persist the resulting
+    /// credential through the store-owned serialized mutation queue,
+    /// acknowledging exactly that local write: success is reported only
+    /// after the awaited store ACK, a failed write surfaces typed, and an
+    /// unknown outcome stays honest as [`ModelsError::MutationOutcomeUnknown`].
+    ///
+    /// No automatic browser launch, keychain read, environment fallback, or
+    /// remote revocation happens: interaction goes through `presenter`, HTTP
+    /// through the flow's injected client, persistence through the attached
+    /// [`CredentialStore`]. Calling `login` for a provider without a
+    /// registered flow or without an attached store is a typed error before
+    /// any interaction.
+    pub async fn login(
+        &self,
+        provider_id: &str,
+        presenter: &dyn crate::auth::LoginPresenter,
+    ) -> Result<crate::auth::OAuthCredential, ModelsError> {
+        let flow =
+            self.oauth_flows
+                .get(provider_id)
+                .ok_or_else(|| ModelsError::UnknownOAuthFlow {
+                    provider: provider_id.to_owned(),
+                })?;
+        let store = self.credential_store.clone().ok_or_else(|| {
+            ModelsError::CredentialStore(CredentialStoreError::Backend {
+                provider: provider_id.to_owned(),
+                reason: "no credential store attached".to_owned(),
+            })
+        })?;
+        match crate::auth::oauth::login_to_store(
+            provider_id,
+            flow.as_ref(),
+            store.as_ref(),
+            presenter,
+        )
+        .await
+        {
+            Ok(credential) => Ok(credential),
+            Err(crate::auth::oauth::LoginStoreError::Flow(error)) => {
+                Err(ModelsError::AuthResolution {
+                    provider: provider_id.to_owned(),
+                    error: Box::new(error),
+                })
+            }
+            Err(crate::auth::oauth::LoginStoreError::Store(error)) => {
+                Err(ModelsError::CredentialStore(error))
+            }
+            Err(crate::auth::oauth::LoginStoreError::Unknown { detail }) => {
+                Err(ModelsError::MutationOutcomeUnknown {
+                    provider: provider_id.to_owned(),
+                    detail,
+                })
+            }
+        }
     }
 
     /// The ambient-source access this collection consults on demand.

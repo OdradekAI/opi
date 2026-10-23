@@ -1009,20 +1009,28 @@ async fn anthropic_oauth_login_manual_code_wins_race() {
             "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
         )
     );
-    // The token POST received the manual code + a code_verifier + grant_type.
+    // The token POST is a JSON request (pi `postJson`) carrying the manual
+    // code + a code_verifier + grant_type.
     let requests = server.received_requests().await.expect("recorded");
     let token_req = requests
         .iter()
         .find(|r| r.method == "POST" && r.url.as_str().contains("/oauth/token"))
         .expect("token POST");
-    let body = std::str::from_utf8(&token_req.body).unwrap();
-    assert!(
-        body.contains("grant_type=authorization_code"),
-        "body: {body}"
+    assert_eq!(
+        token_req.headers.get("content-type").unwrap(),
+        "application/json"
     );
-    assert!(body.contains("code=AUTHCODE-123"), "body: {body}");
-    assert!(body.contains("code_verifier="), "body: {body}");
-    assert!(body.contains("client_id=client-id"), "body: {body}");
+    let body: serde_json::Value = serde_json::from_slice(&token_req.body).unwrap();
+    assert_eq!(body["grant_type"], "authorization_code");
+    assert_eq!(body["code"], "AUTHCODE-123");
+    assert!(body["code_verifier"].as_str().unwrap().len() >= 43);
+    assert_eq!(body["client_id"], "client-id");
+    // Port policy (preferred 53692 -> free loopback) is pinned by the SDK
+    // suite; parallel host tests may legitimately take the fallback port, so
+    // only the host/path contract is asserted here.
+    let redirect = body["redirect_uri"].as_str().unwrap();
+    assert!(redirect.starts_with("http://localhost:"), "{redirect}");
+    assert!(redirect.ends_with("/callback"), "{redirect}");
 }
 
 #[tokio::test]
@@ -1062,8 +1070,13 @@ async fn pkce_manual_redirect_url_is_normalized_for_anthropic_and_codex() {
         });
         let requests = server.received_requests().await.expect("requests");
         assert_eq!(requests.len(), 1);
-        let body = std::str::from_utf8(&requests[0].body).expect("form body");
-        assert!(body.contains("code=encoded+code%2Fpart"), "{body}");
+        // The strict percent-decoder unwraps `encoded+code%2Fpart` before the
+        // token request; Anthropic carries it as JSON, codex as a form field.
+        let raw = String::from_utf8_lossy(&requests[0].body).into_owned();
+        assert!(
+            raw.contains("encoded code/part") || raw.contains("code=encoded+code%2Fpart"),
+            "{raw}"
+        );
     }
 }
 
@@ -1236,10 +1249,10 @@ async fn anthropic_oauth_login_loopback_callback_wins_race() {
     let (cred, _) = tokio::join!(login_fut, drive_fut);
     let cred = cred.expect("login");
     assert_eq!(cred.access.expose_secret(), "atk-cb");
-    // Token POST used the callback code.
+    // Token POST (JSON) used the callback code.
     let requests = server.received_requests().await.expect("recorded");
-    let body = std::str::from_utf8(&requests.last().unwrap().body).unwrap();
-    assert!(body.contains("code=CB+CODE"), "body: {body}");
+    let body: serde_json::Value = serde_json::from_slice(&requests.last().unwrap().body).unwrap();
+    assert_eq!(body["code"], "CB CODE");
     assert_eq!(presenter.notify_success_count.load(Ordering::SeqCst), 1);
 }
 
@@ -1751,9 +1764,13 @@ async fn anthropic_oauth_refresh_exchanges_refresh_token_and_preserves_base_url_
     assert_eq!(refreshed.refresh.expose_secret(), "rtk-new");
     assert!(refreshed.base_url.is_none());
     let requests = server.received_requests().await.unwrap();
-    let body = std::str::from_utf8(&requests[0].body).unwrap();
-    assert!(body.contains("grant_type=refresh_token"), "body: {body}");
-    assert!(body.contains("refresh_token=rtk-old"), "body: {body}");
+    assert_eq!(
+        requests[0].headers.get("content-type").unwrap(),
+        "application/json"
+    );
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["grant_type"], "refresh_token");
+    assert_eq!(body["refresh_token"], "rtk-old");
 }
 
 #[tokio::test]
@@ -2962,7 +2979,10 @@ async fn openai_codex_device_code_never_calls_await_manual_code() {
 }
 
 #[tokio::test]
-async fn anthropic_and_copilot_never_invoke_login_method_selector() {
+async fn anthropic_selects_between_browser_and_copy_code_copilot_never_selects() {
+    // 20.23: the SDK Anthropic flow offers browser + copy-code and resolves
+    // the selection through the presenter (default browser completes the
+    // login); Copilot remains a single-method flow that never selects.
     let anthropic_server = MockServer::start().await;
     mount_token_stub(
         &anthropic_server,
@@ -2974,7 +2994,7 @@ async fn anthropic_and_copilot_never_invoke_login_method_selector() {
         format!("{}/oauth/token", anthropic_server.uri()),
         Duration::from_secs(60),
     );
-    let anthropic_presenter = MethodPresenter::new(None);
+    let anthropic_presenter = MethodPresenter::new(Some(OAuthLoginMethod::Browser));
     anthropic_presenter
         .inner
         .supply_manual_code("anthropic-code");
@@ -2982,7 +3002,14 @@ async fn anthropic_and_copilot_never_invoke_login_method_selector() {
         .login(&anthropic_presenter)
         .await
         .expect("Anthropic login");
-    assert!(anthropic_presenter.selections.lock().unwrap().is_empty());
+    {
+        let selections = anthropic_presenter.selections.lock().unwrap();
+        assert_eq!(selections.len(), 1);
+        assert_eq!(
+            selections[0].1,
+            vec![OAuthLoginMethod::Browser, OAuthLoginMethod::CopyCode]
+        );
+    }
 
     let copilot_server = MockServer::start().await;
     mount_device_auth(
