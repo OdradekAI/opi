@@ -6608,7 +6608,7 @@
       "definition_of_done": "Public login to injected presenter/fake HTTP to acknowledged store to actual selected SDK request verifies JSON token requests, state/PKCE, 53692 callback to free-loopback then manual fallback, copy-code and OAuth headers. Test applicable invalid/state/PKCE/denial/expiry/callback/cancel/refresh failures, one Rust5min near-expiry correction, actual service expiry and shared transaction rotation. No automatic browser/keychain/global runtime/account fallback or remote rollback. Replace product protocol duplicate with SDK mechanism and injected UI/keychain adapter in this compiling cutover.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.12",
@@ -6694,7 +6694,7 @@
             "opi_ai selected Anthropic OAuth adapter (target)",
             "opi_coding_agent::login_oauth/credential_store"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -6703,9 +6703,9 @@
         "opi_coding_agent::login_oauth/credential_store"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "28327008eee35ce31a1a04b5bada38c96ce09b07",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -6766,12 +6766,91 @@
         "crates/opi-coding-agent/tests/*oauth*",
         "crates/opi-coding-agent/tests/*provider*",
         "crates/opi-coding-agent/tests/*rpc*",
-        "crates/opi-coding-agent/tests/*session*"
+        "crates/opi-coding-agent/tests/*session*",
+        "crates/opi-coding-agent/tests/common/mod.rs",
+        "crates/opi-coding-agent/tests/interactive_auth.rs",
+        "crates/opi-coding-agent/tests/interactive_tui_auth.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "5be28cd7be4a5bf33ca00fdd191d5df82bedd42f",
+      "evidence": {
+        "task": "20.23",
+        "dod_sha256": "6097123dbc759d54d8e349cc376d93cd0752d95f4352b99117a6fad456ed9144",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED; opi-ai oauth_flows 22 passed (new), lib 328 passed (2 new unit tests), opi-coding-agent oauth_auth 122, interactive_auth 12, interactive_tui_auth 14, credential_store 47 passed; zero manifest changes",
+        "evaluator": "passed",
+        "acceptance": "P20-S23; public Models::login -> SDK flow with injected presenter and fake loopback HTTP -> JSON token requests with state/PKCE -> 53692/callback then free loopback then paste-back, copy-code via the hosted page -> serialized store mutation with awaited ACK -> stored OAuth credential resolves through check_auth without refresh; refresh keeps real service expiry with the single 5min needs_refresh window; no browser/keychain/env/remote fallback; product protocol duplicate deleted in the compiling host cutover"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-23T05:20:00+00:00",
+          "attempt": 1,
+          "summary": "Delivered the SDK OAuth Anthropic flow and store-acknowledged Models::login, replacing the product protocol duplicate in a compiling cutover. Corpus: the in-tree read-only pi 1.3.0 sources (anthropic.ts, pkce.ts, callback-server.ts) verified line by line - fromImpersonated-era shapes excluded; anthropic.ts pins JSON postJson with 30s per-request abort, CALLBACK_PORT 53692 with /callback and localhost redirect host, bind 53692 -> port 0 -> undefined manual-only ladder, COPY_CODE_REDIRECT_URI, parseAuthorizationInput (URL / code#state / code= / raw), refresh JSON with all fields required and expiry minus 5min; pkce.ts pins 32 random bytes base64url-no-pad; decisions.md Q33 confirms pi JSON token/refresh, state, 53692+copy-code, and the matrix V-43/V-55 rows pin refresh/ACK separation and retain PKCE/state/denial safety. Implementation: new auth::oauth module (PkceLoginConfig pub with encoding/port/path/host/manual-only fields, FlowBudget pub Copy, bind ladder, redirect_uri_for pure mapping, callback/manual race with code#state and code= paste support, strict percent-decode, closed token-endpoint error classes via from_untrusted, per-flow TokenRequestEncoding Json|Form, within_optional_budget, login_to_store with LoginStoreError Flow/Store/Unknown and DeferredSuccessPresenter) and auth::oauth::anthropic (production constants, Clone provider with new/production/with_http_client, select_login_method [Browser, CopyCode] racing cancellation and budget, copy-code runner with state-optional paste, JSON exchange/refresh); OAuthLoginMethod::CopyCode variant; Models gains oauth_flows, register_oauth_flow (sources -> OAuth kind for check_auth) and login -> login_to_store with UnknownOAuthFlow / no-store typed errors. Host cutover: oauth.rs deleted the moved blocks, imports the SDK mechanism, re-exports AnthropicOAuthProvider and the PKCE primitives, production_oauth_client delegates, login_oauth now defers to the SDK free function (the DeferredSuccessPresenter copy is gone), the TUI presenter prompt covers Anthropic browser/copy-code plus Codex, and the registry registers the SDK provider via with_http_client. Dev incidents found by failing tests and fixed before commit: a scoped wiremock guard dropped inside a helper forced expect(1) verification before the login ran (switched to unscoped mounts with explicit received_requests counting); two consecutive await_login_cancelled futures lost the Notify permit fired during method selection, turning cancellation into a budget timeout (fixed by threading the same cancellation future and budget from selection into run_pkce_login, the pattern the Codex flow already used); clippy drove a tokio-mutex port guard for the shared 53692 assertions. No live endpoints were dialed. Exec D.2 (7 lenses, evaluator inline): 0 must-fix, 5 flagged_for_human (a single through-Models login->store->provider-stream wire test was not added - the provider-level Bearer+beta header shape stays covered by oauth_wire_shape and the Models composition by the new login/check tests; PI_OAUTH_CALLBACK_HOST env override not modeled, bind host stays fixed 127.0.0.1; manual redirect-URL pastes still require state, stricter than pi URL parse while copy-code pastes may omit it; refresh tolerates missing refresh_token/expires_in per RFC 6749 where pi requires both; the 300s total login budget is retained where pi has none - the audit forbids a 30s total budget, not a total budget), 1 rejected (reusing the PKCE verifier as the state value, pi quirk: the independent random state is the product safety the matrix explicitly retains). C.1a appends: tests/common/mod.rs (shared extract_redirect_port accepts the SDK localhost redirect host), tests/interactive_auth.rs and tests/interactive_tui_auth.rs (host dispatcher/TUI login contracts updated for the SDK method-selection semantics).",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED (after fmt, clippy fixes, rustdoc link fixes)",
+            "d0_scenarios": "cargo test -p opi-ai (52 result-ok binaries incl. oauth_flows 22, lib 328); cargo test -p opi-coding-agent (54 result-ok binaries incl. oauth_auth 122, interactive_auth 12, interactive_tui_auth 14, credential_store 47)",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified via wiremock request captures (exact JSON bodies incl. state/redirect_uri/code_verifier, headers), a real loopback TCP callback and a busy-53692 occupier for the bind ladder, injected store outcome modes with a serialization gate, and zero-request negative assertions via received_requests; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 5 flagged_for_human, 1 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S23",
+                "action": "add",
+                "test": "crates/opi-ai/tests/oauth_flows.rs (22 tests: browser_login_posts_json_token_request, authorize_url_carries_pkce_state_scopes_and_callback, login_binds_preferred_port_53692_with_callback_path, login_falls_back_to_free_loopback_when_53692_is_busy, copy_code_login_uses_fixed_redirect_uri_and_code_state_paste, copy_code_state_mismatch_is_typed_and_sends_zero_token_requests, callback_state_mismatch_answers_secret_free_400_and_never_exchanges, token_endpoint_denial_and_invalid_grant_map_to_typed_classes, token_response_missing_fields_is_typed, manual_redirect_with_missing_or_duplicate_params_is_typed, login_cancelled_presenter_maps_to_login_cancelled, refresh_posts_json_and_keeps_real_service_expiry, refresh_revoked_on_401_is_typed_without_body_echo, refresh_without_refresh_token_reuses_the_stored_one, near_expiry_needs_refresh_uses_single_five_minute_window, models_login_acks_the_store_write_before_reporting_success, models_login_unknown_provider_is_typed, models_login_store_failure_is_typed_and_never_reports_success, models_login_unknown_mutation_outcome_surfaces_pending, concurrent_login_writes_serialize_on_the_shared_store, check_auth_reports_the_login_without_refreshing, login_performs_no_browser_or_ambient_fallback)",
+                "interface": "auth::oauth SDK surface + Models::login",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S23",
+                "action": "add",
+                "test": "crates/opi-ai/src/auth/oauth/mod.rs tests::{paste_with_hash_state_parses_and_validates, redirect_uri_for_reports_the_manual_only_fallback}",
+                "interface": "oauth parsing and redirect mapping",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S23",
+                "action": "update",
+                "test": "crates/opi-coding-agent/tests/oauth_auth.rs: anthropic token/refresh bodies re-pinned to JSON with state; verifier length 43 (32-byte pi primitive); redirect host/path contract relaxed to localhost+callback (port pinned by the SDK suite); method-selector test split so anthropic selects browser/copy-code while copilot never selects; budget test unchanged in semantics",
+                "interface": "host login flows over the SDK mechanism",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S23",
+                "action": "update",
+                "test": "crates/opi-coding-agent/tests/interactive_auth.rs: anthropic dispatcher asserts JSON token body with state + 43-char verifier + anthropic redirect helper; codex verifier 43 via the shared primitive",
+                "interface": "host /login dispatcher",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S23",
+                "action": "update",
+                "test": "crates/opi-coding-agent/tests/interactive_tui_auth.rs: presenter_counts expectations gain one selection per anthropic login (the SDK always resolves browser/copy-code through the presenter)",
+                "interface": "TUI login retry loop",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S23",
+                "action": "update",
+                "test": "crates/opi-coding-agent/tests/common/mod.rs extract_redirect_port accepts localhost redirect hosts",
+                "interface": "shared test helper",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-STORE",
+                "action": "retain",
+                "test": "credential_store.rs 47 tests unchanged; store mutation semantics untouched",
+                "interface": "store owner",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.24",
@@ -17028,6 +17107,16 @@
       "rejected_count": 1,
       "ran_at": "2026-10-23T03:30:00+00:00",
       "task_id": "20.21.3",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 5,
+      "rejected_count": 1,
+      "ran_at": "2026-10-23T05:20:00+00:00",
+      "task_id": "20.23",
       "criterion_id": null
     }
   ]
