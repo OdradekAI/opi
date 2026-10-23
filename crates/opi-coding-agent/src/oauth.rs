@@ -607,6 +607,7 @@ impl OAuthProvider for CopilotOAuthProvider {
                 expires_at,
                 base_url,
                 account_id: None,
+                client_id: None,
             };
             presenter.notify_success();
             Ok(cred)
@@ -635,6 +636,7 @@ impl OAuthProvider for CopilotOAuthProvider {
                 expires_at,
                 base_url,
                 account_id: None,
+                client_id: None,
             })
         })
     }

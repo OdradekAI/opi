@@ -700,6 +700,7 @@ async fn provider_scope_uses_stored_kind_for_precedence_and_wrong_kind_rejection
                 expires_at: None,
                 base_url: None,
                 account_id: None,
+                client_id: None,
             },
         )
         .await
@@ -1412,6 +1413,7 @@ async fn stored_credential_probe_is_redacted() {
                 expires_at: None,
                 base_url: Some("https://copilot.example/api".to_owned()),
                 account_id: None,
+                client_id: None,
             },
         )
         .await

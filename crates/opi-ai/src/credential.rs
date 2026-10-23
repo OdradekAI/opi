@@ -67,6 +67,10 @@ pub enum Credential {
         /// Provider account identity, when required by a concrete wire.
         /// Non-secret and optional for version-1 decode compatibility.
         account_id: Option<String>,
+        /// OAuth client id the token was issued to (dynamic client
+        /// registration, e.g. OpenAI ChatGPT direct). Non-secret and
+        /// optional for version-1 decode compatibility.
+        client_id: Option<String>,
     },
 }
 
@@ -81,6 +85,7 @@ impl std::fmt::Debug for Credential {
                 expires_at,
                 base_url,
                 account_id,
+                client_id,
                 ..
             } => f
                 .debug_struct("Credential::OAuthToken")
@@ -89,6 +94,7 @@ impl std::fmt::Debug for Credential {
                 .field("expires_at", expires_at)
                 .field("base_url", base_url)
                 .field("account_id", account_id)
+                .field("client_id", client_id)
                 .finish(),
         }
     }

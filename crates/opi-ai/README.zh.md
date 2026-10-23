@@ -908,3 +908,30 @@ pending/slow_down 码与 RFC 8628 +5 秒退避（增量与上限仍由宿主套�
 Anthropic 相同的 store-ACK 语义注册 `openai-codex`。`opi-coding-agent`
 在编译期切换：产品 Codex provider、设备轮询与 account id 提取被删除，
 改用 SDK 机制（注册表与测试经 re-export）。
+
+### SDK OAuth（OpenAI ChatGPT direct）（P20-S25）
+
+`auth::oauth::chatgpt` 钉定 pi 1.3.0 `openai-chatgpt.ts`：每次登录以
+`dynamic_agent_client` 注册动态客户端，回调与手贴 URL 都必须携带
+OpenAI 签发的 client id——form 交换与其后所有刷新复用该 ID，凭据持久
+化它（`OAuthCredential`/`Credential::OAuthToken` 新增非密可选
+`client_id`），缺失时刷新以类型化的“重新登录”失败。authorize URL 携带
+生产 scope（含 `resource.invoke chatgpt.tokens.use.direct`）、S256
+PKCE、独立 state 与 nonce、RFC 8707 `resource` 参数、`agent_name_hint`
+（默认 `opi`）与安装的稳定 `ext_agent_host_id=urn:uuid:<小写>`——缺失
+或畸形 UUID 在任何绑定/HTTP 之前类型化失败。重定向固定为
+`http://127.0.0.1:1455/auth/callback`：绑定失败是类型化终端错误（新
+`CallbackBindFallback::Required`，绝不套 Codex 手贴阶梯或空闲端口）；
+绑定成功时服务器与严格校验的手贴输入竞速——手贴必须是同 origin/path
+的完整 URL、匹配 state 与签发 client id（裸 code 或异源均类型化；
+`error` 参数为类型化拒绝且不回显提供商文本）。token 响应按 pi
+`credentialFromTokenResponse` 严格校验：access/refresh/scope 非空、
+scope 含 direct 标志、`expires_in` 正有限、login 要求 `id_token` 存在
+（绝不解码）；存储真实过期，唯一 5 分钟近过期校正在
+`needs_refresh`。`run_pkce_login` 重构为共享的
+`run_pkce_login_with` 缝隙（流提供输入解析与交换；Anthropic/Codex
+经基础适配器行为逐字节不变）。`Models::login` 以相同 store-ACK 语义注
+册 `openai-chatgpt`；落库恒为 OAuth 类型，API-key-only 消费者
+（Decisions classifier）绝不能把它当 API key 解析。宿主调用点机械映
+射新字段（`client_id: None`）；经宿主信封持久化它属于宿主 ChatGPT
+注册任务。

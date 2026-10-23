@@ -18,6 +18,7 @@
 //! never in a pre-subtracted stored expiry).
 
 pub mod anthropic;
+pub mod chatgpt;
 pub mod codex;
 
 use std::borrow::Cow;
@@ -175,12 +176,17 @@ pub enum CallbackBindFallback {
     /// No server: paste-back only, with the flow's fixed redirect URI
     /// (Codex legacy: bind 1455 or paste).
     ManualOnly,
+    /// The callback server must bind the preferred port; failure is a typed
+    /// terminal error (OpenAI ChatGPT direct: port 1455 is shared with other
+    /// sessions and the Codex CLI, and a foreign holder would reject the
+    /// callback with a state mismatch — pi fails with a clear error instead).
+    Required,
 }
 
 /// Why the loopback callback arm failed. Carries a static discriminant so
 /// `notify_failure` can receive a fixed reason string (never the secret code).
 enum CallbackFail {
-    Input(PkceInputError),
+    Parse(ParsedInputError),
     Io(io::Error),
 }
 
@@ -213,7 +219,7 @@ impl PkceInputError {
 }
 
 #[derive(Clone, Copy)]
-enum PkceInputKind {
+pub(crate) enum PkceInputKind {
     Callback,
     Manual,
 }
@@ -222,14 +228,87 @@ enum PkceInputKind {
 /// timeout). Distinct variants let `notify_failure` receive a fixed,
 /// non-secret reason.
 enum LoginOutcome {
-    CallbackCode(String),
-    ManualCode(String),
+    CallbackCode(AuthzInput),
+    ManualCode(AuthzInput),
     Cancelled,
     Timeout,
-    CallbackInput(PkceInputError),
+    CallbackParse(ParsedInputError),
     CallbackIo(io::Error),
-    ManualInput(PkceInputError),
+    ManualParse(ParsedInputError),
     Manual(ProviderError),
+}
+
+/// A parsed authorization redirect input: the code plus any flow-specific
+/// identity the redirect carried (OpenAI ChatGPT direct returns the issued
+/// client id alongside the code).
+pub(crate) struct AuthzInput {
+    pub code: String,
+    pub client_id: Option<String>,
+}
+
+/// A parse failure carrying the typed provider error plus a fixed,
+/// secret-free `notify_failure` reason.
+pub(crate) struct ParsedInputError {
+    pub error: ProviderError,
+    pub reason: &'static str,
+}
+
+/// Flow hook: parse a callback target or manual paste into an
+/// [`AuthzInput`] validated against the expected CSRF state.
+pub(crate) type InputParser = fn(&str, &str, PkceInputKind) -> Result<AuthzInput, ParsedInputError>;
+
+/// Flow hook: exchange a parsed input for tokens. Receives the login config,
+/// the input (code plus issued client id when the flow registers clients
+/// dynamically), the CSRF state, the redirect URI used at authorization, the
+/// PKCE verifier, and the shared login budget.
+pub(crate) type ExchangeHook<'a> = &'a (
+        dyn for<'x> Fn(
+    &'x PkceLoginConfig,
+    &'x AuthzInput,
+    &'x str,
+    &'x str,
+    &'x str,
+    FlowBudget,
+) -> BoxAuthFuture<'x, Result<OAuthCredential, ProviderError>>
+            + Send
+            + Sync
+    );
+
+/// Base input parser shared by the fixed-client flows: the redirect URL must
+/// carry `code` + matching `state` (paste-back accepts the documented
+/// code-only formats); no flow identity rides the redirect.
+fn base_parse_input(
+    input: &str,
+    expected_state: &str,
+    kind: PkceInputKind,
+) -> Result<AuthzInput, ParsedInputError> {
+    let reason = |error: &PkceInputError| -> &'static str {
+        match (kind, error) {
+            (PkceInputKind::Callback, PkceInputError::StateMismatch) => "state mismatch",
+            (PkceInputKind::Callback, _) => "callback parse error",
+            (PkceInputKind::Manual, _) => "manual redirect error",
+        }
+    };
+    match normalize_pkce_input(input, expected_state, kind) {
+        Ok(code) => Ok(AuthzInput {
+            code,
+            client_id: None,
+        }),
+        Err(error) => Err(ParsedInputError {
+            error: error.provider_error(),
+            reason: reason(&error),
+        }),
+    }
+}
+
+fn callback_input_error(error: PkceInputError) -> ParsedInputError {
+    ParsedInputError {
+        error: error.provider_error(),
+        reason: match error {
+            PkceInputError::StateMismatch => "state mismatch",
+            _ => "callback parse error",
+        },
+    }
 }
 
 /// Token-endpoint JSON response. `refresh_token` and `expires_in` are
@@ -262,6 +341,15 @@ async fn bind_callback_listener(
     if fallback == CallbackBindFallback::ManualOnly {
         return Ok(None);
     }
+    if fallback == CallbackBindFallback::Required {
+        // Surface the underlying bind error: the caller maps it to the
+        // flow-pinned port-in-use message.
+        let port = preferred.expect("Required fallback needs a preferred port");
+        return Err(io::Error::new(
+            io::ErrorKind::AddrInUse,
+            format!("port {port}"),
+        ));
+    }
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     Ok(Some(listener))
 }
@@ -293,6 +381,53 @@ pub async fn run_pkce_login<'a>(
     cancellation: Option<BoxAuthFuture<'a, Result<(), ProviderError>>>,
     existing_budget: Option<FlowBudget>,
 ) -> Result<OAuthCredential, ProviderError> {
+    run_pkce_login_with(
+        config,
+        presenter,
+        base_parse_input,
+        &base_exchange,
+        finalize_credential,
+        cancellation,
+        existing_budget,
+    )
+    .await
+}
+
+/// Base exchange hook for fixed-client flows: the shared
+/// [`exchange_authorization_code`] against the login config.
+fn base_exchange<'x>(
+    config: &'x PkceLoginConfig,
+    input: &'x AuthzInput,
+    state: &'x str,
+    redirect_uri: &'x str,
+    verifier: &'x str,
+    budget: FlowBudget,
+) -> BoxAuthFuture<'x, Result<OAuthCredential, ProviderError>> {
+    Box::pin(exchange_authorization_code(
+        config,
+        &input.code,
+        state,
+        redirect_uri,
+        verifier,
+        budget,
+    ))
+}
+
+/// `run_pkce_login` with flow-supplied input parsing and token exchange.
+/// OpenAI ChatGPT direct uses this: its callback and paste-back inputs carry
+/// the issued client id (dynamic client registration), its manual input is a
+/// strictly validated full redirect URL, and its token exchange posts the
+/// issued client id and a `resource` parameter. The race skeleton, budget,
+/// cancellation plumbing, and presenter notifications stay shared.
+pub(crate) async fn run_pkce_login_with<'a>(
+    config: PkceLoginConfig,
+    presenter: &'a dyn LoginPresenter,
+    parse_input: InputParser,
+    exchange: ExchangeHook<'a>,
+    finalize_credential: fn(OAuthCredential) -> Result<OAuthCredential, ProviderError>,
+    cancellation: Option<BoxAuthFuture<'a, Result<(), ProviderError>>>,
+    existing_budget: Option<FlowBudget>,
+) -> Result<OAuthCredential, ProviderError> {
     let budget = match existing_budget {
         Some(budget) => budget,
         None => FlowBudget::new(config.timeout)?,
@@ -308,7 +443,18 @@ pub async fn run_pkce_login<'a>(
                 presenter.notify_failure("timeout");
             }
         })?
-        .map_err(|e| provider_config_error(format!("oauth loopback bind failed: {e}")))?;
+        .map_err(|e| {
+            if config.bind_fallback == CallbackBindFallback::Required {
+                // Local crate-owned diagnostics for the CLI-shared port.
+                presenter.notify_failure("callback port in use");
+                ProviderError::Config(ProviderErrorSummary::attested_static(
+                    "oauth callback port 1455 is in use: an unfinished login in another \
+                     session or the Codex CLI may hold it; cancel that login and try again",
+                ))
+            } else {
+                provider_config_error(format!("oauth loopback bind failed: {e}"))
+            }
+        })?;
     let Some(redirect_uri) = redirect_uri_for(&config, listener.as_ref()) else {
         return Err(provider_config_error(
             "oauth flow has no redirect uri and no manual fallback",
@@ -348,15 +494,15 @@ pub async fn run_pkce_login<'a>(
             cancelled?;
             LoginOutcome::Cancelled
         },
-        res = accept_one_callback(listener.as_ref(), &state) => match res {
-            Ok(code) => LoginOutcome::CallbackCode(code),
-            Err(CallbackFail::Input(error)) => LoginOutcome::CallbackInput(error),
+        res = accept_one_callback(listener.as_ref(), &state, parse_input) => match res {
+            Ok(input) => LoginOutcome::CallbackCode(input),
+            Err(CallbackFail::Parse(error)) => LoginOutcome::CallbackParse(error),
             Err(CallbackFail::Io(e)) => LoginOutcome::CallbackIo(e),
         },
         res = presenter.await_manual_code() => match res {
-            Ok(input) => match normalize_pkce_input(&input, &state, PkceInputKind::Manual) {
-                Ok(code) => LoginOutcome::ManualCode(code),
-                Err(error) => LoginOutcome::ManualInput(error),
+            Ok(input) => match parse_input(&input, &state, PkceInputKind::Manual) {
+                Ok(input) => LoginOutcome::ManualCode(input),
+                Err(error) => LoginOutcome::ManualParse(error),
             },
             Err(e) => LoginOutcome::Manual(e),
         },
@@ -367,15 +513,15 @@ pub async fn run_pkce_login<'a>(
     drop(listener);
     if !matches!(
         outcome,
-        LoginOutcome::ManualCode(_) | LoginOutcome::ManualInput(_) | LoginOutcome::Manual(_)
+        LoginOutcome::ManualCode(_) | LoginOutcome::ManualParse(_) | LoginOutcome::Manual(_)
     ) && let Err(error) = presenter.cancel_manual_code().await
     {
         presenter.notify_failure("manual code cleanup failed");
         return Err(error);
     }
 
-    let code = match outcome {
-        LoginOutcome::CallbackCode(code) | LoginOutcome::ManualCode(code) => code,
+    let input = match outcome {
+        LoginOutcome::CallbackCode(input) | LoginOutcome::ManualCode(input) => input,
         LoginOutcome::Cancelled => {
             return Err(login_cancelled(presenter, config.provider_id));
         }
@@ -383,12 +529,9 @@ pub async fn run_pkce_login<'a>(
             presenter.notify_failure("timeout");
             return Err(ProviderError::Timeout);
         }
-        LoginOutcome::CallbackInput(error) => {
-            presenter.notify_failure(match error {
-                PkceInputError::StateMismatch => "state mismatch",
-                _ => "callback parse error",
-            });
-            return Err(error.provider_error());
+        LoginOutcome::CallbackParse(error) => {
+            presenter.notify_failure(error.reason);
+            return Err(error.error);
         }
         LoginOutcome::CallbackIo(e) => {
             presenter.notify_failure("callback IO error");
@@ -396,9 +539,9 @@ pub async fn run_pkce_login<'a>(
                 "oauth callback IO error: {e}"
             )));
         }
-        LoginOutcome::ManualInput(error) => {
-            presenter.notify_failure("manual redirect error");
-            return Err(error.provider_error());
+        LoginOutcome::ManualParse(error) => {
+            presenter.notify_failure(error.reason);
+            return Err(error.error);
         }
         LoginOutcome::Manual(e) => {
             presenter.notify_failure("manual code error");
@@ -408,7 +551,7 @@ pub async fn run_pkce_login<'a>(
 
     // Token exchange runs OUTSIDE the select so a timeout firing mid-POST
     // cannot drop the POST future and consume the auth code irrecoverably.
-    match exchange_authorization_code(&config, &code, &state, &redirect_uri, &verifier, budget)
+    match exchange(&config, &input, &state, &redirect_uri, &verifier, budget)
         .await
         .and_then(finalize_credential)
     {
@@ -434,7 +577,8 @@ pub async fn run_pkce_login<'a>(
 async fn accept_one_callback(
     listener: Option<&TcpListener>,
     expected_state: &str,
-) -> Result<String, CallbackFail> {
+    parse_input: InputParser,
+) -> Result<AuthzInput, CallbackFail> {
     let Some(listener) = listener else {
         // No callback server could be bound: this arm never wins.
         return std::future::pending().await;
@@ -452,7 +596,9 @@ async fn accept_one_callback(
             break;
         }
         if buf.len() > 8192 {
-            return Err(CallbackFail::Input(PkceInputError::MalformedUrl));
+            return Err(CallbackFail::Parse(callback_input_error(
+                PkceInputError::MalformedUrl,
+            )));
         }
     }
     // Parse and validate the request before telling the browser the login
@@ -461,13 +607,13 @@ async fn accept_one_callback(
     // written and flushed before resolving on this path so a racing
     // manual-code-wins cancellation leaves a clean response. (An earlier read
     // error or an oversize request aborts without a response.)
-    let req =
-        std::str::from_utf8(&buf).map_err(|_| CallbackFail::Input(PkceInputError::InvalidUtf8))?;
+    let req = std::str::from_utf8(&buf)
+        .map_err(|_| CallbackFail::Parse(callback_input_error(PkceInputError::InvalidUtf8)))?;
     let target = req
         .split(' ')
         .nth(1)
-        .ok_or(CallbackFail::Input(PkceInputError::MalformedUrl))?;
-    let code_result = normalize_pkce_input(target, expected_state, PkceInputKind::Callback);
+        .ok_or_else(|| CallbackFail::Parse(callback_input_error(PkceInputError::MalformedUrl)))?;
+    let code_result = parse_input(target, expected_state, PkceInputKind::Callback);
     let (status_line, body) = match &code_result {
         Ok(_) => (
             "HTTP/1.1 200 OK",
@@ -488,7 +634,7 @@ async fn accept_one_callback(
         .await
         .map_err(CallbackFail::Io)?;
     stream.flush().await.map_err(CallbackFail::Io)?;
-    code_result.map_err(CallbackFail::Input)
+    code_result.map_err(CallbackFail::Parse)
 }
 
 /// Exchange an authorization code for tokens (PKCE login). Requires both
@@ -566,6 +712,7 @@ pub async fn exchange_authorization_code(
         ),
         base_url: None,
         account_id: None,
+        client_id: None,
     })
 }
 
@@ -672,6 +819,7 @@ pub async fn refresh_oauth_token(
         expires_at,
         base_url,
         account_id: cred.account_id.clone(),
+        client_id: cred.client_id.clone(),
     })
 }
 
@@ -894,7 +1042,7 @@ pub(crate) async fn json_request_deadline<F: Future>(send: F) -> Result<F::Outpu
 
 /// Flatten the timeout/transport response stack into one typed transport
 /// failure with a fixed non-secret reason.
-async fn unwrap_response(
+pub(crate) async fn unwrap_response(
     outer: Result<Result<reqwest::Response, reqwest::Error>, ProviderError>,
     message: &str,
 ) -> Result<reqwest::Response, ProviderError> {

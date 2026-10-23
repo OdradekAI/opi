@@ -396,5 +396,6 @@ async fn exchange_copy_code(
         expires_at: Some(expires_at),
         base_url: None,
         account_id: None,
+        client_id: None,
     })
 }

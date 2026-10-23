@@ -1095,3 +1095,37 @@ required) and re-extracts the ChatGPT account id from the access-token JWT
 registers `openai-codex` with the same store-ACK semantics as Anthropic.
 `opi-coding-agent` cut over compiling: the product Codex protocol duplicate
 was deleted in favor of the SDK mechanism.
+
+### SDK OAuth (OpenAI ChatGPT direct) (P20-S25)
+
+`auth::oauth::chatgpt` is pinned to pi 1.3.0's `openai-chatgpt.ts`: every
+login registers a dynamic client (`dynamic_agent_client`) and every
+callback or pasted URL must carry OpenAI's issued client id — the form
+exchange and all later refreshes reuse it, the credential persists it
+(`OAuthCredential`/`Credential::OAuthToken` gained a non-secret optional
+`client_id`), and a stored credential without it fails typed with a
+reconnect error. The authorize URL carries the production scopes
+(`resource.invoke chatgpt.tokens.use.direct`), S256 PKCE, an independent
+state and nonce, the RFC 8707 `resource` parameter, `agent_name_hint`
+(default `opi`), and the installation's stable
+`ext_agent_host_id=urn:uuid:<lowercase>` — a missing or malformed device
+UUID is a typed failure before any bind or HTTP traffic. The redirect is
+the fixed `http://127.0.0.1:1455/auth/callback`: a failed bind is a typed
+terminal error (the new `CallbackBindFallback::Required`; never the Codex
+paste-back ladder, never a free port), while the bound server races a
+strictly validated manual input that must be the full redirect URL with
+the same origin and path, matching state, and the issued client id (a bare
+code or a foreign origin is typed; an `error` parameter is a typed denial
+whose provider text is never echoed). The token response is validated per
+pi `credentialFromTokenResponse` (non-empty access/refresh/scope, the
+direct grant flag, positive finite `expires_in`, and a present, never
+parsed `id_token` on login); the stored expiry is the real service expiry
+with the single five-minute correction at `needs_refresh`.
+`run_pkce_login` was refactored into the shared `run_pkce_login_with`
+seam (Anthropic/Codex behavior byte-identical through the base adapters).
+`Models::login` registers `openai-chatgpt` with the same store-ACK
+semantics; the persisted envelope is always the OAuth kind, so
+API-key-only consumers (the Decisions classifier) can never resolve this
+subscription credential as an API key. Host call sites map the new field
+mechanically; persisting it through the host envelope belongs to the host
+ChatGPT registration task.

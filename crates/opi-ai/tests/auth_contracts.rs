@@ -70,6 +70,7 @@ async fn oauth_credential_debug_redacts_secrets_and_keeps_base_url() {
         expires_at: None,
         base_url: Some("https://example.com".to_owned()),
         account_id: None,
+        client_id: None,
     };
     let dbg = format!("{cred:?}");
     assert!(!dbg.contains("access-secret"), "access leaked: {dbg}");
@@ -143,6 +144,7 @@ impl OAuthProvider for MockOAuthProvider {
                 expires_at: None,
                 base_url: None,
                 account_id: None,
+                client_id: None,
             })
         })
     }
@@ -158,6 +160,7 @@ impl OAuthProvider for MockOAuthProvider {
                 expires_at: cred.expires_at,
                 base_url: cred.base_url.clone(),
                 account_id: None,
+                client_id: None,
             })
         })
     }
@@ -779,6 +782,7 @@ async fn check_reports_expired_oauth_configured_without_refresh() {
         expires_at: Some(time::OffsetDateTime::now_utc() - time::Duration::hours(3)),
         base_url: None,
         account_id: None,
+        client_id: None,
     };
     let store = std::sync::Arc::new(RecordingStore::new([("prov-oauth", expired)]));
     let mut collection = opi_ai::Models::new();
@@ -1135,6 +1139,7 @@ async fn get_auth_resolves_descriptor_sources_without_refresh() {
         expires_at: Some(time::OffsetDateTime::now_utc() - time::Duration::hours(1)),
         base_url: Some("https://copilot.example.com".to_owned()),
         account_id: None,
+        client_id: None,
     };
     let store = std::sync::Arc::new(RecordingStore::new([("prov-store", expired)]));
     let mut collection = opi_ai::Models::new();

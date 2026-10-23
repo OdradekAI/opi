@@ -481,6 +481,7 @@ async fn listing_uses_selected_credential_kind_and_source_label() {
                 expires_at: None,
                 base_url: None,
                 account_id: None,
+                client_id: None,
             },
         )
         .await

@@ -243,6 +243,7 @@ impl OAuthProvider for BlockingRefreshProvider {
                 expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::seconds(3600)),
                 base_url: None,
                 account_id: None,
+                client_id: None,
             })
         })
     }
@@ -438,6 +439,7 @@ fn oauth_credential() -> Credential {
         expires_at: None,
         base_url: Some(COPILOT_BASE_URL.to_owned()),
         account_id: None,
+        client_id: None,
     }
 }
 
@@ -510,6 +512,7 @@ async fn oauth_envelope_round_trips_and_preserves_base_url() {
             base_url,
             expires_at,
             account_id,
+            client_id: _,
         } => {
             assert_eq!(access.expose_secret(), ACCESS);
             assert_eq!(refresh.expose_secret(), REFRESH);
@@ -534,6 +537,7 @@ async fn oauth_envelope_round_trips_optional_account_id() {
                 expires_at: None,
                 base_url: None,
                 account_id: Some("account-123".into()),
+                client_id: None,
             },
         )
         .await
@@ -1204,6 +1208,7 @@ async fn oauth_refresh_serializes_against_public_write_on_the_same_lock_path() {
                 expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::seconds(60)),
                 base_url: None,
                 account_id: None,
+                client_id: None,
             },
         )
         .await
@@ -1966,6 +1971,7 @@ fn near_expiry_oauth() -> Credential {
         expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::seconds(60)),
         base_url: None,
         account_id: None,
+        client_id: None,
     }
 }
 

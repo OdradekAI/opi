@@ -533,6 +533,11 @@ pub struct OAuthCredential {
     pub base_url: Option<String>,
     /// Provider account identity, when required by a concrete wire. Non-secret.
     pub account_id: Option<String>,
+    /// OAuth client id the token was issued to. Set by flows with dynamic
+    /// client registration (OpenAI ChatGPT direct: the callback returns the
+    /// issued id and refresh must reuse it); `None` for flows with a fixed
+    /// client id. Non-secret.
+    pub client_id: Option<String>,
 }
 
 impl std::fmt::Debug for OAuthCredential {
@@ -543,6 +548,7 @@ impl std::fmt::Debug for OAuthCredential {
             .field("expires_at", &self.expires_at)
             .field("base_url", &self.base_url)
             .field("account_id", &self.account_id)
+            .field("client_id", &self.client_id)
             .finish()
     }
 }
@@ -568,6 +574,7 @@ impl From<OAuthCredential> for Credential {
             expires_at: o.expires_at,
             base_url: o.base_url,
             account_id: o.account_id,
+            client_id: o.client_id,
         }
     }
 }

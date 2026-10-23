@@ -615,6 +615,9 @@ fn encode_credential(cred: &Credential) -> Zeroizing<String> {
             expires_at,
             base_url,
             account_id,
+            // The host envelope has no client_id field yet; flows with
+            // dynamic client registration keep it in the in-memory shape.
+            client_id: _,
         } => (
             "oauth",
             EnvelopeFields {
@@ -694,6 +697,7 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
                 expires_at,
                 base_url,
                 account_id,
+                client_id: None,
             })
         }
         _ => Err(CredentialStoreError::UnknownEnvelope {
@@ -1490,12 +1494,14 @@ impl CredentialResolver {
                 expires_at,
                 base_url,
                 account_id,
+                client_id,
             })) => Ok(Some(OAuthCredential {
                 access,
                 refresh,
                 expires_at,
                 base_url,
                 account_id,
+                client_id,
             })),
             Ok(Some(Credential::ApiKey(_))) => {
                 Err(CredentialStoreError::UnexpectedCredentialKind {
@@ -1575,12 +1581,14 @@ fn credential_as_oauth(credential: &Credential) -> Option<OAuthCredential> {
             expires_at,
             base_url,
             account_id,
+            client_id,
         } => Some(OAuthCredential {
             access: access.clone(),
             refresh: refresh.clone(),
             expires_at: *expires_at,
             base_url: base_url.clone(),
             account_id: account_id.clone(),
+            client_id: client_id.clone(),
         }),
         Credential::ApiKey(_) => None,
     }

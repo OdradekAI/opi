@@ -484,6 +484,7 @@ fn oauth_cred(access: &str, refresh: &str, base_url: Option<String>) -> OAuthCre
         expires_at: Some(OffsetDateTime::now_utc() + Duration::from_secs(3600)),
         base_url,
         account_id: None,
+        client_id: None,
     }
 }
 
@@ -606,6 +607,7 @@ fn oauth_credential(access: &str, expires_at: Option<OffsetDateTime>) -> Credent
         expires_at,
         base_url: None,
         account_id: None,
+        client_id: None,
     }
 }
 
@@ -697,6 +699,7 @@ impl OAuthProvider for MockOAuthProvider {
                 expires_at: Some(fresh_expiry()),
                 base_url,
                 account_id,
+                client_id: None,
             })
         })
     }
@@ -3516,6 +3519,7 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
         expires_at: Some(fresh_expiry()),
         base_url: Some("https://enterprise.githubcopilot.com".into()),
         account_id: None,
+        client_id: None,
     };
     store.write("github-copilot", &cred).await.unwrap();
     assert!(
@@ -3539,6 +3543,7 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
         expires_at: Some(fresh_expiry()),
         base_url: None,
         account_id: None,
+        client_id: None,
     };
     store.write("anthropic", &anthropic_cred).await.unwrap();
     assert!(resolver.has_oauth_credential("anthropic").await.unwrap());
@@ -3560,6 +3565,7 @@ async fn openai_codex_resolver_propagates_account_id_without_secret_logging() {
                 expires_at: Some(fresh_expiry()),
                 base_url: None,
                 account_id: Some("account-resolved".into()),
+                client_id: None,
             },
         )
         .await
@@ -4471,6 +4477,7 @@ fn stored_oauth(access: &str, refresh: &str, base_url: Option<String>) -> Creden
         expires_at: Some(fresh_expiry()),
         base_url,
         account_id: None,
+        client_id: None,
     }
 }
 
