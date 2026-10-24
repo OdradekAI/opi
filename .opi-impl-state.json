@@ -7521,7 +7521,7 @@
       "definition_of_done": "Public login to injected presenter/fake HTTP to acknowledged store to actual selected SDK request verifies own PKCE/API-key exchange and metadata, honest no-refresh behavior and no implicit personalization request. Test applicable invalid/state/PKCE/denial/expiry/callback/cancel/refresh failures, one Rust5min near-expiry correction, actual service expiry and shared transaction rotation. No automatic browser/keychain/global runtime/account fallback or remote rollback. Keep host UI and storage backend optional.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.12",
@@ -7606,7 +7606,7 @@
             "opi_ai::Models::{login,get_auth,check_auth} (target)",
             "opi_ai selected OpenRouter OAuth adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -7616,8 +7616,10 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "b3f394a256935c3f1217d1ba882d987ae7e1b710",
+      "baseline_dirty_files": [
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.4.0-upgrade-assessment.md"
+      ],
       "task_owned_paths": [
         "CHANGELOG.md",
         "crates/opi-ai/README.md",
@@ -7625,12 +7627,58 @@
         "crates/opi-ai/src/auth/oauth/**",
         "crates/opi-ai/src/lib.rs",
         "crates/opi-ai/src/models.rs",
-        "crates/opi-ai/tests/oauth_flows.rs"
+        "crates/opi-ai/tests/oauth_flows.rs",
+        "crates/opi-coding-agent/tests/common/mod.rs",
+        "crates/opi-coding-agent/tests/oauth_auth.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "d84b40645b7f4a5b317e58bf96031d3e3afbe1d2",
+      "evidence": {
+        "task": "20.27",
+        "dod_sha256": "b1bfebd0317e142f48d0b109048a1cc699cbacf1e4e8d6e337d27c407b6735",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED; opi-ai oauth_flows 81 passed (17 new OpenRouter tests), opi-ai all-targets green; opi-coding-agent oauth_auth 123 passed (stable across 8+ repeated runs after the probe hardening); zero manifest changes",
+        "evaluator": "passed",
+        "acceptance": "P20-S27; public login (Models::login over register_oauth_flow with the store-owned ACK queue) -> presenter presents the authorize URL after a listening progress notification -> callback vs manual race with pi parse semantics -> strict JSON key exchange (non-ok closed-typed, invalid JSON / missing or empty key typed) -> permanent-key credential (access=key, empty refresh slot, 9999 sentinel expiry, needs_refresh always false) persisted through the ACK queue -> refresh returns the stored credential unchanged with zero HTTP; the flow touches exactly one endpoint (the key exchange) and never issues a personalization request; no automatic browser/keychain/env/account fallback, no remote rollback, host UI and storage backend optional"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-24T12:10:00+00:00",
+          "attempt": 1,
+          "summary": "Delivered the SDK OpenRouter OAuth flow. Corpus: the in-tree read-only pi 1.3.0 openrouter.ts (169 lines, verified line by line) plus callback-server.ts (pathname and GET-method route check with 404 + keep-waiting, error-param denial, one-claim semantics), sdk-contracts rows 89 (openrouter availability K: stored PKCE permanent key or OPENROUTER_API_KEY env; factory installs no personalize helper), 143 (the flow row pinning callback_url PKCE, the random callback path with no state, the JSON auth/keys exchange of a permanent key, access=key with empty refresh, expires MAX_SAFE_INTEGER, identity refresh with no network, login 5min / exchange 30s, no key or empty key or bad JSON fail, and never treating the permanent key as a rotation pair), 202/205 (personalization is the explicit V-56 helper) and spec-draft DEL-09. Implementation: new auth::oauth::openrouter (OpenRouterOAuthProvider with production/new/with_http_client constructors; per-login Uuid::new_v4 callback route; pi parseAuthorizationInput manual semantics - absolute URL must carry ?code=, code= fragment parses as a query, bare value is the code, empty is typed; the OAuth error param on the callback arm is a typed denial whose untrusted detail is never echoed; a strict JSON key exchange whose ok response must carry a non-empty key; the credential with the 9999-12-31T23:59:59Z sentinel expiry and an empty refresh slot; identity refresh with zero network I/O); the shared runner gained AuthorizeStyle (classic query vs OpenRouter callback_url form) and an optional post-bind listening progress template, and accept_one_callback now loops with the pi route/method check (404 + keep waiting) instead of failing the login on a mismatched route - a faithfulness strengthening for every PKCE flow. Deviations flagged for human: 8 (non-ok exchange bodies stay closed instead of pi's detail append; the exchange runs outside the select race with the browser page written before the exchange result; a code-less callback fails fast where pi keeps waiting; pi's PI_OAUTH_CALLBACK_HOST env override is expressed through construction instead of SDK env reads; the manual prompt message and placeholder are host UX via await_manual_code; MAX_SAFE_INTEGER maps to the 9999-12-31 sentinel because time tops out at year 9999 and needs_refresh treats a None expiry as refresh-now; the 5min login budget and 30s exchange deadline are retained; the route-check strengthening tightens all PKCE flows). Dev incidents fixed en route: the callback-path strengthening broke six host tests that drove callbacks on a bare / route (they now use the flow's real route via a new common::extract_callback_path helper); the two dropped-listener probes could then be answered by any concurrent test holding the shared 53692/1455 port - the anthropic probe now owns an exclusive ephemeral port via a 53692 occupier and the codex probe retries past a concurrent unguarded same-route holder (refused or 404 both prove this login dropped its listener; the 1455 guard plus the runner dropping the listener before the cancelled login returns make any live same-route answer provably foreign); a pre-existing send-after-budget unwrap and a 500ms codex device-budget headroom flake were hardened in the same files (the device test keeps its distinct-longer-budget property at 2000ms); wiremock Mock::mount is async (an unawaited mount silently registers nothing); two rustdoc HTML-tag literals. Smoke full needed three settles: the first hit the route-fix fallout, the second the rustdoc tags, the third a pre-existing 2s harness revocation deadline under parallel load, then PASSED on the settled machine (same recorded load-flake class as 20.25/20.26). C.1a appends the two host test paths (mechanical ripple of the shared-runner strengthening).",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED",
+            "d0_scenarios": "cargo test -p opi-ai --test oauth_flows 81 passed (17 new OpenRouter tests: full drive with authorize-URL shape and exchange body assertions, per-login random route, wrong-route 404 then real callback wins, denial typed without detail echo, code-less callback typed, manual URL/fragment/bare parses, manual missing code typed, closed HTTP-error summary with canary, invalid JSON typed, empty or missing key typed, identity refresh with zero HTTP, the 9999 sentinel unit, Models::login store-ACK persistence, exactly one request proving no personalization, typed timeout, production constants); cargo test --workspace --all-targets green; oauth_auth 123 passed stable across 8+ repeated runs",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified via wiremock request captures (the single JSON POST with accept/content-type headers and the {code, code_verifier, code_challenge_method} body), zero-request negative assertions for every typed failure, response status assertions on the raw loopback handler (200/400/404), presenter progress and notify-reason records, and pure unit pins for the sentinel expiry and manual parse semantics; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 8 flagged_for_human (listed in the session note), 0 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S27",
+                "action": "add",
+                "test": "crates/opi-ai/tests/oauth_flows.rs OpenRouter section (17 tests + drive/mount/wait helpers)",
+                "interface": "auth::oauth::openrouter + AuthorizeStyle/listening_progress runner extensions",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S27",
+                "action": "update",
+                "test": "crates/opi-coding-agent/tests/oauth_auth.rs + tests/common/mod.rs: callback drives use the flow route (extract_callback_path), the two dropped-listener probes own or retry to an exclusive outcome, one delayed-code send no longer unwraps, one codex device budget headroom 500ms->2000ms",
+                "interface": "host PKCE callback driving against the strengthened shared runner",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S27",
+                "action": "retain",
+                "test": "all remaining anthropic/codex/chatgpt/copilot oauth_flows and oauth_auth tests unchanged in behavior (the route check only tightens malformed probes)",
+                "interface": "shared runner",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.28",
@@ -17339,6 +17387,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-24T02:40:00+00:00",
       "task_id": "20.26",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 8,
+      "rejected_count": 0,
+      "ran_at": "2026-10-24T12:10:00+00:00",
+      "task_id": "20.27",
       "criterion_id": null
     }
   ]
