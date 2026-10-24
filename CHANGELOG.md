@@ -411,6 +411,35 @@
   and its refresh network bound is now 15s, scoped to the HTTP exchange
   only — lock waits and the ACK are outside it.
 ### Added
+- `opi-ai`: the Radius gateway OAuth flow landed as the ninth SDK OAuth
+  family (task 20.31), pinned to pi 1.3.0's `radius.ts`, plus the
+  DEL-08/DEL-09 and V-43/V-55 assembled source/flow conformance. The new
+  `auth::oauth::radius` module fixes the gateway at construction (pi
+  `normalizeRadiusGatewayUrl`: default https scheme, trailing slashes
+  stripped) and mirrors pi's method prompt through the existing
+  `select_login_method` seam with browser recommended. Browser mode
+  discovers `GET {gateway}/v1/oauth` for the authorization endpoint
+  (browser mode only; device mode never discovers first) and runs the
+  shared PKCE skeleton with the corpus's fixed loopback callback
+  `http://127.0.0.1:1456/oauth/callback` under a required bind (a busy
+  port fails the login directly; no paste-back-only fallback), the fixed
+  `pi-gateway` client, `gateway offline_access` scope, and the
+  `handoff=url` authorize parameter. Device mode posts
+  `/v1/oauth/device` and reuses the shared RFC 8628 machine: the
+  verification URI passes through verbatim (no scheme validation, unlike
+  xAI), denial keeps the single RFC spelling, and non-ok token answers
+  classify by error code (pending/slow_down server-interval-or-+5s,
+  expired/denied revoked, unknown typed without body echo). Token
+  responses require the full access/refresh/expires_in triple on every
+  grant; refresh is the shared strict single pass (no RFC 6749 §6
+  refresh-token preservation — that tolerance stays xAI's row 146
+  fixture) with 401/403 revoked for relogin. The stored expiry is the
+  real service lifetime (pi's 60-second write-time skew is not
+  reproduced; the single five-minute near-expiry correction stays in
+  `needs_refresh`). The assembled conformance test registers all nine
+  delivered families on one `Models`, shares one store across two
+  `Models` instances, and proves per-id ACK isolation plus late-write
+  rotation isolation across sources without re-implementing any family.
 - `opi-ai`: the xAI (Grok/X subscription) OAuth flow landed in the SDK
   (task 20.30), pinned to pi 1.3.0's `xai.ts`. The new `auth::oauth::xai`
   module runs RFC 8628 against `auth.x.ai` (form-encoded

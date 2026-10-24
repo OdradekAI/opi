@@ -24,6 +24,7 @@ pub mod copilot;
 pub mod kimi_coding;
 pub mod meta;
 pub mod openrouter;
+pub mod radius;
 pub mod xai;
 
 use std::borrow::Cow;

@@ -1237,3 +1237,25 @@ stored one (the sdk-contracts row 146 fixture), 401/403 revokes for
 relogin, and nothing retries. The stored expiry is the real service
 lifetime with the single five-minute correction in `needs_refresh`.
 Failure bodies are never echoed; statuses and fixed classes are.
+
+### SDK OAuth (Radius gateway flow and nine-family assembled conformance) (P20-S31)
+
+`auth::oauth::radius` is pinned to pi 1.3.0 `radius.ts`. The gateway is
+fixed at construction (https-defaulted, trailing slashes stripped) and
+the method choice mirrors pi's prompt through `select_login_method` with
+browser recommended. Browser mode discovers `GET {gateway}/v1/oauth` for
+the authorization endpoint (device mode never discovers first) and runs
+the shared PKCE skeleton with the fixed callback
+`http://127.0.0.1:1456/oauth/callback` under a required bind, the
+`pi-gateway` client, `gateway offline_access` scope, and `handoff=url`.
+Device mode posts `/v1/oauth/device` and follows the shared RFC 8628
+machine; the verification URI passes through verbatim (no scheme check,
+unlike xAI) and denial keeps the single RFC spelling. Non-ok token
+answers classify by error code; token responses require the full triple
+on every grant; refresh is the shared strict single pass (no §6
+preservation) with 401/403 revoked. The stored expiry is the real
+service lifetime (pi's 60s write skew not reproduced; the five-minute
+correction stays in `needs_refresh`). The assembled test registers all
+nine delivered families on one `Models`, shares one store across two
+`Models`, and proves per-id ACK isolation and late-write rotation
+isolation across sources.

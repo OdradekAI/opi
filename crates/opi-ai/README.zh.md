@@ -1019,3 +1019,19 @@ token `expires_in` 缺省 3600s。刷新为单遍：响应缺 `refresh_token`
 保留旧值（sdk-contracts 行 146 fixture），401/403 撤销重登，无任何
 重试。存储期限为真实服务期限，5 分钟近过期修正在 `needs_refresh`
 单点。失败体永不回显；仅状态与固定错误类。
+
+### SDK OAuth（Radius 网关流与九族组装验收）（P20-S31）
+
+`auth::oauth::radius` 钉定 pi 1.3.0 `radius.ts`。gateway 构造期固定
+（缺省 https、去尾斜杠），方法选择经 `select_login_method` 镜像 pi
+prompt（browser 推荐）。浏览器模先 `GET {gateway}/v1/oauth` 发现授权端点
+（设备模绝不先 discovery），复用共享 PKCE 骨架：固定回调
+`http://127.0.0.1:1456/oauth/callback`、Required bind（占用即失败）、
+`pi-gateway` client、`gateway offline_access` scope 与 `handoff=url`。
+设备模 POST `/v1/oauth/device` 后走共享 RFC 8628 状态机；
+verification URI 直通（无 scheme 校验，异于 xAI），denial 仅 RFC 单拼写。
+非 ok token 应答按错误码分类；token 响应每种 grant 都要求完整三元组；
+刷新为共享 Strict 单遍（无 §6 保留），401/403 撤销重登。存储期限为真实
+服务期限（pi 写期 60s skew 不复现，5 分钟修正单点 `needs_refresh`）。
+组装测试在单 `Models` 注册全部九族、跨两个 `Models` 共享一个 store，
+证明按 id 的 ACK 隔离与跨源 late-write 轮转隔离。

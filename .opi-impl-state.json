@@ -8169,7 +8169,7 @@
       "definition_of_done": "Public login to injected presenter/fake HTTP to acknowledged store to actual selected SDK request verifies id/name/gateway/account binding, browserPKCE callback plus device flow, discovery/refresh/catalog metadata and store isolation. Test applicable invalid/state/PKCE/denial/expiry/callback/cancel/refresh failures, one Rust5min near-expiry correction, actual service expiry and shared transaction rotation. No automatic browser/keychain/global runtime/account fallback or remote rollback. Keep host UI and storage backend optional. In addition to the Radius slice, own complete DEL-08/DEL-09 and V-43/V-55 assembled source/flow conformance over the completed AWS, ADC, retry-mode and eight OAuth predecessors. Reuse their exact behavioral evidence; add only distinct same-store/cross-source integration cases, never implement those families again.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "in_progress",
       "depends_on": [
         "20.3",
         "20.12",
@@ -8357,7 +8357,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "6c5e268f08609a6667475822f68fbedd3c88c2c5",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
