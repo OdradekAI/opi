@@ -8013,7 +8013,7 @@
       "definition_of_done": "Public login to injected presenter/fake HTTP to acknowledged store to actual selected SDK request verifies device poll/HTTPS verificationURL/denial/expiry and preservation of old refresh token when omitted. Test applicable invalid/state/PKCE/denial/expiry/callback/cancel/refresh failures, one Rust5min near-expiry correction, actual service expiry and shared transaction rotation. No automatic browser/keychain/global runtime/account fallback or remote rollback. Keep host UI and storage backend optional.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.12",
@@ -8098,7 +8098,7 @@
             "opi_ai::Models::{login,get_auth,check_auth} (target)",
             "opi_ai selected xAI OAuth adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -8108,7 +8108,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "100cf3a5f26c4ba5394d8dc1108ed71c8d1b7587",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -8119,10 +8119,46 @@
         "crates/opi-ai/src/models.rs",
         "crates/opi-ai/tests/oauth_flows.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "f43b5f340555c0807d2830ac12dd9a3781303b06",
+      "evidence": {
+        "task": "20.30",
+        "dod_sha256": "f532f1aeddd86ae275d9ecbe811a0e0dd1581f37ec1a9d647a95741c74a2dcf1",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED (first run hit two known full-load oauth_auth flakes recorded with 20.27; both pass solo and in the rerun); opi-ai oauth_flows 155 passed (25 new xAI cases); zero manifest changes",
+        "evaluator": "passed",
+        "acceptance": "P20-S30; public login (Models::login over register_oauth_flow with the store-owned ACK queue) -> RFC 8628 device start form with client_id/scope/referrer -> presenter receives the user code with the complete-or-plain https URI -> shared polling machine (first-poll wait, 1s floor, slow_down server interval or +5s, device-deadline typed timeout) -> ok-first token parse (non-empty access and refresh, expires_in default 3600) -> credential stored through the ACK queue; error-code switch only on non-ok (pending/slow_down/expired/denied with both spellings/unknown/5xx typed without body echo), untrusted verification URIs (either field) typed, start missing/empty/non-positive-expires_in typed, refresh single-pass rotate-or-preserve with the row 146 fixture, 401/403 revoked for relogin, non-ok typed without retry, cancellation typed with zero polls, near-expiry correction via the shared needs_refresh; no automatic browser/keychain/global runtime/account fallback or remote rollback, host UI and storage backend optional"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-24T17:20:00+00:00",
+          "attempt": 1,
+          "summary": "Delivered the SDK xAI OAuth flow. Corpus: the in-tree read-only pi 1.3.0 xai.ts (179 lines, verified line by line) plus the shared device-code.ts polling state machine and sdk-contracts rows 97 (providers table: xai, env-or-subscription entry) and 146 (auth.x.ai form endpoints, fixed client id b1a00492-073a-47ea-816f-4c329264a828, scope openid profile email offline_access grok-cli:access api:access, referrer=pi, https-only verification URIs, expires_in required on device start and defaulting to 3600s on tokens, refresh preserving the stored secret when the response omits the field, single-pass refresh, no Codex strict rule) and spec-draft DEL-09. Implementation: new auth::oauth::xai (XaiOAuthProvider production/with_http_client/new_with_endpoints; pub parse_xai_device_authorization requiring a positive-finite device expires_in, https-only verification_uri, and an https verification_uri_complete whose untrusted presence fails rather than coalescing onto the plain URI - pi validates before choosing complete-or-plain - with interval falling back to 5s; poll branches on the ok status first exactly as xai.ts does, so the RFC 8628 error-code switch including the authorization_denied spelling runs only on non-ok answers; the loop reuses the shared machine shape with the two deadline messages; refresh is a single pass - an omitted refresh secret in the response preserves the stored one per the row 146 fixture while an empty or non-string value fails typed, expires_in defaults to 3600s, 401/403 revokes for relogin, and nothing retries). Deviations flagged for human: 3 (failure bodies closed with statuses and fixed classes only - pi requestFailure concatenates error and error_description; the presenter seam carries user_code + the complete-or-plain https URI without pi interval/expiry notification fields, per the 20.28/20.29 seam decision; the stored expiry is the real service lifetime with the single five-minute near-expiry correction in needs_refresh instead of pi subtracting a skew at write time, consistent with the OAuth family and the shared core). Dev incidents fixed en route: the first RED poll fixtures copied the kimi style of 200-with-error bodies, but xai.ts branches on response.ok before its error-code switch - fixtures remounted at 400 to pin the corpus precedence; the exact-form assertion initially used a query-style percent encoding while reqwest form encoding uses plus and %3A, and one scope token was typoed (groq vs grok) - replaced by an exact-body assertion of the corpus form; clippy collapsible-if on the complete-URI trust check rewritten with let-chains and a needless-borrow in the test helper. D.1 note: the first full smoke run hit two opi-coding-agent oauth_auth tests (codex_login_timeout, pkce_loopback_callback_rejections) failing under full workspace parallelism; both pass solo and in the immediate full rerun - the flake class recorded with 20.27 (body-boundary headroom under load), not caused by this change (it only adds a new opi-ai module and tests). C.1a: no additional test paths beyond the task-owned oauth_flows.rs. D.1 smoke full PASSED on rerun after the flake.",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED (rerun after two known full-load flakes; solo runs green)",
+            "d0_scenarios": "cargo test -p opi-ai --test oauth_flows 155 passed (25 new xAI cases: full drive pinning the exact device-start form client_id/scope/referrer and the poll grant form, complete-URI preference with plain fallback when absent/empty, start non-ok/missing/empty device_code-user_code-verification_uri-expires_in typed, untrusted plain or complete URI typed including http/ftp/not-a-url, parse defaults interval 5s and optional complete with required positive expires_in unit-pinned, first-poll wait with zero polls, slow_down server interval (3 polls) and default +5s (2 polls) by poll count, pending-then-success with 3 requests, denied in both spellings and expired revoked with reasons and zero echo, unknown error and >=500 typed without echo, ok-with-missing/empty/non-positive/non-numeric fields typed, token expires_in default 3600 math, store-ACK persistence via Models::login, refresh rotate-or-preserve with the row 146 fixture asserting the exact grant form and exactly one request, refresh expires_in default 3600, refresh 401/403 revoked with one request, refresh 500 typed without retry, refresh ok-without-access typed, cancellation typed with zero polls, near/far needs_refresh, production constants); cargo test --workspace --all-targets green in the full smoke rerun",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified via wiremock request captures (the exact device-start form body including scope and referrer encoding, the poll grant form, per-path request counts pinning the single-pass refresh and the zero-poll cancellation/negative cases), presenter device-code/failure-reason records, and direct unit pins of the parse defaults and required expires_in; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 3 flagged_for_human (listed in the session note), 0 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S30",
+                "action": "add",
+                "test": "crates/opi-ai/tests/oauth_flows.rs xAI section (25 cases + mount/flow/request helpers reusing expires_within and requests_at)",
+                "interface": "auth::oauth::xai + parse_xai_device_authorization",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S30",
+                "action": "retain",
+                "test": "all remaining oauth_flows tests unchanged in behavior",
+                "interface": "shared runner and sibling flows",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.31",
@@ -17501,6 +17537,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-24T15:45:00+00:00",
       "task_id": "20.29",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 0,
+      "ran_at": "2026-10-24T17:20:00+00:00",
+      "task_id": "20.30",
       "criterion_id": null
     }
   ]
