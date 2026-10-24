@@ -7855,7 +7855,7 @@
       "definition_of_done": "Public login to injected presenter/fake HTTP to acknowledged store to actual selected SDK request verifies RFC8628 identity token then Model API key mint, same-identity remint refresh and mint401/403 relogin classification. Test applicable invalid/state/PKCE/denial/expiry/callback/cancel/refresh failures, one Rust5min near-expiry correction, actual service expiry and shared transaction rotation. No automatic browser/keychain/global runtime/account fallback or remote rollback. Keep host UI and storage backend optional.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.12",
@@ -7940,7 +7940,7 @@
             "opi_ai::Models::{login,get_auth,check_auth} (target)",
             "opi_ai selected Meta OAuth adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -7950,8 +7950,10 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "0a5a13834c09dbb3f57e63c10d3ca3e0cf84a3f6a",
+      "baseline_dirty_files": [
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.4.0-upgrade-assessment.md"
+      ],
       "task_owned_paths": [
         "CHANGELOG.md",
         "crates/opi-ai/README.md",
@@ -7961,10 +7963,46 @@
         "crates/opi-ai/src/models.rs",
         "crates/opi-ai/tests/oauth_flows.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "9b2491a374fad6625c4bca4ad12780e7eccd1278",
+      "evidence": {
+        "task": "20.29",
+        "dod_sha256": "d1bb39be4e932297d464178292dd095afb2036e9e532b0d4ceaa373fac98b59a",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED first run; opi-ai oauth_flows 130 passed (25 new Meta cases), opi-ai all-targets green; zero manifest changes",
+        "evaluator": "passed",
+        "acceptance": "P20-S29; public login (Models::login over register_oauth_flow with the store-owned ACK queue) -> RFC 8628 device start with the fixed client id -> presenter receives the user code with the trusted complete-or-plain verification URI -> shared polling machine -> identity token strict non-empty token check -> Model API key mint with the identity bearer header and x-api-version 1.0.0 -> minted key stored as access with the identity token as refresh and the fixed 24h expiry through the ACK queue; mint 401/403 (login or refresh) typed revoked for relogin with zero retries, refresh re-mints with the same identity and never touches the token endpoint, keyless mint surfaces only a trusted http(s) action_url, denial/expiry/cancel/unknown/5xx typed without body echo, near-expiry correction via the shared needs_refresh; no automatic browser/keychain/global runtime/account fallback or remote rollback, host UI and storage backend optional"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-24T15:45:00+00:00",
+          "attempt": 1,
+          "summary": "Delivered the SDK Meta OAuth flow. Corpus: the in-tree read-only pi 1.3.0 meta.ts (168 lines, verified line by line) plus the shared device-code.ts polling state machine, sdk-contracts rows 78 and 145 (auth.meta.com trailing-slash OIDC device endpoints, Muse Code client id 1031625952748946, identity token never authenticates inference, POST api.meta.ai/muse-code/key with the identity bearer header, an empty JSON body, and x-api-version 1.0.0, the minted key as access and the identity as refresh with a 24h expiry, refresh re-mints without a refresh-grant endpoint, mint 401/403 prompts relogin, a trusted action_url may reach the presenter on a keyless mint) and spec-draft DEL-09. Implementation: new auth::oauth::meta (MetaOAuthProvider production/with_http_client/new_with_endpoints with auth-host trailing-slash trim; pub parse_meta_device_authorization choosing the trusted verification_uri_complete over the trusted verification_uri - pi coalesces at the trust level - with 5s/900s defaults; the RFC 8628 loop shared in shape with kimi_coding including the slow-down reason distinction; poll switch reading the body error code regardless of status exactly as pi switches after its token check - Meta has no strict-triple parse, so an ok body without the identity token falls to the status class; the mint routine is shared by login (with presenter reasons) and refresh (silent classification); refresh is a single re-mint with the stored identity, no retry loop, and 401/403 stays CredentialRevoked for relogin). Deviations flagged for human: 5 (failure bodies closed with statuses and fixed classes only; pi mint 401/403 host-command wording (/login meta) becomes the typed revoked error plus a generic sign-in-again presenter reason; the presenter seam carries user_code + the chosen verification URI without interval/expiry fields like 20.28; the polling loop lives in-module per the copilot/kimi precedent; the corpus action_url string-concatenation becomes a trusted-http(s)-validated presenter reason per sdk-contracts row 145, never a raw body echo). Dev incidents fixed en route: the first RED run inverted pi poll precedence by branching on status before the error-code switch (200 bodies carrying the pending error code were misclassified) - corrected to the corpus order after checking kimi_coding for the same shape; a python patch for the missing/empty-fields test left a shadowing duplicate block that mounted a fresh full body (the both-uris case then logged in successfully), removed; clippy unnecessary_unwrap on the identity token check rewritten with if-let. Ledger-guard lesson recorded: the sensitive scan forbids JSON property names (api_key, authorization, ...) and string VALUES matching a long bearer-token pattern - a corpus phrase pairing the bearer scheme word with a 14-char token-shaped run tripped the latter, while the parse_meta_device_authorization function name is safe. C.1a: no additional test paths beyond the task-owned oauth_flows.rs. D.1 smoke full PASSED on the first run after GREEN.",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED (first run)",
+            "d0_scenarios": "cargo test -p opi-ai --test oauth_flows 130 passed (25 new Meta cases: full drive with start/poll form bodies and mint bearer/x-api-version/content-type headers and the empty JSON object body, complete-URI preference with plain and untrusted-complete fallbacks, start non-ok/missing/empty/both-uris typed, parse defaults and URI-choice unit, first-poll wait with zero polls and zero mints, slow_down server interval and default +5s by poll count, pending-then-success mint count, expired/denied revoked with reasons and zero mints, unknown error and >=500 typed without echo, ok-without-token status class, mint 401/403 revoked for relogin without echo, mint 500 typed, keyless mint with trusted/untrusted action_url reasons, store-ACK persistence via Models::login, refresh same-identity re-mint with exactly one mint request and zero token-endpoint requests, refresh mint 401/403 revoked, refresh mint transient without retry, cancellation typed with zero polls and zero mints, production constants, near/far needs_refresh); cargo test --workspace --all-targets green",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified via wiremock request captures (start and poll form bodies, mint bearer/x-api-version/content-type headers and the empty JSON object body, per-path request counts pinning the no-retry mint policy and the zero-token-endpoint refresh), zero-mint negatives, presenter device-code/progress/failure-reason records, and direct unit pins of the parse defaults, URI choice, and constants; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 5 flagged_for_human (listed in the session note), 0 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S29",
+                "action": "add",
+                "test": "crates/opi-ai/tests/oauth_flows.rs Meta section (25 cases + mount/flow/request-helper block reusing expires_within)",
+                "interface": "auth::oauth::meta + parse_meta_device_authorization",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S29",
+                "action": "retain",
+                "test": "all remaining oauth_flows tests unchanged in behavior",
+                "interface": "shared runner and sibling flows",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.30",
@@ -17453,6 +17491,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-24T14:55:00+00:00",
       "task_id": "20.28",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 5,
+      "rejected_count": 0,
+      "ran_at": "2026-10-24T15:45:00+00:00",
+      "task_id": "20.29",
       "criterion_id": null
     }
   ]
