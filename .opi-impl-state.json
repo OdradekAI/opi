@@ -7689,7 +7689,7 @@
       "definition_of_done": "Public login to injected presenter/fake HTTP to acknowledged store to actual selected SDK request verifies source device authorization/poll interval/expiry/denial, exact credential/header/metadata handling. Test applicable invalid/state/PKCE/denial/expiry/callback/cancel/refresh failures, one Rust5min near-expiry correction, actual service expiry and shared transaction rotation. No automatic browser/keychain/global runtime/account fallback or remote rollback. Keep host UI and storage backend optional.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.12",
@@ -7774,7 +7774,7 @@
             "opi_ai::Models::{login,get_auth,check_auth} (target)",
             "opi_ai selected Kimi Coding OAuth adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -7784,8 +7784,10 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "cd39e104601881c727deafc0f0cc0402be45e2b0",
+      "baseline_dirty_files": [
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.4.0-upgrade-assessment.md"
+      ],
       "task_owned_paths": [
         "CHANGELOG.md",
         "crates/opi-ai/README.md",
@@ -7795,10 +7797,54 @@
         "crates/opi-ai/src/models.rs",
         "crates/opi-ai/tests/oauth_flows.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "2bc0d48f995e373165efde0e9c83a2c94e4df378",
+      "evidence": {
+        "task": "20.28",
+        "dod_sha256": "0d32da76eec8112814398834cae73bf1e472994b073c9dc996b79732a84e5c30",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED; opi-ai oauth_flows 105 passed (24 new Kimi tests), opi-ai all-targets green; opi-coding-agent oauth_auth 123 passed (stable across 12+ repeated full-binary runs); zero manifest changes",
+        "evaluator": "passed",
+        "acceptance": "P20-S28; public login (Models::login over register_oauth_flow with the store-owned ACK queue) -> device authorization form POST with the fixed client id -> presenter receives the user code with the complete verification URI -> RFC 8628 polling (first-poll wait, 1s floor, slow_down server interval or +5s, device-deadline typed timeout with the slow-down reason distinction) -> strict access/refresh/expires_in triple persisted through the ACK queue as the real service expiry; expired_token/access_denied terminal revoked, unknown errors and >=500 typed without body echo, cancellation biased with no poll after cancel; refresh retries transient failures up to three times with backoff, 401/403/invalid_grant revoked with zero retries and no account fallback, near-expiry correction via the shared needs_refresh; no automatic browser/keychain/env/account fallback or remote rollback, host UI and storage backend optional"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-24T14:55:00+00:00",
+          "attempt": 1,
+          "summary": "Delivered the SDK Kimi Coding OAuth device flow. Corpus: the in-tree read-only pi 1.3.0 kimi-coding.ts (297 lines, verified line by line) plus the shared device-code.ts polling state machine, sdk-contracts row 144 (auth.kimi.com form/JSON device endpoints, fixed client id 17e5f671, user-code/verification/expiry/interval notification, 15min/5s defaults, strict access/refresh/expires triple, refresh with at most 3 retries and 30s request timeout, Bearer for the coding endpoint, no account fallback) and spec-draft DEL-09. Implementation: new auth::oauth::kimi_coding (KimiCodingOAuthProvider production/with_http_client/new_with_oauth_host with pi trailing-slash trim; pub parse_kimi_device_authorization for the strict field/trusted-http(s)-URI/defaults contract; RFC 8628 loop with the pre-poll interval wait, 1s floor, slow_down server-interval-or-+5s, device-deadline Timeout with the slow-down reason distinction, expired/denied terminal revoked grants; per-request 30s tokio deadline; a local refresh retry loop with 1s/2s/4s backoff over 429/5xx/transport where 401/403 or an invalid_grant body code is a zero-retry typed revoked credential). Deviations flagged for human: 8 (failure bodies closed, statuses + fixed classes only; the KIMI_CODE_OAUTH_HOST/KIMI_OAUTH_HOST env override is host policy via construction; the presenter seam carries user_code + the complete verification URI without interval/expiry fields; pi WSL clock-drift wording becomes the typed Timeout plus a distinguished presenter reason; the polling loop lives in-module like the copilot precedent instead of a shared module; the 30s deadline is a tokio timeout; refresh backoff is real sleep adding ~3-7s of test wall time; invalid_grant reads the body error code without echoing it) plus one amendment: refresh is implemented locally rather than on the shared refresh_oauth_token core because the retry policy and the invalid_grant dead-credential classification need the body error code before the shared mapper runs; the strict field policy is unchanged. Dev incidents fixed en route: start_paused tokio tests are incompatible with the 30s per-request deadline (the auto-advancing clock jumps straight to the timeout timer during real wiremock roundtrips), so the timing tests run on real time with compact windows whose discriminators are poll counts (5s/2s, 5s/8s, 1s/10s) with >=1s margins; non-JSON failure bodies initially tripped the JSON decode before status classification and now become Value::Null so the status check wins exactly as pi readJson yields null; and the 20.27 dropped-listener probe follow-up - the retry loop probing the shared 1455 route could strike a concurrent unguarded codex login with state=late and abort it (the pkce_total_budget Config flake), and forcing the cancelled codex login onto an ephemeral port revealed that its 1455 bind-failure fallback is manual-only (no owned listener), so the runtime probe now runs only on the anthropic iteration's exclusive ephemeral port while the codex drop stays structural; the codex timeout diagnostic now includes the presenter reasons. C.1a: crates/opi-coding-agent/tests/oauth_auth.rs is already a task-owned ripple path from 20.27; no additional paths. The first smoke run also hit a transient provider_runtime compile process failure under parallel load (clean on retry) and two body-boundary headroom tests flaked only under 12x hammering, never in the settled smoke.",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED",
+            "d0_scenarios": "cargo test -p opi-ai --test oauth_flows 105 passed (24 new Kimi tests: full drive with start/poll form bodies and headers, complete-URI notification, strict-triple expiry math, start non-ok/missing/empty/untrusted-URI typed, parse defaults unit, first-poll wait with zero polls, slow_down server interval and default +5s by poll count, pending-then-success, expired/denied revoked with reasons, unknown error and >=500 typed without echo, bad success fields typed, store-ACK persistence via Models::login, refresh form body + strict triple, invalid_grant/401 revoked zero-retry, transient retry then success, retries exhausted typed, non-retryable terminal without retry, production constants, trailing-slash trim, cancellation typed with zero polls, near/far needs_refresh); cargo test --workspace --all-targets green; oauth_auth 123 passed stable across 12+ repeated full-binary runs",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified via wiremock request captures (form bodies with client_id/device_code/grant_type and refresh_token grant, content-type and accept headers, per-outcome request counts pinning the retry bounds), zero-poll negatives after cancel and pre-poll deadline, presenter device-code and failure-reason records, and direct unit pins of the parse defaults and constants; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 8 flagged_for_human (listed in the session note) plus the local-refresh amendment, 0 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S28",
+                "action": "add",
+                "test": "crates/opi-ai/tests/oauth_flows.rs Kimi section (24 tests + mount/flow/request-helper block)",
+                "interface": "auth::oauth::kimi_coding + parse_kimi_device_authorization",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S28",
+                "action": "update",
+                "test": "crates/opi-coding-agent/tests/oauth_auth.rs: the cancelled-login probe runs only on the anthropic iteration (codex drop structural, comment explains the shared-1455/manual-only reasoning) and the codex timeout diagnostic includes presenter reasons",
+                "interface": "host PKCE cancellation tests against the shared runner",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S28",
+                "action": "retain",
+                "test": "all remaining oauth_flows and oauth_auth tests unchanged in behavior",
+                "interface": "shared runner and sibling flows",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.29",
@@ -17397,6 +17443,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-24T12:10:00+00:00",
       "task_id": "20.27",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 9,
+      "rejected_count": 0,
+      "ran_at": "2026-10-24T14:55:00+00:00",
+      "task_id": "20.28",
       "criterion_id": null
     }
   ]
