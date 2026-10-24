@@ -8169,7 +8169,7 @@
       "definition_of_done": "Public login to injected presenter/fake HTTP to acknowledged store to actual selected SDK request verifies id/name/gateway/account binding, browserPKCE callback plus device flow, discovery/refresh/catalog metadata and store isolation. Test applicable invalid/state/PKCE/denial/expiry/callback/cancel/refresh failures, one Rust5min near-expiry correction, actual service expiry and shared transaction rotation. No automatic browser/keychain/global runtime/account fallback or remote rollback. Keep host UI and storage backend optional. In addition to the Radius slice, own complete DEL-08/DEL-09 and V-43/V-55 assembled source/flow conformance over the completed AWS, ADC, retry-mode and eight OAuth predecessors. Reuse their exact behavioral evidence; add only distinct same-store/cross-source integration cases, never implement those families again.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "in_progress",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.12",
@@ -8270,7 +8270,7 @@
             "opi_ai all nine OAuth login/store/request paths (target)",
             "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-55",
@@ -8285,7 +8285,7 @@
             "opi_ai all nine OAuth login/store/request paths (target)",
             "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-051",
@@ -8300,7 +8300,7 @@
             "opi_ai all nine OAuth login/store/request paths (target)",
             "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S31",
@@ -8315,7 +8315,7 @@
             "opi_ai all nine OAuth login/store/request paths (target)",
             "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-08",
@@ -8330,7 +8330,7 @@
             "opi_ai all nine OAuth login/store/request paths (target)",
             "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-09",
@@ -8345,7 +8345,7 @@
             "opi_ai all nine OAuth login/store/request paths (target)",
             "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -8371,10 +8371,46 @@
         "crates/opi-ai/tests/oauth_flows.rs",
         "crates/opi-ai/tests/vertex_fixtures.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "fcf45122fcff07c327ff3046d29251026e030064",
+      "evidence": {
+        "task": "20.31",
+        "dod_sha256": "3ae2b4c6fc940958350d867f2b5d026bf18f15fdda8ea2713518176c04a885e9",
+        "verification": "workspace; opi-impl-smoke.sh full PASSED first run; opi-ai oauth_flows 178 passed (23 new radius/assembled cases); doc-check PASS; zero manifest changes",
+        "evaluator": "passed",
+        "acceptance": "P20-S31; public login (Models::login over register_oauth_flow with select_login_method choosing browser or device) -> browser: GET /v1/oauth discovery -> shared PKCE skeleton with fixed 1456 callback, required bind, pi-gateway client, gateway offline_access scope, handoff=url -> real loopback callback or presenter paste arm -> strict form token exchange; device: POST /v1/oauth/device -> presenter user_code + verbatim URI -> shared machine -> ok-first strict triple -> credential; non-ok classified by error code, discovery failures typed before any URL presented, refresh strict single pass with 401/403 revoked, cancellation typed, near-expiry correction via shared needs_refresh; assembled: nine families registered on one Models, one store shared across two Models, per-id ACK isolation and cross-source late-write rotation isolation; no automatic fallbacks, host UI and storage backend optional"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-24T19:10:00+00:00",
+          "attempt": 1,
+          "summary": "Delivered the ninth SDK OAuth family (Radius gateway) plus the DEL-08/DEL-09 and V-43/V-55 assembled conformance. Corpus: the in-tree read-only pi 1.3.0 radius.ts (read line by line: fixed 1456 loopback callback with required bind, pi-gateway client, gateway offline_access scope, handoff=url, discovery of only the authorization endpoint, shared polling machine, strict token triple on every grant, refresh via the same requestOAuthToken with no preservation) plus sdk-contracts rows 93 and 147. Implementation: new auth::oauth::radius (RadiusOAuthProvider production/with_http_client/new_with_gateway with pi gateway normalization - https default, trailing slashes stripped - and the gateway fixed for the provider lifetime; pub parse_radius_device_authorization requiring non-empty device_code/user_code/verification_uri and positive-finite expires_in with the 5s interval default, the URI passing through verbatim with no scheme validation unlike xAI; login mirrors pi method prompt through the existing select_login_method seam with browser recommended; browser mode runs discovery then the shared run_pkce_login skeleton with required bind on port 1456 and authorize_params carrying scope and handoff; device mode reuses the shared machine with the two deadline messages and the single RFC denial spelling; refresh delegates to refresh_oauth_token Strict single pass with 401/403 revoked via the shared helper). Deviations flagged for human: 4 (failure bodies closed with statuses and fixed classes only, while pi discovery/token errors concatenate response text; the presenter seam carries user_code + URI and the authorize URL but not pi interval/expiry notifications or the Listening progress message; the stored expiry is the real service lifetime with the single five-minute near-expiry correction in needs_refresh instead of pi radius subtracting a 60s skew at write time, consistent with the family decision; device-start parse stricter than the corpus truthy check - non-empty strings and positive-finite expires_in - while keeping the corpus absence of URI scheme validation). Assembled conformance: one test registers all nine delivered families on one Models, shares one FakeStore across two Models instances, and proves per-id ACK isolation plus late-write rotation isolation across sources (kimi entry untouched while radius rotates); no predecessor family was re-implemented. Dev incidents fixed en route: the first nine-flow draft used wrong provider type names and a kimi start fixture missing verification_uri; the first-poll test mounted two device mocks (the 900s mount shadowed the short-deadline one); the rotation mount was shadowed by the unlimited first token mock and now uses up_to_n_times; clippy manual-inspect rewrites and an unused import. D.1 smoke full PASSED on the first run.",
+          "gate_results": {
+            "d1": "opi-impl-smoke.sh full PASSED first run",
+            "d0_scenarios": "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures green in the full workspace run; oauth_flows 178 passed (23 new: browser full drive with the real 1456 loopback callback and authorize-URL param pins, manual paste arm, discovery non-ok/missing-endpoint/non-string typed before any URL, device start form and poll form pins, parse defaults interval 5s with verbatim URI and required fields, first-poll wait, slow_down server interval (3 polls) and +5s default (2 polls), pending-then-success, expired and denied revoked with reasons, unknown and 5xx typed no-echo, ok missing fields typed, device mode skips discovery, refresh strict rotate single pass with form pins, refresh missing fields strict, refresh 401/403 revoked, refresh non-ok no retry, production constants, nine-flow register + two-Models one-store isolation and rotation)",
+            "d0a_artifact_truthfulness": "no artifact directory; wire claims verified via wiremock request captures (discovery GET, device start and token poll forms, per-path counts pinning the single-pass refresh and zero-poll negatives), a real loopback TCP callback GET driving the browser arm, presenter authorize-URL/device-code/failure records, and unit pins of the parse defaults; classification: verified",
+            "d2_exec": "7 lenses run sequentially; 0 must-fix, 4 flagged_for_human (listed in the session note), 0 rejected",
+            "test_disposition": [
+              {
+                "subject": "P20-S31",
+                "action": "add",
+                "test": "crates/opi-ai/tests/oauth_flows.rs radius section (22 cases + discovery/token/device mounts, drive_radius_callback driver, nine-flow assembled case) reusing port_guard, ScriptedPresenter, FakeStore, requests_at, expires_within, xai_stored_credential, copilot_flow",
+                "interface": "auth::oauth::radius + parse_radius_device_authorization + nine-family register_oauth_flow surface",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S31",
+                "action": "retain",
+                "test": "all remaining oauth_flows tests unchanged in behavior",
+                "interface": "shared runner and sibling flows",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.32",
@@ -17547,6 +17583,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-24T17:20:00+00:00",
       "task_id": "20.30",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 4,
+      "rejected_count": 0,
+      "ran_at": "2026-10-24T19:10:00+00:00",
+      "task_id": "20.31",
       "criterion_id": null
     }
   ]
