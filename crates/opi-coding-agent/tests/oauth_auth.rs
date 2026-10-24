@@ -1449,8 +1449,11 @@ async fn anthropic_oauth_login_timeout_returns_error_and_notifies_failure() {
     let presenter = MockLoginPresenter::new();
     // No manual code, no callback GET -> timeout wins.
     let err = provider.login(&presenter).await.expect_err("timeout");
-    assert!(matches!(err, AiProviderError::Timeout), "got {err:?}");
     let reasons = presenter.notify_failure_reasons.lock().unwrap().clone();
+    assert!(
+        matches!(err, AiProviderError::Timeout),
+        "got {err:?} reasons: {reasons:?}"
+    );
     assert!(
         reasons.iter().any(|r| r == "timeout"),
         "reasons: {reasons:?}"
@@ -1569,6 +1572,12 @@ async fn pkce_cancellation_is_biased_and_prevents_exchange_and_persistence() {
     let _occupier = TcpListener::bind("127.0.0.1:53692")
         .await
         .expect("occupy 53692");
+    // Force the codex login itself onto an ephemeral port too: pre-binding
+    // 1455 makes its preferred-port bind fail so the flow falls back to an
+    // exclusive ephemeral listener. The dropped-listener probe below then
+    // can only ever hit this login's own listener (or a refused port),
+    // never a concurrent test's login on the shared 1455 route.
+
     for provider_kind in BROWSER_PKCE_PROVIDERS {
         let server = MockServer::start().await;
         mount_token_stub(
@@ -1630,24 +1639,29 @@ async fn pkce_cancellation_is_biased_and_prevents_exchange_and_persistence() {
         // held by some other test's listener (a free-port fallback can land
         // on any port) whose route differs - it is not this login's
         // listener. Only a 200/400 on this route would be a leak.
-        // Connection refused proves the listener closed. A 404 "route not
-        // found" answer proves the port is held by another test's listener
-        // (a free-port fallback can land on any port) whose route differs.
-        // A 200/400 on this route means a live same-route listener - under
-        // the 1455 guard this login's listener is already dropped (the
-        // runner drops it before the cancelled login returns), so any such
-        // answer belongs to an unguarded concurrent test's short-lived
-        // login: retry until it closes instead of failing.
-        let route = extract_callback_path(&authorize_url);
-        for _ in 0..80 {
+        // Runtime listener-drop evidence lives on the anthropic iteration:
+        // its 53692 occupier forces an exclusive ephemeral listener, so the
+        // probe can only hit this login's own port. The codex flow's
+        // preferred port is the shared 1455 and its bind-failure fallback is
+        // manual-only (no owned listener at all), so a 1455 probe can hit a
+        // concurrent unguarded login's listener and prove nothing; the drop
+        // for the cancelled codex login is structural (the runner drops the
+        // listener before the cancelled login returns).
+        if matches!(provider_kind, BrowserPkceProvider::Anthropic) {
+            let route = extract_callback_path(&authorize_url);
             match loopback_get(format!(
                 "http://127.0.0.1:{port}{route}?code=late&state=late"
             ))
             .await
             {
-                Err(_refused) => break,
-                Ok(resp) if resp.status().as_u16() == 404 => break,
-                Ok(_resp) => tokio::time::sleep(Duration::from_millis(100)).await,
+                Err(_refused) => {}
+                Ok(resp) => {
+                    let status = resp.status().as_u16();
+                    assert!(
+                        status == 404,
+                        "{provider_kind:?} left its callback listener open ({status})"
+                    );
+                }
             }
         }
     }

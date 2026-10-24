@@ -973,3 +973,18 @@ token 留在 refresh 槽。产品 `CopilotOAuthProvider` 协议复制品删除�
 因此 `needs_refresh` 恒为 false、`refresh` 为零网络恒等操作，且流绝不
 发起 personalization 请求。共享 runner 新增 `AuthorizeStyle` 与可选的
 绑定后进度模板；既有流行为不变。
+
+### SDK OAuth（Kimi Coding 设备流）（P20-S28）
+
+`auth::oauth::kimi_coding` 钉定 pi 1.3.0 `kimi-coding.ts` 与共享
+`device-code.ts` 轮询状态机。对 `auth.kimi.com` 的 RFC 8628：一次 form
+POST 以固定 client id 启动设备授权（两个 verification URI 都必须为
+http(s)；interval/expires 默认 5s/15min），presenter 收到 user code 与
+**完整** verification URI；form 编码的 token 轮询先等一个 interval、下限
+1s、`slow_down` 采纳服务器 interval 否则 +5s，设备期限耗尽时类型化收尾
+（遇过 slow_down 的原因可区分）。`authorization_pending` 继续轮询；
+`expired_token`/`access_denied` 为终态撤销；成功必须是严格的
+access/refresh/expires_in 三元组并按真实期限存储。每请求 30s 期限；
+失败体永不回显。`refresh` 对 429/5xx/传输失败至多重试三次（1s/2s/4s
+退避）；401/403 或 `invalid_grant` 为类型化撤销凭据，绝无账号回退。
+env 的 OAuth host 覆盖归宿主政策，经构造注入。

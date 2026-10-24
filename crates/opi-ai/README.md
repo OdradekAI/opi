@@ -1181,3 +1181,21 @@ refresh slot and the permanent sentinel expiry (9999-12-31 - pi's
 network I/O, and the flow never issues the personalization request.
 The shared runner gained `AuthorizeStyle` and an optional post-bind
 progress template; existing flows are unchanged in behavior.
+
+### SDK OAuth (Kimi Coding device flow) (P20-S28)
+
+`auth::oauth::kimi_coding` is pinned to pi 1.3.0 `kimi-coding.ts` plus the
+shared `device-code.ts` polling state machine. RFC 8628 against
+`auth.kimi.com`: a form POST starts device authorization with the fixed
+client id (both verification URIs must be http(s); interval/expires default
+5s/15min), the presenter gets the user code with the COMPLETE verification
+URI, and form-encoded token polls wait one interval first, floor at 1s,
+honor a server `slow_down` interval or add 5s, and end typed at the device
+deadline (the after-slow-down reason is distinct). `authorization_pending`
+keeps polling; `expired_token`/`access_denied` are terminal revoked grants;
+success must be the strict access/refresh/expires_in triple stored as the
+real expiry. Every request has the 30s deadline; failure bodies are never
+echoed. `refresh` retries 429/5xx/transport up to three times (1s/2s/4s
+backoff); 401/403 or `invalid_grant` is a typed revoked credential with no
+account fallback. The env OAuth-host override is host policy via
+construction.

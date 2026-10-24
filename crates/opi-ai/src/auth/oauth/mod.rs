@@ -21,6 +21,7 @@ pub mod anthropic;
 pub mod chatgpt;
 pub mod codex;
 pub mod copilot;
+pub mod kimi_coding;
 pub mod openrouter;
 
 use std::borrow::Cow;

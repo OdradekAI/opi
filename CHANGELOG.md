@@ -411,6 +411,34 @@
   and its refresh network bound is now 15s, scoped to the HTTP exchange
   only — lock waits and the ACK are outside it.
 ### Added
+- `opi-ai`: the Kimi Code (subscription) OAuth device flow landed in the
+  SDK (task 20.28), pinned to pi 1.3.0's `kimi-coding.ts` + shared
+  `device-code.ts`. The new `auth::oauth::kimi_coding` module runs RFC 8628
+  against `https://auth.kimi.com`: one form-encoded POST to
+  `/api/oauth/device_authorization` with the fixed client id, presenting the
+  public user code with the COMPLETE verification URI (both verification
+  URIs must be http(s)-trusted; `interval`/`expires_in` fall back to 5s and
+  the 15-minute device deadline), then form-encoded token polls under pi's
+  shared polling state machine - wait one interval before the first poll, a
+  1-second interval floor, `slow_down` honoring a server-provided interval
+  or adding 5 seconds, and a typed timeout at the device deadline whose
+  presenter reason distinguishes the after-slow-down case (pi's WSL
+  clock-drift wording is host UX). `authorization_pending` keeps polling;
+  `expired_token`/`access_denied` are terminal typed revoked grants; a
+  success body must be the strict triple (non-empty access and refresh,
+  positive finite `expires_in`) recorded as the real service expiry. Every
+  request carries the 30-second deadline; failure bodies are never echoed
+  (statuses and fixed OAuth error classes only). `refresh` posts the
+  refresh grant with up to three retries over 429/5xx and transport
+  failures (1s/2s/4s backoff); 401/403 or an `invalid_grant` error code is
+  a dead credential - typed revoked, zero retries, never an account
+  fallback. pi's `KIMI_CODE_OAUTH_HOST`/`KIMI_OAUTH_HOST` override is host
+  policy expressed through construction (trailing slashes trimmed).
+  Host-test maintenance in the same commit: the cancelled-login
+  dropped-listener probe now runs only on the anthropic iteration's
+  exclusive ephemeral port - the codex flow's shared 1455 preferred port
+  with its manual-only bind fallback cannot prove ownership, and the probe
+  could strike a concurrent login's listener.
 - `opi-ai`: the OpenRouter OAuth flow landed in the SDK (task 20.27),
   pinned to pi 1.3.0's `openrouter.ts`. OpenRouter exchanges an
   authorization code for a permanent, user-controlled API key instead of
