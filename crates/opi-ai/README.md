@@ -1218,3 +1218,22 @@ deadline. The body error code is read regardless of status, matching pi's
 switch after its token check. Failure bodies are never echoed; the
 sanctioned exception is a trusted http(s) setup `action_url` from a keyless
 mint response reaching the presenter reason.
+
+### SDK OAuth (xAI device flow and single-pass refresh rotation) (P20-S30)
+
+`auth::oauth::xai` is pinned to pi 1.3.0 `xai.ts`. RFC 8628 against
+`auth.x.ai` with form bodies carrying the fixed client id, the xAI scope,
+and `referrer=pi`. Verification URIs are https-only; an untrusted
+`verification_uri_complete` fails login rather than falling back to the
+plain URI (pi validates before choosing `complete ?? plain`), and the
+device authorization requires a positive finite `expires_in` while
+`interval` defaults to 5s. Polling branches on ok first (success bodies
+need non-empty access and refresh tokens) and maps the RFC 8628 error
+codes - including xAI's `authorization_denied` spelling - only on non-ok
+answers, under the shared machine (first-poll wait, 1s floor, slow_down
+server interval or +5s, device deadline). Token `expires_in` defaults to
+3600s. Refresh is a single pass: an omitted `refresh_token` preserves the
+stored one (the sdk-contracts row 146 fixture), 401/403 revokes for
+relogin, and nothing retries. The stored expiry is the real service
+lifetime with the single five-minute correction in `needs_refresh`.
+Failure bodies are never echoed; statuses and fixed classes are.

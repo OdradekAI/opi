@@ -411,6 +411,31 @@
   and its refresh network bound is now 15s, scoped to the HTTP exchange
   only — lock waits and the ACK are outside it.
 ### Added
+- `opi-ai`: the xAI (Grok/X subscription) OAuth flow landed in the SDK
+  (task 20.30), pinned to pi 1.3.0's `xai.ts`. The new `auth::oauth::xai`
+  module runs RFC 8628 against `auth.x.ai` (form-encoded
+  `/oauth2/device/code` with the fixed client id, the xAI scope, and
+  `referrer=pi`; `/oauth2/token` for polling and refresh) and keeps pi's
+  exact trust and parsing edges: verification URIs are https-only, an
+  untrusted `verification_uri_complete` fails rather than coalescing onto
+  the plain URI (pi validates before choosing `complete ?? plain`), and
+  the device authorization requires a positive finite `expires_in` while
+  `interval` falls back to the shared 5s default. Polling branches on the
+  ok status first (a success body must carry non-empty access and refresh
+  tokens; the RFC 8628 error-code switch, including xAI's
+  `authorization_denied` spelling beside `access_denied`, runs only on
+  non-ok answers) and follows the shared machine: first-poll wait, 1s
+  floor, slow_down honoring a server interval or adding 5s, device
+  deadline typed timeout. Token `expires_in` defaults to 3600s. Refresh is
+  a single pass (no retry loop on this wire): a response omitting
+  `refresh_token` preserves the stored one (the sdk-contracts row 146
+  fixture; empty or non-string still fails typed), `expires_in` defaults
+  to 3600s, and 401/403 is a revoked session for relogin. The stored
+  expiry is the real service lifetime; the single five-minute near-expiry
+  correction stays in `needs_refresh`. Failure bodies are never echoed;
+  statuses and fixed OAuth error classes are. The presenter receives the
+  user code with the complete-or-plain https URI; pi's interval/expiry
+  notification fields stay host UX per the 20.28/20.29 seam decision.
 - `opi-ai`: the Meta (Muse subscription) OAuth flow landed in the SDK
   (task 20.29), pinned to pi 1.3.0's `meta.ts` plus the shared
   `device-code.ts`. The new `auth::oauth::meta` module runs RFC 8628

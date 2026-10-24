@@ -1004,3 +1004,18 @@ verification URI 取可信的 `verification_uri_complete` 回退可信的
 读取不分状态（与 pi 的 token 检查后 switch 一致）。失败体永不回显；
 唯一契约允许的例外是无 key 铸造响应中的可信 http(s) `action_url`
 进入 presenter 原因。
+
+### SDK OAuth（xAI 设备流与单遍刷新轮转）（P20-S30）
+
+`auth::oauth::xai` 钉定 pi 1.3.0 `xai.ts`。对 `auth.x.ai` 的 RFC 8628：
+form 体携带固定 client id、xAI scope 与 `referrer=pi`。verification URI
+仅接受 https；不可信的 `verification_uri_complete` 直接类型化失败而非
+回退 plain（pi 先校验再取 `complete ?? plain`）；设备授权要求正有限
+`expires_in`，`interval` 缺省 5s。轮询 ok 先验（成功体须含非空 access
+与 refresh token），RFC 8628 错误码——含 xAI 特有
+`authorization_denied` 拼写——仅在非 ok 应答上映射，并遵循共享状态机
+（首询等待、1s 下限、slow_down 服务器 interval 或 +5s、设备期限）。
+token `expires_in` 缺省 3600s。刷新为单遍：响应缺 `refresh_token`
+保留旧值（sdk-contracts 行 146 fixture），401/403 撤销重登，无任何
+重试。存储期限为真实服务期限，5 分钟近过期修正在 `needs_refresh`
+单点。失败体永不回显；仅状态与固定错误类。
