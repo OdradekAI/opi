@@ -988,3 +988,19 @@ access/refresh/expires_in 三元组并按真实期限存储。每请求 30s 期�
 失败体永不回显。`refresh` 对 429/5xx/传输失败至多重试三次（1s/2s/4s
 退避）；401/403 或 `invalid_grant` 为类型化撤销凭据，绝无账号回退。
 env 的 OAuth host 覆盖归宿主政策，经构造注入。
+
+### SDK OAuth（Meta 设备流与 Model API key 铸造）（P20-S29）
+
+`auth::oauth::meta` 钉定 pi 1.3.0 `meta.ts` 与共享 `device-code.ts` 轮询
+状态机。对 `auth.meta.com` 的 RFC 8628 得到的 identity token 不直接用于
+推理，而是在 `api.meta.ai/muse-code/key` 铸造 Model API key（Bearer
+identity、`{}` body、`x-api-version: 1.0.0`）。凭据以铸造 key 为
+`access`、identity token 为 `refresh`、固定 24 小时期限存储，因此
+`refresh` 用同一 identity 重铸——绝无 refresh_token 授权端点、绝无重试
+环。铸钥 401/403（登录或刷新）为类型化撤销会话，须重新登录。
+verification URI 取可信的 `verification_uri_complete` 回退可信的
+`verification_uri`；interval/expires 默认 5s/15min；轮询首询前等待、
+1s 下限、slow_down 采纳服务器 interval、设备期限类型化超时。错误码
+读取不分状态（与 pi 的 token 检查后 switch 一致）。失败体永不回显；
+唯一契约允许的例外是无 key 铸造响应中的可信 http(s) `action_url`
+进入 presenter 原因。

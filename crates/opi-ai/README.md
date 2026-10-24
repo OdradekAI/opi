@@ -1199,3 +1199,22 @@ echoed. `refresh` retries 429/5xx/transport up to three times (1s/2s/4s
 backoff); 401/403 or `invalid_grant` is a typed revoked credential with no
 account fallback. The env OAuth-host override is host policy via
 construction.
+
+### SDK OAuth (Meta device flow and Model API key mint) (P20-S29)
+
+`auth::oauth::meta` is pinned to pi 1.3.0 `meta.ts` plus the shared
+`device-code.ts` polling machine. RFC 8628 against `auth.meta.com` yields an
+identity token that never authenticates inference; it is exchanged for a
+Model API key at `api.meta.ai/muse-code/key` (Bearer identity, `{}` body,
+`x-api-version: 1.0.0`). The credential stores the minted key as `access`
+and the identity token as `refresh` with a fixed 24-hour expiry, so
+`refresh` re-mints with the same identity - never a refresh_token grant and
+never a retry loop. A mint 401/403 (login or refresh) is a typed revoked
+session for relogin. The verification URI is the trusted
+`verification_uri_complete` falling back to the trusted `verification_uri`;
+interval/expires default to 5s/15min; polling waits before the first poll,
+floors at 1s, honors slow_down intervals, and times out typed at the device
+deadline. The body error code is read regardless of status, matching pi's
+switch after its token check. Failure bodies are never echoed; the
+sanctioned exception is a trusted http(s) setup `action_url` from a keyless
+mint response reaching the presenter reason.

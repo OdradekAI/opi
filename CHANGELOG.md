@@ -411,6 +411,34 @@
   and its refresh network bound is now 15s, scoped to the HTTP exchange
   only — lock waits and the ACK are outside it.
 ### Added
+- `opi-ai`: the Meta (Muse subscription) OAuth flow landed in the SDK
+  (task 20.29), pinned to pi 1.3.0's `meta.ts` plus the shared
+  `device-code.ts`. The new `auth::oauth::meta` module runs RFC 8628
+  against `auth.meta.com` (trailing-slash `/oidc/device/authorization/`
+  and `/oidc/device/token/`, form bodies, fixed client id) and splits
+  identity from API access exactly as pi does: the polled identity token
+  never authenticates inference; it is exchanged for a Model API key via
+  `POST api.meta.ai/muse-code/key` (Bearer identity, empty JSON body,
+  `x-api-version: 1.0.0`), stored with the identity token as `refresh` and
+  a fixed 24-hour client-side expiry, so the shared scheduler re-mints
+  through `refresh` with no refresh_token grant (that endpoint does not
+  exist on this wire - the token path is never hit during refresh) and no
+  retry loop. A 401/403 from mint - login or refresh - is a dead session:
+  typed revoked for relogin, never an account fallback. The device start
+  prefers the trusted `verification_uri_complete` and falls back to the
+  trusted `verification_uri` (pi coalesces at the trust level: an
+  untrusted complete URI defers to the plain one); interval/expires fall
+  back to 5s and the 15-minute device deadline; polling follows pi's
+  shared machine (first-poll wait, 1s floor, slow_down honoring a server
+  interval or adding 5s, typed timeout with the slow-down reason). The
+  poll switch reads the body error code regardless of status exactly as pi
+  does after its token check. Between identity and mint the presenter
+  hears pi's progress notification. Failure bodies are never echoed;
+  statuses and fixed classes are. The one corpus-sanctioned exception:
+  a keyless mint response may surface a trusted http(s) setup
+  `action_url` in the presenter reason (sdk-contracts row 145), never the
+  raw body. Host command wording (pi's ``/login meta`` hint) stays host
+  UX; the typed reason is "sign in again".
 - `opi-ai`: the Kimi Code (subscription) OAuth device flow landed in the
   SDK (task 20.28), pinned to pi 1.3.0's `kimi-coding.ts` + shared
   `device-code.ts`. The new `auth::oauth::kimi_coding` module runs RFC 8628
