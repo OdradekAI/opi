@@ -12,10 +12,10 @@
 use std::time::Duration;
 
 use crate::auth::oauth::{
-    CallbackBindFallback, PkceLoginConfig, RefreshFieldPolicy, TokenRequestEncoding,
-    code_challenge_s256, generate_code_verifier, generate_state, json_request_deadline,
-    no_redirect_client, provider_config_error, provider_network_error, refresh_oauth_token,
-    run_pkce_login, token_endpoint_error, url_encode,
+    AuthorizeStyle, CallbackBindFallback, PkceLoginConfig, RefreshFieldPolicy,
+    TokenRequestEncoding, code_challenge_s256, generate_code_verifier, generate_state,
+    json_request_deadline, no_redirect_client, provider_config_error, provider_network_error,
+    refresh_oauth_token, run_pkce_login, token_endpoint_error, url_encode,
 };
 use crate::auth::{
     BoxAuthFuture, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider,
@@ -126,6 +126,8 @@ impl AnthropicOAuthProvider {
             redirect_host: ANTHROPIC_REDIRECT_HOST.to_owned(),
             manual_only_redirect_uri: Some(ANTHROPIC_MANUAL_REDIRECT_URI.to_owned()),
             bind_fallback: CallbackBindFallback::FreePort,
+            authorize_style: AuthorizeStyle::Standard,
+            listening_progress: None,
         }
     }
 }

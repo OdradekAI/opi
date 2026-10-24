@@ -16,8 +16,8 @@ use secrecy::{ExposeSecret, SecretString};
 use time::OffsetDateTime;
 
 use crate::auth::oauth::{
-    CallbackBindFallback, FlowBudget, PkceInputError, PkceInputKind, PkceLoginConfig,
-    TokenRequestEncoding, generate_state, no_redirect_client, provider_auth_error,
+    AuthorizeStyle, CallbackBindFallback, FlowBudget, PkceInputError, PkceInputKind,
+    PkceLoginConfig, TokenRequestEncoding, generate_state, no_redirect_client, provider_auth_error,
     provider_config_error, run_pkce_login_with, token_endpoint_error, unwrap_response,
 };
 use crate::auth::{BoxAuthFuture, LoginPresenter, OAuthCredential, OAuthProvider};
@@ -364,6 +364,8 @@ impl OpenAiChatGptOAuthProvider {
             redirect_host: "127.0.0.1".to_owned(),
             manual_only_redirect_uri: None,
             bind_fallback: CallbackBindFallback::Required,
+            authorize_style: AuthorizeStyle::Standard,
+            listening_progress: None,
         }
     }
 }

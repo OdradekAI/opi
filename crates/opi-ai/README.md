@@ -1162,3 +1162,22 @@ duplicate is deleted; the host registers the SDK provider with its
 static catalog as the policy whitelist and derives the Copilot request
 base from the token (a legacy stored `base_url` still wins so
 pre-cutover credentials never change endpoints).
+
+### SDK OAuth (OpenRouter) (P20-S27)
+
+`auth::oauth::openrouter` is pinned to pi 1.3.0's `openrouter.ts`.
+OpenRouter trades an authorization code for a permanent API key: the
+authorize URL carries `callback_url` + S256 PKCE with no `state` and no
+`client_id` - the CSRF defense is the fresh random `/oauth/callback/`
+UUID route each login, which the shared loopback handler now validates
+for every PKCE flow (wrong route or method: 404 page, keep waiting). The
+ephemeral-loopback callback races a manual paste of the redirect URL, a
+`code=` fragment, or the bare code; the exchange is one JSON POST to
+`/api/v1/auth/keys` (30-second deadline) that must carry a non-empty
+`key`. Credentials keep the key as the access token with an empty
+refresh slot and the permanent sentinel expiry (9999-12-31 - pi's
+`MAX_SAFE_INTEGER` mapped to the last representable instant), so
+`needs_refresh` is always false, `refresh` is the identity with zero
+network I/O, and the flow never issues the personalization request.
+The shared runner gained `AuthorizeStyle` and an optional post-bind
+progress template; existing flows are unchanged in behavior.

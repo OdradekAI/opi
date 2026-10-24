@@ -282,6 +282,31 @@ pub fn extract_redirect_port(auth_url: &str) -> Option<u16> {
     None
 }
 
+/// Extract the callback PATH from the `redirect_uri` query parameter of an
+/// authorize URL (percent-decoded; `/` when the URI carries no path). PKCE
+/// callback drives must use the flow's real route: the loopback handler
+/// answers any other route with 404 and keeps waiting (pi
+/// `callback-server.ts` pathname check).
+pub fn extract_callback_path(auth_url: &str) -> String {
+    let query = auth_url.split_once('?').map(|(_, q)| q).unwrap_or("");
+    for pair in query.split('&') {
+        if let Some(value) = pair.strip_prefix("redirect_uri=") {
+            let decoded = percent_decode(value);
+            let after_scheme = decoded
+                .split_once("://")
+                .map(|(_, r)| r)
+                .unwrap_or(&decoded);
+            let path = after_scheme.split_once('/');
+            let path = path
+                .map(|(_, p)| format!("/{p}"))
+                .unwrap_or_else(|| "/".to_owned());
+            let path = path.split('?').next().unwrap_or("/").to_owned();
+            return path;
+        }
+    }
+    "/".to_owned()
+}
+
 fn extract_port_from_url(url: &str) -> Option<u16> {
     let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
     let host_port = after_scheme.split('/').next().unwrap_or("");

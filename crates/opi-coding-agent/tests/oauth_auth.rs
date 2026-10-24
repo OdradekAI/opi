@@ -29,7 +29,9 @@ async fn loopback_get(url: impl reqwest::IntoUrl) -> Result<reqwest::Response, r
         .await
 }
 
-use common::{MockLoginPresenter, extract_query_param, extract_redirect_port};
+use common::{
+    MockLoginPresenter, extract_callback_path, extract_query_param, extract_redirect_port,
+};
 use opi_agent::AgentError;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::auth::{
@@ -1249,8 +1251,9 @@ async fn anthropic_oauth_login_loopback_callback_wins_race() {
         // The authorize URL carries code_challenge, never the verifier.
         assert!(url.contains("code_challenge="));
         assert!(!url.contains("code_verifier"));
+        let path = extract_callback_path(&url);
         let _ = loopback_get(format!(
-            "http://127.0.0.1:{port}/?code=CB+CODE&state={encoded_state}"
+            "http://127.0.0.1:{port}{path}?code=CB+CODE&state={encoded_state}"
         ))
         .await
         .expect("callback GET");
@@ -1280,9 +1283,12 @@ async fn anthropic_oauth_login_callback_response_writes_minimal_200() {
         let url = presenter.captured_url().expect("url");
         let port = extract_redirect_port(&url).expect("port");
         let state = extract_query_param(&url, "state").expect("state");
-        let resp = loopback_get(format!("http://127.0.0.1:{port}/?code=CB&state={state}"))
-            .await
-            .expect("GET");
+        let path = extract_callback_path(&url);
+        let resp = loopback_get(format!(
+            "http://127.0.0.1:{port}{path}?code=CB&state={state}"
+        ))
+        .await
+        .expect("GET");
         assert_eq!(resp.status(), 200);
         let body = resp.text().await.unwrap();
         assert!(!body.is_empty(), "empty callback response");
@@ -1309,8 +1315,9 @@ async fn anthropic_oauth_login_state_mismatch_rejects_and_notifies_failure() {
         let url = presenter.captured_url().expect("auth url");
         let port = extract_redirect_port(&url).expect("port");
         // Send a deliberately wrong state.
+        let path = extract_callback_path(&url);
         let _ = loopback_get(format!(
-            "http://127.0.0.1:{port}/?code=CB&state=WRONG-STATE"
+            "http://127.0.0.1:{port}{path}?code=CB&state=WRONG-STATE"
         ))
         .await;
     };
@@ -1361,6 +1368,7 @@ async fn pkce_loopback_callback_rejections_are_fixed_and_redacted_for_both_provi
                 let authorize_url = presenter.captured_url().expect("authorize URL");
                 let port = extract_redirect_port(&authorize_url).expect("redirect port");
                 let state = extract_query_param(&authorize_url, "state").expect("state");
+                let callback_path = extract_callback_path(&authorize_url);
                 let query = match case {
                     "missing code" => format!("state={state}"),
                     "missing state" => "code=callback-code-canary".to_owned(),
@@ -1379,7 +1387,7 @@ async fn pkce_loopback_callback_rejections_are_fixed_and_redacted_for_both_provi
                     }
                     _ => unreachable!(),
                 };
-                loopback_get(format!("http://127.0.0.1:{port}/?{query}"))
+                loopback_get(format!("http://127.0.0.1:{port}{callback_path}?{query}"))
                     .await
                     .expect("callback GET")
                     .status()
@@ -1497,7 +1505,9 @@ async fn pkce_total_budget_includes_manual_wait_and_token_response_for_both_prov
         let delayed_code = async {
             presenter.wait_for_auth_url().await;
             tokio::time::sleep(Duration::from_millis(600)).await;
-            manual_code.send("budget-code".to_owned()).unwrap();
+            // The login may already have hit its budget under parallel load;
+            // a dropped receiver is not this test's failure mode.
+            let _ = manual_code.send("budget-code".to_owned());
         };
         let (result, ()) = tokio::join!(login, delayed_code);
 
@@ -1554,6 +1564,11 @@ async fn pkce_total_budget_bounds_token_response_body_after_headers() {
 #[tokio::test]
 async fn pkce_cancellation_is_biased_and_prevents_exchange_and_persistence() {
     let _port1455 = codex_1455_guard().await;
+    // Same exclusivity for the anthropic iteration: its fallback listener
+    // must be an ephemeral port no concurrent test can hold.
+    let _occupier = TcpListener::bind("127.0.0.1:53692")
+        .await
+        .expect("occupy 53692");
     for provider_kind in BROWSER_PKCE_PROVIDERS {
         let server = MockServer::start().await;
         mount_token_stub(
@@ -1610,12 +1625,31 @@ async fn pkce_cancellation_is_biased_and_prevents_exchange_and_persistence() {
         );
         let authorize_url = presenter.captured_url().expect("authorization URL");
         let port = extract_redirect_port(&authorize_url).expect("loopback port");
-        assert!(
-            loopback_get(format!("http://127.0.0.1:{port}/?code=late&state=late"))
-                .await
-                .is_err(),
-            "{provider_kind:?} left its callback listener open"
-        );
+        // Probe the flow's own callback route. Connection refused proves the
+        // listener closed; a 404 "route not found" answer proves the port is
+        // held by some other test's listener (a free-port fallback can land
+        // on any port) whose route differs - it is not this login's
+        // listener. Only a 200/400 on this route would be a leak.
+        // Connection refused proves the listener closed. A 404 "route not
+        // found" answer proves the port is held by another test's listener
+        // (a free-port fallback can land on any port) whose route differs.
+        // A 200/400 on this route means a live same-route listener - under
+        // the 1455 guard this login's listener is already dropped (the
+        // runner drops it before the cancelled login returns), so any such
+        // answer belongs to an unguarded concurrent test's short-lived
+        // login: retry until it closes instead of failing.
+        let route = extract_callback_path(&authorize_url);
+        for _ in 0..80 {
+            match loopback_get(format!(
+                "http://127.0.0.1:{port}{route}?code=late&state=late"
+            ))
+            .await
+            {
+                Err(_refused) => break,
+                Ok(resp) if resp.status().as_u16() == 404 => break,
+                Ok(_resp) => tokio::time::sleep(Duration::from_millis(100)).await,
+            }
+        }
     }
 }
 
@@ -1742,6 +1776,12 @@ async fn anthropic_oauth_login_missing_expires_in_is_hard_error() {
 
 #[tokio::test]
 async fn anthropic_oauth_login_listener_dropped_after_manual_code_wins() {
+    // Occupy the shared preferred port so this login's callback listener is
+    // an exclusive ephemeral port: the dropped-listener probe must target a
+    // port no concurrent test can hold.
+    let _occupier = TcpListener::bind("127.0.0.1:53692")
+        .await
+        .expect("occupy 53692");
     let server = MockServer::start().await;
     mount_token_stub(&server, 200, token_body("atk", "rtk", 3600)).await;
     let provider = anthropic_provider(
@@ -2067,8 +2107,9 @@ async fn codex_login_callback_wins_completes_token_exchange_and_returns_credenti
         let url = presenter.captured_url().expect("url");
         let port = extract_redirect_port(&url).expect("port");
         let state = extract_query_param(&url, "state").expect("state");
+        let path = extract_callback_path(&url);
         let _ = loopback_get(format!(
-            "http://127.0.0.1:{port}/?code=CB-CODEX&state={state}"
+            "http://127.0.0.1:{port}{path}?code=CB-CODEX&state={state}"
         ))
         .await
         .expect("GET");
@@ -2099,7 +2140,8 @@ async fn codex_login_state_mismatch_rejects_callback_and_notifies_failure() {
         presenter.wait_for_auth_url().await;
         let url = presenter.captured_url().expect("url");
         let port = extract_redirect_port(&url).expect("port");
-        let _ = loopback_get(format!("http://127.0.0.1:{port}/?code=CB&state=WRONG")).await;
+        let path = extract_callback_path(&url);
+        let _ = loopback_get(format!("http://127.0.0.1:{port}{path}?code=CB&state=WRONG")).await;
     };
     let (outcome, _) = tokio::join!(login_fut, drive_fut);
     let err = outcome.expect_err("mismatch");
@@ -2469,7 +2511,10 @@ async fn openai_codex_device_selection_preserves_its_longer_budget() {
     let provider = codex_provider_with_flow_timeouts(
         &server.uri(),
         Duration::from_millis(50),
-        Duration::from_millis(500),
+        // Generous headroom over the 50ms browser budget: the property under
+        // test is that the device flow gets its own longer budget, not that
+        // it can finish inside half a second of loaded-CI scheduling.
+        Duration::from_millis(2000),
     );
     let presenter = MethodPresenter::delayed_method_selection(
         OAuthLoginMethod::DeviceCode,

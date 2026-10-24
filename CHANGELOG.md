@@ -411,6 +411,34 @@
   and its refresh network bound is now 15s, scoped to the HTTP exchange
   only — lock waits and the ACK are outside it.
 ### Added
+- `opi-ai`: the OpenRouter OAuth flow landed in the SDK (task 20.27),
+  pinned to pi 1.3.0's `openrouter.ts`. OpenRouter exchanges an
+  authorization code for a permanent, user-controlled API key instead of
+  an access/refresh pair: the new `auth::oauth::openrouter` module
+  authorizes at `https://openrouter.ai/auth` with `callback_url` + S256
+  PKCE and no `state`/`client_id` (the CSRF defense is the fresh random
+  `/oauth/callback/<uuid>` route each login, now validated by the shared
+  loopback handler, which answers any other route or method with a 404
+  page and keeps waiting - a faithfulness strengthening for every PKCE
+  flow), races the ephemeral-loopback callback against pasting the full
+  redirect URL, a `code=` fragment, or the bare code (each strictly
+  parsed; empty input is a typed failure), and exchanges via one JSON
+  POST to `https://openrouter.ai/api/v1/auth/keys` (`code`,
+  `code_verifier`, fixed `code_challenge_method`, 30-second deadline)
+  whose response must be JSON carrying a non-empty `key`. The credential
+  stores the key as the access token with an empty refresh slot and the
+  permanent sentinel expiry (pi's `MAX_SAFE_INTEGER` mapped to the last
+  representable instant, 9999-12-31, because `time` tops out at year
+  9999; `expires_at: None` could not be used since `needs_refresh`
+  treats a missing expiry as refresh-now), so a permanent key is never
+  rotated: `refresh` is the identity with zero network I/O, and the flow
+  never issues the personalization request (`/models/user` stays an
+  explicit, separately selected catalog helper). The shared PKCE runner
+  gained `AuthorizeStyle` (`callback_url` form vs the classic query) and
+  an optional post-bind `notify_progress` template (OpenRouter reports
+  "Listening for OpenRouter OAuth callback on <redirect uri>"); the
+  existing Anthropic/Codex/ChatGPT constructions are unchanged in
+  behavior.
 - `opi-ai`: the GitHub Copilot OAuth flow is now SDK-owned (task
   20.26), pinned to pi 1.3.0's `github-copilot.ts`. The new
   `auth::oauth::copilot` module runs the GitHub device-code flow (fixed

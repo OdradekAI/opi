@@ -14,9 +14,10 @@
 use std::time::Duration;
 
 use crate::auth::oauth::{
-    CallbackBindFallback, FlowBudget, PkceLoginConfig, RefreshFieldPolicy, TokenRequestEncoding,
-    exchange_authorization_code, login_cancelled, no_redirect_client, provider_auth_error,
-    provider_config_error, provider_network_error, refresh_oauth_token, run_pkce_login,
+    AuthorizeStyle, CallbackBindFallback, FlowBudget, PkceLoginConfig, RefreshFieldPolicy,
+    TokenRequestEncoding, exchange_authorization_code, login_cancelled, no_redirect_client,
+    provider_auth_error, provider_config_error, provider_network_error, refresh_oauth_token,
+    run_pkce_login,
 };
 use crate::auth::{
     BoxAuthFuture, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider,
@@ -472,6 +473,8 @@ async fn run_codex_device_login_flow(
         redirect_host: "127.0.0.1".to_owned(),
         manual_only_redirect_uri: None,
         bind_fallback: CallbackBindFallback::FreePort,
+        authorize_style: AuthorizeStyle::Standard,
+        listening_progress: None,
     };
     let credential = exchange_authorization_code(
         &exchange_config,
@@ -572,6 +575,8 @@ impl OAuthProvider for CodexOAuthProvider {
                         redirect_host: "localhost".to_owned(),
                         manual_only_redirect_uri: Some(CODEX_REDIRECT_URI.to_owned()),
                         bind_fallback: CallbackBindFallback::ManualOnly,
+                        authorize_style: AuthorizeStyle::Standard,
+                        listening_progress: None,
                     };
                     run_pkce_login(
                         config,

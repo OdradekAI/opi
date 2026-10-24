@@ -958,3 +958,18 @@ refresh 重换存储的 GitHub token、重发现元数据、绝不触碰策略�
 token 留在 refresh 槽。产品 `CopilotOAuthProvider` 协议复制品删除；宿主
 注册 SDK 流并以静态目录为策略白名单，请求 base 从 token 派生（legacy
 存储 `base_url` 仍优先，保证切换前的凭据不换端点）。
+
+### SDK OAuth（OpenRouter）（P20-S27）
+
+`auth::oauth::openrouter` 钉定 pi 1.3.0 `openrouter.ts`。OpenRouter 用
+授权码换永久 API key：authorize URL 只带 `callback_url` + S256 PKCE，
+无 `state`、无 `client_id`——CSRF 防线是每次登录随机生成的
+`/oauth/callback/` UUID 路由，共享 loopback 处理器现对全部 PKCE 流校验
+该路由（错误路由或方法：404 页并继续等待）。临时端口回调与手动粘贴
+（完整 redirect URL、`code=` 片段或裸 code）竞速；交换为对
+`/api/v1/auth/keys` 的单次 JSON POST（30s 期限），响应必须携带非空
+`key`。凭据以 key 为 access、refresh 槽为空、过期为永久哨兵
+（9999-12-31——pi 的 `MAX_SAFE_INTEGER` 映射为可表示的最后一刻），
+因此 `needs_refresh` 恒为 false、`refresh` 为零网络恒等操作，且流绝不
+发起 personalization 请求。共享 runner 新增 `AuthorizeStyle` 与可选的
+绑定后进度模板；既有流行为不变。

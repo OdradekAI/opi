@@ -21,6 +21,7 @@ pub mod anthropic;
 pub mod chatgpt;
 pub mod codex;
 pub mod copilot;
+pub mod openrouter;
 
 use std::borrow::Cow;
 use std::future::Future;
@@ -30,7 +31,7 @@ use std::time::Duration;
 use secrecy::{ExposeSecret, SecretString};
 use time::OffsetDateTime;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 use crate::auth::{LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider};
 use crate::credential::{BoxAuthFuture, CredentialStore, CredentialStoreError};
@@ -167,6 +168,28 @@ pub struct PkceLoginConfig {
     /// fallback); Codex legacy goes straight to paste-back with the fixed
     /// redirect URI (pi `.catch(() => undefined)`).
     pub bind_fallback: CallbackBindFallback,
+    /// How the authorize URL carries the redirect and the PKCE challenge
+    /// (pi `loginOpenRouter` needs the `callback_url` form).
+    pub authorize_style: AuthorizeStyle,
+    /// Optional progress template emitted right after the callback listener
+    /// binds, with `{}` replaced by the redirect URI (pi `loginOpenRouter`
+    /// notifies "Listening for OpenRouter OAuth callback on ...").
+    pub listening_progress: Option<&'static str>,
+}
+
+/// How the authorization URL is built from the flow's endpoints.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AuthorizeStyle {
+    /// Classic OAuth query: `response_type=code` + `client_id` +
+    /// `redirect_uri` + `code_challenge` + `code_challenge_method=S256` +
+    /// `state`, plus the flow's extra `authorize_params`.
+    Standard,
+    /// OpenRouter: `callback_url` + `code_challenge` +
+    /// `code_challenge_method=S256` only. OpenRouter sends no `state`; the
+    /// per-login random callback path (validated by the callback handler)
+    /// keeps stray requests from completing the sign-in (pi
+    /// `loginOpenRouter`, sdk-contracts row 143).
+    CallbackUrlNoState,
 }
 
 /// Behavior when the preferred callback port cannot be bound.
@@ -219,7 +242,7 @@ impl PkceInputError {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PkceInputKind {
     Callback,
     Manual,
@@ -461,17 +484,28 @@ pub(crate) async fn run_pkce_login_with<'a>(
             "oauth flow has no redirect uri and no manual fallback",
         ));
     };
+    if let Some(template) = config.listening_progress {
+        presenter.notify_progress(&template.replace("{}", &redirect_uri));
+    }
     let verifier = generate_code_verifier();
     let challenge = code_challenge_s256(&verifier);
     let state = generate_state();
-    let mut authorize_url = format!(
-        "{}?response_type=code&client_id={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}",
-        config.authorize_url,
-        url_encode(&config.client_id),
-        url_encode(&redirect_uri),
-        challenge,
-        state,
-    );
+    let mut authorize_url = match config.authorize_style {
+        AuthorizeStyle::Standard => format!(
+            "{}?response_type=code&client_id={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}",
+            config.authorize_url,
+            url_encode(&config.client_id),
+            url_encode(&redirect_uri),
+            challenge,
+            state,
+        ),
+        AuthorizeStyle::CallbackUrlNoState => format!(
+            "{}?callback_url={}&code_challenge={}&code_challenge_method=S256",
+            config.authorize_url,
+            url_encode(&redirect_uri),
+            challenge,
+        ),
+    };
     for (name, value) in &config.authorize_params {
         authorize_url.push('&');
         authorize_url.push_str(name);
@@ -495,7 +529,12 @@ pub(crate) async fn run_pkce_login_with<'a>(
             cancelled?;
             LoginOutcome::Cancelled
         },
-        res = accept_one_callback(listener.as_ref(), &state, parse_input) => match res {
+        res = accept_one_callback(
+            listener.as_ref(),
+            &state,
+            &config.callback_path,
+            parse_input,
+        ) => match res {
             Ok(input) => LoginOutcome::CallbackCode(input),
             Err(CallbackFail::Parse(error)) => LoginOutcome::CallbackParse(error),
             Err(CallbackFail::Io(e)) => LoginOutcome::CallbackIo(e),
@@ -571,71 +610,101 @@ pub(crate) async fn run_pkce_login_with<'a>(
     }
 }
 
-/// Accept a single loopback callback, parse `code`+`state` from the query,
-/// validate `state` against the expected CSRF token, and write a minimal HTTP
-/// 200 response (no secret) before resolving. Single-accept: the listener is
-/// dropped by the caller after this returns.
+/// Accept loopback callbacks until one matches the configured route, parse
+/// `code`+`state` from its query, validate `state` against the expected CSRF
+/// token, and write a minimal HTTP 200 response (no secret) before resolving.
+/// pi `callback-server.ts` answers any request whose method is not GET or
+/// whose pathname differs from the flow's (random, for OpenRouter) callback
+/// path with a 404 page and keeps waiting - the route check is OpenRouter's
+/// entire CSRF defense because the provider sends no `state` - so this
+/// handler loops on mismatched routes instead of failing the login.
 async fn accept_one_callback(
     listener: Option<&TcpListener>,
     expected_state: &str,
+    expected_path: &str,
     parse_input: InputParser,
 ) -> Result<AuthzInput, CallbackFail> {
     let Some(listener) = listener else {
         // No callback server could be bound: this arm never wins.
         return std::future::pending().await;
     };
-    let (mut stream, _) = listener.accept().await.map_err(CallbackFail::Io)?;
-    let mut buf: Vec<u8> = Vec::with_capacity(1024);
-    let mut tmp = [0u8; 1024];
     loop {
-        let n = stream.read(&mut tmp).await.map_err(CallbackFail::Io)?;
-        if n == 0 {
-            break;
+        let (mut stream, _) = listener.accept().await.map_err(CallbackFail::Io)?;
+        let mut buf: Vec<u8> = Vec::with_capacity(1024);
+        let mut tmp = [0u8; 1024];
+        loop {
+            let n = stream.read(&mut tmp).await.map_err(CallbackFail::Io)?;
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&tmp[..n]);
+            if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+            if buf.len() > 8192 {
+                return Err(CallbackFail::Parse(callback_input_error(
+                    PkceInputError::MalformedUrl,
+                )));
+            }
         }
-        buf.extend_from_slice(&tmp[..n]);
-        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
-            break;
+        // Parse and validate the request before telling the browser the login
+        // succeeded. A valid callback gets 200 + "Login complete"; an invalid
+        // or state-mismatched callback gets a fixed secret-free 400. A response
+        // is written and flushed before resolving on this path so a racing
+        // manual-code-wins cancellation leaves a clean response. (An earlier read
+        // error or an oversize request aborts without a response.)
+        let req = std::str::from_utf8(&buf)
+            .map_err(|_| CallbackFail::Parse(callback_input_error(PkceInputError::InvalidUtf8)))?;
+        let mut parts = req.split(' ');
+        let method = parts.next().unwrap_or("");
+        let target = parts.next();
+        let route_matches = target.is_some_and(|target| {
+            method == "GET" && target.split('?').next().unwrap_or("") == expected_path
+        });
+        if !route_matches {
+            // Wrong route or method (pi 404 "Callback route not found."):
+            // answer and keep waiting for the real callback.
+            write_callback_page(
+                &mut stream,
+                "HTTP/1.1 404 Not Found",
+                "Callback route not found.",
+            )
+            .await
+            .map_err(CallbackFail::Io)?;
+            continue;
         }
-        if buf.len() > 8192 {
-            return Err(CallbackFail::Parse(callback_input_error(
-                PkceInputError::MalformedUrl,
-            )));
-        }
+        let target = target.expect("route_matches checked a target");
+        let code_result = parse_input(target, expected_state, PkceInputKind::Callback);
+        let (status_line, body) = match &code_result {
+            Ok(_) => (
+                "HTTP/1.1 200 OK",
+                "Login complete, you may close this window.",
+            ),
+            Err(_) => (
+                "HTTP/1.1 400 Bad Request",
+                "Login failed, return to the terminal.",
+            ),
+        };
+        write_callback_page(&mut stream, status_line, body)
+            .await
+            .map_err(CallbackFail::Io)?;
+        return code_result.map_err(CallbackFail::Parse);
     }
-    // Parse and validate the request before telling the browser the login
-    // succeeded. A valid callback gets 200 + "Login complete"; an invalid or
-    // state-mismatched callback gets a fixed secret-free 400. A response is
-    // written and flushed before resolving on this path so a racing
-    // manual-code-wins cancellation leaves a clean response. (An earlier read
-    // error or an oversize request aborts without a response.)
-    let req = std::str::from_utf8(&buf)
-        .map_err(|_| CallbackFail::Parse(callback_input_error(PkceInputError::InvalidUtf8)))?;
-    let target = req
-        .split(' ')
-        .nth(1)
-        .ok_or_else(|| CallbackFail::Parse(callback_input_error(PkceInputError::MalformedUrl)))?;
-    let code_result = parse_input(target, expected_state, PkceInputKind::Callback);
-    let (status_line, body) = match &code_result {
-        Ok(_) => (
-            "HTTP/1.1 200 OK",
-            "Login complete, you may close this window.",
-        ),
-        Err(_) => (
-            "HTTP/1.1 400 Bad Request",
-            "Login failed, return to the terminal.",
-        ),
-    };
+}
+
+/// Write and flush one minimal plaintext callback response page.
+async fn write_callback_page(
+    stream: &mut TcpStream,
+    status_line: &str,
+    body: &str,
+) -> io::Result<()> {
     let resp = format!(
         "{status_line}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         body.len(),
         body
     );
-    stream
-        .write_all(resp.as_bytes())
-        .await
-        .map_err(CallbackFail::Io)?;
-    stream.flush().await.map_err(CallbackFail::Io)?;
-    code_result.map_err(CallbackFail::Parse)
+    stream.write_all(resp.as_bytes()).await?;
+    stream.flush().await
 }
 
 /// Exchange an authorization code for tokens (PKCE login). Requires both
@@ -1264,6 +1333,8 @@ mod tests {
             redirect_host: "localhost".to_owned(),
             manual_only_redirect_uri: Some("http://localhost:53692/callback".to_owned()),
             bind_fallback: CallbackBindFallback::FreePort,
+            authorize_style: AuthorizeStyle::Standard,
+            listening_progress: None,
         };
         assert_eq!(
             redirect_uri_for(&config, None).unwrap(),
