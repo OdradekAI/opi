@@ -703,6 +703,7 @@ async fn provider_scope_uses_stored_kind_for_precedence_and_wrong_kind_rejection
                 client_id: None,
                 enterprise_domain: None,
                 available_model_ids: None,
+                scopes: None,
             },
         )
         .await
@@ -1418,6 +1419,7 @@ async fn stored_credential_probe_is_redacted() {
                 client_id: None,
                 enterprise_domain: None,
                 available_model_ids: None,
+                scopes: None,
             },
         )
         .await

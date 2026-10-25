@@ -1,10 +1,9 @@
-//! OAuth provider registry plus PKCE/device-code flows.
+//! OAuth host registry, endpoint policy and terminal login presenter.
 //!
-//! Owns the concrete `OAuthProvider` implementations (Anthropic PKCE, GitHub
-//! Copilot device-code, OpenAI Codex browser/device-code), the
-//! `OAuthProviderRegistry`, and the production `TuiLoginPresenter`. All flow HTTP is mockable: authorize/
-//! token endpoints are configurable so tests point them at a `wiremock` server,
-//! and the `LoginPresenter` is an injected seam.
+//! Protocol flows and acknowledged login persistence are SDK-owned. This
+//! module re-exports the flows, supplies host endpoint configuration and the
+//! production `TuiLoginPresenter`, and maps SDK login failures to closed host
+//! errors. Tests inject endpoints and presenters without browser or account I/O.
 //!
 //! # Secret handling
 //!
@@ -44,7 +43,7 @@ pub use opi_ai::auth::oauth::codex::{
     CODEX_DEVICE_USER_CODE_URL, CODEX_DEVICE_VERIFICATION_URI, CodexOAuthProvider,
 };
 use opi_ai::auth::{LoginPresenter, OAuthLoginMethod, OAuthProvider};
-use opi_ai::credential::{BoxAuthFuture, CredentialStore, CredentialStoreError};
+use opi_ai::credential::{BoxAuthFuture, CredentialStoreError};
 use opi_ai::provider::ProviderError;
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, ChildStdout, Command};
@@ -820,58 +819,6 @@ impl std::fmt::Debug for OAuthProviderRegistry {
 // /login and /logout command helpers
 // ---------------------------------------------------------------------------
 
-/// Presenter adapter that delays the success notification until the acquired
-/// credential has been persisted. Provider failures still reach the real
-/// presenter immediately.
-struct DeferredSuccessPresenter<'a> {
-    inner: &'a dyn LoginPresenter,
-}
-
-impl LoginPresenter for DeferredSuccessPresenter<'_> {
-    fn select_login_method<'a>(
-        &'a self,
-        provider_id: &'a str,
-        methods: &'a [OAuthLoginMethod],
-        default: OAuthLoginMethod,
-    ) -> BoxAuthFuture<'a, Result<OAuthLoginMethod, ProviderError>> {
-        self.inner
-            .select_login_method(provider_id, methods, default)
-    }
-
-    fn present_auth_url<'a>(
-        &'a self,
-        url: &'a str,
-    ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
-        self.inner.present_auth_url(url)
-    }
-
-    fn present_device_code<'a>(
-        &'a self,
-        user_code: &'a str,
-        verification_uri: &'a str,
-    ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
-        self.inner.present_device_code(user_code, verification_uri)
-    }
-
-    fn await_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<String, ProviderError>> {
-        self.inner.await_manual_code()
-    }
-
-    fn cancel_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
-        self.inner.cancel_manual_code()
-    }
-
-    fn await_login_cancelled<'a>(&'a self) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
-        self.inner.await_login_cancelled()
-    }
-
-    fn notify_success(&self) {}
-
-    fn notify_failure(&self, reason: &str) {
-        self.inner.notify_failure(reason);
-    }
-}
-
 fn store_error_to_provider(error: CredentialStoreError) -> ProviderError {
     let message = match error {
         CredentialStoreError::BackendUnavailable { .. } => "credential store unavailable",
@@ -907,45 +854,16 @@ pub async fn login_oauth(
     let oauth = registry
         .lookup(provider_id)
         .ok_or_else(|| provider_config_error(format!("unknown OAuth provider: {provider_id}")))?;
-    let deferred_presenter = DeferredSuccessPresenter { inner: presenter };
-    let cred = oauth.login(&deferred_presenter).await?;
-    let stored: opi_ai::credential::Credential = cred.into();
-    // Persist through the store-owned serialized mutation queue so login
-    // serializes with logout/replace/refresh on the same store; the awaited
-    // receipt is the ACK before success is reported.
-    let receipt = match store
-        .modify(provider_id, opi_ai::write_mutation(stored))
-        .await
-    {
-        Ok(receipt) => receipt,
-        Err(error) => {
-            presenter.notify_failure("credential store write failed");
-            return Err(store_error_to_provider(error));
+    match opi_ai::auth::oauth::login_to_store(provider_id, oauth.as_ref(), store, presenter).await {
+        Ok(_) => Ok(()),
+        Err(opi_ai::auth::oauth::LoginStoreError::Flow(error)) => Err(error),
+        Err(opi_ai::auth::oauth::LoginStoreError::Store(error)) => {
+            Err(store_error_to_provider(error))
         }
-    };
-    match receipt.outcome {
-        opi_ai::mutation::MutationOutcome::Written { .. } => {}
-        opi_ai::mutation::MutationOutcome::Failed {
-            error: ref mutation_error,
-        } => match &**mutation_error {
-            opi_ai::mutation::MutationError::Store(store_error) => {
-                presenter.notify_failure("credential store write failed");
-                return Err(store_error_to_provider(store_error.clone()));
-            }
-            _ => {
-                presenter.notify_failure("credential store write failed");
-                return Err(provider_config_error("credential mutation failed"));
-            }
-        },
-        _ => {
-            presenter.notify_failure("credential store write outcome unknown");
-            return Err(provider_config_error(
-                "credential store write outcome unknown",
-            ));
-        }
+        Err(opi_ai::auth::oauth::LoginStoreError::Unknown { .. }) => Err(provider_config_error(
+            "credential store write outcome unknown",
+        )),
     }
-    presenter.notify_success();
-    Ok(())
 }
 
 #[cfg(test)]

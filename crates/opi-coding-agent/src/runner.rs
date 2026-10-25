@@ -197,6 +197,7 @@ impl NonInteractiveRunner {
             None,
             trust_decision,
             None,
+            None,
             Vec::new(),
         )
     }
@@ -236,6 +237,7 @@ impl NonInteractiveRunner {
             trace_path,
             trust_decision,
             None,
+            None,
             extra_routes,
         )
     }
@@ -256,6 +258,7 @@ impl NonInteractiveRunner {
         runtime_startup: RuntimePackageStartup,
         trace_path: Option<PathBuf>,
         auth_resolver: Arc<dyn opi_ai::AuthResolver>,
+        credential_store: Option<Arc<crate::credential_store::KeychainCredentialStore>>,
         extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     ) -> Result<Self, ToolPolicyError> {
         let trust_decision = runtime_startup.trust_decision;
@@ -273,6 +276,7 @@ impl NonInteractiveRunner {
             trace_path,
             trust_decision,
             Some(auth_resolver),
+            credential_store,
             extra_routes,
         )
     }
@@ -292,6 +296,7 @@ impl NonInteractiveRunner {
         trace_path: Option<PathBuf>,
         trust_decision: TrustDecision,
         auth_resolver: Option<Arc<dyn opi_ai::AuthResolver>>,
+        credential_store: Option<Arc<crate::credential_store::KeychainCredentialStore>>,
         extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     ) -> Result<Self, ToolPolicyError> {
         let tool_config = ToolRuntimeConfig::resolve(
@@ -315,6 +320,9 @@ impl NonInteractiveRunner {
                 .record_diagnostics(true);
         if let Some(auth_resolver) = auth_resolver {
             builder = builder.auth_resolver(auth_resolver);
+        }
+        if let Some(store) = credential_store {
+            builder = builder.credential_store(store);
         }
         if let Some(prompt) = user_system_prompt {
             builder = builder.user_system_prompt(prompt);

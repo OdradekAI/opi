@@ -34,6 +34,57 @@ use tokio_util::sync::CancellationToken;
 
 use crate::credential::BoxAuthFuture;
 
+#[cfg(windows)]
+mod windows;
+
+/// Own the configured child's tree across parent exit and caller cancellation.
+/// Unix retains its process group; Windows attaches before child code runs.
+pub(crate) struct ProcessTree {
+    #[cfg(windows)]
+    job: Option<windows::Job>,
+}
+
+impl ProcessTree {
+    pub(crate) fn prepare(command: &mut Command) -> std::io::Result<Self> {
+        #[cfg(windows)]
+        {
+            let job = windows::Job::new()?;
+            command.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
+            Ok(Self { job: Some(job) })
+        }
+        #[cfg(not(windows))]
+        {
+            #[cfg(unix)]
+            command.process_group(0);
+            #[cfg(not(unix))]
+            let _ = command;
+            Ok(Self {})
+        }
+    }
+
+    pub(crate) fn attach_and_resume(&self, child: &Child) -> std::io::Result<()> {
+        #[cfg(windows)]
+        {
+            self.job
+                .as_ref()
+                .ok_or_else(|| std::io::Error::other("process job is closed"))?
+                .attach_and_resume(child)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = child;
+            Ok(())
+        }
+    }
+
+    #[cfg(windows)]
+    fn terminate(&mut self) {
+        // Closing this last, noninherited handle kills every member even if
+        // the original parent process has already exited.
+        drop(self.job.take());
+    }
+}
+
 /// Child environment for one frozen credential-process invocation.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum ProcessEnv {
@@ -232,6 +283,7 @@ impl Default for CredentialProcessPolicy {
     }
 }
 
+#[cfg(unix)]
 const PROCESS_TREE_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Default [`CredentialProcessRunner`] that really spawns the frozen
@@ -279,16 +331,29 @@ async fn run_spawned_credential_process(
     spec: &CredentialProcessSpec,
     policy: CredentialProcessPolicy,
 ) -> Result<CredentialProcessOutput, CredentialProcessError> {
+    let spec = spec.clone();
+    own_process(move |cancellation| async move {
+        run_spawned_credential_process_inner(&spec, cancellation, policy).await
+    })
+    .await
+    .map_err(|_| CredentialProcessError::Join)?
+}
+
+/// The host runtime owns cleanup after a helper caller stops waiting.
+/// Dropping this wait signals cancellation but leaves the worker alive to
+/// terminate and reap its child tree.
+pub(crate) async fn own_process<T, F, Fut>(work: F) -> Result<T, tokio::task::JoinError>
+where
+    T: Send + 'static,
+    F: FnOnce(CancellationToken) -> Fut,
+    Fut: std::future::Future<Output = T> + Send + 'static,
+{
     let cancellation = CancellationToken::new();
     let mut cancel_on_drop = CancelProcessOnDrop {
         cancellation: cancellation.clone(),
         armed: true,
     };
-    let spec = spec.clone();
-    let task = tokio::spawn(async move {
-        run_spawned_credential_process_inner(&spec, cancellation, policy).await
-    });
-    let result = task.await.map_err(|_| CredentialProcessError::Join)?;
+    let result = tokio::spawn(work(cancellation)).await;
     cancel_on_drop.armed = false;
     result
 }
@@ -298,6 +363,9 @@ async fn run_spawned_credential_process_inner(
     cancellation: CancellationToken,
     policy: CredentialProcessPolicy,
 ) -> Result<CredentialProcessOutput, CredentialProcessError> {
+    if cancellation.is_cancelled() {
+        return Err(CredentialProcessError::Cancelled);
+    }
     let mut command_builder = if cfg!(windows) {
         let mut builder = Command::new("powershell");
         builder.args(["-NoProfile", "-Command", &spec.command]);
@@ -313,8 +381,8 @@ async fn run_spawned_credential_process_inner(
     if let ProcessEnv::Exact(env) = &spec.env {
         command_builder.env_clear().envs(env);
     }
-    #[cfg(unix)]
-    command_builder.process_group(0);
+    let mut tree =
+        ProcessTree::prepare(&mut command_builder).map_err(|_| CredentialProcessError::Spawn)?;
     let mut child = command_builder
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -322,11 +390,16 @@ async fn run_spawned_credential_process_inner(
         .spawn()
         .map_err(|_| CredentialProcessError::Spawn)?;
     let root_pid = child.id();
+    if tree.attach_and_resume(&child).is_err() {
+        terminate_tree_and_reap(&mut child, root_pid, &mut tree).await;
+        return Err(CredentialProcessError::Spawn);
+    }
 
-    let output = read_bounded_process_output(&mut child, root_pid, cancellation, policy).await?;
+    let output =
+        read_bounded_process_output(&mut child, root_pid, &mut tree, cancellation, policy).await?;
     let parsed = parse_credential_process_output(&output);
     if parsed.is_err() {
-        terminate_tree_and_reap(&mut child, root_pid).await;
+        terminate_tree_and_reap(&mut child, root_pid, &mut tree).await;
     }
     parsed
 }
@@ -334,11 +407,12 @@ async fn run_spawned_credential_process_inner(
 async fn read_bounded_process_output(
     child: &mut Child,
     root_pid: Option<u32>,
+    tree: &mut ProcessTree,
     cancellation: CancellationToken,
     policy: CredentialProcessPolicy,
 ) -> Result<Vec<u8>, CredentialProcessError> {
     let Some(mut stdout) = child.stdout.take() else {
-        terminate_tree_and_reap(child, root_pid).await;
+        terminate_tree_and_reap(child, root_pid, tree).await;
         return Err(CredentialProcessError::Output);
     };
     let deadline = Instant::now() + policy.timeout;
@@ -346,30 +420,30 @@ async fn read_bounded_process_output(
     let mut limited_stdout = (&mut stdout).take((policy.max_stdout + 1) as u64);
     let read_result = tokio::select! {
         _ = cancellation.cancelled() => {
-            terminate_tree_and_reap(child, root_pid).await;
+            terminate_tree_and_reap(child, root_pid, tree).await;
             return Err(CredentialProcessError::Cancelled);
         }
         _ = sleep_until(deadline) => {
-            terminate_tree_and_reap(child, root_pid).await;
+            terminate_tree_and_reap(child, root_pid, tree).await;
             return Err(CredentialProcessError::Timeout);
         }
         result = limited_stdout.read_to_end(&mut output) => result,
     };
     if read_result.is_err() {
-        terminate_tree_and_reap(child, root_pid).await;
+        terminate_tree_and_reap(child, root_pid, tree).await;
         return Err(CredentialProcessError::Output);
     }
     if output.len() > policy.max_stdout {
-        terminate_tree_and_reap(child, root_pid).await;
+        terminate_tree_and_reap(child, root_pid, tree).await;
         return Err(CredentialProcessError::OutputLimit);
     }
     let status = tokio::select! {
         _ = cancellation.cancelled() => {
-            terminate_tree_and_reap(child, root_pid).await;
+            terminate_tree_and_reap(child, root_pid, tree).await;
             return Err(CredentialProcessError::Cancelled);
         }
         _ = sleep_until(deadline) => {
-            terminate_tree_and_reap(child, root_pid).await;
+            terminate_tree_and_reap(child, root_pid, tree).await;
             return Err(CredentialProcessError::Timeout);
         }
         result = child.wait() => result,
@@ -377,27 +451,41 @@ async fn read_bounded_process_output(
     let status = match status {
         Ok(status) => status,
         Err(_) => {
-            terminate_tree_and_reap(child, root_pid).await;
+            terminate_tree_and_reap(child, root_pid, tree).await;
             return Err(CredentialProcessError::Output);
         }
     };
     if !status.success() {
-        terminate_tree_and_reap(child, root_pid).await;
+        terminate_tree_and_reap(child, root_pid, tree).await;
         return Err(CredentialProcessError::Exit);
     }
     Ok(output)
 }
 
-pub(crate) async fn terminate_tree_and_reap(child: &mut Child, root_pid: Option<u32>) {
+pub(crate) async fn terminate_tree_and_reap(
+    child: &mut Child,
+    root_pid: Option<u32>,
+    tree: &mut ProcessTree,
+) {
+    #[cfg(windows)]
+    {
+        let _ = root_pid;
+        tree.terminate();
+    }
+    #[cfg(not(windows))]
+    let _ = tree;
+    #[cfg(unix)]
     if let Some(root_pid) = root_pid {
         terminate_process_tree(root_pid).await;
     }
+    #[cfg(not(any(windows, unix)))]
+    let _ = root_pid;
     let _ = child.start_kill();
     let _ = child.wait().await;
 }
 
+#[cfg(unix)]
 async fn terminate_process_tree(root_pid: u32) {
-    #[cfg(unix)]
     let mut command = {
         let mut command = Command::new("kill");
         // The `--` separator is required: procps-ng `kill` parses a bare
@@ -406,15 +494,6 @@ async fn terminate_process_tree(root_pid: u32) {
         command.arg("-KILL").arg("--").arg(format!("-{root_pid}"));
         command
     };
-    #[cfg(windows)]
-    let mut command = {
-        let mut command = Command::new("taskkill");
-        command.args(["/PID", &root_pid.to_string(), "/T", "/F"]);
-        command
-    };
-    #[cfg(not(any(unix, windows)))]
-    return;
-
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -572,10 +651,23 @@ mod tests {
         // the frozen cwd (relative marker path resolves only there).
         let path_var = if cfg!(windows) { "Path" } else { "PATH" };
         let inherited_path = std::env::var(path_var).unwrap_or_default();
+        let env = BTreeMap::from([(path_var.to_owned(), inherited_path)]);
+        #[cfg(windows)]
+        let env = {
+            let mut env = env;
+            env.insert(
+                "SystemRoot".to_owned(),
+                std::env::var("SystemRoot").expect("Windows system root"),
+            );
+            for name in ["USERPROFILE", "HOME", "TMP", "TEMP"] {
+                env.insert(name.to_owned(), dir.path().to_string_lossy().into_owned());
+            }
+            env
+        };
         let spec = CredentialProcessSpec {
             command,
             cwd: Some(dir.path().to_path_buf()),
-            env: ProcessEnv::Exact(BTreeMap::from([(path_var.to_owned(), inherited_path)])),
+            env: ProcessEnv::Exact(env),
         };
         let parsed = SpawnedCredentialProcess::default()
             .run(&spec)

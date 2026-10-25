@@ -19,6 +19,35 @@ use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 use crate::{CompatMetadata, Models};
 use secrecy::SecretString;
 
+/// Minimal native-helper environment rooted in an owned fixture directory.
+/// No credential or proxy environment is inherited. Windows reads only its
+/// system directory for PowerShell and native runtime initialization.
+#[doc(hidden)]
+pub fn portable_auth_process_snapshot(cwd: &std::path::Path) -> crate::auth::AuthProcessSnapshot {
+    let mut env = std::collections::BTreeMap::from([
+        ("HOME".to_owned(), cwd.to_string_lossy().into_owned()),
+        ("TEMP".to_owned(), cwd.to_string_lossy().into_owned()),
+        ("TMP".to_owned(), cwd.to_string_lossy().into_owned()),
+    ]);
+    #[cfg(windows)]
+    {
+        let system = std::env::var("SystemRoot").expect("Windows fixture system directory");
+        env.insert("SystemRoot".into(), system.clone());
+        env.insert("WINDIR".into(), system.clone());
+        env.insert("USERPROFILE".into(), cwd.to_string_lossy().into_owned());
+        env.insert(
+            "PATH".into(),
+            format!("{system}\\System32;{system}\\System32\\WindowsPowerShell\\v1.0"),
+        );
+    }
+    #[cfg(unix)]
+    env.insert("PATH".into(), "/usr/bin:/bin".into());
+    crate::auth::AuthProcessSnapshot {
+        env,
+        cwd: cwd.to_owned(),
+    }
+}
+
 /// An `AuthResolver` that increments a shared counter on every `resolve` and
 /// returns a fixed non-secret credential. Used to prove collection-owned auth
 /// is resolved once per logical call (not per retry attempt).
@@ -477,7 +506,7 @@ impl crate::auth::aws::source_http::AwsSourceTransport for NeverTransport {
 pub fn portable_executable_script(
     dir: &std::path::Path,
     name: &str,
-    unix_body: &str,
+    #[allow(unused_variables)] unix_body: &str,
     #[allow(unused_variables)] windows_body: &str,
 ) -> String {
     #[cfg(unix)]

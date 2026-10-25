@@ -130,6 +130,7 @@ fn chatgpt_credential_from(
         base_url: None,
         account_id: None,
         client_id: Some(client_id.to_owned()),
+        scopes: Some(scopes.into_iter().map(str::to_owned).collect()),
         enterprise_domain: None,
         available_model_ids: None,
     })
@@ -373,6 +374,18 @@ impl OpenAiChatGptOAuthProvider {
 impl OAuthProvider for OpenAiChatGptOAuthProvider {
     fn id(&self) -> &str {
         CHATGPT_PROVIDER_ID
+    }
+
+    fn name(&self) -> &str {
+        "OpenAI (ChatGPT subscription)"
+    }
+
+    fn is_subscription(&self) -> Option<bool> {
+        Some(true)
+    }
+
+    fn login_label(&self) -> Option<&str> {
+        Some("Sign in with ChatGPT")
     }
 
     fn login<'a>(

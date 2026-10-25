@@ -1,8 +1,8 @@
-//! Per-request auth-resolution contracts.
+//! Per-request auth resolution and store-owned OAuth coordination.
 //!
-//! IO-free types owned by [`crate`]. The concrete resolvers (`AuthSource`,
-//! `OAuthProviderRegistry`, `TuiLoginPresenter`) live in `opi-coding-agent`;
-//! `opi-ai` defines only the object-safe contracts so `Models`
+//! The SDK owns source/flow mechanisms and injectable store coordination.
+//! Product policy, native keychain backends and terminal presentation live
+//! in `opi-coding-agent`. Object-safe contracts let `Models`
 //! can resolve authentication once per prepared logical call and reuse it for
 //! sequential retries without depending on a concrete backend or making
 //! providers generic over the resolver.
@@ -28,6 +28,9 @@ use time::OffsetDateTime;
 
 use crate::credential::{BoxAuthFuture, Credential};
 use crate::provider::{ProviderError, ProviderErrorSummary};
+
+/// Store-owned OAuth refresh and request identity assembly.
+pub mod store_oauth;
 
 // ---------------------------------------------------------------------------
 // Resolved auth + resolver
@@ -469,6 +472,15 @@ pub struct AuthProvenance {
 /// refresh, or return a baked key; providers remain unaware of the source
 /// mechanism.
 pub trait AuthResolver: Send + Sync {
+    /// Check this source's configuration without resolving or refreshing it.
+    ///
+    /// Sources may inspect configuration, store metadata or file existence;
+    /// this must not exchange tokens or parse credential-file contents. `None`
+    /// keeps an opaque resolver's registered source-classification check.
+    fn check_configuration(&self) -> Option<BoxAuthFuture<'_, Result<bool, ProviderError>>> {
+        None
+    }
+
     /// Resolve auth for one prepared logical call. Returning
     /// [`ProviderError::CredentialNeeded`] signals that no credential is
     /// available and the caller must obtain one (interactive login or a typed
@@ -545,6 +557,8 @@ pub struct OAuthCredential {
     /// models metadata (GitHub Copilot: picker/policy-filtered ids unioned
     /// with the models enabled at login). Non-secret.
     pub available_model_ids: Option<Vec<String>>,
+    /// Validated scopes issued with this credential, when the flow reports them.
+    pub scopes: Option<Vec<String>>,
 }
 
 impl std::fmt::Debug for OAuthCredential {
@@ -558,6 +572,7 @@ impl std::fmt::Debug for OAuthCredential {
             .field("client_id", &self.client_id)
             .field("enterprise_domain", &self.enterprise_domain)
             .field("available_model_ids", &self.available_model_ids)
+            .field("scopes", &self.scopes)
             .finish()
     }
 }
@@ -565,8 +580,7 @@ impl std::fmt::Debug for OAuthCredential {
 impl OAuthCredential {
     /// Whether the access token should be refreshed before use: it has no known
     /// expiry, or it expires within the 5-minute refresh skew. The skew is fixed
-    /// here so the concrete resolver (`opi-coding-agent`) does not need a `time`
-    /// dependency just to compute it.
+    /// here so every store-owned resolver applies the same window once.
     pub fn needs_refresh(&self) -> bool {
         match self.expires_at {
             None => true,
@@ -586,6 +600,7 @@ impl From<OAuthCredential> for Credential {
             client_id: o.client_id,
             enterprise_domain: o.enterprise_domain,
             available_model_ids: o.available_model_ids,
+            scopes: o.scopes,
         }
     }
 }
@@ -616,6 +631,40 @@ pub trait OAuthProvider: Send + Sync {
     /// Provider identifier (for example `anthropic`, `github-copilot`, or
     /// `openai-codex`).
     fn id(&self) -> &str;
+
+    /// Display name of this authentication method. Reading metadata performs
+    /// no authentication or source I/O. Custom implementations default to id.
+    fn name(&self) -> &str {
+        self.id()
+    }
+
+    /// Whether this method is backed by a provider subscription. `None`
+    /// preserves an unspecified source value rather than guessing `false`.
+    fn is_subscription(&self) -> Option<bool> {
+        None
+    }
+
+    /// Optional provider-supplied label for selecting this login method.
+    fn login_label(&self) -> Option<&str> {
+        None
+    }
+
+    /// Convert this flow's acknowledged credential to its request identity.
+    /// Provider-specific endpoint derivation belongs to the flow; no I/O occurs.
+    fn to_auth(&self, cred: &OAuthCredential) -> ResolvedAuth {
+        ResolvedAuth {
+            scheme: AuthScheme::Bearer,
+            secret: cred.access.clone(),
+            base_url: cred.base_url.clone(),
+            account_id: cred.account_id.clone(),
+            provenance: AuthProvenance {
+                source: AuthProvenanceSource::OAuth {
+                    kind: self.id().to_owned(),
+                },
+                fallback: AuthFallback::NotAttempted,
+            },
+        }
+    }
 
     /// Run the authorization flow, returning a fresh credential on success.
     fn login<'a>(
@@ -773,6 +822,35 @@ pub enum AuthContextError {
         /// Stable, non-secret failure reason.
         reason: String,
     },
+    /// The native helper's owned process context could not be captured.
+    #[error("auth process context could not be captured: {reason}")]
+    ProcessSnapshot {
+        /// Fixed, secret-free failure reason.
+        reason: &'static str,
+    },
+}
+
+/// Owned environment and working directory for one selected auth helper.
+///
+/// Captured only when a source selects a native helper, never during
+/// construction, registration, configuration checks, or static lookups.
+/// Environment values can contain credentials and are omitted from Debug.
+#[derive(Clone, PartialEq, Eq)]
+pub struct AuthProcessSnapshot {
+    /// Exact child environment; nothing else is inherited at spawn time.
+    pub env: std::collections::BTreeMap<String, String>,
+    /// Working directory frozen with the selected command and environment.
+    pub cwd: std::path::PathBuf,
+}
+
+impl std::fmt::Debug for AuthProcessSnapshot {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AuthProcessSnapshot")
+            .field("env", &"<redacted>")
+            .field("cwd", &self.cwd)
+            .finish()
+    }
 }
 
 /// Injectable ambient-source access for authentication (AIR-063/AIR-066).
@@ -806,6 +884,20 @@ pub trait AuthContext: Send + Sync {
     /// `false` explicitly). Probe failures other than absence are typed
     /// errors. This method never reads file contents.
     fn file_exists(&self, path: &str) -> Result<bool, AuthContextError>;
+
+    /// Freeze the native helper's environment and cwd at source selection.
+    ///
+    /// The default isolates injected contexts from the real environment.
+    /// Override it to supply helper environment values explicitly. The cwd
+    /// is captured on this call; merely constructing a context does no I/O.
+    fn process_snapshot(&self) -> Result<AuthProcessSnapshot, AuthContextError> {
+        Ok(AuthProcessSnapshot {
+            env: std::collections::BTreeMap::new(),
+            cwd: std::env::current_dir().map_err(|_| AuthContextError::ProcessSnapshot {
+                reason: "working directory unavailable",
+            })?,
+        })
+    }
 }
 
 /// Default lazy [`AuthContext`] over the real process environment and
@@ -871,6 +963,25 @@ impl AuthContext for AmbientAuthContext {
                 reason: error.to_string(),
             }),
         }
+    }
+
+    fn process_snapshot(&self) -> Result<AuthProcessSnapshot, AuthContextError> {
+        let cwd = std::env::current_dir().map_err(|_| AuthContextError::ProcessSnapshot {
+            reason: "working directory unavailable",
+        })?;
+        let mut env = std::collections::BTreeMap::new();
+        for (name, value) in std::env::vars_os() {
+            let name = name
+                .into_string()
+                .map_err(|_| AuthContextError::ProcessSnapshot {
+                    reason: "environment variable name is not unicode",
+                })?;
+            let value = value
+                .into_string()
+                .map_err(|_| AuthContextError::EnvNotUnicode { name: name.clone() })?;
+            env.insert(name, value);
+        }
+        Ok(AuthProcessSnapshot { env, cwd })
     }
 }
 

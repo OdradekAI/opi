@@ -118,6 +118,7 @@ async fn run_case(case: &str, json: bool) -> (String, String, i32) {
         },
         None,
         Arc::new(StaticAuthResolver::new(AuthScheme::ApiKey, SECRET.into())),
+        None,
         Vec::new(),
     )
     .unwrap()

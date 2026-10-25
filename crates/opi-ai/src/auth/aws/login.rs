@@ -35,7 +35,8 @@ use time::{Duration, OffsetDateTime};
 
 use crate::auth::AwsSigV4Credentials;
 use crate::auth::aws::cache::{
-    AwsSourceCache, CacheIdentity, LoginTokenSnapshot, REFRESH_WINDOW, SourceCacheValue,
+    AwsSourceCache, CacheIdentity, LoginTokenSnapshot, OwnedRefreshError, REFRESH_WINDOW,
+    SourceCacheValue,
 };
 use crate::auth::aws::endpoint::signin_endpoint_url;
 use crate::auth::aws::local::{
@@ -393,10 +394,12 @@ pub async fn resolve_login_session(
     let now = input.clock.now();
 
     // Fresh or near-expiry in-memory hit.
-    if let Some(SourceCacheValue::LoginSession(snapshot)) = cache.peek(&identity, now) {
+    if let Some((SourceCacheValue::LoginSession(snapshot), revision)) =
+        cache.peek_versioned(&identity, now)
+    {
         return login_from_snapshot(
             input,
-            snapshot,
+            (snapshot, revision),
             session,
             profile,
             effective_region,
@@ -407,11 +410,14 @@ pub async fn resolve_login_session(
     }
 
     let guard = cache.refresh_lock(&identity).await;
-    if let Some(SourceCacheValue::LoginSession(snapshot)) = cache.peek(&identity, now) {
+    let now = input.clock.now();
+    if let Some((SourceCacheValue::LoginSession(snapshot), revision)) =
+        cache.peek_versioned(&identity, now)
+    {
         drop(guard);
         return login_from_snapshot(
             input,
-            snapshot,
+            (snapshot, revision),
             session,
             profile,
             effective_region,
@@ -421,20 +427,24 @@ pub async fn resolve_login_session(
         .await;
     }
 
-    let Some(cache_dir) = input.login_cache_dir else {
-        return Err(terminal(TerminalReason::LoginCacheInvalid));
+    let (snapshot, revision) = match cache.source_snapshot(&identity) {
+        Some((SourceCacheValue::LoginSession(snapshot), revision)) => (snapshot, revision),
+        _ => {
+            let Some(cache_dir) = input.login_cache_dir else {
+                return Err(terminal(TerminalReason::LoginCacheInvalid));
+            };
+            let snapshot = match read_login_cache_file(cache_dir, session) {
+                Ok(Some(snapshot)) => snapshot,
+                _ => return Err(terminal(TerminalReason::LoginCacheInvalid)),
+            };
+            let revision = cache.store(identity, SourceCacheValue::LoginSession(snapshot.clone()));
+            (snapshot, revision)
+        }
     };
-    let snapshot = match read_login_cache_file(cache_dir, session) {
-        Ok(Some(snapshot)) => snapshot,
-        _ => return Err(terminal(TerminalReason::LoginCacheInvalid)),
-    };
-    // Publish the file snapshot to the in-memory cache (the refresh path
-    // overwrites it through its own store).
-    cache.store(identity, SourceCacheValue::LoginSession(snapshot.clone()));
     drop(guard);
     login_from_snapshot(
         input,
-        snapshot,
+        (snapshot, revision),
         session,
         profile,
         effective_region,
@@ -448,7 +458,7 @@ pub async fn resolve_login_session(
 /// hit path and the file-read path.
 async fn login_from_snapshot(
     input: &AwsLocalChainInput<'_>,
-    snapshot: LoginTokenSnapshot,
+    snapshot: (LoginTokenSnapshot, u64),
     session: &str,
     profile: &str,
     effective_region: &str,
@@ -456,6 +466,7 @@ async fn login_from_snapshot(
     terminal: &(dyn Fn(TerminalReason) -> CredentialResolutionError + Send + Sync),
 ) -> Result<Option<AwsSigV4Credentials>, CredentialResolutionError> {
     let _ = profile;
+    let (snapshot, revision) = snapshot;
     // A still-valid cached access token is used directly (a passive
     // refresh is registered when it is inside the window).
     if let Some(token) = &snapshot.access_token {
@@ -463,7 +474,14 @@ async fn login_from_snapshot(
             let remaining = expires_at - now;
             if remaining > Duration::ZERO {
                 if remaining <= REFRESH_WINDOW {
-                    register_login_passive(input, session, &snapshot, effective_region, now);
+                    register_login_passive(
+                        input,
+                        session,
+                        &snapshot,
+                        revision,
+                        effective_region,
+                        now,
+                    );
                 }
                 if let Some(credentials) = parse_access_token(token, expires_at) {
                     return Ok(Some(login_credentials(
@@ -490,83 +508,135 @@ async fn login_from_snapshot(
         }
     }
 
-    // Active refresh through SignIn with the owned DPoP proof.
-    let Some(signing_key) = parse_signing_key(&snapshot.signing_key) else {
-        return Err(terminal(TerminalReason::DpopFailed));
+    let cache = input.source_cache.expect("login requires a source cache");
+    let transport = cache
+        .passive_transport()
+        .ok_or_else(|| terminal(TerminalReason::SourceRefreshOwnerUnavailable))?;
+    let clock = cache
+        .passive_clock()
+        .ok_or_else(|| terminal(TerminalReason::SourceRefreshOwnerUnavailable))?;
+    let jti = cache
+        .passive_jti()
+        .ok_or_else(|| terminal(TerminalReason::SourceRefreshOwnerUnavailable))?;
+    let identity = CacheIdentity::LoginSession {
+        session: session.to_owned(),
     };
+    let generation = cache.generation(&identity);
     let endpoint = signin_endpoint_url(effective_region, input.signin_endpoint).to_owned();
-    let jti = input.dpop_jti.next_jti();
-    let iat = now.unix_timestamp();
-    match signin_refresh(
-        input.transport,
-        &endpoint,
-        &snapshot.client_id,
-        &snapshot.refresh_token,
-        &signing_key,
-        &jti,
-        iat,
-    )
-    .await
-    {
-        Ok((access_token, rotated_refresh, expires_in)) => {
-            let expires_at = now + Duration::seconds(expires_in);
-            let Some(credentials) = parse_access_token(&access_token, expires_at) else {
-                return Err(terminal(TerminalReason::InvalidLoginResponse));
+    let cache_dir = input.login_cache_dir.map(Path::to_path_buf);
+    let session = session.to_owned();
+    let publisher = cache.clone();
+    let refresh_identity = identity.clone();
+    let result = cache
+        .run_owned_refresh(identity, move || async move {
+            let terminal = |reason| CredentialResolutionError::Terminal {
+                credential_source: CredentialSource::LoginSession {
+                    session: session.clone(),
+                },
+                reason,
             };
-            let mut refreshed = snapshot.clone();
+            if publisher.generation(&refresh_identity) != generation {
+                return Err(terminal(TerminalReason::SourceRefreshSuperseded));
+            }
+            let Some((SourceCacheValue::LoginSession(current), revision)) =
+                publisher.source_snapshot(&refresh_identity)
+            else {
+                return Err(terminal(TerminalReason::SourceRefreshSuperseded));
+            };
+            let now = clock.now();
+            if current.access_token.is_some()
+                && current.expires_at.is_none_or(|expiry| expiry > now)
+            {
+                return Ok((current, crate::mutation::MutationApplied::Keep));
+            }
+            let signing_key = parse_signing_key(&current.signing_key)
+                .ok_or_else(|| terminal(TerminalReason::DpopFailed))?;
+            let refreshed = signin_refresh(
+                transport.as_ref(),
+                &endpoint,
+                &current.client_id,
+                &current.refresh_token,
+                &signing_key,
+                &jti.next_jti(),
+                now.unix_timestamp(),
+            )
+            .await;
+            let (access_token, rotated_refresh, expires_in) = match refreshed {
+                Ok(value) => value,
+                Err(LoginRefreshError::Denied {
+                    status,
+                    code: Some(code),
+                }) if TERMINAL_LOGIN_CODES
+                    .iter()
+                    .any(|known| code.contains(known)) =>
+                {
+                    return Err(terminal(TerminalReason::LoginDenied {
+                        status,
+                        code: Some(code),
+                    }));
+                }
+                Err(_) => return Err(CredentialResolutionError::Exhausted),
+            };
+            let expires_at = now
+                .checked_add(Duration::seconds(expires_in))
+                .ok_or_else(|| terminal(TerminalReason::InvalidLoginResponse))?;
+            if parse_access_token(&access_token, expires_at).is_none() {
+                return Err(terminal(TerminalReason::InvalidLoginResponse));
+            }
+            let mut refreshed = current;
             refreshed.access_token = Some(access_token);
             refreshed.expires_at = Some(expires_at);
             if let Some(rotated) = rotated_refresh {
-                // The rotated token is authoritative in memory even if the
-                // cache-file write fails (never lose the unique token).
                 refreshed.refresh_token = rotated;
             }
-            if let Some(dir) = input.login_cache_dir {
-                let _ = write_login_cache_file(dir, session, &refreshed);
-            }
-            if let Some(cache) = input.source_cache {
-                cache.store(
-                    CacheIdentity::LoginSession {
-                        session: session.to_owned(),
+            let persisted = refreshed.clone();
+            publisher
+                .commit_source_rotation(
+                    &refresh_identity,
+                    revision,
+                    SourceCacheValue::LoginSession(refreshed.clone()),
+                    || {
+                        if let Some(dir) = &cache_dir {
+                            let _ = write_login_cache_file(dir, &session, &persisted);
+                        }
                     },
-                    SourceCacheValue::LoginSession(refreshed),
-                );
-            }
-            Ok(Some(login_credentials(
-                input,
-                &snapshot,
-                credentials,
-                effective_region,
-            )))
+                )
+                .ok_or_else(|| terminal(TerminalReason::SourceRefreshSuperseded))?;
+            Ok((refreshed, crate::mutation::MutationApplied::Write))
+        })
+        .await;
+    let refreshed = match result {
+        Ok(snapshot) => snapshot,
+        Err(OwnedRefreshError::Operation(CredentialResolutionError::Exhausted)) => return Ok(None),
+        Err(OwnedRefreshError::Operation(error)) => return Err(error),
+        Err(OwnedRefreshError::Unavailable) => {
+            return Err(terminal(TerminalReason::SourceRefreshOwnerUnavailable));
         }
-        Err(LoginRefreshError::Denied {
-            status,
-            code: Some(code),
-        }) if TERMINAL_LOGIN_CODES
-            .iter()
-            .any(|known| code.contains(known)) =>
-        {
-            Err(terminal(TerminalReason::LoginDenied {
-                status,
-                code: Some(code),
-            }))
+        Err(OwnedRefreshError::Cancelled) => {
+            return Err(terminal(TerminalReason::SourceRefreshCancelled));
         }
-        Err(LoginRefreshError::Denied { status, code: None })
-            if status == Some(401) || status == Some(403) =>
-        {
-            // The corpus pins specific AccessDenied-family denials as
-            // terminal; unclassified 401/403 from a selected session is a
-            // service denial, treated as terminal for this source.
-            Err(terminal(TerminalReason::LoginDenied { status, code: None }))
+        Err(OwnedRefreshError::Unknown) => {
+            return Err(terminal(TerminalReason::SourceRefreshOutcomeUnknown));
         }
-        Err(_) => {
-            // Other refresh failures: a still-valid cached token was
-            // already returned above; reaching here means the token is
-            // expired or absent, which raises the default
-            // continue-eligible error (the chain advances).
-            Ok(None)
-        }
+    };
+    let access = refreshed
+        .access_token
+        .as_ref()
+        .ok_or_else(|| terminal(TerminalReason::InvalidLoginResponse))?;
+    if refreshed
+        .expires_at
+        .is_some_and(|expires_at| expires_at <= input.clock.now())
+    {
+        return Err(terminal(TerminalReason::InvalidLoginResponse));
     }
+    let credentials = parse_access_token(access, refreshed.expires_at.unwrap_or(now))
+        .ok_or_else(|| terminal(TerminalReason::InvalidLoginResponse))?;
+    Ok(Some(login_credentials(
+        input,
+        &refreshed,
+        credentials,
+        effective_region,
+    )))
 }
 
 fn login_credentials(
@@ -600,6 +670,7 @@ fn register_login_passive(
     input: &AwsLocalChainInput<'_>,
     session: &str,
     snapshot: &LoginTokenSnapshot,
+    expected_revision: u64,
     effective_region: &str,
     now: OffsetDateTime,
 ) {
@@ -622,6 +693,8 @@ fn register_login_passive(
     let identity = CacheIdentity::LoginSession {
         session: session.clone(),
     };
+    let refreshed_identity = identity.clone();
+    let publisher = cache.clone();
     let slot = Box::new(move || {
         Box::pin(async move {
             let jti = jti.next_jti();
@@ -636,19 +709,54 @@ fn register_login_passive(
                 iat,
             )
             .await;
-            let Ok((access_token, rotated_refresh, expires_in)) = result else {
-                return Ok(crate::mutation::MutationApplied::Keep);
-            };
+            let (access_token, rotated_refresh, expires_in) = result.map_err(|_| {
+                crate::mutation::MutationError::Operation(
+                    crate::provider::ProviderError::AuthFailed(
+                        crate::provider::ProviderErrorSummary::attested_static(
+                            "AWS login token refresh failed",
+                        ),
+                    ),
+                )
+            })?;
             let now = clock.now();
+            let expires_at = now
+                .checked_add(Duration::seconds(expires_in))
+                .ok_or_else(|| {
+                    crate::mutation::MutationError::Operation(
+                        crate::provider::ProviderError::AuthFailed(
+                            crate::provider::ProviderErrorSummary::attested_static(
+                                "AWS login token refresh returned an invalid expiry",
+                            ),
+                        ),
+                    )
+                })?;
             let mut refreshed = snapshot.clone();
             refreshed.access_token = Some(access_token);
-            refreshed.expires_at = Some(now + Duration::seconds(expires_in));
+            refreshed.expires_at = Some(expires_at);
             if let Some(rotated) = rotated_refresh {
                 refreshed.refresh_token = rotated;
             }
-            if let Some(dir) = &cache_dir {
-                let _ = write_login_cache_file(dir, &session, &refreshed);
-            }
+            let persisted = refreshed.clone();
+            publisher
+                .commit_source_rotation(
+                    &refreshed_identity,
+                    expected_revision,
+                    SourceCacheValue::LoginSession(refreshed),
+                    || {
+                        if let Some(dir) = &cache_dir {
+                            let _ = write_login_cache_file(dir, &session, &persisted);
+                        }
+                    },
+                )
+                .ok_or_else(|| {
+                    crate::mutation::MutationError::Operation(
+                        crate::provider::ProviderError::AuthFailed(
+                            crate::provider::ProviderErrorSummary::attested_static(
+                                "AWS login token source changed during refresh",
+                            ),
+                        ),
+                    )
+                })?;
             Ok(crate::mutation::MutationApplied::Write)
         })
             as crate::credential::BoxAuthFuture<

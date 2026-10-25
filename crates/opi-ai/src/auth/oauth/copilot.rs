@@ -720,8 +720,36 @@ struct DeviceCodeBody {
 }
 
 impl OAuthProvider for GitHubCopilotOAuthProvider {
+    fn to_auth(&self, cred: &OAuthCredential) -> crate::auth::ResolvedAuth {
+        crate::auth::ResolvedAuth {
+            scheme: crate::auth::AuthScheme::Bearer,
+            secret: cred.access.clone(),
+            base_url: cred.base_url.clone().or_else(|| {
+                Some(request_base_url(
+                    Some(cred.access.expose_secret()),
+                    cred.enterprise_domain.as_deref(),
+                ))
+            }),
+            account_id: cred.account_id.clone(),
+            provenance: crate::auth::AuthProvenance {
+                source: crate::auth::AuthProvenanceSource::OAuth {
+                    kind: self.id().to_owned(),
+                },
+                fallback: crate::auth::AuthFallback::NotAttempted,
+            },
+        }
+    }
+
     fn id(&self) -> &str {
         "github-copilot"
+    }
+
+    fn name(&self) -> &str {
+        "GitHub Copilot"
+    }
+
+    fn is_subscription(&self) -> Option<bool> {
+        Some(true)
     }
 
     fn login<'a>(
@@ -763,12 +791,19 @@ impl OAuthProvider for GitHubCopilotOAuthProvider {
             };
             let mut interval = device
                 .interval
-                .map(Duration::from_secs_f64)
-                .map(|duration| duration.clamp(MIN_DEVICE_INTERVAL, MAX_DEVICE_INTERVAL))
+                .map(|seconds| {
+                    Duration::from_secs_f64(seconds.clamp(
+                        MIN_DEVICE_INTERVAL.as_secs_f64(),
+                        MAX_DEVICE_INTERVAL.as_secs_f64(),
+                    ))
+                })
                 .unwrap_or(DEFAULT_POLL_INTERVAL);
             let device_deadline = tokio::time::Instant::now()
-                + Duration::from_secs_f64(device.expires_in)
-                    .clamp(Duration::ZERO, MAX_DEVICE_LIFETIME);
+                + Duration::from_secs_f64(
+                    device
+                        .expires_in
+                        .clamp(0.0, MAX_DEVICE_LIFETIME.as_secs_f64()),
+                );
 
             // 2. Present the public user_code (never the device_code).
             tokio::select! {
@@ -832,8 +867,10 @@ impl OAuthProvider for GitHubCopilotOAuthProvider {
                     Ok(DevicePoll::Pending) => {}
                     Ok(DevicePoll::SlowDown(server_interval)) => {
                         interval = match server_interval {
-                            Some(seconds) => Duration::from_secs_f64(seconds)
-                                .clamp(MIN_DEVICE_INTERVAL, MAX_DEVICE_INTERVAL),
+                            Some(seconds) => Duration::from_secs_f64(seconds.clamp(
+                                MIN_DEVICE_INTERVAL.as_secs_f64(),
+                                MAX_DEVICE_INTERVAL.as_secs_f64(),
+                            )),
                             None => (interval + SLOW_DOWN_INCREMENT).min(MAX_DEVICE_INTERVAL),
                         };
                     }
@@ -954,6 +991,7 @@ impl OAuthProvider for GitHubCopilotOAuthProvider {
                 base_url: None,
                 account_id: None,
                 client_id: None,
+                scopes: None,
                 enterprise_domain: enterprise_domain.clone(),
                 available_model_ids: Some(available_model_ids),
             })
@@ -996,6 +1034,7 @@ impl OAuthProvider for GitHubCopilotOAuthProvider {
                 base_url: cred.base_url.clone(),
                 account_id: cred.account_id.clone(),
                 client_id: cred.client_id.clone(),
+                scopes: cred.scopes.clone(),
                 enterprise_domain: cred.enterprise_domain.clone(),
                 available_model_ids: Some(catalog.available_model_ids),
             })

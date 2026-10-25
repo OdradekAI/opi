@@ -28,12 +28,13 @@ use std::path::{Path, PathBuf};
 
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
 
 use crate::auth::AwsSigV4Credentials;
 use crate::auth::aws::cache::{
-    AwsSourceCache, CacheIdentity, REFRESH_WINDOW, SourceCacheValue, SsoRefreshMaterial,
+    CacheIdentity, OwnedRefreshError, REFRESH_WINDOW, SourceCacheValue, SsoRefreshMaterial,
     SsoTokenSnapshot,
 };
 use crate::auth::aws::endpoint::{oidc_endpoint_url, sso_endpoint_url};
@@ -224,9 +225,12 @@ pub(crate) async fn sso_oidc_refresh(
         .get("refreshToken")
         .and_then(Value::as_str)
         .filter(|token| !token.trim().is_empty());
+    let expires_at = now
+        .checked_add(Duration::seconds(expires_in))
+        .ok_or(SsoExchangeError::InvalidResponse)?;
     Ok(SsoTokenSnapshot {
         access_token: SecretString::from(access_token),
-        expires_at: now + Duration::seconds(expires_in),
+        expires_at,
         refresh: Some(SsoRefreshMaterial {
             client_id: material.client_id.clone(),
             client_secret: material.client_secret.clone(),
@@ -348,129 +352,144 @@ pub async fn resolve_sso_source(
     config: &SsoProfileConfig,
     profile: Option<&str>,
 ) -> Result<(AwsSigV4Credentials, String), CredentialResolutionError> {
-    let cache: &AwsSourceCache = input.source_cache.expect("SSO requires a source cache");
+    let cache = input.source_cache.expect("SSO requires a source cache");
+    let source = CredentialSource::Sso {
+        profile: profile.map(str::to_owned),
+    };
+    let terminal = |reason| CredentialResolutionError::Terminal {
+        credential_source: source.clone(),
+        reason,
+    };
     let now = input.clock.now();
     let cache_key = config.cache_key();
     let identity = CacheIdentity::SsoToken {
         cache_key: cache_key.clone(),
     };
-
-    // Fresh hit (or near-expiry hit: the old token stays usable and a
-    // single passive refresh may be registered).
-    if let Some(SourceCacheValue::SsoToken(snapshot)) = cache.peek(&identity, now) {
-        maybe_passive_refresh(input, &identity, &snapshot, now, config);
+    if let Some((SourceCacheValue::SsoToken(snapshot), revision)) =
+        cache.peek_versioned(&identity, now)
+    {
+        maybe_passive_refresh(input, &identity, &snapshot, revision, now, config);
         return federation_credentials(input, config, &snapshot, profile).await;
     }
 
-    // Active single-flight refresh.
     let guard = cache.refresh_lock(&identity).await;
-    if let Some(SourceCacheValue::SsoToken(snapshot)) = cache.peek(&identity, now) {
+    if let Some((SourceCacheValue::SsoToken(snapshot), revision)) =
+        cache.peek_versioned(&identity, input.clock.now())
+    {
         drop(guard);
-        maybe_passive_refresh(input, &identity, &snapshot, now, config);
+        maybe_passive_refresh(
+            input,
+            &identity,
+            &snapshot,
+            revision,
+            input.clock.now(),
+            config,
+        );
         return federation_credentials(input, config, &snapshot, profile).await;
     }
-    let _ = guard;
-
-    let Some(cache_dir) = input.sso_cache_dir else {
-        return Err(CredentialResolutionError::Terminal {
-            credential_source: CredentialSource::Sso {
-                profile: profile.map(str::to_owned),
-            },
-            reason: TerminalReason::InvalidSsoToken,
-        });
-    };
-    let file = match read_sso_token_file(cache_dir, &cache_key) {
-        Ok(file) => file,
-        Err(()) => {
-            return Err(CredentialResolutionError::Terminal {
-                credential_source: CredentialSource::Sso {
-                    profile: profile.map(str::to_owned),
-                },
-                reason: TerminalReason::InvalidSsoToken,
-            });
+    let (mut snapshot, revision) = match cache.source_snapshot(&identity) {
+        Some((SourceCacheValue::SsoToken(snapshot), revision)) => (snapshot, revision),
+        _ => {
+            let dir = input
+                .sso_cache_dir
+                .ok_or_else(|| terminal(TerminalReason::InvalidSsoToken))?;
+            let file = read_sso_token_file(dir, &cache_key)
+                .map_err(|()| terminal(TerminalReason::InvalidSsoToken))?
+                .ok_or_else(|| terminal(TerminalReason::InvalidSsoToken))?;
+            let mut snapshot = file.snapshot;
+            snapshot.modern = snapshot.modern && config.modern();
+            let revision = cache.store(
+                identity.clone(),
+                SourceCacheValue::SsoToken(snapshot.clone()),
+            );
+            (snapshot, revision)
         }
     };
-    let mut snapshot = match file {
-        Some(file) => file.snapshot,
-        None => {
-            // No cached token: modern refresh material also lives in the
-            // cache file, so there is nothing to refresh from.
-            return Err(CredentialResolutionError::Terminal {
-                credential_source: CredentialSource::Sso {
-                    profile: profile.map(str::to_owned),
-                },
-                reason: TerminalReason::InvalidSsoToken,
-            });
-        }
-    };
-    snapshot.modern = snapshot.modern && config.modern();
-
-    let remaining = snapshot.expires_at - now;
-    if remaining > Duration::ZERO && remaining <= REFRESH_WINDOW {
-        // Near expiry but still valid: return the old value and register a
-        // single throttled passive refresh (the corpus pins no blocking
-        // active refresh inside the window).
-        maybe_passive_refresh(input, &identity, &snapshot, now, config);
-        cache.store(identity, SourceCacheValue::SsoToken(snapshot.clone()));
+    if snapshot.expires_at > input.clock.now() {
         drop(guard);
+        maybe_passive_refresh(
+            input,
+            &identity,
+            &snapshot,
+            revision,
+            input.clock.now(),
+            config,
+        );
         return federation_credentials(input, config, &snapshot, profile).await;
     }
-    if remaining <= Duration::ZERO {
-        // Expired: an active refresh is the only path (modern tokens only).
-        if let Some(material) = snapshot.refresh.clone() {
-            let endpoint = oidc_endpoint_url(&config.region, input.oidc_endpoint);
-            match sso_oidc_refresh(input.transport, &endpoint, &material, now).await {
-                Ok(refreshed) => {
-                    // Standard cache write; the corpus pins that a failed
-                    // write is ignored by the refresh itself.
-                    if let Some(dir) = input.sso_cache_dir {
-                        let _ = write_sso_token_file(dir, &cache_key, &refreshed);
-                    }
-                    snapshot = refreshed;
-                }
-                Err(SsoExchangeError::Denied { status, code }) if remaining <= Duration::ZERO => {
-                    return Err(CredentialResolutionError::Terminal {
-                        credential_source: CredentialSource::Sso {
-                            profile: profile.map(str::to_owned),
-                        },
-                        reason: TerminalReason::SsoDenied {
+    if snapshot.refresh.is_none() {
+        return Err(terminal(TerminalReason::InvalidSsoToken));
+    }
+    let transport = cache
+        .passive_transport()
+        .ok_or_else(|| terminal(TerminalReason::SourceRefreshOwnerUnavailable))?;
+    let clock = cache
+        .passive_clock()
+        .ok_or_else(|| terminal(TerminalReason::SourceRefreshOwnerUnavailable))?;
+    let generation = cache.generation(&identity);
+    let endpoint = oidc_endpoint_url(&config.region, input.oidc_endpoint).to_owned();
+    let cache_dir = input.sso_cache_dir.map(Path::to_path_buf);
+    let publisher = cache.clone();
+    let refresh_identity = identity.clone();
+    let refresh_source = source.clone();
+    drop(guard);
+    snapshot = cache
+        .run_owned_refresh(identity, move || async move {
+            let terminal = |reason| CredentialResolutionError::Terminal {
+                credential_source: refresh_source.clone(),
+                reason,
+            };
+            if publisher.generation(&refresh_identity) != generation {
+                return Err(terminal(TerminalReason::SourceRefreshSuperseded));
+            }
+            let Some((SourceCacheValue::SsoToken(current), revision)) =
+                publisher.source_snapshot(&refresh_identity)
+            else {
+                return Err(terminal(TerminalReason::SourceRefreshSuperseded));
+            };
+            if current.expires_at > clock.now() {
+                return Ok((current, crate::mutation::MutationApplied::Keep));
+            }
+            let material = current
+                .refresh
+                .ok_or_else(|| terminal(TerminalReason::InvalidSsoToken))?;
+            let refreshed = sso_oidc_refresh(transport.as_ref(), &endpoint, &material, clock.now())
+                .await
+                .map_err(|error| {
+                    terminal(match error {
+                        SsoExchangeError::Denied { status, code } => TerminalReason::SsoDenied {
                             status,
                             code,
                             request_id: None,
                         },
-                    });
-                }
-                Err(SsoExchangeError::Transport) if remaining <= Duration::ZERO => {
-                    return Err(CredentialResolutionError::Terminal {
-                        credential_source: CredentialSource::Sso {
-                            profile: profile.map(str::to_owned),
-                        },
-                        reason: TerminalReason::SsoTransport,
-                    });
-                }
-                Err(SsoExchangeError::InvalidResponse) if remaining <= Duration::ZERO => {
-                    return Err(CredentialResolutionError::Terminal {
-                        credential_source: CredentialSource::Sso {
-                            profile: profile.map(str::to_owned),
-                        },
-                        reason: TerminalReason::InvalidSsoResponse,
-                    });
-                }
-                Err(_) => unreachable!("expired refresh failures return above"),
+                        SsoExchangeError::Transport => TerminalReason::SsoTransport,
+                        SsoExchangeError::InvalidResponse => TerminalReason::InvalidSsoResponse,
+                    })
+                })?;
+            let retained = refreshed.clone();
+            publisher
+                .commit_source_rotation(
+                    &refresh_identity,
+                    revision,
+                    SourceCacheValue::SsoToken(refreshed.clone()),
+                    || {
+                        if let Some(dir) = &cache_dir {
+                            let _ = write_sso_token_file(dir, &cache_key, &retained);
+                        }
+                    },
+                )
+                .ok_or_else(|| terminal(TerminalReason::SourceRefreshSuperseded))?;
+            Ok((refreshed, crate::mutation::MutationApplied::Write))
+        })
+        .await
+        .map_err(|error| match error {
+            OwnedRefreshError::Operation(error) => error,
+            OwnedRefreshError::Unavailable => {
+                terminal(TerminalReason::SourceRefreshOwnerUnavailable)
             }
-        } else if remaining <= Duration::ZERO {
-            // Legacy (or material-less) expired token: re-login required.
-            return Err(CredentialResolutionError::Terminal {
-                credential_source: CredentialSource::Sso {
-                    profile: profile.map(str::to_owned),
-                },
-                reason: TerminalReason::InvalidSsoToken,
-            });
-        }
-    }
-
-    cache.store(identity, SourceCacheValue::SsoToken(snapshot.clone()));
-    drop(guard);
+            OwnedRefreshError::Cancelled => terminal(TerminalReason::SourceRefreshCancelled),
+            OwnedRefreshError::Unknown => terminal(TerminalReason::SourceRefreshOutcomeUnknown),
+        })?;
     federation_credentials(input, config, &snapshot, profile).await
 }
 
@@ -481,6 +500,7 @@ fn maybe_passive_refresh(
     input: &AwsLocalChainInput<'_>,
     identity: &CacheIdentity,
     snapshot: &SsoTokenSnapshot,
+    expected_revision: u64,
     now: OffsetDateTime,
     config: &SsoProfileConfig,
 ) {
@@ -498,7 +518,8 @@ fn maybe_passive_refresh(
     let cache_key = config.cache_key();
     let material = material.clone();
     let cache_dir = input.sso_cache_dir.map(Path::to_path_buf);
-    let identity = identity.clone();
+    let refreshed_identity = identity.clone();
+    let publisher = cache.clone();
     let transport = cache.passive_transport();
     let clock = cache.passive_clock();
     let (Some(transport), Some(clock)) = (transport, clock) else {
@@ -510,11 +531,37 @@ fn maybe_passive_refresh(
                 match sso_oidc_refresh(transport.as_ref(), &endpoint, &material, clock.now()).await
                 {
                     Ok(refreshed) => refreshed,
-                    Err(_) => return Ok(crate::mutation::MutationApplied::Keep),
+                    Err(_) => {
+                        return Err(crate::mutation::MutationError::Operation(
+                            crate::provider::ProviderError::AuthFailed(
+                                crate::provider::ProviderErrorSummary::attested_static(
+                                    "AWS SSO token refresh failed",
+                                ),
+                            ),
+                        ));
+                    }
                 };
-            if let Some(dir) = &cache_dir {
-                let _ = write_sso_token_file(dir, &cache_key, &refreshed);
-            }
+            let persisted = refreshed.clone();
+            publisher
+                .commit_source_rotation(
+                    &refreshed_identity,
+                    expected_revision,
+                    SourceCacheValue::SsoToken(refreshed),
+                    || {
+                        if let Some(dir) = &cache_dir {
+                            let _ = write_sso_token_file(dir, &cache_key, &persisted);
+                        }
+                    },
+                )
+                .ok_or_else(|| {
+                    crate::mutation::MutationError::Operation(
+                        crate::provider::ProviderError::AuthFailed(
+                            crate::provider::ProviderErrorSummary::attested_static(
+                                "AWS SSO token source changed during refresh",
+                            ),
+                        ),
+                    )
+                })?;
             Ok(crate::mutation::MutationApplied::Write)
         })
             as crate::credential::BoxAuthFuture<
@@ -522,7 +569,7 @@ fn maybe_passive_refresh(
                 Result<crate::mutation::MutationApplied, crate::mutation::MutationError>,
             >
     });
-    cache.maybe_spawn_passive(identity, now, slot);
+    cache.maybe_spawn_passive(identity.clone(), now, slot);
 }
 
 /// Exchange the (valid) token for federation credentials and build the
@@ -540,20 +587,51 @@ async fn federation_credentials(
         credential_source: source.clone(),
         reason,
     };
+    // A rotation can settle after its short-lived access token expires.
+    // Retain its refresh material, but never send expired SSO access.
+    if snapshot.expires_at <= input.clock.now() {
+        return Err(terminal(TerminalReason::InvalidSsoToken));
+    }
     // Fresh federation credentials from a prior exchange are reused; a
     // near-expiry bundle still in its validity is returned (the token
     // refresh above governs renewal).
+    let endpoint = sso_endpoint_url(&config.region, input.sso_endpoint);
+    let cache = input.source_cache.expect("SSO requires a source cache");
+    let token_identity = CacheIdentity::SsoToken {
+        cache_key: config.cache_key(),
+    };
+    let cache_dir = input
+        .sso_cache_dir
+        .map(|path| path.to_string_lossy())
+        .unwrap_or_default();
+    let mut source_digest = Sha256::new();
+    for component in [
+        config.start_url.as_str(),
+        config.region.as_str(),
+        config.account_id.as_str(),
+        config.role_name.as_str(),
+        config.session.as_deref().unwrap_or_default(),
+        endpoint.as_str(),
+        cache_dir.as_ref(),
+    ] {
+        source_digest.update(component.len().to_be_bytes());
+        source_digest.update(component.as_bytes());
+    }
+    source_digest.update(cache.revision(&token_identity).to_be_bytes());
     let temporary_identity = CacheIdentity::Temporary {
-        source: "sso".to_owned(),
+        source: format!("sso:{}", hex::encode(source_digest.finalize())),
         account: Some(config.account_id.clone()),
     };
     let now = input.clock.now();
-    if let Some(cache) = input.source_cache
-        && let Some(SourceCacheValue::Temporary(credentials)) = cache.peek(&temporary_identity, now)
+    if let Some(SourceCacheValue::Temporary(credentials)) = cache.peek(&temporary_identity, now) {
+        return Ok((credentials, config.region.clone()));
+    }
+    let _guard = cache.refresh_lock(&temporary_identity).await;
+    if let Some(SourceCacheValue::Temporary(credentials)) =
+        cache.peek(&temporary_identity, input.clock.now())
     {
         return Ok((credentials, config.region.clone()));
     }
-    let endpoint = sso_endpoint_url(&config.region, input.sso_endpoint);
     match sso_get_role_credentials(
         input.transport,
         &endpoint,
@@ -571,12 +649,10 @@ async fn federation_credentials(
                 region: config.region.clone(),
                 expires_at: Some(role.expires_at),
             };
-            if let Some(cache) = input.source_cache {
-                cache.store(
-                    temporary_identity,
-                    SourceCacheValue::Temporary(credentials.clone()),
-                );
-            }
+            cache.store(
+                temporary_identity,
+                SourceCacheValue::Temporary(credentials.clone()),
+            );
             Ok((credentials, config.region.clone()))
         }
         Err(SsoExchangeError::Transport) => Err(terminal(TerminalReason::SsoTransport)),

@@ -10,17 +10,18 @@
 //! are merged; a response must carry `version`/`success`, a supported
 //! token-type URN with its token field, `expiration_time` when an
 //! output file is configured, and must not be expired. The spawn reuses
-//! the crate's private bounded-process mechanism (process group +
-//! kill-on-drop + tree reaping); this owner never rewrites the
+//! the crate's private process owner (Unix process group or Windows
+//! kill-on-close Job, cancellation and tree reaping); this owner never rewrites the
 //! `output_file`.
 
 use std::path::Path;
 
 use std::process::Stdio;
-use tokio::io::AsyncReadExt;
 use tokio::process::Command;
+use tokio_util::sync::CancellationToken;
 
-use crate::auth::AuthContext;
+use crate::auth::{AuthContext, AuthProcessSnapshot};
+use crate::provider::ProviderErrorSummary;
 
 use super::native::{AdcClock, AdcResolutionError};
 
@@ -214,67 +215,104 @@ async fn cached_response(
     }
 }
 
-/// Bounded merged output collection over the reused private process
-/// mechanism: direct argv (never a shell), process group + kill-on-drop,
-/// per-stream reassembly (stdout then stderr), and tree reaping on
-/// timeout.
+/// Collect one merged OS pipe under the source timeout. A detached owner
+/// performs cancellation cleanup while the host runtime remains alive.
 async fn run_executable(
     argv: &[String],
-    env: Vec<(String, String)>,
+    snapshot: AuthProcessSnapshot,
     timeout_millis: u64,
 ) -> Result<String, AdcResolutionError> {
-    let mut command = Command::new(&argv[0]);
-    command.args(&argv[1..]);
-    for (key, value) in env {
-        command.env(key, value);
+    let argv = argv.to_vec();
+    crate::auth::aws::process::own_process(move |cancellation| async move {
+        run_executable_owned(&argv, snapshot, timeout_millis, cancellation).await
+    })
+    .await
+    .map_err(|_| AdcResolutionError::ExecutableSpawnFailed)?
+}
+
+async fn run_executable_owned(
+    argv: &[String],
+    snapshot: AuthProcessSnapshot,
+    timeout_millis: u64,
+    cancellation: CancellationToken,
+) -> Result<String, AdcResolutionError> {
+    if cancellation.is_cancelled() {
+        return Err(AdcResolutionError::ExecutableCancelled);
     }
-    #[cfg(unix)]
-    command.process_group(0);
+    let (mut reader, stdout) =
+        std::io::pipe().map_err(|_| AdcResolutionError::ExecutableSpawnFailed)?;
+    let stderr = stdout
+        .try_clone()
+        .map_err(|_| AdcResolutionError::ExecutableSpawnFailed)?;
+    let mut command = Command::new(&argv[0]);
     command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .args(&argv[1..])
+        .env_clear()
+        .envs(snapshot.env)
+        .current_dir(snapshot.cwd);
+    let mut tree = crate::auth::aws::process::ProcessTree::prepare(&mut command)
+        .map_err(|_| AdcResolutionError::ExecutableSpawnFailed)?;
+    command
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
         .kill_on_drop(true);
     let mut child = command
         .spawn()
         .map_err(|_| AdcResolutionError::ExecutableSpawnFailed)?;
     let root_pid = child.id();
-
+    if tree.attach_and_resume(&child).is_err() {
+        crate::auth::aws::process::terminate_tree_and_reap(&mut child, root_pid, &mut tree).await;
+        return Err(AdcResolutionError::ExecutableSpawnFailed);
+    }
+    // Command retains its Stdio configuration after spawn; close its copies
+    // so only the child tree owns the write ends and EOF is observable.
+    drop(command);
+    let mut read_job = tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+        let mut output = Vec::new();
+        reader.read_to_end(&mut output).map(|_| output)
+    });
+    let mut read_consumed = false;
     let collect = async {
-        let mut stdout = child.stdout.take();
-        let mut stderr = child.stderr.take();
-        let mut stdout_buffer = Vec::new();
-        let mut stderr_buffer = Vec::new();
-        if let Some(stream) = stdout.as_mut() {
-            stream.read_to_end(&mut stdout_buffer).await.ok();
-        }
-        if let Some(stream) = stderr.as_mut() {
-            stream.read_to_end(&mut stderr_buffer).await.ok();
-        }
-        let status = child.wait().await;
-        (stdout_buffer, stderr_buffer, status)
+        let read = (&mut read_job).await;
+        read_consumed = true;
+        let output = read
+            .map_err(|_| AdcResolutionError::ExecutableOutput)?
+            .map_err(|_| AdcResolutionError::ExecutableOutput)?;
+        let status = child
+            .wait()
+            .await
+            .map_err(|_| AdcResolutionError::ExecutableSpawnFailed)?;
+        Ok::<_, AdcResolutionError>((output, status))
     };
-
-    match tokio::time::timeout(std::time::Duration::from_millis(timeout_millis), collect).await {
-        Ok((stdout, stderr, status)) => {
-            let mut output = stdout;
-            output.extend_from_slice(&stderr);
-            let status = status.map_err(|_| AdcResolutionError::ExecutableSpawnFailed)?;
+    let result = tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => Err(AdcResolutionError::ExecutableCancelled),
+        result = tokio::time::timeout(std::time::Duration::from_millis(timeout_millis), collect) => {
+            result.unwrap_or(Err(AdcResolutionError::ExecutableTimeout))
+        }
+    };
+    match result {
+        Ok((output, status)) => {
             if !status.success() {
                 let code = status
                     .code()
                     .map(|code| code.to_string())
                     .unwrap_or_else(|| "unknown".to_owned());
                 return Err(AdcResolutionError::ExecutableFailed {
-                    code,
-                    message: String::from_utf8_lossy(&output).into_owned(),
+                    code: ProviderErrorSummary::sanitized(code),
+                    message: ProviderErrorSummary::from_untrusted(String::from_utf8_lossy(&output)),
                 });
             }
             Ok(String::from_utf8_lossy(&output).into_owned())
         }
-        Err(_) => {
-            // Reap the whole process tree (the shared private mechanism).
-            crate::auth::aws::process::terminate_tree_and_reap(&mut child, root_pid).await;
-            Err(AdcResolutionError::ExecutableTimeout)
+        Err(error) => {
+            crate::auth::aws::process::terminate_tree_and_reap(&mut child, root_pid, &mut tree)
+                .await;
+            if !read_consumed {
+                let _ = read_job.await;
+            }
+            Err(error)
         }
     }
 }
@@ -299,7 +337,6 @@ pub(crate) async fn retrieve_executable_subject_token(
     if !allowed {
         return Err(AdcResolutionError::ExecutablesNotAllowed);
     }
-
     let response = match output_file {
         Some(output_file) => match cached_response(output_file, clock).await? {
             Some(response) => response,
@@ -311,6 +348,7 @@ pub(crate) async fn retrieve_executable_subject_token(
                     audience,
                     subject_token_type,
                     impersonated_email,
+                    ambient,
                 )
                 .await?
             }
@@ -323,6 +361,7 @@ pub(crate) async fn retrieve_executable_subject_token(
                 audience,
                 subject_token_type,
                 impersonated_email,
+                ambient,
             )
             .await?
         }
@@ -333,10 +372,10 @@ pub(crate) async fn retrieve_executable_subject_token(
     }
     if !response.success {
         return Err(AdcResolutionError::ExecutableFailed {
-            code: response.error_code.unwrap_or_default(),
-            message: response
-                .error_message
-                .unwrap_or_else(|| "unknown executable failure".to_owned()),
+            code: ProviderErrorSummary::from_untrusted(response.error_code.unwrap_or_default()),
+            message: ProviderErrorSummary::from_untrusted(
+                response.error_message.unwrap_or_default(),
+            ),
         });
     }
     if output_file.is_some() && response.expiration_time.is_none() {
@@ -360,10 +399,14 @@ async fn spawn_and_validate(
     audience: &str,
     subject_token_type: &str,
     impersonated_email: Option<&str>,
+    ambient: &dyn AuthContext,
 ) -> Result<ExecutableResponse, AdcResolutionError> {
     let argv = parse_command(command).ok_or(AdcResolutionError::CredentialSourceInvalid {
         reason: "the executable command could not be parsed",
     })?;
+    let mut snapshot = ambient
+        .process_snapshot()
+        .map_err(|_| AdcResolutionError::ExecutableProcessContext)?;
     let mut env = vec![
         (ENV_AUDIENCE.to_owned(), audience.to_owned()),
         (ENV_TOKEN_TYPE.to_owned(), subject_token_type.to_owned()),
@@ -375,7 +418,17 @@ async fn spawn_and_validate(
     if let Some(email) = impersonated_email {
         env.push((ENV_IMPERSONATED_EMAIL.to_owned(), email.to_owned()));
     }
-    let output = run_executable(&argv, env, timeout_millis).await?;
+    for (name, value) in env {
+        // Windows environment names are case-insensitive. An inherited
+        // spelling must not override a selected protocol variable merely
+        // because the owned map has a different key ordering.
+        #[cfg(windows)]
+        snapshot
+            .env
+            .retain(|existing, _| !existing.eq_ignore_ascii_case(&name));
+        snapshot.env.insert(name, value);
+    }
+    let output = run_executable(&argv, snapshot, timeout_millis).await?;
     ExecutableResponse::parse(&output)
 }
 

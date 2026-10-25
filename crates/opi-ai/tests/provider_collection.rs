@@ -766,6 +766,7 @@ fn credential_oauth_token_redacts_secrets_but_keeps_base_url() {
         client_id: None,
         enterprise_domain: None,
         available_model_ids: None,
+        scopes: None,
     };
     let debug = format!("{cred:?}");
     assert!(!debug.contains(STORE_ACCESS), "access leaked: {debug}");

@@ -171,6 +171,7 @@ impl RpcRunner {
             None,
             trust_decision,
             None,
+            None,
             Vec::new(),
         )
     }
@@ -207,6 +208,7 @@ impl RpcRunner {
             trace_sink,
             trust_decision,
             None,
+            None,
             Vec::new(),
         )
     }
@@ -240,6 +242,7 @@ impl RpcRunner {
             Vec::new(),
             None,
             trust_decision,
+            None,
             None,
             Vec::new(),
         )
@@ -282,6 +285,7 @@ impl RpcRunner {
             Some(Arc::new(opi_agent::evidence::InMemoryEvidenceSink::new())),
             trust_decision,
             None,
+            None,
             extra_routes,
         )
     }
@@ -302,6 +306,7 @@ impl RpcRunner {
         resume_info: Option<ResumeInfo>,
         trace_path: Option<PathBuf>,
         auth_resolver: Arc<dyn opi_ai::AuthResolver>,
+        credential_store: Option<Arc<crate::credential_store::KeychainCredentialStore>>,
         extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     ) -> Result<Self, crate::policy::ToolPolicyError> {
         let RuntimePackageStartup {
@@ -330,6 +335,7 @@ impl RpcRunner {
             Some(trace_sink),
             trust_decision,
             Some(auth_resolver),
+            credential_store,
             extra_routes,
         )
     }
@@ -351,6 +357,7 @@ impl RpcRunner {
         trace_sink: Option<Arc<dyn opi_agent::evidence::EvidenceRecorder>>,
         trust_decision: TrustDecision,
         auth_resolver: Option<Arc<dyn opi_ai::AuthResolver>>,
+        credential_store: Option<Arc<crate::credential_store::KeychainCredentialStore>>,
         extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     ) -> Result<Self, crate::policy::ToolPolicyError> {
         let tool_config = crate::policy::ToolRuntimeConfig::resolve(
@@ -377,6 +384,9 @@ impl RpcRunner {
                 .record_diagnostics(true);
         if let Some(auth_resolver) = auth_resolver {
             builder = builder.auth_resolver(auth_resolver);
+        }
+        if let Some(store) = credential_store {
+            builder = builder.credential_store(store);
         }
         if let Some(installed_packages) = installed_packages {
             builder = builder.installed_packages(installed_packages);
@@ -1589,6 +1599,7 @@ mod tests {
                 opi_ai::auth::AuthScheme::ApiKey,
                 secrecy::SecretString::from(canaries.credential),
             )),
+            None,
             Vec::new(),
         )
         .unwrap();

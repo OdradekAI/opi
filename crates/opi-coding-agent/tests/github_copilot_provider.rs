@@ -251,6 +251,7 @@ fn oauth_credential(access: &str, base_url: String) -> Credential {
         client_id: None,
         enterprise_domain: None,
         available_model_ids: None,
+        scopes: None,
     }
 }
 

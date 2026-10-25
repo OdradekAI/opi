@@ -85,6 +85,7 @@ pub struct CodexOAuthProvider {
     device_verification_uri: String,
     device_redirect_uri: String,
     client_id: String,
+    agent_name: String,
     client: reqwest::Client,
     browser_timeout: Duration,
     device_timeout: Duration,
@@ -102,10 +103,19 @@ impl CodexOAuthProvider {
             device_verification_uri: CODEX_DEVICE_VERIFICATION_URI.to_owned(),
             device_redirect_uri: CODEX_DEVICE_REDIRECT_URI.to_owned(),
             client_id: CODEX_CLIENT_ID.to_owned(),
+            agent_name: "opi".to_owned(),
             client,
             browser_timeout: Duration::from_secs(300),
             device_timeout: CODEX_DEVICE_TIMEOUT,
         }
+    }
+
+    /// Set the embedding application's OAuth `originator`. Omitted values
+    /// keep the declared `opi` client identity. The value is captured here
+    /// and forwarded unchanged in the browser authorization request.
+    pub fn with_agent_name(mut self, agent_name: impl Into<String>) -> Self {
+        self.agent_name = agent_name.into();
+        self
     }
 
     /// Construct with production endpoints and a redirect-disabled client.
@@ -131,6 +141,7 @@ impl CodexOAuthProvider {
             device_verification_uri: CODEX_DEVICE_VERIFICATION_URI.to_owned(),
             device_redirect_uri: CODEX_DEVICE_REDIRECT_URI.to_owned(),
             client_id,
+            agent_name: "opi".to_owned(),
             client: no_redirect_client(),
             browser_timeout: timeout,
             device_timeout: CODEX_DEVICE_TIMEOUT,
@@ -159,6 +170,7 @@ impl CodexOAuthProvider {
             device_verification_uri,
             device_redirect_uri,
             client_id,
+            agent_name: "opi".to_owned(),
             client: no_redirect_client(),
             browser_timeout,
             device_timeout,
@@ -507,6 +519,14 @@ impl OAuthProvider for CodexOAuthProvider {
         "openai-codex"
     }
 
+    fn name(&self) -> &str {
+        "OpenAI (ChatGPT Plus/Pro)"
+    }
+
+    fn is_subscription(&self) -> Option<bool> {
+        Some(true)
+    }
+
     fn login<'a>(
         &'a self,
         presenter: &'a dyn LoginPresenter,
@@ -562,7 +582,7 @@ impl OAuthProvider for CodexOAuthProvider {
                             ("scope".into(), CODEX_SCOPES.into()),
                             ("id_token_add_organizations".into(), "true".into()),
                             ("codex_cli_simplified_flow".into(), "true".into()),
-                            ("originator".into(), "opi".into()),
+                            ("originator".into(), self.agent_name.clone()),
                         ],
                         client: self.client.clone(),
                         timeout: self.browser_timeout,

@@ -47,7 +47,7 @@ use crate::auth::aws::endpoint::sts_endpoint_url;
 use crate::auth::aws::login::resolve_login_session;
 use crate::auth::aws::metadata::{self, EcsInputs, ImdsInputs};
 use crate::auth::aws::process::{
-    CredentialProcessOutput, CredentialProcessRunner, CredentialProcessSpec,
+    CredentialProcessOutput, CredentialProcessRunner, CredentialProcessSpec, ProcessEnv,
 };
 use crate::auth::aws::role::{
     MfaTokenPresenter, RoleAssumption, StsExchange, StsExchangeError, assume_role,
@@ -169,6 +169,21 @@ pub enum TerminalReason {
     /// A 2xx SignIn response did not satisfy the fixed shape.
     #[error("the SignIn response was invalid")]
     InvalidLoginResponse,
+    /// A rotating source needs owned dependencies and a mutation owner.
+    #[error("the selected AWS source requires an owned refresh context")]
+    SourceRefreshOwnerUnavailable,
+    /// The selected source was replaced while its exchange was in flight.
+    #[error("the selected AWS source changed during refresh")]
+    SourceRefreshSuperseded,
+    /// An admitted source rotation lost its acknowledged outcome.
+    #[error("the AWS source refresh outcome is unknown")]
+    SourceRefreshOutcomeUnknown,
+    /// A waiter stopped before the source exchange began.
+    #[error("the AWS source refresh was cancelled before execution")]
+    SourceRefreshCancelled,
+    /// A process source's selected environment could not be captured.
+    #[error("the selected credential process context is unavailable")]
+    ProcessSnapshotUnavailable,
 }
 
 impl CredentialResolutionError {
@@ -1162,6 +1177,22 @@ async fn resolve_ini_profile(
         }
     }
 
+    resolve_profile_leaf(input, profile_name, &merged, &region).await
+}
+
+/// Resolve a profile's static, web-identity, process, SSO, or login leaf.
+/// Nested source profiles use the same order and terminal rules as direct
+/// profile selection, without restarting ambient discovery.
+async fn resolve_profile_leaf(
+    input: &AwsLocalChainInput<'_>,
+    profile_name: &str,
+    merged: &ProfileProperties,
+    region: &str,
+) -> Result<(Option<ResolvedAuth>, Option<String>), CredentialResolutionError> {
+    let role_arn = merged
+        .role_arn
+        .as_deref()
+        .filter(|value| !value.trim().is_empty());
     let static_complete = merged
         .access_key_id
         .as_deref()
@@ -1186,7 +1217,7 @@ async fn resolve_ini_profile(
                 .clone()
                 .filter(|token| !token.trim().is_empty())
                 .map(SecretString::from),
-            region: region.clone(),
+            region: region.to_owned(),
             expires_at: None,
         };
         return Ok((
@@ -1194,7 +1225,7 @@ async fn resolve_ini_profile(
                 credentials,
                 source_provenance(source),
             )),
-            Some(region),
+            Some(region.to_owned()),
         ));
     }
 
@@ -1214,10 +1245,10 @@ async fn resolve_ini_profile(
             CredentialSource::WebIdentity {
                 route: WebIdentityRoute::Profile(profile_name.to_owned()),
             },
-            &region,
+            region,
         )
         .await?;
-        return Ok((Some(auth), Some(region)));
+        return Ok((Some(auth), Some(region.to_owned())));
     }
 
     if let Some(command) = merged
@@ -1225,14 +1256,26 @@ async fn resolve_ini_profile(
         .as_deref()
         .filter(|command| !command.trim().is_empty())
     {
-        let spec = CredentialProcessSpec::inherit(command);
+        let snapshot =
+            input
+                .ambient
+                .process_snapshot()
+                .map_err(|_| CredentialResolutionError::Terminal {
+                    credential_source: CredentialSource::CredentialProcess,
+                    reason: TerminalReason::ProcessSnapshotUnavailable,
+                })?;
+        let spec = CredentialProcessSpec {
+            command: command.to_owned(),
+            cwd: Some(snapshot.cwd),
+            env: ProcessEnv::Exact(snapshot.env),
+        };
         if let Ok(output) = input.process.run(&spec).await {
             return Ok((
                 Some(ResolvedAuth::aws_sigv4(
-                    credentials_from_process(output, region.clone()),
+                    credentials_from_process(output, region.to_owned()),
                     source_provenance(CredentialSource::CredentialProcess),
                 )),
-                Some(region),
+                Some(region.to_owned()),
             ));
         }
         // Every credential_process failure is continue-eligible in the fixed
@@ -1267,7 +1310,7 @@ async fn resolve_ini_profile(
                     profile: Some(profile_name.to_owned()),
                 }),
             )),
-            Some(region),
+            Some(region.to_owned()),
         ));
     }
 
@@ -1281,7 +1324,7 @@ async fn resolve_ini_profile(
         .filter(|session| !session.trim().is_empty())
         && input.source_cache.is_some()
         && let Some(credentials) =
-            resolve_login_session(input, session, profile_name, &region).await?
+            resolve_login_session(input, session, profile_name, region).await?
     {
         return Ok((
             Some(ResolvedAuth::aws_sigv4(
@@ -1290,7 +1333,7 @@ async fn resolve_ini_profile(
                     session: session.trim().to_owned(),
                 }),
             )),
-            Some(region),
+            Some(region.to_owned()),
         ));
     }
 
@@ -1315,10 +1358,8 @@ async fn merged_profile(input: &AwsLocalChainInput<'_>, profile_name: &str) -> P
         .overlay(credentials_props.unwrap_or_default(), true)
 }
 
-/// Resolve one nested source profile chain: descend `source_profile` links
-/// (each assuming its own role) until a static pair anchors the chain, then
-/// fold the STS exchanges from the anchor outward. Cycles and unresolved
-/// sources yield `Ok(None)` (continue-eligible, no STS send).
+/// Descend nested role profiles to a complete source, then assume each
+/// role from the innermost profile outward. Cycles remain continue-eligible.
 async fn resolve_source_profile_credentials(
     input: &AwsLocalChainInput<'_>,
     source_name: &str,
@@ -1328,12 +1369,21 @@ async fn resolve_source_profile_credentials(
     let mut merged = merged_profile(input, source_name).await;
     let mut chain: Vec<(String, RoleAssumption)> = Vec::new();
     let mut current = source_name.to_owned();
-    loop {
+    let mut credentials = loop {
         if !visited.insert(current.clone()) {
             return Ok(None);
         }
         if static_pair_complete(&merged) {
-            break;
+            break AwsSigV4Credentials {
+                access_key_id: SecretString::from(merged.access_key_id.unwrap_or_default()),
+                secret_access_key: SecretString::from(merged.secret_access_key.unwrap_or_default()),
+                session_token: merged
+                    .session_token
+                    .filter(|token| !token.trim().is_empty())
+                    .map(SecretString::from),
+                region: region.to_owned(),
+                expires_at: None,
+            };
         }
         let role_arn = merged
             .role_arn
@@ -1343,44 +1393,57 @@ async fn resolve_source_profile_credentials(
             .source_profile
             .as_deref()
             .filter(|value| !value.trim().is_empty());
-        let credential_source_blank = merged
+        let credential_source = merged
             .credential_source
             .as_deref()
-            .is_none_or(|value| value.trim().is_empty());
-        match (role_arn, next_source) {
-            (Some(role_arn), Some(next_source)) if credential_source_blank => {
-                let profile = current.clone();
-                chain.push((
-                    profile,
-                    RoleAssumption {
-                        role_arn: role_arn.to_owned(),
-                        role_session_name: merged.role_session_name.clone(),
-                        external_id: merged.external_id.clone(),
-                        duration_seconds: merged.duration_seconds.clone(),
-                        mfa_serial: merged.mfa_serial.clone(),
-                    },
-                ));
-                current = next_source.to_owned();
-                merged = merged_profile(input, &current).await;
-            }
-            _ => return Ok(None),
+            .filter(|value| !value.trim().is_empty());
+        if let (Some(role_arn), Some(next_source), None) =
+            (role_arn, next_source, credential_source)
+        {
+            chain.push((
+                current.clone(),
+                RoleAssumption {
+                    role_arn: role_arn.to_owned(),
+                    role_session_name: merged.role_session_name.clone(),
+                    external_id: merged.external_id.clone(),
+                    duration_seconds: merged.duration_seconds.clone(),
+                    mfa_serial: merged.mfa_serial.clone(),
+                },
+            ));
+            current = next_source.to_owned();
+            merged = merged_profile(input, &current).await;
+            continue;
         }
-    }
-
-    // Static anchor.
-    let mut credentials = AwsSigV4Credentials {
-        access_key_id: SecretString::from(merged.access_key_id.unwrap_or_default()),
-        secret_access_key: SecretString::from(merged.secret_access_key.unwrap_or_default()),
-        session_token: merged
-            .session_token
-            .filter(|token| !token.trim().is_empty())
-            .map(SecretString::from),
-        region: region.to_owned(),
-        expires_at: None,
+        let source = match (role_arn, next_source, credential_source) {
+            (Some(role_arn), None, Some(kind)) => {
+                resolve_assume_role_from_credential_source(
+                    input, &current, role_arn, kind, &merged, region,
+                )
+                .await?
+            }
+            _ => {
+                resolve_profile_leaf(input, &current, &merged, region)
+                    .await?
+                    .0
+            }
+        };
+        match source.map(|auth| auth.scheme) {
+            Some(AuthScheme::AwsSigV4(credentials)) => break credentials,
+            Some(_) => {
+                return Err(CredentialResolutionError::Terminal {
+                    credential_source: CredentialSource::AssumeRole { profile: current },
+                    reason: TerminalReason::InvalidSourceResponse,
+                });
+            }
+            None => return Ok(None),
+        }
     };
-    // Fold exchanges from the anchor outward (discovery order).
+
+    // Credentials carry a region for signing, while the source's own region
+    // routes its exchange. Every STS hop signs for this selected endpoint.
+    credentials.region = region.to_owned();
     let endpoint = sts_endpoint_url(region, input.sts_endpoint);
-    for (profile, params) in chain {
+    for (profile, params) in chain.into_iter().rev() {
         let token_code = mfa_token_code(input, &profile, &params)?;
         credentials = assume_role(
             input.transport,

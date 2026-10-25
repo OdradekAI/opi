@@ -154,6 +154,9 @@ pub type ProviderAuthPair = (Box<dyn Provider>, Arc<dyn opi_ai::AuthResolver>);
 /// routes (built eagerly with lazy credential IO by [`build_provider_bundle`])
 /// let a cross-provider model switch resolve through the same collection
 /// without reconstructing the Agent.
+/// The supplied credential store is the existing owner of those routes;
+/// attaching it makes the collection's mutation barrier observe their source
+/// rotations and credential writes. Store-free mock assemblies pass `None`.
 ///
 /// `overrides` is the full extension override set. Overrides targeting
 /// `active_provider_id` are skipped here because the caller already
@@ -165,6 +168,7 @@ pub fn build_harness_collection(
     extension_providers: Vec<Box<dyn Provider>>,
     overrides: Vec<(String, ModelInfo)>,
     active_provider_id: &str,
+    credential_store: Option<Arc<dyn opi_ai::CredentialStore>>,
 ) -> Arc<Models> {
     let mut registry = ProviderRegistry::new();
     for provider in extension_providers {
@@ -184,6 +188,9 @@ pub fn build_harness_collection(
             .expect("registering an extension model override must succeed at startup");
     }
     let mut collection = Models::from_registry(registry);
+    if let Some(store) = credential_store {
+        collection.set_credential_store(store);
+    }
     for (provider, auth_resolver) in routes {
         collection
             .register_route(
@@ -1907,7 +1914,7 @@ fn build_runtime_adapter(
             )
         }
         "bedrock" => {
-            let (provider, _resolver) = build_bedrock(config)?;
+            let provider = build_bedrock_adapter(config)?;
             (provider, WireApi::BedrockConverseStream)
         }
         "azure" => {
@@ -1986,7 +1993,7 @@ fn build_runtime_route(
     resolver: &CredentialResolver,
 ) -> Result<ProviderAuthPair, ProviderBuildError> {
     if provider_id == "bedrock" {
-        return build_bedrock(config);
+        return build_bedrock(config, resolver);
     }
     if provider_id == "vertex" {
         return build_vertex_route(config, resolver);
@@ -2030,6 +2037,28 @@ struct VertexAuthResolver {
 }
 
 impl opi_ai::AuthResolver for VertexAuthResolver {
+    fn check_configuration(
+        &self,
+    ) -> Option<opi_ai::BoxAuthFuture<'_, Result<bool, ProviderError>>> {
+        Some(Box::pin(async move {
+            if self
+                .resolver
+                .resolve_api_key("vertex", "GOOGLE_CLOUD_API_KEY")
+                .await
+                .map_err(|error| {
+                    ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+                        format!("credential store error: {error}"),
+                    ))
+                })?
+                .is_some()
+                || self.resolver.env_value(&self.access_token_env).is_some()
+            {
+                return Ok(true);
+            }
+            self.adc.check_configured().map_err(map_vertex_adc_error)
+        }))
+    }
+
     fn resolve<'a>(
         &'a self,
     ) -> opi_ai::BoxAuthFuture<'a, Result<opi_ai::ResolvedAuth, ProviderError>> {
@@ -2126,7 +2155,8 @@ fn build_vertex_route(
             Arc::new(ReqwestAdcTransport::new()),
             Arc::new(SystemAdcClock),
         )
-        .with_scoped(ScopedAdcEnv::default()),
+        .with_scoped(ScopedAdcEnv::default())
+        .with_mutation_queue(resolver.mutation_queue()),
     );
     let auth_resolver = Arc::new(VertexAuthResolver {
         resolver: resolver.clone(),
@@ -2339,18 +2369,23 @@ fn complete_bedrock_credential_pair(access_key_id: Option<&str>, secret_key: Opt
         && secret_key.is_some_and(|value| !value.trim().is_empty())
 }
 
-fn build_bedrock(config: &OpiConfig) -> Result<ProviderAuthPair, ProviderBuildError> {
+fn build_bedrock_adapter(config: &OpiConfig) -> Result<Box<dyn Provider>, ProviderBuildError> {
     let bedrock_config = &config.providers.bedrock;
     let client = build_proxied_client(bedrock_config.proxy.as_ref())?;
     let provider = opi_ai::bedrock::BedrockProvider::new(bedrock_config.base_url.clone(), client);
-    // One shared source cache and mutation owner per Bedrock provider
-    // bundle: cross-call single-flight, the fixed refresh windows, and
-    // observable background refreshes (the queue retains pending work
-    // until a submission or ACK poll enters a runtime).
-    let mutation_queue = Arc::new(opi_ai::mutation::MutationQueue::new());
+    Ok(Box::new(provider))
+}
+
+fn build_bedrock(
+    config: &OpiConfig,
+    resolver: &CredentialResolver,
+) -> Result<ProviderAuthPair, ProviderBuildError> {
+    let provider = build_bedrock_adapter(config)?;
+    // Source rotations and credential writes share the bundle's store owner,
+    // so every attached collection observes the same mutation cutoff.
     let transport = Arc::new(ReqwestSourceTransport::new());
     let source_cache = Arc::new(
-        AwsSourceCache::with_mutation_queue(mutation_queue).with_passive_deps(Arc::new(
+        AwsSourceCache::with_mutation_queue(resolver.mutation_queue()).with_passive_deps(Arc::new(
             opi_ai::auth::aws::cache::PassiveRefreshDeps {
                 transport: transport.clone(),
                 clock: Arc::new(SystemSourceClock),
@@ -2359,11 +2394,11 @@ fn build_bedrock(config: &OpiConfig) -> Result<ProviderAuthPair, ProviderBuildEr
         )),
     );
     let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(BedrockAuthResolver {
-        config: Arc::new(bedrock_config.clone()),
+        config: Arc::new(config.providers.bedrock.clone()),
         source_cache,
         transport,
     });
-    Ok((Box::new(provider), auth))
+    Ok((provider, auth))
 }
 
 /// Apply the production single-wire catalog guard before returning a provider
@@ -2675,11 +2710,11 @@ pub async fn build_collection_for_listing_command(
 mod tests {
     use std::collections::HashMap;
     use std::ffi::OsString;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     use super::{build_bedrock, build_collection_for_listing_command, resolve_bedrock_auth};
     use crate::config::{BedrockProviderConfig, OpiConfig};
-    use crate::credential_store::FakeKeyringBackend;
+    use crate::credential_store::{CredentialResolver, FakeKeyringBackend};
     use crate::doctor::{DoctorContext, DoctorScope, run_doctor};
 
     static BEDROCK_ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -2697,6 +2732,16 @@ mod tests {
     ];
 
     struct ScopedBedrockEnv(Vec<(&'static str, Option<OsString>)>);
+
+    fn empty_credential_resolver(root: &std::path::Path) -> CredentialResolver {
+        CredentialResolver::new(
+            Arc::new(crate::credential_store::KeychainCredentialStore::new(
+                Box::new(FakeKeyringBackend::new()),
+                root.to_path_buf(),
+            )),
+            Arc::new(|_| None),
+        )
+    }
 
     #[tokio::test]
     async fn inactive_oauth_and_layered_anthropic_routes_are_dispatchable() {
@@ -2872,7 +2917,9 @@ mod tests {
             &config_file,
         );
         let config = OpiConfig::default();
-        let (_provider, resolver) = build_bedrock(&config).expect("lazy Bedrock factory");
+        let credential_resolver = empty_credential_resolver(root.path());
+        let (_provider, resolver) =
+            build_bedrock(&config, &credential_resolver).expect("lazy Bedrock factory");
         let environment = resolver.resolve().await.expect("environment source");
         assert!(matches!(
             environment.provenance.source,
@@ -2887,7 +2934,7 @@ mod tests {
         let mut profiled = OpiConfig::default();
         profiled.providers.bedrock.profile = Some("fixture".into());
         let (_provider, profiled_resolver) =
-            build_bedrock(&profiled).expect("lazy Bedrock factory");
+            build_bedrock(&profiled, &credential_resolver).expect("lazy Bedrock factory");
         assert!(matches!(
             profiled_resolver.resolve().await,
             Err(opi_ai::provider::ProviderError::CredentialNeeded { .. })
@@ -3215,10 +3262,99 @@ mod tests {
                 case.name
             );
             assert!(
-                build_bedrock(&config).is_ok(),
+                build_bedrock(&config, &empty_credential_resolver(root.path())).is_ok(),
                 "{}: runtime construction defers credential resolution",
                 case.name
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod vertex_configuration_checks {
+    use crate::credential_store::{
+        CredentialResolver, FakeKeyringBackend, KeychainCredentialStore,
+    };
+    use opi_ai::auth::adc::native::{
+        AdcAuthSelection, AdcNativeOwner, FixedAdcClock, ReqwestAdcTransport,
+    };
+    use opi_ai::auth::{AuthContext, AuthContextError, AuthResolver};
+    use opi_ai::credential::{Credential, CredentialStore};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    struct FailingAdcContext(Arc<AtomicUsize>);
+    impl AuthContext for FailingAdcContext {
+        fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(AuthContextError::EnvAccess {
+                name: name.to_owned(),
+                reason: "controlled ADC context failure".into(),
+            })
+        }
+        fn file_exists(&self, path: &str) -> Result<bool, AuthContextError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(AuthContextError::FileProbe {
+                path: path.to_owned(),
+                reason: "controlled ADC context failure".into(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn vertex_configuration_preserves_express_and_static_bearer_precedence() {
+        for selected in ["stored-key", "access-token", "adc"] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = Arc::new(KeychainCredentialStore::new(
+                Box::new(FakeKeyringBackend::new()),
+                dir.path().to_owned(),
+            ));
+            if selected == "stored-key" {
+                store
+                    .write(
+                        "vertex",
+                        &Credential::ApiKey("synthetic-express-key".into()),
+                    )
+                    .await
+                    .unwrap();
+            }
+            let resolver = CredentialResolver::new(
+                store,
+                Arc::new(move |name| {
+                    (selected == "access-token" && name == "CONTROLLED_VERTEX_TOKEN")
+                        .then(|| "synthetic-bearer".into())
+                }),
+            );
+            let calls = Arc::new(AtomicUsize::new(0));
+            let adc = Arc::new(
+                AdcNativeOwner::new(
+                    AdcAuthSelection::Auto,
+                    Arc::new(ReqwestAdcTransport::new()),
+                    Arc::new(FixedAdcClock::new(
+                        time::OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
+                    )),
+                )
+                .with_ambient(Arc::new(FailingAdcContext(calls.clone()))),
+            );
+            let resolver = super::VertexAuthResolver {
+                resolver,
+                access_token_env: "CONTROLLED_VERTEX_TOKEN".into(),
+                adc,
+            };
+            let configured = resolver.check_configuration().unwrap().await;
+            if selected == "adc" {
+                assert!(configured.is_err());
+                assert_eq!(calls.load(Ordering::SeqCst), 1);
+            } else {
+                assert!(configured.unwrap());
+                assert_eq!(
+                    calls.load(Ordering::SeqCst),
+                    0,
+                    "selected credentials bypass ADC checks"
+                );
+            }
         }
     }
 }

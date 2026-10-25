@@ -77,6 +77,8 @@ struct Slot {
     /// older generation never publishes (late-publication fencing).
     generation: u64,
     token: Option<AdcResolvedToken>,
+    version: u64,
+    outcome: Option<Result<AdcResolvedToken, AdcResolutionError>>,
     /// Per-key single-flight lock, held across one acquisition.
     flight: Option<std::sync::Arc<tokio::sync::Mutex<()>>>,
 }
@@ -128,6 +130,29 @@ impl AdcTokenCache {
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<AdcResolvedToken, AdcResolutionError>>,
     {
+        let observed = self.version(key);
+        self.resolve_observed(key, now, observed, acquire).await
+    }
+
+    pub(crate) fn version(&self, key: AdcCacheKey) -> u64 {
+        self.slots
+            .lock()
+            .expect("cache lock")
+            .get(&key.0)
+            .map_or(0, |slot| slot.version)
+    }
+
+    pub(crate) async fn resolve_observed<F, Fut>(
+        &self,
+        key: AdcCacheKey,
+        now: OffsetDateTime,
+        observed: u64,
+        acquire: F,
+    ) -> Result<AdcResolvedToken, AdcResolutionError>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Result<AdcResolvedToken, AdcResolutionError>>,
+    {
         let flight = {
             let mut slots = self.slots.lock().expect("cache lock");
             slots.entry(key.0).or_default().flight()
@@ -137,11 +162,26 @@ impl AdcTokenCache {
         // Re-read after acquiring the flight: the winner may have published
         // a fresh token while this caller waited, and the generation this
         // acquisition runs under is the one visible at its start.
-        let (entry_generation, cached) = {
+        let (entry_generation, cached, completed) = {
             let slots = self.slots.lock().expect("cache lock");
             let slot = slots.get(&key.0).expect("slot registered with its flight");
-            (slot.generation, slot.token.clone())
+            (
+                slot.generation,
+                slot.token.clone(),
+                (slot.version != observed)
+                    .then(|| slot.outcome.clone())
+                    .flatten(),
+            )
         };
+        if let Some(outcome) = completed {
+            match outcome {
+                Ok(token) if token.expires_at.is_none_or(|expiry| now < expiry) => {
+                    return Ok(token);
+                }
+                Err(error) => return Err(error),
+                _ => {}
+            }
+        }
         if let Some(token) = cached
             .as_ref()
             .filter(|token| !token_needs_refresh(token.expires_at, now))
@@ -157,6 +197,8 @@ impl AdcTokenCache {
                     && slot.generation == entry_generation
                 {
                     slot.token = Some(token.clone());
+                    slot.version += 1;
+                    slot.outcome = Some(Ok(token.clone()));
                 }
                 Ok(token)
             }
@@ -164,13 +206,22 @@ impl AdcTokenCache {
                 // Short-TTL current-call service: a still-valid cached token
                 // serves this call; the failure surfaces only when the
                 // cached token is truly expired (or absent).
-                if let Some(token) = cached
+                let result = if let Some(token) = cached
                     .as_ref()
                     .filter(|token| token.expires_at.is_some_and(|expiry| now < expiry))
                 {
-                    return Ok(token.clone());
+                    Ok(token.clone())
+                } else {
+                    Err(error)
+                };
+                let mut slots = self.slots.lock().expect("cache lock");
+                if let Some(slot) = slots.get_mut(&key.0)
+                    && slot.generation == entry_generation
+                {
+                    slot.version += 1;
+                    slot.outcome = Some(result.clone());
                 }
-                Err(error)
+                result
             }
         }
     }
@@ -183,6 +234,8 @@ impl AdcTokenCache {
         if let Some(slot) = slots.get_mut(&key.0) {
             slot.generation += 1;
             slot.token = None;
+            slot.version += 1;
+            slot.outcome = None;
         }
     }
 }

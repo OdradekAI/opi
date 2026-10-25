@@ -14,15 +14,12 @@ use std::time::Duration;
 use crate::auth::oauth::{
     AuthorizeStyle, CallbackBindFallback, PkceLoginConfig, RefreshFieldPolicy,
     TokenRequestEncoding, code_challenge_s256, generate_code_verifier, generate_state,
-    json_request_deadline, no_redirect_client, provider_config_error, provider_network_error,
-    refresh_oauth_token, run_pkce_login, token_endpoint_error, url_encode,
+    no_redirect_client, provider_config_error, refresh_oauth_token, run_pkce_login, url_encode,
 };
 use crate::auth::{
     BoxAuthFuture, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider,
 };
 use crate::provider::ProviderError;
-use secrecy::SecretString;
-use time::OffsetDateTime;
 
 /// Production authorization endpoint (pi `AUTHORIZE_URL`).
 pub const ANTHROPIC_AUTHORIZE_URL: &str = "https://claude.ai/oauth/authorize";
@@ -137,6 +134,14 @@ impl OAuthProvider for AnthropicOAuthProvider {
         "anthropic"
     }
 
+    fn name(&self) -> &str {
+        "Anthropic (Claude Pro/Max)"
+    }
+
+    fn is_subscription(&self) -> Option<bool> {
+        Some(true)
+    }
+
     fn login<'a>(
         &'a self,
         presenter: &'a dyn LoginPresenter,
@@ -185,7 +190,7 @@ impl OAuthProvider for AnthropicOAuthProvider {
                 }
                 OAuthLoginMethod::CopyCode => {
                     let config = self.browser_config();
-                    run_copy_code_login(&config, presenter).await
+                    run_copy_code_login(&config, presenter, budget, cancellation).await
                 }
                 OAuthLoginMethod::DeviceCode => Err(provider_config_error(
                     "OAuth provider 'anthropic' supplied an invalid login method",
@@ -224,9 +229,11 @@ fn accept_oauth_credential(credential: OAuthCredential) -> Result<OAuthCredentia
 /// Copy-code login (pi `loginAnthropicCopyCode`): authorize against the
 /// hosted `oauth/code/callback` page, have the user paste the shown code
 /// (optionally `code#state`), then exchange it with the fixed redirect URI.
-async fn run_copy_code_login(
+async fn run_copy_code_login<'a>(
     config: &PkceLoginConfig,
-    presenter: &dyn LoginPresenter,
+    presenter: &'a dyn LoginPresenter,
+    budget: super::FlowBudget,
+    mut cancellation: BoxAuthFuture<'a, Result<(), ProviderError>>,
 ) -> Result<OAuthCredential, ProviderError> {
     let verifier = generate_code_verifier();
     let challenge = code_challenge_s256(&verifier);
@@ -248,26 +255,39 @@ async fn run_copy_code_login(
         authorize_url.push_str(&url_encode(value));
     }
 
-    presenter.present_auth_url(&authorize_url).await?;
-
-    let mut cancellation = presenter.await_login_cancelled();
+    tokio::select! {
+        biased;
+        cancelled = cancellation.as_mut() => {
+            cancelled?;
+            return Err(super::login_cancelled(presenter, config.provider_id));
+        }
+        presented = presenter.present_auth_url(&authorize_url) => presented?,
+        _ = budget.elapsed() => {
+            presenter.notify_failure("timeout");
+            return Err(ProviderError::Timeout);
+        }
+    }
     let pasted = tokio::select! {
         biased;
         cancelled = cancellation.as_mut() => {
             cancelled?;
-            presenter.notify_failure("login cancelled");
-            return Err(ProviderError::LoginCancelled { provider_id: config.provider_id.to_owned() });
+            Err(super::login_cancelled(presenter, config.provider_id))
         }
-        res = presenter.await_manual_code() => match res {
-            Ok(input) => input,
-            Err(e) => {
-                presenter.notify_failure("manual code error");
-                return Err(e);
-            }
-        },
+        res = presenter.await_manual_code() => res.inspect_err(|_| presenter.notify_failure("manual code error")),
+        _ = budget.elapsed() => {
+            presenter.notify_failure("timeout");
+            Err(ProviderError::Timeout)
+        }
+    };
+    let pasted = match pasted {
+        Ok(pasted) => pasted,
+        Err(error) => {
+            presenter.cancel_manual_code().await?;
+            return Err(error);
+        }
     };
     let (code, sent_state) = parse_copy_code_paste(&pasted, &state)?;
-    exchange_copy_code(config, &code, &sent_state, &redirect_uri, &verifier)
+    super::exchange_authorization_code(config, &code, &sent_state, &redirect_uri, &verifier, budget)
         .await
         .inspect(|_| presenter.notify_success())
         .inspect_err(|_| presenter.notify_failure("token exchange failed"))
@@ -344,62 +364,4 @@ fn extract_code_state(
         return Err(provider_config_error("oauth state mismatch"));
     }
     Ok((code.to_owned(), state))
-}
-
-/// JSON token exchange for the copy-code path (pi `exchangeAuthorizationCode`
-/// shape: the state travels in the JSON body).
-async fn exchange_copy_code(
-    config: &PkceLoginConfig,
-    code: &str,
-    state: &str,
-    redirect_uri: &str,
-    verifier: &str,
-) -> Result<OAuthCredential, ProviderError> {
-    #[derive(serde::Deserialize)]
-    struct TokenResponse {
-        access_token: String,
-        refresh_token: String,
-        expires_in: i64,
-    }
-    let body = serde_json::json!({
-        "grant_type": "authorization_code",
-        "client_id": config.client_id,
-        "code": code,
-        "state": state,
-        "redirect_uri": redirect_uri,
-        "code_verifier": verifier,
-    });
-    let send = config
-        .client
-        .post(&config.token_url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
-        .json(&body)
-        .send();
-    let resp = json_request_deadline(send)
-        .await
-        .map_err(|_| ProviderError::Timeout)?
-        .map_err(|_| provider_network_error("token exchange failed"))?;
-    let status = resp.status();
-    if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(token_endpoint_error(status, &body));
-    }
-    let token: TokenResponse = resp
-        .json()
-        .await
-        .map_err(|e| provider_config_error(format!("token response parse failed: {e}")))?;
-    let expires_at = OffsetDateTime::now_utc()
-        .checked_add(time::Duration::seconds(token.expires_in))
-        .ok_or_else(|| provider_config_error("token response expires_in out of range"))?;
-    Ok(OAuthCredential {
-        access: SecretString::new(token.access_token.into_boxed_str()),
-        refresh: SecretString::new(token.refresh_token.into_boxed_str()),
-        expires_at: Some(expires_at),
-        base_url: None,
-        account_id: None,
-        client_id: None,
-        enterprise_domain: None,
-        available_model_ids: None,
-    })
 }

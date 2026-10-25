@@ -1321,6 +1321,7 @@ async fn metadata_only_provider_dispatch_returns_explicit_error() {
         vec![Box::new(MockProvider::new("metadata-provider", vec![]))],
         Vec::new(),
         "metadata-provider",
+        None,
     );
 
     let error = collection
@@ -2160,6 +2161,7 @@ async fn build_harness_collection_uses_from_registry_seam() {
         vec![Box::new(MockProvider::new("mock-active", vec![]))],
         Vec::new(),
         "mock-active",
+        None,
     );
 
     // from_registry path: the lookup-only provider contributes metadata but NO

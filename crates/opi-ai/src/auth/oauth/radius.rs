@@ -14,15 +14,17 @@
 //! a required bind (a busy port fails the login directly — pi starts no
 //! paste-back-only fallback), the fixed client `pi-gateway`, scope
 //! `gateway offline_access`, and the `handoff=url` authorize parameter; the
-//! shared skeleton keeps its manual-paste race as mechanism and the host
-//! presenter decides whether paste-back is offered. Device mode reuses the
+//! browser flow waits only for the callback and never starts a manual
+//! input prompt. Device mode reuses the
 //! shared RFC 8628 polling machine: wait one interval before the first
 //! poll, a 1-second floor, `slow_down` honoring a server-provided interval
 //! or adding 5 seconds, and a device-deadline typed timeout; unlike xAI the
 //! verification URI passes through verbatim (the corpus applies no scheme
 //! validation) and denial has the single RFC spelling. Token responses
-//! require the full triple (access, refresh, `expires_in` positive finite)
-//! on every grant; refresh is `refresh_oauth_token` in
+//! require the full access/refresh/expiry triple on every grant. Device
+//! expiry must be positive finite; browser and refresh use the shared
+//! integer-expiry validation without an added positivity rule. Refresh is
+//! `refresh_oauth_token` in
 //! [`RefreshFieldPolicy::Strict`] shape — no RFC 6749 §6 refresh-token
 //! preservation (that tolerance is xAI's sdk-contracts row 146 fixture) —
 //! and 401/403 is a revoked session for relogin via the shared helper.
@@ -40,14 +42,13 @@ use std::time::Duration;
 use crate::auth::oauth::{
     AuthorizeStyle, CallbackBindFallback, PkceLoginConfig, RefreshFieldPolicy,
     TokenRequestEncoding, login_cancelled, provider_auth_error, provider_config_error,
-    refresh_oauth_token, run_pkce_login, token_endpoint_error,
+    refresh_oauth_token, run_pkce_login_callback_only, token_endpoint_error,
 };
 use crate::auth::{
     BoxAuthFuture, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider,
 };
 use crate::provider::ProviderError;
 use secrecy::SecretString;
-use time::OffsetDateTime;
 
 /// Default gateway (pi `DEFAULT_RADIUS_GATEWAY`).
 pub const RADIUS_DEFAULT_GATEWAY: &str = "https://radius.pi.dev";
@@ -199,6 +200,8 @@ fn parse_token_response(body: &serde_json::Value) -> Result<RadiusPoll, Provider
 /// Radius OAuth provider: gateway-fixed browser PKCE or RFC 8628 device
 /// flow plus a strict single-pass refresh.
 pub struct RadiusOAuthProvider {
+    id: String,
+    name: String,
     gateway: String,
     client: reqwest::Client,
 }
@@ -212,6 +215,8 @@ impl RadiusOAuthProvider {
     /// Production gateway with an injected HTTP client.
     pub fn with_http_client(client: reqwest::Client) -> Self {
         Self {
+            id: PROVIDER_ID.to_owned(),
+            name: "Radius".to_owned(),
             gateway: RADIUS_DEFAULT_GATEWAY.to_owned(),
             client,
         }
@@ -222,8 +227,30 @@ impl RadiusOAuthProvider {
     /// gateway/id/name at construction; requests never rewrite them).
     pub fn new_with_gateway(gateway: impl Into<String>) -> Self {
         Self {
+            id: PROVIDER_ID.to_owned(),
+            name: "Radius".to_owned(),
             gateway: normalize_gateway(&gateway.into()),
             client: reqwest::Client::new(),
+        }
+    }
+
+    /// Set the flow's own provider id and display name, retaining its fixed
+    /// gateway. Callers may independently choose their Models registration key.
+    pub fn with_identity(mut self, id: impl Into<String>, name: impl Into<String>) -> Self {
+        self.id = id.into();
+        self.name = name.into();
+        self
+    }
+
+    fn identity_error(&self, error: ProviderError) -> ProviderError {
+        match error {
+            ProviderError::LoginCancelled { .. } => ProviderError::LoginCancelled {
+                provider_id: self.id.clone(),
+            },
+            ProviderError::CredentialRevoked { .. } => ProviderError::CredentialRevoked {
+                provider_id: self.id.clone(),
+            },
+            other => other,
         }
     }
 
@@ -393,7 +420,7 @@ impl RadiusOAuthProvider {
             authorize_style: AuthorizeStyle::Standard,
             listening_progress: None,
         };
-        run_pkce_login(
+        run_pkce_login_callback_only(
             config,
             presenter,
             Ok,
@@ -432,18 +459,16 @@ impl RadiusOAuthProvider {
             }
         }
 
-        let mut interval =
-            Duration::from_secs_f64(device.interval_seconds).max(RADIUS_MINIMUM_POLL_INTERVAL);
-        let deadline = tokio::time::Instant::now()
-            + Duration::from_secs_f64(device.expires_in_seconds)
-                .clamp(Duration::ZERO, Duration::from_secs(u64::MAX / 2));
+        let mut interval = super::checked_poll_duration(device.interval_seconds)?
+            .max(RADIUS_MINIMUM_POLL_INTERVAL);
+        let deadline = super::checked_device_deadline(device.expires_in_seconds)?;
         tokio::select! {
             biased;
             cancelled = cancellation.as_mut() => {
                 cancelled?;
                 return Err(login_cancelled(presenter, PROVIDER_ID));
             }
-            _ = tokio::time::sleep_until(deadline.min(tokio::time::Instant::now() + interval)) => {}
+            _ = tokio::time::sleep_until(deadline.min(super::next_poll_deadline(deadline, interval))) => {}
         }
 
         let mut saw_slow_down = false;
@@ -465,11 +490,7 @@ impl RadiusOAuthProvider {
                     refresh,
                     expires_in,
                 }) => {
-                    let expires_at = OffsetDateTime::now_utc()
-                        .checked_add(time::Duration::seconds_f64(expires_in))
-                        .ok_or_else(|| {
-                            provider_config_error("device token response missing fields")
-                        })?;
+                    let expires_at = super::checked_token_expiry(expires_in)?;
                     return Ok(OAuthCredential {
                         access: SecretString::new(access.into_boxed_str()),
                         refresh: SecretString::new(refresh.into_boxed_str()),
@@ -477,6 +498,7 @@ impl RadiusOAuthProvider {
                         base_url: None,
                         account_id: None,
                         client_id: None,
+                        scopes: None,
                         enterprise_domain: None,
                         available_model_ids: None,
                     });
@@ -486,9 +508,13 @@ impl RadiusOAuthProvider {
                     saw_slow_down = true;
                     interval = match interval_seconds {
                         Some(seconds) => {
-                            Duration::from_secs_f64(seconds).max(RADIUS_MINIMUM_POLL_INTERVAL)
+                            super::checked_poll_duration(seconds)?.max(RADIUS_MINIMUM_POLL_INTERVAL)
                         }
-                        None => interval + RADIUS_SLOW_DOWN_INCREMENT,
+                        None => interval
+                            .checked_add(RADIUS_SLOW_DOWN_INCREMENT)
+                            .ok_or_else(|| {
+                                provider_config_error("OAuth polling interval is out of range")
+                            })?,
                     };
                 }
                 Err(PollError::Expired) => {
@@ -512,7 +538,7 @@ impl RadiusOAuthProvider {
                     return Err(error);
                 }
             }
-            let next = tokio::time::Instant::now() + interval;
+            let next = super::next_poll_deadline(deadline, interval);
             tokio::select! {
                 biased;
                 cancelled = cancellation.as_mut() => {
@@ -537,7 +563,28 @@ fn device_flow_timeout(presenter: &dyn LoginPresenter, saw_slow_down: bool) -> P
 
 impl OAuthProvider for RadiusOAuthProvider {
     fn id(&self) -> &str {
-        PROVIDER_ID
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn to_auth(&self, cred: &OAuthCredential) -> crate::auth::ResolvedAuth {
+        // The configured gateway owns routing for fresh and refreshed tokens;
+        // credential metadata never supplies a Radius endpoint.
+        crate::auth::ResolvedAuth {
+            scheme: crate::auth::AuthScheme::Bearer,
+            secret: cred.access.clone(),
+            base_url: None,
+            account_id: cred.account_id.clone(),
+            provenance: crate::auth::AuthProvenance {
+                source: crate::auth::AuthProvenanceSource::OAuth {
+                    kind: self.id().to_owned(),
+                },
+                fallback: crate::auth::AuthFallback::NotAttempted,
+            },
+        }
     }
 
     fn login<'a>(
@@ -549,11 +596,12 @@ impl OAuthProvider for RadiusOAuthProvider {
             // browser as the recommended default.
             let method = presenter
                 .select_login_method(
-                    PROVIDER_ID,
+                    self.id(),
                     &[OAuthLoginMethod::Browser, OAuthLoginMethod::DeviceCode],
                     OAuthLoginMethod::Browser,
                 )
-                .await?;
+                .await
+                .map_err(|error| self.identity_error(error))?;
             match method {
                 OAuthLoginMethod::Browser => self.login_browser(presenter).await,
                 OAuthLoginMethod::DeviceCode => self.login_device_code(presenter).await,
@@ -561,6 +609,7 @@ impl OAuthProvider for RadiusOAuthProvider {
                     "OAuth provider 'radius' supplied an invalid default login method: {other:?}"
                 ))),
             }
+            .map_err(|error| self.identity_error(error))
         })
     }
 
@@ -577,7 +626,7 @@ impl OAuthProvider for RadiusOAuthProvider {
                 &self.token_url(),
                 RADIUS_OAUTH_CLIENT_ID,
                 cred,
-                PROVIDER_ID,
+                self.id(),
                 None,
                 TokenRequestEncoding::Form,
                 RefreshFieldPolicy::Strict,

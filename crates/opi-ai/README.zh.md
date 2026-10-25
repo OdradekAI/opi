@@ -30,8 +30,8 @@ trait 位于本 crate；可复用的本地 AWS 凭据来源链（scoped/ambient 
 显式 SSO 与 login_session 段、共享配置 INI 叠加（assume-role 与 web identity）、
 `credential_process`、以及远端 ECS/IMDS 来源段，经锁定的 STS Query/XML codec、
 SSO OIDC 与 SignIn ES256 DPoP 流程、单飞来源缓存交换）位于 `auth::aws`；
-keychain、环境变量、
-登录 presenter 和 refresh 实现仍位于 `opi-coding-agent`。
+ADC 来源与全部九种 OAuth 流由 SDK 拥有。coding agent 拥有 keychain backend、
+终端 presenter 与宿主注册策略。
 
 ## Provider
 
@@ -71,13 +71,13 @@ OpenAI-compatible profile 加入。
 | `ProviderError` / `ProviderErrorCategory` | Provider 失败分类：auth、config、request、network、rate_limit、provider、stream、capability 和 cancelled（超时归为 network）。 |
 | `ProviderErrorSummary` | 封闭且可安全脱敏的 Provider error 文本。公共构造仅限 `redacted()`、`authentication_rejected()` 与 `from_untrusted(...)`；不会保留任意 Provider payload。 |
 | `ProviderRegistry` | 解析 `provider:model`、注册自定义 Provider、叠加模型覆盖。 |
-| `Models` / `AuthDescriptor` / `AuthStatus` | unstable-0.x 唯一 driver，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。普通 native/simple/direct 入口与 advanced `prepare_call` 共用同一 compiler、鉴权解析、attempt seam 与 collector。 |
+| `Models` / `AuthDescriptor` / `AuthCheck` | unstable-0.x 唯一 driver，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。普通 native/simple/direct 入口与 advanced `prepare_call` 共用同一 compiler、鉴权解析、attempt seam 与 collector。 |
 | `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | 类型化自定义 chat adapter 注册，携带精确 API 身份与固定 options 类型；由 handle 创建的 options 携带 API/类型标签，可在具备兼容注册的实例间移植。 |
 | `ToolCall::arguments_error` | 文本 tool 参数的最终解析结果标记（AIR-048）：空输入归一为 `{}`，可修复的非法转义保留字面文本，不完整/非对象最终文本保留自有 raw 并携带该错误，绝不以 partial-prefix 成功执行；缺少该字段的历史记录仍可反序列化。 |
 | `ChatModelRecord` / `SimpleOptions` / `ChatCall` | 调用方持有的完整 chat record（provider id、裸模型 id、精确 wire），无需目录成员即可调用；中性 simple options；构造时捕获输入、首次 poll 才启动鉴权的惰性普通调用 owner。 |
 | `PreparedProviderCall` / `PreparedRoute` | `Models::prepare_call` 返回的不透明 logical-call 状态，以及公开的已脱敏 route facts。`route`、`auth_provenance` 与 `start_attempt` 是 prepared-call 生命周期 API。 |
 | `CredentialStore` / `Credential` / `CredentialSource` | 无 IO、object-safe 的凭据持久化与已脱敏三态探测契约。 |
-| `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | 与具体流程无关的 boxed-future OAuth 契约；SDK Anthropic 流（`auth::oauth`）已落位本 crate，其余流程在各自任务迁移。 |
+| `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | 九种 SDK OAuth 家族的 boxed-future 契约、只读 flow 元数据、逐家请求身份转换与注入的登录 UX。 |
 | `AuthResolver` / `ResolvedAuth` | 由 driver 按调用解析的鉴权契约；attempt 开始前会冻结一次准备结果。 |
 | `ApiKind` | crate 根枚举，标注 assistant 消息携带的后端家族（`Anthropic`、`OpenAi`、`Google`、`Mistral`）。 |
 | `HttpClient` | 共享 `reqwest` client，支持连接池和显式/环境变量代理。 |
@@ -92,8 +92,9 @@ OpenAI-compatible profile 加入。
 秘密的前提下报告 present、absent 或 backend-unavailable 状态。
 `AuthDescriptor::StoreCredential` 只携带 key 与 display source。
 `OAuthProvider`、`LoginPresenter` 和 `AuthResolver` 是 object-safe boxed-future
-seam。`opi-coding-agent` 提供 OS-keychain store，以及获批的 Anthropic、GitHub
-Copilot 和 OpenAI Codex 登录 flow；`opi-ai` 不执行 keychain、环境变量或 presenter IO。
+seam。`auth::oauth` 提供 Anthropic、Codex legacy、ChatGPT direct、GitHub
+Copilot、OpenRouter、Kimi Coding、Meta、xAI 与 Radius 流。`opi-coding-agent`
+提供 OS-keychain store 和终端 presenter；SDK 流调用注入的 presenter，不启动浏览器。
 
 `WireApi` 为每个 `ModelInfo` 指定一个精确请求 wire；公开
 `ApiMappedProvider` 暴露一个 provider identity 与 catalog，并在派发前校验其
@@ -109,28 +110,36 @@ cancellation token。attempt 必须串行：重叠 stream 返回
 `ModelsError::AttemptAlreadyActive`，取消返回 `CallCancelled`，先前 attempt 若报告
 credential-needed/revoked，则 prepared call 以 `CredentialTerminated` 关闭。凭据缺失与撤销分别成为显式且不可重试的
 `ProviderError::CredentialNeeded` 和 `ProviderError::CredentialRevoked`。
-按调用凭据仍不在范围内：`extra_headers` 会拒绝 Provider 管理的鉴权 header。
+类型化的逐调用 API-key、Bearer 与 SigV4 覆盖互斥，并在访问来源前优先；
+`extra_headers` 会拒绝 Provider 管理的鉴权 header。
 
 ### 惰性 AuthContext 与管理结果（AIR-063/AIR-066）
 
 来源访问是独立的 context 职责：object-safe 的 `AuthContext`（`env`、
-`file_exists`）只回答"环境说了什么"，不承载模型或 telemetry 数据。
+`file_exists`、`process_snapshot`）拥有来源访问，不承载模型或 telemetry 数据。
 `AmbientAuthContext` 是默认的惰性实现，`Models::set_auth_context` 注入后
 整体替换 ambient——注入来源不会被绕回进程环境。构造、注册与静态目录
 查找执行零 env/store/network 访问；`AuthContextError` 让非 Unicode 环境字节
-与失败的存在性探测保持类型化，而不是空结果。
+与失败的存在性探测保持类型化，而不是空结果。选定的 native helper 接收
+自有 `AuthProcessSnapshot`（精确 env map 与 cwd）；注入的 context 默认给 helper
+空环境，必要变量必须显式提供。Ambient context 仅在选中 helper 时捕获进程环境，
+有效的 ADC output cache 不探进程快照。命令按冻结 argv、cwd、env 直接执行；
+超时或等待者 drop 会触发进程清理与收割。
 
 在此之上，`Models::{check_auth, get_available, get_auth, logout}` 是管理
 结果。`check_auth` 报告配置状态而不刷新——已过期的存储 OAuth 凭据仍是
 已配置——并将不可达的 store backend（含探测快照）以类型化的
 `ModelsError::CredentialStore` 错误呈现，绝不静默折叠为 `Ok(None)`。
-`get_available` 用同一检查过滤注册表。`get_auth` 按需解析被选中的来源；
+`get_available` 用同一检查过滤注册表。注册的 OAuth route 还遵守持久化的
+`available_model_ids`：`Some([])` 是账号的权威空目录，`None` 保留注册目录；
+检查不刷新该元数据。`get_auth` 按需解析被选中的来源；
 显式 `AuthResolutionOverrides::api_key` 无需触碰任何来源即获胜，route
 resolver 的 `CredentialNeeded` 报告未配置，其他被选来源失败则以
 `ModelsError::AuthResolution` 传播且绝不尝试回退来源。`logout` 按调用接收
 凭据 store，且只确认这一次本地删除：不 unset 环境变量、不撤销远端会话、
-不动其他 provider 的条目。管理路径中的存储 OAuth 凭据解析不刷新；刷新
-属于 live route/flow owner。
+不动其他 provider 的条目。仅 descriptor 的存储凭据解析不刷新；通过
+`register_oauth_route` 注册的 OAuth route 在 `get_auth` 与准备调用时使用
+live resolver，包括必要的刷新。
 
 ### Store 拥有的 mutation、ACK 与 mutation barrier（AIR-063 / P20-STORE）
 
@@ -666,16 +675,16 @@ body/事件上限、分配提示或放宽的 content-length/transfer-encoding/EO
 
 以下是明确的非目标，不得作为当前核心行为出现：
 
-- Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider。
-- 经审计的静态 pi-0.80.6 GitHub Copilot/OpenAI Codex snapshot 之外的
-  Provider catalog，包括在线 entitlement filtering。
+- 上列九种之外的 OAuth 家族。
+- 完整 provider/profile catalog、Radius pi-messages 生成，以及可用性检查中的
+  自动目录请求。
 - 凭据撤销后的自动重新登录。
-- 按调用 API key、env 或鉴权 header 覆盖。
+- 经任意 `extra_headers` 注入鉴权。
 - Provider payload/response 流式 hook。
 - 大范围新增 first-class provider 列表（兼容 provider 保持为 config-driven
   profile）。
 - 图像生成（图片支持仅为输入侧）。
-- 已获批的 Anthropic 与 OpenAI Codex OAuth 登录流程之外的浏览器自动化。
+- SDK 拥有的浏览器自动化；打开授权 URL 归宿主负责。
 - 面向 package 的 provider 流式 adapter 协议。
 - 默认测试中的付费实时 provider 调用（实时测试保持 `#[ignore]` 门控）。
 - 复制 pi 的 provider 专用配置文件格式。
@@ -817,7 +826,8 @@ ADC 文件。显式选择的 direct metadata 来源以
 residency（resident：无超时，否则 3000ms；超时按实测语料为单发送
 终局失败）。交换在可注入 transport 上运行固定 Gaxios 重试配置
 （允许 POST、额外 3 次、no-response 2 次、状态 1xx/408/429/5xx、
-100/500/1500ms 延迟），绝不进入生成重试 owner；redirect 为终局。
+100/500/1500ms 延迟），绝不进入生成重试 owner。token POST 拒绝 redirect；
+来源 GET 至多跟随 20 次 redirect，跨 origin 移除敏感 header。
 显式 `GOOGLE_APPLICATION_CREDENTIALS` 文件读/解析失败即终局；
 well-known 文件（Windows `%APPDATA%\gcloud\...`、Unix
 `$HOME/.config/gcloud/...`）缺失表示未配置——绝不触发 metadata 或
@@ -842,11 +852,15 @@ TLS profile 准入的**源作用域 mTLS transport** 交换。executable supplie
 `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1`，将命令解析为直引号感知
 argv（绝不进 shell），合并 stdout/stderr，校验响应模式（token-type URN、
 配置 output_file 时的 `expiration_time`、过期），malformed cache 为终局、
-过期 cache 为 miss，超时收割进程组，且绝不改写 output_file。RFC8693 STS
+过期 cache 为 miss，使用选定 helper 的精确环境/cwd 快照，超时或调用方
+drop 时结束并收割 Unix process group 或 Windows Job，且绝不改写 output_file。helper 失败的 code/message 为
+闭合 `ProviderErrorSummary`，Display、Debug 与安全摘要不保留任意 helper 输出。
+RFC8693 STS
 交换默认 `https://sts.{universe_domain}/v1/token`，confidential 客户端用
 HTTP Basic，无客户端认证时 workforce user project 进入 `options` form
 字段。溯源经 `AdcCredentialSource::ExternalAccount` 非机密分类供应者；
-`impersonated_service_account` 在模拟任务交付前保持类型化未准入。
+`impersonated_service_account` 经下述 source/target 机制组合。AWS subject
+supplier 遵守自身 ADC metadata/环境变量合同，不使用 Bedrock profile/SSO/process 链。
 
 ### ADC 模拟、递归组合与分键缓存（P20-S21-3）
 
@@ -868,7 +882,9 @@ eager 窗口、短 TTL token 服务当前调用且不循环刷新、失效后完
 refresh 经 generation fencing 绝不发布。无稳定 wire principal 的来源为
 identity-unverified（`stable_identity() == None`）：automatic whole-call
 recovery 不得跨 source 变更复用；provider 普通重试继续复用冻结的
-per-call token。
+per-call token。可能轮转的 ADC 获取由共享 mutation queue 拥有：等待者 drop
+不丢弃已开始的刷新；来源替换对晚 token 和轮转的 refresh 材料统一设 fence。
+barrier 观察来源操作与 ACK，不启动鉴权。产品与 keychain store 共用该队列。
 
 ### SDK OAuth（Anthropic）与 store-ACK 的 `Models::login`（P20-S23）
 
@@ -878,7 +894,8 @@ per-call token。
 随机 state；回调阶梯首选 `127.0.0.1:53692` 加 `/callback` 路径（redirect
 URI 写 `localhost`），失败退到空闲 loopback 端口，最后退到纯手贴。第二种
 登录方式 copy-code 面向托管 `oauth/code/callback` 页面，接受手贴的
-`code`、`code#state`、query 串或重定向 URL。token 端点与流程失败保持全
+`code`、`code#state`、query 串或重定向 URL。方式选择、展示与 copy-code 等待
+共用配置的总预算和同一 cancellation waiter。token 端点与流程失败保持全
 遮蔽的产品摘要——闭合 OAuth 错误类也不外显，上游 body 无法回显。过期时
 间按真实服务过期存储；唯一的 5 分钟近过期校正保留在
 `OAuthCredential::needs_refresh`。`Models::register_oauth_flow` +
@@ -896,7 +913,8 @@ token 交换与刷新为 form 编码；浏览器路径使用与 Codex CLI 共享
 纯手贴且 redirect URI 不变，绝不换空闲端口（`bind_fallback` 二选一：
 Anthropic 空闲端口阶梯或 Codex 手贴阶梯）；authorize URL 携带生产 scope、
 S256 PKCE、独立 state 与 `id_token_add_organizations`/
-`codex_cli_simplified_flow`/`originator=opi`。设备码路径钉定 OpenAI
+`codex_cli_simplified_flow`，`originator` 由
+`CodexOAuthProvider::with_agent_name` 捕获（默认 `opi`）。设备码路径钉定 OpenAI
 `deviceauth` 端点：JSON 请求体、403/404 pending 怪癖回退、结构化
 pending/slow_down 码与 RFC 8628 +5 秒退避（增量与上限仍由宿主套件钉
 定）、`access_denied`/`expired_token` 先于状态回退的类型化分类、15 分钟
@@ -932,9 +950,8 @@ scope 含 direct 标志、`expires_in` 正有限、login 要求 `id_token` 存�
 `run_pkce_login_with` 缝隙（流提供输入解析与交换；Anthropic/Codex
 经基础适配器行为逐字节不变）。`Models::login` 以相同 store-ACK 语义注
 册 `openai-chatgpt`；落库恒为 OAuth 类型，API-key-only 消费者
-（Decisions classifier）绝不能把它当 API key 解析。宿主调用点机械映
-射新字段（`client_id: None`）；经宿主信封持久化它属于宿主 ChatGPT
-注册任务。
+（Decisions classifier）绝不能把它当 API key 解析。宿主信封持久化签发的
+`client_id` 与校验后的 `scopes` 列表，save/reopen 与刷新后保留 OAuth 类型。
 
 ### SDK OAuth（GitHub Copilot）（P20-S26）
 
@@ -953,8 +970,9 @@ client `Iv1.b507a08c87ecfe98` + `read:user`，严格校验响应、要求
 单决定 login 可对哪些 unconfigured 模型以 `{"state":"enabled"}`
 chat-policy POST 激活，先 `notify_progress`）。策略激活仅限 login：
 refresh 重换存储的 GitHub token、重发现元数据、绝不触碰策略。凭据新增非
-密 `enterprise_domain` 与 `available_model_ids`（宿主 v1 信封暂不持久
-化），存真实服务过期并保留唯一 5 分钟 `needs_refresh` 校正，GitHub
+密 `enterprise_domain` 与 `available_model_ids`；宿主信封与 token、其他 OAuth
+元数据原子持久化这两个字段。存真实服务过期并保留唯一 5 分钟
+`needs_refresh` 校正，GitHub
 token 留在 refresh 槽。产品 `CopilotOAuthProvider` 协议复制品删除；宿主
 注册 SDK 流并以静态目录为策略白名单，请求 base 从 token 派生（legacy
 存储 `base_url` 仍优先，保证切换前的凭据不换端点）。
@@ -1023,15 +1041,88 @@ token `expires_in` 缺省 3600s。刷新为单遍：响应缺 `refresh_token`
 ### SDK OAuth（Radius 网关流与九族组装验收）（P20-S31）
 
 `auth::oauth::radius` 钉定 pi 1.3.0 `radius.ts`。gateway 构造期固定
-（缺省 https、去尾斜杠），方法选择经 `select_login_method` 镜像 pi
+（缺省 https、去尾斜杠）。`with_identity(id, name)` 捕获 flow 自身的身份与
+显示名，同时保留该 gateway；既有构造器默认 `radius` / `Radius`。
+Models 注册键仍由调用方独立选择。方法选择经 `select_login_method` 镜像 pi
 prompt（browser 推荐）。浏览器模先 `GET {gateway}/v1/oauth` 发现授权端点
 （设备模绝不先 discovery），复用共享 PKCE 骨架：固定回调
 `http://127.0.0.1:1456/oauth/callback`、Required bind（占用即失败）、
 `pi-gateway` client、`gateway offline_access` scope 与 `handoff=url`。
-设备模 POST `/v1/oauth/device` 后走共享 RFC 8628 状态机；
+浏览器路径仅接受 callback，绝不启动手动输入 reader。设备模 POST `/v1/oauth/device` 后走共享 RFC 8628 状态机；
 verification URI 直通（无 scheme 校验，异于 xAI），denial 仅 RFC 单拼写。
 非 ok token 应答按错误码分类；token 响应每种 grant 都要求完整三元组；
 刷新为共享 Strict 单遍（无 §6 保留），401/403 撤销重登。存储期限为真实
 服务期限（pi 写期 60s skew 不复现，5 分钟修正单点 `needs_refresh`）。
 组装测试在单 `Models` 注册全部九族、跨两个 `Models` 共享一个 store，
 证明按 id 的 ACK 隔离与跨源 late-write 轮转隔离。
+
+
+### 将 SDK OAuth 接到实际请求
+
+先附着 `CredentialStore`，再调用 `Models::register_oauth_route(provider,
+flow, compat)`；注册不访问来源。该入口将 provider 与登录流绑定到
+`auth::store_oauth::StoreOAuthResolver`；`register_oauth_flow` 仍供纯登录注册。
+`Models::login` 与产品 `/login` helper 共用 SDK `login_to_store`，完整转发
+presenter 操作，凭据与元数据写入 ACK 后才报告成功。`get_auth` 与普通调用
+解析选定的存储身份，必要时经同一流刷新、等待持久化，再冻结返回的请求身份。
+`OAuthProvider::to_auth` 无 I/O；Copilot 从已确认的 token 派生请求端点。
+刷新失败不重新发现其他账号或来源。OAuth 刷新网络的 15 秒上限不包含
+queue/lock 等待和持久化 ACK。
+
+离线验收沿真实家族流，经公开 login、store ACK 与 `get_auth` 到已有的
+Anthropic、Codex、Chat Completions 与 Responses adapter，包括 Copilot
+token 选择的 HTTPS 端点。Radius 覆盖到 gateway 绑定的登录/刷新与公开鉴权；
+其 pi-messages 生成 adapter 与动态目录仍归后续任务。有限但不可表示的来源
+时长类型化失败；各流保留各自字段要求、缺省与轮询限制。OpenRouter 永久 key
+及 Anthropic/xAI 缺失 refresh 字段的行为仍各自独立。
+
+产品构造器现在接收拥有共享队列的 store：`build_harness_collection` 最后增加
+可选 `Arc<dyn CredentialStore>`；`CodingHarnessBuilder::credential_store`
+附着具体 keychain store；
+`NonInteractiveRunner::new_with_resume_runtime_packages_and_auth` 与
+`RpcRunner::new_with_runtime_packages_and_auth` 在 `auth_resolver` 后接收
+可选 keychain store。生产与 resolver、AWS 来源缓存、ADC owner 使用同一个
+store；`None` 用于无 store 的测试组装。
+
+AWS 嵌套 role profile 保留完整 static pair 优先，再沿现有
+web-identity/process/SSO/login 来源链，从内到外 AssumeRole。SSO cache
+区分 region/account/role/session、endpoint 与来源 revision。AWS 轮转必须
+具备自有依赖和共享 mutation queue；缺少 owner 时在轮转前类型化失败。
+旋转后的来源材料与真实过期保留在内存，即使标准缓存文件的 best-effort 保存
+失败。receipt 确认来源内存更新，不宣称文件持久化成功。失效 fence 拒绝晚
+内存/文件写；fence 失败不表示远端轮转已回滚。login-session 普通刷新失败中
+原有可 Continue 的分类保持不变。
+
+
+`AdcNativeOwner` 可直接作为 `AuthResolver` 注册。其 `check_configured`
+通过同一选定 context 检查环境变量与文件存在性，不读/解析凭据内容、不刷新
+令牌，也不联系 metadata。文件缺失表示未配置，存在性探测失败按类型浮出；
+存在但畸形的文件在实际解析校验前仍算已配置。可选的
+`AuthResolver::check_configuration` hook 供 `check_auth` 与可用性检查使用，
+opaque resolver 保留其来源分类检查。产品 Vertex checker 先保留存储的
+Express/API-key 与配置 Bearer 的优先级，再检查同一个 ADC owner。
+
+
+存储 OAuth 解析在串行 mutation slot 内首次选择当前凭据，包含 fresh-token
+读取，避免等待锁时保留先于 logout/replace 的旧身份。替换附着的 store 或
+upsert helper 绑定的 OAuth flow 会将新调用重绑到该 store/flow；已捕获的
+调用保留其冻结绑定。显式由调用方拥有的 `register_route` resolver 保留自身归属。
+
+
+Windows helper 以 suspended 状态启动，先加入自有 kill-on-close Job，再恢复执行。
+关闭 owner 会结束其后代进程，即使最初 helper parent 已退出。必要的
+`windows-sys` 调用封装在私有 Windows owner，使用 `OwnedHandle`，不添加
+unsafe `Send` 实现。Windows-only 的 `windows-sys` 0.61.2 依赖在已有
+Job/ToolHelp/Threading feature 集上增加 `Win32_Security`，不新增包版本或
+build script。Unix process group 与 AWS 现有 10 秒/64-KiB 宿主策略保持不变；
+本变更不宣称完整 native-platform 验收。
+
+
+`OAuthProvider::{name, is_subscription, login_label}` 可经 `dyn OAuthProvider`
+读取非密 flow 元数据，不执行鉴权或来源 I/O。自定义实现默认 `name = id()`，
+其余两个可选字段为 `None`。九种 SDK 流保留固定 Pi 的显示值及 optional 区别：
+OpenRouter 与 Radius 不声明 subscription flag，没有 login label 的流不合成
+通用 label。Radius 在方式选择、请求溯源和类型化取消/撤销中使用捕获的自身身份，
+刷新仍绑定配置的 gateway 与存储的 account 元数据。fresh 与 refreshed
+Radius 请求鉴权均忽略凭据 `base_url`，路由权威始终属于该 gateway。不新增通用 flow inventory
+或完整 provider/profile 枚举。

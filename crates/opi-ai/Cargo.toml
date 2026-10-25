@@ -46,6 +46,9 @@ rustls-native-certs = { workspace = true }
 libz-rs-sys = { workspace = true }
 flate2 = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Security"] }
+
 [dev-dependencies]
 futures-util = { workspace = true }
 tempfile = { workspace = true }

@@ -591,7 +591,7 @@ impl MutationSlotView for InMemorySlotView {
 /// implementation keeps single-process exclusion only.
 pub struct InMemoryCredentialStore {
     state: Arc<InMemoryState>,
-    queue: MutationQueue,
+    queue: Arc<MutationQueue>,
 }
 
 impl Default for InMemoryCredentialStore {
@@ -603,12 +603,17 @@ impl Default for InMemoryCredentialStore {
 impl InMemoryCredentialStore {
     /// Create an empty store.
     pub fn new() -> Self {
+        Self::with_mutation_queue(Arc::new(MutationQueue::new()))
+    }
+
+    /// Create an empty store sharing source rotation receipts with `queue`.
+    pub fn with_mutation_queue(queue: Arc<MutationQueue>) -> Self {
         Self {
             state: Arc::new(InMemoryState {
                 entries: Mutex::new(HashMap::new()),
                 read_count: std::sync::atomic::AtomicU64::new(0),
             }),
-            queue: MutationQueue::new(),
+            queue,
         }
     }
 
@@ -758,6 +763,10 @@ impl CredentialStore for InMemoryCredentialStore {
 
     fn mutation_barrier(&self) -> MutationBarrier {
         self.queue.barrier()
+    }
+
+    fn mutation_queue(&self) -> Option<Arc<MutationQueue>> {
+        Some(self.queue.clone())
     }
 }
 

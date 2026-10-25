@@ -73,6 +73,7 @@ async fn oauth_credential_debug_redacts_secrets_and_keeps_base_url() {
         client_id: None,
         enterprise_domain: None,
         available_model_ids: None,
+        scopes: None,
     };
     let dbg = format!("{cred:?}");
     assert!(!dbg.contains("access-secret"), "access leaked: {dbg}");
@@ -149,6 +150,7 @@ impl OAuthProvider for MockOAuthProvider {
                 client_id: None,
                 enterprise_domain: None,
                 available_model_ids: None,
+                scopes: None,
             })
         })
     }
@@ -167,6 +169,7 @@ impl OAuthProvider for MockOAuthProvider {
                 client_id: None,
                 enterprise_domain: None,
                 available_model_ids: None,
+                scopes: None,
             })
         })
     }
@@ -791,6 +794,7 @@ async fn check_reports_expired_oauth_configured_without_refresh() {
         client_id: None,
         enterprise_domain: None,
         available_model_ids: None,
+        scopes: None,
     };
     let store = std::sync::Arc::new(RecordingStore::new([("prov-oauth", expired)]));
     let mut collection = opi_ai::Models::new();
@@ -1150,6 +1154,7 @@ async fn get_auth_resolves_descriptor_sources_without_refresh() {
         client_id: None,
         enterprise_domain: None,
         available_model_ids: None,
+        scopes: None,
     };
     let store = std::sync::Arc::new(RecordingStore::new([("prov-store", expired)]));
     let mut collection = opi_ai::Models::new();
@@ -2047,14 +2052,21 @@ f1JdzC/2b2W3wiseeVHZn7MSsny0JpfbveYtQ9xbrmmRY2amtuMzS/jbnrIKQ+wv
     }
 
     #[tokio::test]
-    async fn adc_well_known_unix_path_is_used_when_env_is_unset() {
+    async fn adc_well_known_platform_path_is_used_when_env_is_unset() {
         let dir = temp_dir();
-        let gcloud = dir.path().join(".config").join("gcloud");
+        let gcloud = if cfg!(windows) {
+            dir.path().join("gcloud")
+        } else {
+            dir.path().join(".config").join("gcloud")
+        };
         std::fs::create_dir_all(&gcloud).unwrap();
         let file = gcloud.join("application_default_credentials.json");
         std::fs::write(&file, authorized_user_json(None)).unwrap();
         let ctx = MapContext::default()
-            .with_env("HOME", dir.path().to_str().unwrap())
+            .with_env(
+                if cfg!(windows) { "APPDATA" } else { "HOME" },
+                dir.path().to_str().unwrap(),
+            )
             .with_file(&file);
         let transport = ScriptedTransport::new(vec![ScriptedTransport::token_reply(
             r#"{"access_token":"tok1","expires_in":3600}"#,
@@ -2793,11 +2805,13 @@ mod adc_external {
 
     struct MapContext {
         env: HashMap<String, String>,
+        process_dir: tempfile::TempDir,
     }
 
     impl MapContext {
         fn new(env: &[(&str, &str)]) -> Self {
             Self {
+                process_dir: tempfile::tempdir().unwrap(),
                 env: env
                     .iter()
                     .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
@@ -2807,6 +2821,11 @@ mod adc_external {
     }
 
     impl AuthContext for MapContext {
+        fn process_snapshot(&self) -> Result<opi_ai::auth::AuthProcessSnapshot, AuthContextError> {
+            Ok(opi_ai::test_support::portable_auth_process_snapshot(
+                self.process_dir.path(),
+            ))
+        }
         fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
             Ok(self.env.get(name).cloned())
         }
@@ -2972,7 +2991,10 @@ mod adc_external {
     async fn external_file_supplier_text_exchanges_at_sts() {
         let dir = tempfile::tempdir().unwrap();
         let token_file = creds_file(dir.path(), "subject.txt", "raw-subject-token");
-        let json = external_json(&format!(r#"{{"file":"{}"}}"#, token_file.display()));
+        let json = external_json(&format!(
+            r#"{{"file":{}}}"#,
+            serde_json::to_string(&token_file).unwrap()
+        ));
         let ambient = MapContext::new(&[]);
         let transport = ScriptedTransport::new(vec![sts_ok()]);
 
@@ -3024,8 +3046,8 @@ mod adc_external {
             r#"{"unrelated":"x","the_token":"  spaced  "}"#,
         );
         let json = external_json(&format!(
-            r#"{{"file":"{}","format":{{"type":"json","subject_token_field_name":"the_token"}}}}"#,
-            token_file.display()
+            r#"{{"file":{},"format":{{"type":"json","subject_token_field_name":"the_token"}}}}"#,
+            serde_json::to_string(&token_file).unwrap()
         ));
         let transport = ScriptedTransport::new(vec![sts_ok()]);
         let token = resolve(&json, &MapContext::new(&[]), &transport)
@@ -3048,7 +3070,10 @@ mod adc_external {
     async fn external_file_text_keeps_raw_bytes_without_trim() {
         let dir = tempfile::tempdir().unwrap();
         let token_file = creds_file(dir.path(), "subject.txt", "\n  padded-token \n");
-        let json = external_json(&format!(r#"{{"file":"{}"}}"#, token_file.display()));
+        let json = external_json(&format!(
+            r#"{{"file":{}}}"#,
+            serde_json::to_string(&token_file).unwrap()
+        ));
         let transport = ScriptedTransport::new(vec![sts_ok()]);
         resolve(&json, &MapContext::new(&[]), &transport)
             .await
@@ -3069,7 +3094,10 @@ mod adc_external {
         let token_file = creds_file(dir.path(), "subject.txt", "t");
         let json = external_full_json(
             r#","universe_domain":"example.net""#,
-            &format!(r#"{{"file":"{}"}}"#, token_file.display()),
+            &format!(
+                r#"{{"file":{}}}"#,
+                serde_json::to_string(&token_file).unwrap()
+            ),
         );
         let transport = ScriptedTransport::new(vec![sts_ok()]);
         resolve(&json, &MapContext::new(&[]), &transport)
@@ -3082,7 +3110,10 @@ mod adc_external {
         let token_file = creds_file(dir.path(), "subject.txt", "t");
         let json = external_full_json(
             r#","token_url":"https://sts.example.org/exchange""#,
-            &format!(r#"{{"file":"{}"}}"#, token_file.display()),
+            &format!(
+                r#"{{"file":{}}}"#,
+                serde_json::to_string(&token_file).unwrap()
+            ),
         );
         let transport = ScriptedTransport::new(vec![sts_ok()]);
         resolve(&json, &MapContext::new(&[]), &transport)
@@ -3097,10 +3128,10 @@ mod adc_external {
         let dir = tempfile::tempdir().unwrap();
         let token_file = creds_file(dir.path(), "subject.txt", "t");
         let json = format!(
-            r#"{{"type":"external_account","audience":"{}","subject_token_type":"{}","client_id":"ecid","client_secret":"ecsec","credential_source":{{"file":"{}"}}}}"#,
+            r#"{{"type":"external_account","audience":"{}","subject_token_type":"{}","client_id":"ecid","client_secret":"ecsec","credential_source":{{"file":{}}}}}"#,
             audience(),
             subject_token_type(),
-            token_file.display()
+            serde_json::to_string(&token_file).unwrap()
         );
         let transport = ScriptedTransport::new(vec![sts_ok()]);
         resolve(&json, &MapContext::new(&[]), &transport)
@@ -3132,9 +3163,9 @@ mod adc_external {
         let dir = tempfile::tempdir().unwrap();
         let token_file = creds_file(dir.path(), "subject.txt", "t");
         let json = format!(
-            r#"{{"type":"external_account","audience":"//iam.googleapis.com/locations/us/workforcePools/wp/providers/oidc","subject_token_type":"{}","workforce_pool_user_project":"wp-proj","credential_source":{{"file":"{}"}}}}"#,
+            r#"{{"type":"external_account","audience":"//iam.googleapis.com/locations/us/workforcePools/wp/providers/oidc","subject_token_type":"{}","workforce_pool_user_project":"wp-proj","credential_source":{{"file":{}}}}}"#,
             subject_token_type(),
-            token_file.display()
+            serde_json::to_string(&token_file).unwrap()
         );
         let transport = ScriptedTransport::new(vec![sts_ok()]);
         let token = resolve(&json, &MapContext::new(&[]), &transport)
@@ -3160,7 +3191,10 @@ mod adc_external {
         let token_file = creds_file(dir.path(), "subject.txt", "t");
         let json = external_full_json(
             r#","workforce_pool_user_project":"wp""#,
-            &format!(r#"{{"file":"{}"}}"#, token_file.display()),
+            &format!(
+                r#"{{"file":{}}}"#,
+                serde_json::to_string(&token_file).unwrap()
+            ),
         );
         let error = resolve(
             &json,
@@ -3197,7 +3231,10 @@ mod adc_external {
         let token_file = creds_file(dir.path(), "subject.txt", "t");
         let json = external_full_json(
             r#","token_url":"not a url""#,
-            &format!(r#"{{"file":"{}"}}"#, token_file.display()),
+            &format!(
+                r#"{{"file":{}}}"#,
+                serde_json::to_string(&token_file).unwrap()
+            ),
         );
         let error = resolve(
             &json,
@@ -3271,7 +3308,10 @@ mod adc_external {
     async fn external_sts_rejection_and_retry_budget() {
         let dir = tempfile::tempdir().unwrap();
         let token_file = creds_file(dir.path(), "subject.txt", "t");
-        let json = external_json(&format!(r#"{{"file":"{}"}}"#, token_file.display()));
+        let json = external_json(&format!(
+            r#"{{"file":{}}}"#,
+            serde_json::to_string(&token_file).unwrap()
+        ));
 
         // Non-retryable status is terminal after one send.
         let transport =
@@ -3662,18 +3702,14 @@ mod adc_external {
 
     fn certificate_creds(dir: &std::path::Path, config_name: &str) -> String {
         let config = format!(
-            r#"{{"cert_configs":{{"workload":{{"cert_path":"{}","key_path":"{}"}}}}}}"#,
-            std::path::Path::new(FIXTURES)
-                .join("client-leaf.pem")
-                .display(),
-            std::path::Path::new(FIXTURES)
-                .join("client-leaf.key")
-                .display(),
+            r#"{{"cert_configs":{{"workload":{{"cert_path":{},"key_path":{}}}}}}}"#,
+            serde_json::to_string(&std::path::Path::new(FIXTURES).join("client-leaf.pem")).unwrap(),
+            serde_json::to_string(&std::path::Path::new(FIXTURES).join("client-leaf.key")).unwrap(),
         );
         creds_file(dir, config_name, &config);
         external_json(&format!(
-            r#"{{"certificate":{{"certificate_config_location":"{}"}}}}"#,
-            dir.join(config_name).display()
+            r#"{{"certificate":{{"certificate_config_location":{}}}}}"#,
+            serde_json::to_string(&dir.join(config_name)).unwrap()
         ))
     }
 
@@ -3784,13 +3820,11 @@ mod adc_external {
         std::fs::write(
             &env_config,
             format!(
-                r#"{{"cert_configs":{{"workload":{{"cert_path":"{}","key_path":"{}"}}}}}}"#,
-                std::path::Path::new(FIXTURES)
-                    .join("client-leaf.pem")
-                    .display(),
-                std::path::Path::new(FIXTURES)
-                    .join("client-leaf.key")
-                    .display(),
+                r#"{{"cert_configs":{{"workload":{{"cert_path":{},"key_path":{}}}}}}}"#,
+                serde_json::to_string(&std::path::Path::new(FIXTURES).join("client-leaf.pem"))
+                    .unwrap(),
+                serde_json::to_string(&std::path::Path::new(FIXTURES).join("client-leaf.key"))
+                    .unwrap(),
             ),
         )
         .unwrap();
@@ -3832,13 +3866,9 @@ mod adc_external {
         let path = creds_file(config_dir_path.as_path(), "external2.json", &json);
         let empty_transport2 = ScriptedTransport::new(Vec::new());
         let well_known_config = format!(
-            r#"{{"cert_configs":{{"workload":{{"cert_path":"{}","key_path":"{}"}}}}}}"#,
-            std::path::Path::new(FIXTURES)
-                .join("client-leaf.pem")
-                .display(),
-            std::path::Path::new(FIXTURES)
-                .join("client-leaf.key")
-                .display(),
+            r#"{{"cert_configs":{{"workload":{{"cert_path":{},"key_path":{}}}}}}}"#,
+            serde_json::to_string(&std::path::Path::new(FIXTURES).join("client-leaf.pem")).unwrap(),
+            serde_json::to_string(&std::path::Path::new(FIXTURES).join("client-leaf.key")).unwrap(),
         );
         std::fs::write(
             well_known_dir.join("certificate_config.json"),
@@ -3932,8 +3962,8 @@ mod adc_external {
         let command = json_escape(command);
         match output_file {
             Some(file) => external_json(&format!(
-                r#"{{"executable":{{"command":"{command}","output_file":"{}"}}}}"#,
-                file.display()
+                r#"{{"executable":{{"command":"{command}","output_file":{}}}}}"#,
+                serde_json::to_string(&file).unwrap()
             )),
             None => external_json(&format!(r#"{{"executable":{{"command":"{command}"}}}}"#)),
         }
@@ -4062,11 +4092,11 @@ mod adc_external {
         let command = spawn_helper(dir.path(), &env_dump, &ok_response());
         let impersonation = ",\"service_account_impersonation_url\":\"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/sa@proj.iam.gserviceaccount.com:generateAccessToken\"";
         let json = format!(
-            r#"{{"type":"external_account","audience":"{}","subject_token_type":"{}"{impersonation},"credential_source":{{"executable":{{"command":"{}","output_file":"{}"}}}}}}"#,
+            r#"{{"type":"external_account","audience":"{}","subject_token_type":"{}"{impersonation},"credential_source":{{"executable":{{"command":"{}","output_file":{}}}}}}}"#,
             audience(),
             subject_token_type(),
             json_escape(&command),
-            output_file.display()
+            serde_json::to_string(&output_file).unwrap()
         );
 
         // 20.21.3: the file's impersonation URL now activates the IAM leg
@@ -4153,7 +4183,7 @@ mod adc_external {
         .unwrap_err();
         assert!(matches!(
             error,
-            AdcResolutionError::ExecutableFailed { ref code, .. } if code == "401"
+            AdcResolutionError::ExecutableFailed { ref code, .. } if code.as_str() == "[REDACTED]"
         ));
 
         // Invalid token_type URN.
@@ -4225,7 +4255,7 @@ mod adc_external {
         assert!(matches!(
             error,
             AdcResolutionError::ExecutableFailed { ref code, ref message }
-                if code == "3" && message.contains("boom")
+                if code.as_str() == "3" && message.as_str() == "[REDACTED]"
         ));
 
         // Expired response (fresh spawn) is typed.
@@ -4336,7 +4366,6 @@ mod adc_impersonation {
     /// iamcredentials endpoint from the universe domain).
     const FILE_IMP_URL: &str = "https://iamcredentials.example.com/v1beta/projects/p/serviceAccounts/target@proj.iam.gserviceaccount.com:generateAccessToken";
 
-    #[derive(Default)]
     struct MapContext {
         env: HashMap<String, String>,
     }
@@ -4912,8 +4941,8 @@ mod adc_impersonation {
     fn external_with_impersonation(dir: &std::path::Path, extras: &str) -> String {
         let token_file = subject_file(dir);
         format!(
-            r#"{{"type":"external_account","audience":"//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/p/providers/o","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","service_account_impersonation_url":"{FILE_IMP_URL}"{extras},"credential_source":{{"file":"{}"}}}}"#,
-            token_file.display()
+            r#"{{"type":"external_account","audience":"//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/p/providers/o","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","service_account_impersonation_url":"{FILE_IMP_URL}"{extras},"credential_source":{{"file":{}}}}}"#,
+            serde_json::to_string(&token_file).unwrap()
         )
     }
 
@@ -5384,8 +5413,8 @@ mod adc_impersonation {
             dir.path(),
             "external.json",
             &format!(
-                r#"{{"type":"external_account","audience":"//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/p/providers/o","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","credential_source":{{"file":"{}"}}}}"#,
-                subject_file(dir.path()).display()
+                r#"{{"type":"external_account","audience":"//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/p/providers/o","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","credential_source":{{"file":{}}}}}"#,
+                serde_json::to_string(&subject_file(dir.path())).unwrap()
             ),
         );
         let file_input = input(

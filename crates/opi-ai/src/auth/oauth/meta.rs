@@ -381,6 +381,7 @@ impl MetaOAuthProvider {
             base_url: None,
             account_id: None,
             client_id: None,
+            scopes: None,
             enterprise_domain: None,
             available_model_ids: None,
         })
@@ -403,6 +404,18 @@ fn fail_start_response_invalid(
 impl OAuthProvider for MetaOAuthProvider {
     fn id(&self) -> &str {
         PROVIDER_ID
+    }
+
+    fn name(&self) -> &str {
+        "Meta (Muse subscription)"
+    }
+
+    fn is_subscription(&self) -> Option<bool> {
+        Some(true)
+    }
+
+    fn login_label(&self) -> Option<&str> {
+        Some("Sign in with Meta")
     }
 
     fn login<'a>(
@@ -438,11 +451,9 @@ impl OAuthProvider for MetaOAuthProvider {
 
             // pi `pollOAuthDeviceCodeFlow`: wait one interval before the
             // first poll, then poll under the device deadline.
-            let mut interval =
-                Duration::from_secs_f64(device.interval_seconds).max(META_MINIMUM_POLL_INTERVAL);
-            let deadline = tokio::time::Instant::now()
-                + Duration::from_secs_f64(device.expires_in_seconds)
-                    .clamp(Duration::ZERO, Duration::from_secs(u64::MAX / 2));
+            let mut interval = super::checked_poll_duration(device.interval_seconds)?
+                .max(META_MINIMUM_POLL_INTERVAL);
+            let deadline = super::checked_device_deadline(device.expires_in_seconds)?;
             tokio::select! {
                 biased;
                 cancelled = cancellation.as_mut() => {
@@ -450,7 +461,7 @@ impl OAuthProvider for MetaOAuthProvider {
                     return Err(login_cancelled(presenter, PROVIDER_ID));
                 }
                 _ = tokio::time::sleep_until(deadline.min(
-                    tokio::time::Instant::now() + interval,
+                    super::next_poll_deadline(deadline, interval),
                 )) => {}
             }
 
@@ -475,12 +486,18 @@ impl OAuthProvider for MetaOAuthProvider {
                     }
                     Ok(MetaPoll::SlowDown { interval_seconds }) => {
                         saw_slow_down = true;
-                        interval = match interval_seconds {
-                            Some(seconds) => {
-                                Duration::from_secs_f64(seconds).max(META_MINIMUM_POLL_INTERVAL)
-                            }
-                            None => interval + META_SLOW_DOWN_INCREMENT,
-                        };
+                        interval =
+                            match interval_seconds {
+                                Some(seconds) => super::checked_poll_duration(seconds)?
+                                    .max(META_MINIMUM_POLL_INTERVAL),
+                                None => interval.checked_add(META_SLOW_DOWN_INCREMENT).ok_or_else(
+                                    || {
+                                        provider_config_error(
+                                            "OAuth polling interval is out of range",
+                                        )
+                                    },
+                                )?,
+                            };
                         sleep_poll_gap(presenter, &mut cancellation, interval, deadline).await?;
                         continue;
                     }
@@ -535,7 +552,7 @@ async fn sleep_poll_gap(
     interval: Duration,
     deadline: tokio::time::Instant,
 ) -> Result<(), ProviderError> {
-    let next = tokio::time::Instant::now() + interval;
+    let next = super::next_poll_deadline(deadline, interval);
     tokio::select! {
         biased;
         cancelled = cancellation.as_mut() => {

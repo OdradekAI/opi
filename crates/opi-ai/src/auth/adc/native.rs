@@ -32,8 +32,8 @@
 //! well-known file means "not configured" and performs **zero** network work
 //! (no metadata, BIOS, or gcloud discovery). The `external_account`
 //! federation families are owned by the sibling `external`, `subject`, and
-//! `executable` modules (task 20.21.2);
-//! `impersonated_service_account` fails typed (task 20.21.3).
+//! `executable` modules; `impersonated_service_account` composes its source
+//! through the sibling `impersonation` module.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -45,6 +45,7 @@ use time::OffsetDateTime;
 use crate::auth::{AdcCredentialSource, AuthContext};
 use crate::credential::BoxAuthFuture;
 use crate::http::{HttpClient, HttpClientBuilder, RedirectPolicy};
+use crate::provider::ProviderErrorSummary;
 
 use super::cache::{AdcCacheKey, AdcTokenCache};
 use super::external::{self as external, ExternalAccountFile, resolve_external_account};
@@ -84,9 +85,24 @@ const JWT_LIFETIME_SECS: i64 = 3600;
 
 /// Typed failure of one ADC native-family resolution. Carries no credential
 /// material; [`AdcResolutionError::safe_summary`] is the redaction-safe text.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 #[non_exhaustive]
 pub enum AdcResolutionError {
+    /// The caller cancelled an acquisition before any rotation started.
+    #[error("ADC acquisition cancelled")]
+    Cancelled,
+    /// A source context could not be consulted.
+    #[error("ADC source context unavailable")]
+    ContextUnavailable,
+    /// The source mutation did not produce a confirmed result.
+    #[error("ADC source mutation outcome unknown")]
+    MutationUnknown,
+    /// The selected source was invalidated while its exchange was running.
+    #[error("ADC source changed before the acquisition was acknowledged")]
+    Superseded,
+    /// The selected access token expired before it could serve this call.
+    #[error("ADC access expired before acknowledgement")]
+    Expired,
     /// Auto selection found no credentials file; the caller reports the
     /// credential as missing (never falls through to metadata discovery).
     #[error("no ADC credentials file is configured")]
@@ -155,7 +171,7 @@ pub enum AdcResolutionError {
         /// Sends performed (including the first).
         attempts: usize,
     },
-    /// The exchange saw a redirect; ADC source legs never follow redirects.
+    /// A token exchange redirect was refused or a source redirect bound failed.
     #[error("ADC token exchange refused a redirect")]
     Redirected,
     /// The metadata response's `Metadata-Flavor` header was absent or wrong.
@@ -202,14 +218,23 @@ pub enum AdcResolutionError {
     /// Spawning the executable failed.
     #[error("the executable could not be spawned")]
     ExecutableSpawnFailed,
+    /// The selected helper's frozen environment or cwd could not be captured.
+    #[error("the executable process context could not be captured")]
+    ExecutableProcessContext,
+    /// The helper's output pipe could not be collected.
+    #[error("the executable output could not be collected")]
+    ExecutableOutput,
+    /// The caller stopped waiting and the owned helper was cancelled.
+    #[error("the executable was cancelled")]
+    ExecutableCancelled,
     /// The executable or its response reported a failure
     /// (non-zero exit or `success=false`).
     #[error("the executable failed with code {code}: {message}")]
     ExecutableFailed {
-        /// Reported exit/response code.
-        code: String,
-        /// Merged stdout/stderr or response message (bounded).
-        message: String,
+        /// Native exit code, or redacted untrusted helper response code.
+        code: ProviderErrorSummary,
+        /// Redacted helper output or response message; raw text is not retained.
+        message: ProviderErrorSummary,
     },
     /// The executable exceeded its configured timeout; the process group
     /// was reaped.
@@ -295,7 +320,7 @@ pub enum AdcSourceHttpError {
     /// The request timed out.
     #[error("timeout")]
     Timeout,
-    /// The response was a redirect; source legs never follow.
+    /// A token redirect was refused or a source GET exceeded its redirect bound.
     #[error("redirect refused")]
     Redirect,
 }
@@ -310,11 +335,12 @@ pub trait AdcSourceTransport: Send + Sync {
     ) -> BoxAuthFuture<'_, Result<AdcSourceResponse, AdcSourceHttpError>>;
 }
 
-/// Real HTTP transport backed by the controlled opi-ai client. Redirects are
-/// disabled so a redirect is a typed [`AdcSourceHttpError::Redirect`], never
-/// silently followed: source identity can never be redirected elsewhere.
+/// Real HTTP transport backed by the controlled opi-ai client. Source GETs
+/// follow the pinned twenty-redirect bound; token POST exchanges refuse
+/// redirects. Cross-origin GET redirects drop sensitive headers.
 pub struct ReqwestAdcTransport {
     client: HttpClient,
+    get_client: HttpClient,
 }
 
 impl Default for ReqwestAdcTransport {
@@ -331,6 +357,10 @@ impl ReqwestAdcTransport {
                 .redirects(RedirectPolicy::None)
                 .build()
                 .expect("source transport construction should not fail with valid defaults"),
+            get_client: HttpClientBuilder::new()
+                .redirects(RedirectPolicy::Limited(20))
+                .build()
+                .expect("source transport construction should not fail with valid defaults"),
         }
     }
 
@@ -342,6 +372,10 @@ impl ReqwestAdcTransport {
         Ok(Self {
             client: HttpClientBuilder::new()
                 .redirects(RedirectPolicy::None)
+                .tls(options.clone())
+                .build()?,
+            get_client: HttpClientBuilder::new()
+                .redirects(RedirectPolicy::Limited(20))
                 .tls(options)
                 .build()?,
         })
@@ -356,7 +390,12 @@ impl AdcSourceTransport for ReqwestAdcTransport {
         Box::pin(async move {
             let method = reqwest::Method::from_bytes(request.method.as_bytes())
                 .expect("ADC source methods are valid HTTP methods");
-            let mut builder = self.client.client().request(method, &request.url);
+            let client = if method == reqwest::Method::GET {
+                &self.get_client
+            } else {
+                &self.client
+            };
+            let mut builder = client.client().request(method, &request.url);
             for (name, value) in &request.headers {
                 builder = builder.header(name, value);
             }
@@ -955,7 +994,13 @@ async fn exchange_family(
                 ("client_id", client_id.clone()),
                 ("client_secret", client_secret.expose_secret().to_owned()),
                 ("grant_type", "refresh_token".to_owned()),
-                ("refresh_token", refresh_token.expose_secret().to_owned()),
+                (
+                    "refresh_token",
+                    refresh_override
+                        .unwrap_or(refresh_token)
+                        .expose_secret()
+                        .to_owned(),
+                ),
             ]);
             let (response, sends) = send_with_gaxios_retry(
                 transport,
@@ -1241,6 +1286,7 @@ pub async fn resolve_adc_native_with_refresh(
 /// late-publication fencing through [`AdcTokenCache::invalidate`]. A rotated
 /// refresh token replaces the owner's copy in place (the ADC file is never
 /// rewritten by default).
+#[derive(Clone)]
 pub struct AdcNativeOwner {
     selection: AdcAuthSelection,
     scoped: ScopedAdcEnv,
@@ -1251,18 +1297,51 @@ pub struct AdcNativeOwner {
     impersonation_endpoint: Option<String>,
     universe_domain: Option<String>,
     scopes: Vec<String>,
-    cache: AdcTokenCache,
-    state: Mutex<AdcOwnerState>,
+    cache: Arc<AdcTokenCache>,
+    state: Arc<Mutex<AdcOwnerState>>,
+    queue: Arc<crate::mutation::MutationQueue>,
+    namespace: uuid::Uuid,
 }
 
 #[derive(Default)]
 struct AdcOwnerState {
-    refresh: Option<SecretString>,
+    generation: u64,
+    completed: u64,
+    refresh: std::collections::HashMap<AdcCacheKey, SecretString>,
+    outcomes:
+        std::collections::HashMap<AdcCacheKey, (u64, Result<AdcResolvedToken, AdcResolutionError>)>,
+    keys: std::collections::HashSet<AdcCacheKey>,
+}
+
+struct AdcSnapshot {
+    family: Option<AdcFamily>,
+    key: AdcCacheKey,
+    generation: u64,
+    observed: u64,
+    entered: u64,
+    rotating: bool,
+}
+
+struct CancelAcquisition(tokio_util::sync::CancellationToken);
+impl Drop for CancelAcquisition {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+fn family_can_rotate(family: &AdcFamily) -> bool {
+    match family {
+        AdcFamily::AuthorizedUser { .. } | AdcFamily::ExternalAccountAuthorizedUser { .. } => true,
+        AdcFamily::Impersonated(file) => {
+            parse_adc_json(&file.source_json).is_ok_and(|source| family_can_rotate(&source))
+        }
+        _ => false,
+    }
 }
 
 impl AdcNativeOwner {
-    /// Build an owner for `selection`. Ambient access defaults to the real
-    /// process context; inject one for tests and embedded hosts.
+    /// Construct a lazy source owner. Its mutation receipts acknowledge memory,
+    /// not the ADC file; the file is never rewritten implicitly.
     pub fn new(
         selection: AdcAuthSelection,
         transport: Arc<dyn AdcSourceTransport>,
@@ -1278,58 +1357,141 @@ impl AdcNativeOwner {
             impersonation_endpoint: None,
             universe_domain: None,
             scopes: Vec::new(),
-            cache: AdcTokenCache::new(),
-            state: Mutex::new(AdcOwnerState::default()),
+            cache: Arc::new(AdcTokenCache::new()),
+            state: Arc::new(Mutex::new(AdcOwnerState::default())),
+            queue: Arc::new(crate::mutation::MutationQueue::new()),
+            namespace: uuid::Uuid::new_v4(),
         }
     }
 
-    /// Replace the ambient context.
+    /// Replace ambient source access without consulting the real environment.
     pub fn with_ambient(mut self, ambient: Arc<dyn AuthContext>) -> Self {
         self.ambient = ambient;
         self
     }
-
-    /// Replace the scoped environment values.
+    /// Set the source-scoped environment.
     pub fn with_scoped(mut self, scoped: ScopedAdcEnv) -> Self {
         self.scoped = scoped;
         self
     }
-
-    /// Override the canonical token endpoint (tests and pinned deployments).
+    /// Pin the token exchange endpoint.
     pub fn with_token_endpoint(mut self, endpoint: Option<String>) -> Self {
         self.token_endpoint = endpoint;
         self
     }
-
-    /// Override the canonical impersonation endpoint (tests and pinned
-    /// deployments).
+    /// Pin the IAM exchange endpoint.
     pub fn with_impersonation_endpoint(mut self, endpoint: Option<String>) -> Self {
         self.impersonation_endpoint = endpoint;
         self
     }
-
-    /// Override the universe domain.
+    /// Set the selected universe.
     pub fn with_universe_domain(mut self, domain: Option<String>) -> Self {
         self.universe_domain = domain;
         self
     }
-
-    /// Replace the requested scopes.
+    /// Set the requested scopes.
     pub fn with_scopes(mut self, scopes: Vec<String>) -> Self {
         self.scopes = scopes;
         self
     }
+    /// Share the store's mutation owner so its barrier observes rotations.
+    pub fn with_mutation_queue(mut self, queue: Arc<crate::mutation::MutationQueue>) -> Self {
+        self.queue = queue;
+        self
+    }
+    /// Observe this source's admitted work without starting authentication.
+    pub fn mutation_barrier(&self) -> crate::mutation::MutationBarrier {
+        self.queue.barrier()
+    }
 
-    /// The pinned cache key for this owner's fixed configuration.
-    fn cache_key(&self) -> AdcCacheKey {
-        let config = match &self.selection {
-            AdcAuthSelection::CredentialsFile(path) => path.to_string_lossy().into_owned(),
-            AdcAuthSelection::Auto => "auto".to_owned(),
-            AdcAuthSelection::DirectMetadata { residency } => {
-                format!("metadata:{residency:?}")
-            }
+    /// Check only the selected source's configuration and file presence.
+    /// No credential file is read or parsed, no cache is refreshed, and no
+    /// metadata or token endpoint is contacted. Explicit direct metadata is
+    /// configured by selection, without claiming that the service is healthy.
+    pub fn check_configured(&self) -> Result<bool, AdcResolutionError> {
+        let env = |name| {
+            self.ambient
+                .env(name)
+                .map_err(|_| AdcResolutionError::ContextUnavailable)
         };
-        AdcCacheKey::from_parts(
+        let path = match &self.selection {
+            AdcAuthSelection::DirectMetadata { .. } => return Ok(true),
+            AdcAuthSelection::CredentialsFile(path) => path.clone(),
+            AdcAuthSelection::Auto => match match &self.scoped.google_application_credentials {
+                Some(path) => Some(path.clone()),
+                None => env("GOOGLE_APPLICATION_CREDENTIALS")?,
+            } {
+                Some(path) => PathBuf::from(path),
+                None => {
+                    let Some(path) =
+                        well_known_adc_file(env("APPDATA")?.as_deref(), env("HOME")?.as_deref())
+                    else {
+                        return Ok(false);
+                    };
+                    path
+                }
+            },
+        };
+        self.ambient
+            .file_exists(&path.to_string_lossy())
+            .map_err(|_| AdcResolutionError::ContextUnavailable)
+    }
+
+    async fn snapshot(&self) -> Result<AdcSnapshot, AdcResolutionError> {
+        let (generation, entered) = {
+            let state = self.state.lock().expect("owner state lock");
+            (state.generation, state.completed)
+        };
+        let env = |name| {
+            self.ambient
+                .env(name)
+                .map_err(|_| AdcResolutionError::ContextUnavailable)
+        };
+        let path = match &self.selection {
+            AdcAuthSelection::CredentialsFile(path) => Some(path.clone()),
+            AdcAuthSelection::DirectMetadata { .. } => None,
+            AdcAuthSelection::Auto => match match &self.scoped.google_application_credentials {
+                Some(path) => Some(path.clone()),
+                None => env("GOOGLE_APPLICATION_CREDENTIALS")?,
+            } {
+                Some(path) => Some(PathBuf::from(path)),
+                None => {
+                    let candidate =
+                        well_known_adc_file(env("APPDATA")?.as_deref(), env("HOME")?.as_deref())
+                            .ok_or(AdcResolutionError::NotConfigured)?;
+                    if !self
+                        .ambient
+                        .file_exists(&candidate.to_string_lossy())
+                        .map_err(|_| AdcResolutionError::ContextUnavailable)?
+                    {
+                        return Err(AdcResolutionError::NotConfigured);
+                    }
+                    Some(candidate)
+                }
+            },
+        };
+        let (config, family) = match path {
+            Some(path) => {
+                let raw = tokio::fs::read_to_string(&path).await.map_err(|_| {
+                    AdcResolutionError::ReadFailed {
+                        path: path.to_string_lossy().into_owned(),
+                        reason: "selected file unavailable".into(),
+                    }
+                })?;
+                let family = parse_adc_file(&raw, &path.to_string_lossy())?;
+                (format!("{}\0{raw}", path.display()), Some(family))
+            }
+            None => (
+                format!(
+                    "{:?}:{:?}:{:?}",
+                    self.selection,
+                    env("GCE_METADATA_IP")?,
+                    env("GCE_METADATA_HOST")?
+                ),
+                None,
+            ),
+        };
+        let key = AdcCacheKey::from_parts(
             &config,
             None,
             &[],
@@ -1339,49 +1501,210 @@ impl AdcNativeOwner {
             None,
             self.token_endpoint.as_deref(),
             self.universe_domain.as_deref(),
-            None,
-        )
+            self.impersonation_endpoint.as_deref(),
+        );
+        self.state
+            .lock()
+            .expect("owner state lock")
+            .keys
+            .insert(key);
+        let rotating = family.as_ref().is_some_and(family_can_rotate);
+        Ok(AdcSnapshot {
+            family,
+            key,
+            generation,
+            observed: self.cache.version(key),
+            entered,
+            rotating,
+        })
     }
 
-    /// Resolve (or reuse) the access token for this selection. Concurrent
-    /// resolves merge into one in-flight acquisition; a still-valid
-    /// short-TTL token serves the current call when its refresh fails.
-    pub async fn resolve_token(&self) -> Result<AdcResolvedToken, AdcResolutionError> {
-        let now = self.clock.now();
-        let key = self.cache_key();
-        let refresh_override = self.state.lock().expect("owner state lock").refresh.clone();
-        let token = self
+    async fn acquire_snapshot(
+        &self,
+        snapshot: &AdcSnapshot,
+        rotated: &std::sync::atomic::AtomicBool,
+    ) -> Result<AdcResolvedToken, AdcResolutionError> {
+        let recent = {
+            let state = self.state.lock().expect("owner state lock");
+            if state.generation != snapshot.generation {
+                return Err(AdcResolutionError::Superseded);
+            }
+            state
+                .outcomes
+                .get(&snapshot.key)
+                .filter(|(completed, _)| *completed > snapshot.entered)
+                .map(|(_, result)| result.clone())
+        };
+        if let Some(result) = recent
+            && match result.as_ref() {
+                Err(_) => true,
+                Ok(token) => token
+                    .expires_at
+                    .is_none_or(|expiry| self.clock.now() < expiry),
+            }
+        {
+            return result;
+        }
+        let result = self
             .cache
-            .resolve(key, now, || async {
-                let input = AdcNativeInput {
-                    selection: self.selection.clone(),
-                    scoped: &self.scoped,
-                    ambient: self.ambient.as_ref(),
-                    transport: self.transport.as_ref(),
-                    clock: self.clock.as_ref(),
-                    token_endpoint: self.token_endpoint.as_deref(),
-                    universe_domain: self.universe_domain.as_deref(),
-                    scopes: &self.scopes,
-                    certificate_extra_roots_pem: None,
-                    impersonation_endpoint: self.impersonation_endpoint.as_deref(),
-                };
-                let resolved =
-                    resolve_adc_native_with_refresh(&input, refresh_override.as_ref()).await?;
-                resolved.ok_or(AdcResolutionError::NotConfigured)
-            })
-            .await?;
-        if token.rotated_refresh_token.is_some() {
-            self.state.lock().expect("owner state lock").refresh =
-                token.rotated_refresh_token.clone();
+            .resolve_observed(
+                snapshot.key,
+                self.clock.now(),
+                snapshot.observed,
+                || async {
+                    let refresh = self
+                        .state
+                        .lock()
+                        .expect("owner state lock")
+                        .refresh
+                        .get(&snapshot.key)
+                        .cloned();
+                    let input = AdcNativeInput {
+                        selection: self.selection.clone(),
+                        scoped: &self.scoped,
+                        ambient: self.ambient.as_ref(),
+                        transport: self.transport.as_ref(),
+                        clock: self.clock.as_ref(),
+                        token_endpoint: self.token_endpoint.as_deref(),
+                        universe_domain: self.universe_domain.as_deref(),
+                        scopes: &self.scopes,
+                        certificate_extra_roots_pem: None,
+                        impersonation_endpoint: self.impersonation_endpoint.as_deref(),
+                    };
+                    let token = if let Some(family) = &snapshot.family {
+                        exchange_family(
+                            family,
+                            refresh.as_ref(),
+                            input.transport,
+                            input.clock,
+                            input.token_endpoint,
+                            input.universe_domain,
+                            &default_scopes(&self.scopes),
+                            &input,
+                        )
+                        .await?
+                    } else {
+                        resolve_adc_native_with_refresh(&input, refresh.as_ref())
+                            .await?
+                            .ok_or(AdcResolutionError::NotConfigured)?
+                    };
+                    if let Some(refresh) = &token.rotated_refresh_token {
+                        let mut state = self.state.lock().expect("owner state lock");
+                        // The key includes the captured file contents/client/source.
+                        // Retain unique rotation material for that exact source even
+                        // when its access publication was invalidated while in flight.
+                        state.refresh.insert(snapshot.key, refresh.clone());
+                        rotated.store(true, std::sync::atomic::Ordering::SeqCst);
+                        if state.generation != snapshot.generation {
+                            return Err(AdcResolutionError::Superseded);
+                        }
+                    }
+                    Ok(token)
+                },
+            )
+            .await;
+        let mut state = self.state.lock().expect("owner state lock");
+        state.completed += 1;
+        if state.generation == snapshot.generation {
+            let completed = state.completed;
+            state
+                .outcomes
+                .insert(snapshot.key, (completed, result.clone()));
+        }
+        result
+    }
+
+    /// Resolve a captured source. Ordinary acquisition is cancelled with its
+    /// waiter; once a potentially rotating exchange starts it remains owned
+    /// until its memory ACK while the host Tokio runtime lives.
+    pub async fn resolve_token(&self) -> Result<AdcResolvedToken, AdcResolutionError> {
+        let snapshot = self.snapshot().await?;
+        let cancelled = tokio_util::sync::CancellationToken::new();
+        let _cancel = CancelAcquisition(cancelled.clone());
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let owner = self.clone();
+        let key = format!("adc-memory:{}:{:?}", self.namespace, snapshot.key);
+        let handle = self.queue.submit(&key, Box::new(move || Box::pin(async move {
+            let rotated=std::sync::atomic::AtomicBool::new(false);
+            let result = if cancelled.is_cancelled() { Err(AdcResolutionError::Cancelled) }
+            else if snapshot.rotating { owner.acquire_snapshot(&snapshot,&rotated).await }
+            else { tokio::select! { biased; _ = cancelled.cancelled() => Err(AdcResolutionError::Cancelled), result = owner.acquire_snapshot(&snapshot,&rotated) => result } };
+            let applied = match &result { _ if rotated.load(std::sync::atomic::Ordering::SeqCst) => Ok(crate::mutation::MutationApplied::Write), Ok(_) => Ok(crate::mutation::MutationApplied::Keep),
+                Err(_) => Err(crate::mutation::MutationError::Operation(crate::provider::ProviderError::Config(ProviderErrorSummary::attested_static("ADC source acquisition failed")))) };
+            let _ = send.send(result);
+            applied
+        })));
+        let receipt = handle
+            .await
+            .map_err(|_| AdcResolutionError::MutationUnknown)?;
+        if matches!(
+            receipt.outcome,
+            crate::mutation::MutationOutcome::Unknown { .. }
+        ) {
+            return Err(AdcResolutionError::MutationUnknown);
+        }
+        let token = receive
+            .await
+            .map_err(|_| AdcResolutionError::MutationUnknown)??;
+        if token
+            .expires_at
+            .is_some_and(|expiry| self.clock.now() >= expiry)
+        {
+            return Err(AdcResolutionError::Expired);
         }
         Ok(token)
     }
 
-    /// Invalidate the cached token for this selection (source replacement
-    /// or invalidation): the next resolve re-acquires, and a refresh still
-    /// in flight under the old generation never publishes.
+    /// Invalidate access publications and fence old work. Confirmed same-source
+    /// refresh material is retained; another file identity never borrows it.
     pub fn invalidate(&self) {
-        self.cache.invalidate(self.cache_key());
+        let mut state = self.state.lock().expect("owner state lock");
+        state.generation += 1;
+        state.outcomes.clear();
+        for key in &state.keys {
+            self.cache.invalidate(*key);
+        }
+    }
+}
+
+impl crate::auth::AuthResolver for AdcNativeOwner {
+    fn check_configuration(
+        &self,
+    ) -> Option<BoxAuthFuture<'_, Result<bool, crate::provider::ProviderError>>> {
+        Some(Box::pin(async move {
+            self.check_configured().map_err(adc_auth_error)
+        }))
+    }
+
+    fn resolve(
+        &self,
+    ) -> BoxAuthFuture<'_, Result<crate::auth::ResolvedAuth, crate::provider::ProviderError>> {
+        Box::pin(async move {
+            let token = self.resolve_token().await.map_err(adc_auth_error)?;
+            Ok(crate::auth::ResolvedAuth {
+                scheme: crate::auth::AuthScheme::Bearer,
+                secret: token.access_token,
+                base_url: None,
+                account_id: None,
+                provenance: crate::auth::AuthProvenance {
+                    source: crate::auth::AuthProvenanceSource::Adc {
+                        source: token.source,
+                    },
+                    fallback: crate::auth::AuthFallback::NotAttempted,
+                },
+            })
+        })
+    }
+}
+
+fn adc_auth_error(error: AdcResolutionError) -> crate::provider::ProviderError {
+    match error {
+        AdcResolutionError::NotConfigured => crate::provider::ProviderError::CredentialNeeded {
+            provider_id: "vertex".to_owned(),
+        },
+        other => crate::provider::ProviderError::Config(ProviderErrorSummary::from_untrusted(
+            other.safe_summary(),
+        )),
     }
 }
 

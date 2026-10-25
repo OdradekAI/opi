@@ -1509,9 +1509,18 @@ mod adc_external {
         "//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/p/providers/o";
     const SUBJECT_TOKEN_TYPE: &str = "urn:ietf:params:oauth:token-type:jwt";
 
-    #[derive(Default)]
     struct MapContext {
         env: HashMap<String, String>,
+        process_dir: tempfile::TempDir,
+    }
+
+    impl Default for MapContext {
+        fn default() -> Self {
+            Self {
+                env: HashMap::new(),
+                process_dir: tempfile::tempdir().unwrap(),
+            }
+        }
     }
 
     impl MapContext {
@@ -1522,6 +1531,11 @@ mod adc_external {
     }
 
     impl AuthContext for MapContext {
+        fn process_snapshot(&self) -> Result<opi_ai::auth::AuthProcessSnapshot, AuthContextError> {
+            Ok(opi_ai::test_support::portable_auth_process_snapshot(
+                self.process_dir.path(),
+            ))
+        }
         fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
             Ok(self.env.get(name).cloned())
         }
@@ -1655,7 +1669,10 @@ mod adc_external {
         let creds = dir.path().join("external.json");
         std::fs::write(
             &creds,
-            external_json(&format!(r#"{{"file":"{}"}}"#, subject_file.display())),
+            external_json(&format!(
+                r#"{{"file":{}}}"#,
+                serde_json::to_string(&subject_file).unwrap()
+            )),
         )
         .unwrap();
 
@@ -1722,7 +1739,10 @@ mod adc_external {
         let creds = dir.path().join("external.json");
         std::fs::write(
             &creds,
-            external_json(&format!(r#"{{"file":"{}"}}"#, subject_file.display())),
+            external_json(&format!(
+                r#"{{"file":{}}}"#,
+                serde_json::to_string(&subject_file).unwrap()
+            )),
         )
         .unwrap();
 
@@ -2236,8 +2256,8 @@ mod adc_impersonation {
         std::fs::write(
             &creds,
             format!(
-                r#"{{"type":"external_account","audience":"//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/p/providers/o","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","service_account_impersonation_url":"https://iamcredentials.example.com/v1/projects/-/serviceAccounts/{TARGET}:generateAccessToken","service_account_impersonation":{{"token_lifetime_seconds":2700}},"credential_source":{{"file":"{}"}}}}"#,
-                subject_file.display()
+                r#"{{"type":"external_account","audience":"//iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/p/providers/o","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","service_account_impersonation_url":"https://iamcredentials.example.com/v1/projects/-/serviceAccounts/{TARGET}:generateAccessToken","service_account_impersonation":{{"token_lifetime_seconds":2700}},"credential_source":{{"file":{}}}}}"#,
+                serde_json::to_string(&subject_file).unwrap()
             ),
         )
         .unwrap();

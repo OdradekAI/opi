@@ -691,6 +691,7 @@ async fn all_public_product_modes_share_runtime_semantics() {
         )),
         Some(ev5.path().to_path_buf()),
         runtime_evidence::static_resolver(),
+        None,
         vec![beta_route()],
     )
     .expect("rpc runner constructs");
@@ -1023,6 +1024,7 @@ async fn exercise_rpc_cancellation() -> Vec<String> {
         )),
         Some(evidence.path().to_path_buf()),
         runtime_evidence::static_resolver(),
+        None,
         vec![beta_route()],
     )
     .expect("RPC runner constructs");

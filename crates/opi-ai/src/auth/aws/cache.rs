@@ -15,9 +15,9 @@
 //!   temporary credentials use distinct [`CacheIdentity`](crate::auth::aws::cache::CacheIdentity)
 //!   keys and revisions; a write-back receipt for one never claims the other
 //!   was saved.
-//! * A strictly expired value is discarded and the next lookup blocks on a
-//!   fresh active refresh; values without an expiry never refresh passively
-//!   in the background.
+//! * Strictly expired credentials are never returned for use. Source-token
+//!   refresh material remains owned until replacement or invalidation, even
+//!   after access expiry; values without an expiry never refresh passively.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -29,7 +29,9 @@ use crate::auth::AwsSigV4Credentials;
 use crate::auth::aws::source_http::AwsSourceTransport;
 use crate::credential::BoxAuthFuture;
 use crate::mutation::{MutationApplied, MutationError, MutationQueue, MutationSlot};
+use crate::provider::{ProviderError, ProviderErrorSummary};
 use secrecy::SecretString;
+use tokio_util::sync::CancellationToken;
 
 /// Fixed advance window before expiry in which refresh is attempted
 /// (the corpus-pinned 300000 ms).
@@ -107,6 +109,10 @@ impl CacheIdentity {
             },
         }
     }
+
+    fn mutation_key(&self) -> String {
+        format!("aws-source:{}", self.label())
+    }
 }
 
 /// One cached source value. Secret fields stay wrapped; diagnostics never
@@ -178,6 +184,8 @@ pub struct LoginTokenSnapshot {
 
 struct EntryState {
     value: Option<SourceCacheValue>,
+    access_expired: bool,
+    generation: u64,
     revision: u64,
     last_refresh_attempt: Option<OffsetDateTime>,
     passive_inflight: bool,
@@ -186,21 +194,56 @@ struct EntryState {
     invalidated: bool,
 }
 
-/// Owned dependencies for background (passive) refreshes registered with
-/// the mutation owner. Construct once with the same transport/clock/jti
-/// instances used for active resolutions.
+/// Owned dependencies for active and passive token rotations registered
+/// with the mutation owner. These outlive the initiating waiter.
 pub struct PassiveRefreshDeps {
-    /// Transport used by background refreshes.
+    /// Transport used by source rotations.
     pub transport: Arc<dyn AwsSourceTransport>,
-    /// Clock used by background refreshes.
+    /// Clock used by source rotations.
     pub clock: Arc<dyn SourceClock>,
-    /// DPoP `jti` source used by background refreshes.
+    /// DPoP `jti` source used by source rotations.
     pub jti: Arc<dyn DpopJtiSource>,
+}
+
+pub(crate) enum OwnedRefreshError<E> {
+    Unavailable,
+    Cancelled,
+    Unknown,
+    Operation(E),
+}
+
+struct CancelSourceWait(CancellationToken);
+
+impl Drop for CancelSourceWait {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+struct SourceAckGuard {
+    cache: AwsSourceCache,
+    identity: CacheIdentity,
+}
+
+impl Drop for SourceAckGuard {
+    fn drop(&mut self) {
+        let mut pending = self.cache.inner.pending_acks.lock().unwrap();
+        if let Some(count) = pending.get_mut(&self.identity) {
+            *count -= 1;
+            if *count == 0 {
+                pending.remove(&self.identity);
+            }
+        }
+        drop(pending);
+        self.cache.inner.ack_changed.notify_waiters();
+    }
 }
 
 struct CacheInner {
     entries: Mutex<HashMap<CacheIdentity, EntryState>>,
     flights: Mutex<HashMap<CacheIdentity, Arc<tokio::sync::Mutex<()>>>>,
+    pending_acks: Mutex<HashMap<CacheIdentity, usize>>,
+    ack_changed: tokio::sync::Notify,
     queue: Option<Arc<MutationQueue>>,
     passive: Option<Arc<PassiveRefreshDeps>>,
 }
@@ -213,8 +256,9 @@ struct CacheInner {
 /// Near-expiry background refreshes are registered into the attached
 /// mutation queue when one exists (the §2.2 credential mutation owner); the
 /// original caller may leave and still await completion through the queue's
-/// barrier. Without an attached queue there is no background refresh: the
-/// caller keeps the old value and the next active lookup refreshes.
+/// barrier. Rotations require both that queue and owned dependencies. Without
+/// them, a valid cached value remains usable, passive refresh is skipped, and
+/// an active rotation fails with a typed unavailable-owner error.
 #[derive(Clone)]
 pub struct AwsSourceCache {
     inner: Arc<CacheInner>,
@@ -242,6 +286,8 @@ impl AwsSourceCache {
             inner: Arc::new(CacheInner {
                 entries: Mutex::new(HashMap::new()),
                 flights: Mutex::new(HashMap::new()),
+                pending_acks: Mutex::new(HashMap::new()),
+                ack_changed: tokio::sync::Notify::new(),
                 queue: None,
                 passive: None,
             }),
@@ -257,13 +303,15 @@ impl AwsSourceCache {
             inner: Arc::new(CacheInner {
                 entries: Mutex::new(HashMap::new()),
                 flights: Mutex::new(HashMap::new()),
+                pending_acks: Mutex::new(HashMap::new()),
+                ack_changed: tokio::sync::Notify::new(),
                 queue: Some(queue),
                 passive: None,
             }),
         }
     }
 
-    /// Attach the owned dependencies used by background refreshes. Returns
+    /// Attach the owned dependencies used by source rotations. Returns
     /// a new cache handle sharing the same entries and mutation owner.
     #[must_use]
     pub fn with_passive_deps(mut self, deps: Arc<PassiveRefreshDeps>) -> Self {
@@ -271,6 +319,85 @@ impl AwsSourceCache {
             .expect("passive deps are attached before the cache is shared");
         inner.passive = Some(deps);
         self
+    }
+
+    /// The mutation owner shared with the attached credential store. Its
+    /// barrier observes admitted source rotations as well as store writes.
+    pub fn mutation_queue(&self) -> Option<Arc<MutationQueue>> {
+        self.inner.queue.clone()
+    }
+
+    /// Run a source mutation with a store-owned lifetime. Cancellation may
+    /// skip work still waiting for its source queue slot; after operation entry,
+    /// only the source's own network budget governs the rotation and ACK.
+    pub(crate) async fn run_owned_refresh<T, E, F, Fut>(
+        &self,
+        identity: CacheIdentity,
+        operation: F,
+    ) -> Result<T, OwnedRefreshError<E>>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<(T, MutationApplied), E>> + Send + 'static,
+    {
+        let queue = self
+            .mutation_queue()
+            .ok_or(OwnedRefreshError::Unavailable)?;
+        if tokio::runtime::Handle::try_current().is_err() {
+            return Err(OwnedRefreshError::Unavailable);
+        }
+        let result = Arc::new(Mutex::new(None));
+        let saved = result.clone();
+        let cancelled = CancellationToken::new();
+        let _cancel_wait = CancelSourceWait(cancelled.clone());
+        let ack_guard = self.begin_source_ack(identity.clone());
+        let label = identity.mutation_key();
+        let handle = queue.submit(
+            &label,
+            Box::new(move || {
+                Box::pin(async move {
+                    if cancelled.is_cancelled() {
+                        *saved.lock().unwrap() = Some(Err(OwnedRefreshError::Cancelled));
+                        return Ok(MutationApplied::Keep);
+                    }
+                    match operation().await {
+                        Ok((value, applied)) => {
+                            *saved.lock().unwrap() = Some(Ok(value));
+                            Ok(applied)
+                        }
+                        Err(error) => {
+                            *saved.lock().unwrap() = Some(Err(OwnedRefreshError::Operation(error)));
+                            Err(MutationError::Operation(ProviderError::AuthFailed(
+                                ProviderErrorSummary::attested_static(
+                                    "AWS auth-source rotation failed",
+                                ),
+                            )))
+                        }
+                    }
+                })
+            }),
+        );
+        // The ACK observer belongs to the source owner, so dropping the
+        // initiating waiter cannot expose the publication before its ACK.
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let receipt = handle.await;
+            drop(ack_guard);
+            let _ = ack_tx.send(receipt);
+        });
+        let receipt = ack_rx
+            .await
+            .map_err(|_| OwnedRefreshError::Unknown)?
+            .map_err(|_| OwnedRefreshError::Unknown)?;
+        if matches!(
+            receipt.outcome,
+            crate::mutation::MutationOutcome::Unknown { .. }
+        ) {
+            return Err(OwnedRefreshError::Unknown);
+        }
+        let outcome = result.lock().unwrap().take();
+        outcome.unwrap_or(Err(OwnedRefreshError::Unknown))
     }
 
     /// Transport available to background refreshes, when attached.
@@ -304,11 +431,35 @@ impl AwsSourceCache {
     /// it is present, not invalidated, and not strictly expired. Near-expiry
     /// values are still returned (the caller decides whether to spawn a
     /// passive refresh via [`Self::maybe_spawn_passive`]); strictly expired
-    /// values are discarded here so the next lookup must refresh.
+    /// access is hidden until replacement, retaining source refresh material.
     pub fn peek(&self, identity: &CacheIdentity, now: OffsetDateTime) -> Option<SourceCacheValue> {
+        self.peek_versioned(identity, now).map(|(value, _)| value)
+    }
+
+    /// Capture a usable source value and its publication revision under
+    /// one entry read. A caller must fence writes with this revision.
+    pub(crate) fn peek_versioned(
+        &self,
+        identity: &CacheIdentity,
+        now: OffsetDateTime,
+    ) -> Option<(SourceCacheValue, u64)> {
+        // Admission precedes source publication. Holding this fence through
+        // the entry read prevents a concurrent publication from becoming
+        // visible before its mutation receipt has settled.
+        let pending = self.inner.pending_acks.lock().unwrap();
+        if pending.contains_key(identity)
+            && self.inner.queue.as_ref().is_some_and(|queue| {
+                let label = identity.mutation_key();
+                queue.barrier().report().captured.iter().any(|entry| {
+                    matches!(entry, crate::mutation::BarrierEntry::Pending { provider_id, .. } if provider_id == &label)
+                })
+            })
+        {
+            return None;
+        }
         let mut result = None;
         self.entry_state_mut(identity, |state| {
-            if state.invalidated {
+            if state.invalidated || state.access_expired {
                 return;
             }
             let Some(value) = state.value.as_ref() else {
@@ -318,15 +469,32 @@ impl AwsSourceCache {
                 .expires_at()
                 .is_some_and(|expires_at| expires_at <= now);
             if expired {
-                // Strictly expired values are discarded; the next lookup
-                // blocks on a fresh active refresh.
-                state.value = None;
-                state.revision += 1;
+                // A source token may carry the only current refresh token
+                // after a failed best-effort file write. Retain that
+                // material for its owner, without serving expired access.
+                if matches!(value, SourceCacheValue::Temporary(_)) {
+                    state.value = None;
+                    state.revision += 1;
+                }
+                state.access_expired = true;
                 return;
             }
-            result = Some(value.clone());
+            result = Some((value.clone(), state.revision));
         });
         result
+    }
+
+    /// Source-owner access to refresh material, including an expired
+    /// access token. Invalidated entries are never returned.
+    pub(crate) fn source_snapshot(
+        &self,
+        identity: &CacheIdentity,
+    ) -> Option<(SourceCacheValue, u64)> {
+        let entries = self.inner.entries.lock().unwrap();
+        entries
+            .get(identity)
+            .filter(|state| !state.invalidated)
+            .and_then(|state| state.value.clone().map(|value| (value, state.revision)))
     }
 
     /// Acquire the single-flight refresh lock for `identity`. Concurrent
@@ -338,6 +506,22 @@ impl AwsSourceCache {
             Arc::clone(flights.entry(identity.clone()).or_default())
         };
         let guard = mutex.lock_owned().await;
+        // Source operations serialize through the mutation queue; they do
+        // not hold this selector lock. A selecting caller waits for the
+        // published revision's ACK before reusing it.
+        loop {
+            let changed = self.inner.ack_changed.notified();
+            if !self
+                .inner
+                .pending_acks
+                .lock()
+                .unwrap()
+                .contains_key(identity)
+            {
+                break;
+            }
+            changed.await;
+        }
         SourceRefreshGuard {
             _guard: guard,
             cache: self.clone(),
@@ -352,12 +536,15 @@ impl AwsSourceCache {
         let mut entries = self.inner.entries.lock().unwrap();
         let state = entries.entry(identity).or_insert_with(|| EntryState {
             value: None,
+            access_expired: false,
+            generation: 0,
             revision: 0,
             last_refresh_attempt: None,
             passive_inflight: false,
             invalidated: false,
         });
         state.value = Some(value);
+        state.access_expired = false;
         state.invalidated = false;
         state.revision += 1;
         state.revision
@@ -374,6 +561,39 @@ impl AwsSourceCache {
             .unwrap_or(0)
     }
 
+    pub(crate) fn generation(&self, identity: &CacheIdentity) -> u64 {
+        self.inner
+            .entries
+            .lock()
+            .unwrap()
+            .get(identity)
+            .map(|state| state.generation)
+            .unwrap_or(0)
+    }
+
+    /// Publish one source rotation only while its selected revision is
+    /// current. The best-effort standard-file write runs under this same
+    /// fence; a successful return acknowledges the in-memory value only.
+    pub(crate) fn commit_source_rotation(
+        &self,
+        identity: &CacheIdentity,
+        expected_revision: u64,
+        value: SourceCacheValue,
+        persist: impl FnOnce(),
+    ) -> Option<u64> {
+        let _publication = self.inner.pending_acks.lock().unwrap();
+        let mut entries = self.inner.entries.lock().unwrap();
+        let state = entries.get_mut(identity)?;
+        if state.invalidated || state.revision != expected_revision {
+            return None;
+        }
+        persist();
+        state.value = Some(value);
+        state.access_expired = false;
+        state.revision += 1;
+        Some(state.revision)
+    }
+
     /// Explicitly invalidate a file-backed identity: the cached value is
     /// dropped and the next lookup re-reads the source file. There is no
     /// eternal module-level promise here.
@@ -381,6 +601,7 @@ impl AwsSourceCache {
         self.entry_state_mut(identity, |state| {
             state.value = None;
             state.invalidated = true;
+            state.generation += 1;
             state.revision += 1;
         });
     }
@@ -395,6 +616,20 @@ impl AwsSourceCache {
             .get(identity)
             .and_then(|state| state.last_refresh_attempt)
             .is_none_or(|last| now - last >= MIN_REFRESH_INTERVAL)
+    }
+
+    fn begin_source_ack(&self, identity: CacheIdentity) -> SourceAckGuard {
+        *self
+            .inner
+            .pending_acks
+            .lock()
+            .unwrap()
+            .entry(identity.clone())
+            .or_default() += 1;
+        SourceAckGuard {
+            cache: self.clone(),
+            identity,
+        }
     }
 
     /// Spawn one passive (background) refresh for a near-expiry value when
@@ -412,6 +647,9 @@ impl AwsSourceCache {
         let Some(queue) = self.inner.queue.clone() else {
             return false;
         };
+        if tokio::runtime::Handle::try_current().is_err() {
+            return false;
+        }
         let allowed = self.refresh_allowed(&identity, now);
         let already = self
             .inner
@@ -429,6 +667,8 @@ impl AwsSourceCache {
                 .entry(identity.clone())
                 .or_insert_with(|| EntryState {
                     value: None,
+                    access_expired: false,
+                    generation: 0,
                     revision: 0,
                     last_refresh_attempt: None,
                     passive_inflight: false,
@@ -457,13 +697,19 @@ impl AwsSourceCache {
                 outcome
             }) as BoxAuthFuture<'static, Result<MutationApplied, MutationError>>
         });
-        queue.submit(&identity.label(), wrapped);
+        let ack_guard = self.begin_source_ack(identity.clone());
+        let handle = queue.submit(&identity.mutation_key(), wrapped);
+        tokio::spawn(async move {
+            let _ = handle.await;
+            drop(ack_guard);
+        });
         true
     }
 }
 
-/// Guard held while one active refresh for an identity runs. Other lookups
-/// for the same identity await; dropping the guard releases the flight.
+/// Guard held while one lookup selects a source snapshot. Acquisition waits
+/// for admitted source rotations and their ACKs; queue-owned network work
+/// does not hold this selector lock.
 pub struct SourceRefreshGuard {
     _guard: tokio::sync::OwnedMutexGuard<()>,
     cache: AwsSourceCache,
@@ -542,6 +788,37 @@ mod tests {
         cache.invalidate(&identity);
         assert!(cache.peek(&identity, at(9_000)).is_none());
         assert_eq!(cache.revision(&identity), 2);
+    }
+
+    #[test]
+    fn captured_source_revision_fences_replacement_before_rotation() {
+        let cache = AwsSourceCache::new();
+        let identity = CacheIdentity::SsoToken {
+            cache_key: "selected".to_owned(),
+        };
+        cache.store(identity.clone(), token_value(at(10_000)));
+        let (_, passive_revision) = cache.peek_versioned(&identity, at(9_000)).unwrap();
+        assert!(cache.peek(&identity, at(10_000)).is_none());
+        let (_, active_revision) = cache.source_snapshot(&identity).unwrap();
+        assert_eq!(passive_revision, active_revision);
+
+        cache.invalidate(&identity);
+        cache.store(identity.clone(), token_value(at(30_000)));
+        for captured in [passive_revision, active_revision] {
+            let mut saved = false;
+            assert!(
+                cache
+                    .commit_source_rotation(&identity, captured, token_value(at(20_000)), || {
+                        saved = true
+                    },)
+                    .is_none()
+            );
+            assert!(!saved, "a stale snapshot cannot write the standard file");
+        }
+        assert_eq!(
+            cache.peek(&identity, at(10_000)).unwrap().expires_at(),
+            Some(at(30_000))
+        );
     }
 
     #[test]

@@ -138,6 +138,14 @@ impl OAuthProvider for OpenRouterOAuthProvider {
         "openrouter"
     }
 
+    fn name(&self) -> &str {
+        "OpenRouter OAuth"
+    }
+
+    fn login_label(&self) -> Option<&str> {
+        Some("Sign in with OpenRouter")
+    }
+
     fn login<'a>(
         &'a self,
         presenter: &'a dyn LoginPresenter,
@@ -320,6 +328,7 @@ fn exchange_authorization_code_for_key<'x>(
             base_url: None,
             account_id: None,
             client_id: None,
+            scopes: None,
             enterprise_domain: None,
             available_model_ids: None,
         })

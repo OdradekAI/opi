@@ -36,8 +36,8 @@ assume-role and web identity, `credential_process`, and the remote ECS/IMDS
 segment, exchanging through the pinned STS Query/XML codecs, the SSO OIDC and
 SignIn ES256 DPoP flows, and the single-flight source cache) lives in
 `auth::aws`;
-keychain, environment, login-presenter, and refresh implementations remain in
-`opi-coding-agent`.
+ADC sources and all nine OAuth flows are SDK-owned. The coding agent owns
+the keychain backend, terminal presenter and host registration policy.
 
 ## Providers
 
@@ -77,13 +77,13 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `ProviderError` / `ProviderErrorCategory` | Provider failure taxonomy: auth, config, request, network, rate_limit, provider, stream, capability, and cancelled (timeouts classify as network). |
 | `ProviderErrorSummary` | Closed redaction-safe provider-error text. Public construction is limited to `redacted()`, `authentication_rejected()`, and `from_untrusted(...)`; arbitrary provider payloads are not retained. |
 | `ProviderRegistry` | Resolves `provider:model`, registers custom providers, and layers model overrides. |
-| `Models` / `AuthDescriptor` / `AuthStatus` | Unstable-0.x single driver above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. Ordinary native/simple/direct entries and advanced `prepare_call` share one compiler, auth resolution, attempt seam, and collector. |
+| `Models` / `AuthDescriptor` / `AuthCheck` | Unstable-0.x single driver above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. Ordinary native/simple/direct entries and advanced `prepare_call` share one compiler, auth resolution, attempt seam, and collector. |
 | `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | Typed custom chat adapter registration with its exact API identity and fixed options type; handle-created options carry the API/type tag and stay portable across instances with compatible registrations. |
 | `ToolCall::arguments_error` | Optional final-parse outcome for textual tool arguments (AIR-048): empty input finalizes to `{}`, repairable invalid escapes stay literal, and incomplete/non-object finals keep the owned raw text plus this error, never a partial-prefix success. Historical records without the field keep deserializing. |
 | `ChatModelRecord` / `SimpleOptions` / `ChatCall` | Complete caller-owned chat record (provider id, bare model id, exact wire) usable without catalog membership; neutral simple options; the lazy ordinary-call owner that captures input at construction and starts auth on first poll. |
 | `PreparedProviderCall` / `PreparedRoute` | Opaque logical-call state returned by `Models::prepare_call`, plus its public redacted route facts. `route`, `auth_provenance`, and `start_attempt` are the prepared-call lifecycle APIs. |
 | `CredentialStore` / `Credential` / `CredentialSource` | IO-free, object-safe credential persistence and redacted three-state probe contracts. |
-| `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | Flow-independent boxed-future OAuth contracts; the SDK Anthropic flow (`auth::oauth`) lives here, later flows migrate in their own tasks. |
+| `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | Boxed-future contracts for the nine SDK OAuth families, read-only flow metadata, provider-specific request identity conversion, and injected login UX. |
 | `AuthResolver` / `ResolvedAuth` | Driver-owned per-call auth resolution contract; one prepared result is frozen before an attempt starts. |
 | `ApiKind` | Crate-root enum tagging the backend family (`Anthropic`, `OpenAi`, `Google`, `Mistral`) carried on assistant messages. |
 | `HttpClient` | Shared `reqwest` client with pooling and explicit/env proxy support. |
@@ -98,9 +98,10 @@ added through registry overrides or configured OpenAI-compatible profiles.
 `CredentialSource` reports present, absent, or backend-unavailable state
 without exposing a secret. `AuthDescriptor::StoreCredential` carries only a
 key and display source. `OAuthProvider`, `LoginPresenter`, and `AuthResolver`
-are object-safe boxed-future seams. `opi-coding-agent` supplies the OS-keychain
-store and the approved Anthropic, GitHub Copilot, and OpenAI Codex login flows;
-`opi-ai` performs no keychain, environment, or presenter IO.
+are object-safe boxed-future seams. `auth::oauth` supplies Anthropic, Codex
+legacy, ChatGPT direct, GitHub Copilot, OpenRouter, Kimi Coding, Meta, xAI and
+Radius flows. `opi-coding-agent` supplies the OS-keychain store and terminal
+presenter; SDK flows use the injected presenter and never launch a browser.
 
 `WireApi` gives every `ModelInfo` one exact request wire, while public
 `ApiMappedProvider` exposes one provider identity and catalog and validates
@@ -112,28 +113,38 @@ mismatches are typed non-retryable failures.
 ### Lazy AuthContext and management results (AIR-063/AIR-066)
 
 Source access is a separate context responsibility: the object-safe
-`AuthContext` (`env`, `file_exists`) answers only "what does the ambient
-environment say", never model or telemetry data. `AmbientAuthContext` is the
+`AuthContext` (`env`, `file_exists`, `process_snapshot`) owns source access,
+never model or telemetry data. `AmbientAuthContext` is the
 default lazy implementation, and `Models::set_auth_context` replaces it
 entirely — an injected source is never bypassed back to the process
 environment. Construction, registration, and static catalog lookup perform
 zero environment/store/network access; `AuthContextError` keeps non-unicode
-environment bytes and failed existence probes typed instead of empty.
+environment bytes and failed existence probes typed instead of empty. A
+selected native helper receives an owned `AuthProcessSnapshot` (exact env map
+and cwd); an injected context defaults to an empty helper environment and
+must supply required variables explicitly. Ambient context captures its
+process environment only when that helper is selected, and a valid ADC output
+cache needs no process snapshot. Commands execute directly with frozen argv,
+cwd and env; timeout or waiter drop triggers process cleanup and reaping.
 
 On top of that context, `Models::{check_auth, get_available, get_auth,
 logout}` are the management results. `check_auth` reports configuration
 without refreshing — an expired stored OAuth credential is still configured —
 and surfaces unreachable store backends as typed `ModelsError::CredentialStore`
 errors (probe snapshots included), never as silent `Ok(None)`. `get_available`
-filters the registry by the same check. `get_auth` resolves the selected
+filters the registry by the same check. A registered OAuth route also honors
+stored `available_model_ids`: `Some([])` is an authoritative empty account
+catalog, while `None` keeps the registered catalog; checking never refreshes
+that metadata. `get_auth` resolves the selected
 source on demand; an explicit `AuthResolutionOverrides::api_key` wins over
 every source without touching any, a route resolver's `CredentialNeeded`
 reports unconfigured, and any other selected-source failure propagates as
 `ModelsError::AuthResolution` with no fallback source tried. `logout` takes
 the credential store per call and acknowledges exactly one local deletion:
 no environment variable is unset, no remote session is revoked, and other
-providers' entries stay untouched. Stored OAuth credentials resolve without
-refresh in the management path; refresh belongs to the live route/flow owners.
+providers' entries stay untouched. Descriptor-only stored credentials resolve
+without refresh. An OAuth route registered with `register_oauth_route` uses
+its live resolver for `get_auth` and preparation, including required refresh.
 
 GitHub Copilot routes one static catalog through Anthropic Messages, OpenAI
 Completions/Chat, and OpenAI Responses; OpenAI Codex uses its dedicated
@@ -147,8 +158,9 @@ Attempts are sequential: an overlapping stream returns
 and a prior credential-needed/revoked attempt closes the prepared call with
 `CredentialTerminated`. Missing and revoked credentials surface as explicit, non-retryable
 `ProviderError::CredentialNeeded` and `ProviderError::CredentialRevoked`
-variants. Per-call credentials remain out of scope: `extra_headers` rejects
-provider-managed auth headers.
+variants. Typed per-call API-key, Bearer and SigV4 overrides are mutually
+exclusive and win before source access; `extra_headers` rejects provider-managed
+auth headers.
 
 ### Store-owned mutations, ACKs, and the mutation barrier (AIR-063 / P20-STORE)
 
@@ -823,16 +835,16 @@ resolved reqwest/hyper/hyper-util/http versions and registry checksums.
 The following are explicit non-goals and must not appear as current core
 behavior:
 
-- OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex.
-- Provider catalogs beyond the audited static pi-0.80.6 GitHub Copilot and
-  OpenAI Codex snapshots, including live entitlement filtering.
+- OAuth families beyond the nine listed above.
+- Complete provider/profile catalogs, Radius pi-messages generation, or
+  automatic catalog fetching during availability checks.
 - Automatic re-login after credential revocation.
-- Per-call API-key/env/auth-header override.
+- Injecting authentication through arbitrary `extra_headers`.
 - Provider payload/response streaming hooks.
 - A broad new first-class provider list (compatible providers stay
   config-driven profiles).
 - Image generation (image support is input-only).
-- Browser automation outside the approved Anthropic and OpenAI Codex OAuth login flows.
+- SDK-owned browser automation; hosts own opening presented authorization URLs.
 - Provider streaming-adapter protocol for packages.
 - Paid live provider calls in default tests (live tests stay `#[ignore]`-gated).
 - Copying pi's provider-specific config file format.
@@ -987,7 +999,8 @@ exchange and the frozen residency timeout (resident: none, otherwise
 corpus). Exchanges run the fixed Gaxios retry configuration (POST
 admitted, 3 extra retries, 2 no-response retries, statuses 1xx/408/429/
 5xx, 100/500/1500 ms delays) through an injectable transport and never
-enter the generation retry owner; redirects are terminal. An explicit
+enter the generation retry owner. Token POSTs refuse redirects; source GETs
+follow at most twenty redirects and drop sensitive headers across origins. An explicit
 `GOOGLE_APPLICATION_CREDENTIALS` file is terminal on read/parse failure;
 a missing well-known file (`%APPDATA%\gcloud\...` on Windows,
 `$HOME/.config/gcloud/...` elsewhere) means not configured — never
@@ -1016,13 +1029,16 @@ before the output-file cache and any spawn, parses the command into a
 direct quote-aware argv, merges stdout/stderr, validates the response
 schema (token-type URNs, `expiration_time` when an output file is
 configured, expiry), treats a malformed cache as terminal and a stale one
-as a miss, reaps the process group on timeout, and never rewrites the
-output file. The RFC8693 STS exchange defaults to
+as a miss, uses the selected helper's exact environment/cwd snapshot,
+terminates and reaps its Unix process group or Windows Job on timeout or
+caller drop, and never rewrites the output file. Helper failure code/message fields are closed `ProviderErrorSummary`
+values; arbitrary helper output is absent from Display, Debug and safe summaries. The RFC8693 STS exchange defaults to
 `https://sts.{universe_domain}/v1/token`, uses HTTP Basic for confidential
 clients, and flows a workforce user project into the `options` form field
 without client authentication. Provenance classifies the supplier through
-`AdcCredentialSource::ExternalAccount`; `impersonated_service_account`
-stays typed-unadmitted until the impersonation task.
+`AdcCredentialSource::ExternalAccount`; impersonation composes through the
+source/target mechanism below. The AWS subject supplier uses its ADC-specific
+metadata/environment contract rather than the Bedrock profile/SSO/process chain.
 
 ### ADC impersonation, recursive composition and the keyed cache (P20-S21-3)
 
@@ -1048,7 +1064,11 @@ generation fencing so a refresh completing after an invalidation never
 publishes. Sources without stable wire principals are identity-unverified
 (`stable_identity() == None`): an automatic whole-call recovery must not
 reuse them across a source change; ordinary provider retries keep the
-frozen per-call token.
+frozen per-call token. Rotating ADC acquisitions are owned by the shared
+mutation queue: dropping a waiter does not discard a started refresh; source
+replacement fences late tokens and rotated refresh material together. A
+barrier observes the source operation and ACK without starting auth. The
+product shares this queue with its keychain store.
 
 ### SDK OAuth (Anthropic) and store-acknowledged `Models::login` (P20-S23)
 
@@ -1060,7 +1080,9 @@ random state, and the callback ladder prefers `127.0.0.1:53692` with the
 `/callback` path (redirect URI names `localhost`), falls back to a free
 loopback port, and finally to paste-back only. A second login method,
 copy-code, authorizes against the hosted `oauth/code/callback` page and
-accepts a pasted `code`, `code#state`, query, or redirect URL. Token-endpoint
+accepts a pasted `code`, `code#state`, query, or redirect URL. Selection,
+presentation and copy-code waiting share the configured total budget and
+cancellation waiter. Token-endpoint
 and flow failures keep the fully redacted product summaries — the closed
 OAuth error class never surfaces and upstream bodies cannot echo back.
 Expiry is stored as the real service expiry; the single five-minute
@@ -1082,8 +1104,8 @@ Codex CLI — a failed bind falls back to paste-back only with that same URI,
 never a free port (`bind_fallback` selects the Anthropic free-port ladder or
 the Codex manual-only ladder). The browser authorize URL carries the
 production scopes, S256 PKCE, an independent state, and the
-`id_token_add_organizations`/`codex_cli_simplified_flow`/`originator=opi`
-flags. The device-code path pins OpenAI's `deviceauth` endpoints: JSON
+`id_token_add_organizations`/`codex_cli_simplified_flow` flags and an
+`originator` captured by `CodexOAuthProvider::with_agent_name` (default `opi`). The device-code path pins OpenAI's `deviceauth` endpoints: JSON
 bodies, the 403/404 pending quirk, structured pending/slow_down codes with
 the RFC 8628 +5s backoff, typed denied/expired classification, the bounded
 15-minute budget, and the exchange of the server-issued
@@ -1127,8 +1149,8 @@ seam (Anthropic/Codex behavior byte-identical through the base adapters).
 semantics; the persisted envelope is always the OAuth kind, so
 API-key-only consumers (the Decisions classifier) can never resolve this
 subscription credential as an API key. Host call sites map the new field
-mechanically; persisting it through the host envelope belongs to the host
-ChatGPT registration task.
+through the host envelope: issued `client_id` and the validated `scopes`
+list survive save/reopen and refresh without changing the OAuth credential kind.
 
 ### SDK OAuth (GitHub Copilot) (P20-S26)
 
@@ -1154,8 +1176,8 @@ host — gates which unconfigured models login enables via
 Policy activation is login-only: refresh re-exchanges the stored GitHub
 token and re-discovers the metadata without touching policy.
 Credentials gained non-secret `enterprise_domain` and
-`available_model_ids` fields (the host v1 envelope deliberately does
-not persist them yet), store the real service expiry with the single
+`available_model_ids` fields; the host envelope persists both atomically
+with the tokens and other OAuth metadata. They store the real service expiry with the single
 five-minute `needs_refresh` correction, and keep the GitHub token in
 the refresh slot. The product's `CopilotOAuthProvider` protocol
 duplicate is deleted; the host registers the SDK provider with its
@@ -1241,13 +1263,17 @@ Failure bodies are never echoed; statuses and fixed classes are.
 ### SDK OAuth (Radius gateway flow and nine-family assembled conformance) (P20-S31)
 
 `auth::oauth::radius` is pinned to pi 1.3.0 `radius.ts`. The gateway is
-fixed at construction (https-defaulted, trailing slashes stripped) and
-the method choice mirrors pi's prompt through `select_login_method` with
+fixed at construction (https-defaulted, trailing slashes stripped).
+`with_identity(id, name)` captures the flow's own identity and display name
+while retaining that gateway; the existing constructors default to
+`radius` / `Radius`. Models registration keys remain independently chosen
+by the caller. The method choice mirrors pi's prompt through `select_login_method` with
 browser recommended. Browser mode discovers `GET {gateway}/v1/oauth` for
 the authorization endpoint (device mode never discovers first) and runs
 the shared PKCE skeleton with the fixed callback
 `http://127.0.0.1:1456/oauth/callback` under a required bind, the
-`pi-gateway` client, `gateway offline_access` scope, and `handoff=url`.
+`pi-gateway` client, `gateway offline_access` scope, and `handoff=url`. The
+browser path accepts only its callback and never starts a manual-input reader.
 Device mode posts `/v1/oauth/device` and follows the shared RFC 8628
 machine; the verification URI passes through verbatim (no scheme check,
 unlike xAI) and denial keeps the single RFC spelling. Non-ok token
@@ -1259,3 +1285,91 @@ correction stays in `needs_refresh`). The assembled test registers all
 nine delivered families on one `Models`, shares one store across two
 `Models`, and proves per-id ACK isolation and late-write rotation
 isolation across sources.
+
+
+### Connecting SDK OAuth to a request
+
+Attach a `CredentialStore`, then call `Models::register_oauth_route(provider,
+flow, compat)`. Registration performs no source I/O. It binds the provider
+and login flow to `auth::store_oauth::StoreOAuthResolver`;
+`register_oauth_flow` remains available for login-only registration.
+`Models::login` and the product `/login` helper share SDK `login_to_store`: all
+presenter operations pass through, and success follows the credential-plus-
+metadata write ACK. `get_auth` and ordinary calls resolve the selected stored
+identity, refresh through the same flow when required, await persistence, and
+freeze the returned request identity. `OAuthProvider::to_auth` is I/O-free;
+Copilot derives its request endpoint from that acknowledged token. No refresh
+failure discovers a different account or source. The 15-second OAuth refresh
+network bound excludes queue/lock waiting and persistence ACK.
+
+Offline acceptance follows the real family flows through public login, store
+ACK and `get_auth` into the existing Anthropic, Codex, Chat Completions and
+Responses adapters, including Copilot's token-selected HTTPS endpoint. Radius
+coverage ends at gateway-bound login/refresh and public authentication; its
+pi-messages generation adapter and dynamic catalog remain later work. Finite
+but unrepresentable source durations fail typed; each flow keeps its own
+field requirements, defaults and polling limits. OpenRouter's permanent key
+and Anthropic/xAI omitted-refresh behavior remain distinct.
+
+Product constructors now accept the store that owns this shared queue:
+`build_harness_collection` takes a final optional `Arc<dyn CredentialStore>`;
+`CodingHarnessBuilder::credential_store` attaches the concrete keychain store;
+`NonInteractiveRunner::new_with_resume_runtime_packages_and_auth` and
+`RpcRunner::new_with_runtime_packages_and_auth` take an optional keychain store
+after `auth_resolver`. Production passes the same store used by its resolver,
+AWS source cache and ADC owner; `None` supports store-free test assemblies.
+
+AWS nested role profiles retain static-pair precedence, then resolve the
+existing web-identity/process/SSO/login source chain before assuming roles from
+inside out. SSO caches separate region/account/role/session, endpoint and
+source revision. AWS rotations require owned dependencies and the shared
+mutation queue; missing ownership fails typed before rotation. Rotated source
+material and actual expiry survive best-effort standard-cache file saves.
+Receipts acknowledge the source-memory update, not durable file success.
+Invalidation fences late memory/file writes; a failed fence does not claim
+that the remote rotation was rolled back. Existing login-session Continue
+classification is retained for its eligible ordinary refresh failures.
+
+
+`AdcNativeOwner` implements `AuthResolver` directly. Its `check_configured`
+uses the same selected context for environment/file-existence checks without
+reading or parsing credential contents, refreshing a token or contacting
+metadata. A missing file is unconfigured; a failed existence probe is typed;
+a present malformed file is configured until actual resolution validates it.
+`AuthResolver::check_configuration` is an optional hook used by `check_auth`
+and availability; opaque resolvers retain their source-classification check.
+The product Vertex checker preserves stored Express/API-key and configured
+Bearer precedence before checking its ADC owner.
+
+
+Store-backed OAuth resolution selects the current credential inside its
+serialized mutation slot, including fresh-token reads, so a lock wait cannot
+retain an identity selected before a preceding logout or replacement.
+Replacing the attached store or upserting a helper-bound OAuth flow rebinds
+new calls to that store/flow; already captured calls retain their frozen
+binding. Explicit caller-owned `register_route` resolvers keep their own
+ownership.
+
+
+Windows helpers start suspended, join an owned kill-on-close Job, and resume
+only after assignment. Closing that owner also terminates descendants after
+the original helper parent has exited. The private Windows owner contains the
+required `windows-sys` calls and uses `OwnedHandle` rather than an unsafe
+`Send` implementation. The Windows-only `windows-sys` 0.61.2 dependency adds
+`Win32_Security` to the existing Job/ToolHelp/Threading feature set, without a
+new package version or build script. Unix process groups and the existing AWS
+10-second/64-KiB host policy remain unchanged; this change does not claim
+complete native-platform acceptance.
+
+
+`OAuthProvider::{name, is_subscription, login_label}` expose non-secret flow
+metadata through `dyn OAuthProvider` without auth or source I/O. Custom
+implementations default to `name = id()` and `None` for both optional fields.
+The nine SDK flows retain the fixed Pi display values and optional-field
+distinctions: OpenRouter and Radius do not declare a subscription flag, and
+flows without a login label do not receive a synthesized one. Radius uses
+its captured identity for method selection, request provenance and typed
+cancellation/revocation while refresh remains bound to its configured gateway
+and stored account metadata. Fresh and refreshed Radius request auth both
+ignore credential `base_url`; routing authority stays with that gateway. This adds no generic flow inventory or complete
+provider/profile enumeration.

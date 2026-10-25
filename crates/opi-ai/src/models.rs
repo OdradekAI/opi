@@ -225,6 +225,9 @@ pub struct CompatMetadata {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ModelsError {
+    /// Registration of a dispatchable provider failed.
+    #[error(transparent)]
+    Registration(#[from] RegistrationError),
     /// A registry lookup failed.
     #[error(transparent)]
     Registry(#[from] RegistryError),
@@ -363,6 +366,8 @@ pub struct Models {
     /// Registered SDK OAuth flows keyed by provider id; the login command
     /// dispatches here and persists through the attached credential store.
     oauth_flows: HashMap<String, std::sync::Arc<dyn crate::auth::OAuthProvider>>,
+    /// Routes whose resolver is generated from the attached OAuth store.
+    oauth_routes: std::collections::HashSet<String>,
     /// Typed custom chat API registrations keyed by exact [`ApiId`]. Entries
     /// are captured (cloned `Arc`s) at call creation, so later registration
     /// changes never mutate an existing call.
@@ -391,6 +396,7 @@ impl Models {
             resolvers: HashMap::new(),
             sources: HashMap::new(),
             oauth_flows: HashMap::new(),
+            oauth_routes: std::collections::HashSet::new(),
             chat_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
@@ -415,6 +421,7 @@ impl Models {
             resolvers: HashMap::new(),
             sources: HashMap::new(),
             oauth_flows: HashMap::new(),
+            oauth_routes: std::collections::HashSet::new(),
             chat_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
@@ -440,6 +447,7 @@ impl Models {
         let id = provider.id().to_owned();
         self.registry.register_provider(provider)?;
         self.resolvers.remove(&id);
+        self.oauth_routes.remove(&id);
         self.sources.remove(&id);
         self.probed.remove(&id);
         self.auth.insert(id.clone(), auth);
@@ -467,6 +475,7 @@ impl Models {
     ) -> Result<(), RegistrationError> {
         let id = provider.id().to_owned();
         self.registry.register_provider(provider)?;
+        self.oauth_routes.remove(&id);
         self.auth.remove(&id);
         self.probed.remove(&id);
         self.resolvers.insert(id.clone(), resolver);
@@ -513,6 +522,7 @@ impl Models {
                 dispatch: Arc::clone(&dispatch),
             }))?;
         self.auth.remove(&provider_id);
+        self.oauth_routes.remove(&provider_id);
         self.probed.remove(&provider_id);
         self.resolvers.insert(provider_id.clone(), resolver);
         self.sources.insert(provider_id.clone(), source);
@@ -834,6 +844,18 @@ impl Models {
     /// store consult the injected probe snapshot instead
     /// ([`set_probe`](Self::set_probe)).
     pub fn set_credential_store(&mut self, store: std::sync::Arc<dyn CredentialStore>) {
+        for id in &self.oauth_routes {
+            if let Some(flow) = self.oauth_flows.get(id) {
+                self.resolvers.insert(
+                    id.clone(),
+                    Arc::new(crate::auth::store_oauth::StoreOAuthResolver::new(
+                        store.clone(),
+                        id.clone(),
+                        flow.clone(),
+                    )),
+                );
+            }
+        }
         self.credential_store = Some(store);
     }
 
@@ -852,7 +874,54 @@ impl Models {
                 kind: provider_id.to_owned(),
             },
         );
-        self.oauth_flows.insert(provider_id.to_owned(), flow);
+        self.oauth_flows
+            .insert(provider_id.to_owned(), flow.clone());
+        if self.oauth_routes.contains(provider_id)
+            && let Some(store) = &self.credential_store
+        {
+            self.resolvers.insert(
+                provider_id.to_owned(),
+                Arc::new(crate::auth::store_oauth::StoreOAuthResolver::new(
+                    store.clone(),
+                    provider_id,
+                    flow,
+                )),
+            );
+        }
+    }
+
+    /// Bind an SDK OAuth flow to a dispatchable provider and the attached store.
+    /// Login, refresh, ACK and request authentication share that store. This
+    /// performs no source access; attach the store before registering the route.
+    pub fn register_oauth_route(
+        &mut self,
+        provider: Box<dyn Provider>,
+        flow: Arc<dyn crate::auth::OAuthProvider>,
+        compat: CompatMetadata,
+    ) -> Result<(), ModelsError> {
+        let id = provider.id().to_owned();
+        let store = self.credential_store.clone().ok_or_else(|| {
+            ModelsError::CredentialStore(CredentialStoreError::Backend {
+                provider: id.clone(),
+                reason: "no credential store attached".to_owned(),
+            })
+        })?;
+        let resolver = Arc::new(crate::auth::store_oauth::StoreOAuthResolver::new(
+            store,
+            id.clone(),
+            flow.clone(),
+        ));
+        self.register_route(
+            provider,
+            resolver,
+            AuthProvenanceSource::OAuth {
+                kind: flow.id().to_owned(),
+            },
+            compat,
+        )?;
+        self.register_oauth_flow(&id, flow);
+        self.oauth_routes.insert(id);
+        Ok(())
     }
 
     /// Run the provider's registered OAuth login and persist the resulting
@@ -930,12 +999,15 @@ impl Models {
     /// [`AuthContext`](crate::auth::AuthContext) (or the live store for
     /// [`AuthDescriptor::StoreCredential`]); store-backed providers without a
     /// live store fall back to the redacted probe snapshot injected via
-    /// [`set_probe`](Self::set_probe). Route providers check their
-    /// non-secret source classification the same way, never their live
-    /// resolver: checking is IO-bounded and refresh-free by contract.
+    /// [`set_probe`](Self::set_probe). Route providers first use a declared
+    /// configuration checker when present, then their non-secret source
+    /// classification. Checking never resolves or refreshes authentication.
     pub async fn check_auth(&self, provider_id: &str) -> Result<Option<AuthCheck>, ModelsError> {
         if let Some(descriptor) = self.auth.get(provider_id) {
             return self.check_descriptor(provider_id, descriptor).await;
+        }
+        if !self.check_route_configuration(provider_id).await? {
+            return Ok(None);
         }
         match self.sources.get(provider_id) {
             Some(source) => self.check_source(provider_id, source).await,
@@ -950,6 +1022,8 @@ impl Models {
     /// to one provider. Providers without any auth facts (pure registry
     /// providers registered behind [`from_registry`](Self::from_registry))
     /// are never available through this path.
+    /// OAuth presence and account model metadata use one credential snapshot,
+    /// so concurrent logout or replacement cannot combine different accounts.
     pub async fn get_available(
         &self,
         provider_id: Option<&str>,
@@ -962,18 +1036,58 @@ impl Models {
             .map(str::to_owned)
             .collect();
         let mut available = Vec::new();
+        let mut account_models = std::collections::HashMap::new();
         for id in ids {
-            if self.check_auth(&id).await?.is_some() {
+            if !self.auth.contains_key(&id)
+                && matches!(
+                    self.sources.get(&id),
+                    Some(AuthProvenanceSource::OAuth { .. })
+                )
+                && let Some(store) = &self.credential_store
+            {
+                if !self.check_route_configuration(&id).await? {
+                    continue;
+                }
+                let Some(credential) = store.read(&id).await? else {
+                    continue;
+                };
+                if let Credential::OAuthToken {
+                    available_model_ids: Some(ids),
+                    ..
+                } = credential
+                {
+                    account_models.insert(id.clone(), ids);
+                }
+                available.push(id);
+            } else if self.check_auth(&id).await?.is_some() {
                 available.push(id);
             }
         }
         let mut entries = Vec::new();
         for (provider, model) in self.registry.all_models() {
-            if available.iter().any(|id| id == provider) {
+            if available.iter().any(|id| id == provider)
+                && account_models
+                    .get(provider)
+                    .is_none_or(|ids| ids.iter().any(|id| id == &model.id))
+            {
                 entries.push((provider.to_owned(), model.clone()));
             }
         }
         Ok(entries)
+    }
+
+    async fn check_route_configuration(&self, provider_id: &str) -> Result<bool, ModelsError> {
+        let Some(check) = self
+            .resolvers
+            .get(provider_id)
+            .and_then(|resolver| resolver.check_configuration())
+        else {
+            return Ok(true);
+        };
+        check.await.map_err(|error| ModelsError::AuthResolution {
+            provider: provider_id.to_owned(),
+            error: Box::new(error),
+        })
     }
 
     /// Resolve provider auth on demand for management/status use.

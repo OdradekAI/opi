@@ -2344,10 +2344,10 @@ fn process_output(access: &str, secret: &str) -> CredentialProcessOutput {
 
 #[allow(clippy::too_many_arguments)]
 fn chain_input<'a>(
-    ambient: &'a MapAuthContext,
+    ambient: &'a dyn opi_ai::auth::AuthContext,
     credentials_file: Option<&'a std::path::Path>,
     config_file: Option<&'a std::path::Path>,
-    process: &'a ScriptedProcessRunner,
+    process: &'a dyn CredentialProcessRunner,
     selection: AwsAuthSelection,
     scoped: ScopedAwsEnv,
 ) -> AwsLocalChainInput<'a> {
@@ -4825,6 +4825,213 @@ fn sts_endpoint_rules_follow_partition_and_override() {
     );
 }
 
+#[tokio::test]
+async fn nested_source_profiles_assume_from_inner_to_outer() {
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(
+        ["INNER", "MIDDLE", "OUTER"]
+            .into_iter()
+            .map(|name| {
+                source_response(
+                    200,
+                    sts_success_xml(
+                        name,
+                        &format!("arn:aws:sts::123456789012:assumed-role/{name}/session"),
+                    ),
+                )
+            })
+            .collect(),
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = dir.path().join("credentials");
+    std::fs::write(
+        &credentials,
+        "[base]\naws_access_key_id=BASE_ACCESS\naws_secret_access_key=BASE_SECRET\n",
+    )
+    .unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile outer]\nrole_arn=arn:aws:iam::123456789012:role/outer\nsource_profile=middle\nregion=us-west-2\n\
+         [profile middle]\nrole_arn=arn:aws:iam::123456789012:role/middle\nsource_profile=inner\n\
+         [profile inner]\nrole_arn=arn:aws:iam::123456789012:role/inner\nsource_profile=base\n",
+    )
+    .unwrap();
+    let input = chain_input(
+        &ambient,
+        Some(&credentials),
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("outer".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let resolved = resolve_local_aws_auth(&input).await.unwrap();
+    assert_eq!(
+        sigv4_of(&resolved).access_key_id.expose_secret(),
+        "OUTERACCESS"
+    );
+    assert_eq!(transport.send_count(), 3);
+    for (index, (role, source_key)) in [
+        ("inner", "BASE_ACCESS"),
+        ("middle", "INNERACCESS"),
+        ("outer", "MIDDLEACCESS"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let request = recorded_send(&transport, index);
+        assert!(body_of(&request).contains(&format!("role%2F{role}")));
+        assert_sigv4_signed_with(&request, source_key);
+    }
+}
+
+#[tokio::test]
+async fn assume_role_accepts_process_source_profile() {
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_DISABLED",
+        "true",
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        sts_success_xml(
+            "ROLE",
+            "arn:aws:sts::123456789012:assumed-role/outer/session",
+        ),
+    )]);
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile outer]\nrole_arn=arn:aws:iam::123456789012:role/outer\nsource_profile=process\nregion=us-west-2\n\
+         [profile process]\ncredential_process=synthetic-process\n",
+    )
+    .unwrap();
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("outer".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport);
+    let resolved = resolve_local_aws_auth(&input).await.unwrap();
+    assert_eq!(
+        sigv4_of(&resolved).access_key_id.expose_secret(),
+        "ROLEACCESS"
+    );
+    assert_eq!(runner.calls.lock().unwrap().len(), 1);
+    assert_eq!(transport.send_count(), 1);
+    assert_sigv4_signed_with(&recorded_send(&transport, 0), "PROCESS_ACCESS");
+}
+
+struct FrozenProcessContext {
+    cwd: std::path::PathBuf,
+    fail: bool,
+    snapshots: AtomicUsize,
+}
+
+struct FrozenSpecRunner(std::sync::Mutex<Vec<CredentialProcessSpec>>);
+
+impl CredentialProcessRunner for FrozenSpecRunner {
+    fn run<'a>(
+        &'a self,
+        spec: &'a CredentialProcessSpec,
+    ) -> BoxAuthFuture<
+        'a,
+        Result<CredentialProcessOutput, opi_ai::auth::aws::process::CredentialProcessError>,
+    > {
+        Box::pin(async move {
+            self.0.lock().unwrap().push(spec.clone());
+            Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET"))
+        })
+    }
+}
+
+impl opi_ai::auth::AuthContext for FrozenProcessContext {
+    fn env(&self, _name: &str) -> Result<Option<String>, opi_ai::auth::AuthContextError> {
+        Ok(None)
+    }
+
+    fn file_exists(&self, _path: &str) -> Result<bool, opi_ai::auth::AuthContextError> {
+        Ok(false)
+    }
+
+    fn process_snapshot(
+        &self,
+    ) -> Result<opi_ai::auth::AuthProcessSnapshot, opi_ai::auth::AuthContextError> {
+        self.snapshots.fetch_add(1, Ordering::SeqCst);
+        if self.fail {
+            return Err(opi_ai::auth::AuthContextError::ProcessSnapshot {
+                reason: "synthetic snapshot failure",
+            });
+        }
+        Ok(opi_ai::auth::AuthProcessSnapshot {
+            env: std::collections::BTreeMap::from([(
+                "SOURCE_IDENTITY".to_owned(),
+                "scoped-synthetic".to_owned(),
+            )]),
+            cwd: self.cwd.clone(),
+        })
+    }
+}
+
+#[tokio::test]
+async fn selected_process_freezes_context_environment_and_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile process]\ncredential_process=selected-command\n",
+    )
+    .unwrap();
+    for fail in [false, true] {
+        let context = FrozenProcessContext {
+            cwd: dir.path().to_path_buf(),
+            fail,
+            snapshots: AtomicUsize::new(0),
+        };
+        let runner = FrozenSpecRunner(std::sync::Mutex::new(Vec::new()));
+        let input = chain_input(
+            &context,
+            None,
+            Some(&config),
+            &runner,
+            AwsAuthSelection::Profile("process".to_owned()),
+            ScopedAwsEnv::empty(),
+        );
+        let result = resolve_local_aws_auth(&input).await;
+        assert_eq!(context.snapshots.load(Ordering::SeqCst), 1);
+        let invocations = runner.0.lock().unwrap();
+        if fail {
+            assert!(matches!(
+                result,
+                Err(CredentialResolutionError::Terminal { .. })
+            ));
+            assert!(invocations.is_empty());
+        } else {
+            result.unwrap();
+            assert_eq!(invocations.len(), 1);
+            assert_eq!(invocations[0].cwd.as_deref(), Some(dir.path()));
+            assert_eq!(
+                invocations[0].env,
+                opi_ai::auth::aws::process::ProcessEnv::Exact(std::collections::BTreeMap::from([
+                    ("SOURCE_IDENTITY".to_owned(), "scoped-synthetic".to_owned())
+                ]))
+            );
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Task 20.19.3: SSO / login_session source families and the full chain.
 // ---------------------------------------------------------------------------
@@ -4846,6 +5053,14 @@ impl SourceClock for FakeClock {
     }
 }
 
+struct AdjustableSourceClock(std::sync::Mutex<time::OffsetDateTime>);
+
+impl SourceClock for AdjustableSourceClock {
+    fn now(&self) -> time::OffsetDateTime {
+        *self.0.lock().unwrap()
+    }
+}
+
 /// Deterministic DPoP `jti` source.
 struct CountingJti(std::sync::atomic::AtomicUsize);
 
@@ -4854,6 +5069,15 @@ impl DpopJtiSource for CountingJti {
         let value = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         format!("jti-{value}")
     }
+}
+
+fn cache_with_owned_refresh(transport: Arc<dyn AwsSourceTransport>) -> AwsSourceCache {
+    AwsSourceCache::with_mutation_queue(Arc::new(opi_ai::mutation::MutationQueue::new()))
+        .with_passive_deps(Arc::new(PassiveRefreshDeps {
+            transport,
+            clock: Arc::new(FakeClock(rfc3339("2030-01-01T00:00:00Z"))),
+            jti: Arc::new(CountingJti(AtomicUsize::new(0))),
+        }))
 }
 
 fn modern_sso_token_file(dir: &std::path::Path, expires_at: &str) {
@@ -5048,6 +5272,182 @@ async fn explicit_sso_resolves_with_getrole_wire() {
 }
 
 #[tokio::test]
+async fn sso_shared_cache_keeps_roles_distinct() {
+    let dir = tempfile::tempdir().unwrap();
+    modern_sso_token_file(dir.path(), "2030-01-01T04:00:00Z");
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![
+        source_response(200, role_credentials_body(1_900_000_000_000)),
+        source_response(
+            200,
+            role_credentials_body(1_900_000_000_000).replace("SSO_AKID", "OTHER_ROLE_AKID"),
+        ),
+    ]);
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
+    for (role, expected_key) in [
+        ("Engineering", "SSO_AKID"),
+        ("OtherRole", "OTHER_ROLE_AKID"),
+    ] {
+        let mut scoped = sso_scoped("https://start.example", Some("sess-a"));
+        scoped.sso_role_name = Some(role.to_owned());
+        let input = chain_input(
+            &ambient,
+            None,
+            None,
+            &runner,
+            AwsAuthSelection::Auto,
+            scoped,
+        )
+        .with_source_transport(&transport)
+        .with_source_cache(Some(&cache))
+        .with_clock(&clock)
+        .with_dpop_jti(&jti)
+        .with_sso_cache_dir(Some(dir.path()));
+        let resolved = resolve_local_aws_auth(&input).await.unwrap();
+        assert_eq!(
+            sigv4_of(&resolved).access_key_id.expose_secret(),
+            expected_key
+        );
+    }
+    assert_eq!(transport.send_count(), 2);
+    assert!(transport.send_at(0).url.contains("role_name=Engineering"));
+    assert!(transport.send_at(1).url.contains("role_name=OtherRole"));
+}
+
+#[tokio::test]
+async fn assume_role_accepts_sso_source_profile() {
+    let dir = tempfile::tempdir().unwrap();
+    modern_sso_token_file(dir.path(), "2030-01-01T04:00:00Z");
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile outer]\nrole_arn=arn:aws:iam::123456789012:role/outer\nsource_profile=sso\nregion=us-west-2\n\
+         [profile sso]\nsso_session=sess-a\nsso_account_id=123456789012\nsso_role_name=Engineering\n\
+         [sso-session sess-a]\nsso_start_url=https://start.example\nsso_region=us-east-1\n",
+    )
+    .unwrap();
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_DISABLED",
+        "true",
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![
+        source_response(200, role_credentials_body(1_900_000_000_000)),
+        source_response(
+            200,
+            sts_success_xml(
+                "OUTER",
+                "arn:aws:sts::123456789012:assumed-role/outer/session",
+            ),
+        ),
+    ]);
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("outer".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_sso_cache_dir(Some(dir.path()))
+    .with_clock(&clock);
+    let resolved = resolve_local_aws_auth(&input).await.unwrap();
+    assert_eq!(
+        sigv4_of(&resolved).access_key_id.expose_secret(),
+        "OUTERACCESS"
+    );
+    assert_eq!(transport.send_count(), 2);
+    assert!(transport.send_at(0).url.contains("/federation/credentials"));
+    assert_sigv4_signed_with(&transport.send_at(1), "SSO_AKID");
+    assert!(
+        transport
+            .send_at(1)
+            .url
+            .contains("sts.us-west-2.amazonaws.com")
+    );
+    let request = transport.send_at(1);
+    let authorization = request
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+        .unwrap()
+        .1
+        .as_str();
+    assert!(authorization.contains("/us-west-2/sts/aws4_request"));
+}
+
+#[tokio::test]
+async fn assume_role_accepts_login_source_profile() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_secret, pem) = login_cache_key_pair();
+    let config = dir.path().join("config");
+    std::fs::write(
+        &config,
+        "[profile outer]\nrole_arn=arn:aws:iam::123456789012:role/outer\nsource_profile=login\nregion=us-east-1\n\
+         [profile login]\nlogin_session=my-session\n",
+    )
+    .unwrap();
+    write_login_cache(
+        dir.path(),
+        "my-session",
+        &pem,
+        Some(
+            r#"{"accessKeyId":"LOGIN_AKID","secretAccessKey":"LOGIN_SAK","sessionToken":"LOGIN_SESSION"}"#,
+        ),
+        Some("2030-01-01T04:00:00Z"),
+    );
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_DISABLED",
+        "true",
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let transport = FakeSourceTransport::new(vec![source_response(
+        200,
+        sts_success_xml(
+            "OUTER",
+            "arn:aws:sts::123456789012:assumed-role/outer/session",
+        ),
+    )]);
+    let cache = AwsSourceCache::new();
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("outer".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_login_cache_dir(Some(dir.path()))
+    .with_clock(&clock);
+    let resolved = resolve_local_aws_auth(&input).await.unwrap();
+    assert_eq!(
+        sigv4_of(&resolved).access_key_id.expose_secret(),
+        "OUTERACCESS"
+    );
+    assert_eq!(transport.send_count(), 1);
+    assert_sigv4_signed_with(&transport.send_at(0), "LOGIN_AKID");
+}
+
+#[tokio::test]
 async fn ini_modern_sso_resolves_via_sso_session_section() {
     let dir = tempfile::tempdir().unwrap();
     modern_sso_token_file(dir.path(), "2030-01-01T04:00:00Z");
@@ -5197,6 +5597,424 @@ async fn sso_near_expiry_uses_old_token_and_registers_passive_refresh() {
         secrecy::ExposeSecret::expose_secret(&file.snapshot.access_token),
         "SSO_TOKEN_2"
     );
+    let identity = CacheIdentity::SsoToken {
+        cache_key: "sess-a".to_owned(),
+    };
+    let Some(SourceCacheValue::SsoToken(snapshot)) = cache.peek(&identity, clock.now()) else {
+        panic!("the acknowledged refresh must leave a cached token");
+    };
+    assert_eq!(snapshot.access_token.expose_secret(), "SSO_TOKEN_2");
+    assert_eq!(
+        snapshot.refresh.unwrap().refresh_token.expose_secret(),
+        "oidc-refresh-2"
+    );
+    assert!(cache.revision(&identity) >= 2);
+}
+
+struct AcknowledgedExpiryClock {
+    queue: Arc<opi_ai::mutation::MutationQueue>,
+    advance_after_ack: bool,
+}
+
+impl SourceClock for AcknowledgedExpiryClock {
+    fn now(&self) -> time::OffsetDateTime {
+        let written = self.advance_after_ack && self.queue.barrier().report().captured.iter().any(|entry| {
+            matches!(entry, opi_ai::mutation::BarrierEntry::Settled(receipt) if matches!(receipt.outcome, opi_ai::mutation::MutationOutcome::Written { .. }))
+        });
+        rfc3339(if written {
+            "2030-01-01T00:00:02Z"
+        } else {
+            "2030-01-01T00:00:00Z"
+        })
+    }
+}
+
+struct ExpiryProbeTransport {
+    body: Vec<u8>,
+}
+
+impl AwsSourceTransport for ExpiryProbeTransport {
+    fn send(
+        &self,
+        _request: SourceHttpRequest,
+    ) -> futures_util::future::BoxFuture<'_, Result<SourceHttpResponse, SourceHttpError>> {
+        Box::pin(async move {
+            Ok(SourceHttpResponse {
+                status: 200,
+                body: self.body.clone(),
+            })
+        })
+    }
+}
+
+async fn source_refresh_expiry_probe(
+    login: bool,
+    ttl: i64,
+    advance: bool,
+) -> (Result<ResolvedAuth, CredentialResolutionError>, usize) {
+    let dir = tempfile::tempdir().unwrap();
+    let queue = Arc::new(opi_ai::mutation::MutationQueue::new());
+    let clock = Arc::new(AcknowledgedExpiryClock {
+        queue: queue.clone(),
+        advance_after_ack: advance,
+    });
+    let access = if login {
+        r#"{"accessKeyId":"LOGIN_AKID","secretAccessKey":"LOGIN_SAK","sessionToken":"LOGIN_SESSION"}"#
+    } else {
+        "SSO_TOKEN_2"
+    };
+    let owner = Arc::new(ExpiryProbeTransport { body: serde_json::to_vec(&serde_json::json!({"accessToken":access,"expiresIn":ttl,"refreshToken":"rotated-refresh"})).unwrap() });
+    let cache = AwsSourceCache::with_mutation_queue(queue).with_passive_deps(Arc::new(
+        PassiveRefreshDeps {
+            transport: owner,
+            clock: clock.clone(),
+            jti: Arc::new(CountingJti(AtomicUsize::new(0))),
+        },
+    ));
+    let config = dir.path().join("config");
+    std::fs::write(&config, "[profile corp]\nlogin_session=my-session\n").unwrap();
+    if login {
+        let (_secret, pem) = login_cache_key_pair();
+        cache.store(
+            CacheIdentity::LoginSession {
+                session: "my-session".to_owned(),
+            },
+            SourceCacheValue::LoginSession(opi_ai::auth::aws::cache::LoginTokenSnapshot {
+                client_id: "signin-client".to_owned(),
+                refresh_token: SecretString::from("signin-refresh"),
+                signing_key: SecretString::from(pem),
+                account: Some("123456789012".to_owned()),
+                access_token: None,
+                expires_at: None,
+            }),
+        );
+    } else {
+        cache.store(
+            CacheIdentity::SsoToken {
+                cache_key: "sess-a".to_owned(),
+            },
+            SourceCacheValue::SsoToken(SsoTokenSnapshot {
+                access_token: SecretString::from("OLD"),
+                expires_at: rfc3339("2029-12-31T23:00:00Z"),
+                refresh: Some(SsoRefreshMaterial {
+                    client_id: "oidc-client".to_owned(),
+                    client_secret: SecretString::from("oidc-secret"),
+                    refresh_token: SecretString::from("oidc-refresh"),
+                }),
+                modern: true,
+            }),
+        );
+    }
+    let ambient = MapAuthContext(std::collections::HashMap::from([(
+        "AWS_EC2_METADATA_DISABLED",
+        "true",
+    )]));
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let federation = FakeSourceTransport::new(vec![source_response(
+        200,
+        role_credentials_body(1_900_000_000_000),
+    )]);
+    let selection = if login {
+        AwsAuthSelection::Profile("corp".to_owned())
+    } else {
+        AwsAuthSelection::Auto
+    };
+    let scoped = if login {
+        ScopedAwsEnv::empty()
+    } else {
+        sso_scoped("https://start.example", Some("sess-a"))
+    };
+    let input = chain_input(&ambient, None, Some(&config), &runner, selection, scoped)
+        .with_source_transport(&federation)
+        .with_source_cache(Some(&cache))
+        .with_clock(clock.as_ref())
+        .with_login_cache_dir(Some(dir.path()))
+        .with_sso_cache_dir(Some(dir.path()));
+    let result = resolve_local_aws_auth(&input).await;
+    if advance {
+        assert_eq!(clock.now(), rfc3339("2030-01-01T00:00:02Z"));
+    }
+    (result, federation.send_count())
+}
+
+#[tokio::test]
+async fn sso_nonpositive_refresh_expiry_never_reaches_federation() {
+    for ttl in [0, -1] {
+        let (result, federation) = source_refresh_expiry_probe(false, ttl, false).await;
+        assert!(
+            result.is_err(),
+            "already-expired SSO access cannot authorize GetRoleCredentials"
+        );
+        assert_eq!(federation, 0);
+    }
+}
+
+#[tokio::test]
+async fn login_nonpositive_refresh_expiry_never_selects_credentials() {
+    for ttl in [0, -1] {
+        let (result, _) = source_refresh_expiry_probe(true, ttl, false).await;
+        assert!(
+            result.is_err(),
+            "already-expired login credentials cannot reach a generation attempt"
+        );
+    }
+}
+
+#[tokio::test]
+async fn source_refresh_extreme_expiry_is_typed_invalid_response() {
+    for login in [false, true] {
+        let (result, federation) = source_refresh_expiry_probe(login, i64::MAX, false).await;
+        assert!(
+            matches!(
+                result,
+                Err(CredentialResolutionError::Terminal {
+                    reason: TerminalReason::InvalidSsoResponse
+                        | TerminalReason::InvalidLoginResponse,
+                    ..
+                })
+            ),
+            "unrepresentable expiry must have an ordinary typed source failure"
+        );
+        assert_eq!(federation, 0);
+    }
+}
+
+#[tokio::test]
+async fn source_refresh_rechecks_actual_expiry_after_exchange_and_ack() {
+    for login in [false, true] {
+        let (usable, _) = source_refresh_expiry_probe(login, 1, false).await;
+        assert!(usable.is_ok(), "a still-valid short TTL serves this call");
+        let (result, federation) = source_refresh_expiry_probe(login, 1, true).await;
+        assert!(
+            result.is_err(),
+            "a token expired before source ACK must not serve the waiting call"
+        );
+        assert_eq!(federation, 0);
+    }
+}
+
+#[tokio::test]
+async fn login_passive_extreme_expiry_is_failed_receipt_and_keeps_valid_access() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(&config, "[profile corp]\nlogin_session=my-session\n").unwrap();
+    let (_secret, pem) = login_cache_key_pair();
+    let access = r#"{"accessKeyId":"OLD_LOGIN","secretAccessKey":"LOGIN_SAK","sessionToken":"LOGIN_SESSION"}"#;
+    write_login_cache(
+        dir.path(),
+        "my-session",
+        &pem,
+        Some(access),
+        Some("2030-01-01T00:02:00Z"),
+    );
+    let transport = Arc::new(FakeSourceTransport::new(vec![source_response(200, serde_json::json!({"accessToken":access,"expiresIn":i64::MAX,"refreshToken":"rotated-refresh"}).to_string())]));
+    let cache = cache_with_owned_refresh(transport.clone());
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("corp".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(transport.as_ref())
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_login_cache_dir(Some(dir.path()));
+    let selected = resolve_local_aws_auth(&input).await.unwrap();
+    assert_eq!(
+        sigv4_of(&selected).access_key_id.expose_secret(),
+        "OLD_LOGIN"
+    );
+    let report = cache.mutation_queue().unwrap().barrier().wait().await;
+    assert!(
+        matches!(&report.captured[0], opi_ai::mutation::BarrierEntry::Settled(receipt) if matches!(receipt.outcome, opi_ai::mutation::MutationOutcome::Failed { .. })),
+        "invalid expiry is a typed refresh failure rather than a panicked worker's unknown outcome"
+    );
+    let identity = CacheIdentity::LoginSession {
+        session: "my-session".to_owned(),
+    };
+    let Some(SourceCacheValue::LoginSession(snapshot)) = cache.peek(&identity, clock.now()) else {
+        panic!("old access remains valid")
+    };
+    assert_eq!(snapshot.refresh_token.expose_secret(), "signin-refresh");
+    assert_eq!(snapshot.access_token.unwrap().expose_secret(), access);
+}
+
+#[tokio::test]
+async fn sso_failed_file_save_retains_rotated_material_through_expiry() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = CacheIdentity::SsoToken {
+        cache_key: "sess-a".to_owned(),
+    };
+    let file = dir.path().join(format!(
+        "{}.json",
+        opi_ai::auth::aws::sso::sso_cache_file_name("sess-a")
+    ));
+    std::fs::create_dir(&file).unwrap(); // every standard-file write must fail
+    let clock = Arc::new(AdjustableSourceClock(std::sync::Mutex::new(rfc3339(
+        "2030-01-01T00:00:00Z",
+    ))));
+    let owner_transport = Arc::new(FakeSourceTransport::new(vec![
+        source_response(
+            200,
+            r#"{"accessToken":"SSO_TOKEN_2","expiresIn":60,"refreshToken":"oidc-refresh-2"}"#,
+        ),
+        source_response(
+            200,
+            r#"{"accessToken":"SSO_TOKEN_3","expiresIn":3600,"refreshToken":"oidc-refresh-3"}"#,
+        ),
+    ]));
+    let queue = Arc::new(opi_ai::mutation::MutationQueue::new());
+    let cache = AwsSourceCache::with_mutation_queue(queue.clone()).with_passive_deps(Arc::new(
+        PassiveRefreshDeps {
+            transport: owner_transport.clone(),
+            clock: clock.clone(),
+            jti: Arc::new(CountingJti(AtomicUsize::new(0))),
+        },
+    ));
+    cache.store(
+        identity.clone(),
+        SourceCacheValue::SsoToken(SsoTokenSnapshot {
+            access_token: SecretString::from("SSO_TOKEN"),
+            expires_at: rfc3339("2030-01-01T00:02:00Z"),
+            refresh: Some(SsoRefreshMaterial {
+                client_id: "oidc-client".to_owned(),
+                client_secret: SecretString::from("oidc-secret"),
+                refresh_token: SecretString::from("oidc-refresh"),
+            }),
+            modern: true,
+        }),
+    );
+    let transport = FakeSourceTransport::new(vec![
+        source_response(200, role_credentials_body(1_900_000_000_000)),
+        source_response(200, role_credentials_body(1_900_000_000_000)),
+    ]);
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let input = chain_input(
+        &ambient,
+        None,
+        None,
+        &runner,
+        AwsAuthSelection::Auto,
+        sso_scoped("https://start.example", Some("sess-a")),
+    )
+    .with_source_transport(&transport)
+    .with_source_cache(Some(&cache))
+    .with_clock(clock.as_ref())
+    .with_sso_cache_dir(Some(dir.path()));
+    resolve_local_aws_auth(&input).await.unwrap();
+    let report = queue.barrier().wait().await;
+    assert!(report.is_complete());
+    assert!(
+        matches!(&report.captured[0], opi_ai::mutation::BarrierEntry::Settled(receipt) if matches!(receipt.outcome, opi_ai::mutation::MutationOutcome::Written { .. }))
+    );
+    let Some(SourceCacheValue::SsoToken(snapshot)) = cache.peek(&identity, clock.now()) else {
+        panic!("rotated source token stays owned after file failure")
+    };
+    assert_eq!(snapshot.access_token.expose_secret(), "SSO_TOKEN_2");
+    *clock.0.lock().unwrap() = rfc3339("2030-01-01T00:02:01Z");
+    resolve_local_aws_auth(&input).await.unwrap();
+    let body: serde_json::Value =
+        serde_json::from_slice(owner_transport.send_at(1).body.as_ref().unwrap()).unwrap();
+    assert_eq!(
+        body["refreshToken"], "oidc-refresh-2",
+        "expired access must retain the unique rotated refresh material"
+    );
+    assert_eq!(bearer_of(&transport.send_at(1)), "SSO_TOKEN_3");
+    assert!(
+        file.is_dir(),
+        "best-effort file failure must not be reported as a saved file"
+    );
+}
+
+#[tokio::test]
+async fn login_failed_file_save_retains_rotated_material_through_expiry() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    std::fs::write(&config, "[profile corp]\nlogin_session=my-session\n").unwrap();
+    let file = dir
+        .path()
+        .join(format!("{}.json", login_cache_file_name("my-session")));
+    std::fs::create_dir(&file).unwrap();
+    let (_secret, pem) = login_cache_key_pair();
+    let access = |key: &str| {
+        serde_json::json!({"accessKeyId":key,"secretAccessKey":"LOGIN_SAK","sessionToken":"LOGIN_SESSION"}).to_string()
+    };
+    let clock = Arc::new(AdjustableSourceClock(std::sync::Mutex::new(rfc3339(
+        "2030-01-01T00:00:00Z",
+    ))));
+    let transport = Arc::new(FakeSourceTransport::new(vec![
+        source_response(200, serde_json::json!({"accessToken":access("LOGIN_2"),"expiresIn":60,"refreshToken":"signin-refresh-2"}).to_string()),
+        source_response(200, serde_json::json!({"accessToken":access("LOGIN_3"),"expiresIn":3600,"refreshToken":"signin-refresh-3"}).to_string()),
+    ]));
+    let queue = Arc::new(opi_ai::mutation::MutationQueue::new());
+    let cache = AwsSourceCache::with_mutation_queue(queue.clone()).with_passive_deps(Arc::new(
+        PassiveRefreshDeps {
+            transport: transport.clone(),
+            clock: clock.clone(),
+            jti: Arc::new(CountingJti(AtomicUsize::new(0))),
+        },
+    ));
+    let identity = CacheIdentity::LoginSession {
+        session: "my-session".to_owned(),
+    };
+    cache.store(
+        identity.clone(),
+        SourceCacheValue::LoginSession(opi_ai::auth::aws::cache::LoginTokenSnapshot {
+            client_id: "signin-client".to_owned(),
+            refresh_token: SecretString::from("signin-refresh"),
+            signing_key: SecretString::from(pem),
+            account: Some("123456789012".to_owned()),
+            access_token: Some(SecretString::from(access("LOGIN_1"))),
+            expires_at: Some(rfc3339("2030-01-01T00:02:00Z")),
+        }),
+    );
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("corp".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(transport.as_ref())
+    .with_source_cache(Some(&cache))
+    .with_clock(clock.as_ref())
+    .with_login_cache_dir(Some(dir.path()));
+    let first = resolve_local_aws_auth(&input).await.unwrap();
+    assert_eq!(sigv4_of(&first).access_key_id.expose_secret(), "LOGIN_1");
+    let report = queue.barrier().wait().await;
+    assert!(report.is_complete());
+    let Some(SourceCacheValue::LoginSession(snapshot)) = cache.peek(&identity, clock.now()) else {
+        panic!("rotated source token stays owned after file failure")
+    };
+    assert_eq!(snapshot.refresh_token.expose_secret(), "signin-refresh-2");
+    *clock.0.lock().unwrap() = rfc3339("2030-01-01T00:02:01Z");
+    let second = resolve_local_aws_auth(&input).await.unwrap();
+    assert_eq!(sigv4_of(&second).access_key_id.expose_secret(), "LOGIN_3");
+    let body: serde_json::Value =
+        serde_json::from_slice(transport.send_at(1).body.as_ref().unwrap()).unwrap();
+    assert_eq!(body["refreshToken"], "signin-refresh-2");
+    assert!(file.is_dir());
 }
 
 #[tokio::test]
@@ -5269,9 +6087,11 @@ async fn sso_expired_token_refresh_denied_is_terminal() {
         calls: std::sync::Mutex::new(Vec::new()),
         result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
     };
-    let transport =
-        FakeSourceTransport::new(vec![source_response(400, r#"{"error":"invalid_grant"}"#)]);
-    let cache = AwsSourceCache::new();
+    let transport = Arc::new(FakeSourceTransport::new(vec![source_response(
+        400,
+        r#"{"error":"invalid_grant"}"#,
+    )]));
+    let cache = cache_with_owned_refresh(transport.clone());
     let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
     let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
     let input = chain_input(
@@ -5282,7 +6102,7 @@ async fn sso_expired_token_refresh_denied_is_terminal() {
         AwsAuthSelection::Auto,
         sso_scoped("https://start.example", Some("sess-a")),
     )
-    .with_source_transport(&transport)
+    .with_source_transport(transport.as_ref())
     .with_source_cache(Some(&cache))
     .with_clock(&clock)
     .with_dpop_jti(&jti)
@@ -5459,14 +6279,14 @@ async fn login_session_refresh_dpop_wire_and_rotation() {
         calls: std::sync::Mutex::new(Vec::new()),
         result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
     };
-    let transport = FakeSourceTransport::new(vec![source_response(
+    let transport = Arc::new(FakeSourceTransport::new(vec![source_response(
         200,
         format!(
             r#"{{"accessToken":{},"expiresIn":28800,"refreshToken":"signin-refresh-2"}}"#,
             serde_json::to_string(access_token_json).unwrap()
         ),
-    )]);
-    let cache = AwsSourceCache::new();
+    )]));
+    let cache = cache_with_owned_refresh(transport.clone());
     let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
     let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
     let input = chain_input(
@@ -5477,7 +6297,7 @@ async fn login_session_refresh_dpop_wire_and_rotation() {
         AwsAuthSelection::Profile("corp".to_owned()),
         ScopedAwsEnv::empty(),
     )
-    .with_source_transport(&transport)
+    .with_source_transport(transport.as_ref())
     .with_source_cache(Some(&cache))
     .with_clock(&clock)
     .with_dpop_jti(&jti)
@@ -5519,6 +6339,217 @@ async fn login_session_refresh_dpop_wire_and_rotation() {
         "signin-refresh-2"
     );
     assert!(file.access_token.is_some());
+}
+
+struct GatedLoginRefreshTransport {
+    entered: Notify,
+    release: Notify,
+    sends: AtomicUsize,
+}
+
+impl AwsSourceTransport for GatedLoginRefreshTransport {
+    fn send(
+        &self,
+        _request: SourceHttpRequest,
+    ) -> futures_util::future::BoxFuture<'_, Result<SourceHttpResponse, SourceHttpError>> {
+        self.sends.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            self.entered.notify_one();
+            self.release.notified().await;
+            Ok(SourceHttpResponse {
+                status: 200,
+                body: serde_json::to_vec(&serde_json::json!({
+                    "accessToken": r#"{"accessKeyId":"LOGIN_AKID","secretAccessKey":"LOGIN_SAK","sessionToken":"LOGIN_SESSION"}"#,
+                    "expiresIn": 28800,
+                    "refreshToken": "signin-refresh-2",
+                }))
+                .unwrap(),
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn login_started_rotation_survives_waiter_drop_and_is_barrier_visible() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_secret, pem) = login_cache_key_pair();
+    let config = dir.path().join("config");
+    std::fs::write(&config, "[profile corp]\nlogin_session=my-session\n").unwrap();
+    write_login_cache(dir.path(), "my-session", &pem, None, None);
+    let transport = Arc::new(GatedLoginRefreshTransport {
+        entered: Notify::new(),
+        release: Notify::new(),
+        sends: AtomicUsize::new(0),
+    });
+    let queue = Arc::new(opi_ai::mutation::MutationQueue::new());
+    let cache = AwsSourceCache::with_mutation_queue(queue.clone()).with_passive_deps(Arc::new(
+        PassiveRefreshDeps {
+            transport: transport.clone(),
+            clock: Arc::new(FakeClock(rfc3339("2030-01-01T00:00:00Z"))),
+            jti: Arc::new(CountingJti(AtomicUsize::new(0))),
+        },
+    ));
+    let start_waiter = || {
+        tokio::spawn({
+            let transport = transport.clone();
+            let cache = cache.clone();
+            let login_dir = dir.path().to_path_buf();
+            let config = config.clone();
+            async move {
+                let ambient = MapAuthContext(std::collections::HashMap::new());
+                let runner = ScriptedProcessRunner {
+                    calls: std::sync::Mutex::new(Vec::new()),
+                    result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+                };
+                let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+                let input = chain_input(
+                    &ambient,
+                    None,
+                    Some(&config),
+                    &runner,
+                    AwsAuthSelection::Profile("corp".to_owned()),
+                    ScopedAwsEnv::empty(),
+                )
+                .with_source_transport(transport.as_ref())
+                .with_source_cache(Some(&cache))
+                .with_clock(&clock)
+                .with_login_cache_dir(Some(&login_dir));
+                resolve_local_aws_auth(&input).await
+            }
+        })
+    };
+    let waiter = start_waiter();
+    transport.entered.notified().await;
+    let second_waiter = start_waiter();
+    let barrier = queue.barrier();
+    waiter.abort();
+    assert!(waiter.await.unwrap_err().is_cancelled());
+    transport.release.notify_one();
+    let report = barrier.wait().await;
+    assert!(report.is_complete());
+    assert!(
+        !report.captured.is_empty(),
+        "the active rotation belongs to the source owner"
+    );
+    let second = second_waiter.await.unwrap().unwrap();
+    assert_eq!(
+        sigv4_of(&second).access_key_id.expose_secret(),
+        "LOGIN_AKID"
+    );
+    let file = read_login_cache_file(dir.path(), "my-session")
+        .unwrap()
+        .unwrap();
+    assert_eq!(file.refresh_token.expose_secret(), "signin-refresh-2");
+    let Some(SourceCacheValue::LoginSession(snapshot)) = cache.peek(
+        &CacheIdentity::LoginSession {
+            session: "my-session".to_owned(),
+        },
+        rfc3339("2030-01-01T00:00:00Z"),
+    ) else {
+        panic!("the acknowledged active rotation remains usable");
+    };
+    assert_eq!(snapshot.refresh_token.expose_secret(), "signin-refresh-2");
+    assert_eq!(transport.sends.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn login_invalidated_rotation_cannot_overwrite_replacement() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_secret, pem) = login_cache_key_pair();
+    let config = dir.path().join("config");
+    std::fs::write(&config, "[profile corp]\nlogin_session=my-session\n").unwrap();
+    write_login_cache(dir.path(), "my-session", &pem, None, None);
+    let transport = Arc::new(GatedLoginRefreshTransport {
+        entered: Notify::new(),
+        release: Notify::new(),
+        sends: AtomicUsize::new(0),
+    });
+    let cache = cache_with_owned_refresh(transport.clone());
+    let waiter = tokio::spawn({
+        let cache = cache.clone();
+        let transport = transport.clone();
+        let config = config.clone();
+        let login_dir = dir.path().to_path_buf();
+        async move {
+            let ambient = MapAuthContext(std::collections::HashMap::new());
+            let runner = ScriptedProcessRunner {
+                calls: std::sync::Mutex::new(Vec::new()),
+                result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+            };
+            let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+            let input = chain_input(
+                &ambient,
+                None,
+                Some(&config),
+                &runner,
+                AwsAuthSelection::Profile("corp".to_owned()),
+                ScopedAwsEnv::empty(),
+            )
+            .with_source_transport(transport.as_ref())
+            .with_source_cache(Some(&cache))
+            .with_clock(&clock)
+            .with_login_cache_dir(Some(&login_dir));
+            resolve_local_aws_auth(&input).await
+        }
+    });
+    transport.entered.notified().await;
+    let identity = CacheIdentity::LoginSession {
+        session: "my-session".to_owned(),
+    };
+    cache.invalidate(&identity);
+    let replacement = r#"{"accessKeyId":"REPLACEMENT","secretAccessKey":"REPLACEMENT_SECRET","sessionToken":"REPLACEMENT_SESSION"}"#;
+    write_login_cache(
+        dir.path(),
+        "my-session",
+        &pem,
+        Some(replacement),
+        Some("2030-01-01T08:00:00Z"),
+    );
+    transport.release.notify_one();
+    assert!(matches!(
+        waiter.await.unwrap(),
+        Err(CredentialResolutionError::Terminal {
+            reason: TerminalReason::SourceRefreshSuperseded,
+            ..
+        })
+    ));
+    let report = cache.mutation_queue().unwrap().barrier().wait().await;
+    assert!(
+        matches!(&report.captured[0], opi_ai::mutation::BarrierEntry::Settled(receipt) if matches!(receipt.outcome, opi_ai::mutation::MutationOutcome::Failed { .. }))
+    );
+    assert!(
+        cache
+            .peek(&identity, rfc3339("2030-01-01T00:00:00Z"))
+            .is_none()
+    );
+    let file = read_login_cache_file(dir.path(), "my-session")
+        .unwrap()
+        .unwrap();
+    assert_eq!(file.access_token.unwrap().expose_secret(), replacement);
+    let ambient = MapAuthContext(std::collections::HashMap::new());
+    let runner = ScriptedProcessRunner {
+        calls: std::sync::Mutex::new(Vec::new()),
+        result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
+    };
+    let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
+    let input = chain_input(
+        &ambient,
+        None,
+        Some(&config),
+        &runner,
+        AwsAuthSelection::Profile("corp".to_owned()),
+        ScopedAwsEnv::empty(),
+    )
+    .with_source_transport(transport.as_ref())
+    .with_source_cache(Some(&cache))
+    .with_clock(&clock)
+    .with_login_cache_dir(Some(dir.path()));
+    let selected = resolve_local_aws_auth(&input).await.unwrap();
+    assert_eq!(
+        sigv4_of(&selected).access_key_id.expose_secret(),
+        "REPLACEMENT"
+    );
+    assert_eq!(transport.sends.load(Ordering::SeqCst), 1);
 }
 
 /// Assert the fixed DPoP proof shape and verify its ES256 signature against
@@ -5589,11 +6620,11 @@ async fn login_access_denied_family_is_terminal() {
             calls: std::sync::Mutex::new(Vec::new()),
             result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
         };
-        let transport = FakeSourceTransport::new(vec![source_response(
+        let transport = Arc::new(FakeSourceTransport::new(vec![source_response(
             403,
             format!(r#"{{"code":"{code}","message":"denied"}}"#),
-        )]);
-        let cache = AwsSourceCache::new();
+        )]));
+        let cache = cache_with_owned_refresh(transport.clone());
         let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
         let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
         let input = chain_input(
@@ -5604,7 +6635,7 @@ async fn login_access_denied_family_is_terminal() {
             AwsAuthSelection::Profile("corp".to_owned()),
             ScopedAwsEnv::empty(),
         )
-        .with_source_transport(&transport)
+        .with_source_transport(transport.as_ref())
         .with_source_cache(Some(&cache))
         .with_clock(&clock)
         .with_dpop_jti(&jti)
@@ -5669,8 +6700,8 @@ async fn login_other_failure_with_expired_token_continues_chain() {
     };
     // Unclassified refresh failure (500 without a code): the expired token
     // raises the default continue-eligible error.
-    let transport = FakeSourceTransport::new(vec![source_response(500, "{}")]);
-    let cache = AwsSourceCache::new();
+    let transport = Arc::new(FakeSourceTransport::new(vec![source_response(500, "{}")]));
+    let cache = cache_with_owned_refresh(transport.clone());
     let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
     let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
     let input = chain_input(
@@ -5681,7 +6712,7 @@ async fn login_other_failure_with_expired_token_continues_chain() {
         AwsAuthSelection::Profile("corp".to_owned()),
         ScopedAwsEnv::empty(),
     )
-    .with_source_transport(&transport)
+    .with_source_transport(transport.as_ref())
     .with_source_cache(Some(&cache))
     .with_clock(&clock)
     .with_dpop_jti(&jti)
@@ -5934,8 +6965,8 @@ async fn signin_dpop_over_real_http_to_local_server() {
         calls: std::sync::Mutex::new(Vec::new()),
         result: Ok(process_output("PROCESS_ACCESS", "PROCESS_SECRET")),
     };
-    let transport = opi_ai::auth::aws::source_http::ReqwestSourceTransport::new();
-    let cache = AwsSourceCache::new();
+    let transport = Arc::new(opi_ai::auth::aws::source_http::ReqwestSourceTransport::new());
+    let cache = cache_with_owned_refresh(transport.clone());
     let clock = FakeClock(rfc3339("2030-01-01T00:00:00Z"));
     let jti = CountingJti(std::sync::atomic::AtomicUsize::new(0));
     let input = chain_input(
@@ -5946,7 +6977,7 @@ async fn signin_dpop_over_real_http_to_local_server() {
         AwsAuthSelection::Profile("corp".to_owned()),
         ScopedAwsEnv::empty(),
     )
-    .with_source_transport(&transport)
+    .with_source_transport(transport.as_ref())
     .with_source_cache(Some(&cache))
     .with_clock(&clock)
     .with_dpop_jti(&jti)

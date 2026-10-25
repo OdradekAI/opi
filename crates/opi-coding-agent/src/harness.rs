@@ -950,6 +950,7 @@ pub struct CodingHarnessBuilder {
     /// (production passes the `ProviderBundle` resolver; `None` defaults to a
     /// dummy static resolver so mock-provider tests dispatch via `prepare_call`).
     auth_resolver: Option<Arc<dyn opi_ai::auth::AuthResolver>>,
+    credential_store: Option<Arc<KeychainCredentialStore>>,
     /// Additional dispatchable routes (adapter plus lazy auth resolver)
     /// constructed eagerly at startup. Registered alongside the active route so
     /// a cross-provider model switch resolves through the same collection.
@@ -990,6 +991,7 @@ impl CodingHarnessBuilder {
             trust_decision,
             execution_mode: ExecutionRunMode::Interactive,
             auth_resolver: None,
+            credential_store: None,
             extra_routes: Vec::new(),
             #[cfg(test)]
             session_dir_override: None,
@@ -1121,6 +1123,13 @@ impl CodingHarnessBuilder {
         self
     }
 
+    /// Attach the store already backing the dispatch routes. Its mutation
+    /// barrier observes credential writes and source rotations together.
+    pub fn credential_store(mut self, store: Arc<KeychainCredentialStore>) -> Self {
+        self.credential_store = Some(store);
+        self
+    }
+
     /// Attach additional dispatchable routes (adapter plus lazy auth
     /// resolver) constructed eagerly at startup. Registered alongside the active
     /// route so a cross-provider model switch resolves without reconstructing
@@ -1167,6 +1176,7 @@ impl CodingHarnessBuilder {
                 trust_decision: self.trust_decision,
                 execution_mode: self.execution_mode,
                 auth_resolver: self.auth_resolver,
+                credential_store: self.credential_store,
                 extra_routes: self.extra_routes,
                 #[cfg(test)]
                 session_dir_override: self.session_dir_override,
@@ -1197,6 +1207,7 @@ struct HarnessBuildOptions {
     /// resolver so mock-provider tests dispatch through `prepare_call` without
     /// supplying credentials (the mock ignores the resolved auth).
     auth_resolver: Option<Arc<dyn opi_ai::auth::AuthResolver>>,
+    credential_store: Option<Arc<KeychainCredentialStore>>,
     /// Additional dispatchable routes (adapter plus lazy auth resolver).
     extra_routes: Vec<crate::provider_factory::ProviderAuthPair>,
     #[cfg(test)]
@@ -1218,6 +1229,7 @@ impl Default for HarnessBuildOptions {
             trust_decision: TrustDecision::Undecided,
             execution_mode: ExecutionRunMode::Interactive,
             auth_resolver: None,
+            credential_store: None,
             extra_routes: Vec::new(),
             #[cfg(test)]
             session_dir_override: None,
@@ -1758,6 +1770,10 @@ impl CodingHarness {
             extension_providers,
             overrides,
             &active_provider_id,
+            build_options
+                .credential_store
+                .as_ref()
+                .map(|store| store.clone() as Arc<dyn opi_ai::CredentialStore>),
         );
 
         let (thinking, max_tokens) = initial_thinking_request_config(
@@ -1959,7 +1975,7 @@ impl CodingHarness {
             evidence,
             runtime_input_source,
             runtime_input_policy_digest,
-            credential_store: None,
+            credential_store: build_options.credential_store,
             oauth_registry: None,
             oauth_endpoints: OAuthEndpointConfig::production(),
             oauth_http_client: crate::oauth::production_oauth_client(),

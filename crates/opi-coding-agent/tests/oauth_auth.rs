@@ -29,6 +29,24 @@ async fn loopback_get(url: impl reqwest::IntoUrl) -> Result<reqwest::Response, r
         .await
 }
 
+/// Own the shared preferred port before testing an exclusive fallback
+/// listener. Other browser fixtures may briefly hold it during parallel tests.
+async fn occupy_anthropic_preferred_port() -> TcpListener {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match TcpListener::bind("127.0.0.1:53692").await {
+                Ok(listener) => return listener,
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                Err(error) => panic!("bind preferred-port fixture: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("other fixtures must release the preferred port")
+}
+
 use common::{
     MockLoginPresenter, extract_callback_path, extract_query_param, extract_redirect_port,
 };
@@ -487,6 +505,7 @@ fn oauth_cred(access: &str, refresh: &str, base_url: Option<String>) -> OAuthCre
         base_url,
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     }
@@ -612,6 +631,7 @@ fn oauth_credential(access: &str, expires_at: Option<OffsetDateTime>) -> Credent
         base_url: None,
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     }
@@ -706,6 +726,7 @@ impl OAuthProvider for MockOAuthProvider {
                 base_url,
                 account_id,
                 client_id: None,
+                scopes: None,
                 enterprise_domain: None,
                 available_model_ids: None,
             })
@@ -858,22 +879,30 @@ async fn resolve_oauth_near_expiry_refreshes_and_writes_new_token() {
 #[tokio::test]
 async fn resolve_oauth_refresh_failure_rereads_fresh_token_without_partial_write() {
     let (_dir, store, backend) = store_with(FakeKeyringBackend::new());
+    let same_account_credential = |access: &str, expiry| {
+        let mut credential = oauth_credential(access, Some(expiry));
+        if let Credential::OAuthToken { account_id, .. } = &mut credential {
+            *account_id = Some("selected-account".to_owned());
+        }
+        credential
+    };
     store
         .write(
             PROVIDER,
-            &oauth_credential(FRESH_ACCESS, Some(near_expiry())),
+            &same_account_credential(FRESH_ACCESS, near_expiry()),
         )
         .await
         .unwrap();
     let resolver = resolver_with(store.clone());
     // Refresh fails, but a concurrent writer (simulated via the cloned backend)
-    // has already written a fresh token to the shared store.
+    // has written a fresh token for the identified account before the
+    // refresh failure's under-slot re-read. No pre-lock peek is required.
     let mut oauth_mock = MockOAuthProvider::succeeding();
     oauth_mock.fail = true;
     oauth_mock.backend = Some(backend);
-    oauth_mock.inject_fresh = Mutex::new(Some(oauth_credential(
+    oauth_mock.inject_fresh = Mutex::new(Some(same_account_credential(
         REFRESHED_ACCESS,
-        Some(fresh_expiry()),
+        fresh_expiry(),
     )));
     let oauth = Arc::new(oauth_mock);
     let resolved = resolver
@@ -881,12 +910,16 @@ async fn resolve_oauth_refresh_failure_rereads_fresh_token_without_partial_write
         .await
         .expect("reread resolve");
     assert_eq!(resolved.secret.expose_secret(), REFRESHED_ACCESS);
+    assert_eq!(resolved.account_id.as_deref(), Some("selected-account"));
     assert_eq!(oauth.refresh_calls.load(Ordering::SeqCst), 1);
     // The store holds the concurrent-writer's fresh token (no partial write by us).
     let reread = store.read(PROVIDER).await.unwrap().unwrap();
     match reread {
-        Credential::OAuthToken { access, .. } => {
-            assert_eq!(access.expose_secret(), REFRESHED_ACCESS)
+        Credential::OAuthToken {
+            access, account_id, ..
+        } => {
+            assert_eq!(access.expose_secret(), REFRESHED_ACCESS);
+            assert_eq!(account_id.as_deref(), Some("selected-account"));
         }
         other => panic!("expected OAuthToken, got {other:?}"),
     }
@@ -1569,14 +1602,9 @@ async fn pkce_cancellation_is_biased_and_prevents_exchange_and_persistence() {
     let _port1455 = codex_1455_guard().await;
     // Same exclusivity for the anthropic iteration: its fallback listener
     // must be an ephemeral port no concurrent test can hold.
-    let _occupier = TcpListener::bind("127.0.0.1:53692")
-        .await
-        .expect("occupy 53692");
-    // Force the codex login itself onto an ephemeral port too: pre-binding
-    // 1455 makes its preferred-port bind fail so the flow falls back to an
-    // exclusive ephemeral listener. The dropped-listener probe below then
-    // can only ever hit this login's own listener (or a refused port),
-    // never a concurrent test's login on the shared 1455 route.
+    let _occupier = occupy_anthropic_preferred_port().await;
+    // Codex retains its fixed-port/manual-only policy; only the Anthropic
+    // callback is used for the exclusive listener-drop proof below.
 
     for provider_kind in BROWSER_PKCE_PROVIDERS {
         let server = MockServer::start().await;
@@ -1793,9 +1821,7 @@ async fn anthropic_oauth_login_listener_dropped_after_manual_code_wins() {
     // Occupy the shared preferred port so this login's callback listener is
     // an exclusive ephemeral port: the dropped-listener probe must target a
     // port no concurrent test can hold.
-    let _occupier = TcpListener::bind("127.0.0.1:53692")
-        .await
-        .expect("occupy 53692");
+    let _occupier = occupy_anthropic_preferred_port().await;
     let server = MockServer::start().await;
     mount_token_stub(&server, 200, token_body("atk", "rtk", 3600)).await;
     let provider = anthropic_provider(
@@ -3585,6 +3611,7 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
         base_url: Some("https://enterprise.githubcopilot.com".into()),
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     };
@@ -3611,6 +3638,7 @@ async fn resolver_read_oauth_base_url_and_presence_reflect_stored_cred() {
         base_url: None,
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     };
@@ -3635,6 +3663,7 @@ async fn openai_codex_resolver_propagates_account_id_without_secret_logging() {
                 base_url: None,
                 account_id: Some("account-resolved".into()),
                 client_id: None,
+                scopes: None,
                 enterprise_domain: None,
                 available_model_ids: None,
             },
@@ -4591,6 +4620,7 @@ fn stored_oauth(access: &str, refresh: &str, base_url: Option<String>) -> Creden
         base_url,
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     }
@@ -5658,9 +5688,9 @@ async fn refresh_timeout_releases_lock_and_preserves_prior_credential() {
         .resolve_oauth(PROVIDER, Arc::new(oauth))
         .await
         .expect_err("hung refresh must be bounded");
-    assert!(matches!(error, AiProviderError::AuthFailed(_)), "{error:?}");
-    assert!(!error.is_retryable());
-    assert!(error.to_string().contains("[REDACTED]"));
+    assert!(matches!(error, AiProviderError::Timeout), "{error:?}");
+    assert!(error.is_retryable());
+    assert!(!format!("{error:?} {error}").contains("prior-access"));
     assert!(
         dropped.load(Ordering::SeqCst),
         "refresh future was not dropped"
@@ -5756,4 +5786,84 @@ async fn factory_built_approved_profiles_map_revocation_without_retry() {
             "{provider_id} must issue exactly one request"
         );
     }
+}
+
+#[tokio::test]
+async fn login_oauth_forwards_enterprise_input_and_progress_before_acknowledged_success() {
+    struct TextPresenter {
+        progress: Mutex<Vec<String>>,
+        succeeded: AtomicBool,
+    }
+    impl LoginPresenter for TextPresenter {
+        fn present_auth_url<'a>(
+            &'a self,
+            _: &'a str,
+        ) -> BoxAuthFuture<'a, Result<(), AiProviderError>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn present_device_code<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+        ) -> BoxAuthFuture<'a, Result<(), AiProviderError>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn await_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<String, AiProviderError>> {
+            Box::pin(std::future::pending())
+        }
+        fn prompt_text<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+        ) -> BoxAuthFuture<'a, Result<String, AiProviderError>> {
+            Box::pin(async { Ok("company.ghe.com".to_owned()) })
+        }
+        fn notify_progress(&self, progress: &str) {
+            self.progress.lock().unwrap().push(progress.to_owned());
+        }
+        fn notify_success(&self) {
+            self.succeeded.store(true, Ordering::SeqCst);
+        }
+        fn notify_failure(&self, _: &str) {}
+    }
+    struct EnterpriseFlow;
+    impl OAuthProvider for EnterpriseFlow {
+        fn id(&self) -> &str {
+            "enterprise-input-test"
+        }
+        fn login<'a>(
+            &'a self,
+            presenter: &'a dyn LoginPresenter,
+        ) -> BoxAuthFuture<'a, Result<OAuthCredential, AiProviderError>> {
+            Box::pin(async move {
+                let enterprise = presenter.prompt_text("enterprise", "domain").await?;
+                assert_eq!(enterprise, "company.ghe.com");
+                presenter.notify_progress("discovery finished");
+                Ok(oauth_cred("access", "refresh", None))
+            })
+        }
+        fn refresh<'a>(
+            &'a self,
+            credential: &'a OAuthCredential,
+        ) -> BoxAuthFuture<'a, Result<OAuthCredential, AiProviderError>> {
+            let credential = credential.clone();
+            Box::pin(async move { Ok(credential) })
+        }
+    }
+    let mut registry = OAuthProviderRegistry::new();
+    registry.register(Arc::new(EnterpriseFlow)).unwrap();
+    let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
+    let presenter = TextPresenter {
+        progress: Mutex::new(Vec::new()),
+        succeeded: AtomicBool::new(false),
+    };
+    login_oauth("enterprise-input-test", &registry, &store, &presenter)
+        .await
+        .expect("login ACK");
+    assert_eq!(
+        presenter.progress.lock().unwrap().as_slice(),
+        &["discovery finished"]
+    );
+    assert!(presenter.succeeded.load(Ordering::SeqCst));
+    assert!(store.read("enterprise-input-test").await.unwrap().is_some());
 }

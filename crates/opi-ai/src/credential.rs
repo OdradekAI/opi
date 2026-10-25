@@ -52,8 +52,8 @@ pub enum Credential {
     ApiKey(SecretString),
     /// An OAuth token envelope. `base_url` preserves provider-specific
     /// endpoints (e.g. a Copilot enterprise host). `opi-coding-agent` owns the
-    /// concrete `OAuthCredential`/`ResolvedAuth` flow and live HTTP refresh
-    /// bridge; this crate owns the persistence contract.
+    /// native keychain backend; this crate owns the OAuth flow, store-owned
+    /// refresh bridge and persistence contract.
     OAuthToken {
         /// Bearer/access token. Redacted in all diagnostics.
         access: SecretString,
@@ -79,6 +79,8 @@ pub enum Credential {
         /// (GitHub Copilot). Non-secret and optional for version-1 decode
         /// compatibility.
         available_model_ids: Option<Vec<String>>,
+        /// Validated scopes issued by the OAuth server. Non-secret metadata.
+        scopes: Option<Vec<String>>,
     },
 }
 
@@ -96,6 +98,7 @@ impl std::fmt::Debug for Credential {
                 client_id,
                 enterprise_domain,
                 available_model_ids,
+                scopes,
                 ..
             } => f
                 .debug_struct("Credential::OAuthToken")
@@ -107,6 +110,7 @@ impl std::fmt::Debug for Credential {
                 .field("client_id", client_id)
                 .field("enterprise_domain", enterprise_domain)
                 .field("available_model_ids", available_model_ids)
+                .field("scopes", scopes)
                 .finish(),
         }
     }
@@ -299,5 +303,12 @@ pub trait CredentialStore: Send + Sync {
     /// mutations.
     fn mutation_barrier(&self) -> crate::mutation::MutationBarrier {
         crate::mutation::inert_barrier()
+    }
+
+    /// The store-owned queue to which rotating source owners can attach.
+    /// Sharing it makes their receipts visible through this store's barrier.
+    /// Single-consumer inline stores have no queue.
+    fn mutation_queue(&self) -> Option<std::sync::Arc<crate::mutation::MutationQueue>> {
+        None
     }
 }

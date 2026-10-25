@@ -3,7 +3,7 @@
 //!
 //! The runner is flow-mechanism only: HTTP goes through an injected
 //! `reqwest::Client`, interaction through an injected
-//! [`LoginPresenter`](crate::auth::LoginPresenter), and persistence through
+//! [`LoginPresenter`], and persistence through
 //! an injected [`CredentialStore`](crate::credential::CredentialStore). No
 //! browser is opened, no ambient
 //! environment is consulted, and no keychain is read here.
@@ -84,6 +84,37 @@ impl FlowBudget {
     pub async fn elapsed(&self) {
         tokio::time::sleep_until(self.deadline).await;
     }
+}
+
+/// Convert source-reported seconds without panicking on a finite overflow.
+/// Each flow retains its own required-field and positivity rules.
+pub(crate) fn checked_poll_duration(seconds: f64) -> Result<Duration, ProviderError> {
+    Duration::try_from_secs_f64(seconds)
+        .map_err(|_| provider_config_error("OAuth duration is out of range"))
+}
+
+pub(crate) fn checked_device_deadline(seconds: f64) -> Result<tokio::time::Instant, ProviderError> {
+    tokio::time::Instant::now()
+        .checked_add(checked_poll_duration(seconds)?)
+        .ok_or_else(|| provider_config_error("OAuth device deadline is out of range"))
+}
+
+pub(crate) fn next_poll_deadline(
+    deadline: tokio::time::Instant,
+    interval: Duration,
+) -> tokio::time::Instant {
+    tokio::time::Instant::now()
+        .checked_add(interval)
+        .unwrap_or(deadline)
+        .min(deadline)
+}
+
+pub(crate) fn checked_token_expiry(seconds: f64) -> Result<OffsetDateTime, ProviderError> {
+    let duration = time::Duration::checked_seconds_f64(seconds)
+        .ok_or_else(|| provider_config_error("OAuth token duration is out of range"))?;
+    OffsetDateTime::now_utc()
+        .checked_add(duration)
+        .ok_or_else(|| provider_config_error("OAuth token expiry is out of range"))
 }
 
 pub fn login_cancelled(presenter: &dyn LoginPresenter, provider_id: &'static str) -> ProviderError {
@@ -352,8 +383,8 @@ struct TokenResponse {
 }
 
 /// Bind the callback listener per the flow's fallback policy: the preferred
-/// port first, then `FreePort` retries a free loopback port (both failing is
-/// the typed bind error), while `ManualOnly` returns `Ok(None)` so the login
+/// port first, then `FreePort` retries a free loopback port and permits the
+/// manual fallback if both fail. `ManualOnly` returns `Ok(None)` so the login
 /// continues paste-back only with the fixed redirect URI. Flows with no
 /// preferred port treat a free-port bind failure as the typed error they
 /// always were.
@@ -361,8 +392,23 @@ async fn bind_callback_listener(
     preferred: Option<u16>,
     fallback: CallbackBindFallback,
 ) -> io::Result<Option<TcpListener>> {
+    bind_callback_listener_with(preferred, fallback, |port| {
+        TcpListener::bind(("127.0.0.1", port))
+    })
+    .await
+}
+
+async fn bind_callback_listener_with<T, F, Fut>(
+    preferred: Option<u16>,
+    fallback: CallbackBindFallback,
+    mut bind: F,
+) -> io::Result<Option<T>>
+where
+    F: FnMut(u16) -> Fut,
+    Fut: Future<Output = io::Result<T>>,
+{
     if let Some(port) = preferred
-        && let Ok(listener) = TcpListener::bind(("127.0.0.1", port)).await
+        && let Ok(listener) = bind(port).await
     {
         return Ok(Some(listener));
     }
@@ -370,16 +416,17 @@ async fn bind_callback_listener(
         return Ok(None);
     }
     if fallback == CallbackBindFallback::Required {
-        // Surface the underlying bind error: the caller maps it to the
-        // flow-pinned port-in-use message.
         let port = preferred.expect("Required fallback needs a preferred port");
         return Err(io::Error::new(
             io::ErrorKind::AddrInUse,
             format!("port {port}"),
         ));
     }
-    let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
-    Ok(Some(listener))
+    match bind(0).await {
+        Ok(listener) => Ok(Some(listener)),
+        Err(_) if preferred.is_some() => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 /// The redirect URI for a bound callback port, or the flow's fixed
@@ -456,6 +503,50 @@ pub(crate) async fn run_pkce_login_with<'a>(
     cancellation: Option<BoxAuthFuture<'a, Result<(), ProviderError>>>,
     existing_budget: Option<FlowBudget>,
 ) -> Result<OAuthCredential, ProviderError> {
+    run_pkce_login_with_mode(
+        config,
+        presenter,
+        parse_input,
+        exchange,
+        finalize_credential,
+        cancellation,
+        existing_budget,
+        true,
+    )
+    .await
+}
+
+pub(crate) async fn run_pkce_login_callback_only<'a>(
+    config: PkceLoginConfig,
+    presenter: &'a dyn LoginPresenter,
+    finalize_credential: fn(OAuthCredential) -> Result<OAuthCredential, ProviderError>,
+    cancellation: Option<BoxAuthFuture<'a, Result<(), ProviderError>>>,
+    existing_budget: Option<FlowBudget>,
+) -> Result<OAuthCredential, ProviderError> {
+    run_pkce_login_with_mode(
+        config,
+        presenter,
+        base_parse_input,
+        &base_exchange,
+        finalize_credential,
+        cancellation,
+        existing_budget,
+        false,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)] // flow hooks and wait policy share one race state machine
+async fn run_pkce_login_with_mode<'a>(
+    config: PkceLoginConfig,
+    presenter: &'a dyn LoginPresenter,
+    parse_input: InputParser,
+    exchange: ExchangeHook<'a>,
+    finalize_credential: fn(OAuthCredential) -> Result<OAuthCredential, ProviderError>,
+    cancellation: Option<BoxAuthFuture<'a, Result<(), ProviderError>>>,
+    existing_budget: Option<FlowBudget>,
+    allow_manual_input: bool,
+) -> Result<OAuthCredential, ProviderError> {
     let budget = match existing_budget {
         Some(budget) => budget,
         None => FlowBudget::new(config.timeout)?,
@@ -527,6 +618,13 @@ pub(crate) async fn run_pkce_login_with<'a>(
         })??;
 
     let mut cancellation = cancellation.unwrap_or_else(|| presenter.await_login_cancelled());
+    let manual_input = async {
+        if allow_manual_input {
+            presenter.await_manual_code().await
+        } else {
+            std::future::pending().await
+        }
+    };
     let outcome = tokio::select! {
         biased;
         cancelled = cancellation.as_mut() => {
@@ -543,7 +641,7 @@ pub(crate) async fn run_pkce_login_with<'a>(
             Err(CallbackFail::Parse(error)) => LoginOutcome::CallbackParse(error),
             Err(CallbackFail::Io(e)) => LoginOutcome::CallbackIo(e),
         },
-        res = presenter.await_manual_code() => match res {
+        res = manual_input => match res {
             Ok(input) => match parse_input(&input, &state, PkceInputKind::Manual) {
                 Ok(input) => LoginOutcome::ManualCode(input),
                 Err(error) => LoginOutcome::ManualParse(error),
@@ -558,7 +656,8 @@ pub(crate) async fn run_pkce_login_with<'a>(
     if !matches!(
         outcome,
         LoginOutcome::ManualCode(_) | LoginOutcome::ManualParse(_) | LoginOutcome::Manual(_)
-    ) && let Err(error) = presenter.cancel_manual_code().await
+    ) && allow_manual_input
+        && let Err(error) = presenter.cancel_manual_code().await
     {
         presenter.notify_failure("manual code cleanup failed");
         return Err(error);
@@ -772,7 +871,11 @@ pub async fn exchange_authorization_code(
         .map_err(|e| provider_config_error(format!("token response parse failed: {e}")))?;
     let refresh = token
         .refresh_token
+        .filter(|value| !value.is_empty())
         .ok_or_else(|| provider_config_error("token response missing refresh_token"))?;
+    if token.access_token.is_empty() {
+        return Err(provider_config_error("token response missing access_token"));
+    }
     let expires_in = token
         .expires_in
         .ok_or_else(|| provider_config_error("token response missing expires_in"))?;
@@ -789,6 +892,7 @@ pub async fn exchange_authorization_code(
         enterprise_domain: None,
         available_model_ids: None,
         client_id: None,
+        scopes: None,
     })
 }
 
@@ -868,7 +972,12 @@ pub async fn refresh_oauth_token(
         .await
         .map_err(|e| provider_config_error(format!("refresh response parse failed: {e}")))?;
     let refresh = match token.refresh_token {
-        Some(s) => SecretString::new(s.into_boxed_str()),
+        Some(s) if !s.is_empty() => SecretString::new(s.into_boxed_str()),
+        Some(_) => {
+            return Err(provider_config_error(
+                "refresh response has an empty refresh_token",
+            ));
+        }
         None => match policy {
             RefreshFieldPolicy::Lenient => cred.refresh.clone(),
             RefreshFieldPolicy::Strict => {
@@ -878,6 +987,11 @@ pub async fn refresh_oauth_token(
             }
         },
     };
+    if token.access_token.is_empty() {
+        return Err(provider_config_error(
+            "refresh response has an empty access_token",
+        ));
+    }
     let expires_at = match (token.expires_in, policy) {
         (Some(secs), _) => Some(
             OffsetDateTime::now_utc()
@@ -896,6 +1010,7 @@ pub async fn refresh_oauth_token(
         base_url,
         account_id: cred.account_id.clone(),
         client_id: cred.client_id.clone(),
+        scopes: cred.scopes.clone(),
         enterprise_domain: cred.enterprise_domain.clone(),
         available_model_ids: cred.available_model_ids.clone(),
     })
@@ -1209,6 +1324,18 @@ impl LoginPresenter for DeferredSuccessPresenter<'_> {
         self.inner.cancel_manual_code()
     }
 
+    fn prompt_text<'a>(
+        &'a self,
+        message: &'a str,
+        placeholder: &'a str,
+    ) -> BoxAuthFuture<'a, Result<String, ProviderError>> {
+        self.inner.prompt_text(message, placeholder)
+    }
+
+    fn notify_progress(&self, message: &str) {
+        self.inner.notify_progress(message);
+    }
+
     fn notify_success(&self) {
         // Deferred: the SDK reports success only after the store ACK.
     }
@@ -1344,5 +1471,21 @@ mod tests {
             redirect_uri_for(&config, None).unwrap(),
             "http://localhost:53692/callback"
         );
+    }
+
+    #[tokio::test]
+    async fn callback_double_bind_failure_uses_manual_fallback() {
+        let attempted = std::sync::Mutex::new(Vec::new());
+        let result =
+            bind_callback_listener_with(Some(53692), CallbackBindFallback::FreePort, |port| {
+                attempted.lock().unwrap().push(port);
+                async { Err::<(), _>(io::Error::from(io::ErrorKind::AddrNotAvailable)) }
+            })
+            .await;
+        assert!(
+            matches!(result, Ok(None)),
+            "both binds failing must leave manual fallback available: {result:?}"
+        );
+        assert_eq!(*attempted.lock().unwrap(), vec![53692, 0]);
     }
 }

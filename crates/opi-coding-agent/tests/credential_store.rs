@@ -104,7 +104,7 @@ impl KeyringBackend for ScriptedOAuthRereadBackend {
             KEYCHAIN_PRESENCE_SERVICE => Ok(Some("oauth_token".to_owned())),
             KEYCHAIN_SERVICE => {
                 let call = self.protected_get_calls.fetch_add(1, Ordering::SeqCst);
-                Ok(Some(if call < 2 {
+                Ok(Some(if call < 1 {
                     self.expired_raw.clone()
                 } else {
                     self.fresh_raw.clone()
@@ -134,7 +134,7 @@ impl KeyringBackend for FailingOAuthRereadBackend {
             KEYCHAIN_PRESENCE_SERVICE => Ok(Some("oauth_token".to_owned())),
             KEYCHAIN_SERVICE => {
                 let call = self.protected_get_calls.fetch_add(1, Ordering::SeqCst);
-                if call < 2 {
+                if call < 1 {
                     Ok(Some(self.expired_raw.clone()))
                 } else {
                     Err(BackendError::Other("post-failure reread broke".to_owned()))
@@ -246,6 +246,7 @@ impl OAuthProvider for BlockingRefreshProvider {
                 client_id: None,
                 enterprise_domain: None,
                 available_model_ids: None,
+                scopes: None,
             })
         })
     }
@@ -444,7 +445,38 @@ fn oauth_credential() -> Credential {
         client_id: None,
         enterprise_domain: None,
         available_model_ids: None,
+        scopes: None,
     }
+}
+
+#[tokio::test]
+async fn oauth_envelope_preserves_issued_client_and_catalog_identity() {
+    let (_dir, store) = store_with(FakeKeyringBackend::new());
+    let mut credential = oauth_credential();
+    if let Credential::OAuthToken {
+        client_id,
+        enterprise_domain,
+        available_model_ids,
+        ..
+    } = &mut credential
+    {
+        *client_id = Some("issued-client".into());
+        *enterprise_domain = Some("enterprise.example".into());
+        *available_model_ids = Some(vec!["enabled-model".into()]);
+    }
+    store.write("scripted-oauth", &credential).await.unwrap();
+    let Credential::OAuthToken {
+        client_id,
+        enterprise_domain,
+        available_model_ids,
+        ..
+    } = store.read("scripted-oauth").await.unwrap().unwrap()
+    else {
+        panic!("OAuth credential")
+    };
+    assert_eq!(client_id.as_deref(), Some("issued-client"));
+    assert_eq!(enterprise_domain.as_deref(), Some("enterprise.example"));
+    assert_eq!(available_model_ids, Some(vec!["enabled-model".into()]));
 }
 
 #[tokio::test]
@@ -519,6 +551,7 @@ async fn oauth_envelope_round_trips_and_preserves_base_url() {
             client_id: _,
             enterprise_domain: None,
             available_model_ids: None,
+            scopes: None,
         } => {
             assert_eq!(access.expose_secret(), ACCESS);
             assert_eq!(refresh.expose_secret(), REFRESH);
@@ -546,6 +579,7 @@ async fn oauth_envelope_round_trips_optional_account_id() {
                 client_id: None,
                 enterprise_domain: None,
                 available_model_ids: None,
+                scopes: None,
             },
         )
         .await
@@ -1219,6 +1253,7 @@ async fn oauth_refresh_serializes_against_public_write_on_the_same_lock_path() {
                 client_id: None,
                 enterprise_domain: None,
                 available_model_ids: None,
+                scopes: None,
             },
         )
         .await
@@ -1334,12 +1369,13 @@ async fn losing_lock_contender_does_not_mutate_existing_lock_file() {
 }
 
 #[tokio::test]
-async fn refresh_timeout_rereads_and_returns_newer_scripted_credential() {
+async fn refresh_timeout_rereads_a_proven_same_account_credential() {
     let dir = TempDir::new().unwrap();
     let now = time::OffsetDateTime::now_utc().unix_timestamp();
     let expired_raw = serde_json::json!({
         "version": 1,
         "kind": "oauth",
+        "account_id": "same-selected-account",
         "access": "expired-access",
         "refresh": "expired-refresh",
         "expires_at": now + 60,
@@ -1348,6 +1384,7 @@ async fn refresh_timeout_rereads_and_returns_newer_scripted_credential() {
     let fresh_raw = serde_json::json!({
         "version": 1,
         "kind": "oauth",
+        "account_id": "same-selected-account",
         "access": "newer-access",
         "refresh": "newer-refresh",
         "expires_at": now + 3600,
@@ -1375,8 +1412,8 @@ async fn refresh_timeout_rereads_and_returns_newer_scripted_credential() {
     assert_eq!(resolved.secret.expose_secret(), "newer-access");
     assert_eq!(
         protected_get_calls.load(Ordering::SeqCst),
-        3,
-        "fast read, locked read, and post-timeout reread"
+        2,
+        "locked identity selection and same-account post-timeout reread"
     );
 }
 
@@ -1416,16 +1453,12 @@ async fn refresh_timeout_survives_failed_post_failure_reread() {
         .await
         .expect_err("timeout remains the primary failure");
     assert!(
-        matches!(
-            error,
-            ProviderError::AuthFailed(ref reason) if reason.as_str() == "[REDACTED]"
-        ),
+        matches!(error, ProviderError::Timeout),
         "post-failure reread must not replace the typed timeout: {error:?}"
     );
-    // Three protected reads since task 20.22: fast-path read, locked slot
-    // re-read, and the waiter's post-ACK re-read. The timeout arm keeps the
-    // typed timeout error without a post-failure re-read.
-    assert_eq!(protected_get_calls.load(Ordering::SeqCst), 3);
+    // Locked identity selection and the post-failure re-read. The ACK
+    // returns the captured result without rediscovering a later credential.
+    assert_eq!(protected_get_calls.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]
@@ -1444,8 +1477,8 @@ async fn provider_refresh_error_survives_failed_post_failure_reread() {
         ),
         "post-failure reread must not replace the provider error: {error:?}"
     );
-    // Same four-read shape as the timeout variant (task 20.22).
-    assert_eq!(protected_get_calls.load(Ordering::SeqCst), 4);
+    // No post-ACK read can switch the acknowledged identity.
+    assert_eq!(protected_get_calls.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]
@@ -1984,6 +2017,7 @@ fn near_expiry_oauth() -> Credential {
         client_id: None,
         enterprise_domain: None,
         available_model_ids: None,
+        scopes: None,
     }
 }
 
@@ -2211,6 +2245,7 @@ async fn github_copilot_resolves_request_base_from_token_proxy_endpoint() {
             client_id: None,
             enterprise_domain: enterprise,
             available_model_ids: None,
+            scopes: None,
         }
     };
 

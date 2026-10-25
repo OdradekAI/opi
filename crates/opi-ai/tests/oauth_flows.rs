@@ -22,6 +22,10 @@ use secrecy::ExposeSecret;
 use wiremock::matchers::{body_partial_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+#[path = "support/tls_fixtures.rs"]
+#[allow(dead_code)]
+mod oauth_tls_fixtures;
+
 // ---------------------------------------------------------------------------
 // Test doubles
 // ---------------------------------------------------------------------------
@@ -40,6 +44,7 @@ struct ScriptedPresenter {
     on_present: Mutex<Option<PresentHook>>,
     forced_method: Mutex<Option<OAuthLoginMethod>>,
     offered_methods: Mutex<Vec<OAuthLoginMethod>>,
+    selected_provider_ids: Mutex<Vec<String>>,
     /// Presented device codes: (user_code, verification_uri).
     device_codes: Mutex<Vec<(String, String)>>,
     /// Queued free-text prompt answers; an empty queue answers "".
@@ -112,12 +117,16 @@ fn percent_decode(value: &str) -> String {
 impl LoginPresenter for ScriptedPresenter {
     fn select_login_method<'a>(
         &'a self,
-        _provider_id: &'a str,
+        provider_id: &'a str,
         methods: &'a [OAuthLoginMethod],
         default: OAuthLoginMethod,
     ) -> BoxAuthFuture<'a, Result<OAuthLoginMethod, ProviderError>> {
         let forced = *self.forced_method.lock().unwrap();
         *self.offered_methods.lock().unwrap() = methods.to_vec();
+        self.selected_provider_ids
+            .lock()
+            .unwrap()
+            .push(provider_id.to_owned());
         Box::pin(async move {
             if let Some(forced) = forced
                 && methods.contains(&forced)
@@ -791,6 +800,7 @@ fn stored_credential() -> OAuthCredential {
         base_url: None,
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     }
@@ -904,6 +914,262 @@ async fn near_expiry_needs_refresh_uses_single_five_minute_window() {
 // Models::login — acknowledged store, shared transactions
 // ---------------------------------------------------------------------------
 
+fn register_oauth_assembly_route(
+    models: &mut Models,
+    flow: Arc<dyn OAuthProvider>,
+    wire: opi_ai::WireApi,
+    base_url: String,
+    client: Arc<opi_ai::http::HttpClient>,
+) {
+    use opi_ai::provider::Provider;
+    let id = flow.id().to_owned();
+    let catalog = vec![opi_ai::ModelInfo::new(
+        "auth-proof",
+        "Auth proof",
+        wire,
+        opi_ai::ModelCapabilities::new(16_384, 1024).with_streaming(true),
+    )];
+    let provider: Box<dyn Provider> = match wire {
+        opi_ai::WireApi::AnthropicMessages => {
+            Box::new(opi_ai::anthropic::AnthropicProvider::for_route(
+                id,
+                catalog,
+                Some(base_url),
+                Default::default(),
+                client,
+                true,
+            ))
+        }
+        opi_ai::WireApi::OpenAiCompletions => {
+            let provider = opi_ai::openai_chat::OpenAiChatProvider::for_route(
+                Some(base_url),
+                id.clone(),
+                Default::default(),
+                catalog,
+                client,
+            );
+            Box::new(if id == "github-copilot" {
+                provider.with_copilot_initiator()
+            } else {
+                provider
+            })
+        }
+        opi_ai::WireApi::OpenAiResponses => Box::new(
+            opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
+                Some(base_url),
+                id,
+                Default::default(),
+                catalog,
+                client,
+            ),
+        ),
+        opi_ai::WireApi::OpenAiCodexResponses => Box::new(
+            opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
+                Some(base_url),
+                catalog,
+                client,
+            ),
+        ),
+        _ => panic!("unexpected authentication proof wire"),
+    };
+    models
+        .register_oauth_route(provider, flow, Default::default())
+        .expect("OAuth route registration");
+}
+
+fn oauth_assembly_request(id: &str) -> opi_ai::provider::Request {
+    opi_ai::provider::Request {
+        model: format!("{id}:auth-proof"),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        })
+        .expect("context"),
+        max_tokens: Some(32),
+        temperature: None,
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: tokio_util::sync::CancellationToken::new(),
+        timeout: Some(Duration::from_secs(5)),
+        extra_headers: vec![],
+        cache_retention: opi_ai::provider::CacheRetention::None,
+        session_id: None,
+    }
+}
+
+fn oauth_assembly_sse(wire: opi_ai::WireApi) -> &'static str {
+    match wire {
+        opi_ai::WireApi::AnthropicMessages => concat!(
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"proof\",\"role\":\"assistant\",\"model\":\"auth-proof\",\"content\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":0}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        ),
+        opi_ai::WireApi::OpenAiCompletions => concat!(
+            "data: {\"id\":\"proof\",\"model\":\"auth-proof\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"proof\",\"model\":\"auth-proof\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        ),
+        _ => {
+            "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"proof\",\"model\":\"auth-proof\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n"
+        }
+    }
+}
+
+async fn assert_oauth_identity(
+    models: &Models,
+    id: &str,
+    credential: &OAuthCredential,
+) -> opi_ai::auth::ResolvedAuth {
+    let resolved = models
+        .get_auth(id, Default::default())
+        .await
+        .expect("resolve selected OAuth")
+        .expect("selected identity");
+    assert!(matches!(&resolved.scheme, opi_ai::auth::AuthScheme::Bearer));
+    assert_eq!(
+        resolved.secret.expose_secret(),
+        credential.access.expose_secret()
+    );
+    assert_eq!(resolved.account_id, credential.account_id);
+    assert!(
+        matches!(&resolved.provenance.source, opi_ai::auth::AuthProvenanceSource::OAuth { kind } if kind == id)
+    );
+    resolved
+}
+
+async fn assert_oauth_adapter_request(
+    models: &Models,
+    id: &str,
+    credential: &OAuthCredential,
+    server: &MockServer,
+    wire: opi_ai::WireApi,
+) {
+    let _ = assert_oauth_identity(models, id, credential).await;
+    let endpoint = match wire {
+        opi_ai::WireApi::AnthropicMessages => "/v1/messages",
+        opi_ai::WireApi::OpenAiCompletions => "/v1/chat/completions",
+        opi_ai::WireApi::OpenAiCodexResponses => "/codex/responses",
+        _ => "/v1/responses",
+    };
+    Mock::given(method("POST"))
+        .and(path(endpoint))
+        .and(wiremock::matchers::header(
+            "authorization",
+            format!("Bearer {}", credential.access.expose_secret()),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(oauth_assembly_sse(wire)),
+        )
+        .expect(1)
+        .mount(server)
+        .await;
+    let spec = format!("{id}:auth-proof");
+    let call = models
+        .prepare_call(&spec, oauth_assembly_request(id))
+        .await
+        .expect("prepare selected identity");
+    opi_ai::models::drain_to_completion(call.start_attempt().expect("adapter attempt"))
+        .await
+        .expect("local adapter completed");
+    server.verify().await;
+    let requests = server.received_requests().await.expect("requests");
+    let request = requests
+        .iter()
+        .find(|r| r.url.path() == endpoint)
+        .expect("actual adapter request");
+    assert!(!request.headers.contains_key("x-api-key"));
+    if id == "anthropic" {
+        assert_eq!(
+            request.headers["anthropic-beta"],
+            "claude-code-20250219,oauth-2025-04-20"
+        );
+    }
+    if id == "openai-codex" {
+        assert_eq!(
+            request.headers["chatgpt-account-id"],
+            credential.account_id.as_deref().unwrap()
+        );
+    }
+}
+
+/// One HTTPS inference request on the endpoint selected by a synthetic
+/// Copilot token. Trust is confined to the existing local test CA.
+async fn copilot_https_target() -> (
+    String,
+    Arc<opi_ai::http::HttpClient>,
+    tokio::task::JoinHandle<String>,
+) {
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("https://{}", listener.local_addr().unwrap());
+    let mut config = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
+    .unwrap()
+    .with_no_client_auth()
+    .with_single_cert(
+        vec![
+            CertificateDer::from_pem_slice(oauth_tls_fixtures::CERT_SERVER_RSA.as_bytes()).unwrap(),
+        ],
+        PrivateKeyDer::from_pem_slice(oauth_tls_fixtures::KEY_SERVER_RSA.as_bytes()).unwrap(),
+    )
+    .unwrap();
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    let task = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut tls = tokio_rustls::TlsAcceptor::from(Arc::new(config))
+            .accept(stream)
+            .await
+            .unwrap();
+        let mut bytes = Vec::new();
+        let mut expected_length = None;
+        loop {
+            let mut chunk = [0u8; 4096];
+            let len = tls.read(&mut chunk).await.unwrap();
+            assert_ne!(len, 0, "inference request ended before its body");
+            bytes.extend_from_slice(&chunk[..len]);
+            if expected_length.is_none()
+                && let Some(end) = bytes.windows(4).position(|window| window == b"\r\n\r\n")
+            {
+                let headers = String::from_utf8_lossy(&bytes[..end]).to_ascii_lowercase();
+                let body_len: usize = headers
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .expect("bounded inference body")
+                    .trim()
+                    .parse()
+                    .unwrap();
+                expected_length = Some(end + 4 + body_len);
+            }
+            if expected_length.is_some_and(|len| bytes.len() >= len) {
+                break;
+            }
+        }
+        let body = oauth_assembly_sse(opi_ai::WireApi::OpenAiCompletions);
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        tls.write_all(response.as_bytes()).await.unwrap();
+        let _ = tls.shutdown().await;
+        String::from_utf8(bytes).unwrap()
+    });
+    let tls = opi_ai::http::TlsOptions::new()
+        .with_explicit_roots_pem(oauth_tls_fixtures::CERT_CA.as_bytes())
+        .unwrap()
+        .http1_only();
+    let client = opi_ai::http::HttpClientBuilder::new()
+        .tls(tls)
+        .build()
+        .unwrap();
+    (endpoint, Arc::new(client), task)
+}
+
 fn models_with_flow(store: Arc<FakeStore>, flow: AnthropicOAuthProvider) -> Models {
     let mut models = Models::new();
     models.register_oauth_flow("anthropic", Arc::new(flow));
@@ -928,7 +1194,20 @@ async fn wiremock_login(server: &MockServer) -> (Models, Arc<ScriptedPresenter>,
 #[tokio::test]
 async fn models_login_acks_the_store_write_before_reporting_success() {
     let server = MockServer::start().await;
-    let (models, presenter, store) = wiremock_login(&server).await;
+    let _guard = port_guard().await;
+    mount_token_success(&server).await;
+    let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
+    let presenter = Arc::new(ScriptedPresenter::default());
+    *presenter.on_present.lock().unwrap() = Some(ScriptedPresenter::echo_redirect_hook());
+    let mut models = Models::new();
+    models.set_credential_store(store.clone());
+    register_oauth_assembly_route(
+        &mut models,
+        Arc::new(anthropic_flow(format!("{}/token", server.uri()))),
+        opi_ai::WireApi::AnthropicMessages,
+        server.uri(),
+        Arc::new(opi_ai::http::HttpClient::new()),
+    );
 
     let credential = match models.login("anthropic", presenter.as_ref()).await {
         Ok(c) => c,
@@ -936,8 +1215,20 @@ async fn models_login_acks_the_store_write_before_reporting_success() {
     };
     assert_eq!(credential.access.expose_secret(), "acc-1");
 
+    assert_oauth_adapter_request(
+        &models,
+        "anthropic",
+        &credential,
+        &server,
+        opi_ai::WireApi::AnthropicMessages,
+    )
+    .await;
     // The stored entry is the acknowledged OAuth credential.
-    let stored = store.entry("anthropic").expect("stored");
+    let stored = store
+        .read("anthropic")
+        .await
+        .expect("store read")
+        .expect("stored");
     match stored {
         Credential::OAuthToken { access, .. } => {
             assert_eq!(access.expose_secret(), "acc-1");
@@ -946,13 +1237,10 @@ async fn models_login_acks_the_store_write_before_reporting_success() {
     }
     // notify_success fired after the credential existed in the store.
     assert!(presenter.success_at.lock().unwrap().is_some());
-    assert!(
-        store
-            .modify_log
-            .lock()
-            .unwrap()
-            .contains(&"anthropic".to_owned())
-    );
+    assert!(store.mutation_barrier().report().captured.iter().any(|entry| {
+        matches!(entry, opi_ai::mutation::BarrierEntry::Settled(receipt)
+            if receipt.provider_id == "anthropic" && matches!(receipt.outcome, MutationOutcome::Written { .. }))
+    }));
 }
 
 #[tokio::test]
@@ -1521,22 +1809,40 @@ async fn codex_models_login_acks_the_store_write() {
     let server = MockServer::start().await;
     let access = codex_jwt(Some("acct-models"));
     mount_codex_token_success(&server, &access).await;
-    let store = FakeStore::new();
+    let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
     let store_handle = store.clone();
     let presenter = codex_presenter();
     let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
     let mut models = Models::new();
-    models.register_oauth_flow("openai-codex", Arc::new(flow));
     models.set_credential_store(store);
+    register_oauth_assembly_route(
+        &mut models,
+        Arc::new(flow),
+        opi_ai::WireApi::OpenAiCodexResponses,
+        server.uri(),
+        Arc::new(opi_ai::http::HttpClient::new()),
+    );
 
     let credential = models
         .login("openai-codex", presenter.as_ref())
         .await
         .expect("login");
     assert_eq!(credential.account_id.as_deref(), Some("acct-models"));
+    assert_oauth_adapter_request(
+        &models,
+        "openai-codex",
+        &credential,
+        &server,
+        opi_ai::WireApi::OpenAiCodexResponses,
+    )
+    .await;
     let expected_access = credential.access.expose_secret().to_owned();
 
-    let stored = store_handle.entry("openai-codex").expect("stored");
+    let stored = store_handle
+        .read("openai-codex")
+        .await
+        .expect("store read")
+        .expect("stored");
     match stored {
         Credential::OAuthToken { access, .. } => {
             assert_eq!(access.expose_secret(), expected_access);
@@ -1695,6 +2001,14 @@ async fn chatgpt_authorize_url_carries_dynamic_client_resource_and_host_identity
     assert!(ScriptedPresenter::query_param(&url, "state").is_some());
     // The credential stores the issued client id, not the dynamic literal.
     assert_eq!(credential.client_id.as_deref(), Some("issued-client-1"));
+    assert!(
+        credential
+            .scopes
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|scope| scope == "chatgpt.tokens.use.direct")
+    );
     assert!(presenter.success_at.lock().unwrap().is_some());
 }
 
@@ -1955,6 +2269,7 @@ async fn chatgpt_refresh_reuses_stored_client_id_and_resource_and_revalidates() 
         base_url: None,
         account_id: None,
         client_id: Some("issued-client-7".to_owned()),
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     };
@@ -1963,6 +2278,17 @@ async fn chatgpt_refresh_reuses_stored_client_id_and_resource_and_revalidates() 
     assert_eq!(refreshed.access.expose_secret(), "at-2");
     assert_eq!(refreshed.refresh.expose_secret(), "rt-2");
     assert_eq!(refreshed.client_id.as_deref(), Some("issued-client-7"));
+    assert_eq!(
+        refreshed.scopes.as_ref().unwrap(),
+        &vec![
+            "openid",
+            "profile",
+            "email",
+            "offline_access",
+            "resource.invoke",
+            "chatgpt.tokens.use.direct"
+        ]
+    );
     let requests = server.received_requests().await.unwrap();
     let body = String::from_utf8(requests[0].body.clone()).unwrap();
     let pairs = form_pairs(&body);
@@ -2015,27 +2341,49 @@ async fn chatgpt_models_login_acks_the_store_write_as_an_oauth_envelope() {
     let presenter = Arc::new(ScriptedPresenter::default());
     *presenter.on_present.lock().unwrap() = Some(chatgpt_paste_hook());
     let flow = chatgpt_flow(&server, Some(CHATGPT_DEVICE_UUID), Duration::from_secs(30));
-    let store = FakeStore::new();
+    let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
     let store_handle = store.clone();
     let mut models = Models::new();
-    models.register_oauth_flow("openai-chatgpt", Arc::new(flow));
     models.set_credential_store(store);
+    register_oauth_assembly_route(
+        &mut models,
+        Arc::new(flow),
+        opi_ai::WireApi::OpenAiResponses,
+        server.uri(),
+        Arc::new(opi_ai::http::HttpClient::new()),
+    );
 
     let credential = models
         .login("openai-chatgpt", presenter.as_ref())
         .await
         .expect("login");
     assert_eq!(credential.client_id.as_deref(), Some("issued-client-1"));
+    assert_oauth_adapter_request(
+        &models,
+        "openai-chatgpt",
+        &credential,
+        &server,
+        opi_ai::WireApi::OpenAiResponses,
+    )
+    .await;
     // The persisted envelope is the OAuth token kind with the issued client
     // id — API-key-only consumers (the Decisions classifier) can never
     // resolve this subscription credential as an API key.
-    let stored = store_handle.entry("openai-chatgpt").expect("stored");
+    let stored = store_handle
+        .read("openai-chatgpt")
+        .await
+        .expect("store read")
+        .expect("stored");
     match stored {
         Credential::OAuthToken {
-            access, client_id, ..
+            access,
+            client_id,
+            scopes,
+            ..
         } => {
             assert_eq!(access.expose_secret(), credential.access.expose_secret());
             assert_eq!(client_id.as_deref(), Some("issued-client-1"));
+            assert_eq!(scopes, credential.scopes);
         }
         other => panic!("unexpected stored kind: {other:?}"),
     }
@@ -2255,29 +2603,85 @@ async fn copilot_login_persists_tokens_models_and_real_expiry() {
 #[tokio::test]
 async fn copilot_models_login_acks_the_store_write() {
     let server = MockServer::start().await;
+    let (inference_endpoint, inference_client, inference_task) = copilot_https_target().await;
+    let token = format!(
+        "tid=selected;proxy-ep={};sch=sha256",
+        inference_endpoint.strip_prefix("https://").unwrap()
+    );
     mount_copilot_device_start(&server, format!("{}/login/device", server.uri())).await;
     mount_copilot_poll_complete(&server).await;
-    mount_copilot_exchange(&server).await;
-    mount_copilot_models(&server, copilot_models_body(&[])).await;
-    let store = FakeStore::new();
+    Mock::given(method("GET"))
+        .and(path("/copilot_internal/v2/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "token": token, "expires_at": time::OffsetDateTime::now_utc().unix_timestamp() + 3600,
+        })))
+        .mount(&server)
+        .await;
+    mount_copilot_models(
+        &server,
+        copilot_models_body(&[("auth-proof", true, "enabled", true)]),
+    )
+    .await;
+    let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
     let mut models = Models::new();
-    models.register_oauth_flow(
-        "github-copilot",
-        Arc::new(copilot_flow(
-            &server.uri(),
-            Vec::new(),
-            Duration::from_secs(30),
-        )),
-    );
     models.set_credential_store(store.clone());
+    let uri = server.uri();
+    let models_uri = uri.clone();
+    let flow = GitHubCopilotOAuthProvider::new_with_endpoints(
+        CopilotUrls {
+            device_code_url: format!("{uri}/login/device/code"),
+            access_token_url: format!("{uri}/login/oauth/access_token"),
+            copilot_token_url: format!("{uri}/copilot_internal/v2/token"),
+        },
+        Arc::new(move |_| panic!("no enterprise selection in this local proof")),
+        Arc::new(move |_, _| models_uri.clone()),
+        Vec::new(),
+        Duration::from_secs(30),
+        reqwest::Client::new(),
+    );
+    register_oauth_assembly_route(
+        &mut models,
+        Arc::new(flow),
+        opi_ai::WireApi::OpenAiCompletions,
+        "http://127.0.0.1:1".into(),
+        inference_client,
+    );
     let presenter = Arc::new(ScriptedPresenter::default());
 
     let credential = models
         .login("github-copilot", presenter.as_ref())
         .await
         .expect("login");
+    let resolved = assert_oauth_identity(&models, "github-copilot", &credential).await;
+    assert_eq!(
+        resolved.base_url.as_deref(),
+        Some(inference_endpoint.as_str())
+    );
+    assert_eq!(
+        credential.available_model_ids.as_deref(),
+        Some(["auth-proof".to_owned()].as_slice())
+    );
+    let call = models
+        .prepare_call(
+            "github-copilot:auth-proof",
+            oauth_assembly_request("github-copilot"),
+        )
+        .await
+        .expect("selected Copilot request");
+    opi_ai::models::drain_to_completion(call.start_attempt().unwrap())
+        .await
+        .expect("local Copilot adapter completed");
+    let actual = inference_task.await.expect("local TLS request");
+    assert!(actual.starts_with("POST /v1/chat/completions HTTP/1.1\r\n"));
+    assert!(actual.contains(&format!("authorization: Bearer {token}\r\n")));
+    assert!(actual.to_ascii_lowercase().contains("x-initiator:"));
+    assert!(!actual.to_ascii_lowercase().contains("x-api-key:"));
 
-    let stored = store.entry("github-copilot").expect("stored");
+    let stored = store
+        .read("github-copilot")
+        .await
+        .expect("store read")
+        .expect("stored");
     match stored {
         Credential::OAuthToken {
             refresh,
@@ -2290,6 +2694,98 @@ async fn copilot_models_login_acks_the_store_write() {
         other => panic!("unexpected stored kind: {other:?}"),
     }
     assert!(presenter.success_at.lock().unwrap().is_some());
+}
+
+#[tokio::test]
+async fn copilot_public_available_models_use_acknowledged_account_allowlist() {
+    for account_models in [vec!["auth-proof"], vec![]] {
+        let server = MockServer::start().await;
+        mount_copilot_device_start(&server, format!("{}/login/device", server.uri())).await;
+        mount_copilot_poll_complete(&server).await;
+        mount_copilot_exchange(&server).await;
+        let entries: Vec<_> = account_models
+            .iter()
+            .map(|id| (*id, true, "enabled", true))
+            .collect();
+        mount_copilot_models(&server, copilot_models_body(&entries)).await;
+        let store = FakeStore::new();
+        let mut models = Models::new();
+        models.set_credential_store(store.clone());
+        let catalog = ["auth-proof", "not-authorized"]
+            .map(|id| {
+                opi_ai::ModelInfo::new(
+                    id,
+                    id,
+                    opi_ai::WireApi::OpenAiCompletions,
+                    opi_ai::ModelCapabilities::new(16_384, 1024).with_streaming(true),
+                )
+            })
+            .to_vec();
+        let provider = opi_ai::openai_chat::OpenAiChatProvider::for_route(
+            Some("http://127.0.0.1:1".into()),
+            "github-copilot".into(),
+            Default::default(),
+            catalog,
+            Arc::new(opi_ai::http::HttpClient::new()),
+        );
+        models
+            .register_oauth_route(
+                Box::new(provider),
+                Arc::new(copilot_flow(
+                    &server.uri(),
+                    Vec::new(),
+                    Duration::from_secs(30),
+                )),
+                Default::default(),
+            )
+            .unwrap();
+        let credential = models
+            .login("github-copilot", &ScriptedPresenter::default())
+            .await
+            .expect("real Copilot login ACK");
+        assert_eq!(
+            credential.available_model_ids,
+            Some(account_models.iter().map(|id| (*id).to_owned()).collect())
+        );
+        let available = models
+            .get_available(Some("github-copilot"))
+            .await
+            .expect("account models");
+        let actual: Vec<_> = available
+            .iter()
+            .map(|(_, model)| model.id.as_str())
+            .collect();
+        assert_eq!(
+            actual, account_models,
+            "the account allowlist is authoritative, including an empty list"
+        );
+        let mut legacy = credential;
+        legacy.available_model_ids = None;
+        store
+            .modify("github-copilot", opi_ai::write_mutation(legacy.into()))
+            .await
+            .expect("legacy envelope ACK");
+        let unfiltered = models.get_available(Some("github-copilot")).await.unwrap();
+        assert_eq!(
+            unfiltered
+                .iter()
+                .map(|(_, model)| model.id.as_str())
+                .collect::<Vec<_>>(),
+            ["auth-proof", "not-authorized"],
+            "missing legacy metadata preserves the registered catalog"
+        );
+        assert_eq!(
+            server
+                .received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .filter(|request| request.url.path() == "/models")
+                .count(),
+            1,
+            "availability inspection must not refresh the account catalog"
+        );
+    }
 }
 
 #[tokio::test]
@@ -2723,6 +3219,7 @@ async fn copilot_refresh_reexchanges_rediscovers_and_never_enables_policy() {
         base_url: None,
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: Some("ghe.test".to_owned()),
         available_model_ids: Some(vec!["stale-model".to_owned()]),
     };
@@ -2784,6 +3281,7 @@ async fn copilot_refresh_401_is_credential_revoked() {
         base_url: None,
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     };
@@ -3312,20 +3810,38 @@ async fn openrouter_permanent_key_expiry_is_the_9999_sentinel() {
 async fn openrouter_models_login_persists_through_store_ack() {
     let server = MockServer::start().await;
     mount_openrouter_key(&server, 200, r#"{"key":"sk-or-v1-acked"}"#.to_owned()).await;
-    let store = FakeStore::new();
+    let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
     let presenter = Arc::new(ScriptedPresenter::with_manual("paste-code"));
     let flow = openrouter_flow(format!("{}/api/v1/auth/keys", server.uri()));
     let mut models = Models::new();
-    models.register_oauth_flow("openrouter", Arc::new(flow));
     models.set_credential_store(store.clone());
+    register_oauth_assembly_route(
+        &mut models,
+        Arc::new(flow),
+        opi_ai::WireApi::OpenAiCompletions,
+        server.uri(),
+        Arc::new(opi_ai::http::HttpClient::new()),
+    );
 
     let credential = models
         .login("openrouter", presenter.as_ref().as_ref())
         .await
         .expect("models login");
     assert_eq!(credential.access.expose_secret(), "sk-or-v1-acked");
+    assert_oauth_adapter_request(
+        &models,
+        "openrouter",
+        &credential,
+        &server,
+        opi_ai::WireApi::OpenAiCompletions,
+    )
+    .await;
     assert!(!credential.needs_refresh());
-    let stored = store.entry("openrouter").expect("stored credential");
+    let stored = store
+        .read("openrouter")
+        .await
+        .expect("store read")
+        .expect("stored credential");
     match stored {
         Credential::OAuthToken {
             access,
@@ -3391,6 +3907,7 @@ async fn openrouter_production_constants_are_pinned() {
         base_url: None,
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     };
@@ -3918,10 +4435,16 @@ async fn kimi_login_persists_through_store_ack() {
     let server = MockServer::start().await;
     mount_kimi_start(&server, kimi_start_body(1.into(), 900.into())).await;
     mount_kimi_token(&server, 200, kimi_token_success()).await;
-    let store = FakeStore::new();
+    let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
     let mut models = Models::new();
-    models.register_oauth_flow("kimi-coding", Arc::new(kimi_flow(&server)));
     models.set_credential_store(store.clone());
+    register_oauth_assembly_route(
+        &mut models,
+        Arc::new(kimi_flow(&server)),
+        opi_ai::WireApi::OpenAiCompletions,
+        server.uri(),
+        Arc::new(opi_ai::http::HttpClient::new()),
+    );
     let presenter = Arc::new(ScriptedPresenter::default());
 
     let credential = models
@@ -3929,8 +4452,20 @@ async fn kimi_login_persists_through_store_ack() {
         .await
         .expect("login");
     assert_eq!(credential.access.expose_secret(), "kimi-access-1");
+    assert_oauth_adapter_request(
+        &models,
+        "kimi-coding",
+        &credential,
+        &server,
+        opi_ai::WireApi::OpenAiCompletions,
+    )
+    .await;
 
-    let stored = store.entry("kimi-coding").expect("stored");
+    let stored = store
+        .read("kimi-coding")
+        .await
+        .expect("store read")
+        .expect("stored");
     match stored {
         Credential::OAuthToken {
             access, refresh, ..
@@ -3952,6 +4487,7 @@ fn kimi_stored_credential() -> OAuthCredential {
         base_url: None,
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     }
@@ -4807,10 +5343,16 @@ async fn meta_login_persists_through_store_ack() {
     mount_meta_start(&server, meta_start_body(1.into(), 900.into())).await;
     mount_meta_token(&server, 200, meta_identity_success()).await;
     mount_meta_mint(&server, 200, meta_mint_success()).await;
-    let store = FakeStore::new();
+    let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
     let mut models = Models::new();
-    models.register_oauth_flow("meta", Arc::new(meta_flow(&server)));
     models.set_credential_store(store.clone());
+    register_oauth_assembly_route(
+        &mut models,
+        Arc::new(meta_flow(&server)),
+        opi_ai::WireApi::OpenAiResponses,
+        server.uri(),
+        Arc::new(opi_ai::http::HttpClient::new()),
+    );
     let presenter = Arc::new(ScriptedPresenter::default());
 
     let credential = models
@@ -4818,8 +5360,20 @@ async fn meta_login_persists_through_store_ack() {
         .await
         .expect("login");
     assert_eq!(credential.access.expose_secret(), "meta-api-key-1");
+    assert_oauth_adapter_request(
+        &models,
+        "meta",
+        &credential,
+        &server,
+        opi_ai::WireApi::OpenAiResponses,
+    )
+    .await;
 
-    let stored = store.entry("meta").expect("stored");
+    let stored = store
+        .read("meta")
+        .await
+        .expect("store read")
+        .expect("stored");
     match stored {
         Credential::OAuthToken {
             access, refresh, ..
@@ -4840,6 +5394,7 @@ fn meta_stored_credential() -> OAuthCredential {
         base_url: None,
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     }
@@ -5044,6 +5599,7 @@ fn xai_stored_credential() -> OAuthCredential {
         base_url: None,
         account_id: None,
         client_id: None,
+        scopes: None,
         enterprise_domain: None,
         available_model_ids: None,
     }
@@ -5580,10 +6136,16 @@ async fn xai_login_persists_through_store_ack() {
     let server = MockServer::start().await;
     mount_xai_start(&server, xai_start_body(1.into(), 900.into())).await;
     mount_xai_token(&server, 200, xai_token_success()).await;
-    let store = FakeStore::new();
+    let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
     let mut models = Models::new();
-    models.register_oauth_flow("xai", Arc::new(xai_flow(&server)));
     models.set_credential_store(store.clone());
+    register_oauth_assembly_route(
+        &mut models,
+        Arc::new(xai_flow(&server)),
+        opi_ai::WireApi::OpenAiResponses,
+        server.uri(),
+        Arc::new(opi_ai::http::HttpClient::new()),
+    );
     let presenter = Arc::new(ScriptedPresenter::default());
 
     let credential = models
@@ -5591,8 +6153,20 @@ async fn xai_login_persists_through_store_ack() {
         .await
         .expect("login");
     assert_eq!(credential.access.expose_secret(), "xai-access-1");
+    assert_oauth_adapter_request(
+        &models,
+        "xai",
+        &credential,
+        &server,
+        opi_ai::WireApi::OpenAiResponses,
+    )
+    .await;
 
-    let stored = store.entry("xai").expect("stored");
+    let stored = store
+        .read("xai")
+        .await
+        .expect("store read")
+        .expect("stored");
     match stored {
         Credential::OAuthToken {
             access, refresh, ..
@@ -5963,23 +6537,64 @@ async fn radius_browser_login_discovers_endpoint_and_exchanges_code() {
 }
 
 #[tokio::test]
-async fn radius_browser_manual_paste_arm_completes_login() {
-    // The shared PKCE skeleton keeps the manual arm; the host presenter
-    // decides whether paste-back is offered.
+async fn radius_browser_never_starts_a_manual_reader() {
+    struct CallbackPresenter {
+        inner: ScriptedPresenter,
+        manual_calls: std::sync::atomic::AtomicUsize,
+    }
+    impl LoginPresenter for CallbackPresenter {
+        fn present_auth_url<'a>(
+            &'a self,
+            url: &'a str,
+        ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+            self.inner.present_auth_url(url)
+        }
+        fn present_device_code<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+        ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn await_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<String, ProviderError>> {
+            self.manual_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async {
+                Err(ProviderError::Config(
+                    opi_ai::provider::ProviderErrorSummary::redacted(),
+                ))
+            })
+        }
+        fn notify_success(&self) {
+            self.inner.notify_success();
+        }
+        fn notify_failure(&self, reason: &str) {
+            self.inner.notify_failure(reason);
+        }
+    }
     let _guard = port_guard().await;
     let server = MockServer::start().await;
-    let authorize = format!("{}/authorize", server.uri());
-    mount_radius_discovery(&server, &authorize).await;
+    mount_radius_discovery(&server, &format!("{}/authorize", server.uri())).await;
     mount_radius_token(&server, 200, radius_token_success()).await;
-    let presenter = Arc::new(ScriptedPresenter::default());
-    *presenter.on_present.lock().unwrap() = Some(ScriptedPresenter::echo_redirect_hook());
-
-    let credential = radius_flow(&server)
-        .login(presenter.as_ref())
-        .await
-        .expect("login");
-    assert_eq!(credential.access.expose_secret(), "radius-access-1");
-    assert!(presenter.success_at.lock().unwrap().is_some());
+    let presenter = CallbackPresenter {
+        inner: ScriptedPresenter::default(),
+        manual_calls: std::sync::atomic::AtomicUsize::new(0),
+    };
+    let flow = radius_flow(&server);
+    let (credential, _) = tokio::join!(
+        flow.login(&presenter),
+        drive_radius_callback(&presenter.inner, "rad-code-1")
+    );
+    assert_eq!(
+        credential.expect("callback login").access.expose_secret(),
+        "radius-access-1"
+    );
+    assert_eq!(
+        presenter
+            .manual_calls
+            .load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
 }
 
 #[tokio::test]
@@ -6056,18 +6671,19 @@ async fn radius_browser_token_non_ok_fails_typed_without_echo() {
     )
     .await;
     let presenter = Arc::new(ScriptedPresenter::default());
-    *presenter.on_present.lock().unwrap() = Some(ScriptedPresenter::echo_redirect_hook());
-
-    let error = radius_flow(&server)
-        .login(presenter.as_ref())
-        .await
-        .expect_err("must fail");
+    let flow = radius_flow(&server);
+    let (result, _) = tokio::join!(
+        flow.login(presenter.as_ref()),
+        drive_radius_callback(presenter.as_ref(), "rejected-radius-code")
+    );
+    let error = result.expect_err("must fail");
     assert!(matches!(error, ProviderError::AuthFailed(_)), "{error:?}");
     assert!(!format!("{error:?}").contains("CANARY"));
     assert_eq!(
         presenter.failures.lock().unwrap().as_slice(),
         &["token exchange failed"]
     );
+    assert_eq!(radius_token_requests(&server).await.len(), 1);
 }
 
 #[tokio::test]
@@ -6113,6 +6729,112 @@ async fn radius_device_login_polls_and_completes() {
         "{poll_form}"
     );
     assert!(poll_form.contains("client_id=pi-gateway"), "{poll_form}");
+}
+
+/// Radius authentication is usable before the pi-messages generation
+/// adapter is delivered. An empty catalog exposes that dispatch boundary.
+#[tokio::test]
+async fn radius_public_login_refresh_and_auth_keep_the_configured_gateway() {
+    let _guard = port_guard().await;
+    let gateway = MockServer::start().await;
+    let interactive = MockServer::start().await;
+    mount_radius_discovery(&gateway, &format!("{}/authorize", interactive.uri())).await;
+    Mock::given(method("POST"))
+        .and(path("/v1/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": "radius-login", "refresh_token": "radius-refresh", "expires_in": 1,
+        })))
+        .up_to_n_times(1)
+        .mount(&gateway)
+        .await;
+    let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
+    let mut models = Models::new();
+    models.set_credential_store(store.clone());
+    models
+        .register_oauth_route(
+            Box::new(opi_ai::test_support::MockProvider::new_with_models(
+                "radius",
+                vec![],
+                vec![],
+            )),
+            Arc::new(radius_flow(&gateway)),
+            Default::default(),
+        )
+        .expect("auth route without a generation catalog");
+    let models = Arc::new(models);
+    let presenter = Arc::new(ScriptedPresenter::default());
+    let login = {
+        let models = models.clone();
+        let presenter = presenter.clone();
+        tokio::spawn(async move { models.login("radius", presenter.as_ref()).await })
+    };
+    drive_radius_callback(&presenter, "radius-code").await;
+    let credential = login
+        .await
+        .unwrap()
+        .expect("acknowledged Radius browser login");
+    assert_eq!(credential.access.expose_secret(), "radius-login");
+    assert!(
+        presenter
+            .last_authorize_url()
+            .starts_with(&interactive.uri())
+    );
+    assert!(presenter.success_at.lock().unwrap().is_some());
+    assert!(
+        matches!(store.read("radius").await.expect("stored Radius credential"), Some(Credential::OAuthToken { access, .. }) if access.expose_secret() == "radius-login")
+    );
+
+    mount_radius_token(&gateway, 200, serde_json::json!({
+        "access_token": "radius-refreshed", "refresh_token": "radius-rotated", "expires_in": 3600,
+    })).await;
+    let refreshed = models
+        .get_auth("radius", Default::default())
+        .await
+        .expect("public Radius refresh")
+        .expect("identity");
+    assert_eq!(refreshed.secret.expose_secret(), "radius-refreshed");
+    assert!(matches!(refreshed.scheme, opi_ai::auth::AuthScheme::Bearer));
+    assert!(
+        matches!(&refreshed.provenance.source, opi_ai::auth::AuthProvenanceSource::OAuth { kind } if kind == "radius")
+    );
+    assert!(
+        refreshed.base_url.is_none(),
+        "gateway is immutable provider state, not token metadata"
+    );
+    assert!(refreshed.account_id.is_none());
+    assert!(
+        matches!(store.read("radius").await.expect("stored Radius credential"), Some(Credential::OAuthToken { access, refresh, .. })
+        if access.expose_secret() == "radius-refreshed" && refresh.expose_secret() == "radius-rotated")
+    );
+    let error = models
+        .prepare_call(
+            "radius:unavailable-pi-messages",
+            oauth_assembly_request("radius"),
+        )
+        .await
+        .expect_err("generation adapter is not registered");
+    assert!(matches!(
+        error,
+        opi_ai::ModelsError::Registry(opi_ai::registry::RegistryError::UnknownModel { .. })
+    ));
+    assert!(interactive.received_requests().await.unwrap().is_empty());
+    let requests = gateway.received_requests().await.unwrap();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.url.path() == "/v1/oauth")
+            .count(),
+        1
+    );
+    let tokens: Vec<_> = requests
+        .iter()
+        .filter(|request| request.url.path() == "/v1/oauth/token")
+        .collect();
+    assert_eq!(tokens.len(), 2);
+    let refresh_form = form_pairs(std::str::from_utf8(&tokens[1].body).unwrap());
+    assert!(refresh_form.contains(&("grant_type".into(), "refresh_token".into())));
+    assert!(refresh_form.contains(&("refresh_token".into(), "radius-refresh".into())));
+    assert!(refresh_form.contains(&("client_id".into(), "pi-gateway".into())));
 }
 
 #[test]
@@ -6722,4 +7444,613 @@ async fn nine_flows_register_and_two_models_share_one_store() {
     } else {
         panic!("kimi entry missing after radius rotation");
     }
+}
+
+// Public OAuth regression boundaries: presenter forwarding, malformed
+// credentials and representable source time values.
+#[tokio::test]
+async fn regression_models_login_forwards_text_and_progress() {
+    struct InteractiveFlow(Arc<Mutex<String>>);
+    impl OAuthProvider for InteractiveFlow {
+        fn id(&self) -> &str {
+            "interactive-test"
+        }
+        fn login<'a>(
+            &'a self,
+            presenter: &'a dyn LoginPresenter,
+        ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+            Box::pin(async move {
+                *self.0.lock().unwrap() = presenter.prompt_text("enterprise", "domain").await?;
+                presenter.notify_progress("flow progress");
+                Ok(stored_credential())
+            })
+        }
+        fn refresh<'a>(
+            &'a self,
+            cred: &'a OAuthCredential,
+        ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+            let cred = cred.clone();
+            Box::pin(async move { Ok(cred) })
+        }
+    }
+    let observed = Arc::new(Mutex::new(String::new()));
+    let mut models = Models::new();
+    models.set_credential_store(FakeStore::new());
+    models.register_oauth_flow(
+        "interactive-test",
+        Arc::new(InteractiveFlow(observed.clone())),
+    );
+    let presenter = ScriptedPresenter::default();
+    presenter
+        .prompt_answers
+        .lock()
+        .unwrap()
+        .push("company.ghe.com".to_owned());
+    models
+        .login("interactive-test", &presenter)
+        .await
+        .expect("acknowledged login");
+    assert_eq!(*observed.lock().unwrap(), "company.ghe.com");
+    assert_eq!(
+        presenter.progress.lock().unwrap().as_slice(),
+        &["flow progress"]
+    );
+}
+
+#[tokio::test]
+async fn regression_codex_and_radius_reject_empty_refresh_tokens() {
+    let codex = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/oauth/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": codex_jwt(Some("acct-new")), "refresh_token": "", "expires_in": 3600
+        })))
+        .mount(&codex)
+        .await;
+    assert!(matches!(
+        codex_flow(&codex, Duration::from_secs(30), Duration::from_secs(30))
+            .refresh(&stored_credential())
+            .await,
+        Err(ProviderError::Config(_))
+    ));
+    let radius = MockServer::start().await;
+    mount_radius_token(
+        &radius,
+        200,
+        serde_json::json!({"access_token":"new", "refresh_token":"", "expires_in":3600}),
+    )
+    .await;
+    assert!(matches!(
+        radius_flow(&radius).refresh(&xai_stored_credential()).await,
+        Err(ProviderError::Config(_))
+    ));
+}
+
+#[tokio::test]
+async fn regression_token_expiry_overflow_is_typed() {
+    for kind in ["kimi", "xai"] {
+        let server = MockServer::start().await;
+        let body = serde_json::json!({"access_token":"new", "refresh_token":"new-refresh", "expires_in":1e300});
+        let result = if kind == "kimi" {
+            mount_kimi_token(&server, 200, body).await;
+            kimi_flow(&server).refresh(&kimi_stored_credential()).await
+        } else {
+            mount_xai_token(&server, 200, body).await;
+            xai_flow(&server).refresh(&xai_stored_credential()).await
+        };
+        assert!(
+            matches!(result, Err(ProviderError::Config(_))),
+            "{kind}: {result:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn regression_device_time_overflow_is_typed() {
+    for kind in ["kimi", "meta", "xai", "radius"] {
+        for field in ["interval", "expires_in"] {
+            let server = MockServer::start().await;
+            let mut body = match kind {
+                "kimi" => kimi_start_body(1.into(), 900.into()),
+                "meta" => meta_start_body(1.into(), 900.into()),
+                "xai" => xai_start_body(1.into(), 900.into()),
+                _ => radius_device_start(1.into()),
+            };
+            body[field] = serde_json::json!(1e300);
+            let flow: Arc<dyn OAuthProvider> = match kind {
+                "kimi" => {
+                    mount_kimi_start(&server, body).await;
+                    Arc::new(kimi_flow(&server))
+                }
+                "meta" => {
+                    mount_meta_start(&server, body).await;
+                    Arc::new(meta_flow(&server))
+                }
+                "xai" => {
+                    mount_xai_start(&server, body).await;
+                    Arc::new(xai_flow(&server))
+                }
+                _ => {
+                    mount_radius_device_start(&server, body).await;
+                    Arc::new(radius_flow(&server))
+                }
+            };
+            let presenter = ScriptedPresenter::default();
+            *presenter.forced_method.lock().unwrap() = Some(OAuthLoginMethod::DeviceCode);
+            let result = flow.login(&presenter).await;
+            assert!(
+                matches!(result, Err(ProviderError::Config(_))),
+                "{kind}/{field}: {result:?}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn regression_copy_code_obeys_explicit_login_budget() {
+    let flow = AnthropicOAuthProvider::new(
+        "https://example.invalid/authorize".into(),
+        "http://127.0.0.1:1/token".into(),
+        "synthetic".into(),
+        Duration::from_millis(20),
+    );
+    let presenter = ScriptedPresenter::default();
+    *presenter.forced_method.lock().unwrap() = Some(OAuthLoginMethod::CopyCode);
+    let result = tokio::time::timeout(Duration::from_millis(500), flow.login(&presenter)).await;
+    assert!(
+        matches!(result, Ok(Err(ProviderError::Timeout))),
+        "explicit login budget must finish the pending paste: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn regression_radius_browser_ignores_manual_paste_until_callback() {
+    let _guard = port_guard().await;
+    let server = MockServer::start().await;
+    mount_radius_discovery(&server, &format!("{}/authorize", server.uri())).await;
+    mount_radius_token(&server, 200, radius_token_success()).await;
+    let presenter = ScriptedPresenter::default();
+    *presenter.on_present.lock().unwrap() = Some(ScriptedPresenter::echo_redirect_hook());
+    let flow = radius_flow(&server);
+    let pending = tokio::time::timeout(Duration::from_millis(100), flow.login(&presenter)).await;
+    assert!(
+        pending.is_err(),
+        "manual paste must not complete Radius browser login"
+    );
+    assert!(radius_token_requests(&server).await.is_empty());
+    assert!(presenter.success_at.lock().unwrap().is_none());
+}
+
+#[tokio::test]
+async fn regression_device_slow_down_overflow_is_typed() {
+    for kind in ["kimi", "meta", "xai", "radius"] {
+        let server = MockServer::start().await;
+        let response = serde_json::json!({"error":"slow_down", "interval":1e300});
+        let flow: Arc<dyn OAuthProvider> = match kind {
+            "kimi" => {
+                mount_kimi_start(&server, kimi_start_body(1.into(), 900.into())).await;
+                mount_kimi_token(&server, 400, response).await;
+                Arc::new(kimi_flow(&server))
+            }
+            "meta" => {
+                mount_meta_start(&server, meta_start_body(1.into(), 900.into())).await;
+                mount_meta_token(&server, 400, response).await;
+                Arc::new(meta_flow(&server))
+            }
+            "xai" => {
+                mount_xai_start(&server, xai_start_body(1.into(), 900.into())).await;
+                mount_xai_token(&server, 400, response).await;
+                Arc::new(xai_flow(&server))
+            }
+            _ => {
+                mount_radius_device_start(&server, radius_device_start(1.into())).await;
+                mount_radius_token(&server, 400, response).await;
+                Arc::new(radius_flow(&server))
+            }
+        };
+        let presenter = ScriptedPresenter::default();
+        *presenter.forced_method.lock().unwrap() = Some(OAuthLoginMethod::DeviceCode);
+        let result = flow.login(&presenter).await;
+        assert!(
+            matches!(result, Err(ProviderError::Config(_))),
+            "{kind}: {result:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn regression_copy_code_cancellation_interrupts_pending_presentation() {
+    struct PendingPresentation {
+        presented: tokio::sync::Notify,
+        cancelled: tokio_util::sync::CancellationToken,
+    }
+    impl LoginPresenter for PendingPresentation {
+        fn select_login_method<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a [OAuthLoginMethod],
+            _: OAuthLoginMethod,
+        ) -> BoxAuthFuture<'a, Result<OAuthLoginMethod, ProviderError>> {
+            Box::pin(async { Ok(OAuthLoginMethod::CopyCode) })
+        }
+        fn present_auth_url<'a>(
+            &'a self,
+            _: &'a str,
+        ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+            Box::pin(async move {
+                self.presented.notify_one();
+                std::future::pending().await
+            })
+        }
+        fn present_device_code<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a str,
+        ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn await_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<String, ProviderError>> {
+            Box::pin(std::future::pending())
+        }
+        fn await_login_cancelled<'a>(&'a self) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
+            Box::pin(async move {
+                self.cancelled.cancelled().await;
+                Ok(())
+            })
+        }
+        fn notify_success(&self) {}
+        fn notify_failure(&self, _: &str) {}
+    }
+    let presenter = PendingPresentation {
+        presented: tokio::sync::Notify::new(),
+        cancelled: tokio_util::sync::CancellationToken::new(),
+    };
+    let flow = AnthropicOAuthProvider::new(
+        "https://example.invalid/authorize".into(),
+        "http://127.0.0.1:1/token".into(),
+        "synthetic".into(),
+        Duration::from_secs(10),
+    );
+    let login = async {
+        tokio::join!(flow.login(&presenter), async {
+            presenter.presented.notified().await;
+            presenter.cancelled.cancel();
+        })
+        .0
+    };
+    let result = tokio::time::timeout(Duration::from_millis(500), login).await;
+    assert!(
+        matches!(result, Ok(Err(ProviderError::LoginCancelled { .. }))),
+        "pending presentation must remain cancellable: {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn regression_codex_agent_name_drives_originator() {
+    let _guard = loopback_1455_guard().await;
+    let server = MockServer::start().await;
+    mount_codex_token_success(&server, &codex_jwt(Some("acct-123"))).await;
+    let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30))
+        .with_agent_name("embedding-host");
+    let presenter = codex_presenter();
+    flow.login(presenter.as_ref()).await.expect("login");
+    assert_eq!(
+        ScriptedPresenter::query_param(&presenter.last_authorize_url(), "originator").as_deref(),
+        Some("embedding-host")
+    );
+}
+
+#[tokio::test]
+async fn regression_copilot_source_clamps_before_float_duration_conversion() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST")).and(path("/login/device/code"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "device_code":"copilot-device", "user_code":"COPILOT-CODE", "verification_uri":"https://github.com/login/device", "interval":1e300, "expires_in":1e300
+        }))).mount(&server).await;
+    let flow = copilot_flow(&server.uri(), vec![], Duration::from_millis(50));
+    let presenter = ScriptedPresenter::default();
+    let result = flow.login(&presenter).await;
+    assert!(
+        matches!(result, Err(ProviderError::Timeout)),
+        "source clamps remain in force under the caller budget: {result:?}"
+    );
+    assert!(
+        requests_at(&server, "/login/oauth/access_token")
+            .await
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn nine_oauth_dyn_metadata_matches_the_fixed_source_without_auth_io() {
+    let server = MockServer::start().await;
+    let flows: Vec<Box<dyn OAuthProvider>> = vec![
+        Box::new(anthropic_flow(format!("{}/token", server.uri()))),
+        Box::new(codex_flow(
+            &server,
+            Duration::from_secs(30),
+            Duration::from_secs(30),
+        )),
+        Box::new(chatgpt_flow(
+            &server,
+            Some(CHATGPT_DEVICE_UUID),
+            Duration::from_secs(30),
+        )),
+        Box::new(copilot_flow(&server.uri(), vec![], Duration::from_secs(30))),
+        Box::new(openrouter_flow(format!(
+            "{}/api/v1/auth/keys",
+            server.uri()
+        ))),
+        Box::new(kimi_flow(&server)),
+        Box::new(meta_flow(&server)),
+        Box::new(xai_flow(&server)),
+        Box::new(radius_flow(&server)),
+    ];
+    let expected = [
+        ("anthropic", "Anthropic (Claude Pro/Max)", Some(true), None),
+        (
+            "openai-codex",
+            "OpenAI (ChatGPT Plus/Pro)",
+            Some(true),
+            None,
+        ),
+        (
+            "openai-chatgpt",
+            "OpenAI (ChatGPT subscription)",
+            Some(true),
+            Some("Sign in with ChatGPT"),
+        ),
+        ("github-copilot", "GitHub Copilot", Some(true), None),
+        (
+            "openrouter",
+            "OpenRouter OAuth",
+            None,
+            Some("Sign in with OpenRouter"),
+        ),
+        (
+            "kimi-coding",
+            "Kimi Code (subscription)",
+            Some(true),
+            Some("Sign in with Kimi Code"),
+        ),
+        (
+            "meta",
+            "Meta (Muse subscription)",
+            Some(true),
+            Some("Sign in with Meta"),
+        ),
+        (
+            "xai",
+            "xAI (Grok/X subscription)",
+            Some(true),
+            Some("Sign in with SuperGrok or X Premium"),
+        ),
+        ("radius", "Radius", None, None),
+    ];
+    for (flow, (id, name, subscription, label)) in flows.iter().zip(expected) {
+        assert_eq!(flow.id(), id);
+        assert_eq!(flow.name(), name, "{id}");
+        assert_eq!(flow.is_subscription(), subscription, "{id}");
+        assert_eq!(flow.login_label(), label, "{id}");
+    }
+    for default in [
+        RadiusOAuthProvider::production(),
+        RadiusOAuthProvider::with_http_client(
+            reqwest::Client::builder().no_proxy().build().unwrap(),
+        ),
+    ] {
+        assert_eq!(default.id(), "radius");
+        assert_eq!(default.name(), "Radius");
+        assert_eq!(default.is_subscription(), None);
+        assert_eq!(default.login_label(), None);
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[test]
+fn custom_oauth_metadata_defaults_keep_existing_implementations_usable() {
+    struct CustomFlow;
+    impl OAuthProvider for CustomFlow {
+        fn id(&self) -> &str {
+            "custom-flow"
+        }
+        fn login<'a>(
+            &'a self,
+            _: &'a dyn LoginPresenter,
+        ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+            panic!("metadata must not start login")
+        }
+        fn refresh<'a>(
+            &'a self,
+            _: &'a OAuthCredential,
+        ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+            panic!("metadata must not start refresh")
+        }
+    }
+    let flow: &dyn OAuthProvider = &CustomFlow;
+    assert_eq!(flow.name(), "custom-flow");
+    assert_eq!(flow.is_subscription(), None);
+    assert_eq!(flow.login_label(), None);
+}
+
+#[tokio::test]
+async fn radius_custom_flow_identity_gateway_and_account_remain_bound_on_refresh() {
+    let gateway_a = MockServer::start().await;
+    let gateway_b = MockServer::start().await;
+    let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
+    let mut models = Models::new();
+    models.set_credential_store(store.clone());
+    for (gateway, id, name, account, access, refresh, refreshed) in [
+        (
+            &gateway_a,
+            "radius-a",
+            "Radius A",
+            "account-a",
+            "login-a",
+            "refresh-a",
+            "refreshed-a",
+        ),
+        (
+            &gateway_b,
+            "radius-b",
+            "Radius B",
+            "account-b",
+            "login-b",
+            "refresh-b",
+            "refreshed-b",
+        ),
+    ] {
+        mount_radius_device_start(gateway, radius_device_start(1.into())).await;
+        Mock::given(method("POST"))
+            .and(path("/v1/oauth/token"))
+            .and(wiremock::matchers::body_string_contains(
+                "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code",
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": access, "refresh_token": refresh, "expires_in": 1,
+            })))
+            .expect(1)
+            .mount(gateway)
+            .await;
+        Mock::given(method("POST")).and(path("/v1/oauth/token"))
+            .and(wiremock::matchers::body_string_contains("grant_type=refresh_token"))
+            .and(wiremock::matchers::body_string_contains(format!("refresh_token={refresh}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": refreshed, "refresh_token": format!("rotated-{refresh}"), "expires_in": 3600,
+            }))).expect(1).mount(gateway).await;
+        let flow: Arc<dyn OAuthProvider> =
+            Arc::new(RadiusOAuthProvider::new_with_gateway(gateway.uri()).with_identity(id, name));
+        assert_eq!(flow.id(), id);
+        assert_eq!(flow.name(), name);
+        models
+            .register_oauth_route(
+                Box::new(opi_ai::test_support::MockProvider::new_with_models(
+                    id,
+                    vec![],
+                    vec![],
+                )),
+                flow,
+                Default::default(),
+            )
+            .unwrap();
+        let presenter = ScriptedPresenter::default();
+        *presenter.forced_method.lock().unwrap() = Some(OAuthLoginMethod::DeviceCode);
+        let credential = models
+            .login(id, &presenter)
+            .await
+            .expect("custom Radius login ACK");
+        assert_eq!(credential.access.expose_secret(), access);
+        assert_eq!(
+            presenter.selected_provider_ids.lock().unwrap().as_slice(),
+            &[id.to_owned()]
+        );
+        // Radius does not infer an account id from its opaque access token.
+        // A host-supplied binding survives same-source refresh.
+        let mut stored: Credential = credential.into();
+        if let Credential::OAuthToken {
+            account_id,
+            base_url,
+            ..
+        } = &mut stored
+        {
+            *account_id = Some(account.to_owned());
+            *base_url = Some("http://127.0.0.1:1/untrusted-token-endpoint".into());
+        }
+        store
+            .modify(id, opi_ai::write_mutation(stored))
+            .await
+            .unwrap();
+    }
+    assert!(store.read("radius").await.unwrap().is_none());
+    for (id, account, access) in [
+        ("radius-a", "account-a", "refreshed-a"),
+        ("radius-b", "account-b", "refreshed-b"),
+    ] {
+        let resolved = models
+            .get_auth(id, Default::default())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved.secret.expose_secret(), access);
+        assert_eq!(resolved.account_id.as_deref(), Some(account));
+        assert!(
+            resolved.base_url.is_none(),
+            "the gateway remains flow-owned"
+        );
+        assert!(
+            matches!(&resolved.provenance.source, opi_ai::auth::AuthProvenanceSource::OAuth { kind } if kind == id)
+        );
+        assert!(
+            matches!(store.read(id).await.unwrap(), Some(Credential::OAuthToken { access: saved, account_id: Some(saved_account), .. }) if saved.expose_secret() == access && saved_account == account)
+        );
+    }
+    let mut fresh_a = store.read("radius-a").await.unwrap().unwrap();
+    if let Credential::OAuthToken {
+        expires_at,
+        base_url,
+        ..
+    } = &mut fresh_a
+    {
+        assert!(expires_at.is_some_and(
+            |expiry| expiry > time::OffsetDateTime::now_utc() + time::Duration::minutes(5)
+        ));
+        *base_url = Some(gateway_b.uri());
+    }
+    store
+        .modify("radius-a", opi_ai::write_mutation(fresh_a))
+        .await
+        .unwrap();
+    let before_a = gateway_a.received_requests().await.unwrap().len();
+    let before_b = gateway_b.received_requests().await.unwrap().len();
+    let fresh_auth = models
+        .get_auth("radius-a", Default::default())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(fresh_auth.secret.expose_secret(), "refreshed-a");
+    assert_eq!(fresh_auth.account_id.as_deref(), Some("account-a"));
+    assert!(
+        fresh_auth.base_url.is_none(),
+        "fresh Radius auth cannot promote credential metadata into endpoint authority"
+    );
+    assert_eq!(gateway_a.received_requests().await.unwrap().len(), before_a);
+    assert_eq!(gateway_b.received_requests().await.unwrap().len(), before_b);
+    let mut expired_a = store.read("radius-a").await.unwrap().unwrap();
+    if let Credential::OAuthToken { expires_at, .. } = &mut expired_a {
+        *expires_at = Some(time::OffsetDateTime::now_utc() - time::Duration::seconds(1));
+    }
+    store
+        .modify("radius-a", opi_ai::write_mutation(expired_a))
+        .await
+        .unwrap();
+    Mock::given(method("POST"))
+        .and(path("/v1/oauth/token"))
+        .and(wiremock::matchers::body_string_contains(
+            "refresh_token=rotated-refresh-a",
+        ))
+        .respond_with(
+            ResponseTemplate::new(401).set_body_json(serde_json::json!({"error":"invalid_grant"})),
+        )
+        .expect(1)
+        .mount(&gateway_a)
+        .await;
+    let error = models
+        .get_auth("radius-a", Default::default())
+        .await
+        .expect_err("selected Radius account is revoked");
+    match error {
+        opi_ai::ModelsError::AuthResolution { error, .. } => {
+            assert!(
+                matches!(*error, ProviderError::CredentialRevoked { ref provider_id } if provider_id == "radius-a")
+            );
+        }
+        other => panic!("unexpected Radius revocation: {other:?}"),
+    }
+    assert_eq!(
+        gateway_b.received_requests().await.unwrap().len(),
+        before_b,
+        "a revoked selected flow must not discover the sibling gateway"
+    );
+    gateway_a.verify().await;
+    gateway_b.verify().await;
 }

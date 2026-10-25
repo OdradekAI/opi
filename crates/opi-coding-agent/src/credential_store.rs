@@ -54,7 +54,7 @@ use opi_ai::mutation::{
     CredentialMutationOp, MutationApplied, MutationDecision, MutationError, MutationHandle,
     MutationOutcome, MutationQueue, MutationSlotView,
 };
-use opi_ai::provider::{ProviderError, ProviderErrorSummary};
+use opi_ai::provider::ProviderError;
 use secrecy::{ExposeSecret, SecretString};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -477,6 +477,14 @@ struct EnvelopeFields {
     base_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     account_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enterprise_domain: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    available_model_ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scopes: Option<Vec<String>>,
 }
 
 impl Zeroize for EnvelopeFields {
@@ -529,6 +537,10 @@ struct OAuthEnvelopeV1 {
     expires_at: Option<i64>,
     base_url: Option<String>,
     account_id: Option<String>,
+    client_id: Option<String>,
+    enterprise_domain: Option<String>,
+    available_model_ids: Option<Vec<String>>,
+    scopes: Option<Vec<String>>,
 }
 
 impl Zeroize for OAuthEnvelopeV1 {
@@ -607,6 +619,10 @@ fn encode_credential(cred: &Credential) -> Zeroizing<String> {
                 expires_at: None,
                 base_url: None,
                 account_id: None,
+                client_id: None,
+                enterprise_domain: None,
+                available_model_ids: None,
+                scopes: None,
             },
         ),
         Credential::OAuthToken {
@@ -615,12 +631,10 @@ fn encode_credential(cred: &Credential) -> Zeroizing<String> {
             expires_at,
             base_url,
             account_id,
-            // The host envelope has no client_id/enterprise_domain/
-            // available_model_ids fields yet; the flows keep them in the
-            // in-memory shape.
-            client_id: _,
-            enterprise_domain: _,
-            available_model_ids: _,
+            client_id,
+            enterprise_domain,
+            available_model_ids,
+            scopes,
         } => (
             "oauth",
             EnvelopeFields {
@@ -630,6 +644,10 @@ fn encode_credential(cred: &Credential) -> Zeroizing<String> {
                 expires_at: expires_at.map(|t| t.unix_timestamp()),
                 base_url: base_url.clone(),
                 account_id: account_id.clone(),
+                client_id: client_id.clone(),
+                enterprise_domain: enterprise_domain.clone(),
+                available_model_ids: available_model_ids.clone(),
+                scopes: scopes.clone(),
             },
         ),
     };
@@ -700,9 +718,10 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
                 expires_at,
                 base_url,
                 account_id,
-                client_id: None,
-                enterprise_domain: None,
-                available_model_ids: None,
+                client_id: envelope.client_id.take(),
+                enterprise_domain: envelope.enterprise_domain.take(),
+                available_model_ids: envelope.available_model_ids.take(),
+                scopes: envelope.scopes.take(),
             })
         }
         _ => Err(CredentialStoreError::UnknownEnvelope {
@@ -977,7 +996,7 @@ impl MutationSlotView for KeychainSlotView {
 pub struct KeychainCredentialStore {
     core: std::sync::Arc<KeychainCore>,
     lock: std::sync::Arc<LockCoordinator>,
-    queue: MutationQueue,
+    queue: Arc<MutationQueue>,
 }
 
 /// Map a primitive write/delete receipt back to the original result shape:
@@ -1031,7 +1050,7 @@ impl KeychainCredentialStore {
                 service: KEYCHAIN_SERVICE.to_owned(),
             }),
             lock: std::sync::Arc::new(LockCoordinator::with_timeout(user_config_dir, lock_timeout)),
-            queue: MutationQueue::new(),
+            queue: Arc::new(MutationQueue::new()),
         }
     }
 
@@ -1173,6 +1192,10 @@ impl CredentialStore for KeychainCredentialStore {
     fn mutation_barrier(&self) -> opi_ai::mutation::MutationBarrier {
         self.queue.barrier()
     }
+
+    fn mutation_queue(&self) -> Option<Arc<MutationQueue>> {
+        Some(self.queue.clone())
+    }
 }
 
 impl CredentialMetadataStore for KeychainCredentialStore {
@@ -1289,6 +1312,11 @@ impl CredentialResolver {
         Self::new(store, Arc::new(|name: &str| std::env::var(name).ok()))
     }
 
+    /// Share the existing store owner with the route's rotating source caches.
+    pub(crate) fn mutation_queue(&self) -> Arc<MutationQueue> {
+        self.store.queue.clone()
+    }
+
     /// Resolve an API key for `provider_id`, keychain-first with env fallback.
     /// Returns `None` if neither keychain nor env has a non-empty key.
     pub async fn resolve_api_key(
@@ -1349,140 +1377,10 @@ impl CredentialResolver {
         provider_id: &str,
         oauth: Arc<dyn OAuthProvider>,
     ) -> Result<ResolvedAuth, ProviderError> {
-        // Fast path: lock-free read.
-        let cred = match self
-            .read_oauth(provider_id)
+        opi_ai::auth::store_oauth::StoreOAuthResolver::new(self.store.clone(), provider_id, oauth)
+            .with_refresh_timeout(self.refresh_timeout)
+            .resolve()
             .await
-            .map_err(store_err_to_provider)?
-        {
-            Some(cred) => cred,
-            None => {
-                return Err(ProviderError::CredentialNeeded {
-                    provider_id: provider_id.to_owned(),
-                });
-            }
-        };
-        if !cred.needs_refresh() {
-            return Ok(resolved_oauth(provider_id, &cred));
-        }
-        // Slow path: store-owned rotation. The slot re-reads under the lock
-        // (another writer may have refreshed already), runs the refresh
-        // network exchange under the refresh timeout, and commits
-        // atomically. Dropping this wait cannot abort it.
-        let provider = provider_id.to_owned();
-        let refresh_timeout = self.refresh_timeout;
-        let op: CredentialMutationOp = CredentialMutationOp::Update(Box::new(
-            move |view: &dyn MutationSlotView, current: Option<&Credential>| {
-                let oauth = oauth.clone();
-                let provider = provider.clone();
-                Box::pin(async move {
-                    let current = match current {
-                        Some(credential) => match credential_as_oauth(credential) {
-                            Some(current) => current,
-                            None => {
-                                // Wrong-kind entry: typed failure, no write.
-                                return Err(MutationError::Operation(ProviderError::AuthFailed(
-                                    ProviderErrorSummary::from_untrusted(format!(
-                                        "stored credential for '{provider}' is not an OAuth token"
-                                    )),
-                                )));
-                            }
-                        },
-                        None => {
-                            // Deleted/replaced while queued: never resurrect a
-                            // replaced identity.
-                            return Err(MutationError::Operation(
-                                ProviderError::CredentialNeeded {
-                                    provider_id: provider.clone(),
-                                },
-                            ));
-                        }
-                    };
-                    if !current.needs_refresh() {
-                        // Another waiter's rotation committed before this slot
-                        // ran: reuse it, no second refresh.
-                        return Ok(MutationDecision::Keep);
-                    }
-                    let refresh = match tokio::time::timeout(
-                        refresh_timeout,
-                        oauth.refresh(&current),
-                    )
-                    .await
-                    {
-                        Ok(refresh) => refresh,
-                        Err(_elapsed) => {
-                            return Err(MutationError::Operation(ProviderError::AuthFailed(
-                                ProviderErrorSummary::from_untrusted(format!(
-                                    "OAuth refresh timed out for provider '{provider}'"
-                                )),
-                            )));
-                        }
-                    };
-                    match refresh {
-                        Ok(refreshed) => Ok(MutationDecision::Write(Credential::from(refreshed))),
-                        Err(refresh_err) => {
-                            // Post-failure re-read under the slot's exclusion: a
-                            // concurrent writer may have committed despite our
-                            // HTTP failing.
-                            match view.read_current().await {
-                                Ok(Some(credential)) => match credential_as_oauth(&credential) {
-                                    Some(reread) if !reread.needs_refresh() => {
-                                        Ok(MutationDecision::Keep)
-                                    }
-                                    _ => Err(MutationError::Operation(refresh_err)),
-                                },
-                                _ => Err(MutationError::Operation(refresh_err)),
-                            }
-                        }
-                    }
-                })
-            },
-        ));
-        let receipt = self
-            .store
-            .modify(provider_id, op)
-            .await
-            .map_err(store_err_to_provider)?;
-        // ACK received: re-read the committed entry (reads are lock-free and
-        // never refresh).
-        let reloaded = self.read_oauth(provider_id).await;
-        if let Ok(Some(cred)) = &reloaded
-            && (!cred.needs_refresh() || matches!(receipt.outcome, MutationOutcome::Written { .. }))
-        {
-            return Ok(resolved_oauth(provider_id, cred));
-        }
-        match receipt.outcome {
-            MutationOutcome::Failed { ref error } => match &**error {
-                MutationError::Store(store_error) => {
-                    Err(store_err_to_provider(store_error.clone()))
-                }
-                MutationError::Operation(operation_error) => Err(operation_error.clone()),
-                _ => Err(ProviderError::AuthFailed(
-                    ProviderErrorSummary::from_untrusted(
-                        "OAuth rotation failed with an unrecognized mutation error",
-                    ),
-                )),
-            },
-            MutationOutcome::Unknown { detail } => Err(ProviderError::AuthFailed(
-                ProviderErrorSummary::from_untrusted(format!(
-                    "OAuth rotation outcome unknown for provider '{provider_id}': {detail}"
-                )),
-            )),
-            MutationOutcome::Deleted { .. } => Err(ProviderError::CredentialNeeded {
-                provider_id: provider_id.to_owned(),
-            }),
-            MutationOutcome::Written { .. } | MutationOutcome::Unchanged { .. } => match reloaded {
-                Err(store_error) => Err(store_err_to_provider(store_error)),
-                Ok(None) => Err(ProviderError::CredentialNeeded {
-                    provider_id: provider_id.to_owned(),
-                }),
-                Ok(Some(_)) => Err(ProviderError::AuthFailed(
-                    ProviderErrorSummary::from_untrusted(format!(
-                        "OAuth refresh did not produce a usable credential for provider '{provider_id}'"
-                    )),
-                )),
-            },
-        }
     }
 
     /// Read the stored OAuth credential (lock-free). The marker is the sole
@@ -1502,6 +1400,7 @@ impl CredentialResolver {
                 client_id,
                 enterprise_domain,
                 available_model_ids,
+                scopes,
             })) => Ok(Some(OAuthCredential {
                 access,
                 refresh,
@@ -1511,6 +1410,7 @@ impl CredentialResolver {
                 client_id,
                 enterprise_domain,
                 available_model_ids,
+                scopes,
             })),
             Ok(Some(Credential::ApiKey(_))) => {
                 Err(CredentialStoreError::UnexpectedCredentialKind {
@@ -1565,69 +1465,6 @@ impl CredentialResolver {
     /// absent/empty). Layered auth calls this for every Anthropic stream.
     pub fn env_value(&self, env_var: &str) -> Option<String> {
         (self.env_lookup)(env_var).filter(|v| !v.trim().is_empty())
-    }
-}
-
-/// Build the resolved auth for a stored (already committed) OAuth
-/// credential. Never triggers a refresh.
-fn resolved_oauth(provider_id: &str, cred: &OAuthCredential) -> ResolvedAuth {
-    // GitHub Copilot derives its per-request base URL from the issued
-    // Copilot token's proxy endpoint (pi `toAuth`): the token hint wins,
-    // then a stored enterprise domain, then the individual default. A
-    // legacy stored `base_url` (pre-cutover `endpoints.api`) still wins over
-    // the fallbacks so existing credentials never change endpoints.
-    let base_url = if provider_id == "github-copilot" {
-        cred.base_url.clone().or_else(|| {
-            Some(opi_ai::auth::oauth::copilot::request_base_url(
-                Some(cred.access.expose_secret()),
-                cred.enterprise_domain.as_deref(),
-            ))
-        })
-    } else {
-        cred.base_url.clone()
-    };
-    ResolvedAuth {
-        scheme: AuthScheme::Bearer,
-        secret: cred.access.clone(),
-        base_url,
-        account_id: cred.account_id.clone(),
-        provenance: oauth_provenance(provider_id),
-    }
-}
-
-/// Extract the OAuth shape from a stored credential (no secret exposure
-/// beyond the moved fields).
-fn credential_as_oauth(credential: &Credential) -> Option<OAuthCredential> {
-    match credential {
-        Credential::OAuthToken {
-            access,
-            refresh,
-            expires_at,
-            base_url,
-            account_id,
-            client_id,
-            enterprise_domain,
-            available_model_ids,
-        } => Some(OAuthCredential {
-            access: access.clone(),
-            refresh: refresh.clone(),
-            expires_at: *expires_at,
-            base_url: base_url.clone(),
-            account_id: account_id.clone(),
-            client_id: client_id.clone(),
-            enterprise_domain: enterprise_domain.clone(),
-            available_model_ids: available_model_ids.clone(),
-        }),
-        Credential::ApiKey(_) => None,
-    }
-}
-
-fn oauth_provenance(provider_id: &str) -> AuthProvenance {
-    AuthProvenance {
-        source: AuthProvenanceSource::OAuth {
-            kind: provider_id.to_owned(),
-        },
-        fallback: AuthFallback::NotAttempted,
     }
 }
 

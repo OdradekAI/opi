@@ -20,7 +20,6 @@ use crate::auth::oauth::{login_cancelled, provider_config_error, token_endpoint_
 use crate::auth::{BoxAuthFuture, LoginPresenter, OAuthCredential, OAuthProvider};
 use crate::provider::ProviderError;
 use secrecy::{ExposeSecret, SecretString};
-use time::OffsetDateTime;
 
 /// Fixed OAuth client id (pi `CLIENT_ID`).
 pub const KIMI_CLIENT_ID: &str = "17e5f671-d194-4dfb-9706-5516cb48c098";
@@ -357,13 +356,8 @@ impl KimiCodingOAuthProvider {
                 refresh,
                 expires_in,
             }) => {
-                let expires_at = OffsetDateTime::now_utc()
-                    .checked_add(time::Duration::seconds_f64(expires_in))
-                    .ok_or_else(|| RefreshAttemptOutcome::Terminal(invalid_token_response()));
-                let expires_at = match expires_at {
-                    Ok(at) => at,
-                    Err(e) => return Err(e),
-                };
+                let expires_at = super::checked_token_expiry(expires_in)
+                    .map_err(RefreshAttemptOutcome::Terminal)?;
                 Ok(OAuthCredential {
                     access: SecretString::new(access.into_boxed_str()),
                     refresh: SecretString::new(refresh.into_boxed_str()),
@@ -371,6 +365,7 @@ impl KimiCodingOAuthProvider {
                     base_url: cred.base_url.clone(),
                     account_id: cred.account_id.clone(),
                     client_id: cred.client_id.clone(),
+                    scopes: cred.scopes.clone(),
                     enterprise_domain: cred.enterprise_domain.clone(),
                     available_model_ids: cred.available_model_ids.clone(),
                 })
@@ -409,6 +404,18 @@ impl OAuthProvider for KimiCodingOAuthProvider {
         PROVIDER_ID
     }
 
+    fn name(&self) -> &str {
+        "Kimi Code (subscription)"
+    }
+
+    fn is_subscription(&self) -> Option<bool> {
+        Some(true)
+    }
+
+    fn login_label(&self) -> Option<&str> {
+        Some("Sign in with Kimi Code")
+    }
+
     fn login<'a>(
         &'a self,
         presenter: &'a dyn LoginPresenter,
@@ -443,11 +450,9 @@ impl OAuthProvider for KimiCodingOAuthProvider {
 
             // pi `pollOAuthDeviceCodeFlow`: wait one interval before the
             // first poll, then poll under the device deadline.
-            let mut interval =
-                Duration::from_secs_f64(device.interval_seconds).max(KIMI_MINIMUM_POLL_INTERVAL);
-            let deadline = tokio::time::Instant::now()
-                + Duration::from_secs_f64(device.expires_in_seconds)
-                    .clamp(Duration::ZERO, Duration::from_secs(u64::MAX / 2));
+            let mut interval = super::checked_poll_duration(device.interval_seconds)?
+                .max(KIMI_MINIMUM_POLL_INTERVAL);
+            let deadline = super::checked_device_deadline(device.expires_in_seconds)?;
             tokio::select! {
                 biased;
                 cancelled = cancellation.as_mut() => {
@@ -455,7 +460,7 @@ impl OAuthProvider for KimiCodingOAuthProvider {
                     return Err(login_cancelled(presenter, PROVIDER_ID));
                 }
                 _ = tokio::time::sleep_until(deadline.min(
-                    tokio::time::Instant::now() + interval,
+                    super::next_poll_deadline(deadline, interval),
                 )) => {}
             }
 
@@ -478,9 +483,7 @@ impl OAuthProvider for KimiCodingOAuthProvider {
                         refresh,
                         expires_in,
                     }) => {
-                        let expires_at = OffsetDateTime::now_utc()
-                            .checked_add(time::Duration::seconds_f64(expires_in))
-                            .ok_or_else(invalid_token_response)?;
+                        let expires_at = super::checked_token_expiry(expires_in)?;
                         return Ok(OAuthCredential {
                             access: SecretString::new(access.into_boxed_str()),
                             refresh: SecretString::new(refresh.into_boxed_str()),
@@ -488,6 +491,7 @@ impl OAuthProvider for KimiCodingOAuthProvider {
                             base_url: None,
                             account_id: None,
                             client_id: None,
+                            scopes: None,
                             enterprise_domain: None,
                             available_model_ids: None,
                         });
@@ -495,12 +499,18 @@ impl OAuthProvider for KimiCodingOAuthProvider {
                     Ok(KimiPoll::Pending) => {}
                     Ok(KimiPoll::SlowDown { interval_seconds }) => {
                         saw_slow_down = true;
-                        interval = match interval_seconds {
-                            Some(seconds) => {
-                                Duration::from_secs_f64(seconds).max(KIMI_MINIMUM_POLL_INTERVAL)
-                            }
-                            None => interval + KIMI_SLOW_DOWN_INCREMENT,
-                        };
+                        interval =
+                            match interval_seconds {
+                                Some(seconds) => super::checked_poll_duration(seconds)?
+                                    .max(KIMI_MINIMUM_POLL_INTERVAL),
+                                None => interval.checked_add(KIMI_SLOW_DOWN_INCREMENT).ok_or_else(
+                                    || {
+                                        provider_config_error(
+                                            "OAuth polling interval is out of range",
+                                        )
+                                    },
+                                )?,
+                            };
                     }
                     Err(PollError::Expired) => {
                         presenter.notify_failure("device code expired");
@@ -523,7 +533,7 @@ impl OAuthProvider for KimiCodingOAuthProvider {
                         return Err(error);
                     }
                 }
-                let next = tokio::time::Instant::now() + interval;
+                let next = super::next_poll_deadline(deadline, interval);
                 tokio::select! {
                     biased;
                     cancelled = cancellation.as_mut() => {

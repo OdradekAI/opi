@@ -746,6 +746,7 @@ where
     F: FnOnce(
         Box<dyn opi_ai::provider::Provider>,
         std::sync::Arc<dyn opi_ai::AuthResolver>,
+        std::sync::Arc<opi_coding_agent::credential_store::KeychainCredentialStore>,
         Vec<opi_agent::Diagnostic>,
         Vec<opi_coding_agent::provider_factory::ProviderAuthPair>,
     ) -> Fut,
@@ -760,7 +761,14 @@ where
         extra_routes,
         diagnostics,
     } = bundle;
-    let result = callback(provider, auth_resolver, diagnostics, extra_routes).await;
+    let result = callback(
+        provider,
+        auth_resolver,
+        store.clone(),
+        diagnostics,
+        extra_routes,
+    )
+    .await;
     drop((store, resolver, registry));
     result
 }
@@ -920,7 +928,7 @@ where
 
     with_provider_bundle(
         bundle,
-        move |provider, auth_resolver, provider_diagnostics, extra_routes| async move {
+        move |provider, auth_resolver, store, provider_diagnostics, extra_routes| async move {
             let mut runtime_startup = runtime_startup;
             merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
             let mut runner = match NonInteractiveRunner::new_with_resume_runtime_packages_and_auth(
@@ -936,6 +944,7 @@ where
                 runtime_startup,
                 cli.trace.clone(),
                 auth_resolver,
+                Some(store),
                 extra_routes,
             ) {
                 Ok(runner) => runner,
@@ -1116,7 +1125,7 @@ async fn run_rpc_core(
 
     with_provider_bundle(
         bundle,
-        move |provider, auth_resolver, provider_diagnostics, extra_routes| async move {
+        move |provider, auth_resolver, store, provider_diagnostics, extra_routes| async move {
             let mut runtime_startup = runtime_startup;
             merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
             let mut runner = match RpcRunner::new_with_runtime_packages_and_auth(
@@ -1132,6 +1141,7 @@ async fn run_rpc_core(
                 resume_info,
                 cli.trace.clone(),
                 auth_resolver,
+                Some(store),
                 extra_routes,
             ) {
                 Ok(runner) => runner,
@@ -1294,6 +1304,7 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     // bundle.resolver (CredentialResolver) stays owned by the bundle for /login
     // and CredentialNeeded retry paths.
     .auth_resolver(bundle.auth_resolver.clone())
+    .credential_store(bundle.store)
     .extra_routes(bundle.extra_routes);
     if let Some(prompt) = user_system_prompt {
         builder = builder.user_system_prompt(prompt);
@@ -1335,9 +1346,8 @@ async fn run_interactive_core<Launch, LaunchFuture>(
     let model_display = config.defaults.model.clone();
     let theme_name = config.defaults.theme.clone();
     let keybindings = parse_keybindings(&config.keybindings);
-    // Attach the credential store and OAuth registry so the
-    // interactive loop can handle /login, /logout, and CredentialNeeded retry.
-    harness.credential_store = Some(bundle.store);
+    // The store was attached at collection construction; the interactive
+    // commands also use this registry for login and CredentialNeeded retry.
     harness.oauth_registry = Some(bundle.registry);
 
     if let Err(e) = launch_tui(harness, model_display, theme_name, keybindings).await {
@@ -2492,7 +2502,7 @@ mod tests {
         let callback_live = Arc::clone(&live);
         let completed = with_provider_bundle(
             bundle,
-            move |provider, _auth_resolver, _diagnostics, _extra_routes| async move {
+            move |provider, _auth_resolver, _store, _diagnostics, _extra_routes| async move {
                 assert_eq!(provider.id(), "anthropic");
                 assert!(
                     callback_live.load(Ordering::SeqCst),

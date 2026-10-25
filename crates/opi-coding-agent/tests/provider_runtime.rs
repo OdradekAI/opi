@@ -738,6 +738,7 @@ async fn phase17_noninteractive_runtime_preserves_the_active_route_resolver() {
         startup,
         None,
         resolver,
+        None,
         Vec::new(),
     )
     .unwrap();
