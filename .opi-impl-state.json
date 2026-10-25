@@ -9416,7 +9416,7 @@
       "definition_of_done": "One owner commits persisted ACK and memory revision atomically, restores cache before explicit network and prevents superseded/cancelled late publication. refresh(false) performs no OAuth/network, refresh(true) preserves per-provider successes and errors. Preserve configured baseURL and per-key OpenRouter chat-only filtering/price/limit/401/403/404 rules, Radius authoritative empty replacement, overrides and account isolation. Distribution schema1 differs from hydration6, no bareSDK pi.dev/default startup policy. Local scope: public custom dynamic catalog source plus a real controlled HTTP source prove atomic memory/store commit, restore, cancellation and explicit refresh. Built-in OpenRouter/Radius/operation-qualified policies and full AIR-034/064/V-28/56 close at 20.34; do not add those future factories here.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.18",
@@ -9456,7 +9456,7 @@
         },
         {
           "field": "task_owned_paths",
-          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.",
+          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.; appended crates/opi-coding-agent/tests/common/source_audit.rs (hermeticity guard): 20.33 adds test provider BarrierRefreshProvider (non-network barrier fake -> is_non_network_test_provider whitelist) and HttpCatalogSource (real HTTP consumer -> provider_constructor_url_argument mapping so its URL argument must prove a fixture host), per the guard's own registration protocol",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
         },
         {
@@ -9508,7 +9508,7 @@
             "opi_ai::ModelsStore (target)",
             "opi_ai OpenRouter explicit personalization helper (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-002",
@@ -9522,7 +9522,7 @@
             "opi_ai::ModelsStore (target)",
             "opi_ai OpenRouter explicit personalization helper (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-033",
@@ -9536,7 +9536,7 @@
             "opi_ai::ModelsStore (target)",
             "opi_ai OpenRouter explicit personalization helper (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S33",
@@ -9550,7 +9550,7 @@
             "opi_ai::ModelsStore (target)",
             "opi_ai OpenRouter explicit personalization helper (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -9561,8 +9561,10 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "51fdfb17f9febc2bcecf5b5ea3d24d149822be49",
+      "baseline_dirty_files": [
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.4.0-upgrade-assessment.md"
+      ],
       "task_owned_paths": [
         "CHANGELOG.md",
         "crates/opi-ai/README.md",
@@ -9572,12 +9574,93 @@
         "crates/opi-ai/src/models.rs",
         "crates/opi-ai/src/registry.rs",
         "crates/opi-ai/tests/provider_collection.rs",
-        "crates/opi-ai/tests/registry.rs"
+        "crates/opi-ai/tests/registry.rs",
+        "crates/opi-coding-agent/tests/common/source_audit.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "3a0acc8f1130f03243d431469fa10f5c11a35661",
+      "evidence": {
+        "Opi-Task": "20.33",
+        "Opi-DoD-SHA256": "d7ccd5f4c1c172c5610e370ed174c68d354e14754906ad6f62e7d35c2ab78eef",
+        "Opi-Verification": "workspace; smoke full PASSED (doc-check, fmt, workspace clippy, workspace tests, doc tests, rustdoc); scenario cargo test -p opi-ai --test provider_collection --test registry 65/65 + 27/27 PASS; opi-eval native_driver 2/2 isolated reruns green after one parallel-load flake; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "V-27, AIR-002, AIR-033 and P20-S33 exercised at the opi_ai::catalog::{ModelsStore,DynamicCatalogSource,HttpCatalogSource} and opi_ai::{Models::refresh,RefreshReport} public seams"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-25T17:43:51.526760+00:00",
+          "attempt": 1,
+          "summary": "Delivered DEL ModelsStore/refresh substrate: catalog::store (single revision-commit owner, persist-then-apply via RefreshGuard::commit, superseded/cancelled late-publication guards, restore-before-network, distribution-schema-v1 file with x-opi fidelity extension - distinct from hydration v6), catalog::wire (manual v1 codec avoiding serde derives in non-owned model_info.rs), catalog::http_source (DynamicCatalogSource trait + real HttpCatalogSource over pooled HttpClient), and Models::refresh(allow_network)->RefreshReport per-provider isolation with refresh_with cancellation (0.x breaking change, CHANGELOG entry; all internal callers updated). TDD: red suites first (compile-red, then 3 behavior-red test-setup corrections), final green 65/65 + 27/27. D.1 full PASSED on attempt 3: attempt 1 fmt/clippy/rustdoc private-link fixes plus Phase-17 hermeticity guard registrations (BarrierRefreshProvider whitelist; HttpCatalogSource::new tracked as fail-closed URL consumer, source_audit.rs ownership appended with evidence before edit), attempt 2 failed only on opi-eval native_driver parallel-load flake (isolated 2/2 reruns green, no task-owned path), attempt 3 fully green. Corrected an unverified Opi-DoD-SHA256 footer value in the task commit by amending the just-created unpushed commit before any ledger write; ledger DoD basis convention re-verified against 20.32. D.2 exec 7-lens run via degraded single-reviewer path (no Workflow runtime/node; wf_ref=null): must_fix=0, flagged=3 (source_audit ownership append, opi-eval flake class, Ok(None)-clears-source-overlay merge order documented as provider-then-source), rejected=3 (merge ModelsStore/CatalogHandle, make refresh sync, per-model ETag store metadata). No push.",
+          "gate_results": {
+            "d1_gate": "smoke full PASSED (doc-check, fmt, clippy --workspace --all-targets -D warnings, test --workspace --all-targets, test --workspace --doc, RUSTDOCFLAGS=-D warnings doc --workspace --no-deps)",
+            "d0_scenario": "cargo test -p opi-ai --test provider_collection --test registry -> 65 passed + 27 passed / 0 failed",
+            "d3_gap_only": "git diff --check clean; no bundle resource touched (packer not re-run)",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=3, rejected=3, wf_ref=null (degraded single-reviewer path)",
+            "evidence_correction": "task commit 9fb6ad5 created with unverified Opi-DoD-SHA256 293062d3...; amended to 3a0acc8 with ledger-derived d7ccd5f4c1c172c5610e370ed174c68d354e14754906ad6f62e7d35c2ab78eef before ledger mutation; 20.32 basis convention verified",
+            "artifact_truthfulness": [
+              {
+                "claim": "persisted ACK and memory revision commit atomically through one owner; superseded/cancelled cannot publish late",
+                "classification": "verified",
+                "artifact": "catalog_store_refresh_20_33::late_superseded_refresh_cannot_publish_or_rollback + cancelled_refresh_never_publishes + registry store guard tests",
+                "result": "PASS"
+              },
+              {
+                "claim": "refresh(false) performs no OAuth/network and restores cache first",
+                "classification": "verified",
+                "artifact": "refresh_false_performs_no_network_and_restores_store_first (fetch counter 0, restored resolvable)",
+                "result": "PASS"
+              },
+              {
+                "claim": "store file is distribution schema v1, distinct from hydration v6",
+                "classification": "verified",
+                "artifact": "models_store_file_uses_distribution_schema_v1_not_hydration_v6",
+                "result": "PASS"
+              },
+              {
+                "claim": "per-provider successes and errors with prior retention; prepared calls keep bindings",
+                "classification": "verified",
+                "artifact": "refresh_models_reports_per_provider_and_publishes_successes, refresh_collects_every_provider_after_the_first_error, http/custom source retention tests, prepared_call_keeps_binding_across_refresh_replacement",
+                "result": "PASS"
+              }
+            ],
+            "test_disposition": [
+              {
+                "subject": "V-27/AIR-002/AIR-033/P20-S33",
+                "action": "add",
+                "test": "provider_collection.rs catalog_store_refresh_20_33 mod (6 tests) + registry.rs store/codec tests (10 tests) at the public seams",
+                "interface": "opi_ai::catalog + opi_ai::Models::refresh/refresh_with",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.33",
+                "action": "update",
+                "test": "provider_collection.rs refresh suite (all-or-nothing -> per-provider report: refresh_models_reports_per_provider_and_publishes_successes, refresh_collects_every_provider_after_the_first_error, noop offline test; 10 call sites refresh()->refresh(bool))",
+                "interface": "Models::refresh",
+                "replacement": "RefreshReport carries per-provider outcomes with prior-data retention; red-first",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.33",
+                "action": "update",
+                "test": "crates/opi-coding-agent/tests/common/source_audit.rs (hermeticity registrations)",
+                "interface": "Phase-17 audit whitelist/url-consumer map",
+                "replacement": "documented registration protocol; ownership appended with ledger evidence",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.33",
+                "action": "none",
+                "test": "all other existing suites",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "3a0acc8f1130f03243d431469fa10f5c11a35661"
+          }
+        }
+      ]
     },
     {
       "id": "20.34",
@@ -19904,6 +19987,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-25T10:38:05.007707+00:00",
       "task_id": "20.32",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 3,
+      "ran_at": "2026-10-25T17:43:51.526760+00:00",
+      "task_id": "20.33",
       "criterion_id": null
     }
   ]
