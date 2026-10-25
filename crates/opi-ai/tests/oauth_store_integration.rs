@@ -9,6 +9,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 fn credential(access: &str, expires: i64) -> OAuthCredential {
@@ -29,15 +30,21 @@ struct Flow {
     entered: tokio::sync::Semaphore,
     release: tokio::sync::Semaphore,
     gated: bool,
+    refresh_delay: Duration,
     ttl: std::sync::atomic::AtomicI64,
 }
 impl Flow {
     fn new(gated: bool) -> Arc<Self> {
+        Self::with_timing(gated, Duration::ZERO)
+    }
+
+    fn with_timing(gated: bool, refresh_delay: Duration) -> Arc<Self> {
         Arc::new(Self {
             calls: AtomicUsize::new(0),
             entered: tokio::sync::Semaphore::new(0),
             release: tokio::sync::Semaphore::new(0),
             gated,
+            refresh_delay,
             ttl: std::sync::atomic::AtomicI64::new(3600),
         })
     }
@@ -62,6 +69,9 @@ impl OAuthProvider for Flow {
             self.entered.add_permits(1);
             if self.gated {
                 self.release.acquire().await.unwrap().forget();
+            }
+            if !self.refresh_delay.is_zero() {
+                tokio::time::sleep(self.refresh_delay).await;
             }
             Ok(credential(
                 "refreshed-selected-account",
@@ -381,4 +391,224 @@ async fn availability_never_combines_one_account_presence_with_later_missing_met
         vec!["gpt-4o"],
         "neither the old account nor a logged-out store permits the whole catalog"
     );
+}
+
+/// Delay persistence inside the real queue slot, after the resolver decides
+/// Write but before the credential is published or its receipt can settle.
+struct DelayedCommitStore {
+    inner: InMemoryCredentialStore,
+    delay: Duration,
+    persistence_started: Arc<tokio::sync::Semaphore>,
+}
+
+impl DelayedCommitStore {
+    fn new(delay: Duration) -> Self {
+        Self {
+            inner: InMemoryCredentialStore::new(),
+            delay,
+            persistence_started: Arc::new(tokio::sync::Semaphore::new(0)),
+        }
+    }
+}
+
+impl CredentialStore for DelayedCommitStore {
+    fn read<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> BoxAuthFuture<'a, Result<Option<opi_ai::Credential>, opi_ai::CredentialStoreError>> {
+        self.inner.read(key)
+    }
+
+    fn write<'a>(
+        &'a self,
+        key: &'a str,
+        credential: &'a opi_ai::Credential,
+    ) -> BoxAuthFuture<'a, Result<(), opi_ai::CredentialStoreError>> {
+        self.inner.write(key, credential)
+    }
+
+    fn delete<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> BoxAuthFuture<'a, Result<(), opi_ai::CredentialStoreError>> {
+        self.inner.delete(key)
+    }
+
+    fn probe<'a>(&'a self, key: &'a str) -> BoxAuthFuture<'a, opi_ai::CredentialSource> {
+        self.inner.probe(key)
+    }
+
+    fn modify<'a>(
+        &'a self,
+        key: &'a str,
+        op: opi_ai::mutation::CredentialMutationOp,
+    ) -> BoxAuthFuture<'a, Result<opi_ai::mutation::MutationReceipt, opi_ai::CredentialStoreError>>
+    {
+        use opi_ai::mutation::{CredentialMutationOp, MutationDecision};
+        let delay = self.delay;
+        let started = self.persistence_started.clone();
+        let op = match op {
+            CredentialMutationOp::Update(update) => {
+                CredentialMutationOp::Update(Box::new(move |view, current| {
+                    Box::pin(async move {
+                        let decision = update(view, current).await?;
+                        if matches!(&decision, MutationDecision::Write(_)) {
+                            started.add_permits(1);
+                            tokio::time::sleep(delay).await;
+                        }
+                        Ok(decision)
+                    })
+                }))
+            }
+            other => other,
+        };
+        self.inner.modify(key, op)
+    }
+
+    fn mutation_barrier(&self) -> opi_ai::mutation::MutationBarrier {
+        self.inner.mutation_barrier()
+    }
+
+    fn mutation_queue(&self) -> Option<Arc<opi_ai::mutation::MutationQueue>> {
+        self.inner.mutation_queue()
+    }
+}
+
+async fn assert_stored_access(store: &dyn CredentialStore, expected: &str) {
+    use secrecy::ExposeSecret;
+    let Some(opi_ai::Credential::OAuthToken { access, .. }) = store.read("openai").await.unwrap()
+    else {
+        panic!("selected stored OAuth identity");
+    };
+    assert_eq!(access.expose_secret(), expected);
+}
+
+async fn assert_public_default_budget_excludes_store_time(lock_wait: Duration) {
+    use opi_ai::mutation::{BarrierEntry, CredentialMutationOp, MutationDecision, MutationOutcome};
+    use secrecy::ExposeSecret;
+    let store = Arc::new(DelayedCommitStore::new(Duration::from_secs(6)));
+    store
+        .write("openai", &credential("expired-selected-account", -1).into())
+        .await
+        .unwrap();
+    let blocked = if lock_wait.is_zero() {
+        None
+    } else {
+        let (release, released) = tokio::sync::oneshot::channel();
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let preceding = store.modify(
+            "openai",
+            CredentialMutationOp::Update(Box::new(move |_, _| {
+                Box::pin(async move {
+                    entered.send(()).unwrap();
+                    released.await.unwrap();
+                    Ok(MutationDecision::Keep)
+                })
+            })),
+        );
+        ready.await.unwrap();
+        Some((release, preceding))
+    };
+    let flow = Flow::with_timing(false, Duration::from_secs(10));
+    // register_oauth_route supplies the production default, with no override.
+    let models = models(store.clone(), flow.clone(), "http://127.0.0.1:1".into());
+    let start = tokio::time::Instant::now();
+    let mut pending = Box::pin(models.get_auth("openai", AuthResolutionOverrides::default()));
+    assert!(futures_util::poll!(&mut pending).is_pending());
+    let barrier = models.mutation_barrier().unwrap();
+    let refresh_generation = barrier.cutoff();
+    if let Some((release, preceding)) = blocked {
+        tokio::time::advance(lock_wait).await;
+        assert!(futures_util::poll!(&mut pending).is_pending());
+        assert_eq!(flow.calls.load(Ordering::SeqCst), 0);
+        assert!(!barrier.report().is_complete());
+        release.send(()).unwrap();
+        preceding.await.unwrap();
+    }
+    flow.entered.acquire().await.unwrap().forget();
+    assert_eq!(start.elapsed(), lock_wait);
+    tokio::time::advance(Duration::from_secs(10)).await;
+    tokio::select! {
+        permit = store.persistence_started.acquire() => permit.unwrap().forget(),
+        outcome = &mut pending => panic!("auth returned before persistence ACK: {outcome:?}"),
+    }
+    assert_eq!(start.elapsed(), lock_wait + Duration::from_secs(10));
+    assert!(futures_util::poll!(&mut pending).is_pending());
+    assert_stored_access(store.as_ref(), "expired-selected-account").await;
+    tokio::time::advance(Duration::from_secs(5)).await;
+    assert!(futures_util::poll!(&mut pending).is_pending());
+    assert_stored_access(store.as_ref(), "expired-selected-account").await;
+    assert!(barrier.report().captured.iter().any(
+        |entry| matches!(entry, BarrierEntry::Pending { generation, provider_id }
+            if *generation == refresh_generation && provider_id == "openai")
+    ));
+    tokio::time::advance(Duration::from_secs(1)).await;
+    let auth = pending.await.unwrap().unwrap();
+    assert_eq!(start.elapsed(), lock_wait + Duration::from_secs(16));
+    assert_eq!(auth.secret.expose_secret(), "refreshed-selected-account");
+    assert_eq!(auth.account_id.as_deref(), Some("selected-account"));
+    assert_eq!(flow.calls.load(Ordering::SeqCst), 1);
+    assert_stored_access(store.as_ref(), "refreshed-selected-account").await;
+    let report = barrier.report();
+    assert!(report.is_complete());
+    assert!(matches!(
+        report.captured.last(),
+        Some(BarrierEntry::Settled(receipt))
+            if receipt.generation == refresh_generation
+                && matches!(receipt.outcome, MutationOutcome::Written { .. })
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn public_resolver_default_budget_allows_ten_second_refresh_and_six_second_ack() {
+    assert_public_default_budget_excludes_store_time(Duration::ZERO).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn public_resolver_default_budget_excludes_twenty_second_store_lock_wait() {
+    assert_public_default_budget_excludes_store_time(Duration::from_secs(20)).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn public_resolver_default_budget_times_out_refresh_network_without_a_late_commit() {
+    use opi_ai::models::ModelsError;
+    use opi_ai::mutation::{BarrierEntry, MutationError, MutationOutcome};
+    let store = Arc::new(DelayedCommitStore::new(Duration::from_secs(6)));
+    store
+        .write("openai", &credential("expired-selected-account", -1).into())
+        .await
+        .unwrap();
+    let flow = Flow::with_timing(false, Duration::from_secs(16));
+    let models = models(store.clone(), flow.clone(), "http://127.0.0.1:1".into());
+    let start = tokio::time::Instant::now();
+    let mut pending = Box::pin(models.get_auth("openai", AuthResolutionOverrides::default()));
+    assert!(futures_util::poll!(&mut pending).is_pending());
+    flow.entered.acquire().await.unwrap().forget();
+    assert_eq!(start.elapsed(), Duration::ZERO);
+    let barrier = models.mutation_barrier().unwrap();
+    let refresh_generation = barrier.cutoff();
+    tokio::time::advance(Duration::from_millis(14_999)).await;
+    assert!(futures_util::poll!(&mut pending).is_pending());
+    assert!(!barrier.report().is_complete());
+    tokio::time::advance(Duration::from_millis(2)).await;
+    let error = pending.await.expect_err("default refresh network deadline");
+    assert!(matches!(
+        error,
+        ModelsError::AuthResolution { provider, error }
+            if provider == "openai" && matches!(*error, ProviderError::Timeout)
+    ));
+    assert_eq!(start.elapsed(), Duration::from_millis(15_001));
+    let report = barrier.report();
+    assert!(report.is_complete());
+    assert!(report.captured.iter().any(|entry| matches!(
+        entry,
+        BarrierEntry::Settled(receipt) if receipt.generation == refresh_generation && matches!(
+            &receipt.outcome,
+            MutationOutcome::Failed { error } if matches!(error.as_ref(), MutationError::Operation(ProviderError::Timeout))
+        )
+    )));
+    tokio::time::advance(Duration::from_secs(2)).await;
+    assert_stored_access(store.as_ref(), "expired-selected-account").await;
+    assert_eq!(store.persistence_started.available_permits(), 0);
+    assert_eq!(flow.calls.load(Ordering::SeqCst), 1);
 }

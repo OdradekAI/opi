@@ -4699,6 +4699,11 @@
           "field": "test_impact_plan",
           "reason": "retain/update existing public Interface assertions in crates/opi-ai/tests/auth_contracts.rs. add only materially distinct source inputs/outcomes to those existing suites. Before red, reread full bodies and matrix41+7 disposition, record every retain/update/add/delete and passing replacement before deletion. A new file name is not evidence of duplicate behavior. Run all actually created/modified binaries/filters and reject zero-test success.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+        },
+        {
+          "field": "verification",
+          "reason": "User-approved factual test/call-site inventory supplement P20-N3-AUTH-REPAIR-e3ae30e; reuse the verified repair tree and existing workspace execution. No new DoD, gate, dependency or runtime execution. Same-owner ADC presence checks are refresh-free.",
+          "source": "Git commit e3ae30ef7a1939daac67e859167946a792f19011; existing scenario contracts and public regression tests"
         }
       ],
       "tier": "workspace",
@@ -4710,7 +4715,8 @@
           ".agents/skills/opi-implement/scripts/opi-impl-smoke.ps1 full"
         ],
         "behavioral_tests": [
-          "crates/opi-ai/tests/auth_contracts.rs"
+          "crates/opi-ai/tests/auth_contracts.rs",
+          "crates/opi-ai/tests/adc_owner_regressions.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -4721,18 +4727,23 @@
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-08",
           "scenario": "Separate source configuration checks, on-demand selected resolution and generation. Construction/register/staticlookup do zero env/store/network, injected source replaces ambient and explicit per-call key wins. check expired OAuth is configured without refresh, store/check error is typed not empty, selected source failure never falls back, logout ACKs only selected local deletion. Keep model/Auth/Telemetry Context separation and actual source I/O classification.",
           "verification": [
-            "cargo test -p opi-ai --test auth_contracts"
+            "cargo test -p opi-ai --test auth_contracts",
+            "cargo test -p opi-ai --test adc_owner_regressions"
           ],
           "production_call_sites": [
             "opi_ai::Models::{check_auth,get_available,get_auth,logout} (target)",
-            "opi_coding_agent::provider_factory"
+            "opi_coding_agent::provider_factory",
+            "opi_ai::auth::AuthResolver::check_configuration",
+            "opi_ai::auth::adc::native::AdcNativeOwner::check_configured"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
         "opi_ai::Models::{check_auth,get_available,get_auth,logout} (target)",
-        "opi_coding_agent::provider_factory"
+        "opi_coding_agent::provider_factory",
+        "opi_ai::auth::AuthResolver::check_configuration",
+        "opi_ai::auth::adc::native::AdcNativeOwner::check_configured"
       ],
       "substrate_only": false,
       "iteration_count": 1,
@@ -4855,6 +4866,38 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 1,
+          "summary": "Same-owner ADC presence checking and public Models metadata; P20-S18 reconciled to met. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [
+                "crates/opi-ai/tests/adc_owner_regressions.rs"
+              ],
+              "production_call_sites": [
+                "opi_ai::auth::AuthResolver::check_configuration",
+                "opi_ai::auth::adc::native::AdcNativeOwner::check_configured"
+              ]
+            },
+            "scenario_changes": [
+              {
+                "task": "20.18",
+                "scenario": "P20-S18",
+                "before": "open",
+                "after": "met",
+                "basis": "Executed public Models management and actual ADC-owner configuration fixtures cover this direct contract."
+              }
+            ],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
         }
       ]
     },
@@ -4935,6 +4978,16 @@
           "field": "task_owned_paths",
           "reason": "Adding ScopedEnvironment and ProxyPlaceholder to the public AwsCredentialSource provenance enum (scoped-vs-ambient pairs and the explicit proxy-placeholder mode are DoD-owned) breaks the exhaustive evidence-facts mapping in opi-agent/src/evidence.rs; only the two mirrored variants are added there.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Compat and authentication"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "User-approved post-review inventory supplement P20-N3-AUTH-REPAIR-e3ae30e; exact existing paths: crates/opi-ai/src/auth/aws/process/windows.rs, crates/opi-ai/tests/auth_process_lifecycle.rs. Frozen helper context and tree lifetime, including descendants after parent exit. This records the separately authorized manual repair after the fact, not retroactive Phase C admission.",
+          "source": "Git commit e3ae30ef7a1939daac67e859167946a792f19011; user-approved third-node ledger maintenance"
+        },
+        {
+          "field": "verification",
+          "reason": "User-approved factual test/call-site inventory supplement P20-N3-AUTH-REPAIR-e3ae30e; reuse the verified repair tree and existing workspace execution. No new DoD, gate, dependency or runtime execution. Frozen helper context and tree lifetime, including descendants after parent exit.",
+          "source": "Git commit e3ae30ef7a1939daac67e859167946a792f19011; existing scenario contracts and public regression tests"
         }
       ],
       "tier": "workspace",
@@ -4948,7 +5001,8 @@
         "behavioral_tests": [
           "crates/opi-ai/tests/bedrock_fixtures.rs",
           "crates/opi-ai/tests/auth_contracts.rs",
-          "crates/opi-coding-agent/tests/bedrock_provider_wiring.rs"
+          "crates/opi-coding-agent/tests/bedrock_provider_wiring.rs",
+          "crates/opi-ai/tests/auth_process_lifecycle.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -4995,7 +5049,9 @@
         "crates/opi-coding-agent/tests/bedrock_provider_wiring.rs",
         "crates/opi-ai/tests/provider_lifecycle.rs",
         "crates/opi-coding-agent/tests/provider_factory.rs",
-        "crates/opi-agent/src/evidence.rs"
+        "crates/opi-agent/src/evidence.rs",
+        "crates/opi-ai/src/auth/aws/process/windows.rs",
+        "crates/opi-ai/tests/auth_process_lifecycle.rs"
       ],
       "verified_at_commit": "9ca9edd09f8d03f5fe502f733b05babd173311ef",
       "evidence": {
@@ -5122,6 +5178,30 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Frozen native helper context and Windows Job/tree lifecycle. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [
+                "crates/opi-ai/src/auth/aws/process/windows.rs",
+                "crates/opi-ai/tests/auth_process_lifecycle.rs"
+              ],
+              "behavioral_tests": [
+                "crates/opi-ai/tests/auth_process_lifecycle.rs"
+              ],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
           }
         }
       ]
@@ -5310,6 +5390,25 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Selected nested role chains resolve inner to outer without identity rediscovery. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
           }
         }
       ]
@@ -5531,6 +5630,25 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "SSO/login identity, owned rotation, memory ACK, best-effort disk save and invalidation fences. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
         }
       ]
     },
@@ -5726,6 +5844,25 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Validation-only: no retry implementation changed; reuse executed standard/adaptive/Smithy2026 cases. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
           }
         }
       ]
@@ -5944,6 +6081,25 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "ADC configuration/resolution separation and real Vertex source/target wiring. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
         }
       ]
     },
@@ -6016,6 +6172,16 @@
           "field": "task_owned_paths",
           "reason": "Required caller migrations outside the pre-admitted set: (1) auth/aws/process.rs - terminate_tree_and_reap widened to pub(crate) so the executable supplier reuses the existing private bounded-process mechanism (process group + kill_on_drop + tree reaping) as the DoD mandates, without a new public runner interface; (2) test_support.rs - new portable_executable_script helper moves the unix/windows spawn split out of acceptance test sources because the Phase 17 hermeticity guard rejects conditional-compilation attributes in acceptance files; (3) tests/fixtures/adc-external - committed synthetic non-secret X.509 v3 PEM fixtures (CA, loopback server, two leafs + key) generated with openssl for the source-scoped mTLS handshake proof and chain-order rules.",
           "source": "task 20.21.2 DoD: \"Reuse only the existing private process mechanism, not a new public runner interface\" + test_hermeticity platform-neutrality guard"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "User-approved post-review inventory supplement P20-N3-AUTH-REPAIR-e3ae30e; exact existing paths: crates/opi-ai/tests/auth_process_lifecycle.rs. ADC supplier uses the private helper lifetime mechanism; no Bedrock chain admission is added. This records the separately authorized manual repair after the fact, not retroactive Phase C admission.",
+          "source": "Git commit e3ae30ef7a1939daac67e859167946a792f19011; user-approved third-node ledger maintenance"
+        },
+        {
+          "field": "verification",
+          "reason": "User-approved factual test/call-site inventory supplement P20-N3-AUTH-REPAIR-e3ae30e; reuse the verified repair tree and existing workspace execution. No new DoD, gate, dependency or runtime execution. ADC supplier uses the private helper lifetime mechanism; no Bedrock chain admission is added.",
+          "source": "Git commit e3ae30ef7a1939daac67e859167946a792f19011; existing scenario contracts and public regression tests"
         }
       ],
       "tier": "workspace",
@@ -6028,7 +6194,8 @@
         ],
         "behavioral_tests": [
           "crates/opi-ai/tests/vertex_fixtures.rs",
-          "crates/opi-ai/tests/auth_contracts.rs"
+          "crates/opi-ai/tests/auth_contracts.rs",
+          "crates/opi-ai/tests/auth_process_lifecycle.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -6071,7 +6238,8 @@
         "crates/opi-ai/tests/vertex_fixtures.rs",
         "crates/opi-ai/src/auth/aws/process.rs",
         "crates/opi-ai/src/test_support.rs",
-        "crates/opi-ai/tests/fixtures/adc-external"
+        "crates/opi-ai/tests/fixtures/adc-external",
+        "crates/opi-ai/tests/auth_process_lifecycle.rs"
       ],
       "verified_at_commit": "cf6a483add55d9cbfb7e9e4347be02b4478b5f10",
       "evidence": {
@@ -6134,6 +6302,29 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Executable admission/context/redaction/lifetime and source GET/token POST redirects; preserve distinct ADC AWS scope. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [
+                "crates/opi-ai/tests/auth_process_lifecycle.rs"
+              ],
+              "behavioral_tests": [
+                "crates/opi-ai/tests/auth_process_lifecycle.rs"
+              ],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
           }
         }
       ]
@@ -6207,6 +6398,16 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-STORE; role=consumer; owner_task=20.22; module=opi_ai::auth; interface=CredentialStore atomic update/ACK/mutation_barrier; representation=state machine; consumer_tasks=20.19.3,20.21.1,20.21.3,20.23,20.24,20.25,20.26,20.27,20.28,20.29,20.30,20.31; criterion_ids=AIR-063,V-12; legacy_paths=waiter-owned refresh product protocol duplication; closure_test=crates/opi-ai/tests/auth_contracts.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "User-approved post-review inventory supplement P20-N3-AUTH-REPAIR-e3ae30e; exact existing paths: crates/opi-ai/tests/adc_owner_regressions.rs. Aggregate ADC source identity, rotation and short-TTL publication-fence fixtures. This records the separately authorized manual repair after the fact, not retroactive Phase C admission.",
+          "source": "Git commit e3ae30ef7a1939daac67e859167946a792f19011; user-approved third-node ledger maintenance"
+        },
+        {
+          "field": "verification",
+          "reason": "User-approved factual test/call-site inventory supplement P20-N3-AUTH-REPAIR-e3ae30e; reuse the verified repair tree and existing workspace execution. No new DoD, gate, dependency or runtime execution. Aggregate ADC source identity, rotation and short-TTL publication-fence fixtures.",
+          "source": "Git commit e3ae30ef7a1939daac67e859167946a792f19011; existing scenario contracts and public regression tests"
         }
       ],
       "tier": "workspace",
@@ -6219,7 +6420,8 @@
         ],
         "behavioral_tests": [
           "crates/opi-ai/tests/vertex_fixtures.rs",
-          "crates/opi-ai/tests/auth_contracts.rs"
+          "crates/opi-ai/tests/auth_contracts.rs",
+          "crates/opi-ai/tests/adc_owner_regressions.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -6239,7 +6441,8 @@
         }
       ],
       "production_call_sites": [
-        "opi_ai::Models::get_auth/stream -> selected ADC source -> migrated VertexProvider::stream_prepared -> local SSE response (target)"
+        "opi_ai::Models::get_auth/stream -> selected ADC source -> migrated VertexProvider::stream_prepared -> local SSE response (target)",
+        "opi_ai::auth::adc::native::AdcNativeOwner::resolve_token"
       ],
       "substrate_only": false,
       "iteration_count": 0,
@@ -6258,7 +6461,8 @@
         "crates/opi-ai/src/models.rs",
         "crates/opi-ai/src/vertex.rs",
         "crates/opi-ai/tests/auth_contracts.rs",
-        "crates/opi-ai/tests/vertex_fixtures.rs"
+        "crates/opi-ai/tests/vertex_fixtures.rs",
+        "crates/opi-ai/tests/adc_owner_regressions.rs"
       ],
       "verified_at_commit": "5086aa6dd8d67d2928a32051709d16cb6b50a297",
       "evidence": {
@@ -6338,6 +6542,31 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Recursive identity, unique refresh retention, single-flight, short TTL and late-result fences. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [
+                "crates/opi-ai/tests/adc_owner_regressions.rs"
+              ],
+              "behavioral_tests": [
+                "crates/opi-ai/tests/adc_owner_regressions.rs"
+              ],
+              "production_call_sites": [
+                "opi_ai::auth::adc::native::AdcNativeOwner::resolve_token"
+              ]
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
         }
       ],
       "dod_sha256": "fadf858a12b5df1d296604adea86baedae32e7fc3d7effef3ee9334fa419450d"
@@ -6407,6 +6636,16 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-STORE; role=owner; owner_task=20.22; module=opi_ai::auth; interface=CredentialStore atomic update/ACK/mutation_barrier; representation=state machine; consumer_tasks=20.19.3,20.21.1,20.21.3,20.23,20.24,20.25,20.26,20.27,20.28,20.29,20.30,20.31; criterion_ids=AIR-063,V-12; legacy_paths=waiter-owned refresh product protocol duplication; closure_test=crates/opi-ai/tests/auth_contracts.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "User-approved post-review inventory supplement P20-N3-AUTH-REPAIR-e3ae30e; exact existing paths: crates/opi-ai/src/mutation.rs, crates/opi-coding-agent/tests/product_source_barrier.rs. One SDK/product store coordinator and queue; keychain/fs4/presenter policy stays host-owned. Exact R-02 timing proof remains open. This records the separately authorized manual repair after the fact, not retroactive Phase C admission.",
+          "source": "Git commit e3ae30ef7a1939daac67e859167946a792f19011; user-approved third-node ledger maintenance"
+        },
+        {
+          "field": "verification",
+          "reason": "User-approved factual test/call-site inventory supplement P20-N3-AUTH-REPAIR-e3ae30e; reuse the verified repair tree and existing workspace execution. No new DoD, gate, dependency or runtime execution. One SDK/product store coordinator and queue; keychain/fs4/presenter policy stays host-owned. Exact R-02 timing proof remains open.",
+          "source": "Git commit e3ae30ef7a1939daac67e859167946a792f19011; existing scenario contracts and public regression tests"
         }
       ],
       "tier": "workspace",
@@ -6419,7 +6658,11 @@
         ],
         "behavioral_tests": [
           "crates/opi-ai/tests/auth_contracts.rs",
-          "crates/opi-ai/tests/oauth_wire_shape.rs"
+          "crates/opi-ai/tests/oauth_wire_shape.rs",
+          "crates/opi-ai/tests/oauth_store_integration.rs",
+          "crates/opi-coding-agent/tests/credential_store.rs",
+          "crates/opi-coding-agent/tests/oauth_auth.rs",
+          "crates/opi-coding-agent/tests/product_source_barrier.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -6430,48 +6673,74 @@
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#已有要求的修订验收（V-01–26） / V-12",
           "scenario": "SDK-only public input: **SDK active：** AuthResolver/store/Models；并发近过期、失败、waiter cancel、低层 retry；**host-impact：** 产品恢复. Observable result and failure: 同 prepared logical call 一次解析并冻结 auth；低层 retries 不重新选来源。等待 store-owned 锁的 caller 可取消；**宿主 runtime 存活时，refresh一旦开始仅网络使用独立15s signal，store ACK不受该timer，caller 停止等待不能中断其刷新/原子保存**；Handle 不维持 Runtime 存活，shutdown/abort/timeout/remote或store failure 不保证保存或远端回滚，不冒称旧token仍有效。其他 waiter 复用已提交新 token，不重复 refresh；失败无半凭据/账户 fallback；logout/replace 与刷新同事务序列化，迟到 refresh 不复活已替换身份。取消生成零后续 dispatch，不因已保存刷新自动恢复。显式 V-57 新 call 可重解析同源 auth；产品 recovery identity/持久化政策只属 V-33. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
           "verification": [
-            "cargo test -p opi-ai --test auth_contracts --test oauth_wire_shape"
+            "cargo test -p opi-ai --test auth_contracts --test oauth_wire_shape",
+            "cargo test -p opi-ai --test oauth_store_integration",
+            "cargo test -p opi-coding-agent --test credential_store --test oauth_auth --test product_source_barrier"
           ],
           "production_call_sites": [
             "opi_ai CredentialStore serialized update/mutation_barrier (target)",
             "opi_ai::Models login/get_auth/logout (target)",
-            "opi_coding_agent::credential_store"
+            "opi_coding_agent::credential_store",
+            "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+            "opi_ai::auth::oauth::login_to_store",
+            "opi_ai::CredentialStore::mutation_queue",
+            "opi_coding_agent::credential_store::CredentialResolver::resolve_oauth",
+            "opi_coding_agent::oauth::login_oauth"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-063",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: full Pi 1.3.0 public coverage / AIR-063",
           "scenario": "SDK credentials/store/OAuth owner; concurrent auth mutation. MUST provide object-safe store-owned serialized update/ACK and owned mutation_barrier delegated by Models. Synchronous creation captures same-store cutoff/receipts across Models; waiting starts no auth/logout and cannot abort started rotation. No default30s wait,256-key admission cap or ADC60s total budget; caller cancellation/optional deadline governs waiting only. Report all captured outcomes/pending honestly, retain unknown receipts and late-write fences, and keep runtime/crash/cross-process limits explicit. No account fallback/keychain/generic shutdown dependency. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
           "verification": [
-            "cargo test -p opi-ai --test auth_contracts --test oauth_wire_shape"
+            "cargo test -p opi-ai --test auth_contracts --test oauth_wire_shape",
+            "cargo test -p opi-ai --test oauth_store_integration",
+            "cargo test -p opi-coding-agent --test credential_store --test oauth_auth --test product_source_barrier"
           ],
           "production_call_sites": [
             "opi_ai CredentialStore serialized update/mutation_barrier (target)",
             "opi_ai::Models login/get_auth/logout (target)",
-            "opi_coding_agent::credential_store"
+            "opi_coding_agent::credential_store",
+            "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+            "opi_ai::auth::oauth::login_to_store",
+            "opi_ai::CredentialStore::mutation_queue",
+            "opi_coding_agent::credential_store::CredentialResolver::resolve_oauth",
+            "opi_coding_agent::oauth::login_oauth"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S22",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-09",
           "scenario": "Own atomic credential+metadata updates/ACK and receipts at shared store, started rotation survives waiter cancellation while host runtime lives. Synchronous barrier creation captures same-store cutoff across Models, reports every pending/unknown/failure and late-write fence without starting auth or aborting rotation. Network15s scope excludes lock and ACK, no default wait/receipt caps. Serialize login/logout/replace/refresh, preserve host keychain/locking policy and unknown crash/runtime outcomes; migrate existing product bridge coherently.",
           "verification": [
-            "cargo test -p opi-ai --test auth_contracts --test oauth_wire_shape"
+            "cargo test -p opi-ai --test auth_contracts --test oauth_wire_shape",
+            "cargo test -p opi-ai --test oauth_store_integration",
+            "cargo test -p opi-coding-agent --test credential_store --test oauth_auth --test product_source_barrier"
           ],
           "production_call_sites": [
             "opi_ai CredentialStore serialized update/mutation_barrier (target)",
             "opi_ai::Models login/get_auth/logout (target)",
-            "opi_coding_agent::credential_store"
+            "opi_coding_agent::credential_store",
+            "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+            "opi_ai::auth::oauth::login_to_store",
+            "opi_ai::CredentialStore::mutation_queue",
+            "opi_coding_agent::credential_store::CredentialResolver::resolve_oauth",
+            "opi_coding_agent::oauth::login_oauth"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
         "opi_ai CredentialStore serialized update/mutation_barrier (target)",
         "opi_ai::Models login/get_auth/logout (target)",
-        "opi_coding_agent::credential_store"
+        "opi_coding_agent::credential_store",
+        "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+        "opi_ai::auth::oauth::login_to_store",
+        "opi_ai::CredentialStore::mutation_queue",
+        "opi_coding_agent::credential_store::CredentialResolver::resolve_oauth",
+        "opi_coding_agent::oauth::login_oauth"
       ],
       "substrate_only": false,
       "iteration_count": 1,
@@ -6540,7 +6809,9 @@
         "crates/opi-coding-agent/tests/*oauth*",
         "crates/opi-coding-agent/tests/*provider*",
         "crates/opi-coding-agent/tests/*rpc*",
-        "crates/opi-coding-agent/tests/*session*"
+        "crates/opi-coding-agent/tests/*session*",
+        "crates/opi-ai/src/mutation.rs",
+        "crates/opi-coding-agent/tests/product_source_barrier.rs"
       ],
       "verified_at_commit": "843cde1",
       "evidence": {
@@ -6595,6 +6866,120 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 1,
+          "summary": "Shared SDK/product coordinator and queue. Direct AIR-063 is met; V-12/P20-S22 stay open for exact R-02 timing proof. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [
+                "crates/opi-ai/src/mutation.rs",
+                "crates/opi-coding-agent/tests/product_source_barrier.rs"
+              ],
+              "behavioral_tests": [
+                "crates/opi-ai/tests/oauth_store_integration.rs",
+                "crates/opi-coding-agent/tests/credential_store.rs",
+                "crates/opi-coding-agent/tests/oauth_auth.rs",
+                "crates/opi-coding-agent/tests/product_source_barrier.rs"
+              ],
+              "production_call_sites": [
+                "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+                "opi_ai::auth::oauth::login_to_store",
+                "opi_ai::CredentialStore::mutation_queue",
+                "opi_coding_agent::credential_store::CredentialResolver::resolve_oauth",
+                "opi_coding_agent::oauth::login_oauth"
+              ]
+            },
+            "scenario_changes": [
+              {
+                "task": "20.22",
+                "scenario": "AIR-063",
+                "before": "open",
+                "after": "met",
+                "basis": "Executed direct store/barrier fixtures cover this criterion; additional V-12/V-43/V-55 timing acceptance is distinct."
+              }
+            ],
+            "required_evidence_gap_ref": "P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING",
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
+        },
+        {
+          "timestamp": "2026-10-25T06:30:21.612898+00:00",
+          "attempt": 1,
+          "summary": "User-authorized test/evidence-only closure of the exact R-02 public resolver timing gap. Existing production code, specifications, manifests and original task history are unchanged. All ten OAuth store integration tests and affected-target Clippy pass; no commit, task re-execution or evaluator invocation is fabricated.",
+          "gate_results": {
+            "record_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e",
+            "resolved_evidence_gap_id": "P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING",
+            "runtime_base_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "test_file_sha256": "a5d33067e88f0f0e1ba624da2ae0b2502870d9cdd273a755a011fbfd3939a5e8",
+            "scenario_changes": [
+              {
+                "task": "20.22",
+                "scenario": "V-12",
+                "before": "open",
+                "after": "met",
+                "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+              },
+              {
+                "task": "20.22",
+                "scenario": "P20-S22",
+                "before": "open",
+                "after": "met",
+                "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+              }
+            ],
+            "verification_command": "cargo test --offline --locked -j 2 -p opi-ai --test oauth_store_integration",
+            "verification_result": "PASS: 10 passed, 0 failed, 0 ignored; includes three new fake-clock cases",
+            "test_disposition": [
+              {
+                "subject": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e",
+                "action": "add",
+                "test": "crates/opi-ai/tests/oauth_store_integration.rs::public_resolver_default_budget_allows_ten_second_refresh_and_six_second_ack",
+                "interface": "public Models::get_auth -> default StoreOAuthResolver -> real mutation queue slot/receipt",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e",
+                "action": "add",
+                "test": "crates/opi-ai/tests/oauth_store_integration.rs::public_resolver_default_budget_excludes_twenty_second_store_lock_wait",
+                "interface": "public Models::get_auth -> default StoreOAuthResolver -> real mutation queue slot/receipt",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e",
+                "action": "add",
+                "test": "crates/opi-ai/tests/oauth_store_integration.rs::public_resolver_default_budget_times_out_refresh_network_without_a_late_commit",
+                "interface": "public Models::get_auth -> default StoreOAuthResolver -> real mutation queue slot/receipt",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e",
+                "action": "update",
+                "test": "crates/opi-ai/tests/oauth_store_integration.rs test-only Flow/DelayedCommitStore fixtures",
+                "interface": "configurable synthetic refresh delay and in-slot persistence delay, zero-delay behavior retained for original cases",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/oauth_store_integration.rs original seven tests",
+                "interface": "actual adapter consumption, two Models, rotation cancellation, expiry, unknown ACK, locked selection, rebinding and account availability regressions",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "third_node_verdict": "may continue within the 16-task authentication node; no complete-generation/profile/package/platform closure",
+            "task_history_preserved": true
           }
         }
       ]
@@ -6849,6 +7234,25 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 1,
+          "summary": "Anthropic JSON token fields, copy-code cancellation/budget and manual bind fallback. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
         }
       ]
     },
@@ -7076,6 +7480,25 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Codex agentName, strict refresh/account identity and request assembly. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
         }
       ]
     },
@@ -7263,6 +7686,25 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Issued ChatGPT client and validated scopes persist atomically; Decisions stays API-key-only. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
           }
         }
       ]
@@ -7508,6 +7950,25 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Copilot persisted account metadata/allowlist and endpoint consumption; policy activation login-only. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
         }
       ],
       "dod_sha256": "7930f8b0b78f6f9e4733b77cdb9e76b93c3e106d1c095867a67242840afb0bc9"
@@ -7677,6 +8138,25 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "OpenRouter permanent-key PKCE metadata and assembly; no invented mandatory state/personalization. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
         }
       ]
     },
@@ -7843,6 +8323,25 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Kimi flow-specific timing, validation, metadata and request identity. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
         }
       ]
     },
@@ -8001,6 +8500,25 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Meta same-identity remint and checked source durations. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
         }
       ]
     },
@@ -8157,6 +8675,25 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "xAI timing/duration checks preserve omitted-refresh reuse and HTTPS verification. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [],
+              "behavioral_tests": [],
+              "production_call_sites": []
+            },
+            "scenario_changes": [],
+            "required_evidence_gap_ref": null,
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
         }
       ]
     },
@@ -8237,6 +8774,16 @@
           "field": "definition_of_done",
           "reason": "Public login to injected presenter/fake HTTP to acknowledged store to actual selected SDK request verifies id/name/gateway/account binding, browserPKCE callback plus device flow, discovery/refresh/catalog metadata and store isolation. Test applicable invalid/state/PKCE/denial/expiry/callback/cancel/refresh failures, one Rust5min near-expiry correction, actual service expiry and shared transaction rotation. No automatic browser/keychain/global runtime/account fallback or remote rollback. Keep host UI and storage backend optional. In addition to the Radius slice, own complete DEL-08/DEL-09 and V-43/V-55 assembled source/flow conformance over the completed AWS, ADC, retry-mode and eight OAuth predecessors. Reuse their exact behavioral evidence; add only distinct same-store/cross-source integration cases, never implement those families again.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "User-approved post-review inventory supplement P20-N3-AUTH-REPAIR-e3ae30e; exact existing paths: crates/opi-coding-agent/src/rpc.rs, crates/opi-coding-agent/src/runner.rs, crates/opi-coding-agent/tests/cross_mode_runtime.rs, crates/opi-ai/tests/adc_owner_regressions.rs, crates/opi-ai/tests/auth_process_lifecycle.rs, crates/opi-ai/tests/oauth_store_integration.rs, crates/opi-coding-agent/tests/product_source_barrier.rs, crates/opi-coding-agent/tests/credential_store.rs, crates/opi-coding-agent/tests/oauth_auth.rs, crates/opi-coding-agent/tests/provider_factory.rs. Existing auth assembly and synchronized caller signatures only; later generation/profile/package/platform contracts are unchanged. This records the separately authorized manual repair after the fact, not retroactive Phase C admission.",
+          "source": "Git commit e3ae30ef7a1939daac67e859167946a792f19011; user-approved third-node ledger maintenance"
+        },
+        {
+          "field": "verification",
+          "reason": "User-approved factual test/call-site inventory supplement P20-N3-AUTH-REPAIR-e3ae30e; reuse the verified repair tree and existing workspace execution. No new DoD, gate, dependency or runtime execution. Existing auth assembly and synchronized caller signatures only; later generation/profile/package/platform contracts are unchanged.",
+          "source": "Git commit e3ae30ef7a1939daac67e859167946a792f19011; existing scenario contracts and public regression tests"
         }
       ],
       "tier": "workspace",
@@ -8251,7 +8798,14 @@
           "crates/opi-ai/tests/auth_contracts.rs",
           "crates/opi-ai/tests/bedrock_fixtures.rs",
           "crates/opi-ai/tests/oauth_flows.rs",
-          "crates/opi-ai/tests/vertex_fixtures.rs"
+          "crates/opi-ai/tests/vertex_fixtures.rs",
+          "crates/opi-ai/tests/adc_owner_regressions.rs",
+          "crates/opi-ai/tests/auth_process_lifecycle.rs",
+          "crates/opi-ai/tests/oauth_store_integration.rs",
+          "crates/opi-coding-agent/tests/product_source_barrier.rs",
+          "crates/opi-coding-agent/tests/credential_store.rs",
+          "crates/opi-coding-agent/tests/oauth_auth.rs",
+          "crates/opi-coding-agent/tests/provider_factory.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -8262,13 +8816,22 @@
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#已确认 SDK 协议、身份与预算（V-43–45） / V-43",
           "scenario": "SDK-only public input: **SDK active：** Anthropic/Codex legacy/Copilot 旧三 flow→store/presenter；fake endpoints/ports/clock、并发/ack/cancel. Observable result and failure: 三旧flow为九flow子集，准确callback/ports/PKCE/state/metadata/expiry保持；等锁/结果caller可取消，已开始refresh网络15s与ACK分开，10s网络＋6s ACK不因新总budget失败。store-owned/两Models共享/logout/replace/barrier/latewrite按R-02；没有默认wait/keycount/ADC总时限。旧OA/30s等历史不成为oracle。. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
           "verification": [
-            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures"
+            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures",
+            "cargo test -p opi-ai --test adc_owner_regressions --test auth_process_lifecycle --test oauth_store_integration",
+            "cargo test -p opi-coding-agent --test product_source_barrier --test credential_store --test oauth_auth --test provider_factory"
           ],
           "production_call_sites": [
             "opi_ai::Models::{login,get_auth,check_auth} (target)",
             "opi_ai selected Radius OAuth adapter (target)",
             "opi_ai all nine OAuth login/store/request paths (target)",
-            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
+            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)",
+            "opi_ai::Models::register_oauth_route",
+            "opi_ai::Models::login",
+            "opi_ai::Models::get_auth",
+            "opi_ai::Models::mutation_barrier",
+            "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+            "opi_ai::auth::OAuthProvider::to_auth",
+            "opi_coding_agent::provider_factory::build_harness_collection"
           ],
           "status": "met"
         },
@@ -8277,13 +8840,22 @@
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#Pi 1.3.0 完整公开能力补齐（V-49–59） / V-55",
           "scenario": "SDK-only public input: 九 flow 的 SDK login/get_auth/refresh/logout，fake presenter/endpoints/ports/clock；两个 Models 共享 store、refresh 后取消 waiter、logout/replace race. Observable result and failure: 九flow由公开login/get_auth/refresh/logout→fake endpoints/presenter→同store ACK→adapter可达。已开始refresh仅网络受来源15s signal，store lock/ACK不包该timer；caller停等不丢新token、不恢复generation。无默认barrier wait/key-count/ADC总预算；显式等待deadline返回pending不abort。按key保留unknown、跨Models/crossprocess/fence/denial/expiry/Runtime与已知效果分别证明；check/available不refresh。R-02包含10s+6s正例和真实网络超时负例。. Apply all source row evidence boundaries and later backend/RDF refinements. Host-impact clauses do not grant host delivery.",
           "verification": [
-            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures"
+            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures",
+            "cargo test -p opi-ai --test adc_owner_regressions --test auth_process_lifecycle --test oauth_store_integration",
+            "cargo test -p opi-coding-agent --test product_source_barrier --test credential_store --test oauth_auth --test provider_factory"
           ],
           "production_call_sites": [
             "opi_ai::Models::{login,get_auth,check_auth} (target)",
             "opi_ai selected Radius OAuth adapter (target)",
             "opi_ai all nine OAuth login/store/request paths (target)",
-            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
+            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)",
+            "opi_ai::Models::register_oauth_route",
+            "opi_ai::Models::login",
+            "opi_ai::Models::get_auth",
+            "opi_ai::Models::mutation_barrier",
+            "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+            "opi_ai::auth::OAuthProvider::to_auth",
+            "opi_coding_agent::provider_factory::build_harness_collection"
           ],
           "status": "met"
         },
@@ -8292,13 +8864,22 @@
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Requirements: standalone SDK calls and public outcomes / AIR-051",
           "scenario": "SDK OAuth/store; login/resolve/refresh. MUST make all9 published OAuth families SDK-reachable with injected presenter/store/source and exact per-flow protocol/callback/device/metadata/availability. Caller may cancel lock waiting or stop waiting; started refresh/rotation remains store-owned while runtime lives and acknowledges credential+metadata before success. Pi resolver15s applies to the refresh network signal, not store lock or persistence ACK; no invented total transaction cap. Retain actual expiry and explicitly record the single Rust5min-window difference, same-source serialization and no failed-refresh account fallback. Related active V and current source/RDF qualify complete acceptance, host references remain excluded.",
           "verification": [
-            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures"
+            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures",
+            "cargo test -p opi-ai --test adc_owner_regressions --test auth_process_lifecycle --test oauth_store_integration",
+            "cargo test -p opi-coding-agent --test product_source_barrier --test credential_store --test oauth_auth --test provider_factory"
           ],
           "production_call_sites": [
             "opi_ai::Models::{login,get_auth,check_auth} (target)",
             "opi_ai selected Radius OAuth adapter (target)",
             "opi_ai all nine OAuth login/store/request paths (target)",
-            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
+            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)",
+            "opi_ai::Models::register_oauth_route",
+            "opi_ai::Models::login",
+            "opi_ai::Models::get_auth",
+            "opi_ai::Models::mutation_barrier",
+            "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+            "opi_ai::auth::OAuthProvider::to_auth",
+            "opi_coding_agent::provider_factory::build_harness_collection"
           ],
           "status": "met"
         },
@@ -8307,13 +8888,22 @@
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-09",
           "scenario": "Public login to injected presenter/fake HTTP to acknowledged store to actual selected SDK request verifies id/name/gateway/account binding, browserPKCE callback plus device flow, discovery/refresh/catalog metadata and store isolation. Test applicable invalid/state/PKCE/denial/expiry/callback/cancel/refresh failures, one Rust5min near-expiry correction, actual service expiry and shared transaction rotation. No automatic browser/keychain/global runtime/account fallback or remote rollback. Keep host UI and storage backend optional. In addition to the Radius slice, own complete DEL-08/DEL-09 and V-43/V-55 assembled source/flow conformance over the completed AWS, ADC, retry-mode and eight OAuth predecessors. Reuse their exact behavioral evidence; add only distinct same-store/cross-source integration cases, never implement those families again.",
           "verification": [
-            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures"
+            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures",
+            "cargo test -p opi-ai --test adc_owner_regressions --test auth_process_lifecycle --test oauth_store_integration",
+            "cargo test -p opi-coding-agent --test product_source_barrier --test credential_store --test oauth_auth --test provider_factory"
           ],
           "production_call_sites": [
             "opi_ai::Models::{login,get_auth,check_auth} (target)",
             "opi_ai selected Radius OAuth adapter (target)",
             "opi_ai all nine OAuth login/store/request paths (target)",
-            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
+            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)",
+            "opi_ai::Models::register_oauth_route",
+            "opi_ai::Models::login",
+            "opi_ai::Models::get_auth",
+            "opi_ai::Models::mutation_barrier",
+            "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+            "opi_ai::auth::OAuthProvider::to_auth",
+            "opi_coding_agent::provider_factory::build_harness_collection"
           ],
           "status": "met"
         },
@@ -8322,13 +8912,22 @@
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-08",
           "scenario": "| DEL-08 | Auth/ADC/AWS sources and all pinned retry modes → verify: public SDK through injected sources and real adapter, selected identity, source exchanges, process/metadata lifecycle and no discovery during construction. |",
           "verification": [
-            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures"
+            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures",
+            "cargo test -p opi-ai --test adc_owner_regressions --test auth_process_lifecycle --test oauth_store_integration",
+            "cargo test -p opi-coding-agent --test product_source_barrier --test credential_store --test oauth_auth --test provider_factory"
           ],
           "production_call_sites": [
             "opi_ai::Models::{login,get_auth,check_auth} (target)",
             "opi_ai selected Radius OAuth adapter (target)",
             "opi_ai all nine OAuth login/store/request paths (target)",
-            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
+            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)",
+            "opi_ai::Models::register_oauth_route",
+            "opi_ai::Models::login",
+            "opi_ai::Models::get_auth",
+            "opi_ai::Models::mutation_barrier",
+            "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+            "opi_ai::auth::OAuthProvider::to_auth",
+            "opi_coding_agent::provider_factory::build_harness_collection"
           ],
           "status": "met"
         },
@@ -8337,13 +8936,22 @@
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-09",
           "scenario": "| DEL-09 | Nine OAuth families and store-owned ACK/mutation barrier → verify: public login/refresh/store/request paths, same-store concurrency, cancellation, late writes and honest pending/unknown outcomes. |",
           "verification": [
-            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures"
+            "cargo test -p opi-ai --test auth_contracts --test bedrock_fixtures --test oauth_flows --test vertex_fixtures",
+            "cargo test -p opi-ai --test adc_owner_regressions --test auth_process_lifecycle --test oauth_store_integration",
+            "cargo test -p opi-coding-agent --test product_source_barrier --test credential_store --test oauth_auth --test provider_factory"
           ],
           "production_call_sites": [
             "opi_ai::Models::{login,get_auth,check_auth} (target)",
             "opi_ai selected Radius OAuth adapter (target)",
             "opi_ai all nine OAuth login/store/request paths (target)",
-            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
+            "opi_ai migrated Bedrock and Vertex source-chain adapters (target)",
+            "opi_ai::Models::register_oauth_route",
+            "opi_ai::Models::login",
+            "opi_ai::Models::get_auth",
+            "opi_ai::Models::mutation_barrier",
+            "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+            "opi_ai::auth::OAuthProvider::to_auth",
+            "opi_coding_agent::provider_factory::build_harness_collection"
           ],
           "status": "met"
         }
@@ -8352,7 +8960,14 @@
         "opi_ai::Models::{login,get_auth,check_auth} (target)",
         "opi_ai selected Radius OAuth adapter (target)",
         "opi_ai all nine OAuth login/store/request paths (target)",
-        "opi_ai migrated Bedrock and Vertex source-chain adapters (target)"
+        "opi_ai migrated Bedrock and Vertex source-chain adapters (target)",
+        "opi_ai::Models::register_oauth_route",
+        "opi_ai::Models::login",
+        "opi_ai::Models::get_auth",
+        "opi_ai::Models::mutation_barrier",
+        "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+        "opi_ai::auth::OAuthProvider::to_auth",
+        "opi_coding_agent::provider_factory::build_harness_collection"
       ],
       "substrate_only": false,
       "iteration_count": 0,
@@ -8369,7 +8984,17 @@
         "crates/opi-ai/tests/auth_contracts.rs",
         "crates/opi-ai/tests/bedrock_fixtures.rs",
         "crates/opi-ai/tests/oauth_flows.rs",
-        "crates/opi-ai/tests/vertex_fixtures.rs"
+        "crates/opi-ai/tests/vertex_fixtures.rs",
+        "crates/opi-coding-agent/src/rpc.rs",
+        "crates/opi-coding-agent/src/runner.rs",
+        "crates/opi-coding-agent/tests/cross_mode_runtime.rs",
+        "crates/opi-ai/tests/adc_owner_regressions.rs",
+        "crates/opi-ai/tests/auth_process_lifecycle.rs",
+        "crates/opi-ai/tests/oauth_store_integration.rs",
+        "crates/opi-coding-agent/tests/product_source_barrier.rs",
+        "crates/opi-coding-agent/tests/credential_store.rs",
+        "crates/opi-coding-agent/tests/oauth_auth.rs",
+        "crates/opi-coding-agent/tests/provider_factory.rs"
       ],
       "verified_at_commit": "fcf45122fcff07c327ff3046d29251026e030064",
       "evidence": {
@@ -8408,6 +9033,136 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Actual public SDK/store/product assembly is recorded; V-43/V-55 and P20-S31/DEL-09 aggregate closure reopen for exact R-02 timing evidence. User-approved ledger-only addendum, not a new implementation/evaluator run.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "reverified existing execution; current maintenance runtime execution none",
+            "inventory_added": {
+              "paths": [
+                "crates/opi-coding-agent/src/rpc.rs",
+                "crates/opi-coding-agent/src/runner.rs",
+                "crates/opi-coding-agent/tests/cross_mode_runtime.rs",
+                "crates/opi-ai/tests/adc_owner_regressions.rs",
+                "crates/opi-ai/tests/auth_process_lifecycle.rs",
+                "crates/opi-ai/tests/oauth_store_integration.rs",
+                "crates/opi-coding-agent/tests/product_source_barrier.rs",
+                "crates/opi-coding-agent/tests/credential_store.rs",
+                "crates/opi-coding-agent/tests/oauth_auth.rs",
+                "crates/opi-coding-agent/tests/provider_factory.rs"
+              ],
+              "behavioral_tests": [
+                "crates/opi-ai/tests/adc_owner_regressions.rs",
+                "crates/opi-ai/tests/auth_process_lifecycle.rs",
+                "crates/opi-ai/tests/oauth_store_integration.rs",
+                "crates/opi-coding-agent/tests/product_source_barrier.rs",
+                "crates/opi-coding-agent/tests/credential_store.rs",
+                "crates/opi-coding-agent/tests/oauth_auth.rs",
+                "crates/opi-coding-agent/tests/provider_factory.rs"
+              ],
+              "production_call_sites": [
+                "opi_ai::Models::register_oauth_route",
+                "opi_ai::Models::login",
+                "opi_ai::Models::get_auth",
+                "opi_ai::Models::mutation_barrier",
+                "opi_ai::auth::store_oauth::StoreOAuthResolver::resolve",
+                "opi_ai::auth::OAuthProvider::to_auth",
+                "opi_coding_agent::provider_factory::build_harness_collection"
+              ]
+            },
+            "scenario_changes": [
+              {
+                "task": "20.31",
+                "scenario": "V-43",
+                "before": "met",
+                "after": "open",
+                "basis": "Current assembled closure requires P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING; retain the original historical met evidence verbatim."
+              },
+              {
+                "task": "20.31",
+                "scenario": "V-55",
+                "before": "met",
+                "after": "open",
+                "basis": "Current assembled closure requires P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING; retain the original historical met evidence verbatim."
+              },
+              {
+                "task": "20.31",
+                "scenario": "P20-S31",
+                "before": "met",
+                "after": "open",
+                "basis": "Current assembled closure requires P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING; retain the original historical met evidence verbatim."
+              },
+              {
+                "task": "20.31",
+                "scenario": "DEL-09",
+                "before": "met",
+                "after": "open",
+                "basis": "Current assembled closure requires P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING; retain the original historical met evidence verbatim."
+              }
+            ],
+            "required_evidence_gap_ref": "P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING",
+            "test_impact_this_maintenance": "none",
+            "history_preserved": "Original start/verified commits, evidence, task status, counters and previous notes remain unchanged."
+          }
+        },
+        {
+          "timestamp": "2026-10-25T06:30:21.612898+00:00",
+          "attempt": 0,
+          "summary": "User-authorized test/evidence-only closure of the exact R-02 public resolver timing gap. Existing production code, specifications, manifests and original task history are unchanged. All ten OAuth store integration tests and affected-target Clippy pass; no commit, task re-execution or evaluator invocation is fabricated.",
+          "gate_results": {
+            "record_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e",
+            "resolved_evidence_gap_id": "P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING",
+            "runtime_base_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "test_file_sha256": "a5d33067e88f0f0e1ba624da2ae0b2502870d9cdd273a755a011fbfd3939a5e8",
+            "scenario_changes": [
+              {
+                "task": "20.31",
+                "scenario": "V-43",
+                "before": "open",
+                "after": "met",
+                "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+              },
+              {
+                "task": "20.31",
+                "scenario": "V-55",
+                "before": "open",
+                "after": "met",
+                "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+              },
+              {
+                "task": "20.31",
+                "scenario": "P20-S31",
+                "before": "open",
+                "after": "met",
+                "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+              },
+              {
+                "task": "20.31",
+                "scenario": "DEL-09",
+                "before": "open",
+                "after": "met",
+                "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+              }
+            ],
+            "verification_command": "cargo test --offline --locked -j 2 -p opi-ai --test oauth_store_integration",
+            "verification_result": "PASS: 10 passed, 0 failed, 0 ignored; includes three new fake-clock cases",
+            "test_disposition": [
+              {
+                "subject": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e",
+                "action": "retain",
+                "test": "R-02 shared timing fixtures and predecessor assembled authentication suites",
+                "interface": "reuse owner 20.22 test disposition and root evidence without copying suites",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "third_node_verdict": "may continue within the 16-task authentication node; no complete-generation/profile/package/platform closure",
+            "task_history_preserved": true
           }
         }
       ]
@@ -9293,7 +10048,20 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Reuse repaired auth binding/account allowlists for full profile/catalog integration without duplicating source/flow owners. No profile/catalog completion.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "predecessor handoff only; future task not executed",
+            "task_status_preserved": "failing",
+            "test_impact_this_maintenance": "none"
+          }
+        }
+      ]
     },
     {
       "id": "20.35",
@@ -13521,7 +14289,20 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Reuse SDK login_to_store/StoreOAuthResolver product cutover and synchronized callers; retain host keychain/UI/locking policy. No second broad rewrite.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "predecessor handoff only; future task not executed",
+            "task_status_preserved": "failing",
+            "test_impact_this_maintenance": "none"
+          }
+        }
+      ]
     },
     {
       "id": "20.57",
@@ -14673,6 +15454,18 @@
             "reuse_condition": "Recheck relevant source, fixture, toolchain, target, feature graph, native provenance and artifact identity before reuse; rerun changed inputs or missing evidence only.",
             "acceptance_boundary": "Full assembled SDK/external Codex consumer acceptance remains open. The real Codex/private codec, JWT/ADC worker path, complete adapter/profile coverage and Phase exit are not established."
           }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "In-workspace public auth tests are predecessor evidence, not a packaged external consumer or complete SDK/42-profile proof. Exact R-02 proof remains at 20.22/20.31.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "predecessor handoff only; future task not executed",
+            "task_status_preserved": "failing",
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -14955,6 +15748,18 @@
             "source_identity": "Full crate/three-graph WS package runs bind the precommit worktree and its archived source manifest. Commit preparation changes only ws_peer.rs CRLF to LF plus report notes; the normalization receipt binds both hashes. Fresh 93-private/16-public WS and static checks bind the LF helper. Earlier archive hashes are not relabeled as freshly packaged d0574cd artifacts.",
             "reuse_condition": "Recheck relevant source, fixture, toolchain, target, feature graph, native provenance and artifact identity before reuse; rerun changed inputs or missing evidence only.",
             "acceptance_boundary": "Windows Rust 1.99.1 and WSL GNU Rust 1.97.1 evidence does not establish exact 1.97.0, native macOS, other triples or final native-platform/MSRV acceptance. The real Codex/private codec, JWT/ADC worker path, complete adapter/profile coverage and Phase exit are not established."
+          }
+        },
+        {
+          "timestamp": "2026-10-25T06:18:58.680325+00:00",
+          "attempt": 0,
+          "summary": "Review Windows-only existing windows-sys 0.61.2 Win32_Security feature, private OwnedHandle kill-on-close Job and suspended attach/resume unsafe OS calls, final feature unions/native/MSRV/package provenance. Lockfile added one edge without package-version/checksum/transitive additions. Native Windows lifecycle tests do not close final Linux/macOS/Windows acceptance.",
+          "gate_results": {
+            "record_ref": "P20-N3-AUTH-REPAIR-e3ae30e",
+            "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "evidence_classification": "predecessor handoff only; future task not executed",
+            "task_status_preserved": "failing",
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -17171,6 +17976,961 @@
           "reviewed_task_array_sha256": "714c164defe27efaf3f1c70718a06006d2db29937e7afb64f2968ca9573360ae",
           "workflow_runtime": "unavailable; documented fresh single-reviewer sequential-charter fallback, no JS Workflow execution"
         }
+      }
+    },
+    {
+      "timestamp": "2026-10-25T06:18:58.680325+00:00",
+      "attempt": 0,
+      "summary": "User-approved scoped evidence/test/call-site/path inventory maintenance for the committed third authentication node repairs. Preserve task IDs/DoDs/dependencies/statuses, original history/source pins and graph confirmation. Correct the earlier overbroad no-required-evidence-gap statement: exact R-02 public resolver timing proof is missing, so current assembled third-node closure is evidence insufficient. This is not a new opi-implement execution, manual-commit recovery, plan admission or Phase exit; no Opi-* footers/workflow/evaluator result is fabricated. No production/test/spec edit, commit or push.",
+      "gate_results": {
+        "record_id": "P20-N3-AUTH-REPAIR-e3ae30e",
+        "repair_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+        "repair_parent": "68774fa9662260bdfdcd069a6b5424bc1ebceae7",
+        "repair_tree": "a24c56f244c358a998c88471e135a8d1f15b52fe",
+        "increment_start_commit": "dff0743a2f20f50aec7c0fabf4ca4acb55137708",
+        "node_tasks": [
+          "20.19.1",
+          "20.19.2",
+          "20.19.3",
+          "20.20",
+          "20.21.1",
+          "20.21.2",
+          "20.21.3",
+          "20.23",
+          "20.24",
+          "20.25",
+          "20.26",
+          "20.27",
+          "20.28",
+          "20.29",
+          "20.30",
+          "20.31"
+        ],
+        "prerequisite_tasks": [
+          "20.18",
+          "20.22"
+        ],
+        "candidate_sha256": "1fe29a9e55462fa0c1a5c6fae8260a1f6ed783ae227437ae4d8b21a348a7e6f0",
+        "runtime_verified_candidate_sha256": "2be39f72d560340bb58c772970bbdadb341f5a01f243535c35b774a6f88685b4",
+        "runtime_snapshot_difference": "Only documented redundant rustdoc link removal followed runtime validation; restored-byte hash was checked and rustdoc/doc/fmt/diff checks passed. All 55 committed repair file hashes match the final candidate.",
+        "prior_node_report_verdict": "可继续：仅当前未提交修复候选，本段16项范围",
+        "current_node_verdict": "evidence insufficient until P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING is proved; no confirmed implementation defect from this reconciliation",
+        "verification": [
+          {
+            "command": "cargo fmt --check --all",
+            "result": "PASS",
+            "evidence": "reverified existing repair execution; not rerun by ledger maintenance"
+          },
+          {
+            "command": "python scripts/opi-doc-check.py",
+            "result": "PASS",
+            "evidence": "reverified existing repair execution; not rerun by ledger maintenance"
+          },
+          {
+            "command": "git diff --check",
+            "result": "PASS",
+            "evidence": "reverified existing repair execution; not rerun by ledger maintenance"
+          },
+          {
+            "command": "cargo clippy --offline --locked -j 2 --workspace --all-targets -- -D warnings",
+            "result": "PASS",
+            "evidence": "reverified existing repair execution; not rerun by ledger maintenance",
+            "optional_local_log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-node3-final-v2-clippy.log",
+            "log_sha256": "9574b5f4628ecdfcb40794d0fedd9e98df60779a7883d71f538fc1ca8e0fb4ef"
+          },
+          {
+            "command": "cargo test --offline --locked -j 2 --workspace --all-targets",
+            "result": "PASS",
+            "totals": {
+              "targets": 247,
+              "passed": 5397,
+              "failed": 0,
+              "ignored": 5
+            },
+            "environment": "process-local PATH appended existing D:/Program Files/Git/usr/bin for the pre-existing GNU df requirement",
+            "evidence": "reverified existing repair execution; not rerun by ledger maintenance",
+            "optional_local_log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-node3-final-v3-all-targets.log",
+            "log_sha256": "6dfba1274a757aa78ede255e8d5a9b6eb8887b9da0340bafd0b4c27c33b50854"
+          },
+          {
+            "command": "cargo test --offline --locked -j 2 --workspace --doc",
+            "result": "PASS",
+            "totals": {
+              "targets": 7,
+              "passed": 11,
+              "failed": 0,
+              "ignored": 0
+            },
+            "evidence": "reverified existing repair execution; not rerun by ledger maintenance",
+            "optional_local_log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-node3-final-v3-doctests.log",
+            "log_sha256": "801935736b6ff34f0c8997bde3e3738cb77ff37819f05fec5101be9dccebccfc"
+          },
+          {
+            "command": "RUSTDOCFLAGS=-D warnings cargo doc --offline --locked -j 2 --workspace --no-deps",
+            "result": "PASS",
+            "evidence": "reverified existing repair execution; not rerun by ledger maintenance",
+            "optional_local_log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-node3-final-v4-rustdoc.log",
+            "log_sha256": "8ad2e69a5eff7a6b62eb5879f10cae4794489175f23397e81127763fd4b193a3"
+          },
+          {
+            "command": "cargo clippy --offline --locked -j 2 -p opi-ai --all-targets -- -D warnings",
+            "result": "PASS",
+            "purpose": "standalone Windows feature closure, without product feature union",
+            "evidence": "reverified existing repair execution; not rerun by ledger maintenance"
+          }
+        ],
+        "verification_platform": "Windows native for the repaired candidate; older Linux/WSL evidence remains historical at its original commits",
+        "ignored_tests": [
+          "test run_id_subprocess_child ... ignored, invoked as a subprocess helper",
+          "test tool::operations::tests::atomic_write_retries_without_following_symlink_collision_windows_privileged ... ignored, requires Windows symbolic-link privilege; Unix CI exercises this behavior",
+          "test phase14_rpc_run_stdio_child ... ignored, subprocess-only RPC stdio entry point",
+          "test phase14_outer_tui_rpc_credential_child ... ignored, subprocess-only RPC stdio entry point",
+          "test policy_probe::native_policy_probe ... ignored, invoked as a native target by the platform policy tests"
+        ],
+        "scenario_trace": [
+          {
+            "task": "20.18",
+            "scenario": "P20-S18",
+            "evidence": "existing execution; verified",
+            "tests": {
+              "crates/opi-ai/tests/auth_contracts.rs": [
+                "construction_register_and_static_lookup_perform_zero_source_io",
+                "check_auth_reads_env_only_on_demand_through_the_injected_context",
+                "injected_source_replaces_ambient_for_checks_and_resolution",
+                "explicit_per_call_key_wins_over_every_source",
+                "check_reports_expired_oauth_configured_without_refresh",
+                "store_and_check_errors_are_typed_not_empty",
+                "selected_source_failure_never_falls_back",
+                "logout_acks_only_the_selected_local_deletion",
+                "get_available_lists_only_configured_providers"
+              ],
+              "crates/opi-ai/tests/adc_owner_regressions.rs": [
+                "adc_configuration_check_matches_the_same_unconfigured_owner",
+                "adc_configuration_check_only_probes_a_present_invalid_json_file",
+                "adc_configuration_check_propagates_the_selected_file_probe_failure"
+              ]
+            }
+          },
+          {
+            "task": "20.22",
+            "scenario": "AIR-063",
+            "evidence": "existing execution; verified for direct store/barrier scope",
+            "tests": {
+              "crates/opi-ai/tests/auth_contracts.rs": [
+                "off_runtime_submission_waits_for_explicit_runtime_execution_entry",
+                "barrier_captures_cutoff_across_models_sharing_store",
+                "barrier_reports_pending_failure_unknown_and_late_writes",
+                "unknown_outcome_for_one_key_survives_another_keys_success",
+                "mutation_waits_and_receipts_have_no_default_caps"
+              ],
+              "crates/opi-ai/tests/oauth_store_integration.rs": [
+                "two_models_share_rotation_and_waiter_drop_preserves_the_acknowledged_result",
+                "committed_token_cannot_turn_an_unknown_ack_into_success"
+              ],
+              "crates/opi-coding-agent/tests/product_source_barrier.rs": [
+                "product_collections_observe_the_existing_store_barrier",
+                "keychain_source_queue_and_credential_mutations_share_one_cutoff"
+              ]
+            }
+          }
+        ],
+        "scenario_changes": [
+          {
+            "task": "20.18",
+            "scenario": "P20-S18",
+            "before": "open",
+            "after": "met",
+            "basis": "Executed public Models management and actual ADC-owner configuration fixtures cover this direct contract."
+          },
+          {
+            "task": "20.22",
+            "scenario": "AIR-063",
+            "before": "open",
+            "after": "met",
+            "basis": "Executed direct store/barrier fixtures cover this criterion; additional V-12/V-43/V-55 timing acceptance is distinct."
+          },
+          {
+            "task": "20.31",
+            "scenario": "V-43",
+            "before": "met",
+            "after": "open",
+            "basis": "Current assembled closure requires P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING; retain the original historical met evidence verbatim."
+          },
+          {
+            "task": "20.31",
+            "scenario": "V-55",
+            "before": "met",
+            "after": "open",
+            "basis": "Current assembled closure requires P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING; retain the original historical met evidence verbatim."
+          },
+          {
+            "task": "20.31",
+            "scenario": "P20-S31",
+            "before": "met",
+            "after": "open",
+            "basis": "Current assembled closure requires P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING; retain the original historical met evidence verbatim."
+          },
+          {
+            "task": "20.31",
+            "scenario": "DEL-09",
+            "before": "met",
+            "after": "open",
+            "basis": "Current assembled closure requires P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING; retain the original historical met evidence verbatim."
+          }
+        ],
+        "required_scope_evidence_gaps": [
+          {
+            "id": "P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING",
+            "kind": "evidence-insufficient; no confirmed implementation defect",
+            "owners": [
+              "20.22",
+              "20.31"
+            ],
+            "criteria": [
+              "R-02",
+              "V-12",
+              "V-43",
+              "V-55",
+              "P20-S22",
+              "P20-S31",
+              "DEL-09"
+            ],
+            "source": [
+              "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#R-02 store completion",
+              "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#RDF-10"
+            ],
+            "missing": "Executed public Models/get_auth -> StoreOAuthResolver -> delayed store proof that 10s refresh plus 6s persistence ACK succeeds under the default 15s network bound, paired with a source-network-over-15s typed failure. Fake time is acceptable; lock waiting and ACK remain outside that timer.",
+            "existing_limits": "auth_contracts::network_timeout_scope_excludes_lock_wait_and_ack uses a queue-local 50ms timeout and approximately 30ms lock wait, not StoreOAuthResolver or an independently delayed ACK. oauth_auth::refresh_timeout_releases_lock_and_preserves_prior_credential tests the real resolver with a 25ms override, not the complete default-budget positive/negative pair.",
+            "source_support": "store_oauth.rs times flow.refresh only; store modify/ACK await is outside. This supports implementation placement, not the required executed combination.",
+            "next_acceptance": "Add a focused public resolver/store fixture to existing oauth_store_integration with controlled time and distinct refresh/ACK phases; run that binary and affected checks before group closure. No production fix is inferred."
+          }
+        ],
+        "test_disposition": [
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "add",
+            "test": "crates/opi-ai/tests/adc_owner_regressions.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-ai/tests/auth_contracts.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "add",
+            "test": "crates/opi-ai/tests/auth_process_lifecycle.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-ai/tests/bedrock_fixtures.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-ai/tests/oauth_flows.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "add",
+            "test": "crates/opi-ai/tests/oauth_store_integration.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-ai/tests/provider_collection.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-ai/tests/vertex_fixtures.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/credential_store.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/cross_mode_runtime.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/doctor_cli.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/list_models.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/oauth_auth.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "add",
+            "test": "crates/opi-coding-agent/tests/product_source_barrier.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/provider_factory.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/provider_runtime.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/provider_stream_diagnostics.rs",
+            "interface": "public authentication/source lifecycle or synchronized product caller regression binary",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-ai/src/auth/aws/cache.rs (embedded tests)",
+            "interface": "native helper/publication/callback bind or product assembly unit tests",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-ai/src/auth/aws/process.rs (embedded tests)",
+            "interface": "native helper/publication/callback bind or product assembly unit tests",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-ai/src/auth/oauth/mod.rs (embedded tests)",
+            "interface": "native helper/publication/callback bind or product assembly unit tests",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-coding-agent/src/provider_factory.rs (embedded tests)",
+            "interface": "native helper/publication/callback bind or product assembly unit tests",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "update",
+            "test": "crates/opi-coding-agent/src/main.rs (embedded tests)",
+            "interface": "native helper/publication/callback bind or product assembly unit tests",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "action": "retain",
+            "test": "unchanged workspace authentication/wire/safety suites including oauth_wire_shape, per_request_auth and retry_backoff",
+            "interface": "predecessor regressions retained in the 247-target workspace execution",
+            "replacement": null,
+            "slim_candidate": null
+          }
+        ],
+        "repair_test_impact": [
+          "add",
+          "update",
+          "retain"
+        ],
+        "test_impact_this_maintenance": "none",
+        "withdrawn_judgments_retained": [
+          "legacy register remains lookup-only; register_oauth_flow remains login/check registration",
+          "OAuth Bearer is not changed wholesale to ApiKey",
+          "AWS standard cache file writes remain best effort",
+          "ordinary nonrotating ADC may cancel",
+          "OpenRouter has no invented mandatory state/personalization",
+          "no universal positive-expiry or total-time cap",
+          "AWS process 10s/64KiB remains declared host policy",
+          "external registration keys already allowed Radius account isolation"
+        ],
+        "future_responsibilities": {
+          "20.33/20.34": "complete dynamic catalog and 42-profile assembly",
+          "20.41/20.42": "full Vertex/Bedrock generation",
+          "20.44": "full pi-messages generation including Radius dispatch",
+          "20.49": "full Decisions API-key-only classifier integration",
+          "20.56": "remaining retirement audit",
+          "20.57": "final external package consumer/SDK assembly",
+          "20.58": "final native platforms/MSRV/features/supply chain"
+        },
+        "not_executed": "No live account/browser authorization/cloud metadata/paid provider, Pi test entrypoint, new Rust test, package or additional platform execution in this maintenance. Runtime commands above are existing execution evidence checked against the repaired tree.",
+        "evidence_retention": "Commit/tree identities, commands/results/counts, named source tests and limits are embedded here. Optional temporary log paths plus digests are convenience pointers, not the sole description.",
+        "verification_history_unchanged": true,
+        "baseline_untracked_excluded": "docs/research/pi-ai-opi-ai-alignment/pi-1.4.0-upgrade-assessment.md",
+        "posthoc_inventory_authority": "Current human approval records separately authorized manual repair paths and evidence; it does not retroactively claim original workflow admission."
+      }
+    },
+    {
+      "timestamp": "2026-10-25T06:30:21.612898+00:00",
+      "attempt": 0,
+      "summary": "The user requested test/evidence-only R-02 completion and third-node reacceptance. Fresh default public resolver timing tests close the previously recorded evidence-insufficient gap; preserve that correction as historical evidence and append this resolution. The third authentication node may continue within its 16-task scope. Original task statuses/DoDs/dependencies/start and verified commits/evidence/source pins/verify_runs and phase history remain unchanged. This does not constitute a new opi-implement task/evaluator run or complete Phase 20.",
+      "gate_results": {
+        "record_id": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e",
+        "supersedes_evidence_gap_id": "P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING",
+        "resolved_evidence_gap_ids": [
+          "P20-N3-AUTH-REPAIR-e3ae30e-R02-TIMING"
+        ],
+        "runtime_base_commit": "e3ae30ef7a1939daac67e859167946a792f19011",
+        "runtime_base_tree": "a24c56f244c358a998c88471e135a8d1f15b52fe",
+        "original_node_baseline": "68774fa9662260bdfdcd069a6b5424bc1ebceae7",
+        "increment_start_commit": "dff0743a2f20f50aec7c0fabf4ca4acb55137708",
+        "increment_start_is_ancestor": true,
+        "committed_increment_count": 33,
+        "candidate_state": "HEAD runtime plus the uncommitted test file SHA-256 below and this ledger evidence update",
+        "test_file": "crates/opi-ai/tests/oauth_store_integration.rs",
+        "test_file_sha256": "a5d33067e88f0f0e1ba624da2ae0b2502870d9cdd273a755a011fbfd3939a5e8",
+        "carried_in_ledger_sha256": "65f9b254a9baceba0be28384f5d874a83de5bf7e2a5af7c2db0ae95661fedaa8",
+        "carried_in_ledger_disposition": "carried-in-and-touched; retain the complete prior reconciliation and correction records",
+        "verdict": "may continue: all required evidence for the scoped third authentication node is present",
+        "remaining_confirmed_findings": [],
+        "required_scope_evidence_gaps": [],
+        "scenario_changes": [
+          {
+            "task": "20.22",
+            "scenario": "V-12",
+            "before": "open",
+            "after": "met",
+            "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+          },
+          {
+            "task": "20.22",
+            "scenario": "P20-S22",
+            "before": "open",
+            "after": "met",
+            "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+          },
+          {
+            "task": "20.31",
+            "scenario": "V-43",
+            "before": "open",
+            "after": "met",
+            "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+          },
+          {
+            "task": "20.31",
+            "scenario": "V-55",
+            "before": "open",
+            "after": "met",
+            "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+          },
+          {
+            "task": "20.31",
+            "scenario": "P20-S31",
+            "before": "open",
+            "after": "met",
+            "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+          },
+          {
+            "task": "20.31",
+            "scenario": "DEL-09",
+            "before": "open",
+            "after": "met",
+            "evidence_ref": "P20-N3-R02-PUBLIC-RESOLVER-e3ae30e"
+          }
+        ],
+        "timing_proof": [
+          {
+            "test": "crates/opi-ai/tests/oauth_store_integration.rs::public_resolver_default_budget_allows_ten_second_refresh_and_six_second_ack",
+            "input": "Default register_oauth_route, expired selected credential, fake refresh 10s and delayed persistence 6s inside the real mutation queue slot",
+            "observations": "At t=10 the refresh has returned Write but old credential remains and public auth is pending. At t=15 the same refresh generation is Pending and old credential remains. At t=16 public get_auth returns the selected new credential/account, storage publishes it and the exact refresh receipt is Written.",
+            "result": "PASS"
+          },
+          {
+            "test": "crates/opi-ai/tests/oauth_store_integration.rs::public_resolver_default_budget_excludes_twenty_second_store_lock_wait",
+            "input": "Same selected key has a preceding gated mutation for 20s, then the unchanged default resolver runs the 10s refresh and 6s persistence",
+            "observations": "At t=20 auth remains pending and refresh calls=0. After releasing the earlier slot, refresh starts at t=20 and success/ACK occurs at t=36 with exactly one refresh.",
+            "result": "PASS"
+          },
+          {
+            "test": "crates/opi-ai/tests/oauth_store_integration.rs::public_resolver_default_budget_times_out_refresh_network_without_a_late_commit",
+            "input": "Default resolver, expired selected identity and refresh scheduled for 16s",
+            "observations": "Public auth and barrier remain pending at t=14.999. At t=15.001 public ModelsError::AuthResolution carries ProviderError::Timeout, and the exact refresh generation records Failed(Operation(Timeout)). At t=17.001 the old expired entry is unchanged, persistence never began and refresh calls=1.",
+            "result": "PASS"
+          }
+        ],
+        "executed_verification": [
+          {
+            "command": [
+              "cargo",
+              "test",
+              "--offline",
+              "--locked",
+              "-j",
+              "2",
+              "-p",
+              "opi-ai",
+              "--test",
+              "oauth_store_integration"
+            ],
+            "exit_code": 0,
+            "started_at": "2026-10-25T06:26:25.021741+00:00",
+            "head": "e3ae30ef7a1939daac67e859167946a792f19011",
+            "target": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "test_file_sha256": "a5d33067e88f0f0e1ba624da2ae0b2502870d9cdd273a755a011fbfd3939a5e8",
+            "log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-r02-oauth-store-tests.log",
+            "log_sha256": "c4976954323ea40a9cd0b167aa38f652c6e7b6b8c709abd6af3d23352fe83afb",
+            "evidence": "executed this round",
+            "result": "PASS",
+            "totals": {
+              "passed": 10,
+              "failed": 0,
+              "ignored": 0
+            }
+          },
+          {
+            "command": [
+              "cargo",
+              "fmt",
+              "--check",
+              "--all"
+            ],
+            "exit_code": 0,
+            "started_at": "2026-10-25T06:27:59.870633+00:00",
+            "log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-r02-check-0.log",
+            "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "evidence": "executed this round",
+            "result": "PASS"
+          },
+          {
+            "command": [
+              "cargo",
+              "clippy",
+              "--offline",
+              "--locked",
+              "-j",
+              "2",
+              "-p",
+              "opi-ai",
+              "--test",
+              "oauth_store_integration",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "exit_code": 0,
+            "started_at": "2026-10-25T06:28:03.054684+00:00",
+            "log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-r02-check-1.log",
+            "log_sha256": "99951249e56ead39818657fe5e87f4adb0425b7a906438c8ce841fe2ea47886b",
+            "evidence": "executed this round",
+            "result": "PASS"
+          }
+        ],
+        "reused_verification": [
+          {
+            "command": "cargo fmt --check --all",
+            "result": "PASS",
+            "evidence": "reverified existing execution for unchanged runtime; not rerun this round"
+          },
+          {
+            "command": "python scripts/opi-doc-check.py",
+            "result": "PASS",
+            "evidence": "reverified existing execution for unchanged runtime; not rerun this round"
+          },
+          {
+            "command": "git diff --check",
+            "result": "PASS",
+            "evidence": "reverified existing execution for unchanged runtime; not rerun this round"
+          },
+          {
+            "command": "cargo clippy --offline --locked -j 2 --workspace --all-targets -- -D warnings",
+            "result": "PASS",
+            "evidence": "reverified existing execution for unchanged runtime; not rerun this round",
+            "optional_local_log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-node3-final-v2-clippy.log",
+            "log_sha256": "9574b5f4628ecdfcb40794d0fedd9e98df60779a7883d71f538fc1ca8e0fb4ef"
+          },
+          {
+            "command": "cargo test --offline --locked -j 2 --workspace --all-targets",
+            "result": "PASS",
+            "totals": {
+              "targets": 247,
+              "passed": 5397,
+              "failed": 0,
+              "ignored": 5
+            },
+            "environment": "process-local PATH appended existing D:/Program Files/Git/usr/bin for the pre-existing GNU df requirement",
+            "evidence": "reverified existing execution for unchanged runtime; not rerun this round",
+            "optional_local_log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-node3-final-v3-all-targets.log",
+            "log_sha256": "6dfba1274a757aa78ede255e8d5a9b6eb8887b9da0340bafd0b4c27c33b50854"
+          },
+          {
+            "command": "cargo test --offline --locked -j 2 --workspace --doc",
+            "result": "PASS",
+            "totals": {
+              "targets": 7,
+              "passed": 11,
+              "failed": 0,
+              "ignored": 0
+            },
+            "evidence": "reverified existing execution for unchanged runtime; not rerun this round",
+            "optional_local_log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-node3-final-v3-doctests.log",
+            "log_sha256": "801935736b6ff34f0c8997bde3e3738cb77ff37819f05fec5101be9dccebccfc"
+          },
+          {
+            "command": "RUSTDOCFLAGS=-D warnings cargo doc --offline --locked -j 2 --workspace --no-deps",
+            "result": "PASS",
+            "evidence": "reverified existing execution for unchanged runtime; not rerun this round",
+            "optional_local_log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-node3-final-v4-rustdoc.log",
+            "log_sha256": "8ad2e69a5eff7a6b62eb5879f10cae4794489175f23397e81127763fd4b193a3"
+          },
+          {
+            "command": "cargo clippy --offline --locked -j 2 -p opi-ai --all-targets -- -D warnings",
+            "result": "PASS",
+            "purpose": "standalone Windows feature closure, without product feature union",
+            "evidence": "reverified existing execution for unchanged runtime; not rerun this round"
+          }
+        ],
+        "reuse_boundary": "All 54 other files of the 55-file verified repair candidate retain their exact hashes. Production/manifests/lock/spec sources are unchanged. Prior 247-target workspace execution had 5397 passed and 5 existing ignored; its old 7-test OAuth store binary is superseded by this fresh 10-test run. Do not claim a new whole-workspace execution or add the overlapping results together.",
+        "scope_coverage": [
+          {
+            "task": "20.19.1",
+            "contract": "AWS 环境/profile/INI/process、Bearer/SigV4、冻结环境与进程树",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/aws/local.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/aws/process.rs"
+            ],
+            "tests": [
+              "bedrock_fixtures",
+              "auth_process_lifecycle",
+              "auth::aws::process"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.19.2",
+            "contract": "AssumeRole/Web Identity/嵌套/MFA/ECS/IMDS 来源链",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/aws/local.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/aws/role.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/aws/metadata.rs"
+            ],
+            "tests": [
+              "bedrock_fixtures"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.19.3",
+            "contract": "SSO/login 身份、实际expiry、single-flight、rotation/ACK/file fence",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/aws/cache.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/aws/sso.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/aws/login.rs"
+            ],
+            "tests": [
+              "bedrock_fixtures",
+              "auth::aws::cache"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.20",
+            "contract": "standard/adaptive/Smithy2026、错误/配额/时间/取消、来源与generation分计数",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/retry.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/bedrock/retry.rs"
+            ],
+            "tests": [
+              "bedrock_fixtures::smithy_retry"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.21.1",
+            "contract": "基础ADC与真实Vertex Authorization/project/location/quota、纯配置检查",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/adc/native.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/vertex.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-coding-agent/src/provider_factory.rs"
+            ],
+            "tests": [
+              "auth_contracts",
+              "vertex_fixtures",
+              "adc_owner_regressions",
+              "provider_factory"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.21.2",
+            "contract": "五种external supplier、STS、可执行准入/argv/脱敏/超时取消、GET redirects",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/adc/executable.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/adc/external.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/adc/subject.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/adc/native.rs"
+            ],
+            "tests": [
+              "auth_contracts",
+              "vertex_fixtures",
+              "auth_process_lifecycle",
+              "adc_owner_regressions"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.21.3",
+            "contract": "递归impersonation、target/source隔离、缓存/短TTL/晚结果/唯一refresh",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/adc/cache.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/adc/native.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/adc/impersonation.rs"
+            ],
+            "tests": [
+              "auth_contracts",
+              "vertex_fixtures",
+              "adc_owner_regressions"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.23",
+            "contract": "Anthropic JSON/PKCE/state/端口降级/manual/headers",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/oauth/anthropic.rs"
+            ],
+            "tests": [
+              "oauth_flows",
+              "oauth_auth"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.24",
+            "contract": "Codex legacy browser/device/manual、refresh/account/endpoint/agentName",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/oauth/codex.rs"
+            ],
+            "tests": [
+              "oauth_flows",
+              "oauth_auth"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.25",
+            "contract": "ChatGPT DCR/issued client_id/固定端口/paste/device/scopes/metadata",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/oauth/chatgpt.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-coding-agent/src/credential_store.rs"
+            ],
+            "tests": [
+              "oauth_flows",
+              "oauth_auth",
+              "credential_store"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.26",
+            "contract": "Copilot device/enterprise/proxy/allowlist、仅login policy activation",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/oauth/copilot.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/models.rs"
+            ],
+            "tests": [
+              "oauth_flows",
+              "oauth_auth",
+              "oauth_store_integration"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.27",
+            "contract": "OpenRouter PKCE/API-key exchange、callback/permanent key/no personalization",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/oauth/openrouter.rs"
+            ],
+            "tests": [
+              "oauth_flows"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.28",
+            "contract": "Kimi device interval/expiry/denial/credential/header/metadata",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/oauth/kimi_coding.rs"
+            ],
+            "tests": [
+              "oauth_flows"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.29",
+            "contract": "Meta identity→Model API key、同身份remint与relogin",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/oauth/meta.rs"
+            ],
+            "tests": [
+              "oauth_flows"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.30",
+            "contract": "xAI HTTPS验证/device polling/省略refresh保留旧值",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/oauth/xai.rs"
+            ],
+            "tests": [
+              "oauth_flows"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          },
+          {
+            "task": "20.31",
+            "contract": "Radius id/name/gateway/account及九族metadata；DEL-08/09、V-43/55公共组装",
+            "implementation": [
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/oauth/radius.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/auth/store_oauth.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/models.rs",
+              "D:/Luiz/Odradek/opi/crates/opi-ai/src/mutation.rs",
+              "D:\\Luiz\\Odradek\\opi\\crates\\opi-coding-agent\\src\\provider_factory.rs",
+              "D:\\Luiz\\Odradek\\opi\\crates\\opi-coding-agent\\src\\harness.rs"
+            ],
+            "tests": [
+              "oauth_flows",
+              "oauth_store_integration",
+              "product_source_barrier",
+              "credential_store",
+              "bedrock_fixtures",
+              "vertex_fixtures",
+              "oauth_store_integration::public_resolver_default_budget_*"
+            ],
+            "evidence": "reverified prior execution against unchanged implementation; add current R-02 public resolver proof at 20.22/20.31",
+            "result": "PASS within third-node scope"
+          }
+        ],
+        "cross_task_checks": {
+          "selection": "first store identity selection occurs under the shared mutation slot; no post-ACK identity rediscovery",
+          "request_consumption": "actual Bedrock/Vertex and eight OAuth adapter wires; Radius public auth/gateway/account proof within current scope",
+          "concurrency": "two Models/one store; store and source owners share barrier; credential+metadata use one envelope/snapshot",
+          "cancellation": "started rotation survives waiter drop; ordinary ADC acquisition may cancel; Windows child tree survives neither cancellation nor timeout after parent exit",
+          "persistence": "success follows exact ACK; failed/unknown ACK never becomes token success; AWS best-effort file save is distinct from memory ACK",
+          "expiry": "actual expiry after ACK, one Rust five-minute eager window, valid short TTL accepted"
+        },
+        "ignored_tests": [
+          "test run_id_subprocess_child ... ignored, invoked as a subprocess helper",
+          "test tool::operations::tests::atomic_write_retries_without_following_symlink_collision_windows_privileged ... ignored, requires Windows symbolic-link privilege; Unix CI exercises this behavior",
+          "test phase14_rpc_run_stdio_child ... ignored, subprocess-only RPC stdio entry point",
+          "test phase14_outer_tui_rpc_credential_child ... ignored, subprocess-only RPC stdio entry point",
+          "test policy_probe::native_policy_probe ... ignored, invoked as a native target by the platform policy tests"
+        ],
+        "withdrawn_judgments_retained": [
+          "legacy register remains lookup-only; register_oauth_flow remains login/check registration",
+          "OAuth Bearer is not changed wholesale to ApiKey",
+          "AWS standard cache file writes remain best effort",
+          "ordinary nonrotating ADC may cancel",
+          "OpenRouter has no invented mandatory state/personalization",
+          "no universal positive-expiry or total-time cap",
+          "AWS process 10s/64KiB remains declared host policy",
+          "external registration keys already allowed Radius account isolation"
+        ],
+        "later_responsibilities": {
+          "20.33/20.34": "complete dynamic catalog and 42-profile assembly",
+          "20.41/20.42": "full Vertex/Bedrock generation",
+          "20.44": "full pi-messages generation including Radius dispatch",
+          "20.49": "full Decisions API-key-only classifier integration",
+          "20.56": "remaining retirement audit",
+          "20.57": "final external package consumer/SDK assembly",
+          "20.58": "final native platforms/MSRV/features/supply chain"
+        },
+        "fake_clock_boundary": "Tokio virtual time drives refresh and store-commit waits; it does not alter wall-clock credential expiry. Existing actual-expiry tests remain retained. The delayed test adapter uses a real InMemoryCredentialStore/MutationQueue, not a claim of native keychain I/O at a virtual delay. Product delegation and native-store regressions use their unchanged prior evidence.",
+        "independent_review": "Read-only review found no required corrections to default binding, in-slot ACK delay, generation-specific receipts, paused-clock scheduling or original seven cases. This is not a workflow evaluator invocation.",
+        "test_impact": [
+          "add",
+          "update",
+          "retain"
+        ],
+        "not_executed": "No live provider/account/browser/cloud metadata, Pi test runner, new package or extra platform run. No production/spec/manifest change, commit, staging or push. Unchanged workspace gates reused per check-selection contract.",
+        "baseline_untracked_excluded": "docs/research/pi-ai-opi-ai-alignment/pi-1.4.0-upgrade-assessment.md"
       }
     }
   ],
