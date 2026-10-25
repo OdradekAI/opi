@@ -1931,6 +1931,7 @@ fn is_non_network_test_provider(owner: &str) -> bool {
     matches!(
         owner,
         "BlockingCleanupProvider"
+            | "BarrierRefreshProvider"
             | "CompleteThenHangProvider"
             | "ControlledEmitCleanupProvider"
             | "ControlledProvider"
@@ -1993,6 +1994,7 @@ fn provider_constructor_url_argument(
         ) => Some(0),
         ("GeminiProvider", "new" | "with_client") => Some(0),
         ("BedrockProvider" | "OpenAiCodexResponsesProvider", "new") => Some(0),
+        ("HttpCatalogSource", "new") => Some(0),
         ("AzureOpenAIProvider", "new" | "from_config") => Some(0),
         ("VertexProvider", "new") => Some(2),
         ("VertexProvider", "from_config") => Some(3),

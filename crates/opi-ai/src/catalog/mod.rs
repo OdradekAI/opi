@@ -18,6 +18,15 @@
 //! This surface is part of the **unstable 0.x extension substrate**. Breaking
 //! changes may occur between minor versions without a major version bump.
 
+pub mod http_source;
+pub mod store;
+mod wire;
+
+pub use http_source::{CatalogDocumentError, DynamicCatalogSource, HttpCatalogSource};
+pub use store::{
+    ModelsStore, ModelsStoreError, RefreshGuard, StoreCommit, StoreCommitError, StoreSnapshot,
+};
+
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, OnceLock, RwLock};

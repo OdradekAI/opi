@@ -2,6 +2,14 @@
 
 ### Breaking Changes
 
+- `opi-ai`: `Models::refresh` becomes `refresh(allow_network: bool)`
+  returning `Result<RefreshReport, ModelsError>` (task 20.33).
+  `refresh(false)` performs no OAuth/network work and only restores an
+  attached `ModelsStore`; `refresh(true)` fetches explicitly. Refresh is now
+  per-provider: successes publish, failures retain that provider's prior
+  data and surface redacted per-entry errors instead of failing the whole
+  batch. All-or-nothing callers should treat `RefreshReport` entries
+  individually.
 - `opi-ai`: `AuthContext::process_snapshot` supplies an owned
   `AuthProcessSnapshot` (exact environment map and cwd) when a native helper
   is selected. Injected contexts default to an empty helper environment;
@@ -471,6 +479,19 @@
   and its refresh network bound is now 15s, scoped to the HTTP exchange
   only — lock waits and the ACK are outside it.
 ### Added
+- `opi-ai`: dynamic catalog store and refresh substrate (task 20.33,
+  V-27/AIR-002/AIR-033). New `catalog` items: `ModelsStore` — the single
+  revision-commit owner persisting distribution-schema-v1 snapshots (plus
+  the `x-opi` fidelity extension) with restore-before-network,
+  superseded/cancelled late-publication guards, and last-known retention
+  across reopens; `DynamicCatalogSource` — the public seam for host-plugged
+  catalog sources; `HttpCatalogSource` — a real controlled HTTP source
+  fetching one distribution-schema-v1 document with pooled connections and
+  redacted failures. `Models` gains `set_models_store`,
+  `register_catalog_source`, `refresh_with(token)`, and per-entry
+  `RefreshReport`/`RefreshOutcome`/`RefreshStatus` reporting. The SDK
+  registers no source, attaches no store, and has no pi.dev/default startup
+  fetch policy.
 - `opi-ai`: offline bundled model catalog substrate (DEL-10, task 20.32).
   The new `catalog` module embeds the authentic Pi published model catalog
   as offline resources, packaged byte-for-byte by the explicit

@@ -864,6 +864,39 @@ independently of any catalog state. Image entries are catalog metadata for
 selection/pricing only; the SDK's own image operation paths are owned by the
 typed image API task.
 
+## Dynamic Catalog Store and Refresh (V-27/AIR-002/AIR-033)
+
+`ModelsStore` (`catalog` module) is the single revision-commit owner for
+dynamic catalogs: a `RefreshGuard::commit` persists the snapshot first
+(atomic temp-file rename, distribution-schema-v1 JSON plus the `opi`
+revision header) and returns exactly the acknowledged map, which
+`Models::refresh` then applies to the registry — so memory and disk publish
+together or not at all. Guards created before a newer revision are rejected
+as `Superseded` without touching published state; cancelled guards commit
+nothing; reopening a store restores the last-known revision before any
+network work. The persisted file is the Pi *distribution* schema
+(`models.schema.json`), a different artifact from the hydration data (v6)
+embedded in the builtin bundle; opi-only fidelity (streaming, cache flags,
+pricing tiers, exact thinking maps, wire compat payloads) round-trips
+through an explicit `x-opi` extension, and plain v1 documents decode with
+closed defaults.
+
+`Models::refresh(allow_network)` is the only refresh entry: `refresh(false)`
+performs no OAuth/network work and restores the store cache
+(`RefreshStatus::OfflineRestored`); `refresh(true)` fetches registered
+providers in deterministic sorted order, then registered catalog sources in
+registration order. Outcomes are per-provider: successes publish, failures
+retain that provider's prior data and report a redacted error
+(`RefreshOutcome::{Published,Failed,Restored}` in `RefreshReport`) without
+erasing other providers' catalogs; `Ok(None)` falls the provider back to
+built-in models. `refresh_with` observes a `CancellationToken` — a
+cancelled round fetches, persists, and publishes nothing. Already-prepared
+calls keep their frozen bindings across refreshes. `DynamicCatalogSource`
+is the public seam for host-plugged catalog sources; `HttpCatalogSource`
+fetches one distribution-schema-v1 document over HTTP with pooled
+connections and redacted failures. The SDK registers no source, attaches
+no store, and has no pi.dev/default startup fetch policy.
+
 ## Non-Goals
 
 The following are explicit non-goals and must not appear as current core

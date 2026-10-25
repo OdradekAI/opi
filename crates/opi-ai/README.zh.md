@@ -698,6 +698,33 @@ revision：`try_install` 完整校验候选后原子换入，因此篡改、过�
 选择/计价的 catalog 元数据；SDK 自身的 image 操作路径归 typed image API
 任务所有。
 
+## 动态 Catalog Store 与 Refresh（V-27/AIR-002/AIR-033）
+
+`ModelsStore`（`catalog` 模块）是动态 catalog 的唯一 revision-commit owner：
+`RefreshGuard::commit` 先持久化快照（临时文件 + 原子 rename，distribution
+schema v1 JSON 加 `opi` revision 头），再返回确切被确认的 map，
+`Models::refresh` 随后才把它应用到 registry——内存与磁盘要么一起发布，
+要么都不发布。在新 revision 之前创建的 guard 被拒绝为 `Superseded`，
+不触碰已发布状态；被取消的 guard 不落盘；重开 store 时先于任何网络
+工作恢复最后已知 revision。持久化文件采用 Pi 的 *distribution* schema
+（`models.schema.json`），与内置 bundle 内嵌的 hydration 数据（v6）是
+不同 artifact；opi 特有保真度（streaming、cache 开关、计价分层、精确
+thinking 映射、wire compat 载荷）经显式 `x-opi` 扩展往返，纯 v1 文档
+以封闭默认值解码。
+
+`Models::refresh(allow_network)` 是唯一刷新入口：`refresh(false)` 不做
+任何 OAuth/网络工作，仅恢复 store 缓存（`RefreshStatus::OfflineRestored`）；
+`refresh(true)` 按确定性排序顺序抓取已注册 provider，再按注册顺序抓取
+已注册 catalog source。结果按 provider 隔离：成功者发布，失败者保留
+该 provider 的旧数据并以脱敏错误上报（`RefreshReport` 中的
+`RefreshOutcome::{Published,Failed,Restored}`），不会抹掉其他 provider 的
+catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
+`CancellationToken`——被取消的轮次不抓取、不持久化、不发布任何内容。
+已 prepare 的调用在刷新后保持冻结绑定。`DynamicCatalogSource` 是
+宿主自定义 catalog source 的公开接缝；`HttpCatalogSource` 经池化连接
+抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
+source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
+
 ## 非目标
 
 以下是明确的非目标，不得作为当前核心行为出现：

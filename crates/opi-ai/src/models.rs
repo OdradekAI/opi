@@ -335,6 +335,92 @@ pub enum ModelsError {
         /// Provider whose flow was requested.
         provider: String,
     },
+    /// A dynamic-catalog store operation failed while restoring or
+    /// committing a revision.
+    #[error(transparent)]
+    CatalogStore(#[from] crate::catalog::ModelsStoreError),
+}
+
+/// Outcome of one refresh round, reported per provider or source id.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum RefreshOutcome {
+    /// The entry's complete catalog was published in the new revision
+    /// (`models: 0` means the provider fell back to its built-in models).
+    Published {
+        /// Number of models in the published snapshot.
+        models: usize,
+    },
+    /// The entry failed; its prior data (if any) is retained. The error is
+    /// redacted by construction.
+    Failed(ProviderError),
+    /// The entry was restored from the persisted store during the
+    /// restore-before-network step.
+    Restored {
+        /// Number of models in the restored snapshot.
+        models: usize,
+    },
+}
+
+impl RefreshOutcome {
+    /// Whether this outcome is a reported failure.
+    pub fn is_failure(&self) -> bool {
+        matches!(self, Self::Failed(_))
+    }
+}
+
+/// Terminal status of a refresh round.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RefreshStatus {
+    /// A new revision was fetched and published.
+    #[default]
+    Published,
+    /// Offline round: the store cache was restored, no network work ran.
+    OfflineRestored,
+    /// A newer revision landed first; this round was dropped without
+    /// publishing.
+    Superseded,
+    /// The refresh was cancelled; nothing was persisted or published.
+    Cancelled,
+}
+
+/// One row of a [`RefreshReport`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct RefreshReportEntry {
+    /// Provider id or catalog-source id.
+    pub id: String,
+    /// What happened to that entry.
+    pub outcome: RefreshOutcome,
+}
+
+/// Per-entry report of one refresh round.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RefreshReport {
+    status: RefreshStatus,
+    entries: Vec<RefreshReportEntry>,
+}
+
+impl RefreshReport {
+    /// Terminal status of the round.
+    pub fn status(&self) -> RefreshStatus {
+        self.status
+    }
+
+    /// Every provider/source outcome, in evaluation order.
+    pub fn entries(&self) -> &[RefreshReportEntry] {
+        &self.entries
+    }
+
+    /// Whether the round reported no entries.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Find the report row for `id` (provider id or catalog-source id).
+    pub fn find(&self, id: &str) -> Option<&RefreshReportEntry> {
+        self.entries.iter().find(|entry| entry.id == id)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -382,6 +468,16 @@ pub struct Models {
     /// construction-time design: no store, env, or network access happens
     /// until the owner attaches one.
     credential_store: Option<std::sync::Arc<dyn CredentialStore>>,
+    /// Optional persisted dynamic-catalog store. Attached explicitly via
+    /// [`Models::set_models_store`]; the SDK never creates one or fetches a
+    /// remote catalog by default.
+    models_store: Option<crate::catalog::ModelsStore>,
+    /// Explicitly registered dynamic-catalog sources, fetched only during
+    /// `refresh(true)` rounds in registration order.
+    catalog_sources: Vec<std::sync::Arc<dyn crate::catalog::DynamicCatalogSource>>,
+    /// Whether the attached store's snapshot has already been restored into
+    /// the registry during a refresh round.
+    store_restored: bool,
 }
 
 impl Models {
@@ -400,6 +496,9 @@ impl Models {
             chat_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
+            models_store: None,
+            catalog_sources: Vec::new(),
+            store_restored: false,
         }
     }
 
@@ -425,6 +524,9 @@ impl Models {
             chat_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
+            models_store: None,
+            catalog_sources: Vec::new(),
+            store_restored: false,
         }
     }
 
@@ -1442,76 +1544,260 @@ impl Models {
     /// that provider's prior dynamic catalog, while `Ok(None)` clears any prior
     /// dynamic snapshot and exposes the provider's built-in models. Repeated
     /// refreshes replace rather than append.
-    pub async fn refresh(&mut self) -> Result<(), ModelsError> {
-        let ids = self.registry.provider_ids();
-        let ids: Vec<String> = ids.into_iter().map(|s| s.to_owned()).collect();
+    /// Refresh provider-side model catalogs.
+    ///
+    /// `allow_network` selects the two refresh modes:
+    ///
+    /// - `false` performs **no OAuth/network work at all**: an attached
+    ///   [`crate::catalog::ModelsStore`] is restored into the registry and
+    ///   the report carries [`RefreshOutcome::Restored`] entries with status
+    ///   [`RefreshStatus::OfflineRestored`].
+    /// - `true` first restores any pending store snapshot, then fetches every
+    ///   registered provider (deterministic sorted id order) and every
+    ///   registered catalog source (registration order). Outcomes are
+    ///   **per-provider**: successes publish, failures retain that
+    ///   provider's prior data and report a redacted error without erasing
+    ///   other providers' catalogs. `Ok(None)` clears that provider's dynamic
+    ///   snapshot back to its built-in models.
+    ///
+    /// When a store is attached, publication goes through the store's single
+    /// revision-commit owner: the committed snapshot is persisted first and
+    /// exactly the acknowledged map is applied to memory, so a superseded or
+    /// cancelled refresh can never publish late. Already-prepared calls keep
+    /// their frozen bindings across refreshes.
+    ///
+    /// The SDK registers no source and attaches no store by default: there
+    /// is no pi.dev or default startup fetch policy here.
+    pub async fn refresh(&mut self, allow_network: bool) -> Result<RefreshReport, ModelsError> {
+        self.refresh_with(allow_network, &tokio_util::sync::CancellationToken::new())
+            .await
+    }
 
-        // Collect all results first (no mutation until every provider succeeds).
-        let mut new_catalogs: HashMap<String, Vec<ModelInfo>> = HashMap::new();
-        let mut first_error = None;
-        for id in &ids {
-            let provider = match self.registry.get_provider(id) {
-                Some(p) => p,
-                None => continue,
-            };
-            match provider.refresh_models().await {
-                Ok(Some(models)) => {
-                    // Validate the candidate before it can replace the live
-                    // catalog: a malformed or duplicate refresh must preserve
-                    // the last-known catalog (mirrors register_model checks).
-                    let mut seen = std::collections::HashSet::new();
-                    let validation = models.iter().try_for_each(|model| {
-                        if model.id.is_empty() {
-                            return Err(ModelsError::Provider(ProviderError::Config(
-                                ProviderErrorSummary::sanitized(format!(
-                                    "dynamic catalog for provider '{id}' contains a model with an empty id"
-                                )),
-                            )));
-                        }
-                        if !seen.insert(model.id.as_str()) {
-                            return Err(ModelsError::Provider(ProviderError::Config(
-                                ProviderErrorSummary::sanitized(format!(
-                                    "dynamic catalog for provider '{id}' has duplicate model id '{}'",
-                                    model.id
-                                )),
-                            )));
-                        }
-                        if let Err(source) = model.validate() {
-                            return Err(ModelsError::Provider(ProviderError::Config(
-                                ProviderErrorSummary::sanitized(format!(
-                                    "dynamic catalog for provider '{id}' has invalid model '{}': {source}",
-                                    model.id
-                                )),
-                            )));
-                        }
-                        Ok(())
+    /// [`refresh`](Self::refresh) observing `token`: when the token fires,
+    /// fetching stops, nothing is persisted or published, and the report
+    /// status is [`RefreshStatus::Cancelled`].
+    pub async fn refresh_with(
+        &mut self,
+        allow_network: bool,
+        token: &tokio_util::sync::CancellationToken,
+    ) -> Result<RefreshReport, ModelsError> {
+        let mut report = RefreshReport {
+            status: RefreshStatus::Published,
+            entries: Vec::new(),
+        };
+
+        // Restore the persisted cache before any network work.
+        if !self.store_restored {
+            if let Some(store) = &self.models_store {
+                let snapshot = store.snapshot();
+                for (id, models) in &snapshot.catalogs {
+                    report.entries.push(RefreshReportEntry {
+                        id: id.clone(),
+                        outcome: RefreshOutcome::Restored {
+                            models: models.len(),
+                        },
                     });
-                    match validation {
-                        Ok(()) => {
-                            new_catalogs.insert(id.clone(), models);
+                }
+                self.registry
+                    .replace_all_dynamic_catalogs(snapshot.catalogs);
+            }
+            self.store_restored = true;
+        }
+
+        if !allow_network {
+            report.status = RefreshStatus::OfflineRestored;
+            return Ok(report);
+        }
+
+        let guard = self
+            .models_store
+            .as_ref()
+            .map(|store| store.begin_with(token.clone()));
+
+        // Merge over the current publication: failures retain prior data.
+        let mut merged = self.registry.dynamic_catalogs();
+        let mut cancelled = false;
+
+        let mut ids: Vec<String> = self
+            .registry
+            .provider_ids()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        ids.sort();
+        for id in ids {
+            let Some(provider) = self.registry.get_provider(&id) else {
+                continue;
+            };
+            let outcome = tokio::select! {
+                biased;
+                _ = token.cancelled() => None,
+                result = provider.refresh_models() => Some(result),
+            };
+            let result = match outcome {
+                Some(result) => result,
+                None => {
+                    cancelled = true;
+                    break;
+                }
+            };
+            match result {
+                Ok(Some(models)) => match validate_dynamic_catalog(&id, &models) {
+                    Ok(()) => {
+                        report.entries.push(RefreshReportEntry {
+                            id: id.clone(),
+                            outcome: RefreshOutcome::Published {
+                                models: models.len(),
+                            },
+                        });
+                        merged.insert(id, models);
+                    }
+                    Err(error) => report.entries.push(RefreshReportEntry {
+                        id: id.clone(),
+                        outcome: RefreshOutcome::Failed(error),
+                    }),
+                },
+                Ok(None) => {
+                    // No dynamic snapshot: fall back to built-in models.
+                    report.entries.push(RefreshReportEntry {
+                        id: id.clone(),
+                        outcome: RefreshOutcome::Published { models: 0 },
+                    });
+                    merged.remove(&id);
+                }
+                Err(error) => report.entries.push(RefreshReportEntry {
+                    id: id.clone(),
+                    outcome: RefreshOutcome::Failed(error),
+                }),
+            }
+        }
+
+        if !cancelled {
+            for source in &self.catalog_sources {
+                let outcome = tokio::select! {
+                    biased;
+                    _ = token.cancelled() => None,
+                    result = source.fetch(token.clone()) => Some(result),
+                };
+                let result = match outcome {
+                    Some(result) => result,
+                    None => {
+                        cancelled = true;
+                        break;
+                    }
+                };
+                match result {
+                    Ok(catalogs) => {
+                        let mut published = 0_usize;
+                        let mut source_error = None;
+                        for (provider_id, models) in catalogs {
+                            if self.registry.get_provider(&provider_id).is_none() {
+                                source_error.get_or_insert(ProviderError::Config(
+                                    ProviderErrorSummary::sanitized(format!(
+                                        "catalog source '{}' published unknown provider '{}'",
+                                        source.id(),
+                                        provider_id
+                                    )),
+                                ));
+                                continue;
+                            }
+                            match validate_dynamic_catalog(&provider_id, &models) {
+                                Ok(()) => {
+                                    published += models.len();
+                                    merged.insert(provider_id, models);
+                                }
+                                Err(error) => {
+                                    source_error.get_or_insert(error);
+                                }
+                            }
                         }
-                        Err(error) => {
-                            first_error.get_or_insert(error);
+                        match source_error {
+                            None => report.entries.push(RefreshReportEntry {
+                                id: source.id().to_owned(),
+                                outcome: RefreshOutcome::Published { models: published },
+                            }),
+                            Some(error) => report.entries.push(RefreshReportEntry {
+                                id: source.id().to_owned(),
+                                outcome: RefreshOutcome::Failed(error),
+                            }),
                         }
                     }
-                }
-                Ok(None) => {
-                    // No dynamic snapshot for this provider in the replacement.
-                }
-                Err(err) => {
-                    first_error.get_or_insert(ModelsError::Provider(err));
+                    Err(error) => report.entries.push(RefreshReportEntry {
+                        id: source.id().to_owned(),
+                        outcome: RefreshOutcome::Failed(error),
+                    }),
                 }
             }
         }
 
-        if let Some(error) = first_error {
-            return Err(error);
+        if cancelled {
+            report.status = RefreshStatus::Cancelled;
+            return Ok(report);
         }
 
-        // All succeeded — atomically replace.
-        self.registry.replace_all_dynamic_catalogs(new_catalogs);
-        Ok(())
+        match guard {
+            Some(guard) => match guard.commit(merged).await {
+                Ok(commit) => {
+                    self.registry.replace_all_dynamic_catalogs(commit.catalogs);
+                }
+                Err(crate::catalog::StoreCommitError::Superseded { .. }) => {
+                    report.status = RefreshStatus::Superseded;
+                }
+                Err(crate::catalog::StoreCommitError::Cancelled) => {
+                    report.status = RefreshStatus::Cancelled;
+                }
+                Err(crate::catalog::StoreCommitError::Store(error)) => {
+                    return Err(ModelsError::CatalogStore(error));
+                }
+            },
+            None => self.registry.replace_all_dynamic_catalogs(merged),
+        }
+        Ok(report)
     }
+
+    /// Attach a persisted dynamic-catalog store. Restores happen at the next
+    /// refresh round; nothing is fetched or written here.
+    pub fn set_models_store(&mut self, store: crate::catalog::ModelsStore) {
+        self.models_store = Some(store);
+        self.store_restored = false;
+    }
+
+    /// Register a dynamic-catalog source fetched during `refresh(true)`
+    /// rounds. Registered explicitly; the SDK installs no default source.
+    pub fn register_catalog_source(
+        &mut self,
+        source: std::sync::Arc<dyn crate::catalog::DynamicCatalogSource>,
+    ) {
+        self.catalog_sources.push(source);
+    }
+}
+
+/// Validate a candidate dynamic catalog before it can replace the live
+/// publication: a malformed or duplicate refresh must preserve the
+/// last-known catalog (mirrors `register_model` checks).
+fn validate_dynamic_catalog(provider_id: &str, models: &[ModelInfo]) -> Result<(), ProviderError> {
+    let config = |message: String| ProviderError::Config(ProviderErrorSummary::sanitized(message));
+    let mut seen = std::collections::HashSet::new();
+    for model in models {
+        if model.id.is_empty() {
+            return Err(config(format!(
+                "dynamic catalog for provider '{provider_id}' contains a model with an empty id"
+            )));
+        }
+        if !seen.insert(model.id.as_str()) {
+            return Err(config(format!(
+                "dynamic catalog for provider '{provider_id}' has duplicate model id '{}'",
+                model.id
+            )));
+        }
+        if let Err(source) = model.validate() {
+            return Err(config(format!(
+                "dynamic catalog for provider '{provider_id}' has invalid model '{}': {source}",
+                model.id
+            )));
+        }
+    }
+    Ok(())
 }
 
 impl Default for Models {

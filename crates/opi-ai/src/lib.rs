@@ -56,6 +56,7 @@ pub use auth::{
     AwsSigV4Credentials, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider,
     ResolvedAuth, StaticAuthResolver,
 };
+pub use catalog::{DynamicCatalogSource, HttpCatalogSource, ModelsStore};
 pub use config::{Config, Error};
 pub use credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
@@ -68,7 +69,8 @@ pub use model_info::{
 pub use models::{
     ApiId, AuthCheck, AuthCheckKind, AuthDescriptor, AuthResolutionOverrides, ChatApi,
     ChatApiHandle, ChatCall, ChatModelRecord, CompatMetadata, Models, ModelsError, NativeOptions,
-    PreparedProviderCall, PreparedRoute, SecretKey, SimpleOptions,
+    PreparedProviderCall, PreparedRoute, RefreshOutcome, RefreshReport, RefreshReportEntry,
+    RefreshStatus, SecretKey, SimpleOptions,
 };
 pub use mutation::{
     BarrierEntry, BarrierReport, CredentialMutationOp, CredentialRevision, CredentialUpdateOp,

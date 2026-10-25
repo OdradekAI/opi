@@ -12,7 +12,7 @@ use opi_ai::auth::{
 };
 use opi_ai::message::{AssistantContent, AssistantMessage};
 use opi_ai::models::{
-    AuthCheckKind, AuthDescriptor, CompatMetadata, Models, ModelsError, SecretKey,
+    AuthCheckKind, AuthDescriptor, CompatMetadata, Models, ModelsError, RefreshOutcome, SecretKey,
     drain_to_completion,
 };
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
@@ -667,8 +667,10 @@ async fn collection_supports_provider_correctness_fixtures() {
 #[tokio::test]
 async fn collection_refresh_is_a_documented_noop_extension_point() {
     let mut collection = Models::new();
-    let result = collection.refresh().await;
-    assert!(result.is_ok());
+    // Offline refresh on a store-less collection performs no network work and
+    // reports an empty outcome (no pi.dev/default startup policy exists).
+    let report = collection.refresh(false).await;
+    assert!(report.is_ok());
 }
 
 // ---------------------------------------------------------------------------
@@ -1229,7 +1231,7 @@ async fn refresh_models_is_atomic_substrate() {
     assert!(collection.resolve("dyna:fresh-a1").is_err());
 
     // Refresh succeeds.
-    collection.refresh().await.unwrap();
+    collection.refresh(true).await.unwrap();
 
     // After refresh: dynamic catalogs replace built-in models.
     // Old models gone, fresh models visible.
@@ -1266,7 +1268,7 @@ async fn refresh_models_is_atomic_substrate() {
 }
 
 #[tokio::test]
-async fn refresh_models_atomic_rollback_on_error() {
+async fn refresh_models_reports_per_provider_and_publishes_successes() {
     const STATIC_PROVIDER_CANARY: &str = "static-refresh-provider-canary";
     let mut collection = Models::new();
 
@@ -1300,15 +1302,29 @@ async fn refresh_models_atomic_rollback_on_error() {
     // Verify initial state: no models yet (empty built-in).
     assert!(collection.resolve("good:good-model").is_err());
 
-    // Refresh fails because "bad" returns an error.
-    let err = collection.refresh().await.unwrap_err();
-    assert_eq!(err.to_string(), "provider error: [REDACTED]");
-    assert!(!format!("{err:?}").contains(STATIC_PROVIDER_CANARY));
+    // Refresh reports per-provider outcomes: a failing provider retains its
+    // prior data and does not erase other providers' fresh catalogs.
+    let report = collection.refresh(true).await.unwrap();
+    let good_entry = report
+        .find("good")
+        .expect("good provider appears in the refresh report");
+    assert_eq!(good_entry.outcome, RefreshOutcome::Published { models: 1 });
+    let bad_entry = report
+        .find("bad")
+        .expect("bad provider appears in the refresh report");
+    let RefreshOutcome::Failed(bad_error) = &bad_entry.outcome else {
+        panic!(
+            "bad provider must report its error, got {:?}",
+            bad_entry.outcome
+        )
+    };
+    assert_eq!(bad_error.to_string(), "provider error: [REDACTED]");
+    assert!(!format!("{bad_error:?}").contains(STATIC_PROVIDER_CANARY));
 
-    // Atomic rollback: good's catalog must NOT be installed.
+    // Per-provider isolation: good's fresh catalog IS published despite bad.
     assert!(
-        collection.resolve("good:good-model").is_err(),
-        "good's catalog should NOT be visible after rollback"
+        collection.resolve("good:good-model").is_ok(),
+        "good's fresh catalog must publish even when bad fails"
     );
 }
 
@@ -1333,7 +1349,7 @@ async fn refresh_models_deterministic_ordering() {
             .unwrap();
     }
 
-    collection.refresh().await.unwrap();
+    collection.refresh(true).await.unwrap();
 
     // Provider ids are exposed in deterministic sorted order regardless of
     // registration order, so a regression to insertion order would be caught.
@@ -1366,7 +1382,7 @@ async fn refresh_models_repeated_refresh_replaces() {
         .unwrap();
 
     // First refresh.
-    collection.refresh().await.unwrap();
+    collection.refresh(true).await.unwrap();
     assert!(collection.resolve("dyn:v1").is_ok());
     assert!(collection.resolve("dyn:v2").is_err());
 
@@ -1377,7 +1393,7 @@ async fn refresh_models_repeated_refresh_replaces() {
     ]);
 
     // Second refresh — replaces v1 with v2+v3.
-    collection.refresh().await.unwrap();
+    collection.refresh(true).await.unwrap();
     assert!(
         collection.resolve("dyn:v1").is_err(),
         "v1 should be replaced"
@@ -1406,12 +1422,12 @@ async fn refresh_models_none_clears_prior_dynamic_snapshot() {
         )
         .unwrap();
 
-    collection.refresh().await.unwrap();
+    collection.refresh(true).await.unwrap();
     assert!(collection.resolve("dyn:dynamic").is_ok());
     assert!(collection.resolve("dyn:builtin").is_err());
 
     *refresh_result.lock().unwrap() = None;
-    collection.refresh().await.unwrap();
+    collection.refresh(true).await.unwrap();
 
     assert!(collection.resolve("dyn:dynamic").is_err());
     assert!(collection.resolve("dyn:builtin").is_ok());
@@ -1434,7 +1450,7 @@ async fn refresh_models_empty_catalog_is_valid() {
 
     assert!(collection.resolve("dyn:old").is_ok());
 
-    collection.refresh().await.unwrap();
+    collection.refresh(true).await.unwrap();
 
     // Empty dynamic catalog: old model gone, no new models.
     assert!(collection.resolve("dyn:old").is_err());
@@ -3098,8 +3114,8 @@ mod registry_preflight_and_refresh {
 
     use opi_ai::credential::BoxAuthFuture;
     use opi_ai::model_info::ThinkingLevel;
-    use opi_ai::models::{AuthDescriptor, CompatMetadata, Models, SecretKey};
-    use opi_ai::provider::{EventStream, Provider, ProviderError, Request, ThinkingConfig};
+    use opi_ai::models::{AuthDescriptor, CompatMetadata, Models, RefreshOutcome, SecretKey};
+    use opi_ai::provider::{Provider, ProviderError, Request, ThinkingConfig};
     use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 
     struct CountingRoute {
@@ -3120,7 +3136,7 @@ mod registry_preflight_and_refresh {
             &self,
             _request: Request,
             _auth: opi_ai::auth::ResolvedAuth,
-        ) -> EventStream {
+        ) -> opi_ai::provider::EventStream {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Box::pin(futures_util::stream::empty())
         }
@@ -3189,7 +3205,7 @@ mod registry_preflight_and_refresh {
             &self,
             _request: Request,
             _auth: opi_ai::auth::ResolvedAuth,
-        ) -> EventStream {
+        ) -> opi_ai::provider::EventStream {
             Box::pin(futures_util::stream::empty())
         }
 
@@ -3244,14 +3260,542 @@ mod registry_preflight_and_refresh {
                 .unwrap();
         }
 
-        let error = collection.refresh().await.expect_err("batch must fail");
-
-        assert_eq!(error.to_string(), "provider error: [REDACTED]");
+        // Refresh reports per-provider outcomes and still evaluates every
+        // provider in deterministic (sorted) id order after an error.
+        let report = collection.refresh(true).await.unwrap();
         assert_eq!(
             *log.lock().unwrap(),
             ["a-error", "b-success", "c-error"],
             "refresh must call every provider in sorted order"
         );
-        assert!(collection.resolve("b-success:fresh").is_err());
+        // Successful providers publish despite sibling failures.
+        assert!(collection.resolve("b-success:fresh").is_ok());
+        assert!(report.find("a-error").unwrap().outcome.is_failure());
+        assert!(report.find("c-error").unwrap().outcome.is_failure());
+        assert!(matches!(
+            report.find("b-success").unwrap().outcome,
+            RefreshOutcome::Published { models: 1 }
+        ));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ModelsStore-backed refresh: restore, atomic publication, late/superseded
+// writes, cancellation, catalog sources, and binding stability (task 20.33)
+// ---------------------------------------------------------------------------
+
+mod catalog_store_refresh_20_33 {
+    use super::*;
+    use opi_ai::RefreshStatus;
+    use opi_ai::catalog::{DynamicCatalogSource, HttpCatalogSource, ModelsStore};
+    use opi_ai::models::RefreshOutcome;
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Provider whose `refresh_models` signals entry and blocks until released.
+    struct BarrierRefreshProvider {
+        id: &'static str,
+        builtin: Vec<ModelInfo>,
+        fresh: Vec<ModelInfo>,
+        entered: Arc<tokio::sync::Notify>,
+        release: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+    }
+
+    impl BarrierRefreshProvider {
+        fn new(
+            id: &'static str,
+            fresh: Vec<ModelInfo>,
+            entered: Arc<tokio::sync::Notify>,
+            release: tokio::sync::oneshot::Receiver<()>,
+        ) -> Self {
+            Self {
+                id,
+                builtin: Vec::new(),
+                fresh,
+                entered,
+                release: Mutex::new(Some(release)),
+            }
+        }
+    }
+
+    impl Provider for BarrierRefreshProvider {
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn models(&self) -> &[ModelInfo] {
+            Box::leak(self.builtin.clone().into_boxed_slice())
+        }
+        fn stream_prepared(
+            &self,
+            _request: Request,
+            _auth: opi_ai::auth::ResolvedAuth,
+        ) -> opi_ai::provider::EventStream {
+            Box::pin(futures_util::stream::empty())
+        }
+        fn refresh_models(
+            &self,
+        ) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
+            self.entered.notify_one();
+            let release = self.release.lock().unwrap().take();
+            let fresh = self.fresh.clone();
+            Box::pin(async move {
+                if let Some(release) = release {
+                    let _ = release.await;
+                }
+                Ok(Some(fresh))
+            })
+        }
+    }
+
+    /// Provider that counts refresh fetches, proving offline refresh never
+    /// touches the network path.
+    struct CountingRefreshProvider {
+        id: &'static str,
+        fresh: Vec<ModelInfo>,
+        fetches: Arc<AtomicUsize>,
+    }
+
+    impl Provider for CountingRefreshProvider {
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn models(&self) -> &[ModelInfo] {
+            Box::leak(self.fresh.clone().into_boxed_slice())
+        }
+        fn stream_prepared(
+            &self,
+            _request: Request,
+            _auth: opi_ai::auth::ResolvedAuth,
+        ) -> opi_ai::provider::EventStream {
+            Box::pin(futures_util::stream::empty())
+        }
+        fn refresh_models(
+            &self,
+        ) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
+            self.fetches.fetch_add(1, Ordering::SeqCst);
+            let fresh = self.fresh.clone();
+            Box::pin(async move { Ok(Some(fresh)) })
+        }
+    }
+
+    /// User-plugged dynamic catalog source with fixed output.
+    struct FixedCatalogSource {
+        id: String,
+        catalogs: HashMap<String, Vec<ModelInfo>>,
+    }
+
+    impl DynamicCatalogSource for FixedCatalogSource {
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn fetch(
+            &self,
+            _token: CancellationToken,
+        ) -> futures_util::future::BoxFuture<
+            'static,
+            Result<HashMap<String, Vec<ModelInfo>>, ProviderError>,
+        > {
+            let catalogs = self.catalogs.clone();
+            Box::pin(async move { Ok(catalogs) })
+        }
+    }
+
+    /// User-plugged dynamic catalog source that always fails.
+    struct FailingCatalogSource {
+        id: String,
+    }
+
+    impl DynamicCatalogSource for FailingCatalogSource {
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn fetch(
+            &self,
+            _token: CancellationToken,
+        ) -> futures_util::future::BoxFuture<
+            'static,
+            Result<HashMap<String, Vec<ModelInfo>>, ProviderError>,
+        > {
+            Box::pin(async move {
+                Err(ProviderError::ProviderSide(
+                    opi_ai::provider::ProviderErrorSummary::from_untrusted("source down"),
+                ))
+            })
+        }
+    }
+
+    fn register(collection: &mut Models, provider: Box<dyn Provider>) {
+        collection
+            .register(
+                provider,
+                AuthDescriptor::StaticApiKey {
+                    value: SecretKey::new("key"),
+                },
+                CompatMetadata::default(),
+            )
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn refresh_false_performs_no_network_and_restores_store_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("models-store.json");
+
+        // A prior publication exists in the store.
+        let store = ModelsStore::open(&path).unwrap();
+        store
+            .begin()
+            .commit(HashMap::from([(
+                "dyn".to_owned(),
+                vec![model_info("stored-1", "Stored 1")],
+            )]))
+            .await
+            .unwrap();
+
+        let fetches = Arc::new(AtomicUsize::new(0));
+        let mut collection = Models::new();
+        register(
+            &mut collection,
+            Box::new(CountingRefreshProvider {
+                id: "dyn",
+                fresh: vec![model_info("fresh-1", "Fresh 1")],
+                fetches: fetches.clone(),
+            }),
+        );
+        collection.set_models_store(store);
+
+        // Offline refresh: restore the persisted cache, never fetch.
+        let report = collection.refresh(false).await.unwrap();
+        assert_eq!(
+            report.status(),
+            RefreshStatus::OfflineRestored,
+            "refresh(false) restores without network"
+        );
+        assert_eq!(fetches.load(Ordering::SeqCst), 0, "no provider fetch");
+        assert!(collection.resolve("dyn:stored-1").is_ok());
+        assert!(
+            collection.resolve("dyn:fresh-1").is_err(),
+            "offline refresh must not publish unfetched models"
+        );
+        assert!(matches!(
+            report.find("dyn").map(|entry| &entry.outcome),
+            Some(RefreshOutcome::Restored { models: 1 })
+        ));
+    }
+
+    #[tokio::test]
+    async fn late_superseded_refresh_cannot_publish_or_rollback() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("models-store.json");
+
+        let mut collection = Models::new();
+        let store = ModelsStore::open(&path).unwrap();
+        store
+            .begin()
+            .commit(HashMap::from([(
+                "winner".to_owned(),
+                vec![model_info("w1", "W1")],
+            )]))
+            .await
+            .unwrap();
+        collection.set_models_store(store.clone());
+
+        // Refresh A hangs inside its fetch; while it hangs, a second publisher
+        // commits a newer revision directly through the store.
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        register(
+            &mut collection,
+            Box::new(BarrierRefreshProvider::new(
+                "racer",
+                vec![model_info("racer-fresh", "Racer Fresh")],
+                entered.clone(),
+                release_rx,
+            )),
+        );
+
+        let mut refresh_a = collection;
+        let task = tokio::spawn(async move { refresh_a.refresh(true).await.unwrap() });
+        entered.notified().await;
+
+        // Publisher B commits revision 2 while A is suspended in fetch.
+        store
+            .begin()
+            .commit(HashMap::from([(
+                "winner".to_owned(),
+                vec![model_info("w2", "W2")],
+            )]))
+            .await
+            .unwrap();
+
+        release_tx.send(()).unwrap();
+        let report = task.await.unwrap();
+        assert_eq!(
+            report.status(),
+            RefreshStatus::Superseded,
+            "the late refresh must be dropped, not published"
+        );
+
+        // Store: B's revision wins; A's racer write never lands.
+        assert_eq!(store.revision(), 2);
+        assert!(
+            !store.snapshot().catalogs.contains_key("racer"),
+            "superseded write must not persist"
+        );
+
+        // Reopened store shows B's publication (no rollback).
+        let reopened = ModelsStore::open(&path).unwrap();
+        assert_eq!(reopened.revision(), 2);
+        assert!(reopened.snapshot().catalogs["winner"][0].id == "w2");
+
+        // A fresh collection restoring from the store sees B's world.
+        let mut collection_b = Models::new();
+        register(
+            &mut collection_b,
+            Box::new(RefreshProvider::new("winner", vec![])),
+        );
+        collection_b.set_models_store(ModelsStore::open(&path).unwrap());
+        collection_b.refresh(false).await.unwrap();
+        assert!(collection_b.resolve("winner:w2").is_ok());
+        assert!(collection_b.resolve("racer:racer-fresh").is_err());
+    }
+
+    #[tokio::test]
+    async fn cancelled_refresh_never_publishes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("models-store.json");
+        let mut collection = Models::new();
+        collection.set_models_store(ModelsStore::open(&path).unwrap());
+
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        register(
+            &mut collection,
+            Box::new(BarrierRefreshProvider::new(
+                "racer",
+                vec![model_info("racer-fresh", "Racer Fresh")],
+                entered.clone(),
+                release_rx,
+            )),
+        );
+        // Hold the sender for the whole test: the fetch stays suspended until
+        // cancellation drops it, and a released-late write cannot publish.
+        let _hold_release = release_tx;
+
+        let token = CancellationToken::new();
+        let task_token = token.clone();
+        let task = tokio::spawn(async move {
+            let report = collection.refresh_with(true, &task_token).await.unwrap();
+            (report, collection)
+        });
+        entered.notified().await;
+        token.cancel();
+        let (report, collection) = task.await.unwrap();
+        assert_eq!(report.status(), RefreshStatus::Cancelled);
+
+        // Nothing persisted, nothing published, and a later release of the
+        // suspended fetch cannot publish after cancellation.
+        assert!(!path.exists(), "cancelled refresh persists nothing");
+        assert!(
+            collection.resolve("racer:racer-fresh").is_err(),
+            "cancelled work must never appear in the in-memory catalog"
+        );
+    }
+
+    #[tokio::test]
+    async fn custom_catalog_source_publishes_and_retains_failed_sources() {
+        let mut collection = Models::new();
+        // Catalog sources publish dynamic catalogs for registered providers.
+        register(
+            &mut collection,
+            Box::new(RefreshProvider::new("custom-prov", vec![])),
+        );
+        collection.register_catalog_source(Arc::new(FixedCatalogSource {
+            id: "custom-src".to_owned(),
+            catalogs: HashMap::from([(
+                "custom-prov".to_owned(),
+                vec![model_info("src-model", "Source Model")],
+            )]),
+        }));
+        collection.register_catalog_source(Arc::new(FailingCatalogSource {
+            id: "broken-src".to_owned(),
+        }));
+
+        let report = collection.refresh(true).await.unwrap();
+        assert_eq!(report.status(), RefreshStatus::Published);
+        assert!(
+            collection.resolve("custom-prov:src-model").is_ok(),
+            "custom source models publish through refresh"
+        );
+        assert!(matches!(
+            report.find("custom-src").unwrap().outcome,
+            RefreshOutcome::Published { models: 1 }
+        ));
+        assert!(
+            report.find("broken-src").unwrap().outcome.is_failure(),
+            "failing source reports its error"
+        );
+    }
+
+    /// Minimal raw HTTP server returning queued responses, one per request.
+    async fn spawn_catalog_server(
+        responses: Vec<(u16, String)>,
+    ) -> (std::net::SocketAddr, Arc<Mutex<VecDeque<(u16, String)>>>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind catalog server");
+        let addr = listener.local_addr().expect("catalog server addr");
+        let queue = Arc::new(Mutex::new(responses.into_iter().collect::<VecDeque<_>>()));
+        let server_queue = queue.clone();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut request = Vec::new();
+                let mut buf = [0_u8; 1024];
+                loop {
+                    let read = tokio::io::AsyncReadExt::read(&mut socket, &mut buf)
+                        .await
+                        .expect("read catalog request");
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buf[..read]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let (code, body) = server_queue
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .unwrap_or((200, "{}".to_owned()));
+                let reason = match code {
+                    200 => "OK",
+                    500 => "Internal Server Error",
+                    _ => "Status",
+                };
+                let response = format!(
+                    "HTTP/1.1 {code} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                use tokio::io::AsyncWriteExt;
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        (addr, queue)
+    }
+
+    #[tokio::test]
+    async fn http_catalog_source_publishes_and_retains_on_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("models-store.json");
+
+        let document = serde_json::json!({
+            "providers": {
+                "http-prov": {
+                    "models": [
+                        {
+                            "id": "s1",
+                            "name": "Server One",
+                            "api": "openai-completions",
+                            "contextWindow": 32_000,
+                            "maxTokens": 2_048
+                        }
+                    ]
+                }
+            }
+        })
+        .to_string();
+        let (addr, _queue) =
+            spawn_catalog_server(vec![(200, document), (500, "boom".to_owned())]).await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+
+        let mut collection = Models::new();
+        let store = ModelsStore::open(&path).unwrap();
+        collection.set_models_store(store);
+        // The provider exposes no native listing endpoint (its refresh fails);
+        // the HTTP catalog source owns its dynamic catalog, and failures on
+        // either side retain prior data.
+        register(
+            &mut collection,
+            Box::new(ErrorRefreshProvider {
+                id: "http-prov",
+                error_msg: "no native models endpoint",
+            }),
+        );
+        let source = HttpCatalogSource::new(url);
+        collection.register_catalog_source(Arc::new(source));
+
+        // Round 1: the controlled HTTP source publishes and persists.
+        let report = collection.refresh(true).await.unwrap();
+        assert_eq!(report.status(), RefreshStatus::Published);
+        assert!(collection.resolve("http-prov:s1").is_ok());
+        let persisted = ModelsStore::open(&path).unwrap();
+        assert!(
+            persisted.snapshot().catalogs.contains_key("http-prov"),
+            "published source catalog persists through the store"
+        );
+
+        // Round 2: the server fails; prior data is retained, error reported.
+        let report = collection.refresh(true).await.unwrap();
+        assert!(
+            collection.resolve("http-prov:s1").is_ok(),
+            "failed source refresh retains prior valid data"
+        );
+        assert!(report.find("http-catalog").unwrap().outcome.is_failure());
+    }
+
+    #[tokio::test]
+    async fn prepared_call_keeps_binding_across_refresh_replacement() {
+        let mut collection = Models::new();
+        let mut bound = RefreshProvider::new("dyn", vec![model_info("m1", "M1")]);
+        bound.events = Mutex::new(Some(
+            text_response("bound response")
+                .into_iter()
+                .map(Ok)
+                .collect(),
+        ));
+        collection
+            .register_route(
+                Box::new(bound),
+                Arc::new(StaticAuthResolver::new(
+                    AuthScheme::ApiKey,
+                    secrecy::SecretString::from("sk-bound"),
+                )),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .expect("register dispatchable route");
+
+        // Prepare against the current catalog, then replace it wholesale.
+        let prepared = collection
+            .prepare_call("dyn:m1", minimal_request("dyn:m1"))
+            .await
+            .expect("prepare binds while the model exists");
+        collection
+            .register_route(
+                Box::new(
+                    RefreshProvider::new("dyn", vec![]).with_refresh(vec![model_info("m2", "M2")]),
+                ),
+                Arc::new(StaticAuthResolver::new(
+                    AuthScheme::ApiKey,
+                    secrecy::SecretString::from("sk-bound"),
+                )),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .unwrap();
+        collection.refresh(true).await.unwrap();
+        assert!(
+            collection.resolve("dyn:m1").is_err(),
+            "refresh replaced the catalog wholesale"
+        );
+
+        // The already-prepared call keeps its old binding and still drains.
+        let attempt = prepared.start_attempt().expect("old binding survives");
+        let message = drain_to_completion(attempt)
+            .await
+            .expect("prepared call completes on the frozen binding");
+        assert_eq!(assistant_text(&message), "bound response");
     }
 }

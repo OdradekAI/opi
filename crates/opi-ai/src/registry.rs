@@ -339,6 +339,13 @@ impl ProviderRegistry {
         result
     }
 
+    /// Per-provider dynamic catalogs at the time of the call, cloned from the
+    /// registry's current publication. Refresh merges over this snapshot so
+    /// failed providers retain their prior data.
+    pub fn dynamic_catalogs(&self) -> HashMap<String, Vec<ModelInfo>> {
+        self.dynamic_catalogs.clone()
+    }
+
     /// Replace the dynamic catalog for a single provider.
     ///
     /// Used by [`crate::Models::refresh`] to atomically install refreshed
