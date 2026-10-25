@@ -10306,7 +10306,7 @@
       "definition_of_done": "Replace estimator with applicable positive successful usage-anchor plus trailing canonical message estimates, UTF16 units/4800image chars/ceil(chars/3.5), prefix invalidation and independent reported totals. Preserve exact native omission/gating and source simple formulas including pi-messages bypass. Modelbase < effective-level < request sampling, tiers strict-threshold/first-equal and service-tier differences are actually wired, OpenRouterimage uses base cost exception. Metadata does not create new predispatch limits, unknown stays distinct from0 and old duplicate reasoning_effort config keys error only after replacement proof. Local scope: public estimator and metadata/cost helpers plus the currently migrated Chat/Responses adapters prove the single arithmetic and precedence mechanism. Full per-adapter service-tier/image pricing and AIR-062/V-54 close at 20.34 after their real adapters. Record the native/simple parameter inventory with units, omission/default, false/zero/null and source precedence. Public estimator/metadata plus currently migrated Chat/Responses request captures prove only the shared mechanism; each protocol owner and 20.34 retain final per-adapter proof. No new generic option clamp, timeout or retry policy.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.6"
@@ -10344,7 +10344,7 @@
         },
         {
           "field": "task_owned_paths",
-          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.",
+          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.; appended 4 later-discovered compile-fix paths (crates/opi-coding-agent/tests/{extension_mapped_catalog.rs, list_models.rs, product_source_barrier.rs, runtime_failure_recovery.rs}): each carries exactly one mechanical `sampling_params: Default::default()` Request-initializer addition required by the additive Request field (verified via git diff: only those insertions)",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
         },
         {
@@ -10408,7 +10408,7 @@
             "opi_ai Models native/simple preparation (target)",
             "opi_coding_agent::compaction"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-45",
@@ -10422,7 +10422,7 @@
             "opi_ai Models native/simple preparation (target)",
             "opi_coding_agent::compaction"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-053",
@@ -10436,7 +10436,7 @@
             "opi_ai Models native/simple preparation (target)",
             "opi_coding_agent::compaction"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S35",
@@ -10450,7 +10450,7 @@
             "opi_ai Models native/simple preparation (target)",
             "opi_coding_agent::compaction"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.35",
@@ -10464,7 +10464,7 @@
             "opi_ai Models native/simple preparation (target)",
             "opi_coding_agent::compaction"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -10475,7 +10475,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "5340754478af8e1e416ceb7b3854c3f479063b4e",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -10545,12 +10545,113 @@
         "crates/opi-coding-agent/tests/*oauth*",
         "crates/opi-coding-agent/tests/*provider*",
         "crates/opi-coding-agent/tests/*rpc*",
-        "crates/opi-coding-agent/tests/*session*"
+        "crates/opi-coding-agent/tests/*session*",
+        "crates/opi-coding-agent/tests/extension_mapped_catalog.rs",
+        "crates/opi-coding-agent/tests/list_models.rs",
+        "crates/opi-coding-agent/tests/product_source_barrier.rs",
+        "crates/opi-coding-agent/tests/runtime_failure_recovery.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "d4c8e968f30e9ffa0a1088214f7bcaa2a8b264e9",
+      "evidence": {
+        "Opi-Task": "20.35",
+        "Opi-DoD-SHA256": "5f4931e6511cbbd94a8002909f4777530ef882033defbe35bec9fff277484157",
+        "Opi-Verification": "workspace; smoke full PASSED (doc-check, fmt, workspace clippy, workspace tests, doc tests, rustdoc); scenario cargo test -p opi-ai --test context_budget --test usage_cost --test model_wire_metadata --test request_enrichment 11+37+16+16 PASS; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "V-14, V-45, AIR-053, P20-S35 and ONB-03-20.35 exercised at the opi_ai::context estimator, opi_ai::{resolve_sampling_params,calculate_cost_tiered,ServiceTier} and Chat/Responses wire seams"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-25T18:06:23.683299+00:00",
+          "attempt": 1,
+          "summary": "B.2 approved by user (full end-to-end, two separate commits, network-boundary self-report). B.3 start: estimator replacement (chars/3.5 ceil at message granularity, 4800 image chars, anchor redesign without same-model/full-text lower bound), sampling metadata precedence model<level<request, tier selection on input+cacheRead+cacheWrite with first-equal decode, OpenRouter image base-cost exception, unknown!=0, README(.zh) inventory. Baseline dirty: untracked docs/research/pi-ai-opi-ai-alignment/pi-1.4.0-upgrade-assessment.md (preserve, never commit).",
+          "gate_results": {
+            "b2_gate": "user approved end-to-end run, two commits, network-boundary self-report",
+            "baseline_dirty": [
+              "docs/research/pi-ai-opi-ai-alignment/pi-1.4.0-upgrade-assessment.md"
+            ]
+          }
+        },
+        {
+          "timestamp": "2026-10-25T19:49:59.976602+00:00",
+          "attempt": 1,
+          "summary": "Delivered the 3.5 estimator/sampling/pricing substrate: context.rs rewritten to the Pi anchor contract (ceil(utf16/3.5), 4800 image chars, per-message-class aggregation with separately rounded system tool lists, last positive successful usage anchor across model identities, no same-model/full-text lower bound, Usage.total_tokens independent total preferred over bucket sum with reported-gated fallback); Usage gains total_tokens + service_tier with total_tokens() renamed bucket_total_tokens(); ModelInfo gains sampling_params + per-level map with resolve_sampling_params (model<level<request, per key) merged last by Chat/Responses adapters overriding named fields; ModelPricing::effective_for_usage (strict-threshold, first-equal, input+cacheRead+cacheWrite) + calculate_cost_tiered with ServiceTier multipliers (flex .5/priority-fast 2/gpt-5.5 2.5) parsed from Responses service_tier; OpenRouter image base-rate exception documented; README(.zh) native/simple inventory incl. pi-messages N/A note; no predispatch limits, no reasoning_effort retirement. D.1 full PASSED on attempt 4: attempt 1 clippy if-collapse, attempt 2 provider_collection clamp expectations updated to the 3.5 arithmetic (E 21000->24001 -> available 7672->4671, thinking 6648->3647), attempts 3-4 picker_integration SIGSEGV diagnosed as a corrupted incremental artifact - binary picker_integration-218f70cde909efd8 (built 02:47) crashed 5/5 filtered while two same-source rebuilds (20a4338deaaabd90 and a fresh one) pass; touch-rebuild of the test target then full gate green. Request field addition mechanically synced ~40 initializer sites; 4 later-discovered compile-fix test paths appended to ownership with diff evidence (single sampling_params line each). Baseline dirty grew by two user-side untracked research docs during the run (2026-10-26-community-rust-ai-sdk-fit.zh.md, 2026-10-26-official-rust-ai-sdks.zh.md) - preserved uncommitted. D.2 exec 7-lens run via degraded single-reviewer path (no Workflow runtime/node; wf_ref=null): must_fix=0, flagged=3 (corrupted-artifact incident + touch-rebuild workaround, wide breaking-change surface from the model-param removal mechanically synced, Pi-Messages bypass recorded N/A), rejected=3 (fold estimator into transcript module, add typed top_p/temperature request fields beyond the map, serde derive on estimation-only paths). No push.",
+          "gate_results": {
+            "d1_gate": "smoke full PASSED attempt 4 (doc-check, fmt, clippy --workspace --all-targets -D warnings, test --workspace --all-targets, test --workspace --doc, RUSTDOCFLAGS=-D warnings doc --workspace --no-deps)",
+            "d0_scenario": "cargo test -p opi-ai --test context_budget --test usage_cost --test model_wire_metadata --test request_enrichment -> 11 + 37 + 16 + 16 passed / 0 failed",
+            "d3_gap_only": "git diff --check clean; python scripts/opi-doc-check.py PASS; no catalog resource touched (packer not re-run)",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=3, rejected=3, wf_ref=null (degraded single-reviewer path)",
+            "incident_picker_sigsegv": "picker_integration-218f70cde909efd8 SIGSEGV 5/5 filtered + 3 full-gate hits; same-source rebuilds (picker_integration-20a4338deaaabd90, fresh rebuild) pass; touch crates/opi-coding-agent/tests/picker_integration.rs (mtime only, no content change) forced recompile -> full gate green; classified corrupted incremental artifact, no source defect; incremental compilation and cache preserved per contract",
+            "test_disposition": [
+              {
+                "subject": "V-45/AIR-053 estimator",
+                "action": "update",
+                "test": "context_budget.rs (5 rewritten to anchor contract: 3.5 values, cross-model anchor, params only without anchor)",
+                "interface": "estimate_context_tokens/estimate_message_tokens",
+                "replacement": "message-granularity 3.5 estimator + anchor rules",
+                "slim_candidate": null
+              },
+              {
+                "subject": "V-45/AIR-053 estimator",
+                "action": "add",
+                "test": "context_budget.rs (reported_total_differs_from_bucket_sum, explicit_zero_total fallback, message_granularity_rounding, system separate rounding, trailing system after anchor)",
+                "interface": "estimate_context_tokens + Usage.total_tokens",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "AIR-062 tiers/service-tier/totals",
+                "action": "add",
+                "test": "usage_cost.rs (tiered selection, first-equal unsorted, service multipliers, OpenRouter image exception, total_tokens absent/zero/value serde, ServiceTier wire names)",
+                "interface": "calculate_cost_tiered/effective_for_usage/ServiceTier",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "AIR-062 sampling",
+                "action": "add",
+                "test": "model_wire_metadata.rs (defaults/builders, resolve precedence, Chat+Responses wire merge tests, service_tier roundtrip)",
+                "interface": "resolve_sampling_params + adapter bodies",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "ONB-03",
+                "action": "add",
+                "test": "request_enrichment.rs sampling_params default/carried",
+                "interface": "Request.sampling_params",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.35",
+                "action": "update",
+                "test": "usage_cost.rs total_tokens() asserts -> bucket_total_tokens(); provider_collection.rs phase17 clamp expectations to 3.5 arithmetic",
+                "interface": "Usage::bucket_total_tokens + prepare_call budget E",
+                "replacement": "renamed method; E re-fed through unchanged 4096/min-1 formula",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.35",
+                "action": "update",
+                "test": "~40 Request literal initializers across opi-ai/opi-agent/opi-coding-agent src+tests (+1 mechanical sampling_params line each)",
+                "interface": "Request initializer",
+                "replacement": "additive field",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.35",
+                "action": "none",
+                "test": "all other existing suites",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "d4c8e968f30e9ffa0a1088214f7bcaa2a8b264e9"
+          }
+        }
+      ]
     },
     {
       "id": "20.36",
@@ -19997,6 +20098,16 @@
       "rejected_count": 3,
       "ran_at": "2026-10-25T17:43:51.526760+00:00",
       "task_id": "20.33",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 3,
+      "ran_at": "2026-10-25T19:49:59.976602+00:00",
+      "task_id": "20.35",
       "criterion_id": null
     }
   ]
