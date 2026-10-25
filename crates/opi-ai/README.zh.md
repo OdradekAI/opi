@@ -202,8 +202,9 @@ attempt 记录为
 输出 token。无法装入收缩后上限的 thinking 会缩小，尽可能留出 1024 token 回答空间。
 非 adaptive Anthropic 按 thinking 等级解析省略的预算；无法同时容纳最小 thinking
 预算和回答空间的上限会在鉴权前被拒绝。adaptive effort 不使用该数字预算下限。
-`context` 模块估算消息、system 文本和工具 schema，并使用适用的同模型 usage 加新增
-消息计算当前占用，而非会话累计用量。直接调用 provider adapter 仍保留原有默认行为；
+`context` 模块估算消息、system 文本和工具 schema；最后一个适用的正向成功 usage
+（非 Error／Aborted、时间戳不早于前缀、不限模型身份）充当锚点，只估算锚点之后的
+消息，不再有同模型／全文下界。直接调用 provider adapter 仍保留原有默认行为；
 这是每个 request 的输出上限，与产品的轮数预算相互独立。
 
 `ProviderError::AccountIdMissing { provider_id }` 是独立且不可重试的情形：凭据存在，
@@ -724,6 +725,38 @@ catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
 宿主自定义 catalog source 的公开接缝；`HttpCatalogSource` 经池化连接
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
 source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
+
+## 估算器、Sampling 与计价元数据（V-45/AIR-053/AIR-062，任务 20.35）
+
+`context` 估算器按每 token 3.5 个 UTF-16 码元（`ceil(chars * 2 / 7)`）与每图
+4800 等效字符计算，并在消息粒度向上取整：user／toolResult 消息整块聚合取整一次，
+assistant 消息对 text/thinking/tool-call 字符聚合取整一次，system 消息对正文加
+sections 取整一次，added／removed 工具列表的序列化 JSON 各自单独取整。最后一个
+适用的正向成功 usage 充当锚点（不限模型身份、非 Error／Aborted、时间戳不早于前
+缀）；只估算锚点之后的消息，没有同模型／全文下界。独立上报的正向
+`Usage::total_tokens` 即使与桶和不同也优先；显式 0 或缺失时仅当父桶已上报才回退到
+桶和。未知与零处处区分，子集永不重复相加。
+
+| 参数 | 单位／公式 | 省略 → 默认 | 零／null／未知 | 优先级 |
+|---|---|---|---|---|
+| 文本估算 | `ceil(utf16 / 3.5)` | 空 → 0 | — | — |
+| 图片估算 | 每图 4800 字符 | — | — | — |
+| usage 锚点 | total 或桶和 | 无锚 → 内容估算 | total 0 → 已上报则取桶和；未知 → 跳过 | total > 桶和 |
+| simple 上限 | `clamp(M)`：窗口 ≤ 0 时 `max(1,M)`，否则 `min(M, max(1, W−E−4096))` | `None` → 模型默认输出 | 显式 `M` 不再按模型 max 二次封顶 | request < 窗口算术 |
+| 数字 Claude thinking 预算 | 等级表 1024/2048/8192/16384（xhigh/max → high），再夹取留出回答空间 | 省略预算 → 等级默认 | 低于 1024 的预算在鉴权前拒绝 | 等级默认 < 显式预算 |
+| sampling 参数 | 按键合并的 JSON 映射 | 空映射 → 不合并 | 缺失键保持缺失 | 模型基座 < 生效等级 < request |
+| temperature | 具名字段 | `None` → 按适配器门控省略 | NaN 省略 | sampling 映射覆盖具名字段（最后合并） |
+| 计价 tier | 以 input+cacheRead+cacheWrite 选择，严格大于，取最高，相等重复取首个 | 无 tier → 基础费率 | 构造时拒绝 0 阈值 | 命中费率适用于整个请求 |
+| 1h 缓存写入 | 子集按 2× 输入费率 | `None` → 全部短缓存 | 显式 0 有效，与缺失区分 | 子集，永不重复计费 |
+| service tier | flex 0.5×、priority/fast 2×（`gpt-5.5`：2.5×）、default 1× | 缺失 → 1× | 未识别的 wire 值保持缺失 | 作用于每个成本分量 |
+
+仅 OpenAI 兼容适配器（Chat、Responses）合并解析后的 sampling 映射，且作为 body 的
+最后一步，使模型与 request 的 sampling 覆盖具名请求字段；其他适配器忽略它。
+Responses 适配器把响应中的 `service_tier` 解析进 `Usage`。OpenRouter 图片
+`parse_usage` 是显式源例外：图片用量保留基础模型费率，不做 tier 选择。opi 没有
+Pi-Messages wire，其 native/simple 直传条款（只转发 temperature/maxTokens、不走
+公共预算构建器）不适用，没有绕过共享机制的路径。元数据本身永远不会产生新的派发前限制或缩放；重复的静态 `reasoning_effort` compat 键
+仍然解析，只有在 AIR-022 替换证明之后才会开始硬报错。
 
 ## 非目标
 

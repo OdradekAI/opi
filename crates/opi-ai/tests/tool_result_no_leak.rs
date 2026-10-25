@@ -67,6 +67,7 @@ fn request_with_truncated_tool_result() -> Request {
         .expect("valid context declarations"),
         max_tokens: Some(128),
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,

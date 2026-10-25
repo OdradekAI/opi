@@ -37,6 +37,7 @@ fn minimal_request(model: &str) -> Request {
         .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,
@@ -1859,10 +1860,10 @@ mod phase17 {
         let calls = calls.lock().unwrap();
         assert_eq!(
             calls.iter().map(|c| c.max_tokens).collect::<Vec<_>>(),
-            vec![Some(7_672), Some(7_672), Some(2_000), Some(1)]
+            vec![Some(4_671), Some(4_671), Some(2_000), Some(1)]
         );
-        assert_eq!(calls[0].thinking.budget_tokens, Some(6_648));
-        assert_eq!(calls[1].thinking.budget_tokens, Some(6_648));
+        assert_eq!(calls[0].thinking.budget_tokens, Some(3_647));
+        assert_eq!(calls[1].thinking.budget_tokens, Some(3_647));
         assert_eq!(calls[2].thinking.budget_tokens, Some(976));
     }
 

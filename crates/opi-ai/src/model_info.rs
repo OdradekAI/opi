@@ -11,7 +11,15 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::stream::Pricing;
+use crate::stream::{CostBreakdown, Pricing, Usage, calculate_cost};
+
+/// Arbitrary sampling parameters merged into the request body as-is.
+///
+/// Keys are provider-specific (for example `top_p`, `top_k`, `min_p`);
+/// resolution order is per key: model base < effective thinking level <
+/// request (see [`resolve_sampling_params`]). Only OpenAI-compatible
+/// adapters apply the merged map; other adapters ignore it.
+pub type SamplingParams = serde_json::Map<String, serde_json::Value>;
 
 /// Capabilities of a resolved model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -446,6 +454,89 @@ impl ModelPricing {
             .last()
             .map_or(self.base, |tier| tier.pricing)
     }
+
+    /// Tier selection over one request's usage (AIR-062).
+    ///
+    /// Counts `input + cache_read + cache_write` tokens only, picks the
+    /// highest threshold that was strictly exceeded, and keeps the first of
+    /// equal duplicate thresholds; the chosen rates apply to the whole
+    /// request. The scan does not assume ordering, so wire-originated tier
+    /// lists are handled before catalog validation runs.
+    pub fn effective_for_usage(&self, usage: &Usage) -> Pricing {
+        let prompt_tokens = u64::from(usage.input_tokens)
+            + u64::from(usage.cache_read_tokens)
+            + u64::from(usage.cache_write_tokens);
+        let mut rates = self.base;
+        let mut matched_threshold = 0u64;
+        for tier in &self.tiers {
+            if prompt_tokens > tier.input_tokens_above
+                && tier.input_tokens_above > matched_threshold
+            {
+                rates = tier.pricing;
+                matched_threshold = tier.input_tokens_above;
+            }
+        }
+        rates
+    }
+}
+
+/// Resolve sampling parameters for one request (AIR-062).
+///
+/// Per-key merge with model base < effective thinking level < request
+/// precedence. Returns `None` only when every source is empty.
+pub fn resolve_sampling_params(
+    model: &ModelInfo,
+    effective_level: ThinkingLevel,
+    request: &SamplingParams,
+) -> Option<SamplingParams> {
+    let level_params = model
+        .sampling_params_by_thinking_level
+        .get(&effective_level);
+    if model.sampling_params.is_empty()
+        && level_params.is_none_or(|params| params.is_empty())
+        && request.is_empty()
+    {
+        return None;
+    }
+    let mut merged = model.sampling_params.clone();
+    if let Some(level_params) = level_params {
+        for (key, value) in level_params {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    for (key, value) in request {
+        merged.insert(key.clone(), value.clone());
+    }
+    Some(merged)
+}
+
+/// Tiered request cost with service-tier multiplier (AIR-062).
+///
+/// Selects rates through [`ModelPricing::effective_for_usage`], applies the
+/// base arithmetic (1-hour subset at twice the input rate, never double
+/// counted), and scales every component by the response-reported service
+/// tier. The explicit source exception: OpenRouter image `parse_usage` keeps
+/// base model rates without tiers — image callers use
+/// [`crate::stream::calculate_cost`] directly.
+pub fn calculate_cost_tiered(
+    usage: &Usage,
+    pricing: &ModelPricing,
+    model_id: &str,
+) -> CostBreakdown {
+    let rates = pricing.effective_for_usage(usage);
+    let cost = calculate_cost(usage, &rates);
+    let multiplier = usage
+        .service_tier
+        .map_or(1.0, |tier| tier.cost_multiplier(model_id));
+    if multiplier == 1.0 {
+        return cost;
+    }
+    CostBreakdown {
+        input_cost: cost.input_cost * multiplier,
+        output_cost: cost.output_cost * multiplier,
+        cache_read_cost: cost.cache_read_cost * multiplier,
+        cache_write_cost: cost.cache_write_cost * multiplier,
+    }
 }
 
 fn validate_pricing(pricing: &Pricing) -> Result<(), ModelInfoError> {
@@ -480,6 +571,11 @@ pub struct ModelInfo {
     pub thinking_level_map: ThinkingLevelMap,
     pub compat: WireCompat,
     pub pricing: Option<ModelPricing>,
+    /// Model-base sampling parameters merged under the effective level and
+    /// per-request values.
+    pub sampling_params: SamplingParams,
+    /// Sampling parameter overrides selected by the effective thinking level.
+    pub sampling_params_by_thinking_level: BTreeMap<ThinkingLevel, SamplingParams>,
 }
 
 impl ModelInfo {
@@ -503,6 +599,8 @@ impl ModelInfo {
             thinking_level_map,
             compat: WireCompat::default_for(wire_api),
             pricing: None,
+            sampling_params: SamplingParams::new(),
+            sampling_params_by_thinking_level: BTreeMap::new(),
         }
     }
 
@@ -533,6 +631,22 @@ impl ModelInfo {
         pricing.validate()?;
         self.pricing = Some(pricing);
         Ok(self)
+    }
+
+    /// Attach model-base sampling parameters.
+    pub fn with_sampling_params(mut self, params: SamplingParams) -> Self {
+        self.sampling_params = params;
+        self
+    }
+
+    /// Attach sampling parameter overrides for one thinking level.
+    pub fn with_sampling_level_params(
+        mut self,
+        level: ThinkingLevel,
+        params: SamplingParams,
+    ) -> Self {
+        self.sampling_params_by_thinking_level.insert(level, params);
+        self
     }
 
     pub fn validate(&self) -> Result<(), ModelInfoError> {

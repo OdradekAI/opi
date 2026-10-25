@@ -63,8 +63,9 @@ pub use credential::{
 };
 pub use model::Model;
 pub use model_info::{
-    ModelCapabilities, ModelInfo, ModelInfoError, ModelPricing, PricingTier, ThinkingLevel,
-    ThinkingLevelMap, ThinkingLevelMapping, WireApi, WireCompat,
+    ModelCapabilities, ModelInfo, ModelInfoError, ModelPricing, PricingTier, SamplingParams,
+    ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping, WireApi, WireCompat,
+    calculate_cost_tiered, resolve_sampling_params,
 };
 pub use models::{
     ApiId, AuthCheck, AuthCheckKind, AuthDescriptor, AuthResolutionOverrides, ChatApi,
@@ -83,7 +84,7 @@ pub use provider_headers::{ProviderHeaders, ProviderHeadersError};
 pub use registry::{ProviderRegistry, RegistrationError, RegistryError};
 pub use stream::AssistantStreamEvent;
 pub use stream::{
-    CallFailure, ChatStream, CostBreakdown, CumulativeUsage, Pricing, calculate_cost,
+    CallFailure, ChatStream, CostBreakdown, CumulativeUsage, Pricing, ServiceTier, calculate_cost,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

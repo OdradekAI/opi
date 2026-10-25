@@ -194,6 +194,7 @@ fn assert_projection(
         context: context.clone(),
         max_tokens: Some(64),
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,

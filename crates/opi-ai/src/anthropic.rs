@@ -1841,6 +1841,7 @@ mod tests {
             .expect("valid context declarations"),
             max_tokens: Some(100),
             temperature: None,
+            sampling_params: Default::default(),
             thinking: crate::provider::ThinkingConfig::default(),
             stop_sequences: vec![],
             metadata: None,

@@ -503,6 +503,7 @@ async fn run_operation(
             context: normalized_context,
             max_tokens: state.inference.max_tokens,
             temperature: state.inference.temperature,
+            sampling_params: Default::default(),
             thinking: state.inference.thinking.clone(),
             stop_sequences: vec![],
             metadata: None,

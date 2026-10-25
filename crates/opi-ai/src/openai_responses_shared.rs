@@ -112,6 +112,7 @@ struct RawResponse {
     model: Option<String>,
     output: Option<Vec<RawOutputItem>>,
     usage: Option<RawUsage>,
+    service_tier: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -366,7 +367,7 @@ impl ResponsesEvent {
             .as_ref()
             .and_then(|details| details.cached_tokens)
             .unwrap_or(0);
-        Ok(Some(Usage::reported(
+        let mut usage = Usage::reported(
             usage.input_tokens.unwrap_or(0),
             usage.output_tokens.unwrap_or(0),
             cached,
@@ -376,7 +377,28 @@ impl ResponsesEvent {
                 .output_tokens_details
                 .as_ref()
                 .and_then(|details| details.reasoning_tokens),
-        )))
+        );
+        if let Some(tier) = parse_service_tier(data) {
+            usage = usage.with_service_tier(tier);
+        }
+        Ok(Some(usage))
+    }
+}
+
+/// Parse the response-level service tier into its multiplier-bearing enum.
+/// Unrecognized wire values stay absent rather than guessing a multiplier.
+fn parse_service_tier(data: &RawResponseEvent) -> Option<crate::stream::ServiceTier> {
+    use crate::stream::ServiceTier;
+    match data
+        .response
+        .as_ref()
+        .and_then(|response| response.service_tier.as_deref())
+    {
+        Some("default") => Some(ServiceTier::Default),
+        Some("flex") => Some(ServiceTier::Flex),
+        Some("priority") => Some(ServiceTier::Priority),
+        Some("fast") => Some(ServiceTier::Fast),
+        _ => None,
     }
 }
 

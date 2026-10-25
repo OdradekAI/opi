@@ -116,6 +116,7 @@ fn request_for(model_spec: &str) -> Request {
         .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: opi_ai::provider::ThinkingConfig::default(),
         stop_sequences: Vec::new(),
         metadata: None,

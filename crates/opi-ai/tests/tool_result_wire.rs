@@ -103,6 +103,7 @@ fn request_with_tool_result(is_error: bool, payload: &str) -> Request {
         .expect("valid context declarations"),
         max_tokens: Some(128),
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,

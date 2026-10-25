@@ -79,6 +79,7 @@ fn request(model: &str) -> opi_ai::provider::Request {
         .unwrap(),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: Default::default(),
         stop_sequences: vec![],
         metadata: None,

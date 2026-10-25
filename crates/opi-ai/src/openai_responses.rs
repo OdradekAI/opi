@@ -333,6 +333,24 @@ impl OpenAiResponsesProvider {
         {
             body["reasoning"] = serde_json::json!({"effort": effort});
         }
+        // Last so model and request sampling parameters override named
+        // request fields (model base < effective level < request, per key).
+        let effective_level = if request.thinking.enabled {
+            request.thinking.level
+        } else {
+            crate::model_info::ThinkingLevel::None
+        };
+        if let Some(model) = self.models.iter().find(|model| model.id == model_id)
+            && let Some(sampling) = crate::model_info::resolve_sampling_params(
+                model,
+                effective_level,
+                &request.sampling_params,
+            )
+        {
+            for (key, value) in sampling {
+                body[key.as_str()] = value;
+            }
+        }
         Ok(body)
     }
 

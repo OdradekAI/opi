@@ -43,12 +43,12 @@ fn usage_total_tokens_includes_cache() {
     let u = Usage::reported(100, 50, 200, 75, Some(30), Some(15));
     // total = input + output + cache_read + cache_write
     // subsets (cache_write_1h, reasoning) are NOT added separately
-    assert_eq!(u.total_tokens(), 425);
+    assert_eq!(u.bucket_total_tokens(), 425);
 }
 
 #[test]
 fn usage_total_tokens_zero_when_all_zero() {
-    assert_eq!(Usage::default().total_tokens(), 0);
+    assert_eq!(Usage::default().bucket_total_tokens(), 0);
 }
 
 #[test]
@@ -221,6 +221,8 @@ fn cumulative_usage_accumulation_saturates_totals_and_counters() {
         cache_write_tokens: 1,
         cache_write_1h_tokens: Some(1),
         reasoning_tokens: Some(1),
+        total_tokens: None,
+        service_tier: None,
         reported: false,
     };
 
@@ -510,4 +512,256 @@ fn cumulative_cost_uses_exact_u64_totals_above_public_usage_range() {
 
     assert_eq!(usage.as_usage().input_tokens, u32::MAX);
     assert!((cost.total_cost() - expected).abs() < 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.35: tiered pricing selection, service-tier multipliers, and
+// independent reported totals (AIR-062/V-45 shared mechanism).
+// ---------------------------------------------------------------------------
+
+use opi_ai::calculate_cost_tiered;
+use opi_ai::model_info::{ModelPricing, PricingTier};
+use opi_ai::stream::ServiceTier;
+
+fn rates(input: f64) -> Pricing {
+    Pricing {
+        input_cost_per_mtok: input,
+        output_cost_per_mtok: input * 2.0,
+        cache_read_cost_per_mtok: input / 10.0,
+        cache_write_cost_per_mtok: input * 1.25,
+    }
+}
+
+fn tiered() -> ModelPricing {
+    ModelPricing::try_new(
+        rates(1.0),
+        vec![
+            PricingTier {
+                input_tokens_above: 200_000,
+                pricing: rates(2.0),
+            },
+            PricingTier {
+                input_tokens_above: 400_000,
+                pricing: rates(3.0),
+            },
+        ],
+    )
+    .unwrap()
+}
+
+fn assert_same_cost(left: CostBreakdown, right: CostBreakdown) {
+    for (a, b) in [
+        (left.input_cost, right.input_cost),
+        (left.output_cost, right.output_cost),
+        (left.cache_read_cost, right.cache_read_cost),
+        (left.cache_write_cost, right.cache_write_cost),
+        (left.total_cost(), right.total_cost()),
+    ] {
+        assert!((a - b).abs() < 1e-10, "{a} vs {b}");
+    }
+}
+
+#[test]
+fn tiered_selection_uses_prompt_side_tokens_strictly_exceeded() {
+    // Selection counts input + cacheRead + cacheWrite only; the matched tier
+    // rates apply to the whole request; the boundary itself is not exceeded.
+    let above_two_hundred = calculate_cost(
+        &Usage::reported(250_000, 1_000, 0, 0, None, None),
+        &rates(2.0),
+    );
+    assert_same_cost(
+        calculate_cost_tiered(
+            &Usage::reported(250_000, 1_000, 0, 0, None, None),
+            &tiered(),
+            "any",
+        ),
+        above_two_hundred,
+    );
+
+    let at_boundary = calculate_cost(
+        &Usage::reported(200_000, 1_000, 0, 0, None, None),
+        &rates(1.0),
+    );
+    assert_same_cost(
+        calculate_cost_tiered(
+            &Usage::reported(200_000, 1_000, 0, 0, None, None),
+            &tiered(),
+            "any",
+        ),
+        at_boundary,
+    );
+
+    let cache_counts = calculate_cost(
+        &Usage::reported(150_000, 1_000, 60_000, 0, None, None),
+        &rates(2.0),
+    );
+    assert_same_cost(
+        calculate_cost_tiered(
+            &Usage::reported(150_000, 1_000, 60_000, 0, None, None),
+            &tiered(),
+            "any",
+        ),
+        cache_counts,
+    );
+
+    let output_does_not_select = calculate_cost(
+        &Usage::reported(100_000, 500_000, 0, 0, None, None),
+        &rates(1.0),
+    );
+    assert_same_cost(
+        calculate_cost_tiered(
+            &Usage::reported(100_000, 500_000, 0, 0, None, None),
+            &tiered(),
+            "any",
+        ),
+        output_does_not_select,
+    );
+
+    let highest = calculate_cost(
+        &Usage::reported(450_000, 1_000, 0, 0, None, None),
+        &rates(3.0),
+    );
+    assert_same_cost(
+        calculate_cost_tiered(
+            &Usage::reported(450_000, 1_000, 0, 0, None, None),
+            &tiered(),
+            "any",
+        ),
+        highest,
+    );
+}
+
+#[test]
+fn tiered_selection_keeps_first_equal_duplicate_and_highest_threshold() {
+    // Wire-originated tier lists may repeat a threshold or arrive unsorted:
+    // the scan keeps the first of equal duplicates and the highest strictly
+    // exceeded threshold. Struct literals bypass `try_new` validation, which
+    // still rejects duplicates for constructed catalogs.
+    let unsorted = ModelPricing {
+        base: rates(1.0),
+        tiers: vec![
+            PricingTier {
+                input_tokens_above: 300_000,
+                pricing: rates(3.0),
+            },
+            PricingTier {
+                input_tokens_above: 100_000,
+                pricing: rates(2.0),
+            },
+            PricingTier {
+                input_tokens_above: 100_000,
+                pricing: rates(2.5),
+            },
+        ],
+    };
+    assert_same_cost(
+        calculate_cost_tiered(
+            &Usage::reported(400_000, 0, 0, 0, None, None),
+            &unsorted,
+            "any",
+        ),
+        calculate_cost(&Usage::reported(400_000, 0, 0, 0, None, None), &rates(3.0)),
+    );
+    assert_same_cost(
+        calculate_cost_tiered(
+            &Usage::reported(200_000, 0, 0, 0, None, None),
+            &unsorted,
+            "any",
+        ),
+        calculate_cost(&Usage::reported(200_000, 0, 0, 0, None, None), &rates(2.0)),
+    );
+}
+
+#[test]
+fn service_tier_multiplier_scales_whole_request_cost() {
+    let usage = Usage::reported(1_000_000, 1_000_000, 0, 0, None, None);
+    let base = calculate_cost(&usage, &rates(1.0));
+
+    assert_eq!(ServiceTier::Flex.cost_multiplier("gpt-5.5"), 0.5);
+    assert_eq!(ServiceTier::Priority.cost_multiplier("gpt-5.5"), 2.5);
+    assert_eq!(ServiceTier::Priority.cost_multiplier("other"), 2.0);
+    assert_eq!(ServiceTier::Fast.cost_multiplier("other"), 2.0);
+    assert_eq!(ServiceTier::Default.cost_multiplier("gpt-5.5"), 1.0);
+
+    let flex = calculate_cost_tiered(
+        &usage.clone().with_service_tier(ServiceTier::Flex),
+        &ModelPricing::try_new(rates(1.0), Vec::new()).unwrap(),
+        "any",
+    );
+    assert_same_cost(flex, scaled(&base, 0.5));
+
+    let priority = calculate_cost_tiered(
+        &usage.clone().with_service_tier(ServiceTier::Priority),
+        &ModelPricing::try_new(rates(1.0), Vec::new()).unwrap(),
+        "gpt-5.5",
+    );
+    assert_same_cost(priority, scaled(&base, 2.5));
+
+    let unscaled = calculate_cost_tiered(
+        &usage.clone().with_service_tier(ServiceTier::Default),
+        &ModelPricing::try_new(rates(1.0), Vec::new()).unwrap(),
+        "gpt-5.5",
+    );
+    assert_same_cost(unscaled, base);
+}
+
+fn scaled(cost: &CostBreakdown, multiplier: f64) -> CostBreakdown {
+    CostBreakdown {
+        input_cost: cost.input_cost * multiplier,
+        output_cost: cost.output_cost * multiplier,
+        cache_read_cost: cost.cache_read_cost * multiplier,
+        cache_write_cost: cost.cache_write_cost * multiplier,
+    }
+}
+
+#[test]
+fn openrouter_image_parse_usage_uses_base_rates_without_tiers() {
+    // Explicit source exception: OpenRouter image parseUsage retains the
+    // base model rates; tier selection never applies to image usage.
+    let image_usage = Usage::reported(1_000_000, 1_000_000, 0, 0, None, None);
+    let base = calculate_cost(&image_usage, &tiered().base);
+    let tiered_cost = calculate_cost_tiered(&image_usage, &tiered(), "any");
+    assert!(
+        (tiered_cost.total_cost() - base.total_cost()).abs() > 1.0,
+        "fixture must actually cross a tier boundary"
+    );
+    assert_same_cost(base, calculate_cost(&image_usage, &tiered().base));
+}
+
+#[test]
+fn usage_total_tokens_distinguishes_absent_zero_and_value() {
+    let mut usage = Usage::reported(100, 50, 0, 0, None, None);
+    assert_eq!(usage.total_tokens, None);
+    usage.total_tokens = Some(0);
+    let json = serde_json::to_string(&usage).unwrap();
+    let round_trip: Usage = serde_json::from_str(&json).unwrap();
+    assert_eq!(round_trip.total_tokens, Some(0));
+    usage.total_tokens = Some(123);
+    assert_eq!(
+        serde_json::from_str::<Usage>(&serde_json::to_string(&usage).unwrap())
+            .unwrap()
+            .total_tokens,
+        Some(123)
+    );
+    let legacy: Usage = serde_json::from_str(
+        r#"{"input_tokens":100,"output_tokens":50,"cache_read_tokens":0,"cache_write_tokens":0,"reported":true}"#,
+    )
+    .unwrap();
+    assert_eq!(legacy.total_tokens, None);
+}
+
+#[test]
+fn service_tier_serializes_exact_wire_names() {
+    for (tier, name) in [
+        (ServiceTier::Default, "default"),
+        (ServiceTier::Flex, "flex"),
+        (ServiceTier::Priority, "priority"),
+        (ServiceTier::Fast, "fast"),
+    ] {
+        assert_eq!(serde_json::to_value(tier).unwrap(), name);
+        assert_eq!(
+            serde_json::from_value::<ServiceTier>(name.into()).unwrap(),
+            tier
+        );
+    }
 }

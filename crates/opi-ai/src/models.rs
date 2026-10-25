@@ -2125,7 +2125,6 @@ fn compile_prepared_request(
             (!current_system.is_empty()).then_some(current_system.as_str()),
             &conversation,
             &current_tools,
-            &request.model,
         )
         .tokens;
         let available = context_limit

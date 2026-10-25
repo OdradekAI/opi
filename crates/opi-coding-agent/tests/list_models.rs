@@ -755,6 +755,7 @@ async fn stored_only_credential_lists_models_through_async_orchestration() {
         .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,

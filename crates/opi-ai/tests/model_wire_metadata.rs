@@ -23,7 +23,8 @@ use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::Pricing;
 use opi_ai::vertex;
 use tokio_util::sync::CancellationToken;
-use wiremock::MockServer;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer};
 
 fn pricing(input: f64) -> Pricing {
     Pricing {
@@ -175,6 +176,7 @@ fn unsupported_thinking_request(provider_id: &str, model_id: &str) -> Request {
         .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig {
             enabled: true,
             budget_tokens: None,
@@ -338,4 +340,186 @@ fn model_metadata_rejects_long_cache_without_cache_control() {
     );
 
     assert!(model.validate().is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.35: sampling metadata precedence and adapter wiring (AIR-062).
+// ---------------------------------------------------------------------------
+
+use opi_ai::model_info::resolve_sampling_params;
+use opi_ai::stream::ServiceTier;
+use serde_json::json;
+
+fn sampling_json(value: serde_json::Value) -> opi_ai::model_info::SamplingParams {
+    value.as_object().cloned().expect("object sampling params")
+}
+
+#[test]
+fn sampling_metadata_defaults_empty_and_builders_attach() {
+    let model = ModelInfo::new(
+        "sampling-model",
+        "Sampling Model",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(100_000, 10_000).with_streaming(true),
+    );
+    assert!(model.sampling_params.is_empty());
+    assert!(model.sampling_params_by_thinking_level.is_empty());
+
+    let model = model
+        .with_sampling_params(sampling_json(json!({"top_k": 40})))
+        .with_sampling_level_params(
+            ThinkingLevel::High,
+            sampling_json(json!({"temperature": 0.5})),
+        );
+    assert_eq!(model.sampling_params["top_k"], json!(40));
+    assert_eq!(
+        model.sampling_params_by_thinking_level[&ThinkingLevel::High]["temperature"],
+        json!(0.5)
+    );
+    model.validate().unwrap();
+}
+
+#[test]
+fn resolve_sampling_params_applies_model_level_request_precedence() {
+    let model = ModelInfo::new(
+        "sampling-model",
+        "Sampling Model",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(100_000, 10_000).with_streaming(true),
+    )
+    .with_sampling_params(sampling_json(json!({"a": 1, "b": 1})))
+    .with_sampling_level_params(ThinkingLevel::High, sampling_json(json!({"b": 2})));
+
+    let resolved =
+        resolve_sampling_params(&model, ThinkingLevel::High, &sampling_json(json!({"c": 3})))
+            .expect("non-empty sources resolve");
+    assert_eq!(resolved["a"], json!(1));
+    assert_eq!(resolved["b"], json!(2));
+    assert_eq!(resolved["c"], json!(3));
+
+    let request_wins = resolve_sampling_params(
+        &model,
+        ThinkingLevel::High,
+        &sampling_json(json!({"a": 9, "b": 9})),
+    )
+    .expect("non-empty sources resolve");
+    assert_eq!(request_wins["a"], json!(9));
+    assert_eq!(request_wins["b"], json!(9));
+
+    let empty = ModelInfo::new(
+        "empty",
+        "Empty",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(100_000, 10_000).with_streaming(true),
+    );
+    assert!(resolve_sampling_params(&empty, ThinkingLevel::High, &Default::default()).is_none());
+}
+
+fn sampling_model(wire: WireApi) -> ModelInfo {
+    ModelInfo::new(
+        "model",
+        "Model",
+        wire,
+        ModelCapabilities::new(100_000, 10_000)
+            .with_streaming(true)
+            .with_thinking(true),
+    )
+    .with_sampling_params(sampling_json(json!({"temperature": 0.9, "top_k": 40})))
+    .with_sampling_level_params(
+        ThinkingLevel::High,
+        sampling_json(json!({"temperature": 0.5})),
+    )
+}
+
+fn sampling_request(provider_id: &str) -> Request {
+    let mut request = unsupported_thinking_request(provider_id, "model");
+    request.thinking.level = ThinkingLevel::High;
+    request.temperature = Some(0.7);
+    request.sampling_params = sampling_json(json!({"top_p": 0.9}));
+    request
+}
+
+async fn capture_request_body(
+    server: &MockServer,
+    provider: &dyn Provider,
+    request: Request,
+) -> serde_json::Value {
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
+    while let Some(event) = stream.next().await {
+        if let Err(error) = event {
+            panic!("unexpected provider error: {error}");
+        }
+    }
+    let captured = server.received_requests().await.unwrap().remove(0);
+    serde_json::from_slice(&captured.body).expect("captured body should be JSON")
+}
+
+#[tokio::test]
+async fn chat_merges_sampling_metadata_over_named_fields() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string(
+            "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\"hi\"},\"index\":0,\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let provider = openai_chat::OpenAiChatProvider::for_route(
+        Some(server.uri()),
+        "chat".into(),
+        ProviderHeaders::default(),
+        vec![sampling_model(WireApi::OpenAiCompletions)],
+        Arc::new(HttpClient::new()),
+    );
+
+    let body = capture_request_body(&server, &provider, sampling_request("chat")).await;
+
+    assert_eq!(
+        body["temperature"],
+        json!(0.5),
+        "level overrides named field"
+    );
+    assert_eq!(body["top_k"], json!(40), "model base key survives");
+    assert_eq!(body["top_p"], json!(0.9), "request key merged last");
+}
+
+#[tokio::test]
+async fn responses_merges_sampling_after_named_fields() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string(
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"model\":\"model\",\"output\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}}\n\n",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let provider = openai_responses::OpenAiResponsesProvider::for_route(
+        Some(server.uri()),
+        "custom-responses".into(),
+        ProviderHeaders::default(),
+        vec![sampling_model(WireApi::OpenAiResponses)],
+        Arc::new(HttpClient::new()),
+    );
+
+    let body = capture_request_body(&server, &provider, sampling_request("custom-responses")).await;
+
+    assert_eq!(
+        body["temperature"],
+        json!(0.5),
+        "level overrides named field"
+    );
+    assert_eq!(body["top_k"], json!(40), "model base key survives");
+    assert_eq!(body["top_p"], json!(0.9), "request key merged last");
+}
+
+#[test]
+fn service_tier_usage_field_round_trips() {
+    let mut usage = opi_ai::stream::Usage::reported(10, 5, 0, 0, None, None);
+    usage.service_tier = Some(ServiceTier::Flex);
+    let json = serde_json::to_string(&usage).unwrap();
+    assert!(json.contains("flex"));
+    let round_trip: opi_ai::stream::Usage = serde_json::from_str(&json).unwrap();
+    assert_eq!(round_trip.service_tier, Some(ServiceTier::Flex));
 }

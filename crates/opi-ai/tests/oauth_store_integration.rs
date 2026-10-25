@@ -103,6 +103,7 @@ fn request() -> Request {
         .unwrap(),
         max_tokens: Some(32),
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,

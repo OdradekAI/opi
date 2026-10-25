@@ -532,6 +532,7 @@ async fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
             .expect("valid context declarations"),
             max_tokens: None,
             temperature: None,
+            sampling_params: Default::default(),
             thinking: opi_ai::provider::ThinkingConfig::default(),
             stop_sequences: Vec::new(),
             metadata: None,

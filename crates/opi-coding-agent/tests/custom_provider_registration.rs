@@ -239,6 +239,7 @@ async fn extension_provider_streams_without_network() {
         .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: opi_ai::provider::ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,

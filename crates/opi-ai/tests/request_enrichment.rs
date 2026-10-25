@@ -59,6 +59,7 @@ fn request_new_scalars_default_to_none_empty() {
         .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,
@@ -89,6 +90,7 @@ fn request_scalars_carry_explicit_values() {
         .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,
@@ -595,6 +597,7 @@ fn make_anthropic_request(cancel: CancellationToken, timeout: Option<Duration>) 
         .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,
@@ -620,6 +623,7 @@ fn make_openai_chat_request(cancel: CancellationToken, session_id: Option<String
         .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,
@@ -650,4 +654,41 @@ fn header_value<'a>(request: &'a wiremock::Request, name: &str) -> Option<&'a st
 
 fn request_body_json(request: &wiremock::Request) -> serde_json::Value {
     serde_json::from_slice(&request.body).expect("captured request body should be JSON")
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.35: request sampling parameters
+// ---------------------------------------------------------------------------
+
+#[test]
+fn request_sampling_params_default_empty_and_carried() {
+    let req = Request {
+        model: "test".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        })
+        .expect("valid context declarations"),
+        max_tokens: None,
+        temperature: None,
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::default(),
+        session_id: None,
+        sampling_params: Default::default(),
+    };
+    assert!(req.sampling_params.is_empty());
+
+    let params: opi_ai::model_info::SamplingParams = serde_json::json!({"top_p": 0.9})
+        .as_object()
+        .cloned()
+        .unwrap();
+    let mut req = req;
+    req.sampling_params = params;
+    assert_eq!(req.sampling_params["top_p"], serde_json::json!(0.9));
 }

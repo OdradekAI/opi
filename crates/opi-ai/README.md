@@ -243,8 +243,11 @@ no longer fits is reduced to leave 1024 answer tokens where possible. The
 non-adaptive Anthropic wire resolves an omitted thinking budget from its level
 and rejects ceilings that cannot fit its minimum thinking and answer room
 before authentication; adaptive effort does not use a numeric minimum. The
-`context` module estimates messages, system text and tool schemas; applicable
-same-model usage plus new messages replaces cumulative session usage. Every
+`context` module estimates messages, system text and tool schemas; the last
+applicable positive successful usage (non-error, non-aborted, timestamp not
+older than its prefix, any model identity) anchors the estimate and only
+messages after the anchor are estimated, with no same-model or full-text
+lower bound. Every
 attempt reuses the resolved limit. Direct provider adapter calls retain their
 existing default behavior; this is a per-request output limit, independent of
 any product turn-count budget.
@@ -896,6 +899,48 @@ is the public seam for host-plugged catalog sources; `HttpCatalogSource`
 fetches one distribution-schema-v1 document over HTTP with pooled
 connections and redacted failures. The SDK registers no source, attaches
 no store, and has no pi.dev/default startup fetch policy.
+
+## Estimator, Sampling and Pricing Metadata (V-45/AIR-053/AIR-062, task 20.35)
+
+The `context` estimator uses 3.5 UTF-16 code units per token
+(`ceil(chars * 2 / 7)`) and 4,800 equivalent chars per image, rounding up at
+message granularity: each user or tool-result message rounds once over its
+blocks, each assistant message rounds once over text/thinking/tool-call
+characters, and a system message rounds its body plus sections once with the
+serialized added/removed tool lists rounded separately. The last applicable
+positive successful usage anchors the estimate (any model identity,
+non-error, non-aborted, timestamp not older than its prefix); only messages
+after the anchor are estimated, and there is no same-model or full-text
+lower bound. An independently reported positive `Usage::total_tokens` wins
+even when it differs from the bucket sum; an explicit zero or absent total
+falls back to the bucket sum only when the parent buckets are reported.
+Unknown stays distinct from zero everywhere; child subsets are never added
+twice.
+
+| Parameter | Unit / formula | Omission → default | Zero / null / unknown | Precedence |
+|---|---|---|---|---|
+| text estimate | `ceil(utf16 / 3.5)` | empty → 0 | — | — |
+| image estimate | 4800 chars per image | — | — | — |
+| usage anchor | total or bucket sum | none → content estimate | total 0 → sum if reported; unknown → skip | total > sum |
+| simple max tokens | `clamp(M)`: `max(1,M)` if window ≤ 0, else `min(M, max(1, W−E−4096))` | `None` → model default output | explicit `M` is not re-capped at the model max | request < window arithmetic |
+| numeric-Claude thinking budget | level table 1024/2048/8192/16384 (xhigh/max → high), then clamped to leave answer room | omitted budget → level default | budgets below 1024 are rejected before auth | level default < explicit budget |
+| sampling params | per-key JSON map | empty map → no merge | keys absent stay absent | model base < effective level < request |
+| temperature | named field | `None` → omitted per adapter gating | NaN omitted | sampling map overrides the named field (merged last) |
+| pricing tiers | selection on input+cacheRead+cacheWrite, strict `>`, highest wins, first of equal duplicates | no tiers → base rates | tier threshold 0 rejected at construction | tier rates apply to the whole request |
+| 1h cache write | subset at 2× input rate | `None` → all short-cache | explicit 0 valid, distinct from absent | subset, never double counted |
+| service tier | flex 0.5×, priority/fast 2× (`gpt-5.5`: 2.5×), default 1× | absent → 1× | unrecognized wire value → absent | applies to every cost component |
+
+Only OpenAI-compatible adapters (Chat, Responses) merge the resolved
+sampling map, as the last body step so model and request sampling override
+named request fields; other adapters ignore it. The Responses adapter parses
+the response `service_tier` into `Usage`. OpenRouter image `parse_usage` is
+the explicit source exception: image usage keeps base model rates without
+tier selection. opi has no Pi-Messages wire, so its native/simple
+passthrough clause (forward-only temperature/maxTokens, no common budget
+builder) is inapplicable and nothing bypasses the shared mechanism.
+Metadata alone never creates a new pre-dispatch limit or
+resize; the duplicate static `reasoning_effort` compat keys still parse and
+only gain hard errors after their AIR-022 replacement proof.
 
 ## Non-Goals
 

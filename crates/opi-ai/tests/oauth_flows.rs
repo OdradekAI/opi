@@ -988,6 +988,7 @@ fn oauth_assembly_request(id: &str) -> opi_ai::provider::Request {
         .expect("context"),
         max_tokens: Some(32),
         temperature: None,
+        sampling_params: Default::default(),
         thinking: Default::default(),
         stop_sequences: vec![],
         metadata: None,

@@ -43,6 +43,7 @@ fn text_request(model: &str) -> Request {
         .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,

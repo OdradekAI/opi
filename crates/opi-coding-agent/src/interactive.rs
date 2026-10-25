@@ -963,7 +963,7 @@ pub async fn run_interactive_tui(
             AgentEvent::MessageEnd {
                 message: AgentMessage::Llm(Message::Assistant(a)),
             } => {
-                s.total_tokens += a.usage.total_tokens();
+                s.total_tokens += a.usage.bucket_total_tokens();
                 for content in &a.content {
                     match content {
                         AssistantContent::Text { text } if !s.streaming_started => {

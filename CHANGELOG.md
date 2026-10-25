@@ -2,6 +2,18 @@
 
 ### Breaking Changes
 
+- `opi-ai`: the context estimator follows the 3.5 anchor contract
+  (task 20.35). `estimate_context_tokens` drops the `model` parameter:
+  the last applicable positive successful usage anchors the estimate
+  regardless of model identity, only messages after the anchor are
+  estimated, and the same-model/full-text lower bound is gone. Estimates
+  use `ceil(utf16_chars / 3.5)` with 4,800 image-equivalent chars, rounded
+  once per message (system tool lists round separately). `Usage` gains
+  `total_tokens: Option<u64>` (independently reported total, preferred
+  over the bucket sum when positive) and `service_tier: Option<ServiceTier>`;
+  the former `total_tokens()` method is renamed `bucket_total_tokens()`.
+  `Models::refresh` context ceilings now consume the new estimator
+  arithmetic through the unchanged 4096/min-1 formula.
 - `opi-ai`: `Models::refresh` becomes `refresh(allow_network: bool)`
   returning `Result<RefreshReport, ModelsError>` (task 20.33).
   `refresh(false)` performs no OAuth/network work and only restores an
@@ -479,6 +491,20 @@
   and its refresh network bound is now 15s, scoped to the HTTP exchange
   only — lock waits and the ACK are outside it.
 ### Added
+- `opi-ai`: sampling and pricing-tier metadata with the shared resolution
+  mechanism (task 20.35, AIR-062/V-45). `ModelInfo` gains
+  `sampling_params` and `sampling_params_by_thinking_level` with
+  `resolve_sampling_params` per-key precedence (model base < effective
+  thinking level < request) applied by the OpenAI-compatible Chat and
+  Responses adapters as the last body step, overriding named fields;
+  `Request` gains `sampling_params`. `ModelPricing::effective_for_usage`
+  selects the highest strictly exceeded tier over
+  input+cache-read+cache-write (keeping the first of equal duplicates),
+  `calculate_cost_tiered` applies the whole-request tier rates plus the
+  response service-tier multiplier (flex 0.5×, priority/fast 2×,
+  `gpt-5.5` 2.5×), and `ServiceTier` parses from the Responses wire;
+  OpenRouter image `parse_usage` keeps base rates as the explicit source
+  exception. Metadata alone adds no pre-dispatch limit.
 - `opi-ai`: dynamic catalog store and refresh substrate (task 20.33,
   V-27/AIR-002/AIR-033). New `catalog` items: `ModelsStore` — the single
   revision-commit owner persisting distribution-schema-v1 snapshots (plus

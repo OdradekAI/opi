@@ -37,6 +37,36 @@ impl StopReason {
     }
 }
 
+/// Provider-selected service tier for one response.
+///
+/// Only tiers with a documented cost multiplier are modeled; unrecognized
+/// wire values stay absent instead of guessing a multiplier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceTier {
+    Default,
+    Flex,
+    Priority,
+    Fast,
+}
+
+impl ServiceTier {
+    /// Response-sensitive cost multiplier applied to every cost component.
+    ///
+    /// Mirrors the Responses annex: `flex` halves, `priority`/`fast` double,
+    /// with the one model-specific exception (`gpt-5.5` prices priority and
+    /// fast at 2.5). Absent/default tiers return 1. Per-adapter tier
+    /// resolution stays with the owning adapters.
+    pub fn cost_multiplier(self, model_id: &str) -> f64 {
+        match self {
+            Self::Default => 1.0,
+            Self::Flex => 0.5,
+            Self::Priority | Self::Fast if model_id == "gpt-5.5" => 2.5,
+            Self::Priority | Self::Fast => 2.0,
+        }
+    }
+}
+
 /// Provider-reported token usage.
 ///
 /// The optional `u64` child subsets preserve absent versus explicit zero:
@@ -56,6 +86,16 @@ pub struct Usage {
     /// Subset of `output_tokens` consumed by reasoning/thinking.
     #[serde(default)]
     pub reasoning_tokens: Option<u64>,
+    /// Independently reported grand total, when the provider sends one. It is
+    /// kept separate from the parent buckets: it may legitimately differ from
+    /// [`Usage::bucket_total_tokens`], and an explicit zero stays distinct
+    /// from an absent value.
+    #[serde(default)]
+    pub total_tokens: Option<u64>,
+    /// Service tier the provider selected for this response, when reported.
+    /// Feeds response-sensitive cost multipliers in the tiered cost helper.
+    #[serde(default)]
+    pub service_tier: Option<ServiceTier>,
     #[serde(default)]
     pub reported: bool,
 }
@@ -75,6 +115,8 @@ impl Usage {
             cache_write_tokens: 0,
             cache_write_1h_tokens: None,
             reasoning_tokens: None,
+            total_tokens: None,
+            service_tier: None,
             reported: false,
         }
     }
@@ -94,8 +136,22 @@ impl Usage {
             cache_write_tokens,
             cache_write_1h_tokens,
             reasoning_tokens,
+            total_tokens: None,
+            service_tier: None,
             reported: true,
         }
+    }
+
+    /// Attach an independently reported grand total.
+    pub fn with_total_tokens(mut self, total_tokens: Option<u64>) -> Self {
+        self.total_tokens = total_tokens;
+        self
+    }
+
+    /// Attach the provider-selected service tier.
+    pub fn with_service_tier(mut self, service_tier: ServiceTier) -> Self {
+        self.service_tier = Some(service_tier);
+        self
     }
 
     pub fn is_reported(&self) -> bool {
@@ -106,8 +162,9 @@ impl Usage {
     ///
     /// `cache_write_1h_tokens` is a subset of `cache_write_tokens` and
     /// `reasoning_tokens` is a subset of `output_tokens`, so they are
-    /// not added here.
-    pub fn total_tokens(&self) -> u64 {
+    /// not added here. An independently reported grand total, when present,
+    /// lives in the [`Usage::total_tokens`] field and is not folded in.
+    pub fn bucket_total_tokens(&self) -> u64 {
         self.input_tokens as u64
             + self.output_tokens as u64
             + self.cache_read_tokens as u64
@@ -237,6 +294,8 @@ impl CumulativeUsage {
             reasoning_tokens: self
                 .reasoning_tokens
                 .map(|tokens| tokens.min(u64::from(output_tokens))),
+            total_tokens: None,
+            service_tier: None,
             reported: self.unknown_turns == 0,
         }
     }

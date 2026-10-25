@@ -386,6 +386,7 @@ async fn openai_chat_provider_routes_http_requests_through_proxy() {
         .expect("valid context declarations"),
         max_tokens: Some(64),
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,

@@ -62,6 +62,7 @@ fn request() -> Request {
         .expect("valid context declarations"),
         max_tokens: Some(1024),
         temperature: Some(0.2),
+        sampling_params: Default::default(),
         thinking: ThinkingConfig {
             enabled: true,
             budget_tokens: None,

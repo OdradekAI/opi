@@ -31,6 +31,7 @@ fn make_request(cancel: CancellationToken) -> Request {
         .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: Default::default(),
         stop_sequences: vec![],
         metadata: None,

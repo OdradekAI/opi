@@ -354,6 +354,7 @@ fn adapters_consume_only_the_normalized_transcript() {
         .expect("valid context declarations"),
         max_tokens: Some(64),
         temperature: None,
+        sampling_params: Default::default(),
         thinking: opi_ai::provider::ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,

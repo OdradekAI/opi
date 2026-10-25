@@ -153,6 +153,10 @@ pub struct Request {
     /// perform this collection-owned resolution.
     pub max_tokens: Option<u64>,
     pub temperature: Option<f64>,
+    /// Per-request sampling parameters merged over the model base and the
+    /// effective thinking level (see [`crate::model_info::resolve_sampling_params`]).
+    /// Only OpenAI-compatible adapters apply the merged map.
+    pub sampling_params: crate::model_info::SamplingParams,
     pub thinking: ThinkingConfig,
     pub stop_sequences: Vec<String>,
     pub metadata: Option<serde_json::Value>,

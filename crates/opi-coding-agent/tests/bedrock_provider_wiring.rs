@@ -311,6 +311,7 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
         .expect("valid context"),
         max_tokens: Some(64),
         temperature: None,
+        sampling_params: Default::default(),
         thinking: Default::default(),
         stop_sequences: vec![],
         metadata: None,

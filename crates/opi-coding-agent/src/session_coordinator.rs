@@ -299,7 +299,7 @@ impl SessionCoordinator {
                                     Some(total_reasoning.unwrap_or(0).saturating_add(tokens));
                             }
                             let usage_is_known =
-                                a.usage.is_reported() || a.usage.total_tokens() > 0;
+                                a.usage.is_reported() || a.usage.bucket_total_tokens() > 0;
                             if !usage_is_known {
                                 if saw_user_turn {
                                     turn_has_unknown_usage = true;
@@ -396,7 +396,7 @@ impl SessionCoordinator {
             user_count,
             unknown_turns,
         );
-        let watermark = usage.as_usage().total_tokens();
+        let watermark = usage.as_usage().bucket_total_tokens();
 
         // Seed the live name/labels view from the persisted
         // active-chain metadata so `/session info` and RPC `session_info`
@@ -514,7 +514,7 @@ impl SessionCoordinator {
         // Check threshold-based compaction after each turn.
         // Use tokens accumulated since the last compaction (watermark) so
         // compaction doesn't re-trigger every turn after the first crossing.
-        let total_tokens = self.usage.as_usage().total_tokens();
+        let total_tokens = self.usage.as_usage().bucket_total_tokens();
         let delta = total_tokens.saturating_sub(self.compaction_watermark_tokens);
         if self
             .compaction
@@ -625,7 +625,7 @@ impl SessionCoordinator {
 
                 // Advance the watermark so the next threshold check measures
                 // tokens accumulated from this point forward.
-                self.compaction_watermark_tokens = self.usage.as_usage().total_tokens();
+                self.compaction_watermark_tokens = self.usage.as_usage().bucket_total_tokens();
                 self.active_tip_entry_id = Some(compaction_id);
 
                 // Build the new Agent buffer: [summary, ...kept].
@@ -795,7 +795,7 @@ impl SessionCoordinator {
         self.agent_message_indices = vec![0];
         self.agent_message_indices.extend(plan.kept_indices);
         self.active_tip_entry_id = Some(id);
-        self.compaction_watermark_tokens = self.usage.as_usage().total_tokens();
+        self.compaction_watermark_tokens = self.usage.as_usage().bucket_total_tokens();
         let diagnostic = opi_agent::diagnostic::Diagnostic::new(
             opi_agent::diagnostic::Severity::Info, opi_agent::diagnostic::code::CODE_SESSION_COMPACTED,
             opi_agent::diagnostic::SOURCE_SESSION, "conversation compacted",

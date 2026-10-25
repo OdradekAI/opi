@@ -368,6 +368,7 @@ impl SummaryHooks {
                     .expect("valid context declarations"),
                     max_tokens: Some(256),
                     temperature: None,
+                    sampling_params: Default::default(),
                     thinking: Default::default(),
                     stop_sequences: vec![],
                     metadata: None,

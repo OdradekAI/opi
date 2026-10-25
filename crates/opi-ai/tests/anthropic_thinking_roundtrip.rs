@@ -55,6 +55,7 @@ fn request(messages: Vec<Message>) -> Request {
         .expect("valid context declarations"),
         max_tokens: Some(4096),
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig {
             enabled: true,
             budget_tokens: Some(1024),
