@@ -9307,13 +9307,13 @@
         "crates/opi-ai/Cargo.toml",
         "crates/opi-ai/tests/tool_result_wire.rs"
       ],
-      "verified_at_commit": "9c99c31e41e290067285ef864ae4ef32a3e01133",
+      "verified_at_commit": "5451887b4d7e7492b1b91187968a35b9042074d3",
       "evidence": {
         "Opi-Task": "20.32",
         "Opi-DoD-SHA256": "081dd5aa29f8de66b91c314b554b4107828ae0499227b971943ab261a693a5d5",
-        "Opi-Verification": "workspace; opi-impl-smoke full PASSED (doc-check, fmt, workspace all-target clippy, workspace tests, doc tests, rustdoc, in order); scenario cargo test -p opi-ai --test catalog_artifact 10/10 PASS; packer --check OK (42 providers, structure 0269b76c00ff)",
+        "Opi-Verification": "library-scoped; smoke scoped --crate opi-ai --test catalog_artifact --test tool_result_wire PASSED (fmt, clippy, 10/10+2/2, rustdoc); pack.py --check OK (42 providers, structure 0269b76c00ff); catalog.json sha256 unchanged == pin",
         "Opi-Evaluator": "passed",
-        "Opi-Acceptance": "P20-S32; cargo test -p opi-ai --test catalog_artifact (10 tests: provenance/pin identity, operation-qualified getters, tamper/wrong-version/missing-provider/stale-structure/duplicate/invalid-entry rejections retaining last-known revision, custom-record coexistence) at production call sites opi_ai::catalog::{Catalog, CatalogHandle, Catalog::model/models}"
+        "Opi-Acceptance": "P20-S32 remains met; scenario suite exercised unchanged within the scoped gate (10/10 at opi_ai::catalog public seam)"
       },
       "blocker": null,
       "session_notes": [
@@ -9382,6 +9382,27 @@
               }
             ],
             "commit": "9c99c31e41e290067285ef864ae4ef32a3e01133"
+          }
+        },
+        {
+          "timestamp": "2026-10-25T10:38:05.007707+00:00",
+          "attempt": 2,
+          "summary": "User-directed refinement after review: resource directory renamed resources/catalog/pi-1.3.0 -> resources/catalog/builtin so the bundle is opi-owned like Pi's own package-internal catalog (Pi keeps version association in metadata, not paths; evidence: pi-ai models.generated.ts + nix pin). Artifact bytes unchanged (sha256==pin); manifest regenerated so its packer_sha256 matches the edited pack.py (self-check enforced the rotation). include_bytes! paths, packer BUNDLE_DIR and README/README.zh path mentions updated; no public API, behavior or test change. First fmt failed on a line-length reflow, fixed; scoped gate then PASSED. Prior task commit 9c99c31e41e290067285ef864ae4ef32a3e01133 retains the original delivery evidence; this refinement commit supersedes verified_at_commit.",
+          "gate_results": {
+            "d1_scoped": "smoke scoped --crate opi-ai --test catalog_artifact --test tool_result_wire -> PASSED (catalog_artifact 10/10, tool_result_wire 2/2)",
+            "d3_gap_only": "pack.py --check -> bundle OK 42 providers structure 0269b76c00ff; catalog.json sha256 ffa3e98626230f378f80200debb736c4a2238b5f2ba246a92cfc7d8e19604678 unchanged",
+            "d2_exec": "mechanical-rename spot-check L-D1/L-D4/L-D5, must_fix=0, flagged=0, rejected=0, wf_ref=null",
+            "commit": "5451887b4d7e7492b1b91187968a35b9042074d3",
+            "test_disposition": [
+              {
+                "subject": "20.32",
+                "action": "none",
+                "test": "crates/opi-ai/tests/catalog_artifact.rs (unchanged; exercised in scoped gate)",
+                "interface": "opi_ai::catalog public seam",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
           }
         }
       ]
@@ -19872,6 +19893,16 @@
       "flagged_count": 3,
       "rejected_count": 3,
       "ran_at": "2026-10-25T10:16:18.279042+00:00",
+      "task_id": "20.32",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-10-25T10:38:05.007707+00:00",
       "task_id": "20.32",
       "criterion_id": null
     }
