@@ -9194,7 +9194,7 @@
       "definition_of_done": "Obtain authentic matching catalog material as an explicit delivery-input action with Pi tree/package revision association, source URL/local origin, schema/digest/min-version/provider and operation identities plus generator digest. Validate all data in staging and package actual offline resources before atomic use. Tamper/stale/wrong-version/missing-provider rejects retain last-known revision, explicit complete custom models remain usable. Missing artifact is a blocking input, never invented from synthetic42x3 fixtures or implicit construction hydration.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3"
       ],
@@ -9243,6 +9243,16 @@
           "field": "test_impact_plan",
           "reason": "retain/update existing public Interface assertions in none at this new Interface. add only materially distinct source inputs/outcomes to crates/opi-ai/tests/catalog_artifact.rs. Before red, reread full bodies and matrix41+7 disposition, record every retain/update/add/delete and passing replacement before deletion. A new file name is not evidence of duplicate behavior. Run all actually created/modified binaries/filters and reject zero-test success.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Rejection-matrix tests must forge self-consistent manifests for mutated copies of the real bundle (artifact digest + stale structure), which requires sha2 as an opi-ai dev-dependency; sha2 is already a main dependency, so the dependency graph is unchanged.",
+          "source": "crates/opi-ai/tests/catalog_artifact.rs rejection matrix per task 20.32 DoD"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "The Phase-11 breadth guard in tests/tool_result_wire.rs forbids the 'catalog' token and freezes the public module baseline; the admitted Phase 20 DEL-10 placement (target=core opi-ai) supersedes it for this module, so the guard's documented deliberate-baseline-update path is exercised once here.",
+          "source": "crates/opi-ai/tests/tool_result_wire.rs baseline_modules comment; task 20.32 placement inference note"
         }
       ],
       "tier": "workspace",
@@ -9271,7 +9281,7 @@
             "opi_ai builtin catalog resource loader (target)",
             "opi_ai operation-qualified model getters (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -9281,8 +9291,10 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "52eeaa372f077ebec3cc35d6e1350320b6b35a3e",
+      "baseline_dirty_files": [
+        "docs/research/pi-ai-opi-ai-alignment/pi-1.4.0-upgrade-assessment.md"
+      ],
       "task_owned_paths": [
         "CHANGELOG.md",
         "crates/opi-ai/README.md",
@@ -9291,12 +9303,88 @@
         "crates/opi-ai/src/catalog/**",
         "crates/opi-ai/src/lib.rs",
         "crates/opi-ai/tests/catalog_artifact.rs",
-        "scripts/pi-catalog/**"
+        "scripts/pi-catalog/**",
+        "crates/opi-ai/Cargo.toml",
+        "crates/opi-ai/tests/tool_result_wire.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "9c99c31e41e290067285ef864ae4ef32a3e01133",
+      "evidence": {
+        "Opi-Task": "20.32",
+        "Opi-DoD-SHA256": "081dd5aa29f8de66b91c314b554b4107828ae0499227b971943ab261a693a5d5",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED (doc-check, fmt, workspace all-target clippy, workspace tests, doc tests, rustdoc, in order); scenario cargo test -p opi-ai --test catalog_artifact 10/10 PASS; packer --check OK (42 providers, structure 0269b76c00ff)",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P20-S32; cargo test -p opi-ai --test catalog_artifact (10 tests: provenance/pin identity, operation-qualified getters, tamper/wrong-version/missing-provider/stale-structure/duplicate/invalid-entry rejections retaining last-known revision, custom-record coexistence) at production call sites opi_ai::catalog::{Catalog, CatalogHandle, Catalog::model/models}"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-25T09:07:17.762605+00:00",
+          "attempt": 1,
+          "summary": "B.2 gate passed: user explicitly authorized task 20.32 execution, the single pi.dev digest-pinned catalog download (delivery-input action), and the task commit plus separate ledger checkpoint commit. Boot smoke (format + production clippy) PASSED. Baseline dirty: one untracked unrelated research doc preserved.",
+          "gate_results": {
+            "boot_smoke": ".agents/skills/opi-implement/scripts/opi-impl-smoke.sh boot -> PASSED (cargo fmt --check --all; cargo clippy --workspace --lib --bins -- -D warnings)",
+            "user_approval": "execution + pi.dev fetch + task commit + ledger checkpoint confirmed by user"
+          }
+        },
+        {
+          "timestamp": "2026-10-25T10:16:18.279042+00:00",
+          "attempt": 1,
+          "summary": "Delivered DEL-10 substrate: authentic pi.dev catalog revision sha256-ffa3e986...678 (user-authorized single download, digest==pin) packaged verbatim by scripts/pi-catalog/pack.py (staging validation, atomic emit, --check verifier); opi-ai catalog module embeds and revalidates the bundle (digest/schema/provider-set/entry contract/type:id/structure) with CatalogHandle last-known-retention; custom records unaffected. D.1 smoke full PASSED on attempt 3: attempt 1 failed on the superseded Phase-12 'catalog' breadth guard (fixed via its documented deliberate-baseline-update path, ownership appended before edit), attempt 2 hit a known-class oauth_auth loopback flake under parallel load (3/3 isolated reruns pass; no task-owned path involved). D.2 exec 7-lens run via degraded single-reviewer path (no Workflow runtime/node; wf_ref=null): no must-fix; 3 flagged (guard-baseline move, oauth_auth flake, degraded evaluator path); 3 candidate findings rejected adversarially. No push.",
+          "gate_results": {
+            "d1_gate": "smoke full PASSED (doc-check, fmt, clippy --workspace --all-targets -D warnings, test --workspace --all-targets, test --workspace --doc, RUSTDOCFLAGS=-D warnings doc --workspace --no-deps)",
+            "d0_scenario": "cargo test -p opi-ai --test catalog_artifact -> 10 passed / 0 failed",
+            "d3_gap_only": "python3 scripts/pi-catalog/pack.py --check -> bundle OK 42 providers structure 0269b76c00ff; git diff --check clean",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=3, rejected=3, wf_ref=null (degraded single-reviewer path)",
+            "artifact_truthfulness": [
+              {
+                "claim": "bundled artifact is the pinned authentic pi.dev revision",
+                "classification": "verified",
+                "artifact": "packer --check output + manifest sha256==pin",
+                "result": "bundle OK"
+              },
+              {
+                "claim": "loader validates and rejects tamper/stale/wrong-version/missing-provider retaining last-known",
+                "classification": "verified",
+                "artifact": "cargo test catalog_artifact 10/10",
+                "result": "PASS"
+              },
+              {
+                "claim": "custom complete records remain usable",
+                "classification": "verified",
+                "artifact": "cargo test catalog_artifact explicit_complete_custom_records...",
+                "result": "PASS"
+              }
+            ],
+            "test_disposition": [
+              {
+                "subject": "P20-S32",
+                "action": "add",
+                "test": "crates/opi-ai/tests/catalog_artifact.rs (10 tests at opi_ai::catalog public seam)",
+                "interface": "opi_ai::catalog::{Catalog, CatalogHandle}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.32",
+                "action": "update",
+                "test": "crates/opi-ai/tests/tool_result_wire.rs::provider_tool_result_error_no_phase12_breadth_guard",
+                "interface": "lib.rs module-freeze guard",
+                "replacement": "catalog_artifact.rs behavioral suite pins the admitted catalog contract; guard baseline moved via its documented deliberate-update path",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.32",
+                "action": "none",
+                "test": "all other existing suites",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "9c99c31e41e290067285ef864ae4ef32a3e01133"
+          }
+        }
+      ]
     },
     {
       "id": "20.33",
@@ -19775,6 +19863,16 @@
       "rejected_count": 3,
       "ran_at": "2026-10-25T07:44:30.559472+00:00",
       "task_id": null,
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 3,
+      "ran_at": "2026-10-25T10:16:18.279042+00:00",
+      "task_id": "20.32",
       "criterion_id": null
     }
   ]
