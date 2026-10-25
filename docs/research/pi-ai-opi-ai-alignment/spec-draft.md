@@ -538,6 +538,46 @@ This table is exhaustive for intentional retirement. Future scoped0.x changes sy
 | Old builtin IDs/default wires and global simple budget; config/store/catalog/SDK/product | AIR-052/053 canonical IDs/real default adapters/one mode estimator | Keep explicit Chat adapters/profiles, historical source and unknown usage; migrate config/key conflicts/default Responses/ModelInfo.provider_id/output-budget/estimate helpers/docs | V-44/45 defaults/wire/reentrant migration/budget proof before current old default aliases/independent estimator/double clamp exit; historical reads/custom IDs stay, no silent account overwrite |
 | Old selected capability gaps, fixed wire/profile lists and phase breadth guards | AIR-057–067 complete source-mapped coverage | Preserve useful public utility/state-machine semantics through Rust equivalents; no fake support via symbol rename or narrowing published adapters | V-49–59 and the 41+7 test disposition inventory establish replacement before obsolete presence/count/module-freeze assertions exit; no whole-file deletion by name |
 
+## SDK onboarding and parameter acceptance
+
+This section materializes the human-reviewed onboarding design without changing
+the pinned Pi 1.3.0 SDK target, the 57 active AIR requirements or the 54 active V
+groups. ONB identifiers below are local acceptance criteria within existing
+groups, not new AIR/V identities or delivered evidence. The local Pi 1.4.0 README
+is a usability comparison; its client-identity, whitespace-tool-result and other
+behavioral deltas are not adopted by this amendment. Source/protocol behavior
+and explicit Rust differences prevail over README prose, including Azure's
+already-required Chat and Responses wires.
+
+| Criterion | Owning task / existing group | Required observable acceptance |
+|---|---|---|
+| ONB-01 | 20.56; V-20/39/42 | The bilingual crate README starts with purpose, installation and a complete ordinary quick start, then streaming/final result, factories/catalog/auth, Context/tools/continuation, simple/native options and typed failures/cancel/usage. Advanced mechanism and contributor material is linked after the user path. Current examples use the actual public Context/Request contract; removed system/messages/tools request fields, global/frame APIs and manual-only resolver/route/attempt assembly cannot be the ordinary first-use path. Preserve lifecycle/security conditions in their owning documentation when reorganizing. |
+| ONB-02 | 20.57; V-39/42/58 | Quick-start, streaming and tool-result continuation use the same source in README/examples and a fresh workspace-external consumer of the actual opi-ai Cargo package. Its only Opi dependency is opi-ai plus documented ordinary runtime/Serde/stream dependencies. A controlled peer proves the real request, final outcome and continuation. No product config, Agent, manual auth resolver, private path/patch, prepare lifecycle or persistence implementation is required. Explicit factories/builtins supply catalog/adapters/lazy auth; empty Models stays empty and default memory stores work. Construction/registration/static queries perform no env/store/network work. Workspace-only compilation or a separate complex consumer does not establish this first-use proof. |
+| ONB-03 | 20.16, 20.35, 20.36–20.49; V-11/14/24/26/35/36/45/49/53/54 | Record every adopted native/simple option's source/version, accepted type, unit, omission/default, false/zero/null/removal, precedence, wire field and typed rejection. Exercise actual public-call requests at each owning protocol, not only resolver/option equality. Preserve native/simple distinctions: Codex retains its own native parameters and frozen noninput/transport behavior at 20.16; Anthropic enabled native thinking without a budget uses its source default 1024, not a universal budget; Google native -1 dynamic and 0 disabled survive conversion; pi-messages keeps its whitelist/simple bypass; typed image/classifier/Decisions keep their own fields/results, including API-key-only Decisions. No universal retry, timeout scope, numeric clamp or Chat serializer replaces source-specific semantics. |
+| ONB-04 | 20.51 plus protocol consumers; V-36/51 | Actual requests prove header omit/set/remove, protected selected auth identity, exact callback timing/count per allowed variant, and frozen ordinary retries. Callback/signal/fetch are runtime values, not product JSON fields. Supported and unsupported protocol callbacks remain distinguished; no raw-event reconstruction from normalized output. |
+| ONB-05 | 20.34; V-01/05/44/54 | Factory/profile/model defaults and per-call options reach the real selected adapter with explicit false/zero/omission preserved. Finalize lawful auth-derived endpoint before endpoint-sensitive compat. Capture method/URL/headers/body and source-exchange versus generation attempts without account/model/source fallback. Reuse predecessor proof, adding distinct assembled cases. This does not admit the host TOML/JSON migration. |
+| ONB-06 | 20.58; V-58 | README platform/MSRV/features/package statements match actual native and ordinary/feature-union external-consumer evidence. No functional test establishes performance or untested platform support. Preserve missing evidence and existing native/supply-chain requirements. |
+| ONB-07 | 20.59; V-20/59 and DEL-14 handoff | Reconcile final bilingual README/example/evidence references against 20.56/57/58 proof; record fixed inputs, actual commands/results and add/update/delete/retain/none test dispositions. Separate executed, reproducible prior and missing evidence. Preserve source-drift P.0/P.2/P.4 confirmation and independent F.1a; the documentary handoff cannot self-certify runtime or Phase exit. |
+
+The acceptance matrix remains the sole index; its onboarding supplement maps
+these criteria to the existing owners and public test seams. Existing dependency
+edges remain: parameter/callback/telemetry mechanisms feed adapters; all declared
+operation prerequisites feed 20.34/57; 20.55 precedes 20.56, followed by
+20.57/58/59. Existing passing authentication/source evidence is not reopened or
+relabeled by these added checks. Reuse still-valid tests; superseded assertions
+retire only after equal-or-stronger replacement proof. Inspect Pi test imports
+before executing a mock-only subset, isolate HOME/env and prohibit credential-
+triggered live calls, implicit install or hydration.
+
+Default TOML plus explicit Pi JSON, replacement of product field names and
+configuration-value command sources are approved shaping results for two
+separate Reference Product delivery candidates, not this SDK phase's runtime
+scope. They require their own registered Phase source and graph admission.
+They consume the SDK; the SDK does not depend on their parser, files or policy.
+Pi 1.4 configuration vocabulary can be selected there without replacing this
+phase's Pi 1.3 protocol contract. No auth.json migration, keychain replacement,
+project self-authorization or new session policy follows.
+
 ## Acceptance dependencies and completion
 
 1. Fixed scope/source inventory → verify: pinned Pi 1.3.0 identity, all capability/profile/flow rows, formal authority, 57 active SDK, 9 host-only and 1 retired AIR dispositions, and explicit differences; no hidden excluded published capability.

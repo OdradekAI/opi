@@ -538,6 +538,37 @@ RDF-24保留自有WS协议机制，按用户选择把初始Independent Companion
 | 内置旧 provider ID/default wire、全局simple预算；config/store/catalog/SDK/产品 | AIR-052/053 canonical ID/真实默认adapter/统一mode estimator | 保留明确Chat adapter/profile、历史来源和unknown；迁移config/key冲突、defaultResponses、ModelInfo.provider_id、输出预算/估计helpers及docs | V-44/45先证明defaults/wire/迁移重入及预算；当前旧默认aliases/独立estimator/双clamp退出，历史只读与custom IDs保留；无静默账号覆盖 |
 | 旧选定能力缺口、固定 wire/profile 清单和 phase 范围 guard | AIR-057–067 完整源码映射覆盖 | 以 Rust 对应能力保留有价值的公开 utility/state-machine 语义；不通过符号改名或收窄已发布 adapters 虚假宣称支持 | V-49–59 和 41+7 测试处置清单建立替代后，过时 presence/count/module-freeze 断言才退出；不按名称整文件删除 |
 
+## SDK 上手与参数验收
+
+本节物化已经人类审阅的上手设计，不改变固定 Pi 1.3.0 SDK 目标、57 项 active AIR
+或 54 个 active V 组。下列 ONB 是既有组内的局部验收判据，不新增 AIR/V 身份，也
+不代表交付证据。本地 Pi 1.4.0 README 仅提供使用体验对照；其 client identity、
+空白 tool-result 及其他行为增量不在本次修订中采用。源码/协议行为及明确 Rust
+差异优先于 README 文字，包括 Azure 已要求的 Chat 和 Responses 两种 wire。
+
+| 判据 | Owning task / 既有组 | 必须可观察的验收 |
+|---|---|---|
+| ONB-01 | 20.56；V-20/39/42 | 双语 crate README 先讲用途、安装和完整普通 quick start，再讲 streaming/final result、factories/catalog/auth、Context/tools/continuation、simple/native options、typed failure/cancel/usage。Advanced 机制和贡献者材料在用户路径后链接。当前示例使用真实公共 Context/Request 合同；退役的 system/messages/tools request 字段、global/frame API、仅手工 resolver/route/attempt 的组装不能成为普通首次使用路径。重组时在 owning 文档保留 lifecycle/security 条件。 |
+| ONB-02 | 20.57；V-39/42/58 | README/examples 的 quick-start、streaming、tool-result continuation 与实际 opi-ai Cargo 包的全新 workspace 外消费者使用同一源码。唯一 Opi 依赖为 opi-ai，可加已说明的普通 runtime/Serde/stream 依赖。本地受控服务证明真实请求、最终结果和 continuation；不要求产品配置、Agent、手工 auth resolver、私有 path/patch、prepare 生命周期或持久化实现。显式 factories/builtins 提供 catalog/adapters/lazy auth；空 Models 仍为空，默认 memory stores 可用。构造/注册/静态查询不访问 env/store/network。仅 workspace 编译或另一份复杂 consumer 不证明首次使用。 |
+| ONB-03 | 20.16、20.35、20.36–20.49；V-11/14/24/26/35/36/45/49/53/54 | 逐项记录已采用 native/simple option 的来源/版本、类型、单位、省略/默认、false/zero/null/removal、优先级、wire 字段、typed rejection。各协议 owner 从公共调用检查真实请求，不只比较 resolver/options。保留 native/simple 差异：Codex 的 native 参数、冻结 noninput/transport 行为归 20.16；Anthropic native thinking 开启而未给预算时来源默认 1024，不用通用预算；Google native -1 dynamic、0 disabled 保留；pi-messages 保留 whitelist/simple bypass；typed image/classifier/Decisions 使用自身字段/结果，含 Decisions API-key-only。不用统一 retry、timeout scope、numeric clamp 或 Chat serializer 代替逐来源语义。 |
+| ONB-04 | 20.51 及协议消费者；V-36/51 | 真实请求证明 header 省略/设置/删除、选中 auth 身份保护、每个允许 variant 的 callback 时序/次数、普通 retry 冻结。Callback/signal/fetch 是 runtime 值，不是产品 JSON 字段。保留各协议支持/不支持 callbacks 的区别，不从 normalized output 重构 raw event。 |
+| ONB-05 | 20.34；V-01/05/44/54 | Factory/profile/model 默认和 per-call options 进入真实选中 adapter，保留 false/zero/省略。合法 auth-derived endpoint 先确定，再推断依赖 endpoint 的 compat；捕获 method/URL/headers/body，分开来源交换与 generation attempts，不回退账号/model/source。复用前置证据，只补不同的组合场景；不准入宿主 TOML/JSON 迁移。 |
+| ONB-06 | 20.58；V-58 | README 平台/MSRV/features/package 声称匹配实际 native 及普通/feature-union 外部消费者证据。功能测试不能证明性能或未测试平台支持；保留证据缺口及既有 native/supply-chain 要求。 |
+| ONB-07 | 20.59；V-20/59 与 DEL-14 交接 | 对照 20.56/57/58 证明，协调最终双语 README/example/evidence 引用，记录固定输入、实际命令/结果、add/update/delete/retain/none 测试处置。分开本轮执行、可复核既有、缺失证据；保留 source-drift P.0/P.2/P.4 确认及独立 F.1a，文档交接不得自证 runtime 或 Phase exit。 |
+
+验收矩阵仍是唯一索引；其中上手补充把这些判据映射到既有 owner 和公共测试边界。
+既有依赖不变：参数/callback/telemetry 机制输入 adapters，全部已声明 operation
+前置输入 20.34/57，20.55 先于 20.56，再到 20.57/58/59。新增检查不重开或重新标记
+既有 passing auth/source 证据。复用仍有效测试，退役断言须先有同等或更强替代证明。
+执行 Pi mock-only 子集前检查 imports，隔离 HOME/env，禁止因发现凭据触发 live、
+隐式安装或 hydration。
+
+默认 TOML＋显式 Pi JSON、产品字段替换、配置值命令来源，是已批准的 shaping 结果，
+分别进入两个独立 Reference Product 交付候选，不是本 SDK Phase 的 runtime 范围。
+它们须有各自登记的 Phase 来源和图准入，消费 SDK；SDK 不依赖它们的 parser、文件或
+policy。那里可以选择 Pi 1.4 配置词汇，不替换本 Phase 的 Pi 1.3 协议合同。
+本节不授权 auth.json 迁移、keychain 替换、项目自授权或新 session policy。
+
 ## 验收依赖与完成条件
 
 1. 固定范围／来源清单 → 验证：固定 Pi 1.3.0 identity、全部 capability/profile/flow 行、正式权威、57 项 active SDK、9 项仅宿主与1项退役 AIR 处置，以及明确差异；无隐藏排除的已发布能力。

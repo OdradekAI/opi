@@ -10,6 +10,9 @@
 
 ## 验证边界及证据分层
 
+当前上手与参数补充见文末“SDK 上手与参数补充验收”。ONB 判据细化既有 V 组，
+不新增 AIR/V、不切换 Pi 1.3 协议基线、不把宿主配置候选变成 SDK 退出条件。
+
 HTTP 的后端接受范围单独按 [RDF-22](pi-1.3.0-rust-differences.md#rdf-22-upstream-http-profile) 验证：普通 crates.io reqwest0.12.28/Hyper1.9.0 的 head/read-buffer、trailer count/bytes、累计 chunk-extension 边界可以拒绝其他方面合法的 Pi 输入。V-01/02/05/09/13/29/30/51/55/58 必须保留域内正常与域外 typed 脱敏失败、可证明的阶段、完整 partial/known usage、永久 EOF、handoff 后零重试及取消／清理证据；不虚构 backend 未区分的细因。逐字节／合并输入及 B−1/B/B+ 分开记录，不把采样常量当所有输入的成功保证。仅退役 HTTP patch-apply／namespace 门禁，通用 conformance／真正 package artifact 的普通与 feature-union 消费者保留。该 HTTP 修订不改 WS/PMD 或其他 payload/cap；crypto 后由 RDF-23 独立修订。本次计划不修改测试或既有结果。
 
 Crypto 按 [RDF-23](pi-1.3.0-rust-differences.md#rdf-23-upstream-crypto-profile) 验证命名的上游 key/算法接受范围，更新旧 RSA1024/多素数/P-521 KX 成功期望为 typed 拒绝及无业务 send，保留 RSA2048–8192/e3/P-521 signing/mTLS 正例和错算法/坏 key/坏 trust/ALPN 负例。V-09/49/55/58 仍须真实 Models→Chat→HttpClient TLS、显式 provider 的 host-ring/空宿主对照、普通/feature-union 真实包消费者、native 来源及取消后 key 存活至 join。只退役 crypto fork/namespace/local-FFI 专属义务；算法/身份/资源与所有七组覆盖仍 OPEN。真实 ADC 仍由20.21.1、全 DEL-06 由20.34、组装包由20.57负责，不用研究 JWT 或 mTLS 代替生产 caller。
@@ -515,6 +518,23 @@ cargo test --offline --locked -p opi-ai --test gemini_lifecycle --test provider_
 | WS／RDF-13/18 · V-02/30/49/58 | 60参考constructor＋15native loopback＋16reader＋15partial-codec观察；Node／Bun实际PMD与headercanary、Bun125header与native差分；当前TW完整组合不能原样保留。Node异常退出／Bun非法响应宽松单列；partial接入不补PMD | 完整Pi／opi provider、fallback／continuation／pool／cancel／cleanup、完整Upgrade与多帧tail、PMD参数／fragment／context takeover、proxy／TLS／平台未证；add共同wire／机制fixtures，update选型假设，retain资源／partial。OPEN |
 
 所有正式实验已记录命令／exit／pins，仍不能把native对错误输入的假成功算通过。该最小差分窗口的未关闭组七组不变；其余五组在该窗口未增运行证据，后续新增见下节。harness timers与采样大小不是SDK预算。实际产品test impact **none**；研究脚本／fixtures／结果 **add**。废弃Bun自动解析诊断只作副作用记录，正式Bun --no-install已重跑；没有产品测试迁移／CI实施。
+
+## SDK 上手与参数补充验收
+
+本节对应双语 Phase 来源的“SDK onboarding and parameter acceptance / SDK 上手与参数验收”。
+下列均是未来验收要求，不是本次规划运行的 runtime 结果。Pi 1.4 README 仅作使用体验
+对照；client identity、空白 tool-result 等协议增量单独准入。两个宿主配置纵切不加入
+当前 54 个 SDK V 组。矩阵无单独英文副本；英文合同同步在 `spec-draft.md`。
+
+| 来源判据 / 既有 V | 实施 owner | 公共入口与可执行验收 | 失败/边界与测试处置 |
+|---|---|---|---|
+| ONB-01 / V-20/39/42 | 20.56 | 双语 README 从普通 factory/model→Context→complete/stream 开始；创建 `crates/opi-ai/examples/quick_start.rs`、`quick_start_stream.rs`、`tool_loop.rs` 并复用于文档；`cargo check -p opi-ai --examples` 和 doc checker，受控 peer 的最终外部执行归 20.57 | 改用真实 API，失效 Request 字段/旧 facade 示例退出；生命周期和安全说明移入可发现的 owning 文档，不因重组删除。Examples 当前尚不存在，不能声称已运行。 |
+| ONB-02 / V-39/42/58 | 20.57 | `cargo test -p opi-ai --test external_sdk` 通过实际 `.crate`、新建 workspace 外普通消费者运行同源三示例；验证真实请求/终态/continuation、memory store、显式 builtins/lazy auth | 不依赖产品/Agent/手工 resolver/prepare/private path/root patch；构造注册静态查询零 env/store/network。该 target 及新示例是未来目标；既有 Schema package smoke 不替代。 |
+| ONB-03 / V-11/14/24/26/35/36/45/49/53/54 | 20.16、20.35、20.36–49 | `context_budget`/`usage_cost`/`model_wire_metadata` 验证共同机制；各 owner 的 Chat/Responses/Codex/Azure/Anthropic/Gemini/Vertex/Bedrock/Mistral/pi-messages/image/classifier fixtures 捕获真实 native/simple 请求；20.35 只先证明共同机制，逐协议最终证明归各 adapter，Codex 原 owner 为 20.16 | 逐字段 source/type/unit/omission/false/zero/null/precedence；Anthropic native 默认 1024、Google -1/0、Azure 双 wire、typed Decisions API-key-only；无统一 clamp/retry/timeout。复用仍有效 wire 测试，仅增不同反例。 |
+| ONB-04 / V-36/51 | 20.51＋各新 operation owner | `cargo test -p opi-ai --test request_enrichment` 和相应协议 fixture 验证 headers 省略/设置/删除、callback 逐 variant 次数/时序、retry 冻结和 protected identity；完整跨 operation 组合仍归 20.57 | Callback/signal/fetch 非配置字段；functional failure/cancel typed terminal；不重构 raw、不重新发现账号，不把 unsupported 当支持。 |
+| ONB-05 / V-01/05/44/54 | 20.34 | `cargo test -p opi-ai --test request_enrichment --test model_wire_metadata --test provider_collection` 配合已完成协议 suites；42 profiles 的有效默认/覆盖进入实际 adapter，捕获 URL/headers/body 与 attempt 计数 | Auth endpoint 在 compat 推断前确定，false/zero 不被默认覆盖；来源交换和 generation retry 分开；不接管宿主双 parser，不复制全部前置 suites。 |
+| ONB-06 / V-58 | 20.58 | 既有 `platform_delivery` 目标与实际 native/MSRV/package/feature-union artifact 证据逐条支撑 README 声称 | 未来 target 不能冒充已执行；功能 PASS 不证明性能/其他平台；缺失保留。 |
+| ONB-07 / V-20/59、DEL-14 | 20.59 | `python scripts/opi-doc-check.py`、`git diff --check`；核对 20.56/57/58 的示例同源、包、平台及最终双语交接证据 | 分开本轮/既有/缺失，保留 source-drift P.0/P.2/P.4 和独立 F.1a；不重写历史70/probe结果，不自证 Phase exit。 |
 
 ## 设计 READY 的机制证据与产品 OPEN（同一 V）
 
