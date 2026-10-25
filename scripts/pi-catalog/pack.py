@@ -39,7 +39,7 @@ SOURCE_EVIDENCE = (
 
 BUNDLE_SCHEMA_VERSION = 1
 DATA_SCHEMA_VERSION = 6  # Pi MODEL_DATA_SCHEMA_VERSION for the hydrated layout
-BUNDLE_DIR = REPO_ROOT / "crates" / "opi-ai" / "resources" / "catalog" / "pi-1.3.0"
+BUNDLE_DIR = REPO_ROOT / "crates" / "opi-ai" / "resources" / "catalog" / "builtin"
 CATALOG_NAME = "catalog.json"
 MANIFEST_NAME = "manifest.json"
 

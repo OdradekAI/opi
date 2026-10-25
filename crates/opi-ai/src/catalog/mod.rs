@@ -2,7 +2,7 @@
 //!
 //! The builtin bundle is the authentic Pi published model catalog, packaged
 //! byte-for-byte by `scripts/pi-catalog/pack.py` from the revision pinned by
-//! the local Pi tree (see `resources/catalog/pi-1.3.0/manifest.json`). Loading
+//! the local Pi tree (see `resources/catalog/builtin/manifest.json`). Loading
 //! never performs network I/O, account probing, or generator runs: it parses
 //! the embedded bytes, re-verifies the artifact digest, structure digest,
 //! schema versions, and every entry, and fails closed with a typed
@@ -34,10 +34,9 @@ pub const BUNDLE_SCHEMA_VERSION: u32 = 1;
 /// (Pi `MODEL_DATA_SCHEMA_VERSION`).
 pub const DATA_SCHEMA_VERSION: u32 = 6;
 
-const BUILTIN_CATALOG_BYTES: &[u8] =
-    include_bytes!("../../resources/catalog/pi-1.3.0/catalog.json");
+const BUILTIN_CATALOG_BYTES: &[u8] = include_bytes!("../../resources/catalog/builtin/catalog.json");
 const BUILTIN_MANIFEST_BYTES: &[u8] =
-    include_bytes!("../../resources/catalog/pi-1.3.0/manifest.json");
+    include_bytes!("../../resources/catalog/builtin/manifest.json");
 
 // ---------------------------------------------------------------------------
 // Operation identity

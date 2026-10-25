@@ -674,7 +674,7 @@ body/事件上限、分配提示或放宽的 content-length/transfer-encoding/EO
 ## 离线内置 Model Catalog（DEL-10）
 
 `catalog` 模块把一份真实、带版本的 model catalog 作为离线 crate 资源嵌入：
-`resources/catalog/pi-1.3.0/catalog.json` 与本地 Pi 树
+`resources/catalog/builtin/catalog.json` 与本地 Pi 树
 （`.repo/pi-1.3.0/nix/model-catalog.json`）所固定 revision 的发布产物逐字节一致，
 `manifest.json` 记录交付输入溯源——来源 URL 与 revision、artifact SHA-256、
 Pi 包/本地来源关联、data schema 版本 6、bundle schema 版本、完整 provider

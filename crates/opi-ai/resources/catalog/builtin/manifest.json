@@ -16,7 +16,7 @@
   "data_schema_version": 6,
   "generator": {
     "packer": "scripts/pi-catalog/pack.py",
-    "packer_sha256": "31a231a65eb0d149a19050c2526d92bd651726a019a84a38a2d2fbf3262a19eb",
+    "packer_sha256": "40fd9998d7b9f44ce495a6727b3b69b7b159bbd4c4c145189e8e6c2576062f66",
     "pi_hydrate_model_catalog_ts_sha256": "153433c81547149bf04b7a913c6c72a45666035b53233cd6b6e985248e5a9492",
     "pi_model_data_ts_sha256": "f2605a61ad57d8a3edb93e5c36c0f543d051796b8353452a1fd584eec33f02f4"
   },

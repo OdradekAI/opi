@@ -833,7 +833,7 @@ resolved reqwest/hyper/hyper-util/http versions and registry checksums.
 ## Offline Bundled Model Catalog (DEL-10)
 
 The `catalog` module embeds one authentic, versioned model catalog as offline
-crate resources: `resources/catalog/pi-1.3.0/catalog.json` is byte-for-byte
+crate resources: `resources/catalog/builtin/catalog.json` is byte-for-byte
 the artifact published at the exact revision pinned by the local Pi tree
 (`.repo/pi-1.3.0/nix/model-catalog.json`), and `manifest.json` records the
 delivery-input provenance — source URL and revision, artifact SHA-256,
