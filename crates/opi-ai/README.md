@@ -830,6 +830,40 @@ protected-header stripping, typed redirect-limit and acquisition failures,
 proxy routing with scoped bypass, single-terminal EOF), recording the
 resolved reqwest/hyper/hyper-util/http versions and registry checksums.
 
+## Offline Bundled Model Catalog (DEL-10)
+
+The `catalog` module embeds one authentic, versioned model catalog as offline
+crate resources: `resources/catalog/pi-1.3.0/catalog.json` is byte-for-byte
+the artifact published at the exact revision pinned by the local Pi tree
+(`.repo/pi-1.3.0/nix/model-catalog.json`), and `manifest.json` records the
+delivery-input provenance — source URL and revision, artifact SHA-256,
+Pi package/local-origin association, data schema version 6, bundle schema
+version, the full provider list with per-operation entry counts, and the
+digests of Pi's own validator/hydrator plus the opi packer. The bundle is
+produced by the explicit delivery-input tool `scripts/pi-catalog/pack.py`
+(verify with `--check`); nothing ever synthesizes catalog data from tests,
+defaults, or a generator run, and a missing authentic artifact is a blocking
+input rather than a reconstruction trigger.
+
+`Catalog::builtin()` parses and validates the embedded bytes once per
+process — no network I/O, account probing, or generator execution —
+re-verifying the artifact digest, bundle/data schema versions, provider set,
+every entry's data contract (identity, modalities, capabilities, cost),
+`type:id` uniqueness per provider, and the structure digest. Any mismatch
+is a typed, fail-closed `CatalogError`; no partial catalog exists.
+Operation-qualified getters (`models(provider, operation)`,
+`model(provider, operation, id)`) expose chat/image/classifier entries with
+typed core fields plus the complete raw entry, ready for the store/refresh
+and profile/catalog integration owners. `CatalogHandle` owns the active
+revision: `try_install` validates a candidate completely and swaps
+atomically, so tampered, stale, wrong-version, missing-provider, duplicate,
+or contract-violating candidates are rejected while the last-known revision
+stays readable, and already-held `Arc<Catalog>` values are never rebound.
+Explicit complete custom records (`ChatModelRecord`) remain usable
+independently of any catalog state. Image entries are catalog metadata for
+selection/pricing only; the SDK's own image operation paths are owned by the
+typed image API task.
+
 ## Non-Goals
 
 The following are explicit non-goals and must not appear as current core
@@ -943,7 +977,7 @@ Upgrade → codec path, continuation/pool behavior or complete cleanup acceptanc
 ## Modules
 
 `provider`, `message`, `stream`, `model_info`, `api_mapped`, `registry`,
-`models`, `provider_headers`, `auth`, `credential`, `http`, `retry`, `model`,
+`models`, `provider_headers`, `auth`, `credential`, `catalog`, `http`, `retry`, `model`,
 `anthropic`, `openai_chat`, `openai_responses`, `openai_codex_responses`,
 `openrouter`, `mistral`, `gemini`, `bedrock`, `azure_openai`, `vertex`,
 `config`, `time`, and `test_support`.

@@ -671,6 +671,33 @@ body/事件上限、分配提示或放宽的 content-length/transfer-encoding/EO
 类型化的重定向超限与采集失败、带作用域旁路的代理路由、单终止 EOF），
 记录解析出的 reqwest/hyper/hyper-util/http 版本与 registry 校验和。
 
+## 离线内置 Model Catalog（DEL-10）
+
+`catalog` 模块把一份真实、带版本的 model catalog 作为离线 crate 资源嵌入：
+`resources/catalog/pi-1.3.0/catalog.json` 与本地 Pi 树
+（`.repo/pi-1.3.0/nix/model-catalog.json`）所固定 revision 的发布产物逐字节一致，
+`manifest.json` 记录交付输入溯源——来源 URL 与 revision、artifact SHA-256、
+Pi 包/本地来源关联、data schema 版本 6、bundle schema 版本、完整 provider
+列表与逐操作条目计数，以及 Pi 自有 validator/hydrator 与 opi packer 的摘要。
+Bundle 由显式交付输入工具 `scripts/pi-catalog/pack.py` 生成（`--check` 校验）；
+任何路径都不会从测试、defaults 或 generator 运行合成 catalog 数据，真实
+artifact 缺失是阻断性输入而不是重建触发条件。
+
+`Catalog::builtin()` 每进程解析并校验一次内嵌字节——无网络 I/O、无账户探测、
+不运行 generator——重新校验 artifact 摘要、bundle/data schema 版本、
+provider 集合、每个条目的数据合同（identity、模态、能力、cost）、每 provider
+的 `type:id` 唯一性与结构摘要。任一不匹配都是 typed、fail-closed 的
+`CatalogError`；不存在部分可用的 catalog。按操作限定的 getter
+（`models(provider, operation)`、`model(provider, operation, id)`）公开
+chat/image/classifier 条目的 typed 核心字段与完整原始条目，供后续
+store/refresh 与 profile/catalog 集成 owner 消费。`CatalogHandle` 持有活动
+revision：`try_install` 完整校验候选后原子换入，因此篡改、过期、错误版本、
+缺 provider、重复 identity 或违反合同的候选被拒绝时，最后已知 revision
+保持可读，已持有的 `Arc<Catalog>` 永不被重新绑定。显式完整 custom 记录
+（`ChatModelRecord`）独立于任何 catalog 状态保持可用。Image 条目仅是用于
+选择/计价的 catalog 元数据；SDK 自身的 image 操作路径归 typed image API
+任务所有。
+
 ## 非目标
 
 以下是明确的非目标，不得作为当前核心行为出现：
@@ -780,7 +807,7 @@ cleanup 验收。
 ## 模块
 
 `provider`、`message`、`stream`、`model_info`、`api_mapped`、`registry`、
-`models`、`provider_headers`、`auth`、`credential`、`http`、`retry`、`model`、
+`models`、`provider_headers`、`auth`、`credential`、`catalog`、`http`、`retry`、`model`、
 `anthropic`、`openai_chat`、`openai_responses`、`openai_codex_responses`、
 `openrouter`、`mistral`、`gemini`、`bedrock`、`azure_openai`、`vertex`、
 `config`、`time` 和 `test_support`。

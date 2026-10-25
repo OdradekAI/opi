@@ -471,6 +471,33 @@
   and its refresh network bound is now 15s, scoped to the HTTP exchange
   only — lock waits and the ACK are outside it.
 ### Added
+- `opi-ai`: offline bundled model catalog substrate (DEL-10, task 20.32).
+  The new `catalog` module embeds the authentic Pi published model catalog
+  as offline resources, packaged byte-for-byte by the explicit
+  delivery-input tool `scripts/pi-catalog/pack.py` from the exact revision
+  pinned by the local Pi 1.3.0 tree (`sha256-ffa3e986…678`; 42 providers,
+  1608 chat / 59 image / 38 classifier entries). The bundle manifest
+  records the full provenance chain — pi.dev source URL and revision,
+  artifact SHA-256, `@earendil-works/pi-ai@1.3.0` package/local-origin
+  association, data schema version 6, bundle schema version 1, provider
+  and operation identities, and the digests of Pi's own
+  `model-data.ts`/`hydrate-model-catalog.ts` plus the packer.
+  `Catalog::builtin()` validates the embedded bytes once per process with
+  no network I/O, account probing, or generator runs, re-verifying digest,
+  schema versions, provider set, every entry's data contract, `type:id`
+  uniqueness, and the structure digest — any mismatch is a typed
+  fail-closed `CatalogError`. Operation-qualified getters expose
+  chat/image/classifier entries (typed core fields plus the complete raw
+  entry); `CatalogHandle::try_install` validates a candidate completely
+  before an atomic swap, so tampered, stale, wrong-version,
+  missing-provider, duplicate-identity, and contract-violating candidates
+  are rejected while the last-known revision stays readable and held
+  `Arc<Catalog>` values are never rebound. Explicit complete custom records
+  remain usable independently of catalog state. Missing authentic material
+  remains a blocking input: nothing invents catalog data from synthetic
+  fixtures or implicit construction. Substrate for the ModelsStore
+  restore/refresh/personalization and profile/catalog integration owners;
+  closes no store acceptance scenario.
 - `opi-ai`: `OAuthProvider::{name, is_subscription, login_label}` expose
   read-only metadata on trait objects. All nine SDK flows retain their fixed
   Pi values and optional-field differences; custom implementations default to

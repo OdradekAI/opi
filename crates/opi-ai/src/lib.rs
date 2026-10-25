@@ -9,6 +9,7 @@ pub mod api_mapped;
 pub mod auth;
 pub mod azure_openai;
 pub mod bedrock;
+pub mod catalog;
 pub mod config;
 pub mod context;
 pub mod credential;

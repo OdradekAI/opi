@@ -398,7 +398,10 @@ fn tool_result_error_semantics_across_providers() {
 /// Acceptance entry point for scenario `phase11-provider-no-phase12-breadth`.
 /// Mechanically proves this Phase 11 wire fix did not add Phase 12 breadth: no
 /// new opi-ai provider module, no new opi-ai dependency, and no OAuth /
-/// image-generation / catalog / marketplace surface.
+/// image-generation / marketplace surface. The offline bundled model catalog
+/// (`catalog`) began as forbidden Phase 12 breadth here and was deliberately
+/// admitted later as the Phase 20 DEL-10 substrate (task 20.32); it stays in
+/// the module baseline below and is not provider-breadth.
 #[test]
 fn provider_tool_result_error_no_phase12_breadth_guard() {
     let cargo_toml = include_str!("../Cargo.toml");
@@ -423,13 +426,15 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
 
     let lib_lower = lib_rs.to_lowercase();
     // Phase 14.2 deliberately added the scoped `auth` module (OAuth auth
-    // contracts) to lib.rs; "oauth" is no longer a forbidden token there. The
-    // module-freeze below still catches accidental module additions.
+    // contracts) to lib.rs; "oauth" is no longer a forbidden token there.
+    // Phase 20 (task 20.32, DEL-10) deliberately added the `catalog` module
+    // (offline bundled model catalog); "catalog" is no longer a forbidden
+    // token here either. The module-freeze below still catches accidental
+    // module additions.
     for forbidden in [
         "image_gen",
         "image_generation",
         "marketplace",
-        "catalog",
         "stripe",
         "billing",
     ] {
@@ -455,6 +460,9 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "auth",
         "azure_openai",
         "bedrock",
+        // DEL-10 (task 20.32): the offline bundled model catalog loader is a
+        // deliberate later-phase addition.
+        "catalog",
         "config",
         "context",
         "credential",
