@@ -376,6 +376,16 @@ impl Provider for BedrockProvider {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
+        // Payload callback (task 20.51): once per variant on the
+        // converse-stream projection, frozen across ordinary retries.
+        let body = match request
+            .callbacks
+            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+        {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
+        let callbacks = request.callbacks.clone();
         let cancel = request.cancel.clone();
         let model_id = request
             .model
@@ -502,6 +512,7 @@ impl Provider for BedrockProvider {
                     producer_cancel.clone(),
                     timeout,
                     extra_headers,
+                    callbacks,
                     producer_snapshot,
                     &tx,
                 )
@@ -543,9 +554,13 @@ impl BedrockProvider {
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
         extra_headers: Vec<(String, String)>,
+        callbacks: crate::callbacks::RequestCallbacks,
         snapshot: crate::stream::ProducerSnapshot,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
+        // Header transform (task 20.51) on the per-call set before signing;
+        // the output is revalidated so no signing/identity name can enter.
+        let extra_headers = callbacks.apply_header_transform(&extra_headers)?;
         let path = format!("/model/{model_id}/converse-stream");
         let payload = serde_json::to_vec(body).unwrap_or_default();
         let host = base_url
@@ -660,6 +675,20 @@ impl BedrockProvider {
             }
         })?;
 
+        // Response observer (task 20.51): status and headers exist, before
+        // any body processing or error mapping.
+        let observed_headers: Vec<(String, String)> = response
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str().to_ascii_lowercase(),
+                    value.to_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect();
+        callbacks.notify_response(response.status().as_u16(), &observed_headers)?;
+
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
@@ -715,6 +744,21 @@ impl BedrockProvider {
                     // event text.
                     let payload = String::from_utf8_lossy(&frame.payload);
                     let payload_str = payload.as_ref();
+                    // Raw observer (task 20.51): the parsed smithy frame as
+                    // `{type, ...payload}` before normalization; failure
+                    // preserves the partial.
+                    let mut raw = serde_json::json!({"type": frame.event_type});
+                    if let Ok(object) = serde_json::from_str::<
+                        serde_json::Map<String, serde_json::Value>,
+                    >(payload_str)
+                    {
+                        for (key, value) in object {
+                            raw[key] = value;
+                        }
+                    }
+                    if let Err(error) = callbacks.notify_raw(&raw) {
+                        return Err(mapper.failure(error));
+                    }
                     for event in parse_bedrock_event(&frame.event_type, payload_str) {
                         match event {
                             Ok(bedrock_event) => {

@@ -88,6 +88,7 @@ fn request(model: &str) -> opi_ai::provider::Request {
         extra_headers: vec![],
         cache_retention: opi_ai::provider::CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 

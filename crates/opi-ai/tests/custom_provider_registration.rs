@@ -286,6 +286,7 @@ async fn stream_from_custom_provider() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
@@ -682,6 +683,7 @@ fn models_request() -> Request {
         extra_headers: vec![],
         cache_retention: opi_ai::provider::CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 

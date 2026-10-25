@@ -967,6 +967,7 @@ fn make_test_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -1118,6 +1119,7 @@ fn make_tool_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -1337,6 +1339,7 @@ fn make_tool_result_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -1426,6 +1429,7 @@ fn validate_rejects_image_on_text_only_openai_compatible_profile() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let err = validate_request_capabilities(&provider, &image_request)
         .expect_err("text-only profile model must reject image preflight");
@@ -1631,6 +1635,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let mut stream =
@@ -1710,6 +1715,7 @@ async fn profile_extra_headers_reach_the_http_wire() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let mut stream =
@@ -1766,6 +1772,7 @@ async fn stream_cancellation_aborts_before_completion() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let mut stream =
         provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
@@ -1839,6 +1846,7 @@ async fn chat_final_tool_call(arguments: &str) -> AssistantStreamEvent {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     use opi_ai::provider::Provider as _;
     let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
@@ -1941,4 +1949,195 @@ fn initial_chat_tool_call_arguments_are_emitted_after_start() {
         events.get(1),
         Some(OpenAiChatEvent::ToolCallDelta { arguments, .. }) if arguments == "{\"path\":"
     ));
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.51: functional callbacks at the OpenAI Chat wire (P20-S51)
+// ---------------------------------------------------------------------------
+
+use opi_ai::callbacks::RequestCallbacks;
+
+fn chat_callbacks_request() -> Request {
+    Request {
+        model: "openai:gpt-4o".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "hi".into() }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        })
+        .expect("valid context declarations"),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: serde_json::json!({"top_p": 0.9})
+            .as_object()
+            .cloned()
+            .unwrap(),
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        callbacks: Default::default(),
+    }
+}
+
+fn chat_callbacks_sse() -> String {
+    concat!(
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\"Hi\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5}}\n\n",
+        "data: [DONE]\n\n",
+    )
+    .into()
+}
+
+#[tokio::test]
+async fn chat_payload_callback_sees_merged_sampling_and_wire_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(chat_callbacks_sse())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let seen: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorder = seen.clone();
+    let provider = OpenAiChatProvider::new(Some(server.uri()));
+    let mut request = chat_callbacks_request();
+    request.temperature = Some(0.5);
+    request.callbacks = RequestCallbacks::new().with_on_payload(std::sync::Arc::new(move |body| {
+        recorder.lock().unwrap().push(body.clone());
+        Ok(None)
+    }));
+
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
+    while let Some(item) = stream.next().await {
+        if let Err(error) = item {
+            panic!("unexpected error: {error}");
+        }
+    }
+
+    let bodies = seen.lock().unwrap().clone();
+    assert_eq!(bodies.len(), 1);
+    let sent = server.received_requests().await.unwrap()[0].clone();
+    let wire_body: serde_json::Value =
+        serde_json::from_slice(&sent.body).expect("captured body is JSON");
+    assert_eq!(
+        bodies[0], wire_body,
+        "payload callback observes the exact wire body after sampling merge"
+    );
+    assert_eq!(bodies[0]["top_p"], serde_json::json!(0.9));
+    assert_eq!(bodies[0]["temperature"], serde_json::json!(0.5));
+}
+
+#[tokio::test]
+async fn chat_payload_replacement_reaches_the_wire() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(wiremock::matchers::body_partial_json(
+            serde_json::json!({"chat_marker": "replaced"}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(chat_callbacks_sse())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiChatProvider::new(Some(server.uri()));
+    let mut request = chat_callbacks_request();
+    request.callbacks = RequestCallbacks::new().with_on_payload(std::sync::Arc::new(|body| {
+        let mut replacement = body.clone();
+        replacement["chat_marker"] = serde_json::json!("replaced");
+        Ok(Some(replacement))
+    }));
+
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
+    while let Some(item) = stream.next().await {
+        if let Err(error) = item {
+            panic!("unexpected error: {error}");
+        }
+    }
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn chat_response_and_raw_callbacks_fire_in_source_order() {
+    let order: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let raw_recorder = order.clone();
+    let response_recorder = order.clone();
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(chat_callbacks_sse())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiChatProvider::new(Some(server.uri()));
+    let mut request = chat_callbacks_request();
+    request.callbacks = RequestCallbacks::new()
+        .with_on_response(std::sync::Arc::new(move |status, _headers| {
+            response_recorder
+                .lock()
+                .unwrap()
+                .push(format!("response:{status}"));
+            Ok(())
+        }))
+        .with_on_raw(std::sync::Arc::new(move |event| {
+            // The sentinel `[DONE]` frame is not JSON and is never a raw event.
+            raw_recorder
+                .lock()
+                .unwrap()
+                .push(format!("raw:{}", event["object"].as_str().unwrap_or("?")));
+            Ok(())
+        }));
+
+    let norm_recorder = order.clone();
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
+    while let Some(item) = stream.next().await {
+        if item.is_ok() {
+            norm_recorder.lock().unwrap().push("norm".into());
+        }
+    }
+
+    let order = order.lock().unwrap();
+    let markers = order.iter().map(String::as_str).collect::<Vec<_>>();
+    assert_eq!(markers.first(), Some(&"response:200"));
+    // Three JSON chunks, each raw before its normalized emission.
+    let raw_count = markers
+        .iter()
+        .filter(|m| **m == "raw:chat.completion.chunk")
+        .count();
+    assert_eq!(raw_count, 3);
+    assert!(markers.iter().filter(|m| **m == "norm").count() >= 3);
+    assert!(
+        markers
+            .iter()
+            .position(|m| *m == "raw:chat.completion.chunk")
+            .unwrap()
+            < markers.iter().position(|m| *m == "norm").unwrap(),
+        "raw precedes normalization"
+    );
 }

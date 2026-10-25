@@ -99,6 +99,33 @@ impl ProviderHeaders {
     }
 }
 
+/// Validate a header-transform output (task 20.51): valid names/values, no
+/// duplicates, and no protected identity/auth/signing name (reserved list plus
+/// the `amz-sdk-*` Smithy signing family, case-insensitive).
+pub(crate) fn validate_transform_output(headers: &[(String, String)]) -> Result<(), String> {
+    let mut names = BTreeSet::new();
+    for (name, value) in headers {
+        if let Err(error) = validate_pair(name, value) {
+            return Err(error.to_string());
+        }
+        let normalized = name.to_ascii_lowercase();
+        if RESERVED_PROVIDER_HEADERS.contains(&normalized.as_str()) {
+            return Err(format!(
+                "transform output touches the protected header '{name}'"
+            ));
+        }
+        if normalized.starts_with("amz-sdk-") {
+            return Err(format!(
+                "transform output touches the Smithy signing header '{name}'"
+            ));
+        }
+        if !names.insert(normalized) {
+            return Err(format!("transform output duplicates the header '{name}'"));
+        }
+    }
+    Ok(())
+}
+
 fn validate_pair(name: &str, value: &str) -> Result<(), ProviderHeadersError> {
     if name.trim().is_empty() {
         return Err(ProviderHeadersError::InvalidName(name.into()));

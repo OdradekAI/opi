@@ -205,6 +205,7 @@ fn assert_projection(
         // chronology and the exact declaration values supplied to the wire.
         cache_retention: CacheRetention::Disabled,
         session_id: None,
+        callbacks: Default::default(),
     };
     let canonical = serde_json::to_vec(&request.context).unwrap();
     let body = build(&request).unwrap_or_else(|error| panic!("{model}: {error}"));

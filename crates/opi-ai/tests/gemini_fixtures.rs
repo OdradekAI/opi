@@ -199,6 +199,7 @@ fn gemini_request_body_uses_contents_field() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let body = provider.build_request_body(&request).unwrap();
     // Gemini uses "contents" not "messages"
@@ -258,6 +259,7 @@ fn gemini_request_body_strips_provider_prefix() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let body = provider.build_request_body(&request).unwrap();
     // Model is not in the body — just verify no crash and empty contents
@@ -665,6 +667,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
@@ -824,6 +827,7 @@ fn gemini_http_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -983,4 +987,83 @@ async fn cancellation_during_response_body_is_typed_and_prompt() {
 #[tokio::test]
 async fn cancellation_during_error_body_is_typed_and_prompt() {
     assert_gemini_cancelled(GeminiStallPoint::ErrorBody).await;
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.51: callbacks at the Google wire — payload flows, observers typed
+// unsupported (P20-S51)
+// ---------------------------------------------------------------------------
+
+use opi_ai::callbacks::RequestCallbacks;
+
+#[tokio::test]
+async fn gemini_payload_callback_applies_to_wire_body() {
+    let sse = "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Hi\"}]},\"finishReason\":\"STOP\",\"index\":0}]}\n\n";
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wiremock::matchers::body_partial_json(
+            serde_json::json!({"gemini_marker": "replaced"}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(sse)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = GeminiProvider::new(Some(server.uri()));
+    let mut request = gemini_http_request();
+    request.callbacks = RequestCallbacks::new().with_on_payload(std::sync::Arc::new(|body| {
+        let mut replacement = body.clone();
+        replacement["gemini_marker"] = serde_json::json!("replaced");
+        Ok(Some(replacement))
+    }));
+
+    let events =
+        collect_stream(provider.stream_prepared(request, opi_ai::test_support::resolved_auth()))
+            .await;
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AssistantStreamEvent::Done { .. }))
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn gemini_response_and_raw_callbacks_are_typed_unsupported_before_http() {
+    for with_response in [true, false] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let provider = GeminiProvider::new(Some(server.uri()));
+        let mut request = gemini_http_request();
+        let callbacks = RequestCallbacks::new();
+        request.callbacks = if with_response {
+            callbacks.with_on_response(std::sync::Arc::new(|_status, _headers| Ok(())))
+        } else {
+            callbacks.with_on_raw(std::sync::Arc::new(|_event| Ok(())))
+        };
+
+        let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+        let mut typed = false;
+        while let Some(item) = stream.next().await {
+            if matches!(item, Err(ProviderError::UnsupportedCapability(_))) {
+                typed = true;
+                break;
+            }
+        }
+        assert!(
+            typed,
+            "google wires reject {} observers before any dispatch",
+            if with_response { "response" } else { "raw" }
+        );
+        server.verify().await;
+    }
 }

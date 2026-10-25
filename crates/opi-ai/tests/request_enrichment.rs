@@ -68,6 +68,7 @@ fn request_new_scalars_default_to_none_empty() {
         extra_headers: vec![],
         cache_retention: CacheRetention::default(),
         session_id: None,
+        callbacks: Default::default(),
     };
     assert!(req.timeout.is_none());
     assert!(req.extra_headers.is_empty());
@@ -99,6 +100,7 @@ fn request_scalars_carry_explicit_values() {
         extra_headers: headers.clone(),
         cache_retention: CacheRetention::Long,
         session_id: Some("sess-abc".into()),
+        callbacks: Default::default(),
     };
     assert_eq!(req.timeout, Some(Duration::from_secs(30)));
     assert_eq!(req.extra_headers, vec![("X-Test".into(), "value".into())]);
@@ -606,6 +608,7 @@ fn make_anthropic_request(cancel: CancellationToken, timeout: Option<Duration>) 
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -632,6 +635,7 @@ fn make_openai_chat_request(cancel: CancellationToken, session_id: Option<String
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id,
+        callbacks: Default::default(),
     }
 }
 
@@ -680,6 +684,7 @@ fn request_sampling_params_default_empty_and_carried() {
         extra_headers: vec![],
         cache_retention: CacheRetention::default(),
         session_id: None,
+        callbacks: Default::default(),
         sampling_params: Default::default(),
     };
     assert!(req.sampling_params.is_empty());
@@ -691,4 +696,272 @@ fn request_sampling_params_default_empty_and_carried() {
     let mut req = req;
     req.sampling_params = params;
     assert_eq!(req.sampling_params["top_p"], serde_json::json!(0.9));
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.51: functional headers/payload/response/raw callbacks (ONB-04)
+// ---------------------------------------------------------------------------
+
+use opi_ai::callbacks::RequestCallbacks;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+fn anthropic_sse_ok() -> String {
+    "event: message_start\r\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\",\"usage\":{\"input_tokens\":3,\"output_tokens\":0}}}\r\n\r\nevent: message_stop\r\ndata: {\"type\":\"message_stop\"}\r\n\r\n".into()
+}
+
+#[test]
+fn request_callbacks_default_empty_and_has_no_wire_observers() {
+    let callbacks = RequestCallbacks::new();
+    assert!(callbacks.is_empty());
+    assert!(!callbacks.has_wire_observers());
+}
+
+#[tokio::test]
+async fn sdk_headers_omission_set_and_removal_reach_anthropic_wire() {
+    let server = MockServer::start().await;
+    let body = anthropic_sse_ok();
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    let mut request = make_anthropic_request(CancellationToken::new(), None);
+    request.extra_headers = vec![
+        ("X-Set".to_string(), "keep".to_string()),
+        ("X-Drop".to_string(), "gone".to_string()),
+    ];
+    request.callbacks = RequestCallbacks::new().with_header_transform(Arc::new(|merged| {
+        let mut out: Vec<(String, String)> = merged
+            .iter()
+            .filter(|(name, _)| !name.eq_ignore_ascii_case("x-drop"))
+            .cloned()
+            .collect();
+        out.push(("X-Added".to_string(), "by-transform".to_string()));
+        Ok(out)
+    }));
+
+    drain(provider.stream_prepared(request, opi_ai::test_support::resolved_auth())).await;
+
+    let sent = &server.received_requests().await.unwrap()[0];
+    // Omission: an unset header never reaches the wire.
+    assert!(header_value(sent, "x-opi-never").is_none());
+    // Set and transform-added headers reach the wire; removed ones do not.
+    assert_eq!(header_value(sent, "x-set"), Some("keep"));
+    assert!(header_value(sent, "x-drop").is_none());
+    assert_eq!(header_value(sent, "x-added"), Some("by-transform"));
+    // Protected selected identity stays attached and unchanged.
+    assert_eq!(header_value(sent, "x-api-key"), Some("test-key"));
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn header_transform_touching_protected_header_fails_typed_before_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    let mut request = make_anthropic_request(CancellationToken::new(), None);
+    request.callbacks = RequestCallbacks::new().with_header_transform(Arc::new(|merged| {
+        let mut out = merged.to_vec();
+        out.push(("Authorization".to_string(), "Bearer attacker".to_string()));
+        Ok(out)
+    }));
+
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut saw_callback_phase = false;
+    while let Some(item) = stream.next().await {
+        if let Err(ProviderError::CallbackPhase(_)) = item {
+            saw_callback_phase = true;
+        }
+    }
+    assert!(
+        saw_callback_phase,
+        "transform touching a protected header must fail typed"
+    );
+    server.verify().await;
+}
+
+#[test]
+fn header_transform_failure_is_typed_functional_failure() {
+    // Unit-level: the transform's CallbackError becomes a typed
+    // CallbackPhase error, not a silent ignore and not a retryable cause.
+    let error = ProviderError::CallbackPhase(opi_ai::provider::ProviderErrorSummary::sanitized(
+        "header transform failed",
+    ));
+    assert!(!error.is_retryable());
+    assert_eq!(
+        error.category(),
+        opi_ai::provider::ProviderErrorCategory::Request
+    );
+}
+
+#[tokio::test]
+async fn transform_runs_once_per_dispatch_on_the_merged_per_call_set() {
+    let server = MockServer::start().await;
+    let body = anthropic_sse_ok();
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(body))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    type HeaderSets = Arc<Mutex<Vec<Vec<(String, String)>>>>;
+    let seen_inputs: HeaderSets = Arc::new(Mutex::new(Vec::new()));
+    let recorder = Arc::clone(&seen_inputs);
+    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    let mut request = make_anthropic_request(CancellationToken::new(), None);
+    request.extra_headers = vec![("X-Seed".to_string(), "1".to_string())];
+    request.callbacks = RequestCallbacks::new().with_header_transform(Arc::new(move |merged| {
+        recorder.lock().unwrap().push(merged.to_vec());
+        Ok(merged.to_vec())
+    }));
+
+    drain(provider.stream_prepared(request, opi_ai::test_support::resolved_auth())).await;
+
+    let seen = seen_inputs.lock().unwrap();
+    assert_eq!(seen.len(), 1, "transform applies exactly once per dispatch");
+    assert_eq!(
+        seen[0],
+        vec![("X-Seed".to_string(), "1".to_string())],
+        "transform sees the merged per-call set, never the protected auth headers"
+    );
+}
+
+#[test]
+fn payload_replacement_retargeting_model_identity_fails_typed() {
+    let callbacks = RequestCallbacks::new().with_on_payload(Arc::new(|body| {
+        let mut replacement = body.clone();
+        replacement["model"] = serde_json::json!("claude-evil-rewrite");
+        Ok(Some(replacement))
+    }));
+    let outcome = callbacks.apply_payload(
+        "ordinary",
+        serde_json::json!({"model": "claude-sonnet", "max_tokens": 16}),
+    );
+    match outcome {
+        Err(ProviderError::CallbackPhase(_)) => {}
+        other => panic!("model retarget must fail typed, got {other:?}"),
+    }
+}
+
+#[test]
+fn payload_replacement_raising_output_budget_fails_typed() {
+    let callbacks = RequestCallbacks::new().with_on_payload(Arc::new(|body| {
+        let mut replacement = body.clone();
+        replacement["max_tokens"] = serde_json::json!(999_999);
+        Ok(Some(replacement))
+    }));
+    let outcome = callbacks.apply_payload(
+        "ordinary",
+        serde_json::json!({"model": "claude-sonnet", "max_tokens": 16}),
+    );
+    assert!(
+        matches!(outcome, Err(ProviderError::CallbackPhase(_))),
+        "raising the resolved output budget must fail typed"
+    );
+}
+
+#[tokio::test]
+async fn payload_callback_freezes_once_across_ordinary_acquisition_retry() {
+    use opi_ai::auth::{AuthProvenanceSource, StaticAuthResolver};
+    use opi_ai::http::HttpClientBuilder;
+    use opi_ai::models::Models;
+    use opi_ai::openai_chat::OpenAiChatProvider;
+    use opi_ai::retry::AcquisitionPolicy;
+    use opi_ai::stream::ChatStream;
+    use secrecy::SecretString;
+
+    let server = MockServer::start().await;
+    // First send: retryable 429 with an immediate advisory hint.
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(429).insert_header("retry-after-ms", "1"))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    // Second send: a terminal streaming completion.
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\"hi\"},\"index\":0,\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = Arc::new(HttpClientBuilder::new().build().expect("client build"));
+    let provider =
+        OpenAiChatProvider::with_client(Some(server.uri()), "openai".to_owned(), vec![], client);
+    let mut models = Models::new();
+    models
+        .register_route(
+            Box::new(provider),
+            Arc::new(StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::Bearer,
+                SecretString::from("freeze-key"),
+            )),
+            AuthProvenanceSource::Static,
+            opi_ai::models::CompatMetadata {
+                openai_compatible: true,
+                profile: None,
+            },
+        )
+        .expect("register route");
+
+    let payload_calls = Arc::new(AtomicUsize::new(0));
+    let calls = Arc::clone(&payload_calls);
+    let mut request = make_openai_chat_request(CancellationToken::new(), None);
+    request.callbacks = RequestCallbacks::new().with_on_payload(Arc::new(move |body| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        let mut replacement = body.clone();
+        replacement["frozen_marker"] = serde_json::json!("replaced-once");
+        Ok(Some(replacement))
+    }));
+
+    let mut policy = AcquisitionPolicy::with_max_retries(1);
+    policy.jitter_seed = Some(0);
+    let call = models
+        .prepare_call_with_policy("openai:gpt-4o", request, policy)
+        .await
+        .expect("prepare call");
+
+    let first = ChatStream::new(call.start_attempt().expect("first attempt"))
+        .result()
+        .await
+        .expect_err("first attempt is a retryable 429");
+    assert!(matches!(first.cause(), ProviderError::RateLimited { .. }));
+    let admission = call.retry_admission().expect("retry admitted");
+    assert_eq!(admission.retry_index, 1);
+    tokio::time::sleep(std::time::Duration::from_millis(admission.delay_ms.max(1))).await;
+
+    ChatStream::new(call.start_attempt().expect("second attempt"))
+        .result()
+        .await
+        .expect("second attempt completes");
+
+    assert_eq!(
+        payload_calls.load(Ordering::SeqCst),
+        1,
+        "payload callback runs exactly once per variant across ordinary retry"
+    );
+    let sent = server.received_requests().await.unwrap();
+    assert_eq!(sent.len(), 2);
+    let first_body = request_body_json(&sent[0]);
+    let second_body = request_body_json(&sent[1]);
+    assert_eq!(
+        first_body["frozen_marker"],
+        serde_json::json!("replaced-once")
+    );
+    assert_eq!(
+        second_body, first_body,
+        "the ordinary retry reuses the frozen payload byte-for-byte"
+    );
 }

@@ -66,6 +66,7 @@ async fn stream_yields_text_response_events() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
@@ -114,6 +115,7 @@ async fn stream_yields_tool_call_response_events() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
@@ -165,6 +167,7 @@ async fn stream_yields_error_response_events() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
@@ -213,6 +216,7 @@ async fn multiple_stream_calls_consume_responses_in_order() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     // First call
@@ -241,6 +245,7 @@ async fn multiple_stream_calls_consume_responses_in_order() {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            callbacks: Default::default(),
         },
         opi_ai::test_support::resolved_auth(),
     );

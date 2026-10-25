@@ -180,6 +180,7 @@ async fn mock_provider_returns_error_response() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     use futures_util::StreamExt;
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
@@ -422,6 +423,7 @@ mod acquisition {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            callbacks: Default::default(),
         }
     }
 

@@ -125,6 +125,7 @@ fn request_for(model_spec: &str) -> Request {
         extra_headers: Vec::new(),
         cache_retention: opi_ai::provider::CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 

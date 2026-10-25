@@ -614,6 +614,7 @@ max_output_tokens = 8192
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            callbacks: Default::default(),
         };
         let spec = request.model.clone();
         let prepared = collection
@@ -756,6 +757,7 @@ max_output_tokens = 8192
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     // Phase 17.5: auth moved off the provider object onto the collection route.
     // Each prepare_call resolves auth once: the first call reads the stored
@@ -895,6 +897,7 @@ max_output_tokens = 8192
                 extra_headers: vec![],
                 cache_retention: CacheRetention::None,
                 session_id: None,
+                callbacks: Default::default(),
             };
 
             // Phase 17.5: route through the collection so prepare_call resolves
@@ -1053,6 +1056,7 @@ send_session_id_header = true
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: Some(session_id.into()),
+            callbacks: Default::default(),
         };
         let spec = request.model.clone();
         let prepared = collection

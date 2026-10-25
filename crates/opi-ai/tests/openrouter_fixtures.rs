@@ -167,6 +167,7 @@ fn openrouter_request_body_strips_provider_prefix() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let body = provider.build_request_body(&request).unwrap();
     assert_eq!(body["model"], "openai/gpt-4o");
@@ -387,6 +388,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let mut stream =
@@ -466,6 +468,7 @@ fn openrouter_profile_inherits_shared_compat_flags() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let body = provider.build_request_body(&request).unwrap();
     let messages = body["messages"].as_array().unwrap();
@@ -519,6 +522,7 @@ async fn stream_cancellation_aborts_before_completion() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let mut stream =
         provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());

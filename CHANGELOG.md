@@ -2,6 +2,17 @@
 
 ### Breaking Changes
 
+- `opi-ai`: `provider::Request` gains a `callbacks:
+  callbacks::RequestCallbacks` field (task 20.51): header-transform,
+  payload, response and raw-event functional callbacks ride the request
+  and fire inside the real direct adapters at their source-defined
+  timing. `ProviderError` gains the `CallbackPhase` variant — a callback
+  failure is a functional failure of the call: typed, redacted, never
+  retryable, never swallowed by telemetry and never triggering a new
+  call. `ProviderErrorSummary::sanitized` is now public for advanced
+  error construction. Request-literal callers migrate with
+  `callbacks: Default::default()`.
+
 - `opi-ai`: the context estimator follows the 3.5 anchor contract
   (task 20.35). `estimate_context_tokens` drops the `model` parameter:
   the last applicable positive successful usage anchors the estimate
@@ -479,6 +490,8 @@
   `Models::auth_status` (which read `std::env` directly) are removed in favor
   of the on-demand management results below; `ModelsError` is now
   `#[non_exhaustive]`.
+### Added
+
 - `opi-ai`: the credential-store mutation surface moved from IO-free
   primitives to store-owned serialized mutations (P20-STORE / task 20.22).
   `CredentialStore` gains `modify` and `mutation_barrier` (default
@@ -490,7 +503,27 @@
   `Arc<dyn OAuthProvider>` (the rotation runs detached inside the store)
   and its refresh network bound is now 15s, scoped to the HTTP exchange
   only — lock waits and the ACK are outside it.
-### Added
+
+- `opi-ai`: functional request callbacks (task 20.51, AIR-059/V-51
+  ordinary slice). `callbacks::RequestCallbacks` carries four observer
+  families wired through `Models` and every migrated real direct adapter
+  (Anthropic, OpenAI Chat incl. Mistral/OpenRouter profiles, OpenAI
+  Responses incl. Azure, Codex, Bedrock; Google wires support the payload
+  and header-transform families and reject response/raw observers with a
+  typed `UnsupportedCapability` before dispatch). `onPayload` observes
+  the post-projection wire body — `Ok(None)` keeps it, `Ok(Some)` may
+  replace it under validation (JSON object, unchanged model identity,
+  output budget never raised) — and runs once per payload variant, with
+  ordinary acquisition retries reusing the frozen body byte-for-byte.
+  `onResponse` fires with status and headers once a response exists
+  (failures that never produce a response are not notified); `onRaw`
+  observes each parsed provider wire event strictly before its
+  normalized emission, and a raw failure ends the call with the partial
+  preserved. The header transform applies once per dispatch to the
+  merged per-call set; protected identity/auth/signing names (the
+  reserved provider list plus the `amz-sdk-*` family) never enter the
+  transform and its output is revalidated, giving the supported
+  omission/set/removal behavior with the selected identity intact.
 - `opi-ai`: sampling and pricing-tier metadata with the shared resolution
   mechanism (task 20.35, AIR-062/V-45). `ModelInfo` gains
   `sampling_params` and `sampling_params_by_thinking_level` with

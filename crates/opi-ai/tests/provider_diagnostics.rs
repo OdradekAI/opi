@@ -366,6 +366,7 @@ fn image_request(model: &str) -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -459,5 +460,42 @@ fn retryable_categories_are_rate_limit_and_network_only() {
             "{:?} should not be retryable",
             error.category()
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.51: callback-phase failure taxonomy
+// ---------------------------------------------------------------------------
+
+#[test]
+fn callback_phase_error_classifies_as_request_category_and_never_retryable() {
+    let error = ProviderError::CallbackPhase(opi_ai::provider::ProviderErrorSummary::sanitized(
+        "payload callback failed",
+    ));
+    assert!(!error.is_retryable());
+    assert_eq!(
+        error.category(),
+        opi_ai::provider::ProviderErrorCategory::Request
+    );
+    assert!(error.retry_after_ms().is_none());
+}
+
+#[test]
+fn callback_error_detail_is_redacted_into_the_typed_summary() {
+    use opi_ai::callbacks::{CallbackError, RequestCallbacks};
+    let canary = "sk-live-callback-canary";
+    let callbacks = RequestCallbacks::new().with_on_raw(std::sync::Arc::new(move |_event| {
+        Err(CallbackError::new(format!("raw observer lost {canary}")))
+    }));
+    let outcome = callbacks.notify_raw(&serde_json::json!({"type": "message_stop"}));
+    match outcome {
+        Err(ProviderError::CallbackPhase(summary)) => {
+            let rendered = format!("{summary}");
+            assert!(
+                !rendered.contains(canary),
+                "callback failure detail must be redacted: {rendered}"
+            );
+        }
+        other => panic!("raw observer failure must surface typed, got {other:?}"),
     }
 }

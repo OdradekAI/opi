@@ -56,20 +56,34 @@ pub enum ParsedEvent {
 /// Parse SSE text into frames, then deserialize each frame as an AnthropicEvent.
 /// Returns [`ParsedEvent`] so callers can decide how to handle malformed data.
 pub fn parse_sse_events(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
+    parse_sse_events_with_raw(input).map(|(parsed, _raw)| parsed)
+}
+
+/// [`parse_sse_events`] paired with each processed frame's raw wire JSON (the
+/// `data` payload parsed as a JSON value). Task 20.51: the raw-event callback
+/// observes exactly these values, before normalization. Malformed frames carry
+/// no raw value.
+pub fn parse_sse_events_with_raw(
+    input: &str,
+) -> impl Iterator<Item = (ParsedEvent, Option<serde_json::Value>)> + '_ {
     parse_frames(input).filter_map(|frame| {
         if !ANTHROPIC_EVENTS.contains(&frame.event.as_str()) {
             return None;
         }
+        let raw = serde_json::from_str::<serde_json::Value>(&frame.data).ok();
         match serde_json::from_str::<AnthropicRawEvent>(&frame.data) {
-            Ok(raw) => Some(match AnthropicEvent::from_raw(raw) {
-                Ok(event) => ParsedEvent::Valid(event),
-                Err(error) => ParsedEvent::UsageError(error),
+            Ok(raw_event) => Some(match AnthropicEvent::from_raw(raw_event) {
+                Ok(event) => (ParsedEvent::Valid(event), raw),
+                Err(error) => (ParsedEvent::UsageError(error), raw),
             }),
-            Err(e) => Some(ParsedEvent::Malformed {
-                event_type: frame.event.clone(),
-                data: frame.data.clone(),
-                error: e.to_string(),
-            }),
+            Err(e) => Some((
+                ParsedEvent::Malformed {
+                    event_type: frame.event.clone(),
+                    data: frame.data.clone(),
+                    error: e.to_string(),
+                },
+                raw,
+            )),
         }
     })
 }
@@ -1017,7 +1031,7 @@ impl AnthropicProvider {
     pub fn stream_from_sse(&self, sse_body: &str, cancel: CancellationToken) -> EventStream {
         let mut mapper = AnthropicMapper::new();
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
-        for parsed in parse_sse_events(sse_body) {
+        for (parsed, _raw) in parse_sse_events_with_raw(sse_body) {
             match parsed {
                 ParsedEvent::Valid(event) => {
                     stream_events.extend(mapper.process(event));
@@ -1053,6 +1067,7 @@ impl AnthropicProvider {
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
         extra_headers: Vec<(String, String)>,
+        callbacks: crate::callbacks::RequestCallbacks,
         snapshot: crate::stream::ProducerSnapshot,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
@@ -1093,6 +1108,21 @@ impl AnthropicProvider {
                 ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
             }
         })?;
+
+        // Response observer (task 20.51): fires once the status and headers
+        // exist, before any body processing or error mapping. Failures that
+        // never produce a response are not notified.
+        let observed_headers: Vec<(String, String)> = response
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str().to_ascii_lowercase(),
+                    value.to_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect();
+        callbacks.notify_response(response.status().as_u16(), &observed_headers)?;
 
         let status = response.status();
         if !status.is_success() {
@@ -1143,7 +1173,15 @@ impl AnthropicProvider {
                     buffer.extend_from_slice(&chunk);
                 }
 
-                for parsed in drain_sse_events(&mut buffer, eof)? {
+                for (parsed, raw) in drain_sse_events(&mut buffer, eof)? {
+                    // Raw observer first: strictly before normalization, in
+                    // wire order; its failure ends the call with the partial
+                    // preserved (task 20.51).
+                    if let Some(raw) = raw.as_ref()
+                        && let Err(error) = callbacks.notify_raw(raw)
+                    {
+                        return Err(mapper.failure(error));
+                    }
                     match parsed {
                         ParsedEvent::Valid(event) => {
                             for item in mapper.process(event) {
@@ -1192,7 +1230,10 @@ impl AnthropicProvider {
 /// Returns parsed [`ParsedEvent`]s and leaves incomplete data in the buffer.
 /// Decode only complete frames so UTF-8 and CRLF split across HTTP chunks
 /// remain unchanged, including the text covered by a thinking signature.
-fn drain_sse_events(buffer: &mut Vec<u8>, eof: bool) -> Result<Vec<ParsedEvent>, ProviderError> {
+fn drain_sse_events(
+    buffer: &mut Vec<u8>,
+    eof: bool,
+) -> Result<Vec<(ParsedEvent, Option<serde_json::Value>)>, ProviderError> {
     let mut events = Vec::new();
     loop {
         let mut line_start = 0;
@@ -1239,7 +1280,7 @@ fn drain_sse_events(buffer: &mut Vec<u8>, eof: bool) -> Result<Vec<ParsedEvent>,
         let mut chunk = frame_decoder.push(&frame_bytes);
         chunk.push_str(&frame_decoder.finish());
         let normalized = chunk.replace("\r\n", "\n").replace('\r', "\n");
-        events.extend(parse_sse_events(&normalized));
+        events.extend(parse_sse_events_with_raw(&normalized));
     }
     Ok(events)
 }
@@ -1558,6 +1599,17 @@ impl Provider for AnthropicProvider {
                 return Box::pin(stream::once(async move { Err(error) }));
             }
         };
+        // Payload callback (task 20.51): after sampling/compat/wire
+        // projection, once per variant, frozen across ordinary retries.
+        let body = match request
+            .callbacks
+            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+        {
+            Ok(body) => body,
+            Err(error) => {
+                return Box::pin(stream::once(async move { Err(error) }));
+            }
+        };
         let cancel = request.cancel.clone();
         let timeout = request.timeout;
         let copilot_headers = if self.copilot_headers {
@@ -1572,10 +1624,16 @@ impl Provider for AnthropicProvider {
         } else {
             Ok(Vec::new())
         };
-        let extra_headers = copilot_headers.and_then(|route_headers| {
-            self.headers
-                .merge_request(&route_headers, &request.extra_headers)
-        });
+        let extra_headers = copilot_headers
+            .and_then(|route_headers| {
+                self.headers
+                    .merge_request(&route_headers, &request.extra_headers)
+            })
+            // Header transform (task 20.51): applied once to the merged
+            // per-call set; the output is revalidated against the protected
+            // identity/auth/signing names.
+            .and_then(|merged| request.callbacks.apply_header_transform(&merged));
+        let callbacks = request.callbacks.clone();
         let http_client = self.client.client().clone();
 
         let snapshot = crate::stream::ProducerSnapshot::default();
@@ -1610,6 +1668,7 @@ impl Provider for AnthropicProvider {
                     cancel,
                     timeout,
                     extra_headers,
+                    callbacks,
                     producer_snapshot,
                     &tx,
                 )
@@ -1850,6 +1909,7 @@ mod tests {
             extra_headers: vec![],
             cache_retention,
             session_id: None,
+            callbacks: Default::default(),
         }
     }
 
@@ -2078,7 +2138,7 @@ data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text
         );
         let events = drain_sse_events(&mut frame, false).expect("frames parse with replacement");
         assert_eq!(events.len(), 1);
-        assert!(matches!(events[0], super::ParsedEvent::Valid(_)));
+        assert!(matches!(events[0], (super::ParsedEvent::Valid(_), Some(_))));
         assert!(frame.is_empty(), "complete frame drained");
     }
 }

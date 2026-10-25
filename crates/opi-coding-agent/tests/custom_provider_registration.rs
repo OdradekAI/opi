@@ -248,6 +248,7 @@ async fn extension_provider_streams_without_network() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());

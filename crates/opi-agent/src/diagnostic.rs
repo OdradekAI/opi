@@ -680,6 +680,13 @@ impl From<&opi_ai::provider::ProviderError> for Diagnostic {
                 "provider request failed",
             )
             .details(serde_json::json!({ "provider_error": message })),
+            ProviderError::CallbackPhase(message) => Diagnostic::new(
+                Severity::Error,
+                code::CODE_PROVIDER_REQUEST_FAILED,
+                SOURCE_PROVIDER,
+                "provider callback phase failed",
+            )
+            .details(serde_json::json!({ "provider_error": message })),
             ProviderError::UnknownModel {
                 provider_id,
                 model_id,

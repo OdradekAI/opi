@@ -112,6 +112,7 @@ fn request_with_tool_result(is_error: bool, payload: &str) -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -461,6 +462,9 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "auth",
         "azure_openai",
         "bedrock",
+        // Task 20.51: functional request callbacks (headers/payload/response/
+        // raw observers) are a deliberate later-phase addition.
+        "callbacks",
         // DEL-10 (task 20.32): the offline bundled model catalog loader is a
         // deliberate later-phase addition.
         "catalog",

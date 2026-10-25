@@ -177,6 +177,11 @@ pub struct Request {
     /// can map it to session-affinity or prompt-cache-key headers. `None` means
     /// no session is active.
     pub session_id: Option<String>,
+    /// Functional callbacks (task 20.51): header transform, payload,
+    /// response, and raw-event observers applied by the real direct adapters
+    /// at their source-defined timing. The default is empty; see
+    /// [`crate::callbacks`].
+    pub callbacks: crate::callbacks::RequestCallbacks,
 }
 
 impl Request {
@@ -461,7 +466,11 @@ impl ProviderErrorSummary {
     /// Construct an in-crate summary after applying the shared defense-in-depth
     /// redactor. Raw provider response bodies use [`Self::from_untrusted`]
     /// instead; this path is for locally-produced context and transport errors.
-    pub(crate) fn sanitized(summary: impl AsRef<str>) -> Self {
+    /// Build a summary with the canonical credential redaction applied.
+    ///
+    /// Public since task 20.51: functional-callback failures and advanced
+    /// error constructors need the same redaction pipeline as adapters.
+    pub fn sanitized(summary: impl AsRef<str>) -> Self {
         Self(crate::http::safe_excerpt(summary.as_ref()))
     }
 
@@ -533,6 +542,11 @@ pub enum ProviderError {
     Timeout,
     #[error("request failed: {0}")]
     RequestFailed(ProviderErrorSummary),
+    /// A functional callback failed (task 20.51): header transform, payload,
+    /// response, or raw observer. A functional failure of the call, never
+    /// retryable, never swallowed, and never triggering a new call.
+    #[error("callback phase failed: {0}")]
+    CallbackPhase(ProviderErrorSummary),
     #[error("stream error: {0}")]
     StreamError(ProviderErrorSummary),
     #[error("authentication failed: {0}")]
@@ -708,9 +722,9 @@ impl ProviderError {
             ProviderError::Config(_)
             | ProviderError::MissingWireRoute { .. }
             | ProviderError::WireCompatMismatch { .. } => ProviderErrorCategory::Config,
-            ProviderError::RequestFailed(_) | ProviderError::UnknownModel { .. } => {
-                ProviderErrorCategory::Request
-            }
+            ProviderError::RequestFailed(_)
+            | ProviderError::CallbackPhase(_)
+            | ProviderError::UnknownModel { .. } => ProviderErrorCategory::Request,
             ProviderError::Timeout | ProviderError::Network(_) => ProviderErrorCategory::Network,
             ProviderError::RateLimited { .. } => ProviderErrorCategory::RateLimit,
             ProviderError::ServiceFault { .. } => ProviderErrorCategory::Provider,

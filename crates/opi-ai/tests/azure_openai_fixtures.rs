@@ -61,6 +61,7 @@ fn text_request() -> opi_ai::provider::Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -101,6 +102,7 @@ fn tool_request() -> opi_ai::provider::Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -830,4 +832,80 @@ async fn cancellation_before_response_headers_is_typed_and_prompt() {
 #[tokio::test]
 async fn cancellation_during_response_body_is_typed_and_prompt() {
     assert_azure_cancelled(AzureStallPoint::ResponseBody).await;
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.51: callbacks flow through the shared Responses wire (P20-S51)
+// ---------------------------------------------------------------------------
+
+use opi_ai::callbacks::RequestCallbacks;
+
+#[tokio::test]
+async fn azure_callbacks_flow_through_shared_responses_wire() {
+    let order: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let raw_recorder = order.clone();
+    let response_recorder = order.clone();
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/openai/deployments/my-gpt4o/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_sse_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = AzureOpenAIProvider::new(
+        Some(server.uri()),
+        "my-gpt4o".into(),
+        Some("2024-06-01".into()),
+    )
+    .unwrap();
+    let auth = opi_ai::auth::ResolvedAuth {
+        scheme: opi_ai::auth::AuthScheme::ApiKey,
+        secret: secrecy::SecretString::from("test-api-key-12345"),
+        base_url: None,
+        account_id: None,
+        provenance: opi_ai::AuthProvenance::default(),
+    };
+    let payload_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let payload_counter = payload_calls.clone();
+    let mut request = text_request();
+    request.callbacks = RequestCallbacks::new()
+        .with_on_payload(std::sync::Arc::new(move |_body| {
+            payload_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(None)
+        }))
+        .with_on_response(std::sync::Arc::new(move |status, _headers| {
+            response_recorder
+                .lock()
+                .unwrap()
+                .push(format!("response:{status}"));
+            Ok(())
+        }))
+        .with_on_raw(std::sync::Arc::new(move |event| {
+            raw_recorder
+                .lock()
+                .unwrap()
+                .push(format!("raw:{}", event["object"].as_str().unwrap_or("?")));
+            Ok(())
+        }));
+
+    let events = collect_events(provider.stream_prepared(request, auth)).await;
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AssistantStreamEvent::Done { .. }))
+    );
+    assert_eq!(payload_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let order = order.lock().unwrap().clone();
+    assert_eq!(order.first().map(String::as_str), Some("response:200"));
+    assert!(
+        order.len() > 1,
+        "raw wire events follow the response callback"
+    );
+    server.verify().await;
 }

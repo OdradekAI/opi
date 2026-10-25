@@ -403,6 +403,7 @@ impl OpenAiResponsesProvider {
         timeout: Option<std::time::Duration>,
         session_id: Option<String>,
         request_id: Option<String>,
+        callbacks: crate::callbacks::RequestCallbacks,
         snapshot: crate::stream::ProducerSnapshot,
         tx: tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
@@ -453,6 +454,20 @@ impl OpenAiResponsesProvider {
                     ProviderError::Network(ProviderErrorSummary::sanitized(error.to_string()))
                 }
             })?;
+        // Response observer (task 20.51): fires once the status and headers
+        // exist, before any body processing or error mapping.
+        let observed_headers: Vec<(String, String)> = response
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str().to_ascii_lowercase(),
+                    value.to_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect();
+        callbacks.notify_response(response.status().as_u16(), &observed_headers)?;
+
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
@@ -495,6 +510,13 @@ impl OpenAiResponsesProvider {
                 })?;
                 buffer.push_str(&decoder.push(&chunk));
                 for frame in drain_sse_frames(&mut buffer) {
+                    // Raw observer (task 20.51): the frame's parsed wire JSON,
+                    // strictly before normalization; failure preserves partial.
+                    if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&frame.data)
+                        && let Err(error) = callbacks.notify_raw(&raw)
+                    {
+                        return Err(mapper.failure(error));
+                    }
                     match ResponsesEvent::try_from_frame(&frame) {
                         ParsedEvent::Valid(event) => {
                             for item in mapper.process(event) {
@@ -604,12 +626,16 @@ impl Provider for OpenAiResponsesProvider {
         } else {
             Ok(Vec::new())
         };
-        let extra_headers = copilot_headers.and_then(|copilot_headers| {
-            let mut route_headers = self.route_headers.clone();
-            route_headers.extend(copilot_headers);
-            self.headers
-                .merge_request(&route_headers, &request.extra_headers)
-        });
+        let extra_headers = copilot_headers
+            .and_then(|copilot_headers| {
+                let mut route_headers = self.route_headers.clone();
+                route_headers.extend(copilot_headers);
+                self.headers
+                    .merge_request(&route_headers, &request.extra_headers)
+            })
+            // Header transform (task 20.51): applied once to the merged
+            // per-call set, revalidated against protected names.
+            .and_then(|merged| request.callbacks.apply_header_transform(&merged));
         let session_id = if request.cache_retention != CacheRetention::Disabled {
             request.session_id.clone().filter(|id| !id.is_empty())
         } else {
@@ -636,6 +662,17 @@ impl Provider for OpenAiResponsesProvider {
             body["prompt_cache_key"] =
                 serde_json::Value::String(session_id.chars().take(64).collect());
         }
+        // Payload callback (task 20.51): after sampling/compat/wire projection
+        // (including the affinity stamp above), once per variant, frozen
+        // across ordinary retries.
+        let body = match request
+            .callbacks
+            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+        {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
+        let callbacks = request.callbacks.clone();
         let cancel = request.cancel.clone();
         let timeout = request.timeout;
         let client = self.client.client().clone();
@@ -675,6 +712,7 @@ impl Provider for OpenAiResponsesProvider {
                     timeout,
                     affinity_enabled.then_some(session_id).flatten(),
                     request_id,
+                    callbacks,
                     producer_snapshot,
                     tx.clone(),
                 )

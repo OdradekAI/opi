@@ -9,6 +9,7 @@ pub mod api_mapped;
 pub mod auth;
 pub mod azure_openai;
 pub mod bedrock;
+pub mod callbacks;
 pub mod catalog;
 pub mod config;
 pub mod context;
@@ -56,6 +57,7 @@ pub use auth::{
     AwsSigV4Credentials, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider,
     ResolvedAuth, StaticAuthResolver,
 };
+pub use callbacks::{CallbackError, ORDINARY_PAYLOAD_VARIANT, RequestCallbacks};
 pub use catalog::{DynamicCatalogSource, HttpCatalogSource, ModelsStore};
 pub use config::{Config, Error};
 pub use credential::{

@@ -132,6 +132,7 @@ fn request(model: &str, cache_retention: CacheRetention) -> Request {
         extra_headers: vec![],
         cache_retention,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 

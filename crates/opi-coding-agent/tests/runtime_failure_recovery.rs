@@ -541,6 +541,7 @@ async fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
             extra_headers: Vec::new(),
             cache_retention: opi_ai::provider::CacheRetention::None,
             session_id: None,
+            callbacks: Default::default(),
         }
     }
 

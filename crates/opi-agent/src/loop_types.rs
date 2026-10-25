@@ -86,6 +86,7 @@ impl AgentProviderFailure {
             match error {
                 ProviderError::StreamFailure(failure) => error_summary(failure.cause()),
                 ProviderError::RequestFailed(summary)
+                | ProviderError::CallbackPhase(summary)
                 | ProviderError::StreamError(summary)
                 | ProviderError::AuthFailed(summary)
                 | ProviderError::Network(summary)

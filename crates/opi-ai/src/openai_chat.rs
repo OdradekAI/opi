@@ -47,19 +47,36 @@ pub enum ParsedEvent {
 /// Parse SSE text into frames, then deserialize each frame as an OpenAI chunk.
 /// Returns [`ParsedEvent`] so callers can decide how to handle malformed data.
 pub fn parse_sse_events(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
+    parse_sse_events_with_raw(input).map(|(parsed, _raw)| parsed)
+}
+
+/// [`parse_sse_events`] paired with each processed frame's raw wire JSON
+/// (task 20.51): the raw-event callback observes exactly these values, before
+/// normalization. The `[DONE]` sentinel and malformed frames carry no raw
+/// value.
+pub fn parse_sse_events_with_raw(
+    input: &str,
+) -> impl Iterator<Item = (ParsedEvent, Option<serde_json::Value>)> + '_ {
     parse_frames(input).filter_map(|frame| {
         if frame.data == "[DONE]" {
             return None;
         }
+        let raw = serde_json::from_str::<serde_json::Value>(&frame.data).ok();
         match serde_json::from_str::<OpenAiRawChunk>(&frame.data) {
-            Ok(raw) => Some(match validate_usage_subset(&raw) {
-                Ok(()) => ParsedEvent::Valid(OpenAiChatEvent::from_raw_vec(raw)),
-                Err(error) => ParsedEvent::UsageError(error),
+            Ok(raw_chunk) => Some(match validate_usage_subset(&raw_chunk) {
+                Ok(()) => (
+                    ParsedEvent::Valid(OpenAiChatEvent::from_raw_vec(raw_chunk)),
+                    raw,
+                ),
+                Err(error) => (ParsedEvent::UsageError(error), raw),
             }),
-            Err(e) => Some(ParsedEvent::Malformed {
-                data: frame.data.clone(),
-                error: e.to_string(),
-            }),
+            Err(e) => Some((
+                ParsedEvent::Malformed {
+                    data: frame.data.clone(),
+                    error: e.to_string(),
+                },
+                raw,
+            )),
         }
     })
 }
@@ -1198,7 +1215,7 @@ impl OpenAiChatProvider {
             "",
         );
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
-        for parsed in parse_sse_events(sse_body) {
+        for (parsed, _raw) in parse_sse_events_with_raw(sse_body) {
             match parsed {
                 ParsedEvent::Valid(events) => {
                     for event in events {
@@ -1239,6 +1256,7 @@ impl OpenAiChatProvider {
         body: &serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
+        callbacks: crate::callbacks::RequestCallbacks,
         snapshot: crate::stream::ProducerSnapshot,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
@@ -1286,6 +1304,20 @@ impl OpenAiChatProvider {
                     ProviderError::Network(ProviderErrorSummary::sanitized(e.to_string()))
                 }
             })?;
+
+        // Response observer (task 20.51): fires once the status and headers
+        // exist, before any body processing or error mapping.
+        let observed_headers: Vec<(String, String)> = response
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str().to_ascii_lowercase(),
+                    value.to_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect();
+        callbacks.notify_response(response.status().as_u16(), &observed_headers)?;
 
         let status = response.status();
         if !status.is_success() {
@@ -1335,7 +1367,15 @@ impl OpenAiChatProvider {
                 })?;
                 buffer.push_str(&decoder.push(&chunk));
 
-                for parsed in drain_sse_events(&mut buffer) {
+                for (parsed, raw) in drain_sse_events(&mut buffer) {
+                    // Raw observer first: strictly before normalization, in
+                    // wire order (task 20.51); failure ends the call with the
+                    // partial preserved.
+                    if let Some(raw) = raw.as_ref()
+                        && let Err(error) = callbacks.notify_raw(raw)
+                    {
+                        return Err(mapper.failure(error));
+                    }
                     match parsed {
                         ParsedEvent::Valid(events) => {
                             for event in events {
@@ -1380,7 +1420,7 @@ impl OpenAiChatProvider {
 // Streaming helpers
 // ---------------------------------------------------------------------------
 
-fn drain_sse_events(buffer: &mut String) -> Vec<ParsedEvent> {
+fn drain_sse_events(buffer: &mut String) -> Vec<(ParsedEvent, Option<serde_json::Value>)> {
     if buffer.contains('\r') {
         *buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
     }
@@ -1389,7 +1429,7 @@ fn drain_sse_events(buffer: &mut String) -> Vec<ParsedEvent> {
     while let Some(idx) = buffer.find("\n\n") {
         let end = idx + 2;
         let chunk: String = buffer.drain(..end).collect();
-        events.extend(parse_sse_events(&chunk));
+        events.extend(parse_sse_events_with_raw(&chunk));
     }
     events
 }
@@ -1679,16 +1719,30 @@ impl Provider for OpenAiChatProvider {
                     .map(|name| (name.into(), clamped.clone())),
             );
         }
-        let extra_headers = copilot_headers.and_then(|copilot_headers| {
-            extra_headers.extend(copilot_headers);
-            self.headers
-                .merge_request(&extra_headers, &request.extra_headers)
-        });
+        let extra_headers = copilot_headers
+            .and_then(|copilot_headers| {
+                extra_headers.extend(copilot_headers);
+                self.headers
+                    .merge_request(&extra_headers, &request.extra_headers)
+            })
+            // Header transform (task 20.51): applied once to the merged
+            // per-call set, revalidated against protected names.
+            .and_then(|merged| request.callbacks.apply_header_transform(&merged));
         let timeout = request.timeout;
         let body = match self.build_request_body(&request) {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
+        // Payload callback (task 20.51): after sampling/compat/wire
+        // projection, once per variant, frozen across ordinary retries.
+        let body = match request
+            .callbacks
+            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+        {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
+        let callbacks = request.callbacks.clone();
         let requested_model = request
             .model
             .split_once(':')
@@ -1731,6 +1785,7 @@ impl Provider for OpenAiChatProvider {
                     &body,
                     cancel,
                     timeout,
+                    callbacks,
                     producer_snapshot,
                     &tx,
                 )

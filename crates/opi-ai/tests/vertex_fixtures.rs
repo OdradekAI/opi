@@ -332,6 +332,7 @@ fn vertex_request_body_uses_gemini_format() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let body = provider.build_request_body(&request).unwrap();
     assert!(
@@ -417,6 +418,7 @@ fn lifecycle_text_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -659,7 +661,7 @@ async fn request_enrichment_reaches_vertex_http_boundary() {
     let mut request = lifecycle_text_request();
     request.extra_headers = vec![("X-Opi-Request".into(), "vertex".into())];
 
-    let events = collect_stream(provider.stream_prepared(request, auth)).await;
+    let events = collect_stream(provider.stream_prepared(request, auth.clone())).await;
 
     assert!(
         events
@@ -2392,4 +2394,82 @@ mod adc_impersonation {
         ));
         assert!(generation.received_requests().await.unwrap().is_empty());
     }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.51: vertex callbacks — payload flows, wire observers typed
+// unsupported (P20-S51)
+// ---------------------------------------------------------------------------
+
+use opi_ai::callbacks::RequestCallbacks;
+
+#[tokio::test]
+async fn vertex_wire_observers_unsupported_but_payload_callback_flows() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(wiremock::matchers::body_partial_json(
+            serde_json::json!({"vertex_marker": "replaced"}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_sse_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let observer_server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&observer_server)
+        .await;
+
+    let provider = VertexProvider::new(
+        "my-project".into(),
+        "us-central1".into(),
+        Some(server.uri()),
+    );
+    let auth = opi_ai::auth::ResolvedAuth {
+        scheme: opi_ai::auth::AuthScheme::Bearer,
+        secret: secrecy::SecretString::from("test-access-token"),
+        base_url: None,
+        account_id: None,
+        provenance: opi_ai::AuthProvenance::default(),
+    };
+
+    // Payload-only callbacks flow through the shared Google wire projection.
+    let mut request = lifecycle_text_request();
+    request.callbacks = RequestCallbacks::new().with_on_payload(std::sync::Arc::new(|body| {
+        let mut replacement = body.clone();
+        replacement["vertex_marker"] = serde_json::json!("replaced");
+        Ok(Some(replacement))
+    }));
+    let events = collect_stream(provider.stream_prepared(request, auth.clone())).await;
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AssistantStreamEvent::Done { .. }))
+    );
+    server.verify().await;
+
+    // Wire observers are explicitly unsupported on Google wires.
+    let observer_provider = VertexProvider::new(
+        "my-project".into(),
+        "us-central1".into(),
+        Some(observer_server.uri()),
+    );
+    let mut observer_request = lifecycle_text_request();
+    observer_request.callbacks =
+        RequestCallbacks::new().with_on_response(std::sync::Arc::new(|_status, _headers| Ok(())));
+    let mut stream = observer_provider.stream_prepared(observer_request, auth);
+    let mut typed = false;
+    while let Some(item) = stream.next().await {
+        if matches!(item, Err(ProviderError::UnsupportedCapability(_))) {
+            typed = true;
+            break;
+        }
+    }
+    assert!(typed, "vertex rejects response observers before dispatch");
+    observer_server.verify().await;
 }

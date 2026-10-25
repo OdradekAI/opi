@@ -197,6 +197,16 @@ impl Provider for VertexProvider {
     }
 
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        // Google wires have no HTTP response hook and no raw-event support:
+        // wire observers are rejected before dispatch instead of being
+        // silently ignored (task 20.51).
+        if request.callbacks.has_wire_observers() {
+            return Box::pin(stream::iter(vec![Err(
+                ProviderError::UnsupportedCapability(ProviderErrorSummary::attested_static(
+                    "Google wires do not support response or raw-event callbacks",
+                )),
+            )]));
+        }
         // Two pinned wire modes: an API key selects Express (x-goog-api-key,
         // collection URL); a Bearer token rides the ADC/project/location URL
         // plus the ADC file's quota project header when present.
@@ -240,6 +250,16 @@ impl Provider for VertexProvider {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
+        // Payload callback (task 20.51): once per variant on the shared
+        // Google projection, frozen across ordinary retries.
+        let body = match request
+            .callbacks
+            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+        {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
+        let callbacks = request.callbacks.clone();
         let cancel = request.cancel;
         let timeout = request.timeout;
         let extra_headers = request.extra_headers;
@@ -262,6 +282,7 @@ impl Provider for VertexProvider {
                     producer_cancel.clone(),
                     timeout,
                     extra_headers,
+                    callbacks,
                     producer_snapshot,
                     &tx,
                 )
@@ -326,6 +347,7 @@ async fn stream_vertex_http(
     cancel: CancellationToken,
     timeout: Option<std::time::Duration>,
     extra_headers: Vec<(String, String)>,
+    callbacks: crate::callbacks::RequestCallbacks,
     snapshot: crate::stream::ProducerSnapshot,
     tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
 ) -> Result<(), ProviderError> {
@@ -347,7 +369,22 @@ async fn stream_vertex_http(
         }
     }
     route_headers.push(("content-type".to_owned(), "application/json".to_owned()));
-    let headers = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+    let merged = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+    // Header transform (task 20.51) on the transformable per-call set; the
+    // protected auth/quota identity headers are stamped back after the
+    // transform and never enter it.
+    let transformable: Vec<(String, String)> = merged
+        .iter()
+        .filter(|(name, _)| {
+            !route_headers
+                .iter()
+                .any(|(managed, _)| name.eq_ignore_ascii_case(managed))
+        })
+        .cloned()
+        .collect();
+    let transformed = callbacks.apply_header_transform(&transformable)?;
+    let mut headers = route_headers.clone();
+    headers.extend(transformed);
     let mut req = http_client.post(url);
     for (name, value) in headers {
         req = req.header(name, value);

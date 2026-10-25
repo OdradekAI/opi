@@ -363,6 +363,7 @@ fn adapters_consume_only_the_normalized_transcript() {
         extra_headers: vec![],
         cache_retention: opi_ai::provider::CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let body = provider.build_request_body(&request).unwrap();
     // The built-in model enables cache control, so the prompt rides a

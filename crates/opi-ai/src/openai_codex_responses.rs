@@ -171,6 +171,7 @@ impl OpenAiCodexResponsesProvider {
         timeout: Option<std::time::Duration>,
         session_id: Option<String>,
         request_id: Option<String>,
+        callbacks: crate::callbacks::RequestCallbacks,
         snapshot: crate::stream::ProducerSnapshot,
         tx: tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
@@ -231,6 +232,20 @@ impl OpenAiCodexResponsesProvider {
                     ProviderError::Network(ProviderErrorSummary::sanitized(error.to_string()))
                 }
             })?;
+        // Response observer (task 20.51): status and headers exist, before
+        // any body processing or error mapping.
+        let observed_headers: Vec<(String, String)> = response
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str().to_ascii_lowercase(),
+                    value.to_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect();
+        callbacks.notify_response(response.status().as_u16(), &observed_headers)?;
+
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
@@ -268,6 +283,13 @@ impl OpenAiCodexResponsesProvider {
                 })?;
                 buffer.push_str(&decoder.push(&chunk));
                 for frame in drain_sse_frames(&mut buffer) {
+                    // Raw observer (task 20.51): the frame's parsed wire JSON
+                    // before the codex mapper; failure preserves the partial.
+                    if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&frame.data)
+                        && let Err(error) = callbacks.notify_raw(&raw)
+                    {
+                        return Err(mapper.failure(error));
+                    }
                     match ResponsesEvent::try_from_frame(&frame) {
                         ParsedEvent::Valid(event) => {
                             let event = match event {
@@ -348,7 +370,10 @@ impl Provider for OpenAiCodexResponsesProvider {
             .iter()
             .find(|model| model.id == model_id)
             .and_then(|model| model.base_url.clone());
-        let extra_headers = validate_headers(&request.extra_headers);
+        let extra_headers = validate_headers(&request.extra_headers)
+            // Header transform (task 20.51) on the per-call set, revalidated
+            // against protected/managed names before any dispatch.
+            .and_then(|merged| request.callbacks.apply_header_transform(&merged));
         let requested_model = request
             .model
             .split_once(':')
@@ -359,6 +384,16 @@ impl Provider for OpenAiCodexResponsesProvider {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
+        // Payload callback (task 20.51): once per variant, frozen across
+        // ordinary retries, on the codex mapper body.
+        let body = match request
+            .callbacks
+            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+        {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
+        let callbacks = request.callbacks.clone();
         let timeout = request.timeout;
         let session_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
             Some(
@@ -426,6 +461,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                     timeout,
                     session_id,
                     request_id,
+                    callbacks,
                     producer_snapshot,
                     tx.clone(),
                 )

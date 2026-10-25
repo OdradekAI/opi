@@ -900,6 +900,34 @@ fetches one distribution-schema-v1 document over HTTP with pooled
 connections and redacted failures. The SDK registers no source, attaches
 no store, and has no pi.dev/default startup fetch policy.
 
+## Functional Request Callbacks (AIR-059/V-51 ordinary slice, task 20.51)
+
+`callbacks::RequestCallbacks` (carried on `Request.callbacks`, default empty)
+attaches four observer families. They fire inside the real direct adapters at
+their source-defined timing — never reconstructed from a normalized
+`EventStream`, and never by stacking a second driver:
+
+| Callback | Timing | Contract |
+|---|---|---|
+| `with_header_transform` | Once per dispatch, on the merged per-call set | Output replaces the set; omission/set/removal of non-protected entries is supported. Protected identity/auth/signing names (the reserved provider list plus `amz-sdk-*`) never enter the transform and its output is revalidated — touching one is a typed failure before dispatch. |
+| `with_on_payload` | After sampling/compat/wire projection, on the final body | `Ok(None)` keeps the body; `Ok(Some(v))` replaces it after validation: JSON object, unchanged model identity, output budget never raised. Runs once per payload variant — an ordinary acquisition retry reuses the frozen body byte-for-byte (`ORDINARY_PAYLOAD_VARIANT`). |
+| `with_on_response` | Once a response exists, with status and headers, before any body processing or error mapping | Failures that never produce a response (connect errors, timeouts) are not notified. |
+| `with_on_raw` | Per parsed provider wire event, strictly before its normalized emission, in wire order | Read-only; a failure ends the current call with the typed error while preserving the delivered partial. |
+
+Adapter coverage: Anthropic, OpenAI Chat (including the Mistral and OpenRouter
+profiles), OpenAI Responses (including Azure), Codex, and Bedrock wire all four
+families (Bedrock raw events are the parsed smithy frames as
+`{type, ...payload}`; the Smithy signing headers are transform-protected).
+Google wires (Gemini/Vertex) support the payload and header-transform families
+and reject response/raw observers with a typed `UnsupportedCapability` before
+any dispatch — two source facts (no HTTP response hook, no raw support), one
+fail-closed gate. A callback failure is a functional failure of the call:
+`ProviderError::CallbackPhase`, redacted, never retryable, never swallowed by
+telemetry, never triggering a new call. Callbacks are runtime function values,
+not JSON configuration; this slice closes the ordinary path only — strict
+variant interaction (20.11), newly introduced operation APIs (20.43–50) and
+full AIR-059/V-51 closure (20.57) are separate slices.
+
 ## Estimator, Sampling and Pricing Metadata (V-45/AIR-053/AIR-062, task 20.35)
 
 The `context` estimator uses 3.5 UTF-16 code units per token

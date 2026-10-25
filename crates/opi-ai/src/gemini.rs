@@ -774,6 +774,7 @@ impl GeminiProvider {
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
         extra_headers: Vec<(String, String)>,
+        callbacks: crate::callbacks::RequestCallbacks,
         snapshot: crate::stream::ProducerSnapshot,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
@@ -782,7 +783,22 @@ impl GeminiProvider {
             ("x-goog-api-key".to_owned(), api_key),
             ("content-type".to_owned(), "application/json".to_owned()),
         ];
-        let headers = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+        let merged = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+        // Header transform (task 20.51) on the transformable per-call set; the
+        // protected identity/wire headers are stamped back after the
+        // transform and never enter it.
+        let transformable: Vec<(String, String)> = merged
+            .iter()
+            .filter(|(name, _)| {
+                !route_headers
+                    .iter()
+                    .any(|(managed, _)| name.eq_ignore_ascii_case(managed))
+            })
+            .cloned()
+            .collect();
+        let transformed = callbacks.apply_header_transform(&transformable)?;
+        let mut headers = route_headers.clone();
+        headers.extend(transformed);
         let mut request = http_client.post(&url);
         for (name, value) in headers {
             request = request.header(name, value);
@@ -944,6 +960,16 @@ fn map_gemini_error(
 
 impl Provider for GeminiProvider {
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        // Google wires have no HTTP response hook and no raw-event support
+        // (two source facts, one gate): wire observers are rejected before
+        // dispatch instead of being silently ignored (task 20.51).
+        if request.callbacks.has_wire_observers() {
+            return Box::pin(stream::iter(vec![Err(
+                ProviderError::UnsupportedCapability(ProviderErrorSummary::attested_static(
+                    "Google wires do not support response or raw-event callbacks",
+                )),
+            )]));
+        }
         let secret = auth.secret.expose_secret();
         let api_key = match auth.scheme {
             crate::auth::AuthScheme::ApiKey => secret.to_string(),
@@ -965,6 +991,16 @@ impl Provider for GeminiProvider {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
+        // Payload callback (task 20.51): once per variant on the shared
+        // Google projection, frozen across ordinary retries.
+        let body = match request
+            .callbacks
+            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+        {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
+        let callbacks = request.callbacks.clone();
         let cancel = request.cancel.clone();
         let timeout = request.timeout;
         let extra_headers = request.extra_headers;
@@ -987,6 +1023,7 @@ impl Provider for GeminiProvider {
                     producer_cancel.clone(),
                     timeout,
                     extra_headers,
+                    callbacks,
                     producer_snapshot,
                     &tx,
                 )

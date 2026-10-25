@@ -102,6 +102,7 @@ fn responses_request_body_uses_input_field() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let body = provider.build_request_body(&request).unwrap();
     // Responses API uses "input" not "messages"
@@ -151,6 +152,7 @@ fn responses_request_body_strips_provider_prefix() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let body = provider.build_request_body(&request).unwrap();
     assert_eq!(body["model"], "o3");
@@ -194,6 +196,7 @@ fn responses_tool_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -1252,6 +1255,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let mut stream =
@@ -1331,6 +1335,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let mut stream =
         provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
@@ -1353,4 +1358,139 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
     tokio::time::timeout(std::time::Duration::from_secs(2), drain)
         .await
         .expect("stream must drain promptly after cancellation (no hang/panic)");
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.51: functional callbacks at the Responses wire (P20-S51)
+// ---------------------------------------------------------------------------
+
+use opi_ai::callbacks::RequestCallbacks;
+
+fn responses_text_request() -> Request {
+    Request {
+        model: "openai-responses:gpt-4o".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        })
+        .expect("valid context declarations"),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        callbacks: Default::default(),
+    }
+}
+
+#[tokio::test]
+async fn responses_payload_callback_sees_projected_input_body() {
+    let sse = concat!(
+        "event: response.created\n",
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n",
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"model\":\"gpt-4o\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hi\"}]}],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n",
+    );
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(sse)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let seen: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorder = seen.clone();
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+    let mut request = responses_text_request();
+    request.callbacks = RequestCallbacks::new().with_on_payload(std::sync::Arc::new(move |body| {
+        recorder.lock().unwrap().push(body.clone());
+        Ok(None)
+    }));
+
+    collect_stream(provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()))
+        .await;
+
+    let bodies = seen.lock().unwrap().clone();
+    assert_eq!(bodies.len(), 1);
+    assert!(
+        bodies[0]["input"].is_array(),
+        "payload callback sees the projected `input` field, not raw messages"
+    );
+    let sent = server.received_requests().await.unwrap()[0].clone();
+    let wire_body: serde_json::Value =
+        serde_json::from_slice(&sent.body).expect("captured body is JSON");
+    assert_eq!(bodies[0], wire_body);
+}
+
+#[tokio::test]
+async fn responses_response_and_raw_callbacks_follow_source_order() {
+    let order: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let raw_recorder = order.clone();
+    let response_recorder = order.clone();
+    let sse = concat!(
+        "event: response.created\n",
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"gpt-4o\",\"output\":[]}}\n\n",
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"model\":\"gpt-4o\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hi\"}]}],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n",
+    );
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(sse)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+    let mut request = responses_text_request();
+    request.callbacks = RequestCallbacks::new()
+        .with_on_response(std::sync::Arc::new(move |status, _headers| {
+            response_recorder
+                .lock()
+                .unwrap()
+                .push(format!("response:{status}"));
+            Ok(())
+        }))
+        .with_on_raw(std::sync::Arc::new(move |event| {
+            raw_recorder
+                .lock()
+                .unwrap()
+                .push(format!("raw:{}", event["type"].as_str().unwrap_or("?")));
+            Ok(())
+        }));
+
+    collect_stream(provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()))
+        .await;
+
+    let order = order.lock().unwrap();
+    assert_eq!(
+        order.iter().map(String::as_str).collect::<Vec<_>>(),
+        vec![
+            "response:200",
+            "raw:response.created",
+            "raw:response.completed"
+        ],
+        "response first, then parsed wire events in stream order"
+    );
 }

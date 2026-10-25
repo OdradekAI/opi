@@ -15,9 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
-use crate::openai_chat::{
-    CompatConfig, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent, parse_sse_events,
-};
+use crate::openai_chat::{CompatConfig, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent};
 use crate::provider::{
     EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
 };
@@ -182,7 +180,7 @@ impl AzureOpenAIProvider {
             "",
         );
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
-        for parsed in parse_sse_events(sse_body) {
+        for (parsed, _raw) in crate::openai_chat::parse_sse_events_with_raw(sse_body) {
             match parsed {
                 ParsedEvent::Valid(events) => {
                     for event in events {
@@ -250,9 +248,19 @@ impl Provider for AzureOpenAIProvider {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
+        // Payload callback (task 20.51): once per variant, frozen across
+        // ordinary retries, on the inner chat projection.
+        let body = match request
+            .callbacks
+            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+        {
+            Ok(body) => body,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
         let cancel = request.cancel;
         let timeout = request.timeout;
         let extra_headers = request.extra_headers;
+        let callbacks = request.callbacks;
         let http_client = self.client.client().clone();
 
         let snapshot = crate::stream::ProducerSnapshot::default();
@@ -272,6 +280,7 @@ impl Provider for AzureOpenAIProvider {
                     producer_cancel.clone(),
                     timeout,
                     extra_headers,
+                    callbacks,
                     producer_snapshot,
                     &tx,
                 )
@@ -308,6 +317,7 @@ async fn stream_azure_http(
     cancel: CancellationToken,
     timeout: Option<std::time::Duration>,
     extra_headers: Vec<(String, String)>,
+    callbacks: crate::callbacks::RequestCallbacks,
     snapshot: crate::stream::ProducerSnapshot,
     tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
 ) -> Result<(), ProviderError> {
@@ -315,7 +325,23 @@ async fn stream_azure_http(
         ("api-key".to_owned(), api_key),
         ("content-type".to_owned(), "application/json".to_owned()),
     ];
-    let headers = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+    let merged = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+    let transformable: Vec<(String, String)> = merged
+        .iter()
+        .filter(|(name, _)| {
+            // The protected route headers (api-key identity, content-type
+            // wire type) are excluded from the transformable per-call set.
+            !route_headers
+                .iter()
+                .any(|(managed, _)| name.eq_ignore_ascii_case(managed))
+        })
+        .cloned()
+        .collect();
+    // Header transform (task 20.51) on the merged per-call set; the output is
+    // revalidated against protected identity/auth/signing names.
+    let transformed = callbacks.apply_header_transform(&transformable)?;
+    let mut headers = route_headers.clone();
+    headers.extend(transformed);
     let mut req = http_client.post(url);
     for (name, value) in headers {
         req = req.header(name, value);
@@ -338,6 +364,20 @@ async fn stream_azure_http(
             ProviderError::Network(ProviderErrorSummary::sanitized(error.to_string()))
         }
     })?;
+
+    // Response observer (task 20.51): status and headers exist, before any
+    // body processing or error mapping.
+    let observed_headers: Vec<(String, String)> = response
+        .headers()
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.as_str().to_ascii_lowercase(),
+                value.to_str().unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    callbacks.notify_response(response.status().as_u16(), &observed_headers)?;
 
     let status = response.status();
     if !status.is_success() {
@@ -381,7 +421,14 @@ async fn stream_azure_http(
             })?;
             buffer.push_str(&decoder.push(&chunk));
 
-            for parsed in drain_sse_events(&mut buffer) {
+            for (parsed, raw) in drain_sse_events(&mut buffer) {
+                // Raw observer (task 20.51): parsed wire JSON before
+                // normalization; failure preserves the partial.
+                if let Some(raw) = raw.as_ref()
+                    && let Err(error) = callbacks.notify_raw(raw)
+                {
+                    return Err(mapper.failure(error));
+                }
                 match parsed {
                     ParsedEvent::Valid(events) => {
                         for event in events {
@@ -432,7 +479,7 @@ async fn stream_azure_http(
     result.map_err(|cause| mapper.failure(cause))
 }
 
-fn drain_sse_events(buffer: &mut String) -> Vec<ParsedEvent> {
+fn drain_sse_events(buffer: &mut String) -> Vec<(ParsedEvent, Option<serde_json::Value>)> {
     if buffer.contains('\r') {
         *buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
     }
@@ -441,7 +488,7 @@ fn drain_sse_events(buffer: &mut String) -> Vec<ParsedEvent> {
     while let Some(idx) = buffer.find("\n\n") {
         let end = idx + 2;
         let chunk: String = buffer.drain(..end).collect();
-        events.extend(parse_sse_events(&chunk));
+        events.extend(crate::openai_chat::parse_sse_events_with_raw(&chunk));
     }
     events
 }

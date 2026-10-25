@@ -40,6 +40,7 @@ mod openai_chat_profile {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            callbacks: Default::default(),
         }
     }
 
@@ -349,6 +350,7 @@ mod mistral_profile {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            callbacks: Default::default(),
         }
     }
 
@@ -589,6 +591,7 @@ mod openrouter_profile {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            callbacks: Default::default(),
         }
     }
 

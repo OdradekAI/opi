@@ -726,6 +726,30 @@ catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
 source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
 
+## 功能请求回调（AIR-059/V-51 普通切片，任务 20.51）
+
+`callbacks::RequestCallbacks`（随 `Request.callbacks` 携带，默认为空）附加四类
+观察者，在真实直连适配器内按其源定义的时机触发——绝不从归一化 `EventStream`
+反推，也绝不叠加第二个驱动：
+
+| 回调 | 时机 | 合同 |
+|---|---|---|
+| `with_header_transform` | 每次派发一次，作用于合并后的每调用集合 | 输出整体替换该集合；非保护项的省略/设置/删除受支持。保护性 identity/auth/signing 名单（保留字列表加 `amz-sdk-*`）绝不进入变换，输出重校验——触碰即派发前 typed 失败。 |
+| `with_on_payload` | 采样/compat/wire 投影之后，作用于最终请求体 | `Ok(None)` 保持原体；`Ok(Some(v))` 校验后替换：JSON object、model 身份不变、输出预算不得上调。每个 payload variant 只运行一次——普通获取重试按字节复用冻结体（`ORDINARY_PAYLOAD_VARIANT`）。 |
+| `with_on_response` | 响应存在时一次，携带 status 与 headers，先于任何 body 处理或错误映射 | 从未产生响应的失败（连接错误、超时）不通知。 |
+| `with_on_raw` | 每个已解析 provider wire 事件，严格先于其归一化发射，按 wire 顺序 | 只读；失败以 typed 错误终止当前调用并保留已交付的 partial。 |
+
+适配器覆盖：Anthropic、OpenAI Chat（含 Mistral 与 OpenRouter profile）、
+OpenAI Responses（含 Azure）、Codex 与 Bedrock 接线全部四类（Bedrock raw 事件
+为已解析 smithy 帧 `{type, ...payload}`；Smithy 签名头受变换保护）。Google
+wire（Gemini/Vertex）支持 payload 与 header-transform 两类，对 response/raw
+观察者在任何派发之前以 typed `UnsupportedCapability` 拒绝——两个源事实
+（无 HTTP response hook、无 raw 支持）共用一个 fail-closed 门。回调失败是
+调用的功能失败：`ProviderError::CallbackPhase`，已脱敏、永不重试、不被遥测
+吞掉、不触发新调用。回调是运行时函数值，不是 JSON 配置；本切片只收普通
+路径——strict variant 交互（20.11）、新引入的操作 API（20.43–50）与完整
+AIR-059/V-51 收口（20.57）是独立切片。
+
 ## 估算器、Sampling 与计价元数据（V-45/AIR-053/AIR-062，任务 20.35）
 
 `context` 估算器按每 token 3.5 个 UTF-16 码元（`ceil(chars * 2 / 7)`）与每图

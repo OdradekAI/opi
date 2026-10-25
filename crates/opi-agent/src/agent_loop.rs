@@ -512,6 +512,7 @@ async fn run_operation(
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: context.session_id.clone(),
+            callbacks: Default::default(),
         };
 
         // Prepare one logical model call: route lookup, capability/wire

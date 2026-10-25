@@ -189,6 +189,7 @@ fn unsupported_thinking_request(provider_id: &str, model_id: &str) -> Request {
         extra_headers: Vec::new(),
         cache_retention: Default::default(),
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 

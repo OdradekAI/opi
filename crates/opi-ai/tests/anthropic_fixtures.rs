@@ -489,6 +489,7 @@ async fn cache_1h_malformed_subset_stops_production_stream_with_non_retryable_er
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let results: Vec<_> = provider
@@ -954,6 +955,7 @@ fn build_request_body_includes_thinking_when_enabled() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let body = provider.build_request_body(&request).unwrap();
@@ -996,6 +998,7 @@ fn build_request_body_uses_default_budget_when_none() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let body = provider.build_request_body(&request).unwrap();
@@ -1036,6 +1039,7 @@ fn build_request_body_omits_thinking_when_disabled() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let body = provider.build_request_body(&request).unwrap();
@@ -1505,6 +1509,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
 
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
@@ -1576,6 +1581,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
@@ -1631,6 +1637,7 @@ mod request_compatibility {
             extra_headers: Vec::new(),
             cache_retention: CacheRetention::None,
             session_id: None,
+            callbacks: Default::default(),
         }
     }
     #[tokio::test]
@@ -1718,5 +1725,245 @@ mod request_compatibility {
             body["thinking"],
             serde_json::json!({"type": "enabled", "budget_tokens": 4096})
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.51: functional callbacks at the Anthropic wire (P20-S51)
+// ---------------------------------------------------------------------------
+
+use opi_ai::callbacks::RequestCallbacks;
+
+fn callbacks_request() -> Request {
+    Request {
+        model: "anthropic:claude-sonnet-4-5-20250514".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "hi".into() }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        })
+        .expect("valid context declarations"),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: ThinkingConfig {
+            enabled: true,
+            budget_tokens: Some(1024),
+            level: opi_ai::ThinkingLevel::Medium,
+        },
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        callbacks: Default::default(),
+    }
+}
+
+fn callbacks_sse() -> String {
+    concat!(
+        "event: message_start\r\n",
+        "data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\",\"usage\":{\"input_tokens\":3,\"output_tokens\":0}}}\r\n\r\n",
+        "event: content_block_start\r\n",
+        "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\r\n\r\n",
+        "event: message_stop\r\n",
+        "data: {\"type\":\"message_stop\"}\r\n\r\n",
+    )
+    .into()
+}
+
+#[tokio::test]
+async fn payload_callback_observes_final_wire_body_after_projection() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(callbacks_sse()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let seen: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorder = seen.clone();
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut request = callbacks_request();
+    request.callbacks = RequestCallbacks::new().with_on_payload(std::sync::Arc::new(move |body| {
+        recorder.lock().unwrap().push(body.clone());
+        Ok(None)
+    }));
+
+    stream_prepared_and_drain(&provider, request).await;
+
+    let bodies = seen.lock().unwrap().clone();
+    assert_eq!(bodies.len(), 1);
+    let sent = server.received_requests().await.unwrap()[0].clone();
+    let wire_body: serde_json::Value =
+        serde_json::from_slice(&sent.body).expect("captured body is JSON");
+    assert_eq!(
+        bodies[0], wire_body,
+        "payload callback observes the exact post-projection wire body"
+    );
+    assert!(
+        bodies[0]["thinking"]["budget_tokens"] == serde_json::json!(1024),
+        "thinking projection precedes the payload callback"
+    );
+}
+
+#[tokio::test]
+async fn response_callback_precedes_every_stream_event() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(callbacks_sse()))
+        .mount(&server)
+        .await;
+
+    let order: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let response_recorder = order.clone();
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut request = callbacks_request();
+    request.callbacks =
+        RequestCallbacks::new().with_on_response(std::sync::Arc::new(move |status, headers| {
+            response_recorder
+                .lock()
+                .unwrap()
+                .push(format!("response:{status}"));
+            assert!(
+                headers
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case("content-type")),
+                "response callback sees the wire response headers"
+            );
+            Ok(())
+        }));
+
+    let event_recorder = order.clone();
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    while let Some(item) = stream.next().await {
+        if item.is_ok() {
+            event_recorder.lock().unwrap().push("event".into());
+        }
+    }
+
+    let order = order.lock().unwrap().clone();
+    assert_eq!(order.first().map(String::as_str), Some("response:200"));
+    assert!(
+        order.iter().filter(|m| m.as_str() == "event").count() >= 1,
+        "normalized stream events follow the response callback"
+    );
+}
+
+#[tokio::test]
+async fn raw_callback_sees_wire_events_in_order_before_normalization() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(callbacks_sse()))
+        .mount(&server)
+        .await;
+
+    let raw_types: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let raw_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let raw_recorder = raw_types.clone();
+    let raw_counter = raw_count.clone();
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut request = callbacks_request();
+    request.callbacks = RequestCallbacks::new().with_on_raw(std::sync::Arc::new(move |event| {
+        raw_recorder
+            .lock()
+            .unwrap()
+            .push(event["type"].as_str().unwrap_or("<unknown>").to_string());
+        raw_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }));
+
+    // Happens-before proof: normalized event #i is only sent after
+    // notify_raw(#i), so at the moment the consumer observes the i-th event
+    // the raw count must already be >= i + 1.
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut observed = 0usize;
+    while let Some(item) = stream.next().await {
+        if item.is_ok() {
+            observed += 1;
+            assert!(
+                raw_count.load(std::sync::atomic::Ordering::SeqCst) >= observed,
+                "raw event {observed} must fire before its normalized emission"
+            );
+        }
+    }
+    assert_eq!(observed, 3);
+
+    let raw = raw_types.lock().unwrap();
+    assert_eq!(
+        raw.iter().map(String::as_str).collect::<Vec<_>>(),
+        vec!["message_start", "content_block_start", "message_stop"],
+        "raw wire events arrive in stream order"
+    );
+}
+
+#[tokio::test]
+async fn raw_callback_failure_preserves_partial_and_ends_typed() {
+    let sse = concat!(
+        "event: message_start\r\n",
+        "data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\",\"usage\":{\"input_tokens\":3,\"output_tokens\":0}}}\r\n\r\n",
+        "event: content_block_start\r\n",
+        "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\r\n\r\n",
+        "event: content_block_delta\r\n",
+        "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"partial \"}}\r\n\r\n",
+        "event: content_block_delta\r\n",
+        "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lost\"}}\r\n\r\n",
+        "event: message_stop\r\n",
+        "data: {\"type\":\"message_stop\"}\r\n\r\n",
+    );
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(sse))
+        .mount(&server)
+        .await;
+
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut request = callbacks_request();
+    request.callbacks = RequestCallbacks::new().with_on_raw(std::sync::Arc::new(|event| {
+        if event["type"] == "content_block_delta" && event["delta"]["text"] == "lost" {
+            return Err(opi_ai::callbacks::CallbackError::new("raw observer failed"));
+        }
+        Ok(())
+    }));
+
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut saw_delta = false;
+    let mut typed_failure = false;
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(AssistantStreamEvent::TextDelta { .. }) => saw_delta = true,
+            Err(ProviderError::StreamFailure(failure))
+                if matches!(failure.cause(), ProviderError::CallbackPhase(_)) =>
+            {
+                typed_failure = true;
+                break;
+            }
+            Err(_) => break,
+            _ => {}
+        }
+    }
+    assert!(saw_delta, "events before the raw failure stay delivered");
+    assert!(
+        typed_failure,
+        "raw failure ends the call typed with the partial preserved"
+    );
+}
+
+async fn stream_prepared_and_drain(provider: &AnthropicProvider, request: Request) {
+    use opi_ai::provider::Provider;
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    while let Some(item) = stream.next().await {
+        if let Err(error) = item {
+            panic!("unexpected error: {error}");
+        }
     }
 }

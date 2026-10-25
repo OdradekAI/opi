@@ -82,6 +82,7 @@ fn text_stream_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -118,6 +119,7 @@ fn tool_call_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -698,6 +700,7 @@ async fn url_image_rejected_with_clear_error() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     };
     let stream = provider.stream_prepared(request, test_auth());
     use futures_util::StreamExt;
@@ -1084,6 +1087,7 @@ fn lifecycle_text_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -7732,4 +7736,144 @@ mod smithy_retry {
         assert_eq!(quota.capacity(), 495);
         assert_eq!(source_sends.load(Ordering::SeqCst), 0);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.51: functional callbacks at the Bedrock wire (P20-S51)
+// ---------------------------------------------------------------------------
+
+use opi_ai::callbacks::RequestCallbacks;
+
+#[tokio::test]
+async fn bedrock_payload_and_response_callbacks_flow_through_converse_stream() {
+    let body_bytes = bedrock_text_lifecycle_bytes();
+    let payload_bodies: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let payload_recorder = payload_bodies.clone();
+    let response_status = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let response_recorder = response_status.clone();
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/model/anthropic.claude-sonnet-4/converse-stream"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(body_bytes, "application/vnd.amazon.eventstream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()));
+    let mut request = lifecycle_text_request();
+    request.callbacks = RequestCallbacks::new()
+        .with_on_payload(std::sync::Arc::new(move |body| {
+            payload_recorder.lock().unwrap().push(body.clone());
+            Ok(None)
+        }))
+        .with_on_response(std::sync::Arc::new(move |status, headers| {
+            response_recorder.lock().unwrap().push(format!("{status}"));
+            assert!(
+                headers
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case("content-type")),
+                "bedrock response callback sees the event-stream content type"
+            );
+            Ok(())
+        }));
+
+    let events = collect_events(provider.stream_prepared(request, test_auth())).await;
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AssistantStreamEvent::Done { .. }))
+    );
+
+    let bodies = payload_bodies.lock().unwrap().clone();
+    assert_eq!(bodies.len(), 1);
+    assert!(
+        bodies[0]["messages"].is_array(),
+        "bedrock payload callback sees the converse-stream body"
+    );
+    let sent = server.received_requests().await.unwrap()[0].clone();
+    let wire_body: serde_json::Value =
+        serde_json::from_slice(&sent.body).expect("captured body is JSON");
+    assert_eq!(bodies[0], wire_body);
+    assert_eq!(*response_status.lock().unwrap(), vec!["200"]);
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn bedrock_raw_callback_sees_frame_events_in_order() {
+    let body_bytes = bedrock_text_lifecycle_bytes();
+    let raw_events: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorder = raw_events.clone();
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(body_bytes, "application/vnd.amazon.eventstream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()));
+    let mut request = lifecycle_text_request();
+    request.callbacks = RequestCallbacks::new().with_on_raw(std::sync::Arc::new(move |event| {
+        recorder
+            .lock()
+            .unwrap()
+            .push(event["type"].as_str().unwrap_or("?").to_string());
+        Ok(())
+    }));
+
+    let events = collect_events(provider.stream_prepared(request, test_auth())).await;
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, AssistantStreamEvent::TextDelta { .. }))
+    );
+    let raw = raw_events.lock().unwrap();
+    assert!(
+        raw.first().map(String::as_str) == Some("messageStart"),
+        "bedrock raw observer sees smithy frames in wire order: {raw:?}"
+    );
+    assert!(raw.contains(&"contentBlockDelta".to_string()));
+    assert!(
+        raw.last().map(String::as_str) == Some("metadata"),
+        "every parsed smithy frame reaches the raw observer, in wire order: {raw:?}"
+    );
+}
+
+#[tokio::test]
+async fn bedrock_transform_touching_signing_headers_fails_typed_before_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let provider = BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()));
+    let mut request = lifecycle_text_request();
+    request.callbacks =
+        RequestCallbacks::new().with_header_transform(std::sync::Arc::new(|merged| {
+            let mut out = merged.to_vec();
+            out.push(("amz-sdk-invocation-id".to_string(), "attacker".to_string()));
+            Ok(out)
+        }));
+
+    let mut stream = provider.stream_prepared(request, test_auth());
+    let mut typed = false;
+    while let Some(item) = stream.next().await {
+        if matches!(item, Err(ProviderError::CallbackPhase(_))) {
+            typed = true;
+            break;
+        }
+    }
+    assert!(
+        typed,
+        "transform touching the Smithy signing headers must fail typed"
+    );
+    server.verify().await;
 }

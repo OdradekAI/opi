@@ -119,6 +119,7 @@ fn request(model: &str) -> Request {
         extra_headers: Vec::new(),
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
     }
 }
 
@@ -274,10 +275,12 @@ fn provider_metadata(error: &ProviderError) -> serde_json::Value {
             "error_name": error_name,
             "retry_after_ms": retry_after_ms,
         }),
-        ProviderError::RequestFailed(summary) => serde_json::json!({
-            "variant": "request_failed",
-            "summary": summary.as_str(),
-        }),
+        ProviderError::RequestFailed(summary) | ProviderError::CallbackPhase(summary) => {
+            serde_json::json!({
+                "variant": "request_failed",
+                "summary": summary.as_str(),
+            })
+        }
         ProviderError::StreamError(summary) => serde_json::json!({
             "variant": "stream_error",
             "summary": summary.as_str(),
@@ -352,6 +355,7 @@ fn provider_summary(error: &ProviderError) -> Option<&ProviderErrorSummary> {
     match error {
         ProviderError::StreamFailure(failure) => provider_summary(failure.cause()),
         ProviderError::RequestFailed(summary)
+        | ProviderError::CallbackPhase(summary)
         | ProviderError::StreamError(summary)
         | ProviderError::AuthFailed(summary)
         | ProviderError::Network(summary)

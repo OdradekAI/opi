@@ -75,6 +75,7 @@ fn request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::Short,
         session_id: Some("session-fixed".into()),
+        callbacks: Default::default(),
     }
 }
 
@@ -800,4 +801,123 @@ async fn dedicated_codex_provider_failures_are_typed_and_redacted() {
     ] {
         assert!(!rendered.contains(sentinel), "{sentinel}: {rendered}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.51: functional callbacks at the Codex wire (P20-S51)
+// ---------------------------------------------------------------------------
+
+use opi_ai::callbacks::RequestCallbacks;
+
+fn codex_completed_sse() -> String {
+    concat!(
+        "event: response.completed\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"response-1\",\"model\":\"gpt-5.4\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n",
+    )
+    .into()
+}
+
+#[tokio::test]
+async fn codex_payload_response_and_raw_callbacks_flow_through_mapper_events() {
+    let order: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let raw_recorder = order.clone();
+    let response_recorder = order.clone();
+    let payload_bodies: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let payload_recorder = payload_bodies.clone();
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/codex/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(codex_completed_sse())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiCodexResponsesProvider::new(
+        Some(server.uri()),
+        vec![model(None)],
+        Arc::new(HttpClient::new()),
+    );
+    let auth = auth("sentinel-access", None, Some("account-fixed".into()));
+    let mut request = request();
+    request.callbacks = RequestCallbacks::new()
+        .with_on_payload(std::sync::Arc::new(move |body| {
+            payload_recorder.lock().unwrap().push(body.clone());
+            Ok(None)
+        }))
+        .with_on_response(std::sync::Arc::new(move |status, _headers| {
+            response_recorder
+                .lock()
+                .unwrap()
+                .push(format!("response:{status}"));
+            Ok(())
+        }))
+        .with_on_raw(std::sync::Arc::new(move |event| {
+            raw_recorder
+                .lock()
+                .unwrap()
+                .push(format!("raw:{}", event["type"].as_str().unwrap_or("?")));
+            Ok(())
+        }));
+
+    assert!(drain(&provider, request, auth).await.is_none());
+
+    let bodies = payload_bodies.lock().unwrap().clone();
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0]["model"], serde_json::json!("gpt-5.4"));
+    assert!(
+        bodies[0]["input"].is_array(),
+        "codex payload sees the mapper body"
+    );
+    let order = order.lock().unwrap().clone();
+    assert_eq!(
+        order.iter().map(String::as_str).collect::<Vec<_>>(),
+        vec!["response:200", "raw:response.completed"],
+        "codex HTTP wire hands mapper events to the raw observer in order"
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn codex_transform_touching_managed_headers_fails_typed_before_http() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiCodexResponsesProvider::new(
+        Some(server.uri()),
+        vec![model(None)],
+        Arc::new(HttpClient::new()),
+    );
+    let auth = auth("sentinel-access", None, Some("account-fixed".into()));
+    let mut request = request();
+    request.callbacks =
+        RequestCallbacks::new().with_header_transform(std::sync::Arc::new(|merged| {
+            let mut out = merged.to_vec();
+            out.push(("ChatGPT-Account-Id".to_string(), "attacker".to_string()));
+            Ok(out)
+        }));
+
+    let mut stream = provider.stream_prepared(request, auth);
+    let mut typed = false;
+    while let Some(item) = stream.next().await {
+        if matches!(item, Err(ProviderError::CallbackPhase(_))) {
+            typed = true;
+            break;
+        }
+    }
+    assert!(
+        typed,
+        "transform touching a codex managed header must fail typed"
+    );
+    server.verify().await;
 }

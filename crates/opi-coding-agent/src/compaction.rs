@@ -381,7 +381,8 @@ pub(crate) fn summary_request(
             messages: vec![Message::User(opi_ai::message::UserMessage { content: vec![opi_ai::message::InputContent::Text { text: format!("<conversation>\n{conversation}\n</conversation>") }], timestamp_ms: opi_ai::time::now_ms() })],
             tools: vec![] }).expect("valid context declarations"), max_tokens: Some(RESERVE_TOKENS * 4 / 5), temperature: None, sampling_params: Default::default(),
         thinking: ThinkingConfig::default(), stop_sequences: vec![], metadata: None, cancel,
-        timeout: None, extra_headers: vec![], cache_retention: CacheRetention::None, session_id: None }
+        timeout: None, extra_headers: vec![], cache_retention: CacheRetention::None, session_id: None,
+        callbacks: Default::default() }
 }
 
 fn summary_text(response: &opi_ai::message::AssistantMessage) -> Result<String, AgentError> {
