@@ -21,12 +21,12 @@
   "spec_files_sha256": {
     "docs/opi-spec.md": "7979f349811d5e8da8ed4b60adb0fa41175c76462a78e449fd326dd4c19cf9e1",
     "docs/opi-spec.zh.md": "6a199822c5f4233ab7c13942db87f7986ac8b0e74a68075402371476f431c005",
-    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "2a1758b286ce7c5c9d7d97a3ee5aef71a53904814714c399546e4691515db603",
-    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "0a05f8b46d53d6b54a994bf5cece4cf44ff6f4ce3be527a4b4958959bd68091a",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "8c6cd66f7771e026210f06e49d037da54029c74258a1d45925cdbddd710f5f21",
+    "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "a841575a91ab4a3895648c1c66ce2c6c7d9afd4685fb1d408e550d39b3f62415",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "9e3d6ef690c3a794bc9c47ddc2dce04840f98d8881649be1ab2e8db0df287fd5",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "411d2f6d262b1afc22e84c73213dffd0eb890ed70e210dfa497d2a5d021cd31d",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "acb7f5f798b3384c63d36ad9af844b580755e2ea792ce3e2d32d9d3af2f15e81",
-    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "19fbf4d021c266acd31d53b0a731b080ac2af9c3774fb8e35cba4fb9e955472c",
+    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "0e6b282522532a40540cd05e855733613d74d652b2cab265353420b34fd5ff65",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "b74c0b09afd31bc06cf8d5d1df834a6af9d53f2d08c3653aa492ed36396c4eba",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md": "878d15231e734dc03772e1f1bd48cb8ffe2252a2818748e4b8630af43a2e8a76",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md": "61547ccfc0549018d2fd4042ade8edac3547599b412e12ea2479821b40f67a8f",
@@ -36,7 +36,7 @@
     "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
     "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c"
   },
-  "task_graph_confirmed_at": "2026-10-21T08:40:07.536772+00:00",
+  "task_graph_confirmed_at": "2026-10-25T07:50:28.672233+00:00",
   "current_phase": 20,
   "tasks": [
     {
@@ -4172,7 +4172,7 @@
       "title": "真实 Codex WS／Auto／continuation 公共路径",
       "crate": "workspace",
       "parent_spec_row": "DEL-07",
-      "definition_of_done": "Public default Auto and four explicit modes use real WS/PMD with temporary sessionless/no-cache operation, exact full-input plus response prefix delta and frozen noninput fields. Only success+responseID publishes continuation. Bound missing-ID full retry and pre-generation connection-limit reconnect separately, permit transport fallback only before first effective provider event, never on auth/protocol/abort. EOF/started failure preserves partial and final error, no output splice or silent SSE parity substitute. Complete the RDF-24 consolidation using the existing private frame/pmd/io implementation under crates/opi-ai/src/ws, not a second codec or revived companion. Preserve the public ws Upgrade API; the real Models -> Codex adapter -> source-qualified strict Upgrade -> private protocol owner must execute framing, PMD, window8 negotiation, ordered trailing bytes, Close and active/idle cancellation. Replace the transitional unused-code boundary with this genuine production path, not test-only wiring or constructing and dropping an unused owner. Retain the migrated corpus, Send/nonSync, partial/flush/EOF, storage, cancellation and fairness assertions plus exact compression/hidden-API/unsafe obligations. Run applicable root gates and ordinary/default/C-zlib graphs. Actual opi-ai cargo package artifacts must contain private protocol sources, required tests/fixtures/helpers and LICENSE/NOTICE; extracted private tests and fresh external Models -> real Codex -> Upgrade -> private-codec consumers run in all three graphs and are reported separately. Upgrade-only/raw-stream consumers do not close this task. Record exact registry versions/checksums/features and actual AWS-LC plus C-libz native provenance when both are selected. No public codec, test feature, doc-hidden public export, copied production source, checkout/root patch or library-lock substitution. Reuse the source-identical 7cb5f0c physical migration and valid proof; do not redo removed standalone-package gates or call that partial proof the completed Codex path. Preserve 20.15 historical delivery and 20.17/34/57/58 acceptance ownership.",
+      "definition_of_done": "Public default Auto and four explicit modes use real WS/PMD with temporary sessionless/no-cache operation, exact full-input plus response prefix delta and frozen noninput fields. Only success+responseID publishes continuation. Bound missing-ID full retry and pre-generation connection-limit reconnect separately, permit transport fallback only before first effective provider event, never on auth/protocol/abort. EOF/started failure preserves partial and final error, no output splice or silent SSE parity substitute. Complete the RDF-24 consolidation using the existing private frame/pmd/io implementation under crates/opi-ai/src/ws, not a second codec or revived companion. Preserve the public ws Upgrade API; the real Models -> Codex adapter -> source-qualified strict Upgrade -> private protocol owner must execute framing, PMD, window8 negotiation, ordered trailing bytes, Close and active/idle cancellation. Replace the transitional unused-code boundary with this genuine production path, not test-only wiring or constructing and dropping an unused owner. Retain the migrated corpus, Send/nonSync, partial/flush/EOF, storage, cancellation and fairness assertions plus exact compression/hidden-API/unsafe obligations. Run applicable root gates and ordinary/default/C-zlib graphs. Actual opi-ai cargo package artifacts must contain private protocol sources, required tests/fixtures/helpers and LICENSE/NOTICE; extracted private tests and fresh external Models -> real Codex -> Upgrade -> private-codec consumers run in all three graphs and are reported separately. Upgrade-only/raw-stream consumers do not close this task. Record exact registry versions/checksums/features and actual AWS-LC plus C-libz native provenance when both are selected. No public codec, test feature, doc-hidden public export, copied production source, checkout/root patch or library-lock substitution. Reuse the source-identical 7cb5f0c physical migration and valid proof; do not redo removed standalone-package gates or call that partial proof the completed Codex path. Preserve 20.15 historical delivery and 20.17/34/57/58 acceptance ownership. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Codex native parameters, source transport modes and frozen noninput fields remain at this original owner; continuation/retry does not reselect identity or change frozen options.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -4280,6 +4280,11 @@
           "field": "verification",
           "reason": "Retain the existing private codec corpus and dedicated Codex target; explicitly include tests/ws_upgrade.rs as the public Upgrade supplement now outside src/ws/tests. The existing package_slice WS addendum executes extracted private protocol tests, extracted public Upgrade tests and separate external public consumers in ordinary/default/C-zlib graphs. Upgrade-only or direct request-builder proof does not close the still-required real Models/Codex/private-codec chain, continuation or resource cleanup. No new gate or executable is introduced.",
           "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md#8.1 归属、接口与唯一生产接入"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -4325,6 +4330,19 @@
             "cargo test -p opi-ai --lib ws:: --features flate2/default",
             "cargo test -p opi-ai --lib ws:: --features flate2/zlib",
             "python -B scripts/pi-sdk-conformance/package_slice.py --family ws --offline --scratch <new-workspace-external-directory> --target-dir <existing-marked-shared-workspace-cache>"
+          ],
+          "production_call_sites": [
+            "opi_ai Codex direct adapter",
+            "opi_ai::Models::stream/stream_simple (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.16",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Codex native parameters, source transport modes and frozen noninput fields remain at this original owner; continuation/retry does not reselect identity or change frozen options.",
+          "verification": [
+            "cargo test -p opi-ai --test openai_codex_responses"
           ],
           "production_call_sites": [
             "opi_ai Codex direct adapter",
@@ -9458,7 +9476,7 @@
       "title": "42 profiles、目录／预算集成与 canonical 引用迁移",
       "crate": "workspace",
       "parent_spec_row": "DEL-10",
-      "definition_of_done": "Every one of42 factories produces exact source-qualified registered wires/defaults/auth/filter/endpoint metadata, real public calls and full custom record behavior, including OpenAI Responses default plus Chat and Azure dual wires. Reentrant gemini/google, vertex/google-vertex, bedrock/amazon-bedrock config/store reference migration detects conflicts before copy/ACK/switch and never overwrites accounts, rewrites historical ApiKind or retains permanent builtin aliases. Test profile-specific wire fixtures not factory count alone. Own the assembled full source closures for frozen route/effort (AIR-001/V-01), acquisition defaults and source send accounting (AIR-007/V-05/DEL-05/DEL-06), built-in catalog behavior (AIR-034/064/V-28/56), adapter-specific sampling/pricing (AIR-062/V-54), and transcript/native-effort stamps unaffected by sampling/onPayload overrides (V-16). All corresponding mechanisms are supplied by predecessor tasks. Reuse their named fixtures/results at the final relevant state and add only missing cross-path conformance; no second driver, catalog owner, retry coordinator or full implementation pass. Own complete V-32 through actual adapter capture -> terminal -> serialize/reload -> next request, including same-identity effort stamps and cross-identity projection; use the completed 20.7 replay mechanism and 20.37/protocol producers, never hand-constructed metadata alone.",
+      "definition_of_done": "Every one of42 factories produces exact source-qualified registered wires/defaults/auth/filter/endpoint metadata, real public calls and full custom record behavior, including OpenAI Responses default plus Chat and Azure dual wires. Reentrant gemini/google, vertex/google-vertex, bedrock/amazon-bedrock config/store reference migration detects conflicts before copy/ACK/switch and never overwrites accounts, rewrites historical ApiKind or retains permanent builtin aliases. Test profile-specific wire fixtures not factory count alone. Own the assembled full source closures for frozen route/effort (AIR-001/V-01), acquisition defaults and source send accounting (AIR-007/V-05/DEL-05/DEL-06), built-in catalog behavior (AIR-034/064/V-28/56), adapter-specific sampling/pricing (AIR-062/V-54), and transcript/native-effort stamps unaffected by sampling/onPayload overrides (V-16). All corresponding mechanisms are supplied by predecessor tasks. Reuse their named fixtures/results at the final relevant state and add only missing cross-path conformance; no second driver, catalog owner, retry coordinator or full implementation pass. Own complete V-32 through actual adapter capture -> terminal -> serialize/reload -> next request, including same-identity effort stamps and cross-identity projection; use the completed 20.7 replay mechanism and 20.37/protocol producers, never hand-constructed metadata alone. Verify source-qualified factory/profile/model and per-call parameters through actual selected adapters, preserving explicit false/zero/omission. Final auth-derived endpoint precedes endpoint-sensitive compatibility. Capture method/URL/headers/body and separate source exchanges from generation attempts; no identity fallback or host TOML/JSON migration. Reuse predecessor cases at the final relevant state rather than rerunning copied suites.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -9621,6 +9639,11 @@
           "field": "acceptance_partition",
           "reason": "V-32 full source closure moves from 20.7 to 20.34 after the real protocol adapters and effort metadata exist. 20.7 proves its current-adapter canonical replay and opaque-preservation slice only; a hand-constructed historical stamp is not producer-to-next-request proof. Reuse predecessor assertions and add only distinct assembled cases; do not add a reverse dependency from 20.7 to 20.37.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#新增已确认能力的验收（V-27–38） / V-32"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-05 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-05"
         }
       ],
       "tier": "workspace",
@@ -9942,6 +9965,25 @@
             "opi_ai completed real adapter producers and next-request replay through Models (target)"
           ],
           "status": "open"
+        },
+        {
+          "id": "ONB-05-20.34",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-05",
+          "scenario": "Verify source-qualified factory/profile/model and per-call parameters through actual selected adapters, preserving explicit false/zero/omission. Final auth-derived endpoint precedes endpoint-sensitive compatibility. Capture method/URL/headers/body and separate source exchanges from generation attempts; no identity fallback or host TOML/JSON migration. Reuse predecessor cases at the final relevant state rather than rerunning copied suites.",
+          "verification": [
+            "cargo test -p opi-ai --test request_enrichment --test model_wire_metadata --test provider_collection"
+          ],
+          "production_call_sites": [
+            "opi_ai builtin provider factories (target)",
+            "opi_coding_agent::provider_factory",
+            "opi_coding_agent config/credential-reference migration",
+            "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
+            "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)",
+            "opi_ai transcript projection/real adapter preparation (target)",
+            "opi_ai serialized Message roundtrip",
+            "opi_ai completed real adapter producers and next-request replay through Models (target)"
+          ],
+          "status": "open"
         }
       ],
       "production_call_sites": [
@@ -10069,7 +10111,7 @@
       "title": "3.5 estimator、effort／sampling／pricing 元数据",
       "crate": "workspace",
       "parent_spec_row": "DEL-10",
-      "definition_of_done": "Replace estimator with applicable positive successful usage-anchor plus trailing canonical message estimates, UTF16 units/4800image chars/ceil(chars/3.5), prefix invalidation and independent reported totals. Preserve exact native omission/gating and source simple formulas including pi-messages bypass. Modelbase < effective-level < request sampling, tiers strict-threshold/first-equal and service-tier differences are actually wired, OpenRouterimage uses base cost exception. Metadata does not create new predispatch limits, unknown stays distinct from0 and old duplicate reasoning_effort config keys error only after replacement proof. Local scope: public estimator and metadata/cost helpers plus the currently migrated Chat/Responses adapters prove the single arithmetic and precedence mechanism. Full per-adapter service-tier/image pricing and AIR-062/V-54 close at 20.34 after their real adapters.",
+      "definition_of_done": "Replace estimator with applicable positive successful usage-anchor plus trailing canonical message estimates, UTF16 units/4800image chars/ceil(chars/3.5), prefix invalidation and independent reported totals. Preserve exact native omission/gating and source simple formulas including pi-messages bypass. Modelbase < effective-level < request sampling, tiers strict-threshold/first-equal and service-tier differences are actually wired, OpenRouterimage uses base cost exception. Metadata does not create new predispatch limits, unknown stays distinct from0 and old duplicate reasoning_effort config keys error only after replacement proof. Local scope: public estimator and metadata/cost helpers plus the currently migrated Chat/Responses adapters prove the single arithmetic and precedence mechanism. Full per-adapter service-tier/image pricing and AIR-062/V-54 close at 20.34 after their real adapters. Record the native/simple parameter inventory with units, omission/default, false/zero/null and source precedence. Public estimator/metadata plus currently migrated Chat/Responses request captures prove only the shared mechanism; each protocol owner and 20.34 retain final per-adapter proof. No new generic option clamp, timeout or retry policy.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -10137,6 +10179,11 @@
           "field": "acceptance_partition",
           "reason": "Local scope: public estimator and metadata/cost helpers plus the currently migrated Chat/Responses adapters prove the single arithmetic and precedence mechanism. Full per-adapter service-tier/image pricing and AIR-062/V-54 close at 20.34 after their real adapters.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -10150,7 +10197,8 @@
         "behavioral_tests": [
           "crates/opi-ai/tests/context_budget.rs",
           "crates/opi-ai/tests/usage_cost.rs",
-          "crates/opi-ai/tests/model_wire_metadata.rs"
+          "crates/opi-ai/tests/model_wire_metadata.rs",
+          "crates/opi-ai/tests/request_enrichment.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -10204,6 +10252,20 @@
           "scenario": "Replace estimator with applicable positive successful usage-anchor plus trailing canonical message estimates, UTF16 units/4800image chars/ceil(chars/3.5), prefix invalidation and independent reported totals. Preserve exact native omission/gating and source simple formulas including pi-messages bypass. Modelbase < effective-level < request sampling, tiers strict-threshold/first-equal and service-tier differences are actually wired, OpenRouterimage uses base cost exception. Metadata does not create new predispatch limits, unknown stays distinct from0 and old duplicate reasoning_effort config keys error only after replacement proof. Local scope: public estimator and metadata/cost helpers plus the currently migrated Chat/Responses adapters prove the single arithmetic and precedence mechanism. Full per-adapter service-tier/image pricing and AIR-062/V-54 close at 20.34 after their real adapters.",
           "verification": [
             "cargo test -p opi-ai --test context_budget --test model_wire_metadata --test usage_cost"
+          ],
+          "production_call_sites": [
+            "opi_ai context/usage/cost helpers",
+            "opi_ai Models native/simple preparation (target)",
+            "opi_coding_agent::compaction"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.35",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "Record the native/simple parameter inventory with units, omission/default, false/zero/null and source precedence. Public estimator/metadata plus currently migrated Chat/Responses request captures prove only the shared mechanism; each protocol owner and 20.34 retain final per-adapter proof. No new generic option clamp, timeout or retry policy.",
+          "verification": [
+            "cargo test -p opi-ai --test context_budget --test usage_cost --test model_wire_metadata --test request_enrichment"
           ],
           "production_call_sites": [
             "opi_ai context/usage/cost helpers",
@@ -10304,7 +10366,7 @@
       "title": "完整聊天 adapter：openai-completions",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public native/simple/complete/result and direct adapter execute Chat store omission/false, developer-role/bridge and declared reasoning formats/off/gating plus tool-result images. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+      "definition_of_done": "Public native/simple/complete/result and direct adapter execute Chat store omission/false, developer-role/bridge and declared reasoning formats/off/gating plus tool-result images. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Chat store omission versus false, developer-role/bridge, output-limit field, reasoning/tool-choice and effective request overrides remain source-qualified.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -10394,6 +10456,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-TELEMETRY; role=consumer; owner_task=20.54; module=opi_ai::telemetry; interface=TelemetryContext scoped poll/drop; representation=owned carrier; consumer_tasks=20.16,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.45,20.46,20.47,20.48,20.49,20.50,20.55; criterion_ids=AIR-055,V-47; legacy_paths=none; closure_test=crates/opi-ai/tests/telemetry_carrier.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -10450,6 +10517,19 @@
             "opi_ai openai-completions public direct adapter"
           ],
           "status": "open"
+        },
+        {
+          "id": "ONB-03-20.36",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Chat store omission versus false, developer-role/bridge, output-limit field, reasoning/tool-choice and effective request overrides remain source-qualified.",
+          "verification": [
+            "cargo test -p opi-ai --test openai_chat_fixtures"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models native/simple four entries (target)",
+            "opi_ai openai-completions public direct adapter"
+          ],
+          "status": "open"
         }
       ],
       "production_call_sites": [
@@ -10492,7 +10572,7 @@
       "title": "完整聊天 adapter：openai-responses",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public native/simple/complete/result and direct adapter execute native tool/grammar IDs, encrypted reasoning/replay, source service-tier and mid-conversation effort stamps. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+      "definition_of_done": "Public native/simple/complete/result and direct adapter execute native tool/grammar IDs, encrypted reasoning/replay, source service-tier and mid-conversation effort stamps. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Responses grammar/function tools, output limits, store, reasoning/service-tier/session/cache options retain their exact source semantics. Codex transport/native protocol remains at 20.16.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -10582,6 +10662,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-TELEMETRY; role=consumer; owner_task=20.54; module=opi_ai::telemetry; interface=TelemetryContext scoped poll/drop; representation=owned carrier; consumer_tasks=20.16,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.45,20.46,20.47,20.48,20.49,20.50,20.55; criterion_ids=AIR-055,V-47; legacy_paths=none; closure_test=crates/opi-ai/tests/telemetry_carrier.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -10606,6 +10691,19 @@
           "scenario": "Public native/simple/complete/result and direct adapter execute native tool/grammar IDs, encrypted reasoning/replay, source service-tier and mid-conversation effort stamps. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
           "verification": [
             "cargo test -p opi-ai --test openai_responses_fixtures --test openai_responses_lifecycle"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models native/simple four entries (target)",
+            "opi_ai openai-responses public direct adapter"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.37",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Responses grammar/function tools, output limits, store, reasoning/service-tier/session/cache options retain their exact source semantics. Codex transport/native protocol remains at 20.16.",
+          "verification": [
+            "cargo test -p opi-ai --test openai_responses_fixtures"
           ],
           "production_call_sites": [
             "opi_ai::Models native/simple four entries (target)",
@@ -10646,7 +10744,7 @@
       "title": "完整聊天 adapter：azure-openai-responses + Azure Chat",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public native/simple/complete/result and direct adapter execute real deployment/resource/apiVersion mapping and explicit dual wires, no Responses service-tier multiplier. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+      "definition_of_done": "Public native/simple/complete/result and direct adapter execute real deployment/resource/apiVersion mapping and explicit dual wires, no Responses service-tier multiplier. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Azure keeps both Chat and Responses with deployment/resource/API-version mapping and source-specific option omissions, without importing contradictory README prose.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -10738,6 +10836,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-TELEMETRY; role=consumer; owner_task=20.54; module=opi_ai::telemetry; interface=TelemetryContext scoped poll/drop; representation=owned carrier; consumer_tasks=20.16,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.45,20.46,20.47,20.48,20.49,20.50,20.55; criterion_ids=AIR-055,V-47; legacy_paths=none; closure_test=crates/opi-ai/tests/telemetry_carrier.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -10759,6 +10862,19 @@
           "id": "P20-S38",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-11",
           "scenario": "Public native/simple/complete/result and direct adapter execute real deployment/resource/apiVersion mapping and explicit dual wires, no Responses service-tier multiplier. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+          "verification": [
+            "cargo test -p opi-ai --test azure_openai_fixtures"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models native/simple four entries (target)",
+            "opi_ai azure-openai-responses + Azure Chat public direct adapter"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.38",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Azure keeps both Chat and Responses with deployment/resource/API-version mapping and source-specific option omissions, without importing contradictory README prose.",
           "verification": [
             "cargo test -p opi-ai --test azure_openai_fixtures"
           ],
@@ -10800,7 +10916,7 @@
       "title": "完整聊天 adapter：anthropic-messages",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public native/simple/complete/result and direct adapter execute inline-tools-2026-09-15 by-value redefinitions, strict variants, signed/redacted thinking and error-turn image relocation. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+      "definition_of_done": "Public native/simple/complete/result and direct adapter execute inline-tools-2026-09-15 by-value redefinitions, strict variants, signed/redacted thinking and error-turn image relocation. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Anthropic native thinking omitted/disabled/enabled and explicit budgets are distinct; enabled without budget uses source native default 1024, separate from simple effort policy and adaptive/strict variants.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -10891,6 +11007,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-TELEMETRY; role=consumer; owner_task=20.54; module=opi_ai::telemetry; interface=TelemetryContext scoped poll/drop; representation=owned carrier; consumer_tasks=20.16,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.45,20.46,20.47,20.48,20.49,20.50,20.55; criterion_ids=AIR-055,V-47; legacy_paths=none; closure_test=crates/opi-ai/tests/telemetry_carrier.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -10915,6 +11036,19 @@
           "scenario": "Public native/simple/complete/result and direct adapter execute inline-tools-2026-09-15 by-value redefinitions, strict variants, signed/redacted thinking and error-turn image relocation. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
           "verification": [
             "cargo test -p opi-ai --test anthropic_fixtures --test anthropic_thinking_roundtrip"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models native/simple four entries (target)",
+            "opi_ai anthropic-messages public direct adapter"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.39",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Anthropic native thinking omitted/disabled/enabled and explicit budgets are distinct; enabled without budget uses source native default 1024, separate from simple effort policy and adaptive/strict variants.",
+          "verification": [
+            "cargo test -p opi-ai --test anthropic_fixtures"
           ],
           "production_call_sites": [
             "opi_ai::Models native/simple four entries (target)",
@@ -10955,7 +11089,7 @@
       "title": "完整聊天 adapter：google-generative-ai",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public native/simple/complete/result and direct adapter execute thoughtSignature, Gemini3 unsigned tool handling, thinking level/budget and source unsupported callbacks/customfetch. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+      "definition_of_done": "Public native/simple/complete/result and direct adapter execute thoughtSignature, Gemini3 unsigned tool handling, thinking level/budget and source unsupported callbacks/customfetch. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Google native thinking budget -1 is dynamic and 0 disabled; signed/tool content, level choices and supported/unsupported callbacks stay source-qualified.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -11045,6 +11179,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-TELEMETRY; role=consumer; owner_task=20.54; module=opi_ai::telemetry; interface=TelemetryContext scoped poll/drop; representation=owned carrier; consumer_tasks=20.16,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.45,20.46,20.47,20.48,20.49,20.50,20.55; criterion_ids=AIR-055,V-47; legacy_paths=none; closure_test=crates/opi-ai/tests/telemetry_carrier.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -11069,6 +11208,19 @@
           "scenario": "Public native/simple/complete/result and direct adapter execute thoughtSignature, Gemini3 unsigned tool handling, thinking level/budget and source unsupported callbacks/customfetch. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
           "verification": [
             "cargo test -p opi-ai --test gemini_fixtures --test gemini_lifecycle"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models native/simple four entries (target)",
+            "opi_ai google-generative-ai public direct adapter"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.40",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Google native thinking budget -1 is dynamic and 0 disabled; signed/tool content, level choices and supported/unsupported callbacks stay source-qualified.",
+          "verification": [
+            "cargo test -p opi-ai --test gemini_fixtures"
           ],
           "production_call_sites": [
             "opi_ai::Models native/simple four entries (target)",
@@ -11109,7 +11261,7 @@
       "title": "完整聊天 adapter：google-vertex",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public native/simple/complete/result and direct adapter execute API-key Express versus ADC project/location endpoints and Google content/retry rules, independent provider identity. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+      "definition_of_done": "Public native/simple/complete/result and direct adapter execute API-key Express versus ADC project/location endpoints and Google content/retry rules, independent provider identity. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Vertex preserves Google native -1/0/positive budgets and levels plus real Express/ADC Authorization, target and quota provenance; token acquisition alone does not close generation.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -11201,6 +11353,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-TELEMETRY; role=consumer; owner_task=20.54; module=opi_ai::telemetry; interface=TelemetryContext scoped poll/drop; representation=owned carrier; consumer_tasks=20.16,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.45,20.46,20.47,20.48,20.49,20.50,20.55; criterion_ids=AIR-055,V-47; legacy_paths=none; closure_test=crates/opi-ai/tests/telemetry_carrier.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -11222,6 +11379,19 @@
           "id": "P20-S41",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-11",
           "scenario": "Public native/simple/complete/result and direct adapter execute API-key Express versus ADC project/location endpoints and Google content/retry rules, independent provider identity. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+          "verification": [
+            "cargo test -p opi-ai --test vertex_fixtures"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models native/simple four entries (target)",
+            "opi_ai google-vertex public direct adapter"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.41",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Vertex preserves Google native -1/0/positive budgets and levels plus real Express/ADC Authorization, target and quota provenance; token acquisition alone does not close generation.",
           "verification": [
             "cargo test -p opi-ai --test vertex_fixtures"
           ],
@@ -11263,7 +11433,7 @@
       "title": "完整聊天 adapter：bedrock-converse-stream",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public native/simple/complete/result and direct adapter execute AWS eventstream CRC/tools/images/signatures/redacted bytes, source auth/retries and actual H2/H1 paths. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+      "definition_of_done": "Public native/simple/complete/result and direct adapter execute AWS eventstream CRC/tools/images/signatures/redacted bytes, source auth/retries and actual H2/H1 paths. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Bedrock inference/additional request fields, auth/signature identity and exact retry modes retain their source timing/accounting; auth-only proof does not close generation.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -11355,6 +11525,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-TELEMETRY; role=consumer; owner_task=20.54; module=opi_ai::telemetry; interface=TelemetryContext scoped poll/drop; representation=owned carrier; consumer_tasks=20.16,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.45,20.46,20.47,20.48,20.49,20.50,20.55; criterion_ids=AIR-055,V-47; legacy_paths=none; closure_test=crates/opi-ai/tests/telemetry_carrier.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -11376,6 +11551,19 @@
           "id": "P20-S42",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-11",
           "scenario": "Public native/simple/complete/result and direct adapter execute AWS eventstream CRC/tools/images/signatures/redacted bytes, source auth/retries and actual H2/H1 paths. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+          "verification": [
+            "cargo test -p opi-ai --test bedrock_fixtures"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models native/simple four entries (target)",
+            "opi_ai bedrock-converse-stream public direct adapter"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.42",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Bedrock inference/additional request fields, auth/signature identity and exact retry modes retain their source timing/accounting; auth-only proof does not close generation.",
           "verification": [
             "cargo test -p opi-ai --test bedrock_fixtures"
           ],
@@ -11430,7 +11618,7 @@
       "title": "完整聊天 adapter：mistral-conversations",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public native/simple/complete/result and direct adapter execute actual chat/completions endpoint despite API name, exact headers/body/stream timing and failure. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+      "definition_of_done": "Public native/simple/complete/result and direct adapter execute actual chat/completions endpoint despite API name, exact headers/body/stream timing and failure. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Mistral uses its own exact request fields, endpoint, source timeout scope and typed results rather than inherited Chat defaults.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -11520,6 +11708,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-TELEMETRY; role=consumer; owner_task=20.54; module=opi_ai::telemetry; interface=TelemetryContext scoped poll/drop; representation=owned carrier; consumer_tasks=20.16,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.45,20.46,20.47,20.48,20.49,20.50,20.55; criterion_ids=AIR-055,V-47; legacy_paths=none; closure_test=crates/opi-ai/tests/telemetry_carrier.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -11541,6 +11734,19 @@
           "id": "P20-S43",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-11",
           "scenario": "Public native/simple/complete/result and direct adapter execute actual chat/completions endpoint despite API name, exact headers/body/stream timing and failure. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+          "verification": [
+            "cargo test -p opi-ai --test mistral_fixtures"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models native/simple four entries (target)",
+            "opi_ai mistral-conversations public direct adapter"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.43",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Mistral uses its own exact request fields, endpoint, source timeout scope and typed results rather than inherited Chat defaults.",
           "verification": [
             "cargo test -p opi-ai --test mistral_fixtures"
           ],
@@ -11582,7 +11788,7 @@
       "title": "完整聊天 adapter：pi-messages",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public native/simple/complete/result and direct adapter execute POST /messages exact option whitelist and SSE typed event validation, native simple bypass/no invented clamp. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+      "definition_of_done": "Public native/simple/complete/result and direct adapter execute POST /messages exact option whitelist and SSE typed event validation, native simple bypass/no invented clamp. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. pi-messages/Radius keeps its native option whitelist and simple bypass with exact /messages request fields and typed events, not a Chat serializer.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -11667,6 +11873,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-TELEMETRY; role=consumer; owner_task=20.54; module=opi_ai::telemetry; interface=TelemetryContext scoped poll/drop; representation=owned carrier; consumer_tasks=20.16,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.45,20.46,20.47,20.48,20.49,20.50,20.55; criterion_ids=AIR-055,V-47; legacy_paths=none; closure_test=crates/opi-ai/tests/telemetry_carrier.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -11688,6 +11899,19 @@
           "id": "P20-S44",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-11",
           "scenario": "Public native/simple/complete/result and direct adapter execute POST /messages exact option whitelist and SSE typed event validation, native simple bypass/no invented clamp. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof.",
+          "verification": [
+            "cargo test -p opi-ai --test chat_pi_messages"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models native/simple four entries (target)",
+            "opi_ai pi-messages public direct adapter"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.44",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. pi-messages/Radius keeps its native option whitelist and simple bypass with exact /messages request fields and typed events, not a Chat serializer.",
           "verification": [
             "cargo test -p opi-ai --test chat_pi_messages"
           ],
@@ -11729,7 +11953,7 @@
       "title": "typed OpenRouter image／ImageApi 公共路径",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Implement fixed-O ImageApi and operation-qualified image selection, one real OpenRouter image adapter, same source auth/callback/lifecycle/typed accounting. Shared conformance covers both real reference consumers common SDK workflow through public generate_images, without porting their codemode/durable hosts. Preserve first-choice text/dataURL order, encoded original/decode status, text-only/empty success and skipped nonmatching entries, source600000ms body-inclusive timeout and base-price exception. Wrong operation/modality rejects before auth where known, no URL fetch/file write/image streaming/second protocol is invented.",
+      "definition_of_done": "Implement fixed-O ImageApi and operation-qualified image selection, one real OpenRouter image adapter, same source auth/callback/lifecycle/typed accounting. Shared conformance covers both real reference consumers common SDK workflow through public generate_images, without porting their codemode/durable hosts. Preserve first-choice text/dataURL order, encoded original/decode status, text-only/empty success and skipped nonmatching entries, source600000ms body-inclusive timeout and base-price exception. Wrong operation/modality rejects before auth where known, no URL fetch/file write/image streaming/second protocol is invented. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Typed OpenRouter image options, timeout, base-cost exception and ordered image/text result keep their own source contract without Chat serialization or an invented streaming API.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -11818,6 +12042,11 @@
           "field": "test_support_ownership",
           "reason": "Add only the distinct operation-specific script/record support needed by this vertical slice after its real operation types exist. Reuse 20.53.8 chat events and final-outcome ownership; mocks supplement real adapter/source fixtures and never close wire acceptance.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -11875,6 +12104,19 @@
             "opi_ai OpenRouter image direct adapter (target)"
           ],
           "status": "open"
+        },
+        {
+          "id": "ONB-03-20.45",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Typed OpenRouter image options, timeout, base-cost exception and ordered image/text result keep their own source contract without Chat serialization or an invented streaming API.",
+          "verification": [
+            "cargo test -p opi-ai --test openrouter_fixtures"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models::generate_images (target)",
+            "opi_ai OpenRouter image direct adapter (target)"
+          ],
+          "status": "open"
         }
       ],
       "production_call_sites": [
@@ -11913,7 +12155,7 @@
       "title": "typed classifier：typesafe-system-one",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public classify reaches real typesafe-system-one adapter with typed choice/ordered score/noul bool, per-protocol label/level and image rules. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count.",
+      "definition_of_done": "Public classify reaches real typesafe-system-one adapter with typed choice/ordered score/noul bool, per-protocol label/level and image rules. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Typesafe classifier parameters and typed outcomes preserve their source types, finite constraints and retry rules without invented probability normalization.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -11995,6 +12237,11 @@
           "field": "test_support_ownership",
           "reason": "Add only the distinct operation-specific script/record support needed by this vertical slice after its real operation types exist. Reuse 20.53.8 chat events and final-outcome ownership; mocks supplement real adapter/source fixtures and never close wire acceptance.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -12019,6 +12266,19 @@
           "scenario": "Public classify reaches real typesafe-system-one adapter with typed choice/ordered score/noul bool, per-protocol label/level and image rules. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count.",
           "verification": [
             "cargo test -p opi-ai --test classifier_contract --test test_support_tests"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models::classify (target)",
+            "opi_ai typesafe-system-one direct adapter (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.46",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Typesafe classifier parameters and typed outcomes preserve their source types, finite constraints and retry rules without invented probability normalization.",
+          "verification": [
+            "cargo test -p opi-ai --test classifier_contract"
           ],
           "production_call_sites": [
             "opi_ai::Models::classify (target)",
@@ -12061,7 +12321,7 @@
       "title": "typed classifier：cloudflare-workers-ai-system-one",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public classify reaches real cloudflare-workers-ai-system-one adapter with Cloudflare envelope/account/auth, image support and finite required values. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count.",
+      "definition_of_done": "Public classify reaches real cloudflare-workers-ai-system-one adapter with Cloudflare envelope/account/auth, image support and finite required values. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Cloudflare classifier parameters, account/envelope/image fields and typed outcomes preserve their own protocol.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -12137,6 +12397,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-TELEMETRY; role=consumer; owner_task=20.54; module=opi_ai::telemetry; interface=TelemetryContext scoped poll/drop; representation=owned carrier; consumer_tasks=20.16,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.45,20.46,20.47,20.48,20.49,20.50,20.55; criterion_ids=AIR-055,V-47; legacy_paths=none; closure_test=crates/opi-ai/tests/telemetry_carrier.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -12158,6 +12423,19 @@
           "id": "P20-S47",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-11",
           "scenario": "Public classify reaches real cloudflare-workers-ai-system-one adapter with Cloudflare envelope/account/auth, image support and finite required values. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count.",
+          "verification": [
+            "cargo test -p opi-ai --test classifier_contract"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models::classify (target)",
+            "opi_ai cloudflare-workers-ai-system-one direct adapter (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.47",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Cloudflare classifier parameters, account/envelope/image fields and typed outcomes preserve their own protocol.",
           "verification": [
             "cargo test -p opi-ai --test classifier_contract"
           ],
@@ -12200,7 +12478,7 @@
       "title": "typed classifier：llama-cpp-classify",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public classify reaches real llama-cpp-classify adapter with tokenization/template/logprobs/probability algorithms and actual image/refusal rules. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count.",
+      "definition_of_done": "Public classify reaches real llama-cpp-classify adapter with tokenization/template/logprobs/probability algorithms and actual image/refusal rules. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. llama-cpp classifier parameters and tokenization/template/logprob result preserve their own protocol and image/refusal rules.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -12277,6 +12555,11 @@
           "field": "shared_decision",
           "reason": "decision_id=P20-TELEMETRY; role=consumer; owner_task=20.54; module=opi_ai::telemetry; interface=TelemetryContext scoped poll/drop; representation=owned carrier; consumer_tasks=20.16,20.36,20.37,20.38,20.39,20.40,20.41,20.42,20.43,20.44,20.45,20.46,20.47,20.48,20.49,20.50,20.55; criterion_ids=AIR-055,V-47; legacy_paths=none; closure_test=crates/opi-ai/tests/telemetry_carrier.rs; trigger=multiple-consumers",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Phase delivery contract; docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -12298,6 +12581,19 @@
           "id": "P20-S48",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-11",
           "scenario": "Public classify reaches real llama-cpp-classify adapter with tokenization/template/logprobs/probability algorithms and actual image/refusal rules. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count.",
+          "verification": [
+            "cargo test -p opi-ai --test classifier_contract"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models::classify (target)",
+            "opi_ai llama-cpp-classify direct adapter (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.48",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. llama-cpp classifier parameters and tokenization/template/logprob result preserve their own protocol and image/refusal rules.",
           "verification": [
             "cargo test -p opi-ai --test classifier_contract"
           ],
@@ -12340,7 +12636,7 @@
       "title": "OpenAI Decisions 与四 classifier 共用合同验收",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Public classify reaches real openai-decisions adapter with predicate bool and API-key-only availability plus source504 retry exclusion. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count. Own full four-protocol V-24/AIR-028/AIR-029 closure over completed 20.46/47/48 plus this adapter. Reuse one ClassifierApi conformance surface; add distinct assembled cases rather than a second implementation or copied suites.",
+      "definition_of_done": "Public classify reaches real openai-decisions adapter with predicate bool and API-key-only availability plus source504 retry exclusion. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count. Own full four-protocol V-24/AIR-028/AIR-029 closure over completed 20.46/47/48 plus this adapter. Reuse one ClassifierApi conformance surface; add distinct assembled cases rather than a second implementation or copied suites. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Decisions remains API-key-only, with its own predicate/result/options and 504 retry exclusion; close the assembled four-classifier proof without duplicate suites.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -12421,6 +12717,11 @@
           "field": "definition_of_done",
           "reason": "Public classify reaches real openai-decisions adapter with predicate bool and API-key-only availability plus source504 retry exclusion. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count. Own full four-protocol V-24/AIR-028/AIR-029 closure over completed 20.46/47/48 plus this adapter. Reuse one ClassifierApi conformance surface; add distinct assembled cases rather than a second implementation or copied suites.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
         }
       ],
       "tier": "workspace",
@@ -12484,6 +12785,20 @@
           "id": "P20-S49",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-11",
           "scenario": "Public classify reaches real openai-decisions adapter with predicate bool and API-key-only availability plus source504 retry exclusion. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count. Own full four-protocol V-24/AIR-028/AIR-029 closure over completed 20.46/47/48 plus this adapter. Reuse one ClassifierApi conformance surface; add distinct assembled cases rather than a second implementation or copied suites.",
+          "verification": [
+            "cargo test -p opi-ai --test classifier_contract"
+          ],
+          "production_call_sites": [
+            "opi_ai::Models::classify (target)",
+            "opi_ai openai-decisions direct adapter (target)",
+            "opi_ai four real classifier protocol adapters via Models::classify (target)"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-03-20.49",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03",
+          "scenario": "For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Decisions remains API-key-only, with its own predicate/result/options and 504 retry exclusion; close the assembled four-classifier proof without duplicate suites.",
           "verification": [
             "cargo test -p opi-ai --test classifier_contract"
           ],
@@ -12716,7 +13031,7 @@
       "title": "headers／payload／response／raw functional callbacks",
       "crate": "workspace",
       "parent_spec_row": "DEL-11",
-      "definition_of_done": "Wire headers, onPayload, onResponse and raw-event callbacks through Models and every currently existing migrated real direct adapter at its source-defined timing. Public ordinary-call fixtures prove post-transform validation/protected identity, once-per-variant payload freezing across ordinary acquisition retry, raw-before-normalized order, functional callback failure/cancel and supported-versus-unsupported protocol behavior. This slice closes only the ordinary callback path; 20.11 consumes it and owns strict-variant interaction, while operation tasks 20.43-50 wire newly introduced APIs and 20.57 closes full AIR-059/V-51 coverage. Never recover raw events from a normalized EventStream or stack a second driver.",
+      "definition_of_done": "Wire headers, onPayload, onResponse and raw-event callbacks through Models and every currently existing migrated real direct adapter at its source-defined timing. Public ordinary-call fixtures prove post-transform validation/protected identity, once-per-variant payload freezing across ordinary acquisition retry, raw-before-normalized order, functional callback failure/cancel and supported-versus-unsupported protocol behavior. This slice closes only the ordinary callback path; 20.11 consumes it and owns strict-variant interaction, while operation tasks 20.43-50 wire newly introduced APIs and 20.57 closes full AIR-059/V-51 coverage. Never recover raw events from a normalized EventStream or stack a second driver. Explicitly prove SDK header omission/set/removal and protected selected identity through actual requests, with source-qualified per-variant callback timing/count and frozen ordinary retries. Runtime signal/fetch/functions are not JSON configuration. New operation consumers and 20.57 retain their full cross-operation closure.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -12791,6 +13106,11 @@
           "field": "acceptance_partition",
           "reason": "Callbacks precede strict integration: 20.4 -> 20.51 -> 20.11. The complete V-36/AIR-042 rows belong to 20.11; the local P20-S51 proves ordinary callback semantics without requiring future strict behavior.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#新增已确认能力的验收（V-27–38）"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-04 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-04"
         }
       ],
       "tier": "workspace",
@@ -12824,6 +13144,19 @@
           "scenario": "Wire headers, onPayload, onResponse and raw-event callbacks through Models and every currently existing migrated real direct adapter at its source-defined timing. Public ordinary-call fixtures prove post-transform validation/protected identity, once-per-variant payload freezing across ordinary acquisition retry, raw-before-normalized order, functional callback failure/cancel and supported-versus-unsupported protocol behavior. This slice closes only the ordinary callback path; 20.11 consumes it and owns strict-variant interaction, while operation tasks 20.43-50 wire newly introduced APIs and 20.57 closes full AIR-059/V-51 coverage. Never recover raw events from a normalized EventStream or stack a second driver.",
           "verification": [
             "cargo test -p opi-ai --test anthropic_fixtures --test azure_openai_fixtures --test bedrock_fixtures --test gemini_fixtures --test mistral_fixtures --test openai_chat_fixtures --test openai_codex_responses --test openai_responses_fixtures --test provider_diagnostics --test request_enrichment --test vertex_fixtures"
+          ],
+          "production_call_sites": [
+            "opi_ai Models ordinary/advanced driver (target)",
+            "opi_ai existing public direct adapter acquisition"
+          ],
+          "status": "open"
+        },
+        {
+          "id": "ONB-04-20.51",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-04",
+          "scenario": "Explicitly prove SDK header omission/set/removal and protected selected identity through actual requests, with source-qualified per-variant callback timing/count and frozen ordinary retries. Runtime signal/fetch/functions are not JSON configuration. New operation consumers and 20.57 retain their full cross-operation closure.",
+          "verification": [
+            "cargo test -p opi-ai --test request_enrichment"
           ],
           "production_call_sites": [
             "opi_ai Models ordinary/advanced driver (target)",
@@ -14049,7 +14382,7 @@
       "title": "逐切片迁移后的旧符号／断言／历史 reader 退出审计",
       "crate": "workspace",
       "parent_spec_row": "DEL-13",
-      "definition_of_done": "Audit that each earlier breaking slice already migrated its callers, then remove only remaining source-listed shallow Config/Model/ProviderKind/error/parallel facade exports and equivalent obsolete assertions after passing replacements. Verify old current exports/readers/dual writes/stacked retry reach zero while historical v1/read-only events, sessionv2 writer facts, authority/denial/secret/CRC/SigV4/process tests remain. Synchronize user-visible Unreleased/current schemas/fixtures and bilingual SDK migration docs, no host policy/sessionv3 redesign. Audit removal already completed slice by slice and retain historical readers; this task does not defer known predecessor symbol/caller migrations or authorize a second broad rewrite. Reuse passing replacement assertions; delete only newly proven task-local leftovers.",
+      "definition_of_done": "Audit that each earlier breaking slice already migrated its callers, then remove only remaining source-listed shallow Config/Model/ProviderKind/error/parallel facade exports and equivalent obsolete assertions after passing replacements. Verify old current exports/readers/dual writes/stacked retry reach zero while historical v1/read-only events, sessionv2 writer facts, authority/denial/secret/CRC/SigV4/process tests remain. Synchronize user-visible Unreleased/current schemas/fixtures and bilingual SDK migration docs, no host policy/sessionv3 redesign. Audit removal already completed slice by slice and retain historical readers; this task does not defer known predecessor symbol/caller migrations or authorize a second broad rewrite. Reuse passing replacement assertions; delete only newly proven task-local leftovers. Reorganize the bilingual crate README into purpose/install/complete ordinary quick start, streaming/final result, factories/catalog/auth, Context/tools/continuation, native/simple options and errors/cancel/usage before advanced/contributor detail. Create the three owned example sources and reuse their exact source in the manual, using the actual public Context/Request API without retired fields or manual-only resolver/route/prepare steps. Preserve moved lifecycle/security facts at discoverable owning links. This task compiles examples; the actual external packaged-example proof remains at 20.57.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -14106,6 +14439,11 @@
           "field": "definition_of_done",
           "reason": "Audit that each earlier breaking slice already migrated its callers, then remove only remaining source-listed shallow Config/Model/ProviderKind/error/parallel facade exports and equivalent obsolete assertions after passing replacements. Verify old current exports/readers/dual writes/stacked retry reach zero while historical v1/read-only events, sessionv2 writer facts, authority/denial/secret/CRC/SigV4/process tests remain. Synchronize user-visible Unreleased/current schemas/fixtures and bilingual SDK migration docs, no host policy/sessionv3 redesign. Audit removal already completed slice by slice and retain historical readers; this task does not defer known predecessor symbol/caller migrations or authorize a second broad rewrite. Reuse passing replacement assertions; delete only newly proven task-local leftovers.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-01 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-01"
         }
       ],
       "tier": "workspace",
@@ -14203,6 +14541,18 @@
             "opi_coding_agent factory/config/auth/compaction/JSON-RPC assembly"
           ],
           "status": "open"
+        },
+        {
+          "id": "ONB-01-20.56",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-01",
+          "scenario": "Reorganize the bilingual crate README into purpose/install/complete ordinary quick start, streaming/final result, factories/catalog/auth, Context/tools/continuation, native/simple options and errors/cancel/usage before advanced/contributor detail. Create the three owned example sources and reuse their exact source in the manual, using the actual public Context/Request API without retired fields or manual-only resolver/route/prepare steps. Preserve moved lifecycle/security facts at discoverable owning links. This task compiles examples; the actual external packaged-example proof remains at 20.57.",
+          "verification": [
+            "cargo check -p opi-ai --examples",
+            "python scripts/opi-doc-check.py",
+            "git diff --check"
+          ],
+          "production_call_sites": [],
+          "status": "open"
         }
       ],
       "production_call_sites": [
@@ -14284,7 +14634,10 @@
         "crates/opi-coding-agent/tests/*oauth*",
         "crates/opi-coding-agent/tests/*provider*",
         "crates/opi-coding-agent/tests/*rpc*",
-        "crates/opi-coding-agent/tests/*session*"
+        "crates/opi-coding-agent/tests/*session*",
+        "crates/opi-ai/examples/quick_start.rs",
+        "crates/opi-ai/examples/quick_start_stream.rs",
+        "crates/opi-ai/examples/tool_loop.rs"
       ],
       "verified_at_commit": null,
       "evidence": null,
@@ -14310,7 +14663,7 @@
       "title": "workspace 外真实 package consumer 与完整 SDK 矩阵",
       "crate": "workspace",
       "parent_spec_row": "DEL-14",
-      "definition_of_done": "Run fresh workspace-external consumer using opi-ai as its sole Opi runtime dependency and ordinary Tokio/Serde/Stream dependencies, with actually packaged offline resources and registry-resolvable controlled dependency closure, no root patch/TEMP paths. Exercise every public workflow, all10 chat/1image/4classifier/42profiles/9flow paths with fake sources/transport and complete model records, two instances/shared store/cleanup/options portability/tool loop/serde. Differential fixed Pi public entrypoints use import-reviewed mock-only runner, isolated HOME/env/no credentials-triggered live/no silent install, exact source/runtime/fixture/RDF/result pins. Public failures/actual allocation/large lawful acceptance/typed policies remain observable, not helper-only proof. Reuse early external-consumer packaging checks from 20.8/12/14 and the private SDK/Codex package proof owned by 20.16, keeping 20.15 independent-package results at their original historical identity, plus predecessor behavioral suites, adding only distinct assembled external-use cases. Own full cross-operation duration AIR-061/V-53 and callbacks AIR-059/V-51 proof including new image/classifier/deferred producers; no second implementation pass. The final opi-ai artifact must include private WS sources/tests/fixtures/helpers and LICENSE/NOTICE. Revalidate the final relevant ordinary/default/C-zlib artifact graphs with separate extracted private protocol tests and real public Models/Codex/Upgrade/private-codec consumers. Upgrade-only or old companion package proof cannot close final assembled SDK acceptance; native platform/MSRV stays with 20.58.",
+      "definition_of_done": "Run fresh workspace-external consumer using opi-ai as its sole Opi runtime dependency and ordinary Tokio/Serde/Stream dependencies, with actually packaged offline resources and registry-resolvable controlled dependency closure, no root patch/TEMP paths. Exercise every public workflow, all10 chat/1image/4classifier/42profiles/9flow paths with fake sources/transport and complete model records, two instances/shared store/cleanup/options portability/tool loop/serde. Differential fixed Pi public entrypoints use import-reviewed mock-only runner, isolated HOME/env/no credentials-triggered live/no silent install, exact source/runtime/fixture/RDF/result pins. Public failures/actual allocation/large lawful acceptance/typed policies remain observable, not helper-only proof. Reuse early external-consumer packaging checks from 20.8/12/14 and the private SDK/Codex package proof owned by 20.16, keeping 20.15 independent-package results at their original historical identity, plus predecessor behavioral suites, adding only distinct assembled external-use cases. Own full cross-operation duration AIR-061/V-53 and callbacks AIR-059/V-51 proof including new image/classifier/deferred producers; no second implementation pass. The final opi-ai artifact must include private WS sources/tests/fixtures/helpers and LICENSE/NOTICE. Revalidate the final relevant ordinary/default/C-zlib artifact graphs with separate extracted private protocol tests and real public Models/Codex/Upgrade/private-codec consumers. Upgrade-only or old companion package proof cannot close final assembled SDK acceptance; native platform/MSRV stays with 20.58. Run the exact README/example quick-start, streaming and tool-result-continuation source from a fresh workspace-external consumer of the actual opi-ai .crate. The consumer uses only opi-ai plus documented ordinary runtime/Serde/stream dependencies, with no product config, Agent, manual auth resolver, prepare lifecycle, private path/root patch or persistence implementation. A controlled peer proves the real request/final result/continuation; assert default memory stores, explicit builtins/factories and zero env/store/network during construction/registration/static queries. Empty Models is not advertised as populated. Reuse the package harness and preserve final native/feature-union acceptance.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -14437,6 +14790,11 @@
           "field": "upstream_data_contract",
           "reason": "Own P20-RDF-21 final assembled SDK/package semantic closure and all inherited open full-source scenarios. Reuse original early proof only within its exact archive/input identity; changed resources or new operations need final relevant artifact evidence. Schema vendor gates remain retired, HTTP/crypto use current RDF-22/23, and RDF-24 WS is private SDK protocol state plus unmodified compression, not an independent package. 20.15 old package evidence is historical; reuse valid 20.16 private/public proofs without claiming Upgrade-only or library lock as final package acceptance. Native/MSRV and final supply chain remain 20.58.",
           "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-24-owned-ws-profile"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-02 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-02"
         }
       ],
       "tier": "workspace",
@@ -15391,6 +15749,19 @@
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
           "status": "open"
+        },
+        {
+          "id": "ONB-02-20.57",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-02",
+          "scenario": "Run the exact README/example quick-start, streaming and tool-result-continuation source from a fresh workspace-external consumer of the actual opi-ai .crate. The consumer uses only opi-ai plus documented ordinary runtime/Serde/stream dependencies, with no product config, Agent, manual auth resolver, prepare lifecycle, private path/root patch or persistence implementation. A controlled peer proves the real request/final result/continuation; assert default memory stores, explicit builtins/factories and zero env/store/network during construction/registration/static queries. Empty Models is not advertised as populated. Reuse the package harness and preserve final native/feature-union acceptance.",
+          "verification": [
+            "cargo test -p opi-ai --test external_sdk"
+          ],
+          "production_call_sites": [
+            "published-package-shaped opi_ai public consumer (target)",
+            "all real opi_ai built-in/direct/custom adapter paths (target)"
+          ],
+          "status": "open"
         }
       ],
       "production_call_sites": [
@@ -15552,6 +15923,11 @@
           "field": "ws_profile_reconciliation",
           "reason": "Update only V-58/P20-GAP-WS and necessary verification/ownership to the actual private SDK WS layout. Preserve IDs/statuses, other scenarios, platform DoD, dependencies and runtime history. 20.15 retains original independent-package contract and evidence, 20.16 owns real public codec integration, 20.17 resources and 20.57 final SDK. No private test or Upgrade-only package PASS promotes these tasks or complete V criteria; ordinary/default/C-zlib and local hidden/unsafe/native obligations remain.",
           "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-24-owned-ws-profile"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-06 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-06"
         }
       ],
       "tier": "workspace",
@@ -15676,6 +16052,18 @@
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
           "status": "open"
+        },
+        {
+          "id": "ONB-06-20.58",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-06",
+          "scenario": "Cross-check README platform/MSRV/features/package claims against this task's actual native and ordinary/feature-union consumer artifacts and dependency provenance. Keep missing platforms explicit; functional success is not performance evidence.",
+          "verification": [
+            "cargo test -p opi-ai --test platform_delivery"
+          ],
+          "production_call_sites": [
+            "opi_ai external package consumer on native Linux/macOS/Windows (target)"
+          ],
+          "status": "open"
         }
       ],
       "production_call_sites": [
@@ -15770,7 +16158,7 @@
       "title": "上游跟进／测试处置与交付证据基线",
       "crate": "documentation",
       "parent_spec_row": "DEL-14",
-      "definition_of_done": "After 20.58, record actual final Pi/Opi/runtime/dependency/catalog/platform identities and source-to-Rust add/update/delete/retain dispositions, commands, executed/skip/missing counts and gaps in the existing tracking/evidence locations with bilingual README/evidence handoff. In acceptance-matrix.md append only evidence/version/result links and factual counts required by V-59; do not edit AIR/V identities, requirements, accepted scope, original observations or historical 70/probe results. This exact registered-source evidence update intentionally causes hash drift: before this task is marked passing or F.1a runs, stop automatic task completion, enter the existing plan drift reconciliation, preserve runtime history and passing evidence, repeat P.0/P.2 and show P.4 for human confirmation. Only that confirmed reconciliation may install refreshed source hashes; never patch hashes alone or treat this task as phase exit. Resume this same task under the reconciled contract and complete its documentation gate/checkpoint. Assemble the DEL-14/delivery-group handoff from the existing 20.57/20.58 public runtime, package, native and MSRV proof plus final upstream/test dispositions, checking exact input identities, artifact references and unresolved gaps without rerunning unchanged runtime evidence. Task completion acknowledges only this documentary handoff. After every task is passing, mandatory workflow F.1a independently rebuilds and judges the complete DEL-14 criterion and delivery coverage group; no documentation check closes runtime acceptance or substitutes for F.1a.",
+      "definition_of_done": "After 20.58, record actual final Pi/Opi/runtime/dependency/catalog/platform identities and source-to-Rust add/update/delete/retain dispositions, commands, executed/skip/missing counts and gaps in the existing tracking/evidence locations with bilingual README/evidence handoff. In acceptance-matrix.md append only evidence/version/result links and factual counts required by V-59; do not edit AIR/V identities, requirements, accepted scope, original observations or historical 70/probe results. This exact registered-source evidence update intentionally causes hash drift: before this task is marked passing or F.1a runs, stop automatic task completion, enter the existing plan drift reconciliation, preserve runtime history and passing evidence, repeat P.0/P.2 and show P.4 for human confirmation. Only that confirmed reconciliation may install refreshed source hashes; never patch hashes alone or treat this task as phase exit. Resume this same task under the reconciled contract and complete its documentation gate/checkpoint. Assemble the DEL-14/delivery-group handoff from the existing 20.57/20.58 public runtime, package, native and MSRV proof plus final upstream/test dispositions, checking exact input identities, artifact references and unresolved gaps without rerunning unchanged runtime evidence. Task completion acknowledges only this documentary handoff. After every task is passing, mandatory workflow F.1a independently rebuilds and judges the complete DEL-14 criterion and delivery coverage group; no documentation check closes runtime acceptance or substitutes for F.1a. Reconcile the final bilingual README/example/evidence handoff against actual 20.56/57/58 results, with exact inputs, commands and test dispositions. Distinguish current execution, reproducible prior evidence and missing proof. Preserve the registered matrix drift P.0/P.2/P.4 confirmation and independent F.1a; no host configuration, Pi 1.4 protocol adoption or runtime self-certification.",
       "definition_source": "inferred",
       "replaces": null,
       "status": "failing",
@@ -15827,6 +16215,11 @@
           "field": "acceptance_partition",
           "reason": "DEL-14 and the delivery-group trace are split by actual completion: 20.57/20.58 supply SDK/package/native/MSRV runtime proof; 20.59 owns the final documentary evidence/disposition handoff after those tasks pass. Only the mandatory workflow F.1a, after every task passes, independently closes the complete DEL-14 criterion and delivery coverage group. No task requires its own future Phase exit or treats a documentation check as runtime proof.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-14"
+        },
+        {
+          "field": "onboarding_acceptance",
+          "reason": "Supplement the existing owner with ONB-07 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-07"
         }
       ],
       "tier": "documentation",
@@ -15912,6 +16305,17 @@
           "id": "DEL-14",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Delivery decomposition / DEL-14",
           "scenario": "DEL-14 documentary handoff after 20.57/20.58: record the actual unique-matrix, external SDK/package/native/MSRV evidence references and exact inputs together with final upstream follow-up and complete test dispositions. Inspect predecessor proof and report missing, stale or mismatched evidence as a gap; reuse valid unchanged runtime results. This scenario closes only the final evidence handoff, not the full source criterion. After all tasks pass, mandatory F.1a independently judges the complete DEL-14 and refuses archive for unmet requirements; neither 20.58 nor this documentation task self-certifies Phase exit.",
+          "verification": [
+            "python scripts/opi-doc-check.py",
+            "git diff --check"
+          ],
+          "production_call_sites": [],
+          "status": "open"
+        },
+        {
+          "id": "ONB-07-20.59",
+          "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-07",
+          "scenario": "Reconcile the final bilingual README/example/evidence handoff against actual 20.56/57/58 results, with exact inputs, commands and test dispositions. Distinguish current execution, reproducible prior evidence and missing proof. Preserve the registered matrix drift P.0/P.2/P.4 confirmation and independent F.1a; no host configuration, Pi 1.4 protocol adoption or runtime self-certification.",
           "verification": [
             "python scripts/opi-doc-check.py",
             "git diff --check"
@@ -18932,6 +19336,14 @@
         "not_executed": "No live provider/account/browser/cloud metadata, Pi test runner, new package or extra platform run. No production/spec/manifest change, commit, staging or push. Unchanged workspace gates reused per check-selection contract.",
         "baseline_untracked_excluded": "docs/research/pi-ai-opi-ai-alignment/pi-1.4.0-upgrade-assessment.md"
       }
+    },
+    {
+      "timestamp": "2026-10-25T07:35:17.360593+00:00",
+      "summary": "Onboarding/parameter source reconciliation draft only. 68 existing Phase 20 tasks; 22 failing owners supplemented, all 32 passing task objects preserved byte-equivalent after JSON parsing. Host configuration/value-source rows remain unregistered independent delivery candidates, not new 20.x tasks. P.4 whole-graph confirmation pending; canonical ledger and production unchanged; no commit authorized."
+    },
+    {
+      "timestamp": "2026-10-25T07:50:28.672233+00:00",
+      "summary": "Human explicitly confirmed the complete onboarding/parameter graph with confirm-all and selected write-only installation. Install exactly the reviewed 68-task array (SHA256 ab7fcba57e2453cfea5aa397508168be53f0bd080e966885b9c98ae862646168), retaining 32 passing objects, all dependencies/runtime history and 16 registered sources. HOST-CFG/HOST-VALUES remain independent unregistered delivery candidates. No production edits, task execution, staging, commit or publication authorized; unrelated research file preserved and excluded."
     }
   ],
   "verify_runs": [
@@ -19353,6 +19765,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-24T19:10:00+00:00",
       "task_id": "20.31",
+      "criterion_id": null
+    },
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 3,
+      "ran_at": "2026-10-25T07:44:30.559472+00:00",
+      "task_id": null,
       "criterion_id": null
     }
   ]
