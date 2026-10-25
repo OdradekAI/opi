@@ -13327,7 +13327,7 @@
       "definition_of_done": "Wire headers, onPayload, onResponse and raw-event callbacks through Models and every currently existing migrated real direct adapter at its source-defined timing. Public ordinary-call fixtures prove post-transform validation/protected identity, once-per-variant payload freezing across ordinary acquisition retry, raw-before-normalized order, functional callback failure/cancel and supported-versus-unsupported protocol behavior. This slice closes only the ordinary callback path; 20.11 consumes it and owns strict-variant interaction, while operation tasks 20.43-50 wire newly introduced APIs and 20.57 closes full AIR-059/V-51 coverage. Never recover raw events from a normalized EventStream or stack a second driver. Explicitly prove SDK header omission/set/removal and protected selected identity through actual requests, with source-qualified per-variant callback timing/count and frozen ordinary retries. Runtime signal/fetch/functions are not JSON configuration. New operation consumers and 20.57 retain their full cross-operation closure.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -13367,7 +13367,7 @@
         },
         {
           "field": "task_owned_paths",
-          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.",
+          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.; appended 47 later-discovered compile-fix paths with diff evidence: 45 files carry exactly one mechanical `callbacks: Default::default()` Request-initializer addition required by the additive Request field (verified via git diff: zero non-mechanical hunks, except provider_public_safety.rs which additionally folds the additive ProviderError::CallbackPhase variant into its two existing exhaustive-match arms); opi-agent src {agent_loop.rs, loop_types.rs, diagnostic.rs} and opi-coding-agent src {compaction.rs, interactive_auth.rs} carry the same field addition plus minimal exhaustive-match arms for the new CallbackPhase variant (mapped into the existing request/summary categories); tool_result_wire.rs updates the deliberate public-module baseline list with `callbacks` exactly as its failure message instructs",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
         },
         {
@@ -13442,7 +13442,7 @@
             "opi_ai Models ordinary/advanced driver (target)",
             "opi_ai existing public direct adapter acquisition"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-04-20.51",
@@ -13455,7 +13455,7 @@
             "opi_ai Models ordinary/advanced driver (target)",
             "opi_ai existing public direct adapter acquisition"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -13465,7 +13465,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "1af495e06e8a4c91958311131164d7b725ed72da",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -13499,12 +13499,157 @@
         "crates/opi-ai/tests/openai_responses_fixtures.rs",
         "crates/opi-ai/tests/provider_diagnostics.rs",
         "crates/opi-ai/tests/request_enrichment.rs",
-        "crates/opi-ai/tests/vertex_fixtures.rs"
+        "crates/opi-ai/tests/vertex_fixtures.rs",
+        "crates/opi-agent/src/agent_loop.rs",
+        "crates/opi-agent/src/diagnostic.rs",
+        "crates/opi-agent/src/loop_types.rs",
+        "crates/opi-agent/tests/preparation_transaction.rs",
+        "crates/opi-agent/tests/provider_public_safety.rs",
+        "crates/opi-coding-agent/src/compaction.rs",
+        "crates/opi-coding-agent/src/interactive_auth.rs",
+        "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs",
+        "crates/opi-ai/tests/api_mapped_provider.rs",
+        "crates/opi-ai/tests/custom_provider_registration.rs",
+        "crates/opi-ai/tests/gemini_lifecycle.rs",
+        "crates/opi-ai/tests/http_acceptance.rs",
+        "crates/opi-ai/tests/image_provider_serialization.rs",
+        "crates/opi-ai/tests/model_wire_metadata.rs",
+        "crates/opi-ai/tests/oauth_flows.rs",
+        "crates/opi-ai/tests/oauth_store_integration.rs",
+        "crates/opi-ai/tests/oauth_wire_shape.rs",
+        "crates/opi-ai/tests/openai_compat_lifecycle.rs",
+        "crates/opi-ai/tests/openai_responses_lifecycle.rs",
+        "crates/opi-ai/tests/openrouter_fixtures.rs",
+        "crates/opi-ai/tests/per_request_auth.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/provider_error_classes.rs",
+        "crates/opi-ai/tests/provider_lifecycle.rs",
+        "crates/opi-ai/tests/provider_trait.rs",
+        "crates/opi-ai/tests/proxy_support.rs",
+        "crates/opi-ai/tests/replay_contract.rs",
+        "crates/opi-ai/tests/retry_backoff.rs",
+        "crates/opi-ai/tests/test_support_tests.rs",
+        "crates/opi-ai/tests/tls_contract.rs",
+        "crates/opi-ai/tests/tool_result_no_leak.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs",
+        "crates/opi-ai/tests/transcript_contract.rs",
+        "crates/opi-ai/tests/transcript_contract/provider_projection.rs",
+        "crates/opi-coding-agent/tests/anthropic_cache_markers.rs",
+        "crates/opi-coding-agent/tests/bedrock_provider_wiring.rs",
+        "crates/opi-coding-agent/tests/custom_provider_map.rs",
+        "crates/opi-coding-agent/tests/custom_provider_registration.rs",
+        "crates/opi-coding-agent/tests/extension_mapped_catalog.rs",
+        "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+        "crates/opi-coding-agent/tests/list_models.rs",
+        "crates/opi-coding-agent/tests/oauth_auth.rs",
+        "crates/opi-coding-agent/tests/product_source_barrier.rs",
+        "crates/opi-coding-agent/tests/provider_factory.rs",
+        "crates/opi-coding-agent/tests/provider_runtime.rs",
+        "crates/opi-coding-agent/tests/runtime_failure_recovery.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "2510f8601d0c5e6977075cfeb510399f7a4c01f5",
+      "evidence": {
+        "Opi-Task": "20.51",
+        "Opi-DoD-SHA256": "486c5c7f63c403b228333d16b37a49cf055b509baedd3537eeb6739e34bc4256",
+        "Opi-Verification": "workspace; smoke full PASSED (doc-check, fmt, workspace clippy, workspace tests, doc tests, rustdoc); scenario cargo test -p opi-ai --test anthropic_fixtures --test azure_openai_fixtures --test bedrock_fixtures --test gemini_fixtures --test mistral_fixtures --test openai_chat_fixtures --test openai_codex_responses --test openai_responses_fixtures --test provider_diagnostics --test request_enrichment --test vertex_fixtures 496 PASS; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P20-S51 and ONB-04-20.51 exercised at opi_ai::callbacks (RequestCallbacks, CallbackError), Request.callbacks, ProviderError::CallbackPhase and the eight adapter wire seams via loopback wiremock"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-25T20:06:05.002887+00:00",
+          "gate": "B.2 authorization granted",
+          "scope": "Approved by user: (1) full end-to-end TDD run of headers/transform, onPayload (post-projection, once-per-variant frozen across ordinary acquisition retry), onResponse (status/headers at adapter source timing), onRaw (raw-before-normalized, read-only, failure preserves partial) through Models and all migrated real direct adapters (anthropic, openai_chat incl. mistral/openrouter profiles, openai_responses+shared incl. azure, codex, bedrock; gemini/vertex typed-unsupported for response/raw with payload/headers still functional); typed non-retryable ProviderError::CallbackPhase; no EventStream-derived raw recovery, no second driver, no strict-variant work (20.11), no new-API wiring (20.43-50), MockProvider is testing support only; (2) two separate commits (feat with Opi-* footers + ledger checkpoint); (3) network-boundary self-report (127.0.0.1 wiremock loopback only, no provider APIs, no real credentials).",
+          "baseline_correction": "Baseline re-observed at B.3 follow-up: the three previously untracked user-side research drafts were consolidated by the user into commit 1af495e (docs/research/2026-10-26-rust-ai-sdk-survey.zh.md) and removed; worktree is clean at start_commit apart from this ledger mutation, so baseline_dirty_files is now empty."
+        },
+        {
+          "timestamp": "2026-10-25T22:10:27.833425+00:00",
+          "attempt": 1,
+          "summary": "Delivered the ordinary functional-callbacks slice: new callbacks module (RequestCallbacks with header-transform/onPayload/onResponse/onRaw + CallbackError + ORDINARY_PAYLOAD_VARIANT freeze map shared through Request clones so ordinary acquisition retries reuse the frozen body); Request.callbacks field; ProviderError::CallbackPhase (typed, redacted, never retryable - folded into the existing Request category); ProviderErrorSummary::sanitized made public. All eight migrated adapter families wired at source timing: anthropic (parse_sse_events_with_raw pairing, response hook before error mapping), openai_chat incl. mistral/openrouter profiles, openai_responses + azure (route-protected headers excluded from the transform set and stamped back), codex (managed-header protection extends to transform output), bedrock (transform before signing, smithy frames notified as {type,...payload}), gemini/vertex fail-closed typed UnsupportedCapability for response/raw observers while payload/transform flow. 30 new tests across the 12 owned suites (wiremock loopback actual requests proving omission/set/removal + protected identity, once-per-variant freeze across a 429->200 ordinary retry with byte-equal bodies, raw happens-before-normalized count proof, raw-failure partial preservation, per-adapter timing/order). D.1 full PASSED after fmt/clippy fixes and three deliberate iterations of the tool_result_wire public-module baseline (order-sensitive list; message instructs the update). 46 later-discovered compile-fix/baseline paths appended to ownership with diff evidence (mechanical callbacks field, minimal exhaustive-match arms, baseline entry). Baseline note: the user consolidated the three untracked research drafts into commit 1af495e before B.3, so the baseline is clean. No push.",
+          "gate_results": {
+            "d1_gate": "smoke full PASSED (doc-check, fmt, clippy --workspace --all-targets -D warnings, test --workspace --all-targets, test --workspace --doc, RUSTDOCFLAGS=-D warnings doc --workspace --no-deps)",
+            "d0_scenario": "cargo test -p opi-ai (11 suites) -> 496 passed / 0 failed",
+            "d3_gap_only": "git diff --check clean; python scripts/opi-doc-check.py PASS; packer untouched (no catalog resource change)",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=3 (46-path ownership append for the additive Request field and ProviderError variant, protected route headers excluded-then-stamped-back design on azure/gemini/vertex documented in README, order-sensitive module-baseline guard required three deliberate iterations), rejected=3 (async callback trait objects vs sync closures at the same happens-before seam, per-adapter typed raw-event enums vs the source-acknowledged JSON escape hatch, any raw recovery from a normalized EventStream - forbidden by the DoD), wf_ref=null (degraded single-reviewer path)",
+            "test_disposition": [
+              {
+                "subject": "ONB-04 header semantics",
+                "action": "add",
+                "test": "request_enrichment.rs (default-empty observers, omission/set/removal + protected identity on the wire, transform-once with merged-set visibility, protected-touch typed failure, payload identity/budget typed failures, freeze-once across 429->200 ordinary retry)",
+                "interface": "RequestCallbacks + Request.callbacks",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S51 anthropic timing",
+                "action": "add",
+                "test": "anthropic_fixtures.rs (payload equals wire body post-thinking-projection, response-before-events order with headers, raw happens-before-normalized count proof, raw-failure partial preservation)",
+                "interface": "callbacks seams in stream_prepared/stream_http",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S51 chat family",
+                "action": "add",
+                "test": "openai_chat_fixtures.rs (sampling-merged payload body, replacement reaches wire, response+raw order with [DONE] exclusion); mistral_fixtures.rs (profile carries callbacks through the chat adapter)",
+                "interface": "chat adapter seams",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S51 responses family",
+                "action": "add",
+                "test": "openai_responses_fixtures.rs (projected input body, response-then-raw order); azure_openai_fixtures.rs (callbacks through shared responses wire); openai_codex_responses.rs (mapper payload/response/raw, transform touching managed header fails typed before http)",
+                "interface": "responses/codex seams",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S51 bedrock",
+                "action": "add",
+                "test": "bedrock_fixtures.rs (payload equals converse-stream body, response headers with event-stream type, smithy frame raw order incl. metadata last, transform touching amz-sdk-* fails typed before http)",
+                "interface": "bedrock seams",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S51 google wires",
+                "action": "add",
+                "test": "gemini_fixtures.rs (payload replacement flows; response/raw typed unsupported before http, both observer kinds); vertex_fixtures.rs (payload flows while response observers typed unsupported)",
+                "interface": "gemini/vertex gates",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "callback taxonomy",
+                "action": "add",
+                "test": "provider_diagnostics.rs (CallbackPhase -> Request category, never retryable, no retry-after; CallbackError detail redacted into the typed summary)",
+                "interface": "ProviderError::CallbackPhase",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.51 additive surface",
+                "action": "update",
+                "test": "~46 non-owned files: mechanical `callbacks: Default::default()` Request initializers (45 files, zero other hunks) + minimal exhaustive-match arms for the CallbackPhase variant (provider_public_safety.rs, loop_types.rs, diagnostic.rs, interactive_auth.rs) + tool_result_wire.rs public-module baseline gains `callbacks`",
+                "interface": "Request/ProviderError additive fields",
+                "replacement": "additive field/variant",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.51",
+                "action": "retain",
+                "test": "all pre-existing tests in the 12 suites and workspace-wide",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "2510f8601d0c5e6977075cfeb510399f7a4c01f5"
+          }
+        }
+      ]
     },
     {
       "id": "20.52",
@@ -20108,6 +20253,16 @@
       "rejected_count": 3,
       "ran_at": "2026-10-25T19:49:59.976602+00:00",
       "task_id": "20.35",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 3,
+      "ran_at": "2026-10-25T22:10:27.833425+00:00",
+      "task_id": "20.51",
       "criterion_id": null
     }
   ]
