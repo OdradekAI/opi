@@ -4353,7 +4353,7 @@
       "definition_of_done": "Public default Auto and four explicit modes use real WS/PMD with temporary sessionless/no-cache operation, exact full-input plus response prefix delta and frozen noninput fields. Only success+responseID publishes continuation. Bound missing-ID full retry and pre-generation connection-limit reconnect separately, permit transport fallback only before first effective provider event, never on auth/protocol/abort. EOF/started failure preserves partial and final error, no output splice or silent SSE parity substitute. Complete the RDF-24 consolidation using the existing private frame/pmd/io implementation under crates/opi-ai/src/ws, not a second codec or revived companion. Preserve the public ws Upgrade API; the real Models -> Codex adapter -> source-qualified strict Upgrade -> private protocol owner must execute framing, PMD, window8 negotiation, ordered trailing bytes, Close and active/idle cancellation. Replace the transitional unused-code boundary with this genuine production path, not test-only wiring or constructing and dropping an unused owner. Retain the migrated corpus, Send/nonSync, partial/flush/EOF, storage, cancellation and fairness assertions plus exact compression/hidden-API/unsafe obligations. Run applicable root gates and ordinary/default/C-zlib graphs. Actual opi-ai cargo package artifacts must contain private protocol sources, required tests/fixtures/helpers and LICENSE/NOTICE; extracted private tests and fresh external Models -> real Codex -> Upgrade -> private-codec consumers run in all three graphs and are reported separately. Upgrade-only/raw-stream consumers do not close this task. Record exact registry versions/checksums/features and actual AWS-LC plus C-libz native provenance when both are selected. No public codec, test feature, doc-hidden public export, copied production source, checkout/root patch or library-lock substitution. Reuse the source-identical 7cb5f0c physical migration and valid proof; do not redo removed standalone-package gates or call that partial proof the completed Codex path. Preserve 20.15 historical delivery and 20.17/34/57/58 acceptance ownership. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Codex native parameters, source transport modes and frozen noninput fields remain at this original owner; continuation/retry does not reselect identity or change frozen options.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -4496,7 +4496,7 @@
             "opi_ai Codex direct adapter",
             "opi_ai::Models::stream/stream_simple (target)"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "P20-S16",
@@ -4513,7 +4513,7 @@
             "opi_ai Codex direct adapter",
             "opi_ai::Models::stream/stream_simple (target)"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "ONB-03-20.16",
@@ -4526,7 +4526,7 @@
             "opi_ai Codex direct adapter",
             "opi_ai::Models::stream/stream_simple (target)"
           ],
-          "status": "open"
+          "status": "closed"
         }
       ],
       "production_call_sites": [
@@ -4536,7 +4536,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "6c06403e0",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -4563,8 +4563,14 @@
         "crates/opi-ai/tests/support/tls_fixtures.rs",
         "crates/opi-ai/tests/openai_codex_responses/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "5dc3bdbb1f975d858ce5645460bf32fb86304524",
+      "evidence": {
+        "Opi-Task": "20.16",
+        "Opi-DoD-SHA256": "fc5c376fb0cc1e096c3aef2091b8000e319477becb0e7b891f221a0aa133b9ce",
+        "Opi-Verification": "workspace; smoke full PASSED (fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets 258 suites, doc tests, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps); scenario cargo test -p opi-ai --test openai_codex_responses 42 PASS; cargo test -p opi-ai 1990 PASS; cargo test -p opi-ai --lib ws:: x3 graphs 134 each; package_slice.py --family ws --offline PASS at scratch /mnt/e/opi/ws-proof-2016b (three graphs: private 134/public 16/consumer 7 incl. real-chain; package sha256 4fc3a8b49f2afe6e0924a0d644cb804e03abcaba681454f1ae3b6c45ad9d1de6; registry checksums + AWS-LC and C-libz native provenance recorded); test_package_slice 55 PASS; doc-check PASS; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "AIR-036/P20-S16/ONB-03-20.16 exercised on the real Models -> Codex adapter -> strict Upgrade -> private protocol owner path with bounded transport/delta/continuation semantics and the external packaged real-chain consumer in all three graphs; 20.17/20.34/20.57/20.58 ownership preserved"
+      },
       "blocker": null,
       "session_notes": [
         {
@@ -4628,6 +4634,57 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-26T15:11:56.929794+00:00",
+          "attempt": 1,
+          "summary": "B.2 gate: user approved (1) TDD scope in three delivered layers. Layer 1 - neutral TransportPreference{Auto(default, correcting pi's unnormalized local default),Sse,Websocket,WebsocketCached} on Request.transport plus the real Codex WS production path inside OpenAiCodexResponsesProvider: base_url -> ws(s)://.../codex/responses, WS headers (OpenAI-Beta responses_websockets=2026-02-06 replacing responses=experimental, accept/content-type dropped, session-id=x-client-request-id=session-or-uuidv7), strict crate::ws::upgrade with a RedirectPolicy::None pre-flight typed config check (policy mismatch is a config error, never transport fallback), additive WsUpgradeRequest::headers builder for the handshake auth headers, Driver wiring via pub(super)->pub(crate) visibility (NegotiatedPmd->PmdParameters window8 mapping), response.create text frame (uncompressed, fresh mask), next() event loop sharing the SSE ResponsesEvent mapper (no silent SSE parity substitute; shared JSON entry extracted from try_from_frame), completion -> explicit client Close (queue+flush+finish_close absolute deadline), EOF-before-completion typed error, request.timeout as WS idle timeout, CancellationToken active/idle cancellation. Delta/continuation (Auto/WebsocketCached with session): provider-owned (session,account) cache with busy serialization + 55min age cap evaluated on acquire (proactive idle timers and pool cleanup remain 20.17's registered ownership), non-input canonical-JSON equality + exact prefix rule (previous full input + converted actual response items minus tool-call outputs) -> previous_response_id + delta input else full input, continuation published only on successful terminal + responseId, any error clears continuation and keeps the connection out of the pool; sessionless/Disabled = temporary WS (fresh connection, full Close, no cache writes); non-cached Websocket = fresh connection per call without continuation read/write. Bounded branches: previous_response_not_found -> exactly one full-input retry before public output; websocket_connection_limit_reached before start -> exactly one reconnect (separate branch); WS->SSE fallback only on transport-class failures before the first effective provider event with per-session stickiness, never on abort/API/auth/protocol/callback errors; post-start failure = terminal typed error preserving partial. Layer 2 - tests in tests/openai_codex_responses.rs with local tokio/std WS peers (reuse tests/support/ws_peer.rs pattern; flate2 dev-dep for peer-side compression), plus ONB-03 distinct missing input/outcome cases only; existing --lib ws:: corpus/Send/nonSync/partial/flush/EOF/storage/cancellation/fairness assertions retained green; remove the ws.rs #[allow(dead_code)] transitional boundary (targeted allows only for genuinely test-only historical items). Layer 3 - consumer-ws template gains the real-chain profile (fresh external Models->real Codex->strict Upgrade->private codec against an in-process local peer, no compression negotiation in the consumer peer) running in all three graphs with separate reporting; package_slice.py ws family public_codec_status closed; registry versions/checksums/features + AWS-LC and C-libz native provenance recorded from actual units; reuse the 7cb5f0c migration evidence, no removed standalone-package gates redone. Pre-registered rejected: generic pool framework/session resources/pool cleanup (20.17); SSE body zstd compression (upstream optional optimization, not claimed); SSE retry-loop changes (20.52); public codec/test feature/doc-hidden export/copied production source (RDF-24); WS-path telemetry propagation (20.54 carrier exists; SDK propagation owned later); separate neutral websocketConnectTimeoutMs field (reuse Request.timeout/fixed default, smallest surface); 20.17/20.34/20.57/20.58 acceptance not advanced. (2) two separate commits (feat task + ledger checkpoint); (3) network self-report: all in-process local peers/loopback; zero real provider API calls, zero credentials, zero registry publication; package_slice --offline resolves from local Cargo cache and the existing shared target cache."
+        },
+        {
+          "timestamp": "2026-10-26T19:54:36.460010+00:00",
+          "attempt": 1,
+          "summary": "Delivered the real Codex WS path: TransportPreference{Auto,Sse,Websocket,WebsocketCached} on Request.transport (default Auto; explicit WS demands RedirectPolicy::None as typed config failure, Auto resolves to SSE under other policies), openai_codex_responses/ws_transport.rs driving ws::upgrade -> ws::io::Driver with response.create text frames, shared SSE event classifier, explicit client Close on temporary connections, EOF-never-success, Request::timeout as WS idle timeout, active/idle cancellation, WsUpgradeRequest::headers additive bridge (reserved handshake names rejected), session pooling with continuation (exact-prefix delta + frozen non-input fields, publish only on successful terminal + response id, sessionless/Disabled temporary), bounded branches (one full-input retry on previous_response_not_found pre-output, one reconnect on websocket_connection_limit_reached pre-start, pre-start transport-class WS->SSE fallback sticky per session; auth/API/abort/protocol never fallback; output-delivered errors terminal with partial), removal of the ws transitional allow(dead_code) boundary (test-only historical items cfg(test) with comments; dead Core::is_closed deleted), and the ws packaging family real-chain consumer check across three graphs. TDD rounds: red E0432/E0609 on the transport surface; per-round reds were behavioral (pooled-close expectations corrected once pooling landed, peer head-buffering bug found via POST-body loss, transport-vs-protocol classification split by emitted_any, non-101 non-auth statuses reclassified transport-class per source semantics, idless/shape assertion fixes); 20 new adapter tests, final 42/42. Bulk Request::transport migration touched 69 files mechanically (185 sites; compiler-guided cleanup after two over-broad removal passes; full diff audited - only intentional removals remain; compaction.rs one-line construction restored intact). Incidents: (1) E: drive 100% full blocked workspace linking - user reclaimed the stale cache opi-72fa37a0fa044958 per my blocker report, I removed only my own temp target ws-cons-check; (2) an OOM-during-incremental-write corrupted the harness_resource_integration test binary (deterministic SIGSEGV under --all-targets) - resolved by touching the test source to force a clean rebuild, then 251/258-suite green runs; (3) interactive_tui_auth outer_tui_second_normal_prompt_invalidates_pending_credential_turn failed once under full parallel load with an authentication-timeout assertion and passed solo x3 and on the full retry - same load-timing class as the documented oauth_flows flake, diff-isolated from this task (mechanical field inserts only). Deviation from the approved network self-report: two crates.io fetches were required for offline packaging (valuable 0.1.1 - entered the lock when 20.54's tracing-core direct dependency re-recorded tracing-core's optional deps; zerocopy-derive 0.8.63 - resolved by the consumer template's new tokio-util pin); both checksums match the locks and both are now cached; no provider APIs, credentials or publication involved. The public module-set guard in tests/tool_result_wire.rs was updated deliberately per its own instruction for cancel/identity/provider_env/telemetry - verification debt from prior tasks' scoped-only runs now corrected by this task's full suite run. Design decisions recorded: fresh connections opened under a session key become the pooled connection for that key (cache-insert on creation like the source); continuation response items derive through the same replay/convert path as request input (fidelity via the shared converter, locked by peer assertions); proactive idle timers/pool cleanup remain 20.17's registered ownership (age cap + busy serialization enforced on acquire).",
+          "gate_results": {
+            "d1_gate": "smoke full PASSED after environment incidents (disk reclaimed by user; OOM-corrupted binary rebuilt; one load-timing TUI flake passed on retry)",
+            "d0_scenario": "cargo test -p opi-ai --test openai_codex_responses -> 42 passed / 0 failed; cargo test -p opi-ai -> 1990 passed / 0 failed; --lib ws:: x3 graphs -> 134 each",
+            "d3_gap_only": "python scripts/opi-doc-check.py PASS; git diff --check clean; package_slice --family ws --offline PASS at /mnt/e/opi/ws-proof-2016b; test_package_slice 55 PASS",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=3 (two crates.io fetches beyond the approved no-new-download self-report - disclosed, checksum-matched, cached; interactive_tui_auth load-timing flake documented with solo-pass evidence and diff isolation; module-set baseline guard needed a deliberate update revealing prior tasks' scoped-only verification debt), rejected=7 as pre-registered (pool framework/session resources/cleanup 20.17; SSE zstd body compression; SSE retry-loop changes 20.52; public codec/test feature/doc-hidden export/copied source RDF-24; WS telemetry propagation later tasks; separate websocketConnectTimeoutMs neutral field; 20.17/20.34/20.57/20.58 acceptance not advanced), wf_ref=null (degraded single-reviewer path)",
+            "test_disposition": [
+              {
+                "subject": "Codex WS transport",
+                "action": "add",
+                "test": "tests/openai_codex_responses.rs (20 tests: transport resolution, real chain, delta/prefix/non-input/full-input/no-id, sessionless temporary, pooled reuse, missing-id bounded retry, connection-limit reconnect, pre-start fallback + sticky, auth/started negatives, EOF, idle timeout, active/idle cancellation, ONB wire assertions)",
+                "interface": "opi_ai::provider::{TransportPreference, Request::transport}, OpenAiCodexResponsesProvider WS path, opi_ai::ws::WsUpgradeRequest::headers",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "packaging real chain",
+                "action": "add",
+                "test": "scripts/pi-sdk-conformance/consumer-ws real-chain check (7-check battery) + package_slice ws family updates + test_package_slice updates",
+                "interface": "opi_ai::{Models, ChatModelRecord, OpenAiCodexResponsesProvider, ws}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Request::transport migration",
+                "action": "update",
+                "test": "69 files: mechanical transport: Default::default() insertions at Request literal sites; module-set baseline guard deliberate update in tool_result_wire.rs",
+                "interface": "opi_ai::provider::Request",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.16",
+                "action": "retain",
+                "test": "all pre-existing suites unchanged and green (1990 opi-ai, 258 workspace)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "5dc3bdbb1f975d858ce5645460bf32fb86304524"
           }
         }
       ]
@@ -20869,6 +20926,16 @@
       "rejected_count": 5,
       "ran_at": "2026-10-26T12:37:53.695136+00:00",
       "task_id": "20.54",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 7,
+      "ran_at": "2026-10-26T19:54:36.460010+00:00",
+      "task_id": "20.16",
       "criterion_id": null
     }
   ]
