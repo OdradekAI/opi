@@ -14648,7 +14648,7 @@
       "definition_of_done": "Public header helpers preserve case-insensitive merge/null deletion and source order. Scoped injected env precedes permitted ambient lookup with no construction read or global mutation; proxy/header identity protection delegates to existing owners, not another policy layer. Public cancellable waits preserve actual source scope and release listeners/timers on cancel/drop/ready, with one-way parent linkage and deterministic barriers/fakeclock. Reuse Tokio/CancellationToken and current time/retry mechanism, no executor or global timer authority.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.4",
         "20.12",
@@ -14733,7 +14733,7 @@
             "opi_ai::utils::case-insensitive header deletion/merge and injected source env helpers (target)",
             "opi_ai::utils::cancellation/deadline/sleep public mechanism (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S53-7",
@@ -14746,7 +14746,7 @@
             "opi_ai::utils::case-insensitive header deletion/merge and injected source env helpers (target)",
             "opi_ai::utils::cancellation/deadline/sleep public mechanism (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -14756,7 +14756,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "d445ad073",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -14771,10 +14771,52 @@
         "crates/opi-ai/src/utils/headers.rs",
         "crates/opi-ai/tests/public_utilities.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "d569bd4a590f015719b45aea5c45f7d441f6c890",
+      "evidence": {
+        "Opi-Task": "20.53.6",
+        "Opi-DoD-SHA256": "0e24cce60b60177c5d74f79bf4c86f2be0c5f87c7b7462abdd0e4f2bc41b8dcb",
+        "Opi-Verification": "library; smoke scoped --crate opi-ai --test public_utilities PASSED (fmt, clippy -D warnings, crate tests, rustdoc -D warnings; two clippy retries); scenario cargo test -p opi-ai --test public_utilities 46 PASS (11 new); doc-check PASS; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P20-S53-6/7 exercised at provider_headers::merge_provider_header_sources, provider_env::provider_env_value, and cancel::{operation_token, sleep_cancel, race_with_cancel, Cancelled}; case-insensitive merge/null deletion/source order, scoped-before-ambient with no construction read or global mutation, timer/listener release on cancel/drop/ready, one-way linkage and deterministic fake-clock barriers all observable; proxy/header identity protection and executor/timer authority explicitly not introduced"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-26T11:30:02.601923+00:00",
+          "attempt": 1,
+          "summary": "B.2 gate: user approved (1) TDD on three small surfaces pinned to utils/headers.ts, utils/provider-env.ts, utils/sleep.ts + utils/abort.ts: a public merge helper in provider_headers.rs (multi-source case-insensitive last-wins with delete+reinsert move-to-end ordering, None-value deletion, empty->None, winner's original case preserved, feeding ProviderHeaders::try_new without touching merge_request fail-closed semantics), a new pub mod provider_env with provider_env_value(name, scoped) (scoped injected precedes ambient std::env::var, faithful JS || short-circuit where an empty scoped string falls back to ambient, lazy per-name reads with zero construction reads and zero global mutation, no Bun /proc fallback - documented; no new proxy/identity policy layer, owners stay http.rs/auth.rs), and a new pub mod cancel (operation_token with one-way parent->child child_token linkage, sleep_cancel via tokio::select! over time::sleep vs token.cancelled() with timer released on cancel/ready/drop and pre-cancel failing immediately, race_with_cancel returning the operation output or Cancelled, dropped-future cancellation being the Rust-native abandoned-promise observation) reusing the existing tokio_util CancellationToken, retry.rs delays and time.rs clock with no executor or global timer authority; (2) two separate commits (feat task commit with Opi-* footers + ledger checkpoint); (3) network self-report (pure in-process; no network, no wiremock, no credentials, no provider APIs). Pre-registered rejected: any proxy/header identity policy layer (owners retained), changing merge_request override rejection into silent merging, global sleep/cancel state or timer pools, the Bun /proc/self/environ fallback, and new dependencies. ~11 red-first tests incl. paused-clock fakeclock and barrier sequencing; ambient env mutations serialized by a test mutex."
+        },
+        {
+          "timestamp": "2026-10-26T11:46:43.880587+00:00",
+          "attempt": 1,
+          "summary": "Delivered the pinned headers/provider-env/sleep/abort utils family: merge_provider_header_sources in provider_headers.rs (case-insensitive last-wins with reinsert-to-end ordering, None deletion, empty->None, feeding try_new without touching merge_request), new pub mod provider_env with provider_env_value (scoped before ambient, faithful || chain where empty scoped falls back and empty ambient yields None - refined during green to match the full pinned chain and locked by test), and new pub mod cancel with operation_token/sleep_cancel/race_with_cancel/Cancelled over CancellationToken (one-way child_token linkage, pre-cancel fast-fail without polling, select-based timer/listener release, dropped-future abandoned-promise semantics verified by a drop sentinel). Red phase was genuine E0432 on all three imports; one test-authoring fix (parent_two is intentionally cancelled in the linkage test). Two D.1 retries: collapsible_if -> edition-2024 let-chain. Flagged: provider_env_value, race_with_cancel and sleep_cancel currently have no internal call sites - admitted per the task DoD as pinned-utils family completion with Pi call-site evidence (anthropic/azure/bedrock env opts, codex/oauth sleeps, credential-store races); revisit via simplification_trigger=unused if later wiring tasks do not consume them. No push.",
+          "gate_results": {
+            "d1_gate": "smoke scoped --crate opi-ai --test public_utilities PASSED (fmt, clippy -D warnings, crate tests + public_utilities, rustdoc -D warnings)",
+            "d0_scenario": "cargo test -p opi-ai --test public_utilities -> 46 passed / 0 failed (11 new)",
+            "d3_gap_only": "python scripts/opi-doc-check.py PASS; git diff --check clean",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=2 (no internal call sites yet for provider_env_value/cancel helpers - family completion per DoD with pinned Pi call-site evidence, simplification_trigger=unused revisit registered; ambient-env tests depend on real process environment with a mutex and unique names - documented serialization), rejected=5 as pre-registered (proxy/header identity policy layer; silent merge replacing merge_request rejection; global sleep/cancel state or timer pools; Bun /proc fallback; new dependencies), wf_ref=null (degraded single-reviewer path)",
+            "test_disposition": [
+              {
+                "subject": "header merge/scoped env/cancellable waits",
+                "action": "add",
+                "test": "tests/public_utilities.rs +11: merge reinsert order + winner case, None deletion + empty->None, within-source last-wins, scoped-precedes-ambient (mutex-serialized env mutation), empty-scoped/empty-ambient || short-circuit, paused-clock sleep duration, pre-cancel immediate failure without elapsed time, mid-wait cancellation, ready-before-cancel race, drop-sentinel operation release, one-way linkage both directions",
+                "interface": "opi_ai::provider_headers::merge_provider_header_sources; opi_ai::provider_env::provider_env_value; opi_ai::cancel::{operation_token, sleep_cancel, race_with_cancel, Cancelled}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.53.6",
+                "action": "retain",
+                "test": "all pre-existing suites unchanged and green in the scoped crate gate",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "d569bd4a590f015719b45aea5c45f7d441f6c890"
+          }
+        }
+      ]
     },
     {
       "id": "20.53.8",
@@ -20713,6 +20755,16 @@
       "rejected_count": 4,
       "ran_at": "2026-10-26T11:08:04.747622+00:00",
       "task_id": "20.53.4",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 5,
+      "ran_at": "2026-10-26T11:46:43.880587+00:00",
+      "task_id": "20.53.6",
       "criterion_id": null
     }
   ]
