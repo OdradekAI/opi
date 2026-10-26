@@ -2125,6 +2125,7 @@ mod tests {
 
     fn make_request(cache_retention: CacheRetention) -> Request {
         Request {
+            transport: Default::default(),
             model: "anthropic:claude-sonnet-4-5-20250514".into(),
             context: crate::transcript::normalize_context(crate::transcript::Context {
                 system_prompt: Some("You are a test assistant.".into()),

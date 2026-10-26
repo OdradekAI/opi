@@ -79,6 +79,7 @@ fn responses_unknown_model_returns_error() {
 fn responses_request_body_uses_input_field() {
     let provider = responses_provider();
     let request = Request {
+        transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -134,6 +135,7 @@ fn responses_request_body_uses_input_field() {
 fn responses_request_body_strips_provider_prefix() {
     let provider = responses_provider();
     let request = Request {
+        transport: Default::default(),
         model: "openai-responses:o3".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -169,6 +171,7 @@ fn responses_request_body_strips_provider_prefix() {
 
 fn responses_tool_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -1233,6 +1236,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
     let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let request = Request {
+        transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -1313,6 +1317,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
     let cancel = CancellationToken::new();
     let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let request = Request {
+        transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -1369,6 +1374,7 @@ use opi_ai::callbacks::RequestCallbacks;
 
 fn responses_text_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),

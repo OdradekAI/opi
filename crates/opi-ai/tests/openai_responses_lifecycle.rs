@@ -15,6 +15,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn make_request(cancel: CancellationToken) -> Request {
     Request {
+        transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

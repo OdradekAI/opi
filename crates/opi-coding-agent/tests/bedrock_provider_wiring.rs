@@ -295,6 +295,7 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
     ));
 
     let mut request = opi_ai::provider::Request {
+        transport: Default::default(),
         model: "bedrock:anthropic.claude-sonnet-4-20250514-v2:0".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

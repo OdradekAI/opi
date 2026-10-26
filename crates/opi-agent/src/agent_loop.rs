@@ -499,6 +499,7 @@ async fn run_operation(
             Err(error) => fail_before_dispatch!(AgentError::from(ProviderError::from(error))),
         };
         let request = Request {
+            transport: Default::default(),
             model: state.model_selection.to_spec(),
             context: normalized_context,
             max_tokens: state.inference.max_tokens,

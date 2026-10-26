@@ -466,6 +466,7 @@ async fn cache_1h_malformed_subset_stops_production_stream_with_non_retryable_er
 
     let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
+        transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -928,6 +929,7 @@ fn thinking_fixture_usage_tracked() {
 fn build_request_body_includes_thinking_when_enabled() {
     let provider = AnthropicProvider::new(None);
     let request = Request {
+        transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -971,6 +973,7 @@ fn build_request_body_includes_thinking_when_enabled() {
 fn build_request_body_uses_default_budget_when_none() {
     let provider = AnthropicProvider::new(None);
     let request = Request {
+        transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -1016,6 +1019,7 @@ fn build_request_body_uses_default_budget_when_none() {
 fn build_request_body_omits_thinking_when_disabled() {
     let provider = AnthropicProvider::new(None);
     let request = Request {
+        transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -1486,6 +1490,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
     let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
+        transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -1558,6 +1563,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
     let cancel = CancellationToken::new();
     let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
+        transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -1619,6 +1625,7 @@ mod request_compatibility {
 
     fn request(model: &str) -> Request {
         Request {
+            transport: Default::default(),
             model: model.into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,
@@ -1737,6 +1744,7 @@ use opi_ai::callbacks::RequestCallbacks;
 
 fn callbacks_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -2319,6 +2327,7 @@ mod anthropic_strict_wire_tests {
 
     fn request_with_tools(tools: Vec<ToolDef>) -> Request {
         Request {
+            transport: Default::default(),
             model: "test:strict-model".into(),
             context: opi_ai::transcript::normalize_context(Context {
                 system_prompt: None,
@@ -2586,6 +2595,7 @@ mod anthropic_strict_variant_tests {
 
     fn variant_request(tools: Vec<ToolDef>, callbacks: RequestCallbacks) -> Request {
         Request {
+            transport: Default::default(),
             model: "test:strict-model".into(),
             context: opi_ai::transcript::normalize_context(Context {
                 system_prompt: None,

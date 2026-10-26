@@ -176,6 +176,7 @@ fn gemini_unknown_model_returns_error() {
 fn gemini_request_body_uses_contents_field() {
     let provider = gemini_provider();
     let request = Request {
+        transport: Default::default(),
         model: "gemini:gemini-2.5-flash".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -241,6 +242,7 @@ fn gemini_request_body_uses_contents_field() {
 fn gemini_request_body_strips_provider_prefix() {
     let provider = gemini_provider();
     let request = Request {
+        transport: Default::default(),
         model: "gemini:gemini-2.5-pro".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -644,6 +646,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
     let provider = GeminiProvider::new(Some(server.uri()));
     let request = Request {
+        transport: Default::default(),
         model: "gemini:gemini-2.5-flash".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -804,6 +807,7 @@ async fn request_header_cannot_override_gemini_auth_routing() {
 
 fn gemini_http_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "gemini:gemini-2.5-flash".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -1089,6 +1093,7 @@ mod constrained_guard_tests {
 
     fn guarded_request(tools: Vec<ToolDef>) -> Request {
         Request {
+            transport: Default::default(),
             model: "gemini:gemini-2.5-flash".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,

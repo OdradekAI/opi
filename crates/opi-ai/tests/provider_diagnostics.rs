@@ -340,6 +340,7 @@ fn text_only_model(id: &str) -> ModelInfo {
 
 fn image_request(model: &str) -> Request {
     Request {
+        transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

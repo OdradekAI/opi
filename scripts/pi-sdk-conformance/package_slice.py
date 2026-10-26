@@ -11,9 +11,11 @@ Families:
   frame/PMD/Close/async-IO implementation and its retained protocol tests,
   plus public Upgrade/WSS integration tests. Both suites and their clippy
   targets run from the extracted artifact in all three feature graphs.
-  Separate workspace-external consumers exercise only the existing public
-  HTTP Upgrade and detached raw stream. These layers do not prove the real
-  Codex provider/codec chain; that acceptance remains OPEN for task 20.16.
+  Separate workspace-external consumers exercise the existing public HTTP
+  Upgrade and detached raw stream and, since task 20.16, the real
+  ``Models`` -> Codex adapter -> strict Upgrade -> private-codec chain
+  against a local scripted peer (no PMD negotiation in that check; the
+  packaged private protocol suites retain compression coverage).
   Both AWS-LC and, in the C-zlib union, libz-sys native provenance are recorded
   from the consumer's actual Cargo units.
 
@@ -158,7 +160,7 @@ FAMILIES: dict[str, dict[str, Any]] = {
         "crate": "opi-ai",
         "private_test_minimum": 93,
         "public_test_minimum": 15,
-        "public_codec_status": "OPEN: task 20.16",
+        "public_codec_status": "CLOSED: task 20.16 real-chain consumer check",
         "consumer": "consumer-ws",
         "profiles": [
             {
@@ -199,7 +201,7 @@ FAMILIES: dict[str, dict[str, Any]] = {
                 ],
             },
         ],
-        "expected_checks": 6,
+        "expected_checks": 7,
     },
 }
 
@@ -641,9 +643,10 @@ def main() -> int:
         },
     }
     if args.family == "ws":
-        evidence["scope"] = "packaged opi-ai protocol supplements and public Upgrade tests plus external Upgrade proof"
+        evidence["scope"] = ("packaged opi-ai protocol supplements and public Upgrade tests "
+                             "plus the external real-chain Upgrade proof (task 20.16)")
         evidence["public_codec_status"] = family["public_codec_status"]
-        evidence["public_codec_exercised"] = False
+        evidence["public_codec_exercised"] = True
 
     def run(name: str, command: list[str], cwd: Path) -> str:
         started = time.monotonic()
@@ -746,7 +749,8 @@ def main() -> int:
             check_family_report(report, family)
             evidence["profiles"].append({
                 "name": profile["name"],
-                "scope": ("external public Upgrade and raw stream; private codec not exercised"
+                "scope": ("external public Upgrade, raw stream and the real "
+                          "Models -> Codex -> Upgrade -> private-codec chain"
                           if args.family == "ws" else "external public consumer"),
                 "graph": graph,
                 "report": report,

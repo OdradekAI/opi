@@ -59,6 +59,7 @@ fn test_auth() -> ResolvedAuth {
 
 fn text_stream_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "anthropic.claude-sonnet-4-20250514-v2:0".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -88,6 +89,7 @@ fn text_stream_request() -> Request {
 
 fn tool_call_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "anthropic.claude-sonnet-4-20250514-v2:0".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -670,6 +672,7 @@ fn bedrock_provider_accepts_shared_client() {
 async fn url_image_rejected_with_clear_error() {
     let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
     let request = Request {
+        transport: Default::default(),
         model: "bedrock:anthropic.claude-sonnet-4-20250514-v2:0".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -1066,6 +1069,7 @@ fn lifecycle_text_request() -> Request {
     // `anthropic.claude-sonnet-4` (family `anthropic`) and the request path
     // stays free of URL-encoded version colons.
     Request {
+        transport: Default::default(),
         model: "bedrock:anthropic.claude-sonnet-4".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -7901,6 +7905,7 @@ mod constrained_guard_tests {
 
     fn guarded_request(tools: Vec<ToolDef>) -> Request {
         Request {
+            transport: Default::default(),
             model: "bedrock:anthropic.claude-3-5-sonnet-20240620-v1:0".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,

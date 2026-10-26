@@ -44,6 +44,7 @@ fn model(base_url: Option<String>) -> ModelInfo {
 
 fn request() -> Request {
     Request {
+        transport: Default::default(),
         model: "openai-codex:gpt-5.4".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("system prompt".into()),
@@ -1054,5 +1055,1257 @@ mod codex_constrained_tests {
                 && diagnostic.detail.as_deref() == Some("grammar-tool")),
             "the unsupported grammar target records its loss on the message"
         );
+    }
+}
+
+// ===========================================================================
+// Task 20.16: real Codex WS/Auto/continuation public path. Local scripted
+// peers only; no real provider endpoints are contacted.
+// ===========================================================================
+
+mod ws_path {
+    use super::*;
+    use opi_ai::http::{HttpClientBuilder, RedirectPolicy};
+    use opi_ai::provider::TransportPreference;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::{Arc, Mutex};
+
+    // -- scripted local peer ------------------------------------------------
+
+    pub(crate) struct PeerCapture {
+        pub heads: Vec<Vec<String>>,
+        pub frames: Vec<serde_json::Value>,
+        pub posts: Vec<serde_json::Value>,
+    }
+
+    pub(crate) struct CodexPeer {
+        pub port: u16,
+        pub capture: Arc<Mutex<PeerCapture>>,
+        pub(crate) handle: Option<std::thread::JoinHandle<Result<(), String>>>,
+    }
+
+    pub(crate) fn accept_token_for(key: &str) -> String {
+        use base64::Engine;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(key.as_bytes())
+            .unwrap();
+        let mut nonce = [0_u8; 16];
+        nonce.copy_from_slice(&bytes);
+        opi_ai::ws::accept_token(&nonce)
+    }
+
+    /// Byte-wise head reader: no internal buffering, so request bodies that
+    /// arrive with the head are never consumed ahead of the caller.
+    pub(crate) fn read_head(stream: &mut TcpStream) -> Vec<String> {
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut lines = Vec::new();
+        let mut line = Vec::new();
+        let mut byte = [0; 1];
+        loop {
+            match stream.read(&mut byte) {
+                Ok(0) => break,
+                Ok(_) => {
+                    if byte[0] == b'\n' {
+                        if line == b"\r" || line.is_empty() {
+                            break;
+                        }
+                        lines.push(String::from_utf8_lossy(&line).trim_end().to_owned());
+                        line.clear();
+                    } else {
+                        line.push(byte[0]);
+                    }
+                }
+                Err(_error) => break,
+            }
+        }
+        lines
+    }
+
+    pub(crate) fn header<'a>(lines: &'a [String], name: &str) -> Option<&'a str> {
+        lines
+            .iter()
+            .filter_map(|l| l.split_once(':'))
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.trim())
+    }
+
+    pub(crate) fn response_101(lines: &[String], extra: &[(&str, &str)]) -> Vec<u8> {
+        let accept = accept_token_for(header(lines, "sec-websocket-key").unwrap());
+        let mut response = format!(
+            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n"
+        );
+        for (name, value) in extra {
+            response.push_str(&format!("{name}: {value}\r\n"));
+        }
+        response.push_str("\r\n");
+        response.into_bytes()
+    }
+
+    pub(crate) fn sse_response(events: &str, status: u16) -> Vec<u8> {
+        let reason = if status == 200 { "OK" } else { "Bad Request" };
+        format!("HTTP/1.1 {status} {reason}\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{events}", events.len()).into_bytes()
+    }
+
+    /// Read one masked client frame; returns (opcode, payload).
+    pub(crate) fn read_frame(stream: &mut TcpStream) -> Result<(u8, Vec<u8>), String> {
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut head = [0; 2];
+        stream.read_exact(&mut head).map_err(|e| e.to_string())?;
+        let opcode = head[0] & 0x0f;
+        let masked = head[1] & 0x80 != 0;
+        let len = match head[1] & 0x7f {
+            126 => {
+                let mut extended = [0; 2];
+                stream
+                    .read_exact(&mut extended)
+                    .map_err(|e| e.to_string())?;
+                u16::from_be_bytes(extended) as usize
+            }
+            127 => {
+                let mut extended = [0; 8];
+                stream
+                    .read_exact(&mut extended)
+                    .map_err(|e| e.to_string())?;
+                u64::from_be_bytes(extended) as usize
+            }
+            value => value as usize,
+        };
+        let mut mask = [0; 4];
+        if masked {
+            stream.read_exact(&mut mask).map_err(|e| e.to_string())?;
+        }
+        let mut payload = vec![0; len];
+        stream.read_exact(&mut payload).map_err(|e| e.to_string())?;
+        if masked {
+            for (i, byte) in payload.iter_mut().enumerate() {
+                *byte ^= mask[i % 4];
+            }
+        }
+        Ok((opcode, payload))
+    }
+
+    /// Write one unmasked server frame.
+    pub(crate) fn write_frame(stream: &mut TcpStream, opcode: u8, payload: &[u8]) {
+        let mut frame = vec![0x80 | opcode];
+        match payload.len() {
+            0..=125 => frame.push(payload.len() as u8),
+            126..=65535 => {
+                frame.push(126);
+                frame.extend_from_slice(&(payload.len() as u16).to_be_bytes());
+            }
+            length => {
+                frame.push(127);
+                frame.extend_from_slice(&(length as u64).to_be_bytes());
+            }
+        }
+        frame.extend_from_slice(payload);
+        stream.write_all(&frame).unwrap();
+        stream.flush().unwrap();
+    }
+
+    pub(crate) fn drain_to_eof(stream: &mut TcpStream) -> Result<usize, String> {
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut total = 0;
+        let mut buffer = [0; 512];
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => return Ok(total),
+                Ok(n) => total += n,
+                Err(error) => {
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        || error.kind() == std::io::ErrorKind::TimedOut
+                    {
+                        return Ok(total);
+                    }
+                    return Err(error.to_string());
+                }
+            }
+        }
+    }
+
+    pub(crate) fn completed_event() -> String {
+        "{\"type\":\"response.completed\",\"response\":{\"id\":\"response-1\",\"model\":\"gpt-5.4\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}".to_owned()
+    }
+
+    impl CodexPeer {
+        /// Spawn a peer thread running `handler` once per accepted connection.
+        pub(crate) fn spawn<H>(handler: H) -> Self
+        where
+            H: Fn(TcpStream, Vec<String>, &Arc<Mutex<PeerCapture>>) -> Result<(), String>
+                + Send
+                + 'static,
+        {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let capture = Arc::new(Mutex::new(PeerCapture {
+                heads: Vec::new(),
+                frames: Vec::new(),
+                posts: Vec::new(),
+            }));
+            let shared = capture.clone();
+            let handle = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().map_err(|e| e.to_string())?;
+                stream.set_nodelay(true).unwrap();
+                let lines = read_head(&mut stream);
+                shared.lock().unwrap().heads.push(lines.clone());
+                if header(&lines, "upgrade").is_some() {
+                    handler(stream, lines, &shared)
+                } else {
+                    // POST: SSE-style response; record the JSON body.
+                    let length = header(&lines, "content-length")
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .unwrap_or(0);
+                    let mut body = vec![0; length];
+                    stream
+                        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                        .unwrap();
+                    stream.read_exact(&mut body).map_err(|e| e.to_string())?;
+                    let value: serde_json::Value =
+                        serde_json::from_slice(&body).unwrap_or_default();
+                    shared.lock().unwrap().posts.push(value);
+                    handler(stream, lines, &shared)
+                }
+            });
+            CodexPeer {
+                port,
+                capture,
+                handle: Some(handle),
+            }
+        }
+
+        pub(crate) fn base_url(&self) -> String {
+            format!("http://127.0.0.1:{}", self.port)
+        }
+
+        pub(crate) fn finish(mut self) -> Result<Arc<Mutex<PeerCapture>>, String> {
+            self.handle
+                .take()
+                .expect("peer thread")
+                .join()
+                .map_err(|_| "server thread panicked".to_string())??;
+            Ok(self.capture)
+        }
+    }
+
+    fn none_redirect_client() -> Arc<opi_ai::http::HttpClient> {
+        Arc::new(
+            HttpClientBuilder::new()
+                .redirects(RedirectPolicy::None)
+                .build()
+                .expect("client"),
+        )
+    }
+
+    // -- transport resolution -------------------------------------------------
+
+    #[tokio::test]
+    async fn default_auto_uses_real_websocket_path() {
+        let peer = CodexPeer::spawn(
+            |mut stream: TcpStream,
+             lines: Vec<String>,
+             capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                assert_eq!(
+                    header(&lines, "openai-beta").unwrap(),
+                    "responses_websockets=2026-02-06",
+                    "WS handshake must carry the websocket beta header"
+                );
+                assert_eq!(header(&lines, "authorization").unwrap(), "Bearer ws-secret");
+                assert_eq!(header(&lines, "chatgpt-account-id").unwrap(), "acct-1");
+                assert_eq!(header(&lines, "originator").unwrap(), "opi");
+                assert_eq!(header(&lines, "session-id").unwrap(), "session-fixed");
+                assert_eq!(
+                    header(&lines, "x-client-request-id").unwrap(),
+                    "session-fixed"
+                );
+                assert!(
+                    header(&lines, "content-type").is_none(),
+                    "WS handshake drops the SSE content-type header"
+                );
+                stream.write_all(&response_101(&lines, &[])).unwrap();
+                let (opcode, payload) = read_frame(&mut stream)?;
+                assert_eq!(opcode, 1, "response.create travels as a text frame");
+                let frame: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+                capture.lock().unwrap().frames.push(frame);
+                write_frame(&mut stream, 1, completed_event().as_bytes());
+                // Auto with an active session keeps the connection pooled: no
+                // Close handshake; the socket closes silently at provider drop.
+                drain_to_eof(&mut stream)?;
+                Ok(())
+            },
+        );
+        let provider = OpenAiCodexResponsesProvider::new(
+            Some(peer.base_url()),
+            vec![model(None)],
+            none_redirect_client(),
+        );
+        let terminal = typed_terminal(
+            &provider,
+            request(),
+            auth("ws-secret", None, Some("acct-1".into())),
+        )
+        .await;
+        assert_eq!(terminal.response_id.as_deref(), Some("response-1"));
+        let capture = peer.finish().expect("peer script");
+        let frame = capture.lock().unwrap().frames[0].clone();
+        assert_eq!(frame["type"], "response.create");
+        assert_eq!(frame["model"], "gpt-5.4");
+        assert_eq!(frame["store"], false);
+        assert_eq!(frame["stream"], true);
+        assert_eq!(frame["prompt_cache_key"], "session-fixed");
+        assert!(!frame["input"].as_array().unwrap().is_empty());
+        // ONB-03: the transport preference is a typed transport-layer hint
+        // only; it never leaks into the wire body under any mode.
+        assert!(
+            frame.get("transport").is_none(),
+            "transport preference must not appear in the request body"
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_sse_never_attempts_websocket() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/codex/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(codex_completed_sse()),
+            )
+            .mount(&server)
+            .await;
+        // A listener that fails any WS upgrade attempt.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let guard = tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    break;
+                };
+                let mut buffer = [0; 512];
+                use tokio::io::AsyncReadExt;
+                let _ = socket.read(&mut buffer).await;
+                use tokio::io::AsyncWriteExt;
+                let _ = socket
+                    .write_all(b"HTTP/1.1 500 Internal Server Error\r\ncontent-length: 0\r\n\r\n")
+                    .await;
+            }
+        });
+        let provider = OpenAiCodexResponsesProvider::new(
+            Some(server.uri()),
+            vec![model(None)],
+            Arc::new(HttpClient::new()),
+        );
+        let mut call = request();
+        call.transport = TransportPreference::Sse;
+        let terminal =
+            typed_terminal(&provider, call, auth("sse-secret", None, Some("a".into()))).await;
+        assert_eq!(terminal.response_id.as_deref(), Some("response-1"));
+        guard.abort();
+    }
+
+    #[tokio::test]
+    async fn explicit_websocket_reuses_connection_without_continuation() {
+        let peer = CodexPeer::spawn(
+            |mut stream: TcpStream, lines: Vec<String>, capture: &Arc<Mutex<PeerCapture>>| {
+                stream.write_all(&response_101(&lines, &[])).unwrap();
+                for _turn in 0..2 {
+                    let (opcode, payload) = read_frame(&mut stream)?;
+                    assert_eq!(opcode, 1);
+                    capture
+                        .lock()
+                        .unwrap()
+                        .frames
+                        .push(serde_json::from_slice(&payload).unwrap());
+                    write_frame(&mut stream, 1, completed_event().as_bytes());
+                }
+                // Pooled connection: no Close handshake; the socket closes
+                // silently at provider drop.
+                drain_to_eof(&mut stream)?;
+                Ok(())
+            },
+        );
+        let provider = OpenAiCodexResponsesProvider::new(
+            Some(peer.base_url()),
+            vec![model(None)],
+            none_redirect_client(),
+        );
+        for call in 0..2 {
+            let mut call_request = request();
+            call_request.transport = TransportPreference::Websocket;
+            let mut stream = provider
+                .stream_prepared(call_request, auth("ws-secret", None, Some("acct-1".into())));
+            let mut saw_done = false;
+            while let Some(result) = stream.next().await {
+                if let AssistantStreamEvent::Done { message, .. } =
+                    result.expect("scripted Codex response must stream successfully")
+                {
+                    assert_eq!(message.response_id.as_deref(), Some("response-1"));
+                    saw_done = true;
+                }
+            }
+            assert!(saw_done, "call {call} must finish with Done");
+        }
+        let capture = peer.finish().expect("peer script");
+        {
+            let guard = capture.lock().unwrap();
+            assert_eq!(
+                guard.heads.len(),
+                1,
+                "non-cached websocket still pools the idle connection"
+            );
+            assert_eq!(guard.frames.len(), 2);
+            for frame in &guard.frames {
+                assert!(
+                    frame.get("previous_response_id").is_none(),
+                    "non-cached websocket never sends continuation deltas"
+                );
+                assert_eq!(frame["input"].as_array().unwrap().len(), 1);
+            }
+        }
+    }
+}
+
+mod ws_continuation {
+    use super::ws_path::{
+        CodexPeer, completed_event, drain_to_eof, read_frame, response_101, write_frame,
+    };
+    use super::*;
+    use opi_ai::http::{HttpClientBuilder, RedirectPolicy};
+    use opi_ai::provider::TransportPreference;
+    use std::io::Write;
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::{Arc, Mutex};
+
+    impl CodexPeer {
+        /// Spawn a peer accepting connections until `total` arrive or 10s of
+        /// idle elapse. WebSocket connections consume the next handler;
+        /// plain POST requests are answered with the shared SSE corpus.
+        pub(crate) fn spawn_many<H>(handlers: Vec<H>, total: usize) -> Self
+        where
+            H: Fn(
+                    TcpStream,
+                    Vec<String>,
+                    &Arc<Mutex<super::ws_path::PeerCapture>>,
+                ) -> Result<(), String>
+                + Send
+                + 'static,
+        {
+            use std::collections::VecDeque;
+            use std::io::{Read, Write};
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener
+                .set_nonblocking(true)
+                .expect("nonblocking listener");
+            let port = listener.local_addr().unwrap().port();
+            let capture = Arc::new(Mutex::new(super::ws_path::PeerCapture {
+                heads: Vec::new(),
+                frames: Vec::new(),
+                posts: Vec::new(),
+            }));
+            let shared = capture.clone();
+            let mut handlers: VecDeque<H> = handlers.into();
+            let handle = std::thread::spawn(move || {
+                let mut accepted = 0;
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                while accepted < total {
+                    if std::time::Instant::now() > deadline {
+                        break;
+                    }
+                    match listener.accept() {
+                        Ok((mut stream, _)) => {
+                            accepted += 1;
+                            stream.set_nodelay(true).unwrap();
+                            let lines = super::ws_path::read_head(&mut stream);
+                            shared.lock().unwrap().heads.push(lines.clone());
+                            if super::ws_path::header(&lines, "upgrade").is_some() {
+                                let handler = handlers
+                                    .pop_front()
+                                    .ok_or("websocket connection without handler")?;
+                                handler(stream, lines, &shared)?;
+                            } else {
+                                let length = super::ws_path::header(&lines, "content-length")
+                                    .and_then(|v| v.parse::<usize>().ok())
+                                    .unwrap_or(0);
+                                let mut body = vec![0; length];
+                                stream
+                                    .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                                    .unwrap();
+                                stream.read_exact(&mut body).map_err(|e| e.to_string())?;
+                                let value: serde_json::Value =
+                                    serde_json::from_slice(&body).unwrap_or_default();
+                                shared.lock().unwrap().posts.push(value);
+                                let response =
+                                    super::ws_path::sse_response(&codex_completed_sse(), 200);
+                                stream.write_all(&response).map_err(|e| e.to_string())?;
+                                let _ = stream.shutdown(std::net::Shutdown::Both);
+                            }
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
+                        Err(error) => return Err(error.to_string()),
+                    }
+                }
+                Ok(())
+            });
+            CodexPeer {
+                port,
+                capture,
+                handle: Some(handle),
+            }
+        }
+    }
+
+    fn ws_provider(base_url: String) -> OpenAiCodexResponsesProvider {
+        OpenAiCodexResponsesProvider::new(
+            Some(base_url),
+            vec![model(None)],
+            Arc::new(
+                HttpClientBuilder::new()
+                    .redirects(RedirectPolicy::None)
+                    .build()
+                    .unwrap(),
+            ),
+        )
+    }
+
+    /// A second-turn request: same system prompt and tools, one more user
+    /// message than the shared `request()` helper.
+    pub(crate) fn second_turn_request() -> Request {
+        let mut request = request();
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("system prompt".into()),
+            messages: vec![
+                Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "hello".into(),
+                    }],
+                    timestamp_ms: 0,
+                }),
+                Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "second turn".into(),
+                    }],
+                    timestamp_ms: 0,
+                }),
+            ],
+            tools: vec![ToolDef {
+                name: "read".into(),
+                description: "Read a file".into(),
+                input_schema: serde_json::json!({"type":"object"}),
+                constrained_sampling: None,
+            }],
+        })
+        .expect("valid context declarations");
+        request
+    }
+
+    pub(crate) async fn frame_call(provider: &OpenAiCodexResponsesProvider, request: Request) {
+        // Drain to stream end: the producer finishing guarantees pooled
+        // connections are released before the next call acquires them.
+        let mut stream =
+            provider.stream_prepared(request, auth("ws-secret", None, Some("acct-1".into())));
+        let mut saw_done = false;
+        while let Some(result) = stream.next().await {
+            if let AssistantStreamEvent::Done { .. } =
+                result.expect("scripted Codex response must stream successfully")
+            {
+                saw_done = true;
+            }
+        }
+        assert!(saw_done, "stream must finish with Done");
+    }
+
+    #[tokio::test]
+    async fn cached_continuation_sends_delta_over_one_pooled_connection() {
+        let peer = CodexPeer::spawn_many(
+            vec![|mut stream: TcpStream,
+                  lines: Vec<String>,
+                  capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                stream.write_all(&response_101(&lines, &[])).unwrap();
+                let (opcode, payload) = read_frame(&mut stream)?;
+                assert_eq!(opcode, 1);
+                let first: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+                capture.lock().unwrap().frames.push(first);
+                write_frame(&mut stream, 1, completed_event().as_bytes());
+                // The pooled connection stays open; the second request reuses it.
+                let (opcode, payload) = read_frame(&mut stream)?;
+                assert_eq!(opcode, 1);
+                let second: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+                capture.lock().unwrap().frames.push(second);
+                write_frame(&mut stream, 1, completed_event().as_bytes());
+                // No Close handshake: the connection returns to the pool and
+                // closes silently when the provider is dropped.
+                drain_to_eof(&mut stream)?;
+                Ok(())
+            }],
+            1,
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut first = request();
+        first.transport = TransportPreference::WebsocketCached;
+        frame_call(&provider, first).await;
+        let mut second = second_turn_request();
+        second.transport = TransportPreference::WebsocketCached;
+        frame_call(&provider, second).await;
+        let capture = peer.finish().expect("peer script");
+        {
+            let guard = capture.lock().unwrap();
+            assert_eq!(guard.heads.len(), 1, "both calls share one connection");
+            let first = &guard.frames[0];
+            let second = &guard.frames[1];
+            assert!(
+                first.get("previous_response_id").is_none(),
+                "first request is full input"
+            );
+            assert_eq!(first["input"].as_array().unwrap().len(), 1);
+            assert_eq!(
+                second["previous_response_id"], "response-1",
+                "second request continues from the published response id"
+            );
+            let delta = second["input"].as_array().unwrap();
+            assert_eq!(delta.len(), 1, "delta input carries only the new turn");
+            assert_eq!(
+                delta[0]["content"], "second turn",
+                "the delta item is exactly the new turn's input item"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn cached_continuation_falls_back_to_full_input_on_noninput_change() {
+        let peer = CodexPeer::spawn_many(
+            vec![|mut stream: TcpStream,
+                  lines: Vec<String>,
+                  capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                stream.write_all(&response_101(&lines, &[])).unwrap();
+                for _turn in 0..2 {
+                    let (opcode, payload) = read_frame(&mut stream)?;
+                    assert_eq!(opcode, 1);
+                    capture
+                        .lock()
+                        .unwrap()
+                        .frames
+                        .push(serde_json::from_slice(&payload).unwrap());
+                    write_frame(&mut stream, 1, completed_event().as_bytes());
+                }
+                // No Close handshake: the pooled connection is reused.
+                drain_to_eof(&mut stream)?;
+                Ok(())
+            }],
+            1,
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut first = request();
+        first.transport = TransportPreference::WebsocketCached;
+        frame_call(&provider, first).await;
+        let mut second = second_turn_request();
+        second.transport = TransportPreference::WebsocketCached;
+        second.temperature = Some(0.7);
+        frame_call(&provider, second).await;
+        let capture = peer.finish().expect("peer script");
+        {
+            let guard = capture.lock().unwrap();
+            let second = &guard.frames[1];
+            assert!(
+                second.get("previous_response_id").is_none(),
+                "changed non-input fields force full input"
+            );
+            assert_eq!(second["input"].as_array().unwrap().len(), 2);
+        }
+    }
+
+    #[tokio::test]
+    async fn continuation_not_published_without_response_id() {
+        let idless =
+            "{\"type\":\"response.completed\",\"response\":{\"model\":\"gpt-5.4\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}".to_owned();
+        let peer = CodexPeer::spawn_many(
+            vec![move |mut stream: TcpStream,
+                       lines: Vec<String>,
+                       capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                stream.write_all(&response_101(&lines, &[])).unwrap();
+                for turn in 0..2 {
+                    let (opcode, payload) = read_frame(&mut stream)?;
+                    assert_eq!(opcode, 1);
+                    capture
+                        .lock()
+                        .unwrap()
+                        .frames
+                        .push(serde_json::from_slice(&payload).unwrap());
+                    let event = if turn == 0 {
+                        idless.as_bytes().to_vec()
+                    } else {
+                        completed_event().into_bytes()
+                    };
+                    write_frame(&mut stream, 1, &event);
+                }
+                // No Close handshake: the pooled connection is reused.
+                drain_to_eof(&mut stream)?;
+                Ok(())
+            }],
+            1,
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut first = request();
+        first.transport = TransportPreference::WebsocketCached;
+        // The id-less completion still finishes the call...
+        let mut stream =
+            provider.stream_prepared(first, auth("ws-secret", None, Some("acct-1".into())));
+        while let Some(result) = stream.next().await {
+            assert!(result.is_ok(), "id-less completion must still stream");
+        }
+        // ...but publishes no continuation: the next request is full input.
+        let mut second = second_turn_request();
+        second.transport = TransportPreference::WebsocketCached;
+        frame_call(&provider, second).await;
+        let capture = peer.finish().expect("peer script");
+        {
+            let guard = capture.lock().unwrap();
+            assert!(guard.frames[1].get("previous_response_id").is_none());
+            assert_eq!(guard.frames[1]["input"].as_array().unwrap().len(), 2);
+        }
+    }
+
+    #[tokio::test]
+    async fn sessionless_requests_use_temporary_connections() {
+        let peer = CodexPeer::spawn_many(
+            vec![
+                |mut stream: TcpStream,
+                 lines: Vec<String>,
+                 capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                    stream.write_all(&response_101(&lines, &[])).unwrap();
+                    let (opcode, payload) = read_frame(&mut stream)?;
+                    assert_eq!(opcode, 1);
+                    capture
+                        .lock()
+                        .unwrap()
+                        .frames
+                        .push(serde_json::from_slice(&payload).unwrap());
+                    write_frame(&mut stream, 1, completed_event().as_bytes());
+                    assert_eq!(read_frame(&mut stream)?.0, 8);
+                    write_frame(&mut stream, 8, &[]);
+                    drain_to_eof(&mut stream)?;
+                    Ok(())
+                },
+                |mut stream: TcpStream,
+                 lines: Vec<String>,
+                 capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                    stream.write_all(&response_101(&lines, &[])).unwrap();
+                    let (opcode, payload) = read_frame(&mut stream)?;
+                    assert_eq!(opcode, 1);
+                    capture
+                        .lock()
+                        .unwrap()
+                        .frames
+                        .push(serde_json::from_slice(&payload).unwrap());
+                    write_frame(&mut stream, 1, completed_event().as_bytes());
+                    assert_eq!(read_frame(&mut stream)?.0, 8);
+                    write_frame(&mut stream, 8, &[]);
+                    drain_to_eof(&mut stream)?;
+                    Ok(())
+                },
+            ],
+            2,
+        );
+        let provider = ws_provider(peer.base_url());
+        for turn in 0..2 {
+            let mut call = if turn == 0 {
+                request()
+            } else {
+                second_turn_request()
+            };
+            call.cache_retention = CacheRetention::Disabled;
+            call.transport = TransportPreference::WebsocketCached;
+            frame_call(&provider, call).await;
+        }
+        let capture = peer.finish().expect("peer script");
+        {
+            let guard = capture.lock().unwrap();
+            assert_eq!(guard.heads.len(), 2, "sessionless calls never pool");
+            for frame in &guard.frames {
+                assert!(frame.get("previous_response_id").is_none());
+            }
+        }
+    }
+}
+
+mod ws_branches {
+    use super::ws_continuation::frame_call;
+    use super::ws_continuation::second_turn_request;
+    use super::ws_path::{
+        CodexPeer, completed_event, drain_to_eof, read_frame, response_101, write_frame,
+    };
+    use super::*;
+    use opi_ai::http::{HttpClientBuilder, RedirectPolicy};
+    use opi_ai::provider::TransportPreference;
+    use std::io::Write;
+    use std::net::TcpStream;
+    use std::sync::{Arc, Mutex};
+
+    fn ws_provider(base_url: String) -> OpenAiCodexResponsesProvider {
+        OpenAiCodexResponsesProvider::new(
+            Some(base_url),
+            vec![model(None)],
+            Arc::new(
+                HttpClientBuilder::new()
+                    .redirects(RedirectPolicy::None)
+                    .build()
+                    .unwrap(),
+            ),
+        )
+    }
+
+    fn auth_ws() -> ResolvedAuth {
+        auth("ws-secret", None, Some("acct-1".into()))
+    }
+
+    /// Read one frame and reply with a JSON error event.
+    fn reply_error(stream: &mut TcpStream, code: &str) -> Result<(), String> {
+        let (opcode, _) = read_frame(stream)?;
+        assert_eq!(opcode, 1);
+        let error = format!(r#"{{"type":"error","code":"{code}"}}"#);
+        write_frame(stream, 1, error.as_bytes());
+        drain_to_eof(stream)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn missing_previous_response_allows_one_full_input_retry() {
+        let peer = CodexPeer::spawn_many(
+            vec![
+                // One pooled connection: call 1's full input, then call 2's
+                // delta, which the server rejects.
+                |mut stream: TcpStream,
+                 lines: Vec<String>,
+                 capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                    stream.write_all(&response_101(&lines, &[])).unwrap();
+                    for turn in 0..2 {
+                        let (opcode, payload) = read_frame(&mut stream)?;
+                        assert_eq!(opcode, 1);
+                        capture
+                            .lock()
+                            .unwrap()
+                            .frames
+                            .push(serde_json::from_slice(&payload).unwrap());
+                        if turn == 0 {
+                            write_frame(&mut stream, 1, completed_event().as_bytes());
+                        } else {
+                            let error = r#"{"type":"error","code":"previous_response_not_found"}"#;
+                            write_frame(&mut stream, 1, error.as_bytes());
+                        }
+                    }
+                    drain_to_eof(&mut stream)?;
+                    Ok(())
+                },
+                // Call 2 attempt 2: full input on a fresh connection.
+                |mut stream: TcpStream,
+                 lines: Vec<String>,
+                 capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                    stream.write_all(&response_101(&lines, &[])).unwrap();
+                    let (opcode, payload) = read_frame(&mut stream)?;
+                    assert_eq!(opcode, 1);
+                    capture
+                        .lock()
+                        .unwrap()
+                        .frames
+                        .push(serde_json::from_slice(&payload).unwrap());
+                    write_frame(&mut stream, 1, completed_event().as_bytes());
+                    drain_to_eof(&mut stream)?;
+                    Ok(())
+                },
+            ],
+            2,
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut first = request();
+        first.transport = TransportPreference::WebsocketCached;
+        frame_call(&provider, first).await;
+        let mut second = second_turn_request();
+        second.transport = TransportPreference::WebsocketCached;
+        // The retry happens before public output: the stream still finishes
+        // with exactly one Done.
+        frame_call(&provider, second).await;
+        let capture = peer.finish().expect("peer script");
+        {
+            let guard = capture.lock().unwrap();
+            assert_eq!(guard.frames.len(), 3);
+            assert_eq!(guard.frames[1]["previous_response_id"], "response-1");
+            assert!(
+                guard.frames[2].get("previous_response_id").is_none(),
+                "the retry sends full input"
+            );
+            assert_eq!(guard.frames[2]["input"].as_array().unwrap().len(), 2);
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_previous_response_retry_is_bounded_to_one() {
+        let peer = CodexPeer::spawn_many(
+            vec![
+                |mut stream: TcpStream,
+                 lines: Vec<String>,
+                 _capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                    stream.write_all(&response_101(&lines, &[])).unwrap();
+                    let (opcode, _) = read_frame(&mut stream)?;
+                    assert_eq!(opcode, 1);
+                    write_frame(&mut stream, 1, completed_event().as_bytes());
+                    reply_error(&mut stream, "previous_response_not_found")
+                },
+                reply_missing,
+            ],
+            2,
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut first = request();
+        first.transport = TransportPreference::WebsocketCached;
+        frame_call(&provider, first).await;
+        let mut second = second_turn_request();
+        second.transport = TransportPreference::WebsocketCached;
+        let error = drain(&provider, second, auth_ws()).await;
+        assert!(
+            error.is_some(),
+            "the second missing-id rejection is terminal"
+        );
+        peer.finish().expect("peer script");
+    }
+
+    fn reply_missing(
+        mut stream: TcpStream,
+        lines: Vec<String>,
+        _capture: &Arc<Mutex<super::ws_path::PeerCapture>>,
+    ) -> Result<(), String> {
+        stream.write_all(&response_101(&lines, &[])).unwrap();
+        reply_error(&mut stream, "previous_response_not_found")
+    }
+
+    #[tokio::test]
+    async fn connection_limit_before_start_allows_one_reconnect() {
+        let peer = CodexPeer::spawn_many(
+            vec![
+                |mut stream: TcpStream,
+                 lines: Vec<String>,
+                 _capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                    stream.write_all(&response_101(&lines, &[])).unwrap();
+                    reply_error(&mut stream, "websocket_connection_limit_reached")
+                },
+                |mut stream: TcpStream,
+                 lines: Vec<String>,
+                 capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                    stream.write_all(&response_101(&lines, &[])).unwrap();
+                    let (opcode, payload) = read_frame(&mut stream)?;
+                    assert_eq!(opcode, 1);
+                    capture
+                        .lock()
+                        .unwrap()
+                        .frames
+                        .push(serde_json::from_slice(&payload).unwrap());
+                    write_frame(&mut stream, 1, completed_event().as_bytes());
+                    drain_to_eof(&mut stream)?;
+                    Ok(())
+                },
+            ],
+            2,
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut call = request();
+        call.transport = TransportPreference::WebsocketCached;
+        frame_call(&provider, call).await;
+        let capture = peer.finish().expect("peer script");
+        {
+            let guard = capture.lock().unwrap();
+            assert_eq!(guard.heads.len(), 2, "one reconnect, then success");
+            assert!(
+                guard.frames[0].get("previous_response_id").is_none(),
+                "the successful reconnect sends full input"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn transport_failure_before_events_falls_back_to_sse() {
+        let peer = CodexPeer::spawn_many(
+            vec![|mut stream: TcpStream,
+                  lines: Vec<String>,
+                  _capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                stream.write_all(&response_101(&lines, &[])).unwrap();
+                // Abrupt transport loss before any provider event.
+                let _ = read_frame(&mut stream);
+                drop(stream);
+                Ok(())
+            }],
+            2,
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut call = request();
+        call.transport = TransportPreference::Auto;
+        let terminal = typed_terminal(&provider, call, auth_ws()).await;
+        assert_eq!(terminal.response_id.as_deref(), Some("response-1"));
+        let capture = peer.finish().expect("peer script");
+        {
+            let guard = capture.lock().unwrap();
+            assert_eq!(guard.heads.len(), 2, "one WS attempt then one SSE POST");
+            assert!(
+                guard.heads[1].first().unwrap().starts_with("POST"),
+                "the fallback request is the SSE transport"
+            );
+            assert_eq!(guard.posts.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn upgrade_auth_status_is_terminal_without_fallback() {
+        let peer = CodexPeer::spawn_many(
+            vec![|mut stream: TcpStream,
+                  _lines: Vec<String>,
+                  _capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                let _ = read_frame(&mut stream);
+                stream
+                    .write_all(b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\n\r\n")
+                    .unwrap();
+                Ok(())
+            }],
+            1,
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut call = request();
+        call.transport = TransportPreference::Websocket;
+        let error = drain(&provider, call, auth_ws()).await;
+        assert!(
+            matches!(error, Some(ProviderError::CredentialRevoked { .. })),
+            "401 on upgrade stays a revoked-credential failure, got {error:?}"
+        );
+        let capture = peer.finish().expect("peer script");
+        {
+            let guard = capture.lock().unwrap();
+            assert!(
+                guard.posts.is_empty(),
+                "auth failure never masquerades as transport loss"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn started_failure_is_terminal_and_ends_the_stream() {
+        let events = [
+            r#"{"type":"response.output_item.added","item":{"type":"message","id":"msg_1","role":"assistant","status":"in_progress","content":[]}}"#,
+            r#"{"type":"response.content_part.added","part":{"type":"output_text","text":""}}"#,
+            r#"{"type":"response.output_text.delta","delta":"Hello"}"#,
+        ];
+        let peer = CodexPeer::spawn_many(
+            vec![move |mut stream: TcpStream,
+                       lines: Vec<String>,
+                       _capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                stream.write_all(&response_101(&lines, &[])).unwrap();
+                let (opcode, _) = read_frame(&mut stream)?;
+                assert_eq!(opcode, 1);
+                // Effective provider events, then abrupt transport loss.
+                for event in events {
+                    write_frame(&mut stream, 1, event.as_bytes());
+                }
+                let _ = read_frame(&mut stream);
+                drop(stream);
+                Ok(())
+            }],
+            1,
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut call = request();
+        call.transport = TransportPreference::WebsocketCached;
+        let error = drain(&provider, call, auth_ws()).await;
+        assert!(
+            matches!(
+                error,
+                Some(ProviderError::StreamError(_)) | Some(ProviderError::StreamFailure(_))
+            ),
+            "an output-delivered error ends the stream, got {error:?}"
+        );
+        let capture = peer.finish().expect("peer script");
+        assert!(
+            capture.lock().unwrap().posts.is_empty(),
+            "no SSE splice after output"
+        );
+    }
+
+    #[tokio::test]
+    async fn fallback_is_sticky_for_the_session() {
+        let peer = CodexPeer::spawn_many(
+            vec![|mut stream: TcpStream,
+                  lines: Vec<String>,
+                  _capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                stream.write_all(&response_101(&lines, &[])).unwrap();
+                let _ = read_frame(&mut stream);
+                drop(stream);
+                Ok(())
+            }],
+            3,
+        );
+        let provider = ws_provider(peer.base_url());
+        for call_index in 0..2 {
+            let mut call = if call_index == 0 {
+                request()
+            } else {
+                second_turn_request()
+            };
+            call.transport = TransportPreference::Auto;
+            let terminal = typed_terminal(&provider, call, auth_ws()).await;
+            assert_eq!(terminal.response_id.as_deref(), Some("response-1"));
+        }
+        let capture = peer.finish().expect("peer script");
+        {
+            let guard = capture.lock().unwrap();
+            assert_eq!(
+                guard.heads.len(),
+                3,
+                "first call: WS + SSE; second call: SSE only"
+            );
+            assert!(
+                guard.heads[1].first().unwrap().starts_with("POST")
+                    && guard.heads[2].first().unwrap().starts_with("POST"),
+                "the sticky marker keeps later calls on SSE"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn idle_timeout_before_events_falls_back_to_sse() {
+        let peer = CodexPeer::spawn_many(
+            vec![|mut stream: TcpStream,
+                  lines: Vec<String>,
+                  _capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                stream.write_all(&response_101(&lines, &[])).unwrap();
+                // Hold the connection open without sending any event; the
+                // hold runs off-thread so the peer can serve the SSE fallback.
+                std::thread::spawn(move || {
+                    let mut held = stream;
+                    let (opcode, _) = read_frame(&mut held).unwrap_or((0, Vec::new()));
+                    assert_eq!(opcode, 1);
+                    std::thread::sleep(std::time::Duration::from_millis(600));
+                });
+                Ok(())
+            }],
+            2,
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut call = request();
+        call.transport = TransportPreference::WebsocketCached;
+        call.timeout = Some(std::time::Duration::from_millis(150));
+        let terminal = typed_terminal(&provider, call, auth_ws()).await;
+        assert_eq!(terminal.response_id.as_deref(), Some("response-1"));
+        let capture = peer.finish().expect("peer script");
+        assert_eq!(
+            capture.lock().unwrap().posts.len(),
+            1,
+            "idle timeout falls back once"
+        );
+    }
+}
+
+mod ws_cancellation {
+    use super::ws_path::{CodexPeer, read_frame, response_101, write_frame};
+    use super::*;
+    use opi_ai::http::{HttpClientBuilder, RedirectPolicy};
+    use opi_ai::provider::TransportPreference;
+    use std::io::Write;
+    use std::net::TcpStream;
+    use std::sync::{Arc, Mutex};
+
+    fn ws_provider(base_url: String) -> OpenAiCodexResponsesProvider {
+        OpenAiCodexResponsesProvider::new(
+            Some(base_url),
+            vec![model(None)],
+            Arc::new(
+                HttpClientBuilder::new()
+                    .redirects(RedirectPolicy::None)
+                    .build()
+                    .unwrap(),
+            ),
+        )
+    }
+
+    const DELTA: &str = r#"{"type":"response.output_text.delta","delta":"Hello"}"#;
+
+    #[tokio::test]
+    async fn active_cancellation_mid_stream_ends_with_cancelled() {
+        let peer = CodexPeer::spawn(
+            |mut stream: TcpStream,
+             lines: Vec<String>,
+             _capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                stream.write_all(&response_101(&lines, &[])).unwrap();
+                let (opcode, _) = read_frame(&mut stream).unwrap();
+                assert_eq!(opcode, 1);
+                write_frame(&mut stream, 1, DELTA.as_bytes());
+                // Hold the connection open; the client cancels mid-stream.
+                std::thread::sleep(std::time::Duration::from_millis(800));
+                Ok(())
+            },
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut call = request();
+        call.transport = TransportPreference::WebsocketCached;
+        let cancel = call.cancel.clone();
+        let mut stream = provider.stream_prepared(call, auth("s", None, Some("a".into())));
+        let mut error = None;
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(_) => cancel.cancel(),
+                Err(found) => {
+                    error = Some(found);
+                    break;
+                }
+            }
+        }
+        let cancelled = matches!(&error, Some(ProviderError::Cancelled))
+            || matches!(&error, Some(ProviderError::StreamFailure(failure))
+                if matches!(failure.cause(), ProviderError::Cancelled));
+        assert!(
+            cancelled,
+            "active cancellation ends the stream as Cancelled, got {error:?}"
+        );
+        peer.finish().expect("peer script");
+    }
+
+    #[tokio::test]
+    async fn idle_cancellation_before_events_ends_with_cancelled() {
+        let peer = CodexPeer::spawn(
+            |mut stream: TcpStream,
+             lines: Vec<String>,
+             _capture: &Arc<Mutex<super::ws_path::PeerCapture>>| {
+                stream.write_all(&response_101(&lines, &[])).unwrap();
+                let (opcode, _) = read_frame(&mut stream).unwrap();
+                assert_eq!(opcode, 1);
+                // No events: the client cancels while idle.
+                std::thread::sleep(std::time::Duration::from_millis(800));
+                Ok(())
+            },
+        );
+        let provider = ws_provider(peer.base_url());
+        let mut call = request();
+        call.transport = TransportPreference::WebsocketCached;
+        let cancel = call.cancel.clone();
+        let mut stream = provider.stream_prepared(call, auth("s", None, Some("a".into())));
+        // Let the producer reach the idle wait, then cancel.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        cancel.cancel();
+        let mut error = None;
+        while let Some(result) = stream.next().await {
+            if let Err(found) = result {
+                error = Some(found);
+                break;
+            }
+        }
+        let cancelled = matches!(&error, Some(ProviderError::Cancelled))
+            || matches!(&error, Some(ProviderError::StreamFailure(failure))
+                if matches!(failure.cause(), ProviderError::Cancelled));
+        assert!(
+            cancelled,
+            "idle cancellation ends the stream as Cancelled, got {error:?}"
+        );
+        peer.finish().expect("peer script");
     }
 }

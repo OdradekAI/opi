@@ -162,6 +162,7 @@ async fn mock_provider_returns_error_response() {
         ],
     );
     let request = opi_ai::provider::Request {
+        transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -405,6 +406,7 @@ mod acquisition {
 
     fn chat_request() -> opi_ai::provider::Request {
         opi_ai::provider::Request {
+            transport: Default::default(),
             model: "openai:gpt-4o".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,

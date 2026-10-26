@@ -944,6 +944,7 @@ use tokio_util::sync::CancellationToken;
 
 fn make_test_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -1092,6 +1093,7 @@ fn compat_config_represents_assistant_after_tool_result() {
 
 fn make_tool_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -1283,6 +1285,7 @@ fn build_request_body_cache_key_absent_by_default() {
 
 fn make_tool_result_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -1405,6 +1408,7 @@ fn validate_rejects_image_on_text_only_openai_compatible_profile() {
         vec![text_only],
     );
     let image_request = Request {
+        transport: Default::default(),
         model: "compatprof:text-only-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -1614,6 +1618,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
     let provider = OpenAiChatProvider::new(Some(server.uri()));
     let request = Request {
+        transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -1694,6 +1699,7 @@ async fn profile_extra_headers_reach_the_http_wire() {
         vec![],
     );
     let request = Request {
+        transport: Default::default(),
         model: "affinityprof:any-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -1751,6 +1757,7 @@ async fn stream_cancellation_aborts_before_completion() {
     let cancel = CancellationToken::new();
     let provider = OpenAiChatProvider::new(Some(server));
     let request = Request {
+        transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -1830,6 +1837,7 @@ async fn chat_final_tool_call(arguments: &str) -> AssistantStreamEvent {
         .await;
     let provider = OpenAiChatProvider::new(Some(server.uri()));
     let request = opi_ai::provider::Request {
+        transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -1961,6 +1969,7 @@ use opi_ai::callbacks::RequestCallbacks;
 
 fn chat_callbacks_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -2165,6 +2174,7 @@ mod constrained_guard_tests {
 
     fn guarded_request(tools: Vec<ToolDef>) -> Request {
         Request {
+            transport: Default::default(),
             model: "openai:gpt-4o".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,

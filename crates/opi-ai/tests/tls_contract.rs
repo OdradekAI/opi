@@ -394,6 +394,7 @@ fn build_tls_client(
 
 fn chat_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: transcript::normalize_context(transcript::Context {
             system_prompt: None,

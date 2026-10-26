@@ -167,6 +167,7 @@ fn unsupported_thinking_model(id: &str, wire_api: WireApi) -> ModelInfo {
 
 fn unsupported_thinking_request(provider_id: &str, model_id: &str) -> Request {
     Request {
+        transport: Default::default(),
         model: format!("{provider_id}:{model_id}"),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

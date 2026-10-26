@@ -144,6 +144,7 @@ fn openrouter_unknown_model_returns_error() {
 fn openrouter_request_body_strips_provider_prefix() {
     let provider = openrouter_provider();
     let request = Request {
+        transport: Default::default(),
         model: "openrouter:openai/gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -365,6 +366,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
     let provider = opi_ai::openrouter::openrouter_provider(Some(server.uri()));
     let request = Request {
+        transport: Default::default(),
         model: "openrouter:openai/gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -441,6 +443,7 @@ fn openrouter_profile_inherits_shared_compat_flags() {
         vec![],
     );
     let request = Request {
+        transport: Default::default(),
         model: "openrouter:openai/gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -500,6 +503,7 @@ async fn stream_cancellation_aborts_before_completion() {
     let cancel = CancellationToken::new();
     let provider = opi_ai::openrouter::openrouter_provider(Some(server));
     let request = Request {
+        transport: Default::default(),
         model: "openrouter:openai/gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

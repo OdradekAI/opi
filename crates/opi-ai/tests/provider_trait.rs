@@ -116,6 +116,7 @@ fn model_info_fields() {
 fn request_builds_with_all_fields() {
     let cancel = CancellationToken::new();
     let req = Request {
+        transport: Default::default(),
         model: "claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -165,6 +166,7 @@ fn request_builds_with_all_fields() {
 fn request_cancellation_propagates() {
     let cancel = CancellationToken::new();
     let req = Request {
+        transport: Default::default(),
         model: "test".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -255,6 +257,7 @@ async fn custom_provider_untrusted_constructor_discards_error_payloads() {
     };
     let mut stream = provider.stream_prepared(
         Request {
+            transport: Default::default(),
             model: "canary-errors:model".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,
@@ -309,6 +312,7 @@ async fn provider_trait_yields_done_event() {
     let provider = DummyProvider;
     let cancel = CancellationToken::new();
     let request = Request {
+        transport: Default::default(),
         model: "test".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

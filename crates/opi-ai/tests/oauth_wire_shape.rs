@@ -52,6 +52,7 @@ const ANTHROPIC_OAUTH_BETA: &str = "claude-code-20250219,oauth-2025-04-20";
 
 fn sample_request(model: &str) -> Request {
     Request {
+        transport: Default::default(),
         model: model.to_owned(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),

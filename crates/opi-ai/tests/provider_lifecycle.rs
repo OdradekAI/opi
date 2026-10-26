@@ -17,6 +17,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn make_request(cancel: CancellationToken) -> Request {
     Request {
+        transport: Default::default(),
         model: "anthropic:claude-sonnet-4".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

@@ -17,6 +17,7 @@ mod openai_chat_profile {
 
     fn make_request(cancel: CancellationToken) -> Request {
         Request {
+            transport: Default::default(),
             model: "openai:gpt-4o".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,
@@ -327,6 +328,7 @@ mod mistral_profile {
 
     fn make_request(cancel: CancellationToken) -> Request {
         Request {
+            transport: Default::default(),
             model: "mistral:mistral-large-latest".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,
@@ -568,6 +570,7 @@ mod openrouter_profile {
 
     fn make_request(cancel: CancellationToken) -> Request {
         Request {
+            transport: Default::default(),
             model: "openrouter:gpt-4o".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,

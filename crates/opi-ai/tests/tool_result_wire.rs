@@ -55,6 +55,7 @@ const EXPECTED_ERROR_MARKER: &str = "[tool_error] ";
 /// shape realistic; tool-result assertions navigate to the LAST message.
 fn request_with_tool_result(is_error: bool, payload: &str) -> Request {
     Request {
+        transport: Default::default(),
         model: "m".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -466,6 +467,8 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         // Task 20.51: functional request callbacks (headers/payload/response/
         // raw observers) are a deliberate later-phase addition.
         "callbacks",
+        // Task 20.53.6: cancellation helpers are a deliberate addition.
+        "cancel",
         // DEL-10 (task 20.32): the offline bundled model catalog loader is a
         // deliberate later-phase addition.
         "catalog",
@@ -477,6 +480,8 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "credential",
         "gemini",
         "http",
+        // Task 20.53.4: provider identity helpers are a deliberate addition.
+        "identity",
         "message",
         "mistral",
         "model",
@@ -490,12 +495,16 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "openai_responses",
         "openrouter",
         "provider",
+        // Task 20.53.6: provider environment helpers are a deliberate addition.
+        "provider_env",
         "provider_headers",
         "registry",
         "replay",
         "retry",
         "schema",
         "stream",
+        // Task 20.54: the telemetry carrier is a deliberate addition.
+        "telemetry",
         "test_support",
         "time",
         "transcript",

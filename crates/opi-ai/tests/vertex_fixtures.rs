@@ -309,6 +309,7 @@ async fn vertex_usage_in_done_event() {
 fn vertex_request_body_uses_gemini_format() {
     let provider = vertex_provider();
     let request = Request {
+        transport: Default::default(),
         model: "vertex:gemini-2.5-flash".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -395,6 +396,7 @@ fn tool_call_sse_fixture() -> String {
 
 fn lifecycle_text_request() -> Request {
     Request {
+        transport: Default::default(),
         model: "vertex:gemini-2.5-flash".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -2495,6 +2497,7 @@ mod constrained_guard_tests {
 
     fn guarded_request(tools: Vec<ToolDef>) -> Request {
         Request {
+            transport: Default::default(),
             model: "vertex:gemini-2.5-flash".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,

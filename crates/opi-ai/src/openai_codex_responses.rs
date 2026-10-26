@@ -18,7 +18,10 @@ use crate::openai_responses_shared::{
 };
 use crate::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
+    TransportPreference,
 };
+
+mod ws_transport;
 use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_cancel};
 
 const PROVIDER_ID: &str = "openai-codex";
@@ -48,6 +51,7 @@ pub struct OpenAiCodexResponsesProvider {
     base_url: String,
     models: Vec<ModelInfo>,
     client: Arc<HttpClient>,
+    ws_state: Arc<ws_transport::WsTransportState>,
 }
 
 impl OpenAiCodexResponsesProvider {
@@ -56,6 +60,7 @@ impl OpenAiCodexResponsesProvider {
             base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.into()),
             models,
             client,
+            ws_state: Arc::default(),
         }
     }
 
@@ -439,6 +444,22 @@ impl Provider for OpenAiCodexResponsesProvider {
         };
         let cancel = request.cancel.clone();
         let client = self.client.client().clone();
+        let http_client = self.client.clone();
+        let ws_state = self.ws_state.clone();
+        let transport = request.transport;
+        // WebSocket pooling and continuation are keyed on the caller's
+        // explicit session id only; generated per-call ids stay sessionless.
+        let session_key: Option<String> = if request.cache_retention != CacheRetention::Disabled {
+            request.session_id.clone().filter(|id| !id.is_empty())
+        } else {
+            None
+        };
+        let cont_route = crate::replay::ReplayRoute {
+            wire: crate::model_info::WireApi::OpenAiCodexResponses,
+            provider: PROVIDER_ID.to_owned(),
+            model: model_id_owned.clone(),
+            supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
+        };
         let snapshot = crate::stream::ProducerSnapshot::default();
         let producer_snapshot = snapshot.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
@@ -476,25 +497,70 @@ impl Provider for OpenAiCodexResponsesProvider {
                     }
                 };
                 let base_url = model_base_url.unwrap_or(default_base_url);
-                if let Err(error) = Self::stream_http(
-                    client,
-                    resolved,
-                    wire_facts,
-                    base_url,
-                    requested_model,
-                    extra_headers,
-                    body,
-                    cancel,
-                    timeout,
-                    session_id,
-                    request_id,
-                    callbacks,
-                    producer_snapshot,
-                    tx.clone(),
-                )
-                .await
-                {
-                    let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                if transport == TransportPreference::Sse {
+                    stream_sse(
+                        client,
+                        resolved,
+                        wire_facts,
+                        base_url,
+                        requested_model,
+                        extra_headers,
+                        body,
+                        cancel,
+                        timeout,
+                        session_id,
+                        request_id,
+                        callbacks,
+                        producer_snapshot,
+                        tx.clone(),
+                        producer_cancel,
+                    )
+                    .await;
+                } else {
+                    let outcome = ws_transport::drive(
+                        &ws_state,
+                        &http_client,
+                        transport,
+                        session_key,
+                        &base_url,
+                        &resolved,
+                        body.clone(),
+                        extra_headers.clone(),
+                        wire_facts.clone(),
+                        cont_route,
+                        timeout,
+                        cancel.clone(),
+                        callbacks.clone(),
+                        producer_snapshot.clone(),
+                        tx.clone(),
+                    )
+                    .await;
+                    match outcome {
+                        ws_transport::WsLoopOutcome::Done => {}
+                        ws_transport::WsLoopOutcome::Fallback => {
+                            stream_sse(
+                                client,
+                                resolved,
+                                wire_facts,
+                                base_url,
+                                requested_model,
+                                extra_headers,
+                                body,
+                                cancel,
+                                timeout,
+                                session_id,
+                                request_id,
+                                callbacks,
+                                producer_snapshot,
+                                tx.clone(),
+                                producer_cancel,
+                            )
+                            .await;
+                        }
+                        ws_transport::WsLoopOutcome::Terminal(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                        }
+                    }
                 }
             };
 
@@ -509,6 +575,63 @@ impl Provider for OpenAiCodexResponsesProvider {
             stream_cancel,
             snapshot,
         ))
+    }
+}
+
+/// Drive the SSE transport and publish any terminal error (shared by the
+/// explicit SSE route and the bounded WS→SSE fallback).
+#[allow(clippy::too_many_arguments)]
+async fn stream_sse(
+    client: reqwest::Client,
+    resolved: crate::auth::ResolvedAuth,
+    wire_facts: Option<crate::openai_responses_shared::ResponsesWireTools>,
+    base_url: String,
+    requested_model: String,
+    extra_headers: Vec<(String, String)>,
+    body: serde_json::Value,
+    cancel: CancellationToken,
+    timeout: Option<std::time::Duration>,
+    session_id: Option<String>,
+    request_id: Option<String>,
+    callbacks: crate::callbacks::RequestCallbacks,
+    snapshot: crate::stream::ProducerSnapshot,
+    tx: tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
+    producer_cancel: CancellationToken,
+) {
+    if let Err(error) = OpenAiCodexResponsesProvider::stream_http(
+        client,
+        resolved,
+        wire_facts,
+        base_url,
+        requested_model,
+        extra_headers,
+        body,
+        cancel,
+        timeout,
+        session_id,
+        request_id,
+        callbacks,
+        snapshot,
+        tx.clone(),
+    )
+    .await
+    {
+        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+    }
+}
+
+/// Map a non-101 WebSocket upgrade status through the same typed HTTP
+/// classification as the SSE transport.
+fn map_http_upgrade_status(status: u16) -> ProviderError {
+    match status {
+        401 | 403 => ProviderError::CredentialRevoked {
+            provider_id: PROVIDER_ID.into(),
+        },
+        429 => ProviderError::RateLimited {
+            retry_after_ms: None,
+        },
+        408 | 504 => ProviderError::Timeout,
+        code => ProviderError::ProviderSide(ProviderErrorSummary::from_http_response(code)),
     }
 }
 

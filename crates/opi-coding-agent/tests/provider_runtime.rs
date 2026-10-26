@@ -107,6 +107,7 @@ fn model_info(id: &str) -> ModelInfo {
 
 fn request_for(model_spec: &str) -> Request {
     Request {
+        transport: Default::default(),
         model: model_spec.to_owned(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

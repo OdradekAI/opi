@@ -29,6 +29,7 @@ const SECRET: &str = "sk-proj-1234567890abcdefghijklmnopqrstuv";
 
 fn text_request(model: &str) -> Request {
     Request {
+        transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),

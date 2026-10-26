@@ -268,6 +268,7 @@ async fn stream_from_custom_provider() {
 
     let (provider, _) = registry.resolve("stream-prov:s-model").unwrap();
     let request = Request {
+        transport: Default::default(),
         model: "stream-prov:s-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -665,6 +666,7 @@ fn echo_record_info(max_output: u64) -> ModelInfo {
 
 fn models_request() -> Request {
     Request {
+        transport: Default::default(),
         model: String::new(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("be terse".into()),

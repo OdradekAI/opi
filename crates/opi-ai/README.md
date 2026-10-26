@@ -931,6 +931,43 @@ domain span vocabulary, no automatic SDK call/attempt spans, nothing
 serialized or placed on the wire. SDK propagation through actual
 operations is owned by later tasks.
 
+## Real Codex WebSocket Transport: Auto/Delta/Continuation (task 20.16, DEL-07)
+
+The Codex adapter now owns the real WebSocket production path through the
+strict Upgrade bridge into the private frame/PMD/Close owner
+(`openai_codex_responses/ws_transport.rs`; tests at
+`tests/openai_codex_responses.rs`).
+
+- **Transport resolution:** `Request::transport`
+  (`TransportPreference::{Auto, Sse, Websocket, WebsocketCached}`, default
+  `Auto`) resolves first; omitted and explicit `Auto` follow the same delta
+  rules. An explicit WebSocket demand requires an `HttpClient` built with
+  `RedirectPolicy::None` (typed configuration failure otherwise); `Auto`
+  with any other policy resolves to SSE.
+- **Real chain:** `response.create` travels as a masked text frame; events
+  decode through the exact SSE classifier, so both transports publish
+  identical public events; explicit client Close completes temporary
+  connections; EOF without a terminal is never success; `Request::timeout`
+  is the WebSocket idle timeout; cancellation is active and idle.
+- **Delta/continuation** (Auto/WebsocketCached with a session):
+  `previous_response_id` + delta input are sent only when the non-input
+  fields are unchanged and the previous full input plus the actual response
+  items form an exact prefix of the new input; otherwise the full input.
+  Continuation publishes only after a successful terminal with a response
+  id. Sessionless or `Disabled` cache retention uses temporary connections.
+- **Bounded branches:** exactly one full-input retry on
+  `previous_response_not_found` before public output; exactly one reconnect
+  on `websocket_connection_limit_reached` before generation starts; the
+  WS->SSE fallback fires only for transport-class failures before the first
+  effective provider event and is sticky per session. Abort/API/auth/
+  protocol failures never masquerade as transport loss; an output-delivered
+  error ends that stream with the partial preserved.
+- **Upgrade bridge:** `WsUpgradeRequest::headers` adds caller handshake
+  headers (handshake-managed names are reserved and rejected).
+- **Packaging:** the `ws` conformance family now includes a real-chain
+  consumer check (external `Models::stream_simple` -> Codex -> Upgrade ->
+  private codec against a local scripted peer) in all three feature graphs.
+
 ## Scripted Multi-Operation MockProvider Support (task 20.53.8, DEL-11)
 
 `test_support` extends the existing `MockProvider` chat scripts with the

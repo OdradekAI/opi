@@ -162,6 +162,28 @@ pub enum CacheRetention {
     Long,
 }
 
+/// Preferred transport for providers that support multiple transports
+/// (task 20.16, DEL-07). `Auto` is the normalized default: providers with a
+/// WebSocket transport attempt it first and fall back to SSE only under the
+/// bounded transport rules; `Sse` never attempts an alternate transport;
+/// `Websocket` uses a fresh connection per call; `WebsocketCached` additionally
+/// reuses a session-scoped connection and its continuation state when one is
+/// available. The preference is a transport-layer hint only: it never appears
+/// in request bodies or wire payloads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TransportPreference {
+    /// Provider default resolution (WebSocket first where supported).
+    #[default]
+    Auto,
+    /// HTTP SSE only; never attempts an alternate transport.
+    Sse,
+    /// WebSocket with a fresh connection per call.
+    Websocket,
+    /// WebSocket with connection and continuation reuse when a session is
+    /// active.
+    WebsocketCached,
+}
+
 /// A single request to a provider.
 #[derive(Clone)]
 pub struct Request {
@@ -209,6 +231,9 @@ pub struct Request {
     /// at their source-defined timing. The default is empty; see
     /// [`crate::callbacks`].
     pub callbacks: crate::callbacks::RequestCallbacks,
+    /// Preferred transport for providers that support multiple transports
+    /// (task 20.16). Defaults to [`TransportPreference::Auto`].
+    pub transport: TransportPreference,
 }
 
 impl Request {

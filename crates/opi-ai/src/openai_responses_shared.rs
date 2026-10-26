@@ -228,6 +228,16 @@ fn owned_item(item: RawOutputItem) -> RawOutputItemOwned {
 }
 
 impl ResponsesEvent {
+    /// Shared event-decoding entry (task 20.16): the WebSocket transport
+    /// decodes each text frame's payload through exactly the SSE frame
+    /// classifier, so both transports publish identical public events.
+    pub(crate) fn try_from_json_str(data: &str) -> ParsedEvent {
+        Self::try_from_frame(&SseFrame {
+            event: String::new(),
+            data: data.to_owned(),
+        })
+    }
+
     pub(crate) fn try_from_frame(frame: &SseFrame) -> ParsedEvent {
         // Real Responses/Codex streams terminate with the `data: [DONE]`
         // sentinel, which carries no JSON payload and is redundant with the
@@ -468,6 +478,7 @@ pub(crate) struct ResponsesToolOptions {
 
 /// The compiled tool list plus the per-call grammar/strict facts the mapper
 /// and diagnostics consume.
+#[derive(Clone)]
 pub(crate) struct ResponsesWireTools {
     pub tools: Vec<serde_json::Value>,
     /// Grammar tool name -> input property.
@@ -601,6 +612,13 @@ pub(crate) struct ResponsesMapper {
 }
 
 impl ResponsesMapper {
+    /// The mapper's current partial assistant message (task 20.16): the
+    /// WebSocket continuation publishes from the same accumulated state the
+    /// public stream observed.
+    pub(crate) fn partial(&self) -> &crate::message::AssistantMessage {
+        &self.partial
+    }
+
     pub(crate) fn set_snapshot(&mut self, snapshot: crate::stream::ProducerSnapshot) {
         self.snapshot = snapshot;
         self.snapshot.record(&self.partial);

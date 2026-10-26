@@ -193,6 +193,7 @@ fn assert_projection(
     view: WireView,
 ) {
     let request = Request {
+        transport: Default::default(),
         model: model.into(),
         context: context.clone(),
         max_tokens: Some(64),

@@ -538,6 +538,7 @@ mod frozen_target_wire {
 
     fn logical_request() -> Request {
         Request {
+            transport: Default::default(),
             model: "anthropic:claude-sonnet-4-5-20250514".into(),
             context: transcript::normalize_context(transcript::Context {
                 system_prompt: None,

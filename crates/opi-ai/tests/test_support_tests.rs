@@ -45,6 +45,7 @@ async fn stream_yields_text_response_events() {
     let provider = MockProvider::new("test", vec![response]);
 
     let request = Request {
+        transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -97,6 +98,7 @@ async fn stream_yields_tool_call_response_events() {
     let provider = MockProvider::new("test", vec![response]);
 
     let request = Request {
+        transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -149,6 +151,7 @@ async fn stream_yields_error_response_events() {
     let provider = MockProvider::new("test", vec![response]);
 
     let request = Request {
+        transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -198,6 +201,7 @@ async fn multiple_stream_calls_consume_responses_in_order() {
     let provider = MockProvider::new("test", vec![first, second]);
 
     let dummy_request = Request {
+        transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -227,6 +231,7 @@ async fn multiple_stream_calls_consume_responses_in_order() {
     // Second call
     let stream2 = provider.stream_prepared(
         Request {
+            transport: Default::default(),
             model: "mock-model".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,
@@ -368,6 +373,7 @@ use opi_ai::test_support::{MockResponse, blocks_response};
 
 fn scripted_request(cancel: CancellationToken) -> Request {
     Request {
+        transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

@@ -4507,6 +4507,7 @@ async fn tui_login_presenter_print_only_methods_succeed_without_panic() {
 
 fn factory_request(model: &str) -> Request {
     Request {
+        transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

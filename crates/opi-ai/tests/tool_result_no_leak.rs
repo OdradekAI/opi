@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 fn request_with_truncated_tool_result() -> Request {
     Request {
+        transport: Default::default(),
         model: "m".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

@@ -523,6 +523,7 @@ async fn requested_resume_open_failure_is_visible_before_provider_dispatch() {
 async fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
     fn request(model: &str, cancel: CancellationToken) -> Request {
         Request {
+            transport: Default::default(),
             model: model.to_owned(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,

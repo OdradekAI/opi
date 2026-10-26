@@ -748,6 +748,36 @@ owner；closure test 位于 `tests/telemetry_carrier.rs`。
 仅载体基底：无 global subscriber/exporter/采样、无领域 span 词汇、无自动
 SDK 调用/attempt span、不序列化不上 wire。SDK 实际传播由后续任务持有。
 
+## 真实 Codex WebSocket 传输：Auto／Delta／续传（任务 20.16，DEL-07）
+
+Codex adapter 现持有经严格 Upgrade 桥进入私有 frame/PMD/Close owner 的真实
+WebSocket 生产路径（`openai_codex_responses/ws_transport.rs`；测试位于
+`tests/openai_codex_responses.rs`）。
+
+- **传输解析：** `Request::transport`
+  （`TransportPreference::{Auto, Sse, Websocket, WebsocketCached}`，默认
+  `Auto`）先行解析；省略与显式 `Auto` 遵循同一 delta 规则。显式 WebSocket
+  需要以 `RedirectPolicy::None` 构建的 `HttpClient`（否则 typed 配置错误）；
+  其他策略下的 `Auto` 解析为 SSE。
+- **真实链路：** `response.create` 以带掩码的 text 帧发送；事件经与 SSE 完
+  全相同的分类器解码，两种传输发布一致的公开事件；临时连接完成显式客户
+  端 Close；无终态的 EOF 绝不算成功；`Request::timeout` 即 WebSocket 空闲
+  超时；取消覆盖活跃与空闲两态。
+- **Delta／续传**（Auto/WebsocketCached 且有 session）：仅当非 input 字段
+  未变且“上次完整 input＋实际响应 items”构成新 input 的精确前缀时发送
+  `previous_response_id`＋delta input，否则发送完整 input。仅成功终态且带
+  response id 才发布续传。无 session 或 `Disabled` 保留策略使用临时连接。
+- **有界分支：** `previous_response_not_found` 在公开输出前恰允许一次完整
+  input 重试；`websocket_connection_limit_reached` 在生成开始前恰允许一次
+  重连；WS→SSE 回退仅在首个有效 provider 事件之前的传输类失败上触发并按
+  session 粘滞。abort/API/auth/协议失败绝不伪装为传输丢失；已交付输出后的
+  错误终止该流并保全 partial。
+- **Upgrade 桥：** `WsUpgradeRequest::headers` 增加调用方握手头（握手保留
+  名被拒绝）。
+- **打包：** `ws` conformance family 新增真实链 consumer 检查（外部
+  `Models::stream_simple` -> Codex -> Upgrade -> 私有 codec，本地脚本
+  peer），三图运行并单独报告。
+
 ## MockProvider 多操作脚本测试支撑（任务 20.53.8，DEL-11）
 
 `test_support` 按钉定 `providers/faux.ts` 为既有 `MockProvider` chat 脚本补齐

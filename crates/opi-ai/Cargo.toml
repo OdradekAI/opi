@@ -52,6 +52,8 @@ windows-sys = { workspace = true, features = ["Win32_Security"] }
 
 [dev-dependencies]
 sha2 = { workspace = true }
+base64 = { workspace = true }
+flate2 = { workspace = true }
 futures-util = { workspace = true }
 tempfile = { workspace = true }
 wiremock = { workspace = true }

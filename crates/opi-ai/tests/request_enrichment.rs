@@ -50,6 +50,7 @@ fn cache_retention_variants_exist() {
 fn request_new_scalars_default_to_none_empty() {
     let cancel = CancellationToken::new();
     let req = Request {
+        transport: Default::default(),
         model: "test".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -82,6 +83,7 @@ fn request_scalars_carry_explicit_values() {
     let timeout = Duration::from_secs(30);
     let headers = vec![("X-Test".to_string(), "value".to_string())];
     let req = Request {
+        transport: Default::default(),
         model: "test".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -587,6 +589,7 @@ async fn session_affinity_wire_mappings() {
 
 fn make_anthropic_request(cancel: CancellationToken, timeout: Option<Duration>) -> Request {
     Request {
+        transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -614,6 +617,7 @@ fn make_anthropic_request(cancel: CancellationToken, timeout: Option<Duration>) 
 
 fn make_openai_chat_request(cancel: CancellationToken, session_id: Option<String>) -> Request {
     Request {
+        transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -667,6 +671,7 @@ fn request_body_json(request: &wiremock::Request) -> serde_json::Value {
 #[test]
 fn request_sampling_params_default_empty_and_carried() {
     let req = Request {
+        transport: Default::default(),
         model: "test".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

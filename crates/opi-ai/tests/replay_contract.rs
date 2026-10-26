@@ -88,6 +88,7 @@ fn not_executed_result(id: &str, name: &str, reason: ToolNotExecutedReason) -> M
 
 fn request(model: &str, messages: Vec<Message>) -> Request {
     Request {
+        transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

@@ -746,6 +746,7 @@ async fn stored_only_credential_lists_models_through_async_orchestration() {
     );
 
     let request = Request {
+        transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

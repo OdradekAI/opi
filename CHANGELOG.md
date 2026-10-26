@@ -504,6 +504,37 @@
   unchanged.
 ### Added
 
+- `opi-ai`: real Codex WebSocket/Auto/continuation public path (task
+  20.16, DEL-07; RDF-24). New neutral `Request::transport`
+  (`TransportPreference::Auto` default, plus `Sse`, `Websocket`,
+  `WebsocketCached`) - omitted and explicit `Auto` follow the same rules,
+  correcting the source's unnormalized local default. The Codex adapter now
+  drives the real chain Models -> Codex adapter -> source-qualified strict
+  Upgrade -> private frame/PMD/Close owner: `response.create` over a masked
+  text frame, events decoded through the exact SSE classifier (identical
+  public events), explicit client Close on temporary connections, EOF never
+  counted as success, `Request::timeout` as the WebSocket idle timeout, and
+  active/idle cancellation. Session-scoped pooling with continuation
+  (sessionless/Disabled stays temporary): a delta request is sent only when
+  the non-input fields are unchanged and the previous full input plus the
+  actual response items form an exact prefix, otherwise the full input;
+  continuation publishes only after a successful terminal with a response id.
+  Bounded branches: exactly one full-input retry on
+  `previous_response_not_found` before public output, exactly one reconnect
+  on `websocket_connection_limit_reached` before generation starts, and a
+  WS->SSE fallback only for transport-class failures before the first
+  effective provider event (per-session sticky); abort/API/auth/protocol
+  failures never masquerade as transport loss and an output-delivered error
+  ends that stream preserving the partial. `WsUpgradeRequest::headers`
+  extends the public Upgrade bridge with caller handshake headers
+  (handshake-managed names reserved). The transitional unused-code boundary
+  on the private ws modules is replaced by this genuine production path.
+  Packaging proof: the ws family now ships a real-chain consumer check
+  (fresh workspace-external `Models::stream_simple` -> Codex -> Upgrade ->
+  private codec against a local scripted peer) running in all three feature
+  graphs and reported separately; `cargo package` artifacts contain the
+  private protocol sources, retained tests/fixtures, LICENSE/NOTICE, with
+  registry checksums plus AWS-LC and C-libz native provenance recorded.
 - `opi-ai`: process-local telemetry carrier `TelemetryContext` (task
   20.54, DEL-12; P20-TELEMETRY owner). `from_span(tracing::Span)` freezes
   the parent span together with the current default `Dispatch` at creation

@@ -8,10 +8,13 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
 };
 #[derive(Debug)]
-pub(super) enum Fault {
+pub(crate) enum Fault {
+    // The backend errno is diagnostic only; it surfaces through the Debug
+    // formatting in `Display` and is not branched on.
+    #[allow(dead_code)]
     Backend(i32),
     Boundary,
     Padding,
@@ -106,6 +109,7 @@ enum Progress {
     Complete,
 }
 impl Decoder {
+    #[cfg(test)]
     pub(super) fn new(no_context: bool) -> Result<Self, Fault> {
         Self::with_window_bits(15, no_context)
     }
@@ -187,14 +191,17 @@ impl Decoder {
         self.stream.avail_out = 0;
         result
     }
+    #[cfg(test)]
     pub(super) fn decode(&mut self, payload: &[u8]) -> Result<Vec<u8>, Fault> {
         self.decode_sync(payload, None)
     }
+    #[cfg(test)]
     pub(super) fn decode_limit(&mut self, payload: &[u8], limit: usize) -> Result<Vec<u8>, Fault> {
         self.decode_sync(payload, Some(limit))
     }
     // Synchronous compatibility entry drives the exact same state machine to completion.
     // This API intentionally makes no cooperative scheduling guarantee.
+    #[cfg(test)]
     fn decode_sync(&mut self, payload: &[u8], limit: Option<usize>) -> Result<Vec<u8>, Fault> {
         if self.failed {
             return Err(Fault::Terminal);
@@ -208,7 +215,7 @@ impl Decoder {
             return Err(error);
         }
         self.start_decode(owned, limit)?;
-        let mut cx = Context::from_waker(Waker::noop());
+        let mut cx = Context::from_waker(std::task::Waker::noop());
         loop {
             if let Poll::Ready(result) = self.poll_decode(&mut cx) {
                 return result;
@@ -388,17 +395,21 @@ impl Decoder {
         self.job = None;
         self.release();
     }
+    #[cfg(test)]
     pub(super) fn job_pending(&self) -> bool {
         self.job.is_some()
     }
+    #[cfg(test)]
     pub(super) fn buffered_output(&self) -> usize {
         self.job.as_ref().map_or(0, |job| job.output.len())
     }
+    #[cfg(test)]
     pub(super) fn released(&self) -> bool {
         !self.initialized
     }
     /// Cooperative signal only: a pending decode self-wakes, but this flag cannot wake an
     /// unrelated idle socket read. The transport owner must supply that cancellation wakeup.
+    #[cfg(test)]
     pub(super) fn cancellation_flag(&self) -> Arc<AtomicBool> {
         self.cancellation.clone()
     }
@@ -409,6 +420,7 @@ impl Decoder {
             self.initialized = false;
         }
     }
+    #[cfg(test)]
     pub(super) fn failed(&self) -> bool {
         self.failed
     }
@@ -504,7 +516,7 @@ mod local_growth_tests {
         let mut d = Decoder::new(false).unwrap();
         d.start_decode(input, None).unwrap();
         FAIL_APPEND.with(|v| v.set(true));
-        let mut cx = Context::from_waker(Waker::noop());
+        let mut cx = Context::from_waker(std::task::Waker::noop());
         assert!(matches!(
             d.poll_decode(&mut cx),
             Poll::Ready(Err(Fault::Allocation(_)))

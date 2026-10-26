@@ -17,15 +17,11 @@
 //! [`RedirectPolicy::None`], so a 3xx is terminal. There is no hidden auth
 //! discovery, automatic resend, reconnect or fallback.
 
-// The public Upgrade bridge still returns the raw stream; these private
-// protocol operations have no production caller yet. Keep their state machines
-// compiled while allowing unused items only at these module boundaries.
-#[allow(dead_code)]
-mod frame;
-#[allow(dead_code)]
-mod io;
-#[allow(dead_code)]
-mod pmd;
+// The private protocol state machines are consumed by the real Codex
+// WebSocket transport (task 20.16) through the crate-internal `io` driver.
+pub(crate) mod frame;
+pub(crate) mod io;
+pub(crate) mod pmd;
 
 #[cfg(test)]
 mod tests;
@@ -77,6 +73,9 @@ pub enum WsUpgradeError {
     /// The negotiated stream could not be detached from the client.
     #[error("WebSocket upgrade could not detach the upgraded stream")]
     Detach(String),
+    /// A caller header collided with a handshake-managed header name.
+    #[error("WebSocket upgrade reserved caller header: {0}")]
+    ReservedHeader(String),
 }
 
 /// Fresh 16-byte nonce from the pinned platform entropy (aws-lc-rs).
@@ -153,6 +152,7 @@ pub struct WsUpgradeRequest {
     uri: Url,
     subprotocols: Vec<String>,
     pmd: Option<PmdOffer>,
+    headers: Vec<(String, String)>,
 }
 
 impl WsUpgradeRequest {
@@ -163,7 +163,17 @@ impl WsUpgradeRequest {
             uri,
             subprotocols: Vec::new(),
             pmd: None,
+            headers: Vec::new(),
         }
+    }
+
+    /// Add caller headers to the handshake request (for example provider
+    /// authentication on the real Codex WebSocket transport). Handshake-
+    /// managed names (`Connection`, `Upgrade`, `Sec-WebSocket-*`) are
+    /// reserved and rejected with [`WsUpgradeError::ReservedHeader`].
+    pub fn headers(mut self, headers: impl IntoIterator<Item = (String, String)>) -> Self {
+        self.headers.extend(headers);
+        self
     }
 
     /// Offer subprotocols; the response may select at most one of them.
@@ -208,6 +218,11 @@ impl WsUpgradeRequest {
 pub struct UpgradedWs {
     pub stream: reqwest::Upgraded,
     pub negotiation: Negotiation,
+}
+
+fn managed_header(name: &str) -> bool {
+    let lowered = name.to_ascii_lowercase();
+    lowered == "connection" || lowered == "upgrade" || lowered.starts_with("sec-websocket-")
 }
 
 fn token_list_contains(
@@ -336,6 +351,12 @@ pub async fn upgrade(
     }
     if let Some(offer) = request.offer_header() {
         builder = builder.header("Sec-WebSocket-Extensions", offer);
+    }
+    for (name, value) in &request.headers {
+        if managed_header(name) {
+            return Err(WsUpgradeError::ReservedHeader(name.clone()));
+        }
+        builder = builder.header(name.as_str(), value.as_str());
     }
     let response = builder.send().await?;
     let status = response.status();

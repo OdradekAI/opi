@@ -349,6 +349,7 @@ fn adapters_consume_only_the_normalized_transcript() {
         Arc::new(HttpClient::new()),
     );
     let request = opi_ai::provider::Request {
+        transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: normalize_context(Context {
             system_prompt: Some("system text".to_owned()),

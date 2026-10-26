@@ -596,6 +596,7 @@ max_output_tokens = 8192
         // SAFETY: serialized by ENV_MUTEX and restored by EnvVarGuard.
         unsafe { std::env::set_var(env_name, format!("token-{index}")) };
         let request = Request {
+            transport: Default::default(),
             model: format!("acme:{model}"),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,
@@ -739,6 +740,7 @@ max_output_tokens = 8192
     .expect("custom provider builds with the stored credential present");
 
     let request = || Request {
+        transport: Default::default(),
         model: "acme:chat".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -879,6 +881,7 @@ max_output_tokens = 8192
             .await
             .expect("production custom provider bundle");
             let request = Request {
+                transport: Default::default(),
                 model: format!("acme:{model}"),
                 context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                     system_prompt: None,
@@ -1038,6 +1041,7 @@ send_session_id_header = true
         ("enabled", "session-custom-enabled"),
     ] {
         let request = Request {
+            transport: Default::default(),
             model: format!("acme:{model}"),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,

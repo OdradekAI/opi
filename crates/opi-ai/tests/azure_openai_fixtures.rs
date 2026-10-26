@@ -36,6 +36,7 @@ fn make_provider_with_deployments(deployments: Vec<&str>) -> AzureOpenAIProvider
 
 fn text_request() -> opi_ai::provider::Request {
     opi_ai::provider::Request {
+        transport: Default::default(),
         model: "azure:my-gpt4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: Some("You are helpful.".into()),
@@ -70,6 +71,7 @@ fn tool_request() -> opi_ai::provider::Request {
     use opi_ai::provider::Request;
 
     Request {
+        transport: Default::default(),
         model: "azure:my-gpt4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

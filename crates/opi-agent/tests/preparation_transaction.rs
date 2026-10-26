@@ -356,6 +356,7 @@ impl SummaryHooks {
             .run_provider_call(
                 &self.collection,
                 opi_ai::provider::Request {
+                    transport: Default::default(),
                     model: state.model_selection.to_spec(),
                     context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                         system_prompt: Some("fixture summary instruction".into()),

@@ -42,6 +42,7 @@ fn thinking_tool_stream() -> String {
 
 fn request(messages: Vec<Message>) -> Request {
     Request {
+        transport: Default::default(),
         model: "anthropic:model-alias".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

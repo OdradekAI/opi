@@ -5,7 +5,7 @@ use std::collections::TryReserveError;
 use std::fmt;
 
 #[derive(Debug)]
-pub(super) enum Fault {
+pub(crate) enum Fault {
     Protocol(&'static str),
     Storage(TryReserveError),
     Capacity,
@@ -83,9 +83,9 @@ fn append_actual(buffer: &mut Vec<u8>, bytes: &[u8]) -> Result<(), Fault> {
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct Frame {
     pub(super) fin: bool,
-    pub(super) opcode: u8,
-    pub(super) compressed: bool,
-    pub(super) payload: Vec<u8>,
+    pub(crate) opcode: u8,
+    pub(crate) compressed: bool,
+    pub(crate) payload: Vec<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -125,6 +125,7 @@ impl Decoder {
 
     /// Convenience all-or-error batch API. Use `feed_into` for prefix delivery
     /// when a later frame in this same input chunk is malformed.
+    #[cfg(test)]
     pub(super) fn feed(&mut self, bytes: &[u8]) -> Result<Vec<Frame>, Fault> {
         let mut complete = Vec::new();
         self.feed_into(bytes, &mut complete)?;
@@ -275,25 +276,28 @@ impl Decoder {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(super) fn buffered_len(&self) -> usize {
         self.header_len + self.body.len()
     }
 
     /// Includes the fixed ten-byte header, even when no bytes are buffered.
+    #[cfg(test)]
     pub(super) fn buffered_capacity(&self) -> usize {
         self.header.len() + self.body.capacity()
     }
 
+    #[cfg(test)]
     pub(super) fn failed(&self) -> bool {
         self.failed
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct Message {
-    pub(super) opcode: u8,
-    pub(super) compressed: bool,
-    pub(super) payload: Vec<u8>,
+pub(crate) struct Message {
+    pub(crate) opcode: u8,
+    pub(crate) compressed: bool,
+    pub(crate) payload: Vec<u8>,
 }
 
 /// Complete-message assembler. Compressed payloads remain opaque and require
@@ -409,6 +413,7 @@ impl Messages {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn append_progress(&self) -> Option<(usize, usize)> {
         let job = self.append.as_ref()?;
         Some((job.offset, job.frame.payload.len()))
@@ -486,6 +491,7 @@ impl Messages {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(super) fn failed(&self) -> bool {
         self.failed
     }

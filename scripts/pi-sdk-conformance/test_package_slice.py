@@ -216,9 +216,9 @@ class WsFamilyTests(unittest.TestCase):
         self.assertNotIn("package_dir", ws)
         self.assertEqual(ws["private_test_minimum"], 93)
         self.assertEqual(ws["public_test_minimum"], 15)
-        self.assertEqual(ws["public_codec_status"], "OPEN: task 20.16")
+        self.assertEqual(ws["public_codec_status"], "CLOSED: task 20.16 real-chain consumer check")
         self.assertEqual(ws["consumer"], "consumer-ws")
-        self.assertEqual(ws["expected_checks"], 6)
+        self.assertEqual(ws["expected_checks"], 7)
         self.assertEqual(
             [p["name"] for p in ws["profiles"]],
             ["ordinary", "union-default", "union-c-zlib"],
@@ -846,7 +846,9 @@ class WsPackageBoundaryTests(unittest.TestCase):
                                  for name in names))
             package_step = next(step for step in steps if step["name"] == "package")
             self.assertIn("opi-ai", package_step["command"])
-            self.assertEqual(evidence["public_codec_status"], "OPEN: task 20.16")
+            self.assertEqual(
+                evidence["public_codec_status"],
+                "CLOSED: task 20.16 real-chain consumer check")
 
 
 if __name__ == "__main__":
