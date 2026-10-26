@@ -13838,7 +13838,7 @@
       "definition_of_done": "Public opt-in helper creates new logical calls only when enabled and classified transient, quota/billing/usage limits veto first, success Stop/Length/ToolUse/Deferred and Aborted do not retry. Verify scheduled/sleep/attemptStart/finished order and exact counts, cancellable backoff/partial failure/usage, callback failure and controlled frozen target factory. Omission makes one call, no automatic Models/product recovery/output splice/transcript mutation/tool replay or prepared budget reset.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -13912,7 +13912,7 @@
           "production_call_sites": [
             "opi_ai::retry_assistant_call (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-065",
@@ -13924,7 +13924,7 @@
           "production_call_sites": [
             "opi_ai::retry_assistant_call (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S52",
@@ -13936,7 +13936,7 @@
           "production_call_sites": [
             "opi_ai::retry_assistant_call (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -13956,10 +13956,54 @@
         "crates/opi-ai/src/retry.rs",
         "crates/opi-ai/tests/whole_call_retry.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "3104da4c2e4ddb97ffdd809c2973b7c3cb1db1ea",
+      "evidence": {
+        "Opi-Task": "20.52",
+        "Opi-DoD-SHA256": "15ad9f6fe90e15cdaa1525112bda214cb5130f9bfed23e05cff91c13aa9a863d",
+        "Opi-Verification": "library; smoke full PASSED (doc-check, fmt, workspace clippy, workspace tests, doc tests, rustdoc); scenario cargo test -p opi-ai --test whole_call_retry 13 PASS; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "V-57/AIR-065/P20-S52 exercised at opi_ai::retry_assistant_call and opi_ai::retry::{WholeCallRetryPolicy, classify_whole_call_retry, WholeCallRetryCallbacks, WholeCallRetryError} with wiremock loopback proving per-retry new logical calls against a frozen target; AIR-007 layering preserved (acquisition core untouched)"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-26T04:04:09.483169+00:00",
+          "attempt": 1,
+          "b2_gate": "user approved in-conversation: (1) end-to-end TDD of the presented five-part plan (classification battery faithful to the pinned retry.ts pattern lists, delay math with saturation and the 60s default cap, callback ordering/counts with finished-only-once-when-scheduled semantics, cancellable backoff abort normalization preserving partial content and usage, explicit callback failure, controlled frozen-target wiremock factory asserting new logical calls per retry and no product recovery/transcript mutation/prepared-budget reset); (2) two separate commits (task feat with Opi-* footers + ledger checkpoint); (3) network-boundary self-report (loopback wiremock only)",
+          "start_commit": "d16096caa2dd367ebd02a9bee1ce532aa167e2fe8c779342208acdd2b4b02c64",
+          "baseline_dirty_files": []
+        },
+        {
+          "timestamp": "2026-10-26T04:57:20.075589+00:00",
+          "attempt": 1,
+          "summary": "Delivered the explicit whole-call retry helper as a standalone section of opi-ai retry.rs with a flat opi_ai::retry_assistant_call re-export: WholeCallRetryPolicy (disabled default; max_retries counts extra complete calls), whole_call_retry_delay_ms (base*2^(attempt-1) saturating, capped at the caller value or the 60s default), classify_whole_call_retry (both pinned source pattern lists compiled verbatim as case-insensitive regexes over the existing dependency - quota/billing/usage-limit vetoes first, then the transient families including gateway-forwarding and temporarily-unavailable phrases), RetryCallbackFailure + WholeCallRetryError::Callback, WholeCallRetryCallbacks with the OnRetry* type aliases, and the retry_assistant_call loop (omission/disabled = one produce; valid stops and aborts return immediately; scheduled -> cancellable sleep -> attemptStart -> new produce; finished once only when a retry was scheduled; cancelled backoff re-stamps the failed message Aborted preserving partial content and usage; callback failure stops the loop with a typed error). 13-test suite covers the full contract including two loopback-wiremock tests: a controlled frozen-target factory retrying with exactly two new logical dispatches against the same route, and no-recovery-without-opt-in. models.rs (pre-authorized) needed no change; ownership set matched the changed files exactly. One test-math correction during the red phase (budget boundary n<2), code unchanged from design. No push.",
+          "gate_results": {
+            "d1_gate": "smoke full PASSED (doc-check, fmt, clippy --workspace --all-targets -D warnings, test --workspace --all-targets, test --workspace --doc, RUSTDOCFLAGS=-D warnings doc --workspace --no-deps)",
+            "d0_scenario": "cargo test -p opi-ai --test whole_call_retry -> 13 passed / 0 failed",
+            "d3_gap_only": "git diff --check clean; python scripts/opi-doc-check.py PASS",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=3 (Deferred stop variant does not exist yet - classification is exclusion-based and stays forward-compatible when a deferred task lands; ProviderError-to-message mapping is the caller factory's job, demonstrated by the wire factory test; callbacks are synchronous FnMut closures rather than the source's async-optional callbacks - minimal Rust surface with no second consumer demanding async), rejected=3 (a ProviderError-level classification entry point - message-level is the pinned source shape; a built-in produce factory or auth re-resolution inside the helper - AIR-065 keeps identity with the caller; async boxed callbacks - speculative), wf_ref=null (degraded single-reviewer path)",
+            "test_disposition": [
+              {
+                "subject": "whole-call helper contract",
+                "action": "add",
+                "test": "tests/whole_call_retry.rs (13): classification veto/transient/valid/aborted/bare-error battery, delay growth + saturation + 60s default cap, omission and disabled single-call, exact scheduled->sleep->attemptStart->produce ordering with finished-once-only-when-scheduled, quota veto without scheduling, budget exhaustion returning the final error, aborted-after-schedule without further calls, cancelled-backoff abort normalization preserving partial content and usage, typed callback failure stopping the loop, wiremock frozen-target factory with two new logical dispatches, wiremock no-recovery-without-opt-in",
+                "interface": "opi_ai::retry_assistant_call + opi_ai::retry::{policy, classification, callbacks, error}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.52",
+                "action": "retain",
+                "test": "all pre-existing suites unchanged and green in the workspace gate",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "3104da4c2e4ddb97ffdd809c2973b7c3cb1db1ea"
+          }
+        }
+      ]
     },
     {
       "id": "20.53.1",
@@ -20451,6 +20495,16 @@
       "rejected_count": 3,
       "ran_at": "2026-10-26T03:33:12.521953+00:00",
       "task_id": "20.11",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 3,
+      "ran_at": "2026-10-26T04:57:20.075589+00:00",
+      "task_id": "20.52",
       "criterion_id": null
     }
   ]
