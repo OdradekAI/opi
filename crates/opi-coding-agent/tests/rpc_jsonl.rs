@@ -1381,6 +1381,7 @@ async fn phase13_rpc_session_metadata_shape() {
                 stop_reason: opi_ai::stream::StopReason::Stop,
                 error_message: None,
                 timestamp_ms: 0,
+                diagnostics: Vec::new(),
             }),
         };
         let m3 = MessageEntry {
@@ -1401,6 +1402,7 @@ async fn phase13_rpc_session_metadata_shape() {
                 stop_reason: opi_ai::stream::StopReason::Stop,
                 error_message: None,
                 timestamp_ms: 0,
+                diagnostics: Vec::new(),
             }),
         };
         let leaf = LeafEntry {

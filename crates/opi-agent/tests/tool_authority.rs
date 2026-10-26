@@ -57,6 +57,7 @@ impl Tool for AuthorizationCapturingTool {
             name: "mytool".to_owned(),
             description: "captures the trusted execution authorization".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
 

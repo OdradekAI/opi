@@ -105,6 +105,7 @@ impl Tool for ReadTool {
             name: "read".into(),
             description: "Read file content with optional line range.".into(),
             input_schema: self.schema.clone(),
+            constrained_sampling: None,
         }
     }
 

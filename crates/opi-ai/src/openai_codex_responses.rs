@@ -64,6 +64,20 @@ impl OpenAiCodexResponsesProvider {
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        self.compile_request_body(request).map(|(body, _)| body)
+    }
+
+    /// The body plus this call's constrained-sampling facts (task 20.11).
+    fn compile_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<
+        (
+            serde_json::Value,
+            Option<crate::openai_responses_shared::ResponsesWireTools>,
+        ),
+        crate::provider::ProviderError,
+    > {
         let model_id = request
             .model
             .strip_prefix("openai-codex:")
@@ -91,7 +105,25 @@ impl OpenAiCodexResponsesProvider {
             &replay_route,
             crate::replay::ReplayProjection::NativeOrCollapse,
         )?;
-        let input = convert_messages(&replay.messages, &replay_route);
+        // Task 20.11: compile the tools first so grammar replay items know
+        // their custom shape.
+        let mut wire_facts: Option<crate::openai_responses_shared::ResponsesWireTools> = None;
+        if !current_tools.is_empty() {
+            let wire = crate::openai_responses_shared::convert_responses_tools(
+                &current_tools,
+                crate::openai_responses_shared::ResponsesToolOptions {
+                    default_strict: None,
+                    supports_strict_mode: true,
+                    supports_grammar_tools: false,
+                },
+            )?;
+            wire_facts = Some(wire);
+        }
+        let grammar_map = wire_facts
+            .as_ref()
+            .map(|wire| wire.grammar_input_properties.clone())
+            .unwrap_or_default();
+        let input = convert_messages(&replay.messages, &replay_route, &grammar_map);
         let session_id = if request.cache_retention != CacheRetention::Disabled {
             request.session_id.as_deref().filter(|id| !id.is_empty())
         } else {
@@ -116,21 +148,8 @@ impl OpenAiCodexResponsesProvider {
             body["prompt_cache_key"] =
                 serde_json::Value::String(session_id.chars().take(64).collect());
         }
-        if !current_tools.is_empty() {
-            body["tools"] = serde_json::Value::Array(
-                current_tools
-                    .iter()
-                    .map(|tool| {
-                        serde_json::json!({
-                            "type": "function",
-                            "name": tool.name,
-                            "description": tool.description,
-                            "parameters": tool.input_schema,
-                            "strict": null,
-                        })
-                    })
-                    .collect(),
-            );
+        if let Some(wire) = &wire_facts {
+            body["tools"] = serde_json::Value::Array(wire.tools.clone());
         }
         if request.thinking.enabled {
             let effort = self
@@ -156,13 +175,14 @@ impl OpenAiCodexResponsesProvider {
         {
             body["temperature"] = serde_json::Value::Number(number);
         }
-        Ok(body)
+        Ok((body, wire_facts))
     }
 
     #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         client: reqwest::Client,
         resolved: ResolvedAuth,
+        wire_facts: Option<crate::openai_responses_shared::ResponsesWireTools>,
         base_url: String,
         requested_model: String,
         extra_headers: Vec<(String, String)>,
@@ -260,6 +280,12 @@ impl OpenAiCodexResponsesProvider {
             crate::model_info::WireApi::OpenAiCodexResponses,
             &requested_model,
         );
+        // Task 20.11: the call's constrained-sampling facts ride the mapper.
+        if let Some(wire) = wire_facts {
+            mapper.set_grammar_tools(wire.grammar_input_properties);
+            mapper.set_strict_tools(wire.strict_tools);
+            mapper.seed_diagnostics(wire.diagnostics);
+        }
         mapper.set_snapshot(snapshot);
         let result: Result<(), ProviderError> = async {
             loop {
@@ -380,8 +406,8 @@ impl Provider for OpenAiCodexResponsesProvider {
             .map(|(_, id)| id)
             .unwrap_or(&request.model)
             .to_owned();
-        let body = match self.build_request_body(&request) {
-            Ok(body) => body,
+        let (body, wire_facts) = match self.compile_request_body(&request) {
+            Ok(compiled) => compiled,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
         // Payload callback (task 20.51): once per variant, frozen across
@@ -453,6 +479,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                 if let Err(error) = Self::stream_http(
                     client,
                     resolved,
+                    wire_facts,
                     base_url,
                     requested_model,
                     extra_headers,

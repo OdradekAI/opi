@@ -348,6 +348,10 @@ fn provider_metadata(error: &ProviderError) -> serde_json::Value {
             "summary": summary.as_str(),
         }),
         ProviderError::Cancelled => serde_json::json!({ "variant": "cancelled" }),
+        ProviderError::StrictToolLimits { detail } => serde_json::json!({
+            "variant": "strict_tool_limits",
+            "summary": detail.as_str(),
+        }),
     }
 }
 
@@ -356,6 +360,7 @@ fn provider_summary(error: &ProviderError) -> Option<&ProviderErrorSummary> {
         ProviderError::StreamFailure(failure) => provider_summary(failure.cause()),
         ProviderError::RequestFailed(summary)
         | ProviderError::CallbackPhase(summary)
+        | ProviderError::StrictToolLimits { detail: summary }
         | ProviderError::StreamError(summary)
         | ProviderError::AuthFailed(summary)
         | ProviderError::Network(summary)

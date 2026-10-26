@@ -50,6 +50,7 @@ fn request(messages: Vec<Message>) -> Request {
                 name: "read".into(),
                 description: "Read a local fixture".into(),
                 input_schema: json!({"type":"object","properties":{"path":{"type":"string"}}}),
+                constrained_sampling: None,
             }],
         })
         .expect("valid context declarations"),

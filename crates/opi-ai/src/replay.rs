@@ -815,6 +815,7 @@ mod tests {
             error_message: None,
             timestamp_ms: 0,
             wire: Some(WireApi::AnthropicMessages),
+            diagnostics: Vec::new(),
         }
     }
 

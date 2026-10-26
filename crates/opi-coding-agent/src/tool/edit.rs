@@ -88,6 +88,7 @@ impl Tool for EditTool {
             name: "edit".into(),
             description: "Replace a unique exact string in a file.".into(),
             input_schema: self.schema.clone(),
+            constrained_sampling: None,
         }
     }
 

@@ -1189,6 +1189,28 @@ async fn run_operation(
                             continue 'stream;
                         }
 
+                        // Task 20.11 (V-34/V-36): the SDK admitted exactly
+                        // one rebuilt strict-downgrade variant. Dispatch it
+                        // immediately from the same prepared call — the
+                        // rebuilt body re-ran the payload callback under its
+                        // own freeze slot, headers/auth/model stay frozen,
+                        // and the counters cannot be reset for a third
+                        // variant. The recorded downgrade diagnostic rides
+                        // the rebuilt variant's message.
+                        if let Some(strict_variant) = prepared.strict_variant_admission() {
+                            observe(
+                                &diagnostic_sink,
+                                Diagnostic::new(
+                                    Severity::Warning,
+                                    CODE_PROVIDER_STRICT_DOWNGRADE,
+                                    SOURCE_PROVIDER,
+                                    "rebuilding one strict-tool downgrade variant",
+                                )
+                                .details(json!({ "reason": strict_variant.reason })),
+                            );
+                            continue 'stream;
+                        }
+
                         if retry_admitted > 0 {
                             // The SDK sealed the episode: a post-handoff
                             // failure suppressed the remaining budget, or the

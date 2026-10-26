@@ -81,6 +81,7 @@ fn assistant(texts: &[&str]) -> Message {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: 0,
+        diagnostics: Vec::new(),
     })
 }
 
@@ -112,11 +113,13 @@ fn request(model: &str, cache_retention: CacheRetention) -> Request {
                     name: "first_tool".into(),
                     description: "must remain unmarked".into(),
                     input_schema: json!({"type": "object"}),
+                    constrained_sampling: None,
                 },
                 ToolDef {
                     name: "last_tool".into(),
                     description: "must receive the final tool marker".into(),
                     input_schema: json!({"type": "object"}),
+                    constrained_sampling: None,
                 },
             ],
         })

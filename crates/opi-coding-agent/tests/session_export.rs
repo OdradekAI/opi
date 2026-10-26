@@ -76,6 +76,7 @@ fn assistant_msg(id: &str, parent: Option<&str>, text: &str) -> SessionEntry {
             stop_reason: opi_ai::stream::StopReason::Stop,
             error_message: None,
             timestamp_ms: 0,
+            diagnostics: Vec::new(),
         }),
     })
 }
@@ -108,6 +109,7 @@ fn assistant_with_thinking(
             stop_reason: opi_ai::stream::StopReason::Stop,
             error_message: None,
             timestamp_ms: 0,
+            diagnostics: Vec::new(),
         }),
     })
 }
@@ -142,6 +144,7 @@ fn assistant_with_tool_call(
             stop_reason: opi_ai::stream::StopReason::ToolUse,
             error_message: None,
             timestamp_ms: 0,
+            diagnostics: Vec::new(),
         }),
     })
 }

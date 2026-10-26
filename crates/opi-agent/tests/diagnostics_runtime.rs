@@ -927,6 +927,7 @@ mod runtime_emission {
                     name: "pending".into(),
                     description: "always succeeds; keeps the loop calling".into(),
                     input_schema: serde_json::json!({"type": "object"}),
+                    constrained_sampling: None,
                 }
             }
             fn execute(

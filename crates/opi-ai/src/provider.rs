@@ -27,6 +27,33 @@ pub struct AttemptContext {
     pub attempt: u32,
     /// The frozen total attempt budget.
     pub max_attempts: u32,
+    /// The payload variant this attempt dispatches (task 20.11): the
+    /// ordinary frozen payload, or the single rebuilt strict-downgrade
+    /// variant.
+    pub payload_variant: PayloadVariant,
+}
+
+/// The payload variant of one attempt (task 20.11, V-34/V-36).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayloadVariant {
+    /// The ordinary post-projection payload; ordinary acquisition retries
+    /// reuse its frozen body.
+    Ordinary,
+    /// The rebuilt Anthropic strict downgrade: prefer-strict removed,
+    /// require kept, payload callback re-run and re-frozen under its own
+    /// variant label.
+    AnthropicStrictDowngrade,
+}
+
+impl PayloadVariant {
+    /// The payload-freeze slot label (see
+    /// [`crate::callbacks::RequestCallbacks`]).
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ordinary => crate::callbacks::ORDINARY_PAYLOAD_VARIANT,
+            Self::AnthropicStrictDowngrade => crate::callbacks::STRICT_DOWNGRADE_PAYLOAD_VARIANT,
+        }
+    }
 }
 
 /// Provider trait — each concrete provider (Anthropic, OpenAI, etc.) implements this.
@@ -547,6 +574,15 @@ pub enum ProviderError {
     /// retryable, never swallowed, and never triggering a new call.
     #[error("callback phase failed: {0}")]
     CallbackPhase(ProviderErrorSummary),
+    /// A source-qualified strict-limit rejection (task 20.11, V-34): the
+    /// Anthropic wire answered 400 `invalid_request_error` with one of the
+    /// documented strict-tool limit messages on a request that actually
+    /// carried prefer-strict tools. Never an ordinary transport retry: the
+    /// acquisition owner may admit exactly one rebuilt downgrade variant,
+    /// and a second occurrence (or one without prefer-strict tools) is a
+    /// terminal failure.
+    #[error("strict tool limits exceeded: {detail}")]
+    StrictToolLimits { detail: ProviderErrorSummary },
     #[error("stream error: {0}")]
     StreamError(ProviderErrorSummary),
     #[error("authentication failed: {0}")]
@@ -724,6 +760,7 @@ impl ProviderError {
             | ProviderError::WireCompatMismatch { .. } => ProviderErrorCategory::Config,
             ProviderError::RequestFailed(_)
             | ProviderError::CallbackPhase(_)
+            | ProviderError::StrictToolLimits { .. }
             | ProviderError::UnknownModel { .. } => ProviderErrorCategory::Request,
             ProviderError::Timeout | ProviderError::Network(_) => ProviderErrorCategory::Network,
             ProviderError::RateLimited { .. } => ProviderErrorCategory::RateLimit,

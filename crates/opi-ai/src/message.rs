@@ -47,6 +47,12 @@ pub struct AssistantMessage {
     pub stop_reason: crate::stream::StopReason,
     pub error_message: Option<String>,
     pub timestamp_ms: i64,
+    /// Message-level constrained-sampling diagnostics (task 20.11,
+    /// V-34/V-36): at most one recorded strict-prefer downgrade with its
+    /// reason, plus grammar-target fallback losses. Default empty;
+    /// historical messages deserialize without it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<crate::stream::AssistantDiagnostic>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -264,6 +270,13 @@ pub struct ToolDef {
     pub name: String,
     pub description: String,
     pub input_schema: serde_json::Value,
+    /// Per-tool constrained-sampling intent (task 20.11, AIR-040):
+    /// `json_schema` prefer/require or grammar variants. `None` (the
+    /// default and the historical shape) never selects constrained
+    /// sampling. Adapters resolve it at body-build time; the trusted
+    /// `input_schema` is never mutated by the strict projection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constrained_sampling: Option<crate::constrained_sampling::ConstrainedSampling>,
 }
 
 #[cfg(test)]

@@ -1844,7 +1844,16 @@ pub struct PreparedRoute {
 /// An opaque prepared provider call.
 ///
 /// Privately freezes the resolved provider, the request, and the secret-bearing
-/// resolved authentication. [`start_attempt`](Self::start_attempt) reuses the
+/// resolved authentication. `start_attempt` reuses the
+/// An admitted strict-downgrade variant (task 20.11): exactly one rebuilt
+/// payload variant after a source-qualified Anthropic strict-limit
+/// rejection, with its machine-readable reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StrictVariantAdmission {
+    /// The recorded downgrade reason (e.g. `strict_tool_limits_exceeded`).
+    pub reason: &'static str,
+}
+
 /// frozen route, request, and authentication for each permitted sequential
 /// retry without repeating route/auth preparation. The secret never enters
 /// [`PreparedRoute`], Agent-visible state, evidence, diagnostics, or
@@ -2000,6 +2009,22 @@ impl PreparedProviderCall {
     /// terminal outcome).
     pub fn acquisition_seal(&self) -> Option<crate::retry::AcquisitionSeal> {
         self.acquisition.seal()
+    }
+
+    /// The pending strict-downgrade variant admission, if the last observed
+    /// failure was a source-qualified Anthropic strict-limit rejection on
+    /// the first variant (task 20.11, V-34/V-36).
+    ///
+    /// The caller dispatches it immediately through
+    /// [`start_attempt`](Self::start_attempt) — no readiness wait: the
+    /// rebuilt variant removes only prefer-strict, re-runs the payload
+    /// callback under its own freeze slot, and keeps the frozen
+    /// headers/auth/model. At most one exists per logical call and nothing
+    /// resets the counters to gain another.
+    pub fn strict_variant_admission(&self) -> Option<StrictVariantAdmission> {
+        self.acquisition
+            .strict_variant_admission()
+            .map(|reason| StrictVariantAdmission { reason })
     }
 
     /// Start one attempt using the frozen request and authentication.

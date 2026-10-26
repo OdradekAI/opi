@@ -231,6 +231,7 @@ impl Tool for RecordingTool {
             name: self.name.clone(),
             description: "recording test tool".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
 

@@ -651,6 +651,7 @@ mod tests {
             name: name.to_owned(),
             description: description.to_owned(),
             input_schema: serde_json::json!({"type": "object"}),
+            constrained_sampling: None,
         }
     }
 
@@ -1015,6 +1016,7 @@ mod tests {
             name: String::new(),
             description: "d".to_owned(),
             input_schema: serde_json::json!({"type": "object"}),
+            constrained_sampling: None,
         };
         assert_eq!(
             validate_tool_declaration(&bad_name),
@@ -1027,6 +1029,7 @@ mod tests {
             name: "t".to_owned(),
             description: "d".to_owned(),
             input_schema: serde_json::json!({"properties": {"x": {"type": "string", "pattern": "["}}}),
+            constrained_sampling: None,
         };
         assert!(matches!(
             validate_tool_declaration(&bad_schema),

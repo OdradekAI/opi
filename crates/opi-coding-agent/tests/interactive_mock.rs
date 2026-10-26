@@ -56,6 +56,7 @@ impl Tool for RecordTool {
                 },
                 "required": ["arg"]
             }),
+            constrained_sampling: None,
         }
     }
 

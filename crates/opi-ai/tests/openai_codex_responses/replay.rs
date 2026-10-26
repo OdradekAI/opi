@@ -25,6 +25,7 @@ fn assistant() -> AssistantMessage {
         stop_reason: StopReason::ToolUse,
         error_message: None,
         timestamp_ms: 0,
+        diagnostics: Vec::new(),
     }
 }
 

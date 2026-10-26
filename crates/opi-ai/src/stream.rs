@@ -25,6 +25,25 @@ pub enum StopReason {
     Aborted,
 }
 
+/// A message-level constrained-sampling diagnostic (task 20.11): the
+/// recorded strict-prefer downgrade (kind
+/// `anthropic_strict_tools_fallback`, reason
+/// `strict_tool_limits_exceeded`) or a grammar-target fallback loss
+/// (kind `constrained_sampling_fallback`). `detail` carries the
+/// redacted-safe provider message when one exists.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantDiagnostic {
+    /// Diagnostic kind, e.g. `anthropic_strict_tools_fallback`.
+    pub kind: String,
+    /// Machine-readable reason, e.g. `strict_tool_limits_exceeded` or
+    /// `grammar_target_unsupported`.
+    pub reason: String,
+    /// Redacted-safe detail line, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
 impl StopReason {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -592,6 +611,7 @@ fn setup_failure_message(cause: &ProviderError) -> crate::message::AssistantMess
         stop_reason: StopReason::Error,
         error_message: Some(cause.to_string()),
         timestamp_ms: crate::time::now_ms(),
+        diagnostics: Vec::new(),
     }
 }
 

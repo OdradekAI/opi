@@ -43,6 +43,12 @@ use crate::provider::{ProviderError, ProviderErrorSummary};
 /// this variant's frozen payload.
 pub const ORDINARY_PAYLOAD_VARIANT: &str = "ordinary";
 
+/// The payload-variant label of the single rebuilt Anthropic strict
+/// downgrade (task 20.11, V-34/V-36): its own freeze slot, so the payload
+/// callback re-runs once on the rebuilt body and ordinary retries of the
+/// downgrade variant reuse it.
+pub const STRICT_DOWNGRADE_PAYLOAD_VARIANT: &str = "anthropic_strict_downgrade";
+
 /// A callback's typed functional failure. The detail is redacted before it
 /// reaches any public error surface.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,6 +111,10 @@ struct RequestCallbacksInner {
     /// re-clones the frozen request) reuses the frozen body without
     /// re-invoking the callback.
     frozen_payloads: Mutex<HashMap<String, serde_json::Value>>,
+    /// The transformed header set, frozen after the first dispatch of the
+    /// logical call (V-36: the merged headers stay unchanged and the strict
+    /// branch never re-runs the transform).
+    frozen_headers: Mutex<Option<Vec<(String, String)>>>,
 }
 
 /// The functional-callback set carried by [`crate::provider::Request`].
@@ -185,11 +195,15 @@ impl RequestCallbacks {
 
     /// Apply the header transform to the merged per-call header set.
     ///
-    /// The output replaces the merged set after revalidation: names must be
-    /// valid, unique, and non-protected (`RESERVED_PROVIDER_HEADERS`, the
-    /// `amz-sdk-*` signing family, case-insensitive). Validation failure is a
-    /// typed callback-phase failure; without a transform the merged set is
-    /// returned unchanged.
+    /// The transform runs exactly once per logical call: the first dispatch
+    /// computes the output and freezes it, and every later dispatch —
+    /// ordinary acquisition retries and the strict downgrade variant alike —
+    /// reuses the frozen set (V-36: the strict branch re-runs only
+    /// `on_payload`). The output replaces the merged set after
+    /// revalidation: names must be valid, unique, and non-protected
+    /// (`RESERVED_PROVIDER_HEADERS`, the `amz-sdk-*` signing family,
+    /// case-insensitive). Validation failure is a typed callback-phase
+    /// failure; without a transform the merged set is returned unchanged.
     pub fn apply_header_transform(
         &self,
         merged: &[(String, String)],
@@ -197,6 +211,15 @@ impl RequestCallbacks {
         let Some(transform) = self.inner.header_transform.as_ref() else {
             return Ok(merged.to_vec());
         };
+        if let Some(frozen) = self
+            .inner
+            .frozen_headers
+            .lock()
+            .expect("frozen header set poisoned")
+            .as_ref()
+        {
+            return Ok(frozen.clone());
+        }
         let output =
             transform(merged).map_err(|error| error.into_provider_error("header transform"))?;
         crate::provider_headers::validate_transform_output(&output).map_err(|error| {
@@ -204,6 +227,11 @@ impl RequestCallbacks {
                 "header transform output is invalid: {error}"
             )))
         })?;
+        *self
+            .inner
+            .frozen_headers
+            .lock()
+            .expect("frozen header set poisoned") = Some(output.clone());
         Ok(output)
     }
 

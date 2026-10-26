@@ -88,6 +88,7 @@ fn tool_request() -> opi_ai::provider::Request {
                         "city": {"type": "string"}
                     }
                 }),
+                constrained_sampling: None,
             }],
         })
         .expect("valid context declarations"),

@@ -377,13 +377,15 @@ async fn stream_azure_http(
             )
         })
         .collect();
-    callbacks.notify_response(response.status().as_u16(), &observed_headers)?;
 
     let status = response.status();
     if !status.is_success() {
         let headers = response.headers().clone();
         return Err(map_azure_status(status, &headers));
     }
+    // Response callback (V-36): fired exactly once on the successfully
+    // acquired response; rejected dispatches never masquerade.
+    callbacks.notify_response(status.as_u16(), &observed_headers)?;
 
     let mut byte_stream = response.bytes_stream();
     let mut buffer = String::new();

@@ -398,6 +398,7 @@ mod tests {
                 name: name.to_owned(),
                 description: "stub".to_owned(),
                 input_schema: serde_json::json!({ "type": "object" }),
+                constrained_sampling: None,
             },
         })
     }
@@ -412,6 +413,7 @@ mod tests {
                 name: name.to_owned(),
                 description: name.to_owned(),
                 input_schema: serde_json::json!({ "type": "object" }),
+                constrained_sampling: None,
             },
             stub_tool(name),
         )

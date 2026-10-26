@@ -84,6 +84,7 @@ fn request_with_tool_result(is_error: bool, payload: &str) -> Request {
                     stop_reason: opi_ai::stream::StopReason::ToolUse,
                     error_message: None,
                     timestamp_ms: 0,
+                    diagnostics: Vec::new(),
                 }),
                 Message::ToolResult(ToolResultMessage {
                     not_executed: None,
@@ -469,6 +470,9 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         // deliberate later-phase addition.
         "catalog",
         "config",
+        // Task 20.11: constrained sampling (strict wire projection and
+        // grammar tools) is a deliberate later-phase addition.
+        "constrained_sampling",
         "context",
         "credential",
         "gemini",

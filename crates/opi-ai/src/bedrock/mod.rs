@@ -226,6 +226,15 @@ impl BedrockProvider {
         let transcript = transcript.as_ref();
         let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
+        // Task 20.11 (AIR-040, fail-closed): a require intent on a wire
+        // without strict projection fails typed before dispatch.
+        crate::constrained_sampling::assert_supported_constraints(&current_tools, false).map_err(
+            |error| {
+                crate::provider::ProviderError::Config(
+                    crate::provider::ProviderErrorSummary::sanitized(error.detail()),
+                )
+            },
+        )?;
 
         // Canonical replay projection (task 20.7) before body building.
         let replay = crate::replay::project_replay(
@@ -687,13 +696,15 @@ impl BedrockProvider {
                 )
             })
             .collect();
-        callbacks.notify_response(response.status().as_u16(), &observed_headers)?;
 
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
             return Err(map_bedrock_status(status, &headers));
         }
+        // Response callback (V-36): fired exactly once on the successfully
+        // acquired response; rejected dispatches never masquerade.
+        callbacks.notify_response(status.as_u16(), &observed_headers)?;
 
         let mut byte_stream = response.bytes_stream();
         let mut buffer: Vec<u8> = Vec::new();
@@ -1320,6 +1331,7 @@ fn empty_assistant_message(model: &str) -> AssistantMessage {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: crate::time::now_ms(),
+        diagnostics: Vec::new(),
     }
 }
 

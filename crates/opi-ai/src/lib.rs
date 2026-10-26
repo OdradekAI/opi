@@ -12,6 +12,7 @@ pub mod bedrock;
 pub mod callbacks;
 pub mod catalog;
 pub mod config;
+pub mod constrained_sampling;
 pub mod context;
 pub mod credential;
 mod endpoint;

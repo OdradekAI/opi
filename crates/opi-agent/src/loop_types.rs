@@ -87,6 +87,7 @@ impl AgentProviderFailure {
                 ProviderError::StreamFailure(failure) => error_summary(failure.cause()),
                 ProviderError::RequestFailed(summary)
                 | ProviderError::CallbackPhase(summary)
+                | ProviderError::StrictToolLimits { detail: summary }
                 | ProviderError::StreamError(summary)
                 | ProviderError::AuthFailed(summary)
                 | ProviderError::Network(summary)

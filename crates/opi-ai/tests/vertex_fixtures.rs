@@ -2473,3 +2473,79 @@ async fn vertex_wire_observers_unsupported_but_payload_callback_flows() {
     assert!(typed, "vertex rejects response observers before dispatch");
     observer_server.verify().await;
 }
+
+mod constrained_guard_tests {
+    use super::*;
+    use opi_ai::constrained_sampling::{ConstrainedSampling, StrictPreference};
+    use opi_ai::message::ToolDef;
+    use opi_ai::provider::ProviderError;
+
+    fn constrained_tool(strict: StrictPreference) -> ToolDef {
+        ToolDef {
+            name: "structured".into(),
+            description: "d".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"]
+            }),
+            constrained_sampling: Some(ConstrainedSampling::JsonSchema { strict }),
+        }
+    }
+
+    fn guarded_request(tools: Vec<ToolDef>) -> Request {
+        Request {
+            model: "vertex:gemini-2.5-flash".into(),
+            context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: None,
+                messages: vec![Message::User(UserMessage {
+                    content: vec![InputContent::Text { text: "go".into() }],
+                    timestamp_ms: 0,
+                })],
+                tools,
+            })
+            .expect("valid context declarations"),
+            max_tokens: Some(64),
+            temperature: None,
+            sampling_params: Default::default(),
+            thinking: ThinkingConfig::default(),
+            stop_sequences: vec![],
+            metadata: None,
+            cancel: CancellationToken::new(),
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention: CacheRetention::None,
+            session_id: None,
+            callbacks: Default::default(),
+        }
+    }
+
+    #[test]
+    fn require_constrained_sampling_fails_typed_before_dispatch() {
+        let provider = vertex_provider();
+        let error = provider
+            .build_request_body(&guarded_request(vec![constrained_tool(
+                StrictPreference::Require,
+            )]))
+            .expect_err("require never silently drops on this wire");
+        assert!(
+            matches!(error, ProviderError::Config(_)),
+            "typed pre-dispatch failure, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn prefer_constrained_sampling_projects_non_strict() {
+        let provider = vertex_provider();
+        let body = provider
+            .build_request_body(&guarded_request(vec![constrained_tool(
+                StrictPreference::Prefer,
+            )]))
+            .expect("prefer projects non-strict");
+        let serialized = body.to_string();
+        assert!(
+            !serialized.contains("\"strict\""),
+            "no strict flag is invented on this wire: {serialized}"
+        );
+    }
+}

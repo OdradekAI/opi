@@ -104,6 +104,10 @@ struct RawResponseEvent {
     delta: Option<String>,
     text: Option<String>,
     message: Option<String>,
+    /// The final raw input of a grammar custom-tool call
+    /// (`response.custom_tool_call_input.done`).
+    #[serde(default)]
+    input: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,6 +126,9 @@ struct RawOutputItem {
     call_id: Option<String>,
     name: Option<String>,
     arguments: Option<String>,
+    /// The raw input string of a `custom_tool_call` item (grammar tools).
+    #[serde(default)]
+    input: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,6 +170,17 @@ pub(crate) enum ResponsesEvent {
         output_index: usize,
         delta: String,
     },
+    /// A grammar custom-tool input delta (task 20.11): the raw wire input
+    /// grows by `delta`.
+    CustomToolCallInputDelta {
+        output_index: usize,
+        delta: String,
+    },
+    /// The final raw input of a grammar custom-tool call.
+    CustomToolCallInputDone {
+        output_index: usize,
+        input: String,
+    },
     OutputItemDone {
         output_index: usize,
         item: RawOutputItemOwned,
@@ -195,6 +213,7 @@ pub(crate) struct RawOutputItemOwned {
     call_id: Option<String>,
     name: Option<String>,
     arguments: Option<String>,
+    input: Option<String>,
 }
 
 fn owned_item(item: RawOutputItem) -> RawOutputItemOwned {
@@ -204,6 +223,7 @@ fn owned_item(item: RawOutputItem) -> RawOutputItemOwned {
         call_id: item.call_id,
         name: item.name,
         arguments: item.arguments,
+        input: item.input,
     }
 }
 
@@ -276,6 +296,18 @@ impl ResponsesEvent {
                     delta: data.delta.unwrap_or_default(),
                 })
             }
+            "response.custom_tool_call_input.delta" => {
+                ParsedEvent::Valid(Self::CustomToolCallInputDelta {
+                    output_index: data.output_index.unwrap_or(0),
+                    delta: data.delta.unwrap_or_default(),
+                })
+            }
+            "response.custom_tool_call_input.done" => {
+                ParsedEvent::Valid(Self::CustomToolCallInputDone {
+                    output_index: data.output_index.unwrap_or(0),
+                    input: data.input.clone().unwrap_or_default(),
+                })
+            }
             "response.output_item.done" => ParsedEvent::Valid(Self::OutputItemDone {
                 output_index: data.output_index.unwrap_or(0),
                 item: data.item.map(owned_item).unwrap_or(RawOutputItemOwned {
@@ -284,6 +316,7 @@ impl ResponsesEvent {
                     call_id: None,
                     name: None,
                     arguments: None,
+                    input: None,
                 }),
             }),
             "response.completed" => {
@@ -410,6 +443,145 @@ struct ToolCallState {
     name: String,
     arguments: String,
     ended: bool,
+    /// Grammar custom-call state (task 20.11): the wrapping buffer for the
+    /// raw wire input under its JSON property.
+    custom_input: Option<CustomInputState>,
+}
+
+struct CustomInputState {
+    property: String,
+    buffer: crate::constrained_sampling::GrammarInputBuffer,
+}
+
+/// Options for the shared Responses-family tool conversion (task 20.11,
+/// V-34/AIR-040).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ResponsesToolOptions {
+    /// The wire-wide default strictness: `None` emits the provider's null
+    /// strict (Codex), `Some(bool)` the configured default.
+    pub default_strict: Option<bool>,
+    /// Whether the wire supports per-tool strict mode at all.
+    pub supports_strict_mode: bool,
+    /// Whether the wire supports grammar custom tools.
+    pub supports_grammar_tools: bool,
+}
+
+/// The compiled tool list plus the per-call grammar/strict facts the mapper
+/// and diagnostics consume.
+pub(crate) struct ResponsesWireTools {
+    pub tools: Vec<serde_json::Value>,
+    /// Grammar tool name -> input property.
+    pub grammar_input_properties: std::collections::HashMap<String, String>,
+    /// Trusted declarations of strict-dispatched tools.
+    pub strict_tools: Vec<crate::message::ToolDef>,
+    /// Recorded constrained-sampling losses (grammar-target fallback).
+    pub diagnostics: Vec<crate::stream::AssistantDiagnostic>,
+}
+
+/// Convert the current tool declarations onto the Responses wire (pinned
+/// pi 1.3.0 `convertResponsesTools` semantics).
+///
+/// Grammar tools on a supporting wire project as `custom` tools with the
+/// lark-preferred grammar format; on an unsupported target they fall back to
+/// a plain JSON function tool with a recorded loss diagnostic. A supported
+/// target without a usable variant or schema shape fails typed before
+/// dispatch. `json_schema` tools resolve per-tool strict over the wire
+/// default; require fails typed when strict mode is unavailable, and strict
+/// parameters carry the converted private wire schema (the trusted
+/// declaration is never modified).
+pub(crate) fn convert_responses_tools(
+    tools: &[crate::message::ToolDef],
+    options: ResponsesToolOptions,
+) -> Result<ResponsesWireTools, ProviderError> {
+    use crate::constrained_sampling::{
+        ConstrainedSampling, NoRejectedKeywords, make_strict_json_schema,
+        resolve_grammar_constrained_sampling, resolve_json_schema_strict_sampling,
+    };
+    let fail = |detail: String| ProviderError::Config(ProviderErrorSummary::sanitized(detail));
+    let mut wire_tools = Vec::with_capacity(tools.len());
+    let mut grammar_input_properties = std::collections::HashMap::new();
+    let mut strict_tools = Vec::new();
+    let mut diagnostics = Vec::new();
+    for tool in tools {
+        let grammar = resolve_grammar_constrained_sampling(tool, options.supports_grammar_tools)
+            .map_err(|error| fail(error.detail().to_owned()))?;
+        if let Some(grammar) = grammar {
+            grammar_input_properties.insert(tool.name.clone(), grammar.input_property.clone());
+            wire_tools.push(serde_json::json!({
+                "type": "custom",
+                "name": tool.name,
+                "description": tool.description,
+                "format": {
+                    "type": "grammar",
+                    "syntax": grammar.format,
+                    "definition": grammar.definition,
+                },
+            }));
+            continue;
+        }
+        if matches!(
+            &tool.constrained_sampling,
+            Some(ConstrainedSampling::Grammar { .. })
+        ) && !options.supports_grammar_tools
+        {
+            // Unsupported grammar target (V-34): plain JSON projection with
+            // the loss recorded on the message.
+            diagnostics.push(crate::stream::AssistantDiagnostic {
+                kind: "constrained_sampling_fallback".into(),
+                reason: "grammar_target_unsupported".into(),
+                detail: Some(tool.name.clone()),
+            });
+        }
+        let per_tool_strict = resolve_json_schema_strict_sampling(
+            tool,
+            options.supports_strict_mode,
+            &NoRejectedKeywords,
+        )
+        .map_err(|error| fail(error.detail().to_owned()))?;
+        let strict = per_tool_strict.or(options.default_strict);
+        let parameters = if strict == Some(true) {
+            let converted = make_strict_json_schema(&tool.input_schema, &NoRejectedKeywords)
+                .map_err(|error| fail(error.detail().to_owned()))?;
+            strict_tools.push(tool.clone());
+            converted
+        } else {
+            tool.input_schema.clone()
+        };
+        let mut wire = serde_json::json!({
+            "type": "function",
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": parameters,
+        });
+        if options.supports_strict_mode {
+            wire["strict"] = match strict {
+                Some(value) => serde_json::Value::Bool(value),
+                None => serde_json::Value::Null,
+            };
+        }
+        wire_tools.push(wire);
+    }
+    Ok(ResponsesWireTools {
+        tools: wire_tools,
+        grammar_input_properties,
+        strict_tools,
+        diagnostics,
+    })
+}
+
+/// Dual-ID packing (task 20.11): `call_id|item_id` with the wire-type
+/// prefix (`fc_` function calls, `ctc_` grammar custom calls); a
+/// foreign-shaped item id is legalized through the prefix rather than
+/// guessed.
+fn dual_packed_id(call_id: &str, item_id: &str, prefix: &str) -> String {
+    if item_id.is_empty() {
+        return call_id.to_owned();
+    }
+    let mut item_id = item_id.to_owned();
+    if !item_id.starts_with(prefix) {
+        item_id = format!("{prefix}{item_id}");
+    }
+    format!("{call_id}|{item_id}")
 }
 
 /// Stateful conversion from Responses events to opi stream events.
@@ -420,12 +592,43 @@ pub(crate) struct ResponsesMapper {
     text_started: bool,
     text_content_index: Option<usize>,
     tool_calls: Vec<ToolCallState>,
+    /// Grammar tools of this call (task 20.11): tool name -> input
+    /// property.
+    grammar_input_properties: std::collections::HashMap<String, String>,
+    /// Strict-dispatched tools of this call: their returned arguments
+    /// normalize nulls back onto the original trusted schema.
+    strict_tools: std::collections::HashMap<String, crate::message::ToolDef>,
 }
 
 impl ResponsesMapper {
     pub(crate) fn set_snapshot(&mut self, snapshot: crate::stream::ProducerSnapshot) {
         self.snapshot = snapshot;
         self.snapshot.record(&self.partial);
+    }
+
+    /// Record the grammar custom-tool map of this call (task 20.11).
+    pub(crate) fn set_grammar_tools(
+        &mut self,
+        properties: std::collections::HashMap<String, String>,
+    ) {
+        self.grammar_input_properties = properties;
+    }
+
+    /// Record the strict-dispatched tool declarations of this call.
+    pub(crate) fn set_strict_tools(&mut self, tools: Vec<crate::message::ToolDef>) {
+        self.strict_tools = tools
+            .into_iter()
+            .map(|tool| (tool.name.clone(), tool))
+            .collect();
+    }
+
+    /// Seed message-level constrained-sampling diagnostics (task 20.11):
+    /// recorded grammar-target fallback losses ride the message.
+    pub(crate) fn seed_diagnostics(
+        &mut self,
+        diagnostics: Vec<crate::stream::AssistantDiagnostic>,
+    ) {
+        self.partial.diagnostics.extend(diagnostics);
     }
 
     pub(crate) fn process(
@@ -449,6 +652,8 @@ impl ResponsesMapper {
             text_started: false,
             text_content_index: None,
             tool_calls: Vec::new(),
+            grammar_input_properties: std::collections::HashMap::new(),
+            strict_tools: std::collections::HashMap::new(),
         }
     }
 
@@ -474,6 +679,50 @@ impl ResponsesMapper {
                 })]
             }
             ResponsesEvent::OutputItemAdded { output_index, item } => {
+                if item.item_type == "custom_tool_call" {
+                    // Grammar custom call (task 20.11): a tool-call slot whose
+                    // raw wire input wraps into incremental JSON under the
+                    // tool's input property.
+                    let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> =
+                        self.end_text().into_iter().map(Ok).collect();
+                    let id = item.call_id.clone().unwrap_or_default();
+                    let name = item.name.clone().unwrap_or_default();
+                    let property = self
+                        .grammar_input_properties
+                        .get(&name)
+                        .cloned()
+                        .unwrap_or_else(|| "input".to_owned());
+                    let content_index = self.partial.content.len();
+                    self.partial.content.push(AssistantContent::ToolCall {
+                        tool_call: ToolCall {
+                            id: id.clone(),
+                            name: name.clone(),
+                            arguments: String::new(),
+                            arguments_error: None,
+                        },
+                    });
+                    self.tool_calls.push(ToolCallState {
+                        output_index,
+                        content_index,
+                        id,
+                        item_id: item.id.clone().unwrap_or_default(),
+                        name,
+                        arguments: String::new(),
+                        ended: false,
+                        custom_input: Some(CustomInputState {
+                            buffer: crate::constrained_sampling::GrammarInputBuffer::new(
+                                property.clone(),
+                                item.input.clone().unwrap_or_default(),
+                            ),
+                            property,
+                        }),
+                    });
+                    events.push(Ok(AssistantStreamEvent::ToolCallStart {
+                        content_index,
+                        partial: self.partial.clone(),
+                    }));
+                    return events;
+                }
                 if item.item_type != "function_call" {
                     return Vec::new();
                 }
@@ -503,6 +752,7 @@ impl ResponsesMapper {
                     name,
                     arguments,
                     ended: false,
+                    custom_input: None,
                 });
                 events.push(Ok(AssistantStreamEvent::ToolCallStart {
                     content_index,
@@ -573,7 +823,59 @@ impl ResponsesMapper {
                     partial: self.partial.clone(),
                 })]
             }
+            ResponsesEvent::CustomToolCallInputDelta {
+                output_index,
+                delta,
+            } => match self.append_custom_input(output_index, &delta, false) {
+                Ok(Some(wrapped_delta)) => {
+                    let Some(content_index) = self
+                        .tool_calls
+                        .iter()
+                        .find(|state| state.output_index == output_index)
+                        .map(|state| state.content_index)
+                    else {
+                        return Vec::new();
+                    };
+                    vec![Ok(AssistantStreamEvent::ToolCallDelta {
+                        content_index,
+                        delta: wrapped_delta,
+                        partial: self.partial.clone(),
+                    })]
+                }
+                Ok(None) => Vec::new(),
+                Err(error) => vec![Err(self.failure(error))],
+            },
+            ResponsesEvent::CustomToolCallInputDone {
+                output_index,
+                input,
+            } => match self.append_custom_input(output_index, &input, true) {
+                Ok(Some(wrapped_delta)) => {
+                    let Some(content_index) = self
+                        .tool_calls
+                        .iter()
+                        .find(|state| state.output_index == output_index)
+                        .map(|state| state.content_index)
+                    else {
+                        return Vec::new();
+                    };
+                    vec![Ok(AssistantStreamEvent::ToolCallDelta {
+                        content_index,
+                        delta: wrapped_delta,
+                        partial: self.partial.clone(),
+                    })]
+                }
+                Ok(None) => Vec::new(),
+                Err(error) => vec![Err(self.failure(error))],
+            },
             ResponsesEvent::OutputItemDone { output_index, item } => {
+                if item.item_type == "custom_tool_call" {
+                    self.update_tool_call(output_index, &item);
+                    return self
+                        .finish_tool_call(output_index)
+                        .into_iter()
+                        .map(Ok)
+                        .collect();
+                }
                 if item.item_type != "function_call" {
                     return Vec::new();
                 }
@@ -606,7 +908,7 @@ impl ResponsesMapper {
                 let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> =
                     self.end_text().into_iter().map(Ok).collect();
                 for (output_index, item) in output.iter().enumerate() {
-                    if item.item_type == "function_call" {
+                    if item.item_type == "function_call" || item.item_type == "custom_tool_call" {
                         self.update_tool_call(output_index, item);
                     }
                 }
@@ -687,23 +989,56 @@ impl ResponsesMapper {
         }
         state.ended = true;
         let content_index = state.content_index;
+        // Grammar custom calls (task 20.11): the authoritative arguments are
+        // the raw input under its property (already maintained per delta);
+        // textual finalization and its error fact do not apply.
+        if state.custom_input.is_some() {
+            let arguments = state.arguments.clone();
+            let item_id = state.item_id.clone();
+            let id = state.id.clone();
+            let name = state.name.clone();
+            let tool_call = ToolCall {
+                id: dual_packed_id(&id, &item_id, "ctc_"),
+                name,
+                arguments: arguments.clone(),
+                arguments_error: None,
+            };
+            if let Some(AssistantContent::ToolCall { tool_call: partial }) =
+                self.partial.content.get_mut(content_index)
+            {
+                partial.arguments = arguments;
+                partial.id = tool_call.id.clone();
+            }
+            return Some(AssistantStreamEvent::ToolCallEnd {
+                content_index,
+                tool_call,
+                partial: self.partial.clone(),
+            });
+        }
         // Final textual arguments are parsed once at item end (AIR-048).
-        let (arguments, arguments_error) =
+        let (mut arguments, arguments_error) =
             ToolCall::finalize_text_arguments(state.arguments.clone());
+        // Strict-dispatched tools (task 20.11): normalize explicit nulls
+        // back onto the original trusted schema.
+        if arguments_error.is_none()
+            && let Some(tool) = self.strict_tools.get(&state.name)
+            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&arguments)
+        {
+            let mut normalized = parsed;
+            crate::constrained_sampling::normalize_wire_arguments_nulls(
+                &tool.input_schema,
+                &mut normalized,
+            );
+            arguments = serde_json::to_string(&normalized).unwrap_or(arguments);
+        }
         // Dual-ID packing (pinned pi 1.3.0 Responses mechanism): the
         // canonical id carries `call_id|item_id` so same-identity replay
         // can restore both fields. Item ids must start with `fc_`; a
         // foreign-shaped one is legalized through a stable digest instead
         // of being guessed (RP-02/RP-07).
-        let packed_id = if state.item_id.is_empty() {
-            state.id.clone()
-        } else {
-            let mut item_id = state.item_id.clone();
-            if !item_id.starts_with("fc_") {
-                item_id = format!("fc_{item_id}");
-            }
-            format!("{}|{}", state.id, item_id)
-        };
+        let item_id = state.item_id.clone();
+        let id = state.id.clone();
+        let packed_id = dual_packed_id(&id, &item_id, "fc_");
         let tool_call = ToolCall {
             id: packed_id,
             name: state.name.clone(),
@@ -724,6 +1059,48 @@ impl ResponsesMapper {
             tool_call,
             partial: self.partial.clone(),
         })
+    }
+
+    /// Append one raw grammar-input increment (task 20.11): the buffer
+    /// enforces monotonic growth and single close; violations are typed
+    /// stream failures that preserve the delivered partial.
+    fn append_custom_input(
+        &mut self,
+        output_index: usize,
+        next_input: &str,
+        close: bool,
+    ) -> Result<Option<String>, ProviderError> {
+        let Some(state) = self
+            .tool_calls
+            .iter_mut()
+            .find(|state| state.output_index == output_index)
+        else {
+            return Ok(None);
+        };
+        let Some(custom) = state.custom_input.as_mut() else {
+            return Ok(None);
+        };
+        let wrapped = crate::constrained_sampling::append_grammar_tool_input_delta(
+            &mut custom.buffer,
+            next_input,
+            close,
+        )
+        .map_err(|error| {
+            ProviderError::StreamError(ProviderErrorSummary::sanitized(error.detail()))
+        })?;
+        // The authoritative arguments stay the raw input under its
+        // property; the wrapped text is the streaming view.
+        if let Ok(arguments) = serde_json::to_string(&serde_json::json!({
+            &custom.property: custom.buffer.input(),
+        })) {
+            state.arguments = arguments;
+            if let Some(AssistantContent::ToolCall { tool_call }) =
+                self.partial.content.get_mut(state.content_index)
+            {
+                tool_call.arguments = state.arguments.clone();
+            }
+        }
+        Ok(wrapped)
     }
 
     fn update_tool_call(&mut self, output_index: usize, item: &RawOutputItemOwned) {
@@ -783,6 +1160,7 @@ fn empty_assistant_message(
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: crate::time::now_ms(),
+        diagnostics: Vec::new(),
     }
 }
 
@@ -799,6 +1177,7 @@ fn split_packed_call_id(id: &str) -> (&str, Option<&str>) {
 pub(crate) fn convert_messages(
     messages: &[crate::message::Message],
     route: &crate::replay::ReplayRoute,
+    grammar_input_properties: &std::collections::HashMap<String, String>,
 ) -> Vec<serde_json::Value> {
     let mut input = Vec::new();
     for message in messages {
@@ -857,6 +1236,32 @@ pub(crate) fn convert_messages(
                         }
                         AssistantContent::ToolCall { tool_call } => {
                             let (call_id, item_id) = split_packed_call_id(&tool_call.id);
+                            if let Some(property) = grammar_input_properties.get(&tool_call.name) {
+                                // Grammar custom call (task 20.11): replay
+                                // restores the raw input string under its
+                                // property, with the ctc_ item id.
+                                let raw_input =
+                                    serde_json::from_str::<serde_json::Value>(&tool_call.arguments)
+                                        .ok()
+                                        .and_then(|arguments| {
+                                            arguments
+                                                .get(property)
+                                                .and_then(serde_json::Value::as_str)
+                                                .map(String::from)
+                                        })
+                                        .unwrap_or_default();
+                                let mut custom = serde_json::json!({
+                                    "type":"custom_tool_call",
+                                    "call_id":call_id,
+                                    "name":tool_call.name,
+                                    "input":raw_input,
+                                });
+                                if same && let Some(item_id) = item_id {
+                                    custom["id"] = serde_json::json!(item_id);
+                                }
+                                input.push(custom);
+                                continue;
+                            }
                             // Same-identity replay restores both ids; a
                             // different-identity call omits the item id so
                             // the service's reasoning-pairing validation
@@ -899,8 +1304,13 @@ pub(crate) fn convert_messages(
                     content
                 };
                 let (call_id, _item_id) = split_packed_call_id(&result.tool_call_id);
+                let item_type = if grammar_input_properties.contains_key(&result.tool_name) {
+                    "custom_tool_call_output"
+                } else {
+                    "function_call_output"
+                };
                 input.push(serde_json::json!({
-                    "type":"function_call_output",
+                    "type":item_type,
                     "call_id":call_id,
                     "output":output,
                 }));

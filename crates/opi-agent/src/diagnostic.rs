@@ -223,6 +223,9 @@ pub mod code {
     pub const CODE_PROVIDER_RATE_LIMITED: &str = "provider_rate_limited";
     pub const CODE_PROVIDER_TIMEOUT: &str = "provider_timeout";
     pub const CODE_PROVIDER_REQUEST_FAILED: &str = "provider_request_failed";
+    /// The SDK admitted exactly one rebuilt Anthropic strict-tool downgrade
+    /// variant (task 20.11, V-34/V-36).
+    pub const CODE_PROVIDER_STRICT_DOWNGRADE: &str = "provider_strict_downgrade";
     pub const CODE_PROVIDER_STREAM_ERROR: &str = "provider_stream_error";
     pub const CODE_PROVIDER_NETWORK: &str = "provider_network_error";
     pub const CODE_PROVIDER_CONFIG: &str = "provider_config_error";
@@ -687,6 +690,15 @@ impl From<&opi_ai::provider::ProviderError> for Diagnostic {
                 "provider callback phase failed",
             )
             .details(serde_json::json!({ "provider_error": message })),
+            ProviderError::StrictToolLimits { detail } => Diagnostic::new(
+                Severity::Warning,
+                code::CODE_PROVIDER_STRICT_DOWNGRADE,
+                SOURCE_PROVIDER,
+                "provider strict tool limits exceeded",
+            )
+            .details(
+                serde_json::json!({ "reason": "strict_tool_limits_exceeded", "detail": detail }),
+            ),
             ProviderError::UnknownModel {
                 provider_id,
                 model_id,

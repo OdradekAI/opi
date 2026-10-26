@@ -292,6 +292,9 @@ pub struct AnthropicMessagesCompat {
     pub supports_eager_tool_input_streaming: bool,
     pub force_adaptive_thinking: bool,
     pub supports_temperature: bool,
+    /// Whether the wire accepts strict tool schemas (task 20.11, V-34):
+    /// `json_schema` require fails typed before dispatch when false.
+    pub supports_strict_tools: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

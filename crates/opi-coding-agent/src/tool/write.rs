@@ -62,6 +62,7 @@ impl Tool for WriteTool {
             name: "write".into(),
             description: "Create or replace a file with the given content.".into(),
             input_schema: self.schema.clone(),
+            constrained_sampling: None,
         }
     }
 

@@ -60,6 +60,7 @@ impl Tool for GreetTool {
                 },
                 "required": ["name"]
             }),
+            constrained_sampling: None,
         }
     }
 
@@ -99,6 +100,7 @@ impl Tool for EchoTool {
             name: "echo".into(),
             description: "Echoes input.".into(),
             input_schema: json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
 
@@ -404,6 +406,7 @@ impl Tool for ProbeTool {
                 "properties": { "name": { "type": "string" } },
                 "required": ["name"]
             }),
+            constrained_sampling: None,
         }
     }
 
@@ -442,6 +445,7 @@ impl Tool for PermissiveProbeTool {
             name: "echo".into(),
             description: "permissive probe tool".into(),
             input_schema: json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
 
@@ -484,6 +488,7 @@ impl Tool for ParallelPermissiveProbeTool {
             name: "echo_parallel".into(),
             description: "parallel permissive probe tool".into(),
             input_schema: json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
 
@@ -566,6 +571,7 @@ fn base_msg() -> AssistantMessage {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: 0,
+        diagnostics: Vec::new(),
     }
 }
 
@@ -752,6 +758,7 @@ async fn normalization_coerces_before_authorization_and_execution() {
                     "properties": { "n": { "type": "integer" } },
                     "required": ["n"]
                 }),
+                constrained_sampling: None,
             }
         }
         fn execute(
@@ -931,6 +938,7 @@ async fn upstream_unicode_tool_arguments_cross_authority_once() {
                         "ignored": 1
                     }
                 }),
+                constrained_sampling: None,
             }
         }
 
@@ -1423,6 +1431,7 @@ impl Tool for LengthProbeTool {
                 "properties": { "value": { "type": "string" } },
                 "required": ["value"]
             }),
+            constrained_sampling: None,
         }
     }
 
@@ -1771,6 +1780,7 @@ async fn executed_error_results_never_claim_non_execution() {
                 name: "effect_error".into(),
                 description: "Record a real effect before reporting failure".into(),
                 input_schema: json!({"type":"object"}),
+                constrained_sampling: None,
             }
         }
 

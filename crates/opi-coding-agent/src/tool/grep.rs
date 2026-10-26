@@ -39,6 +39,7 @@ impl Tool for GrepTool {
                 at a fixed limit."
                 .into(),
             input_schema: self.schema.clone(),
+            constrained_sampling: None,
         }
     }
 

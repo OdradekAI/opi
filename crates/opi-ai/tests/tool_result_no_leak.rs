@@ -48,6 +48,7 @@ fn request_with_truncated_tool_result() -> Request {
                     stop_reason: opi_ai::stream::StopReason::ToolUse,
                     error_message: None,
                     timestamp_ms: 0,
+                    diagnostics: Vec::new(),
                 }),
                 Message::ToolResult(ToolResultMessage {
                     not_executed: None,

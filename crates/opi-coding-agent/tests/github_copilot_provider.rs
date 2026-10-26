@@ -520,6 +520,7 @@ fn call_assistant(id: &str, name: &str) -> Message {
         stop_reason: opi_ai::stream::StopReason::ToolUse,
         error_message: None,
         timestamp_ms: 0,
+        diagnostics: Vec::new(),
     })
 }
 

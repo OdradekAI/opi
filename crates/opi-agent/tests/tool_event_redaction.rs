@@ -35,6 +35,7 @@ impl Tool for SecretTool {
             name: "bash".into(),
             description: "test tool".into(),
             input_schema: json!({"type":"object"}),
+            constrained_sampling: None,
         }
     }
 

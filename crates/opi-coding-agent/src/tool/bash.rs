@@ -184,6 +184,7 @@ impl Tool for BashTool {
             name: "bash".into(),
             description: "Execute a shell command with timeout and streamed output.".into(),
             input_schema: self.schema.clone(),
+            constrained_sampling: None,
         }
     }
 

@@ -27,6 +27,7 @@ fn assistant(timestamp_ms: i64) -> Message {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms,
+        diagnostics: Vec::new(),
     })
 }
 
@@ -121,6 +122,7 @@ fn initial_context_counts_system_images_and_tool_schemas() {
         name: "read".into(),
         description: "Read a file".into(),
         input_schema: serde_json::json!({"type":"object"}),
+        constrained_sampling: None,
     }];
     let schema_tokens = estimate_text_tokens(&serde_json::to_string(&tools).unwrap());
     let estimate = estimate_context_tokens(Some("abcdefgh"), &[image], &tools);
@@ -142,6 +144,7 @@ fn anchor_supersedes_full_text_lower_bound() {
             name: "read".into(),
             description: "Read a file".into(),
             input_schema: serde_json::json!({"type":"object"}),
+            constrained_sampling: None,
         }],
     );
     assert_eq!(estimate.tokens, 670);
@@ -218,6 +221,7 @@ fn message_granularity_rounding_aggregates_before_ceil() {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: 0,
+        diagnostics: Vec::new(),
     });
     assert_eq!(estimate_message_tokens(&three_blocks), 1);
 
@@ -238,6 +242,7 @@ fn system_message_rounds_prompt_sections_and_tool_lists_separately() {
             name: "tool".into(),
             description: "tool".into(),
             input_schema: serde_json::json!({"type":"object"}),
+            constrained_sampling: None,
         }],
         tools_removed: vec![ToolReference {
             name: "gone".into(),

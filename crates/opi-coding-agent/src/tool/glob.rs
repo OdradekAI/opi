@@ -39,6 +39,7 @@ impl Tool for GlobTool {
                 fixed limit. An opi convenience (not pi-parity)."
                 .into(),
             input_schema: self.schema.clone(),
+            constrained_sampling: None,
         }
     }
 

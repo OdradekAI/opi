@@ -122,6 +122,7 @@ impl Tool for ProcessAdapterTool {
             name: self.name.clone(),
             description: self.description.clone(),
             input_schema: self.schema.clone(),
+            constrained_sampling: None,
         }
     }
 

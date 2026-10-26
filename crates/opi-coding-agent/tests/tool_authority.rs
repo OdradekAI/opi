@@ -239,6 +239,7 @@ impl Tool for RecordingTool {
             name: self.name.clone(),
             description: "recording test tool".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
     fn execute(
@@ -271,6 +272,7 @@ impl Tool for UntrustedContentTool {
             name: "read".to_owned(),
             description: "returns untrusted content".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
 
@@ -356,6 +358,7 @@ fn counted_registered(
             name: name.to_owned(),
             description: name.to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         },
         Arc::new(RecordingTool::new(name, count)),
     )
@@ -782,6 +785,7 @@ async fn phase17_expired_or_failed_authority_is_fail_closed() {
             name: "write".to_owned(),
             description: "write".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         },
         Arc::new(RecordingTool::new("write", count.clone())),
     );
@@ -853,6 +857,7 @@ async fn phase17_expired_or_failed_authority_is_fail_closed() {
             name: "write".to_owned(),
             description: "write".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         },
         Arc::new(RecordingTool::new("write", error_count.clone())),
     );
@@ -1356,6 +1361,7 @@ impl Tool for GatedTool {
             name: "gated".to_owned(),
             description: "gated test tool".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
     fn execute(

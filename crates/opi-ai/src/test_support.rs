@@ -257,6 +257,7 @@ pub fn base_assistant() -> AssistantMessage {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: crate::time::now_ms(),
+        diagnostics: Vec::new(),
     }
 }
 

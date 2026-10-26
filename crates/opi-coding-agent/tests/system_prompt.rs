@@ -17,6 +17,7 @@ fn tool_def(name: &str, description: &str) -> ToolDef {
             },
             "required": ["arg"]
         }),
+        constrained_sampling: None,
     }
 }
 

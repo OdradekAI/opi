@@ -118,6 +118,7 @@ impl Provider for RecordingRoute {
                     stop_reason: opi_ai::stream::StopReason::Error,
                     error_message: Some("recorded".into()),
                     timestamp_ms: 0,
+                    diagnostics: Vec::new(),
                 },
             })
         }))

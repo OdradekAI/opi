@@ -482,6 +482,7 @@ async fn dispatch_complete_returns_terminal_error_event() {
         stop_reason: opi_ai::stream::StopReason::Error,
         error_message: Some("terminal failure".into()),
         timestamp_ms: 0,
+        diagnostics: Vec::new(),
     };
     let mut collection = Models::new();
     collection

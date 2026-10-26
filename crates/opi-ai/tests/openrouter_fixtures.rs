@@ -454,6 +454,7 @@ fn openrouter_profile_inherits_shared_compat_flags() {
                 name: "list_dir".into(),
                 description: "list a directory".into(),
                 input_schema: serde_json::json!({"type":"object","properties":{}}),
+                constrained_sampling: None,
             }],
         })
         .expect("valid context declarations"),

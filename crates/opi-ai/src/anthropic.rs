@@ -403,9 +403,23 @@ impl AnthropicEvent {
 // ---------------------------------------------------------------------------
 
 /// Tracks content block state and accumulates the final message.
+/// How one tool actually went out on this dispatch (task 20.11): only a
+/// dispatched prefer-strict tool qualifies the source's strict-limit
+/// downgrade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StrictToolDisposition {
+    NotStrict,
+    StrictPrefer,
+    StrictRequire,
+}
+
 pub struct AnthropicMapper {
     snapshot: crate::stream::ProducerSnapshot,
     partial: AssistantMessage,
+    /// Trusted declarations of the strict-dispatched tools on this call
+    /// (task 20.11): their returned arguments normalize nulls back onto the
+    /// original schema at finalization.
+    strict_tools: std::collections::HashMap<String, crate::message::ToolDef>,
     blocks: Vec<BlockState>,
     saw_done: bool,
 }
@@ -458,9 +472,29 @@ impl AnthropicMapper {
         Self {
             snapshot: crate::stream::ProducerSnapshot::default(),
             partial: empty_assistant_message(provider_id),
+            strict_tools: std::collections::HashMap::new(),
             blocks: Vec::new(),
             saw_done: false,
         }
+    }
+
+    /// Record the strict-dispatched tools of this call (task 20.11,
+    /// V-34): their returned arguments normalize per the original trusted
+    /// schema at block end.
+    pub(crate) fn set_strict_tools(&mut self, tools: Vec<crate::message::ToolDef>) {
+        self.strict_tools = tools
+            .into_iter()
+            .map(|tool| (tool.name.clone(), tool))
+            .collect();
+    }
+
+    /// Seed message-level diagnostics (task 20.11, V-34/V-36): the recorded
+    /// strict downgrade rides the message from Start through the terminal.
+    pub(crate) fn seed_diagnostics(
+        &mut self,
+        diagnostics: Vec<crate::stream::AssistantDiagnostic>,
+    ) {
+        self.partial.diagnostics.extend(diagnostics);
     }
 
     /// Process one Anthropic event, returning zero or more stream events.
@@ -638,8 +672,24 @@ impl AnthropicMapper {
                         // end: empty normalizes to `{}`, repairable escapes
                         // stay literal, anything else keeps the owned raw
                         // text plus `arguments_error` (AIR-048).
-                        let (arguments, arguments_error) =
+                        let (mut arguments, arguments_error) =
                             ToolCall::finalize_text_arguments(partial_json.clone());
+                        // Strict-dispatched tools (task 20.11): the strict
+                        // wire may answer an explicit null where the original
+                        // trusted schema declared an optional non-nullable
+                        // position; normalize back onto the original schema.
+                        if arguments_error.is_none()
+                            && let Some(tool) = self.strict_tools.get(name)
+                            && let Ok(parsed) =
+                                serde_json::from_str::<serde_json::Value>(&arguments)
+                        {
+                            let mut normalized = parsed;
+                            crate::constrained_sampling::normalize_wire_arguments_nulls(
+                                &tool.input_schema,
+                                &mut normalized,
+                            );
+                            arguments = serde_json::to_string(&normalized).unwrap_or(arguments);
+                        }
                         let tool_call = ToolCall {
                             id: id.clone(),
                             name: name.clone(),
@@ -739,6 +789,7 @@ fn empty_assistant_message(provider_id: &str) -> AssistantMessage {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: crate::time::now_ms(),
+        diagnostics: Vec::new(),
     }
 }
 
@@ -803,6 +854,7 @@ pub fn model_catalog() -> Vec<ModelInfo> {
                 supports_eager_tool_input_streaming: false,
                 force_adaptive_thinking: false,
                 supports_temperature: true,
+                supports_strict_tools: false,
             }))
             .expect("built-in Anthropic compatibility uses the matching wire")
     })
@@ -879,6 +931,113 @@ impl AnthropicProvider {
         &self.client
     }
 
+    /// Project one tool declaration onto the Anthropic wire (task 20.11,
+    /// V-34/AIR-040), returning the disposition for downgrade
+    /// qualification.
+    ///
+    /// A `json_schema` tool on a strict-capable wire projects `strict: true`
+    /// with the converted private wire schema (a clone; the trusted
+    /// declaration is never modified). `Prefer` with an unconvertible schema
+    /// — or on a wire without strict support — stays non-strict; `Require`
+    /// fails typed before any dispatch. Tools without constrained sampling
+    /// project their trusted schema unchanged.
+    fn project_wire_tool(
+        &self,
+        tool: &crate::message::ToolDef,
+        supports_strict: bool,
+        disable_preferred_strict: bool,
+    ) -> Result<(serde_json::Value, StrictToolDisposition), crate::provider::ProviderError> {
+        use crate::constrained_sampling::{
+            AnthropicStrictKeywordAdmission, resolve_json_schema_strict_sampling,
+        };
+        let strict = if disable_preferred_strict
+            && matches!(
+                &tool.constrained_sampling,
+                Some(
+                    crate::constrained_sampling::ConstrainedSampling::JsonSchema {
+                        strict: crate::constrained_sampling::StrictPreference::Prefer,
+                    }
+                ),
+            ) {
+            // The rebuilt downgrade variant removes only prefer-strict;
+            // require stays strict (V-34).
+            None
+        } else {
+            resolve_json_schema_strict_sampling(
+                tool,
+                supports_strict,
+                &AnthropicStrictKeywordAdmission,
+            )
+            .map_err(|error| {
+                crate::provider::ProviderError::Config(
+                    crate::provider::ProviderErrorSummary::sanitized(error.detail()),
+                )
+            })?
+        };
+        let disposition = match (&tool.constrained_sampling, strict) {
+            (
+                Some(crate::constrained_sampling::ConstrainedSampling::JsonSchema {
+                    strict: crate::constrained_sampling::StrictPreference::Prefer,
+                }),
+                Some(true),
+            ) => StrictToolDisposition::StrictPrefer,
+            (
+                Some(crate::constrained_sampling::ConstrainedSampling::JsonSchema {
+                    strict: crate::constrained_sampling::StrictPreference::Require,
+                }),
+                Some(true),
+            ) => StrictToolDisposition::StrictRequire,
+            _ => StrictToolDisposition::NotStrict,
+        };
+        let mut wire = serde_json::json!({
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.input_schema,
+        });
+        if strict == Some(true) {
+            let converted = crate::constrained_sampling::make_strict_json_schema(
+                &tool.input_schema,
+                &AnthropicStrictKeywordAdmission,
+            )
+            .expect("resolve succeeded so the conversion succeeds");
+            wire["input_schema"] = converted;
+            wire["strict"] = serde_json::Value::Bool(true);
+        }
+        Ok((wire, disposition))
+    }
+
+    /// Compile the current tool declarations for one dispatch (task 20.11):
+    /// the wire tool list, whether any prefer-strict tool actually went out
+    /// strict (the 400 downgrade is qualified by this fact), and the
+    /// trusted schemas of strict-dispatched tools (returned-argument null
+    /// normalization).
+    fn compile_wire_tools(
+        &self,
+        current_tools: &[crate::message::ToolDef],
+        supports_strict: bool,
+        disable_preferred_strict: bool,
+    ) -> Result<
+        (Vec<serde_json::Value>, bool, Vec<crate::message::ToolDef>),
+        crate::provider::ProviderError,
+    > {
+        let mut tools = Vec::with_capacity(current_tools.len());
+        let mut has_preferred_strict = false;
+        let mut strict_tools = Vec::new();
+        for tool in current_tools {
+            let (wire, disposition) =
+                self.project_wire_tool(tool, supports_strict, disable_preferred_strict)?;
+            match disposition {
+                StrictToolDisposition::StrictPrefer => has_preferred_strict = true,
+                StrictToolDisposition::StrictRequire | StrictToolDisposition::NotStrict => {}
+            }
+            if wire.get("strict") == Some(&serde_json::Value::Bool(true)) {
+                strict_tools.push(tool.clone());
+            }
+            tools.push(wire);
+        }
+        Ok((tools, has_preferred_strict, strict_tools))
+    }
+
     /// Build the Anthropic Messages API request body.
     ///
     /// Emits `cache_control` markers when the selected model advertises
@@ -893,6 +1052,22 @@ impl AnthropicProvider {
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        self.build_request_body_variant(request, false)
+            .map(|(body, _, _)| body)
+    }
+
+    /// The variant-aware body compiler (task 20.11): the wire body plus the
+    /// downgrade qualification fact (whether any prefer-strict tool actually
+    /// went out strict) and the trusted declarations of strict-dispatched
+    /// tools (returned-argument null normalization).
+    fn build_request_body_variant(
+        &self,
+        request: &Request,
+        disable_preferred_strict: bool,
+    ) -> Result<
+        (serde_json::Value, bool, Vec<crate::message::ToolDef>),
+        crate::provider::ProviderError,
+    > {
         let model_id = request
             .model
             .split_once(':')
@@ -912,6 +1087,7 @@ impl AnthropicProvider {
                 supports_eager_tool_input_streaming: false,
                 force_adaptive_thinking: false,
                 supports_temperature: true,
+                supports_strict_tools: false,
             });
         let supports_cache = model_caps
             .map(|m| m.capabilities.supports_cache_control)
@@ -989,17 +1165,16 @@ impl AnthropicProvider {
                 .map(serde_json::Value::Number)
                 .unwrap_or(serde_json::Value::Null);
         }
+        let mut has_preferred_strict = false;
+        let mut strict_tools = Vec::new();
         if !current_tools.is_empty() {
-            let mut tools: Vec<serde_json::Value> = current_tools
-                .iter()
-                .map(|t| {
-                    serde_json::json!({
-                        "name": t.name,
-                        "description": t.description,
-                        "input_schema": t.input_schema,
-                    })
-                })
-                .collect();
+            let (mut tools, preferred_strict, dispatched_strict) = self.compile_wire_tools(
+                &current_tools,
+                compat.supports_strict_tools,
+                disable_preferred_strict,
+            )?;
+            has_preferred_strict = preferred_strict;
+            strict_tools = dispatched_strict;
             if emit_cache && let Some(last) = tools.last_mut() {
                 last["cache_control"] = cache_marker.clone();
             }
@@ -1024,7 +1199,7 @@ impl AnthropicProvider {
                 })
             };
         }
-        Ok(body)
+        Ok((body, has_preferred_strict, strict_tools))
     }
 
     /// Stream events from a raw SSE response body.
@@ -1054,7 +1229,153 @@ impl AnthropicProvider {
         Box::pin(stream::iter(stream_events))
     }
 
+    /// Dispatch one attempt with its payload variant (task 20.11): the
+    /// ordinary frozen payload, or the single rebuilt strict downgrade
+    /// (prefer-strict removed, its own payload-callback freeze slot, one
+    /// recorded downgrade diagnostic on the message).
+    fn stream_dispatch(
+        &self,
+        request: Request,
+        resolved: crate::auth::ResolvedAuth,
+        variant: crate::provider::PayloadVariant,
+    ) -> EventStream {
+        // Same as `stream` but skips per-call auth resolution: the collection
+        // resolved and froze authentication once for the logical call.
+        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
+        let default_base_url = self.default_base_url.clone();
+        let provider_id = self.provider_id.clone();
+        let auth_invalid_policy = self.auth_invalid_policy;
+        let direct_oauth_beta = self.direct_oauth_beta;
+        let credential_base_url_enabled = self.copilot_headers;
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, model_id)| model_id)
+            .unwrap_or(&request.model);
+        let model_base_url = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.base_url.clone());
+        let disable_preferred_strict =
+            variant == crate::provider::PayloadVariant::AnthropicStrictDowngrade;
+        let (body, has_preferred_strict, strict_tools) =
+            match self.build_request_body_variant(&request, disable_preferred_strict) {
+                Ok(compiled) => compiled,
+                Err(error) => {
+                    return Box::pin(stream::once(async move { Err(error) }));
+                }
+            };
+        // Payload callback (task 20.51/20.11): after sampling/compat/wire
+        // projection, once per variant, frozen across ordinary retries; the
+        // rebuilt downgrade variant re-runs it under its own slot (V-36).
+        let body = match request.callbacks.apply_payload(variant.label(), body) {
+            Ok(body) => body,
+            Err(error) => {
+                return Box::pin(stream::once(async move { Err(error) }));
+            }
+        };
+        let cancel = request.cancel.clone();
+        let timeout = request.timeout;
+        let copilot_headers = if self.copilot_headers {
+            match github_copilot_route_headers(&request) {
+                Ok(mut headers) => {
+                    let initiator = github_copilot_initiator(&request);
+                    headers.push(("X-Initiator".into(), initiator.into()));
+                    Ok(headers)
+                }
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(Vec::new())
+        };
+        let extra_headers = copilot_headers
+            .and_then(|route_headers| {
+                self.headers
+                    .merge_request(&route_headers, &request.extra_headers)
+            })
+            // Header transform (task 20.51): applied once to the merged
+            // per-call set; the output is revalidated against the protected
+            // identity/auth/signing names.
+            .and_then(|merged| request.callbacks.apply_header_transform(&merged));
+        let callbacks = request.callbacks.clone();
+        let http_client = self.client.client().clone();
+        // The downgrade diagnostic rides the rebuilt variant's message from
+        // Start through the terminal (V-34: one recorded downgrade).
+        let diagnostics_seed =
+            if variant == crate::provider::PayloadVariant::AnthropicStrictDowngrade {
+                vec![crate::stream::AssistantDiagnostic {
+                    kind: "anthropic_strict_tools_fallback".into(),
+                    reason: "strict_tool_limits_exceeded".into(),
+                    detail: None,
+                }]
+            } else {
+                Vec::new()
+            };
+
+        let snapshot = crate::stream::ProducerSnapshot::default();
+        let producer_snapshot = snapshot.clone();
+        let (tx, rx) = tokio::sync::mpsc::channel(64);
+        let tx_closed = tx.clone();
+        let producer_cancel = cancel.clone();
+        let stream_cancel = cancel.clone();
+
+        tokio::spawn(async move {
+            let work = async {
+                let extra_headers = match extra_headers {
+                    Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                        return;
+                    }
+                };
+                let base_url = credential_base_url_enabled
+                    .then(|| resolved.base_url.clone())
+                    .flatten()
+                    .or(model_base_url)
+                    .unwrap_or(default_base_url);
+                if let Err(e) = Self::stream_http(
+                    http_client,
+                    resolved,
+                    base_url,
+                    provider_id,
+                    auth_invalid_policy,
+                    direct_oauth_beta,
+                    has_preferred_strict,
+                    strict_tools,
+                    diagnostics_seed,
+                    &body,
+                    cancel,
+                    timeout,
+                    extra_headers,
+                    callbacks,
+                    producer_snapshot,
+                    &tx,
+                )
+                .await
+                {
+                    let _ = tx.send(Err(e)).await;
+                }
+            };
+
+            tokio::select! {
+                biased;
+                _ = tx_closed.closed() => (),
+                _ = work => {},
+            }
+        });
+
+        Box::pin(CancelAwareReceiverStream::with_snapshot(
+            rx,
+            stream_cancel,
+            snapshot,
+        ))
+    }
+
     /// Real HTTP streaming: POST to Anthropic Messages API and parse SSE from the byte stream.
+    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         client: reqwest::Client,
@@ -1063,6 +1384,9 @@ impl AnthropicProvider {
         provider_id: String,
         auth_invalid_policy: AuthInvalidPolicy,
         direct_oauth_beta: bool,
+        has_preferred_strict: bool,
+        strict_tools: Vec<crate::message::ToolDef>,
+        diagnostics_seed: Vec<crate::stream::AssistantDiagnostic>,
         body: &serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
@@ -1122,10 +1446,41 @@ impl AnthropicProvider {
                 )
             })
             .collect();
-        callbacks.notify_response(response.status().as_u16(), &observed_headers)?;
-
         let status = response.status();
         if !status.is_success() {
+            // The source-qualified strict-limit downgrade (task 20.11,
+            // V-34): a 400 invalid_request_error whose message carries one
+            // of the documented strict-tool limit markers, on a request that
+            // actually dispatched prefer-strict tools, is typed so the
+            // acquisition owner may admit exactly one rebuilt variant. Any
+            // other 400 stays the ordinary provider-side failure.
+            if status.as_u16() == 400 && has_preferred_strict {
+                let body_text = response.text().await.unwrap_or_default();
+                if let Some(error) = body_text
+                    .parse::<serde_json::Value>()
+                    .ok()
+                    .and_then(|value| value.get("error").cloned())
+                    && error.get("type").and_then(serde_json::Value::as_str)
+                        == Some("invalid_request_error")
+                    && let Some(message) = error.get("message").and_then(serde_json::Value::as_str)
+                    && [
+                        "The compiled grammar is too large",
+                        "Too many strict tools (",
+                        "Schemas contains too many parameters with union types (",
+                    ]
+                    .iter()
+                    .any(|marker| message.contains(marker))
+                {
+                    return Err(ProviderError::StrictToolLimits {
+                        detail: ProviderErrorSummary::sanitized(message),
+                    });
+                }
+                // A 400 carries no retry-after hint; the ordinary
+                // provider-side mapping for this status needs no headers.
+                return Err(ProviderError::ProviderSide(
+                    ProviderErrorSummary::from_http_response(400),
+                ));
+            }
             let headers = response.headers().clone();
             return Err(map_http_status(
                 status,
@@ -1134,10 +1489,18 @@ impl AnthropicProvider {
                 &provider_id,
             ));
         }
+        // Response callback (V-36): read-only, and fired exactly once on
+        // the successfully acquired response — a rejected dispatch (the
+        // strict-limit 400, a 429, an auth failure) never masquerades as a
+        // success callback. Failures that never produce a response (connect
+        // errors, timeouts) are not notified.
+        callbacks.notify_response(status.as_u16(), &observed_headers)?;
 
         let mut byte_stream = response.bytes_stream();
         let mut buffer = Vec::new();
         let mut mapper = AnthropicMapper::new_for_provider(&provider_id);
+        mapper.set_strict_tools(strict_tools);
+        mapper.seed_diagnostics(diagnostics_seed);
         // Keep the requested route for continuation even when the service
         // reports a resolved model name for an alias.
         mapper.partial.model = body["model"].as_str().unwrap_or_default().to_owned();
@@ -1573,123 +1936,19 @@ impl Provider for AnthropicProvider {
         request: Request,
         resolved: crate::auth::ResolvedAuth,
     ) -> EventStream {
-        // Same as `stream` but skips per-call auth resolution: the collection
-        // resolved and froze authentication once for the logical call.
-        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
-            return Box::pin(stream::once(async move { Err(error) }));
-        }
-        let default_base_url = self.default_base_url.clone();
-        let provider_id = self.provider_id.clone();
-        let auth_invalid_policy = self.auth_invalid_policy;
-        let direct_oauth_beta = self.direct_oauth_beta;
-        let credential_base_url_enabled = self.copilot_headers;
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, model_id)| model_id)
-            .unwrap_or(&request.model);
-        let model_base_url = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.clone());
-        let body = match self.build_request_body(&request) {
-            Ok(body) => body,
-            Err(error) => {
-                return Box::pin(stream::once(async move { Err(error) }));
-            }
-        };
-        // Payload callback (task 20.51): after sampling/compat/wire
-        // projection, once per variant, frozen across ordinary retries.
-        let body = match request
-            .callbacks
-            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-        {
-            Ok(body) => body,
-            Err(error) => {
-                return Box::pin(stream::once(async move { Err(error) }));
-            }
-        };
-        let cancel = request.cancel.clone();
-        let timeout = request.timeout;
-        let copilot_headers = if self.copilot_headers {
-            match github_copilot_route_headers(&request) {
-                Ok(mut headers) => {
-                    let initiator = github_copilot_initiator(&request);
-                    headers.push(("X-Initiator".into(), initiator.into()));
-                    Ok(headers)
-                }
-                Err(error) => Err(error),
-            }
-        } else {
-            Ok(Vec::new())
-        };
-        let extra_headers = copilot_headers
-            .and_then(|route_headers| {
-                self.headers
-                    .merge_request(&route_headers, &request.extra_headers)
-            })
-            // Header transform (task 20.51): applied once to the merged
-            // per-call set; the output is revalidated against the protected
-            // identity/auth/signing names.
-            .and_then(|merged| request.callbacks.apply_header_transform(&merged));
-        let callbacks = request.callbacks.clone();
-        let http_client = self.client.client().clone();
+        self.stream_dispatch(request, resolved, crate::provider::PayloadVariant::Ordinary)
+    }
 
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let tx_closed = tx.clone();
-        let producer_cancel = cancel.clone();
-        let stream_cancel = cancel.clone();
-
-        tokio::spawn(async move {
-            let work = async {
-                let extra_headers = match extra_headers {
-                    Ok(headers) => headers,
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                        return;
-                    }
-                };
-                let base_url = credential_base_url_enabled
-                    .then(|| resolved.base_url.clone())
-                    .flatten()
-                    .or(model_base_url)
-                    .unwrap_or(default_base_url);
-                if let Err(e) = Self::stream_http(
-                    http_client,
-                    resolved,
-                    base_url,
-                    provider_id,
-                    auth_invalid_policy,
-                    direct_oauth_beta,
-                    &body,
-                    cancel,
-                    timeout,
-                    extra_headers,
-                    callbacks,
-                    producer_snapshot,
-                    &tx,
-                )
-                .await
-                {
-                    let _ = tx.send(Err(e)).await;
-                }
-            };
-
-            tokio::select! {
-                biased;
-                _ = tx_closed.closed() => (),
-                _ = work => {},
-            }
-        });
-
-        Box::pin(CancelAwareReceiverStream::with_snapshot(
-            rx,
-            stream_cancel,
-            snapshot,
-        ))
+    /// The acquisition owner's per-attempt entry (task 20.11): the rebuilt
+    /// strict-downgrade variant arrives here with its own payload-variant
+    /// label; ordinary attempts keep the frozen ordinary payload.
+    fn stream_attempt(
+        &self,
+        request: Request,
+        resolved: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+    ) -> EventStream {
+        self.stream_dispatch(request, resolved, attempt.payload_variant)
     }
 
     fn id(&self) -> &str {
@@ -1728,6 +1987,7 @@ mod tests {
             stop_reason: StopReason::Stop,
             error_message: None,
             timestamp_ms: 0,
+            diagnostics: Vec::new(),
         })
     }
 
@@ -1889,12 +2149,14 @@ mod tests {
                         stop_reason: crate::stream::StopReason::Stop,
                         error_message: None,
                         timestamp_ms: 0,
+                        diagnostics: Vec::new(),
                     }),
                 ],
                 tools: vec![crate::message::ToolDef {
                     name: "greet".into(),
                     description: "Say hello".into(),
                     input_schema: serde_json::json!({"type": "object"}),
+                    constrained_sampling: None,
                 }],
             })
             .expect("valid context declarations"),

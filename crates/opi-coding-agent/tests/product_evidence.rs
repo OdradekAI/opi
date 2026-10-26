@@ -1556,6 +1556,7 @@ impl Tool for RecordingTool {
             name: "write".to_owned(),
             description: "recording test tool".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
     fn execute(
@@ -1598,6 +1599,7 @@ async fn required_evidence_failure_denies_unlaunched_tool_side_effect() {
             name: "write".to_owned(),
             description: "write".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         },
         Arc::new(RecordingTool {
             count: count.clone(),
@@ -1699,6 +1701,7 @@ async fn malformed_provider_record_rejection_blocks_later_tool_launch() {
             name: "write".to_owned(),
             description: "write".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         },
         Arc::new(RecordingTool {
             count: count.clone(),

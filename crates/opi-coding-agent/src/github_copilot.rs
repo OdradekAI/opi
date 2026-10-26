@@ -428,6 +428,7 @@ fn catalog_model(record: &CatalogRecord) -> ModelInfo {
             supports_eager_tool_input_streaming: eager_tool_input,
             force_adaptive_thinking: adaptive_thinking,
             supports_temperature: temperature,
+            supports_strict_tools: false,
         }),
         Compat::Chat => WireCompat::OpenAiCompletions(OpenAiCompletionsCompat {
             chat_completions_path: "/chat/completions".into(),

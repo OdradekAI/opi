@@ -182,6 +182,7 @@ fn responses_tool_request() -> Request {
                 name: "list_dir".into(),
                 description: "list a directory".into(),
                 input_schema: serde_json::json!({"type":"object","properties":{}}),
+                constrained_sampling: None,
             }],
         })
         .expect("valid context declarations"),
@@ -1493,4 +1494,281 @@ async fn responses_response_and_raw_callbacks_follow_source_order() {
         ],
         "response first, then parsed wire events in stream order"
     );
+}
+
+// --- task 20.11: Responses constrained sampling (grammar + strict) ---
+
+mod responses_constrained_tests {
+    use super::*;
+    use opi_ai::constrained_sampling::{ConstrainedSampling, StrictPreference};
+    use opi_ai::openai_responses::ResponsesConfig;
+
+    fn grammar_tool(lark: Option<&str>, regex: Option<&str>) -> ToolDef {
+        ToolDef {
+            name: "grammar-tool".into(),
+            description: "grammar constrained".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {"input": {"type": "string"}},
+                "required": ["input"]
+            }),
+            constrained_sampling: Some(ConstrainedSampling::Grammar {
+                openai_lark: lark.map(String::from),
+                openai_regex: regex.map(String::from),
+            }),
+        }
+    }
+
+    fn json_schema_tool(strict: StrictPreference) -> ToolDef {
+        ToolDef {
+            name: "structured".into(),
+            description: "d".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {"path": {"type": "string"}, "limit": {"type": "number"}},
+                "required": ["path"]
+            }),
+            constrained_sampling: Some(ConstrainedSampling::JsonSchema { strict }),
+        }
+    }
+
+    fn request_with(tools: Vec<ToolDef>) -> Request {
+        let mut request = responses_tool_request();
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("You are helpful.".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "go".into() }],
+                timestamp_ms: 0,
+            })],
+            tools,
+        })
+        .expect("valid context declarations");
+        request
+    }
+
+    #[test]
+    fn grammar_tool_projects_custom_tool_preferring_lark() {
+        let provider = OpenAiResponsesProvider::new_with_config(
+            None,
+            ResponsesConfig {
+                supports_grammar_tools: true,
+                ..Default::default()
+            },
+        );
+        let body = provider
+            .build_request_body(&request_with(vec![grammar_tool(
+                Some("start: WORD"),
+                Some("^a+$"),
+            )]))
+            .unwrap();
+        assert_eq!(body["tools"][0]["type"], serde_json::json!("custom"));
+        assert_eq!(
+            body["tools"][0]["format"],
+            serde_json::json!({"type": "grammar", "syntax": "lark", "definition": "start: WORD"}),
+            "lark is preferred over regex when both variants are provided"
+        );
+    }
+
+    #[test]
+    fn grammar_unsupported_target_projects_plain_function_with_recorded_loss() {
+        let provider = responses_provider();
+        let body = provider
+            .build_request_body(&request_with(vec![grammar_tool(Some("start: WORD"), None)]))
+            .unwrap();
+        assert_eq!(body["tools"][0]["type"], serde_json::json!("function"));
+        assert!(
+            body["tools"][0].get("format").is_none(),
+            "no grammar format is sent to an unsupported target"
+        );
+    }
+
+    #[test]
+    fn grammar_supported_target_without_variant_fails_before_dispatch() {
+        let provider = OpenAiResponsesProvider::new_with_config(
+            None,
+            ResponsesConfig {
+                supports_grammar_tools: true,
+                ..Default::default()
+            },
+        );
+        let error = provider
+            .build_request_body(&request_with(vec![grammar_tool(None, Some("   "))]))
+            .unwrap_err();
+        assert!(
+            matches!(error, ProviderError::Config(_)),
+            "typed pre-dispatch failure, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn strict_json_schema_resolves_per_tool_over_the_wire_default() {
+        // Default strict (config strict_tools = false): prefer stays
+        // non-strict; require fails typed because this wire lacks strict
+        // support by default.
+        let provider = responses_provider();
+        let body = provider
+            .build_request_body(&request_with(vec![json_schema_tool(
+                StrictPreference::Prefer,
+            )]))
+            .unwrap();
+        assert_eq!(body["tools"][0]["type"], serde_json::json!("function"));
+        assert!(
+            body["tools"][0].get("strict").is_none(),
+            "no strict flag without strict support"
+        );
+        let error = provider
+            .build_request_body(&request_with(vec![json_schema_tool(
+                StrictPreference::Require,
+            )]))
+            .unwrap_err();
+        assert!(matches!(error, ProviderError::Config(_)));
+
+        // With strict support: prefer resolves strict with the converted
+        // schema (required-all + additionalProperties false).
+        let provider = OpenAiResponsesProvider::new_with_config(
+            None,
+            ResponsesConfig {
+                strict_tools: true,
+                ..Default::default()
+            },
+        );
+        let body = provider
+            .build_request_body(&request_with(vec![json_schema_tool(
+                StrictPreference::Prefer,
+            )]))
+            .unwrap();
+        assert_eq!(body["tools"][0]["strict"], serde_json::json!(true));
+        assert_eq!(
+            body["tools"][0]["parameters"]["additionalProperties"],
+            serde_json::json!(false)
+        );
+        assert_eq!(
+            body["tools"][0]["parameters"]["properties"]["path"],
+            serde_json::json!({"type": "string"}),
+            "required properties stay unchanged"
+        );
+        assert_eq!(
+            body["tools"][0]["parameters"]["properties"]["limit"],
+            serde_json::json!({"anyOf": [{"type": "number"}, {"type": "null"}]}),
+            "optional properties wrap nullable"
+        );
+    }
+
+    fn custom_tool_call_sse() -> String {
+        [
+            r#"data: {"type":"response.output_item.added","output_index":1,"item":{"type":"custom_tool_call","id":"ctc_1","call_id":"call_1","name":"grammar-tool","input":""}}"#,
+            "",
+            r#"data: {"type":"response.custom_tool_call_input.delta","output_index":1,"delta":"hel"}"#,
+            "",
+            r#"data: {"type":"response.custom_tool_call_input.delta","output_index":1,"delta":"lo"}"#,
+            "",
+            r#"data: {"type":"response.custom_tool_call_input.done","output_index":1,"input":"hello"}"#,
+            "",
+            r#"data: {"type":"response.output_item.done","output_index":1,"item":{"type":"custom_tool_call","id":"ctc_1","call_id":"call_1","name":"grammar-tool","input":"hello"}}"#,
+            "",
+            r#"data: {"type":"response.completed","response":{"id":"resp_1","model":"gpt-4o","usage":{"input_tokens":3,"output_tokens":2}}}"#,
+            "",
+        ]
+        .join("\n")
+    }
+
+    #[tokio::test]
+    async fn custom_tool_call_input_wraps_incrementally_and_finalizes_raw() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(custom_tool_call_sse()),
+            )
+            .mount(&server)
+            .await;
+        let provider = OpenAiResponsesProvider::new_with_config(
+            Some(server.uri()),
+            ResponsesConfig {
+                supports_grammar_tools: true,
+                ..Default::default()
+            },
+        );
+        let events = collect_stream(provider.stream_prepared(
+            request_with(vec![grammar_tool(Some("start: WORD"), None)]),
+            opi_ai::test_support::resolved_bearer_auth(),
+        ))
+        .await;
+
+        // The streaming deltas carry the wrapped JSON object text.
+        let deltas: Vec<&str> = events
+            .iter()
+            .filter_map(|event| match event {
+                AssistantStreamEvent::ToolCallDelta { delta, .. } => Some(delta.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            deltas.join(""),
+            r#"{"input":"hello"}"#,
+            "the raw wire input wraps into the incremental JSON object text"
+        );
+        // The final tool call keeps the raw input under its property.
+        let final_call = events
+            .iter()
+            .find_map(|event| match event {
+                AssistantStreamEvent::ToolCallEnd { tool_call, .. } => Some(tool_call.clone()),
+                _ => None,
+            })
+            .expect("custom tool call finalizes");
+        assert_eq!(final_call.name, "grammar-tool");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&final_call.arguments).unwrap(),
+            serde_json::json!({"input": "hello"})
+        );
+        assert!(final_call.arguments_error.is_none());
+    }
+
+    #[tokio::test]
+    async fn custom_tool_call_closed_input_violation_is_observable() {
+        let server = MockServer::start().await;
+        // The done event's input contradicts the accumulated deltas.
+        let broken = custom_tool_call_sse().replace(
+            r#""response.custom_tool_call_input.done","output_index":1,"input":"hello""#,
+            r#""response.custom_tool_call_input.done","output_index":1,"input":"hexlo""#,
+        );
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(broken),
+            )
+            .mount(&server)
+            .await;
+        let provider = OpenAiResponsesProvider::new_with_config(
+            Some(server.uri()),
+            ResponsesConfig {
+                supports_grammar_tools: true,
+                ..Default::default()
+            },
+        );
+        use futures_util::StreamExt;
+        let failure = provider
+            .stream_prepared(
+                request_with(vec![grammar_tool(Some("start: WORD"), None)]),
+                opi_ai::test_support::resolved_bearer_auth(),
+            )
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .find_map(|item| item.err())
+            .expect("the non-monotonic close fails typed");
+        let is_typed_stream_failure = match &failure {
+            ProviderError::StreamError(_) => true,
+            ProviderError::StreamFailure(boxed) => {
+                matches!(boxed.cause(), ProviderError::StreamError(_))
+            }
+            _ => false,
+        };
+        assert!(
+            is_typed_stream_failure,
+            "closed-input violation surfaces as a typed stream failure, got {failure:?}"
+        );
+    }
 }

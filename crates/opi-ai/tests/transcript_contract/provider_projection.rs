@@ -49,6 +49,7 @@ fn current_read() -> ToolDef {
             "required": ["path", "modes"],
             "additionalProperties": false
         }),
+        constrained_sampling: None,
     }
 }
 
@@ -62,6 +63,7 @@ fn current_status() -> ToolDef {
             "required": ["detail"],
             "additionalProperties": false
         }),
+        constrained_sampling: None,
     }
 }
 
@@ -90,6 +92,7 @@ fn current_write() -> ToolDef {
             "required": ["changes"],
             "additionalProperties": false
         }),
+        constrained_sampling: None,
     }
 }
 

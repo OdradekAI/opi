@@ -900,6 +900,48 @@ fetches one distribution-schema-v1 document over HTTP with pooled
 connections and redacted failures. The SDK registers no source, attaches
 no store, and has no pi.dev/default startup fetch policy.
 
+## Constrained Sampling: Strict Wire Projection and the Bounded Downgrade Variant (AIR-040/V-34, task 20.11)
+
+`ToolDef.constrained_sampling` carries the per-tool intent — `json_schema`
+with `prefer`/`require`, or `grammar` with lark/regex variants — and the
+adapters resolve it at body-build time:
+
+- The strict projection (`constrained_sampling::make_strict_json_schema`)
+  converts a **private wire schema**: every property becomes required,
+  optional non-nullable properties wrap nullable, and unsupported shapes
+  (references, unions of objects/arrays, tuples, schema-valued
+  `additionalProperties`, per-wire rejected keywords such as Anthropic's
+  numeric bounds and off-whitelist formats) are typed failures. The
+  conversion clones; the trusted declaration never changes.
+- `prefer` projects non-strict whenever the wire or the schema cannot
+  support strict mode; `require` fails typed before any dispatch, including
+  on wires without strict projection (Chat incl. Mistral/OpenRouter,
+  Bedrock, Gemini/Vertex, Azure) — a require constraint is never silently
+  dropped. Returned explicit nulls normalize back onto the original
+  trusted schema.
+- Anthropic admits exactly one source-qualified strict-limit downgrade: a
+  400 `invalid_request_error` carrying one of the documented
+  grammar-size/strict-tool-count/union markers, on a request that actually
+  dispatched a prefer-strict tool, becomes the non-retryable
+  `ProviderError::StrictToolLimits`, and the acquisition state machine
+  admits one rebuilt variant — prefer-strict removed, require kept, fresh
+  per-variant budget (≤1+N sends each, total ≤2×(1+N), N=0 still two sends,
+  nothing resets the counters). The rebuild re-runs `onPayload` and
+  post-validation under its own freeze slot, reuses the frozen
+  headers/auth/model (the header transform now runs once per logical call),
+  and records one `anthropic_strict_tools_fallback` diagnostic on the
+  message. Other 400s, callback errors, cancellation and post-Start
+  failures never branch.
+- Responses/Codex project grammar tools as `custom` tools, lark preferred
+  over regex; unsupported targets fall back to a plain JSON function tool
+  with the loss recorded on the message, and a supported target without a
+  usable variant or schema shape fails before dispatch. Streaming wraps the
+  raw `custom_tool_call` input incrementally into `{"<property>":"…"}`
+  (monotonic growth, single close, typed failure on violation) while the
+  raw input stays the authoritative final arguments; replay restores
+  `custom_tool_call(_output)` items with `ctc_` ids (`fc_` stays the
+  function-call prefix).
+
 ## Functional Request Callbacks (AIR-059/V-51 ordinary slice, task 20.51)
 
 `callbacks::RequestCallbacks` (carried on `Request.callbacks`, default empty)

@@ -43,6 +43,7 @@ impl Tool for FindTool {
                 paths in lexicographic order, capped at a fixed limit."
                 .into(),
             input_schema: self.schema.clone(),
+            constrained_sampling: None,
         }
     }
 

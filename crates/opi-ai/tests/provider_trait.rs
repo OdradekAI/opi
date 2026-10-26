@@ -30,6 +30,7 @@ fn sample_assistant_message() -> AssistantMessage {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: 1000,
+        diagnostics: Vec::new(),
     }
 }
 
@@ -128,6 +129,7 @@ fn request_builds_with_all_fields() {
                 name: "read_file".into(),
                 description: "Read a file".into(),
                 input_schema: serde_json::json!({"type": "object"}),
+                constrained_sampling: None,
             }],
         })
         .expect("valid context declarations"),

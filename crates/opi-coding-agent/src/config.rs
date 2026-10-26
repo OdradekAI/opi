@@ -1611,6 +1611,7 @@ fn custom_compat(
                     .unwrap_or_default(),
                 force_adaptive_thinking: raw.force_adaptive_thinking.unwrap_or_default(),
                 supports_temperature: raw.supports_temperature.unwrap_or_default(),
+                supports_strict_tools: false,
             })
         }
         opi_ai::WireApi::OpenAiCompletions => {

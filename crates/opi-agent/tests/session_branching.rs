@@ -57,6 +57,7 @@ fn assistant_msg(id: &str, parent: Option<&str>, text: &str) -> SessionEntry {
             stop_reason: opi_ai::stream::StopReason::Stop,
             error_message: None,
             timestamp_ms: 0,
+            diagnostics: Vec::new(),
         }),
     })
 }

@@ -726,6 +726,37 @@ catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
 source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
 
+## 受限采样：strict wire 投影与有界降级变体（AIR-040/V-34，任务 20.11）
+
+`ToolDef.constrained_sampling` 携带逐工具意图——`json_schema` 的
+`prefer`/`require`，或带 lark/regex 变体的 `grammar`——适配器在构体时解析：
+
+- strict 投影（`constrained_sampling::make_strict_json_schema`）转换的是
+  **私有 wire schema**：所有属性变为 required，可选非空属性包裹 nullable，
+  不支持形态（引用、对象/数组 union、tuple、schema 值
+  `additionalProperties`、逐 wire 拒绝的关键字如 Anthropic 的数值边界与白名
+  单外 format）为 typed 失败。转换使用克隆；trusted 声明永不改动。
+- wire 或 schema 不支持 strict 时 `prefer` 投影非严格；`require` 在任何
+  派发之前 typed 失败，包括尚无 strict 投影的 wire（Chat 含
+  Mistral/OpenRouter、Bedrock、Gemini/Vertex、Azure）——require 约束绝不
+  静默删除。返回的显式 null 按**原** trusted schema 归一。
+- Anthropic 恰好允许一次 source-qualified strict-limit 降级：携带文档化
+  grammar 大小/strict 工具数/union 标记之一的 400
+  `invalid_request_error`、且请求确实派发了 prefer-strict 工具时，产出不可
+  重试的 `ProviderError::StrictToolLimits`，acquisition 状态机允许一个重
+  建变体——只移除 prefer-strict、require 保留、每变体预算 ≤1+N（总计
+  ≤2×(1+N)，N=0 仍两次 send，无任何重置路径）。重建在新冻结槽重跑
+  `onPayload` 与 post-validation，复用冻结的 headers/auth/model（header
+  transform 现为每逻辑调用一次），并在消息上记录一次
+  `anthropic_strict_tools_fallback` 诊断。其他 400、回调错误、取消与
+  Start 后失败一律不分支。
+- Responses/Codex 将 grammar 工具投影为 `custom` 工具，lark 优先 regex；
+  不支持目标退普通 JSON function 工具并在消息上记录 loss，支持目标无可用
+  variant/schema 则派发前失败。流式将 `custom_tool_call` 原始输入增量封装
+  为 `{"<property>":"…"}`（单调增长、单次 close、违规 typed 失败），原始输
+  入仍是权威最终参数；replay 以 `ctc_` id 还原
+  `custom_tool_call(_output)` 项（function call 保持 `fc_` 前缀）。
+
 ## 功能请求回调（AIR-059/V-51 普通切片，任务 20.51）
 
 `callbacks::RequestCallbacks`（随 `Request.callbacks` 携带，默认为空）附加四类

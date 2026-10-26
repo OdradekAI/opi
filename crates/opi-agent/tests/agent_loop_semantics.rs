@@ -124,6 +124,7 @@ impl Tool for OrderTool {
                 "properties": { "arg": { "type": "string" } },
                 "required": ["arg"]
             }),
+            constrained_sampling: None,
         }
     }
 
@@ -176,6 +177,7 @@ impl Tool for EchoTool {
                 "properties": { "arg": { "type": "string" } },
                 "required": ["arg"]
             }),
+            constrained_sampling: None,
         }
     }
 
@@ -367,6 +369,7 @@ fn base_msg() -> AssistantMessage {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: 0,
+        diagnostics: Vec::new(),
     }
 }
 

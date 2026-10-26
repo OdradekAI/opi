@@ -90,6 +90,7 @@ impl Tool for MockTool {
                 },
                 "required": ["arg"]
             }),
+            constrained_sampling: None,
         }
     }
 

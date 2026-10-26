@@ -108,6 +108,7 @@ impl Tool for UncertainTool {
             name: "uncertain".to_owned(),
             description: "returns an uncertain external-effect result".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
 
@@ -144,6 +145,7 @@ impl Tool for SequentialUncertainTool {
             name: "first".to_owned(),
             description: "returns a terminal uncertain outcome".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
 
@@ -522,6 +524,7 @@ impl Tool for SequentialCountingTool {
             name: self.name.clone(),
             description: "sequential counter".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
 
@@ -564,6 +567,7 @@ fn two_tool_response() -> Vec<AssistantStreamEvent> {
         stop_reason: StopReason::ToolUse,
         error_message: None,
         timestamp_ms: 0,
+        diagnostics: Vec::new(),
     };
     let calls = [
         ToolCall {
@@ -1326,6 +1330,7 @@ impl Tool for ParallelBarrierTool {
             name: self.name.clone(),
             description: "parallel preflight barrier".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
 
@@ -2410,6 +2415,7 @@ async fn in_band_stream_error_terminal_fails_the_run_without_retry() {
         stop_reason: StopReason::Error,
         error_message: Some("overloaded".to_owned()),
         timestamp_ms: 0,
+        diagnostics: Vec::new(),
     };
     partial.content.push(AssistantContent::Text {
         text: "partial before failure".to_owned(),

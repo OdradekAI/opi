@@ -27,6 +27,7 @@ fn sample_assistant_message() -> AssistantMessage {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: 1000,
+        diagnostics: Vec::new(),
     }
 }
 
@@ -194,6 +195,7 @@ fn tool_def_round_trips_through_json() {
             },
             "required": ["path"]
         }),
+        constrained_sampling: None,
     };
     let json = serde_json::to_string(&def).expect("serialize");
     let back: ToolDef = serde_json::from_str(&json).expect("deserialize");
@@ -631,4 +633,62 @@ async fn chat_stream_drop_without_poll_performs_no_inner_work() {
     // producer (zero source/network work before first poll).
     drop(stream);
     assert_eq!(polls.load(Ordering::SeqCst), 0);
+}
+
+// --- task 20.11: message-level diagnostics (V-34/V-36 record) ---
+
+mod diagnostics_serde_tests {
+    use opi_ai::ApiKind;
+    use opi_ai::message::{AssistantContent, AssistantMessage};
+    use opi_ai::stream::{AssistantDiagnostic, StopReason};
+    use serde_json::json;
+
+    #[test]
+    fn message_diagnostics_round_trip_and_default_empty() {
+        // Historical messages without the field deserialize with no
+        // diagnostics and do not re-serialize the key.
+        let legacy = json!({
+            "content": [{"type": "text", "text": "hi"}],
+            "api": "Anthropic",
+            "provider": "anthropic",
+            "model": "m",
+            "response_model": null,
+            "response_id": null,
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+            "stop_reason": "stop",
+            "error_message": null,
+            "timestamp_ms": 0
+        });
+        let message: AssistantMessage = serde_json::from_value(legacy).expect("legacy shape");
+        assert!(message.diagnostics.is_empty());
+        let reserialized = serde_json::to_value(&message).unwrap();
+        assert!(reserialized.get("diagnostics").is_none());
+
+        // A downgrade diagnostic round-trips its kind and reason.
+        let message = AssistantMessage {
+            content: vec![AssistantContent::Text { text: "hi".into() }],
+            api: ApiKind::Anthropic,
+            provider: "anthropic".into(),
+            model: "m".into(),
+            response_model: None,
+            wire: None,
+            response_id: None,
+            usage: Default::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp_ms: 0,
+            diagnostics: vec![AssistantDiagnostic {
+                kind: "anthropic_strict_tools_fallback".into(),
+                reason: "strict_tool_limits_exceeded".into(),
+                detail: None,
+            }],
+        };
+        let wire = serde_json::to_value(&message).unwrap();
+        let back: AssistantMessage = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(back.diagnostics, message.diagnostics);
+        assert_eq!(
+            wire["diagnostics"][0]["reason"],
+            json!("strict_tool_limits_exceeded")
+        );
+    }
 }

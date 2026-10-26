@@ -490,8 +490,49 @@
   `Models::auth_status` (which read `std::env` directly) are removed in favor
   of the on-demand management results below; `ModelsError` is now
   `#[non_exhaustive]`.
+
+- `opi-ai`: additive constrained-sampling surface (task 20.11): `ToolDef`
+  gains a serde-defaulted `constrained_sampling` declaration
+  (`json_schema` prefer/require or grammar lark/regex variants),
+  `AssistantMessage` gains a serde-defaulted `diagnostics` vector
+  (`AssistantDiagnostic` records the strict downgrade and grammar-target
+  losses), `ProviderError` gains the non-retryable `StrictToolLimits`
+  variant, `AttemptContext` gains `payload_variant` (+ `PayloadVariant`),
+  `AnthropicMessagesCompat` gains `supports_strict_tools` and
+  `ResponsesConfig` gains `supports_grammar_tools`. Existing struct-literal
+  call sites add `Default`/`None` fields; historical records deserialize
+  unchanged.
 ### Added
 
+- `opi-ai`: strict／grammar wire projection and the single bounded
+  downgrade variant (task 20.51 follow-on, AIR-040/AIR-042/V-34/V-36, DEL-04
+  ordinary slice). The private wire schema conversion (`make_strict_json_schema`,
+  pinned to the source semantics) forces optional→required+nullable
+  recursively on a clone — the trusted schema is never modified — with
+  per-wire keyword admission; `prefer` projects non-strict when unsupported
+  while `require` fails typed before any dispatch, including a fail-closed
+  guard on the wires without strict projection (Chat incl. Mistral/
+  OpenRouter, Bedrock, Gemini/Vertex, Azure). The one source-qualified
+  Anthropic strict-limit 400 (invalid_request_error with the documented
+  grammar-size / strict-tool-count / union markers on an actually dispatched
+  prefer-strict tool) is typed `ProviderError::StrictToolLimits` and admits
+  exactly one rebuilt variant through the acquisition state machine:
+  prefer-strict removed, require kept, per-variant budget ≤1+N, total
+  ≤2×(1+N), N=0 still two sends, no reset path. The rebuilt variant re-runs
+  `onPayload` and post-validation under its own freeze slot, keeps the
+  frozen headers (the header transform now runs once per logical call) and
+  auth/model, never re-runs the header transform, and records one
+  `anthropic_strict_tools_fallback` diagnostic on the message. Other 400s,
+  callback errors, cancellation and post-Start failures never branch.
+  Responses/Codex wire grammar tools as `custom` tools (lark preferred over
+  regex; unsupported targets fall back to plain JSON with the loss recorded)
+  and stream `custom_tool_call` input wrapped incrementally into
+  `{"<property>":"…"}` with monotonic/single-close enforcement and the raw
+  input as the authoritative final arguments; replay restores
+  `custom_tool_call(_output)` items with `ctc_` ids while function calls
+  keep `fc_`. Returned explicit nulls normalize back onto the original
+  trusted schema. Response callbacks now fire exactly once on the
+  successfully acquired response across all adapters.
 - `opi-ai`: the credential-store mutation surface moved from IO-free
   primitives to store-owned serialized mutations (P20-STORE / task 20.22).
   `CredentialStore` gains `modify` and `mutation_barrier` (default

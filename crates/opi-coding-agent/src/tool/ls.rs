@@ -49,6 +49,7 @@ impl Tool for LsTool {
                 tools."
                 .into(),
             input_schema: self.schema.clone(),
+            constrained_sampling: None,
         }
     }
 

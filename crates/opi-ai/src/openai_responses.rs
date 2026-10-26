@@ -13,8 +13,7 @@ use crate::auth::{AuthInvalidPolicy, AuthScheme, ResolvedAuth};
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::openai_responses_shared::{
-    ParsedEvent, ResponsesEvent, ResponsesMapper, convert_messages, drain_sse_frames,
-    parse_sse_frames,
+    ParsedEvent, ResponsesEvent, ResponsesMapper, drain_sse_frames, parse_sse_frames,
 };
 use crate::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
@@ -35,8 +34,14 @@ pub struct ResponsesConfig {
     /// Legacy profile metadata. Request/model thinking maps are authoritative
     /// for wire output.
     pub reasoning_effort: Option<String>,
-    /// Emit `"strict": true` on function tool definitions.
+    /// Emit `"strict": true` on function tool definitions (and admit
+    /// per-tool `json_schema` strict resolution, task 20.11).
     pub strict_tools: bool,
+    /// Whether the wire supports grammar custom tools (task 20.11): a
+    /// grammar tool projects as a `custom` tool with its lark-preferred
+    /// format; unsupported targets fall back to a plain JSON function tool
+    /// with the loss recorded.
+    pub supports_grammar_tools: bool,
     /// Emit the `session_id` header when the selected affinity policy is active.
     /// Direct-route prompt cache keys and request IDs are independent of this.
     pub send_session_id_header: bool,
@@ -48,6 +53,7 @@ impl Default for ResponsesConfig {
             store: None,
             reasoning_effort: None,
             strict_tools: false,
+            supports_grammar_tools: false,
             send_session_id_header: true,
         }
     }
@@ -227,6 +233,7 @@ impl OpenAiResponsesProvider {
             }) = self.models.iter().find(|model| model.id == model_id)
         {
             return ResponsesConfig {
+                supports_grammar_tools: false,
                 store: compat.store,
                 reasoning_effort: compat.reasoning_effort.clone(),
                 strict_tools: compat.strict_tools,
@@ -258,12 +265,29 @@ impl OpenAiResponsesProvider {
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        self.compile_request_body(request).map(|(body, _)| body)
+    }
+
+    /// Compile the body plus the per-call constrained-sampling facts (task
+    /// 20.11): the grammar custom-tool map, strict-dispatched declarations,
+    /// and recorded fallback losses the stream mapper consumes.
+    fn compile_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<
+        (
+            serde_json::Value,
+            Option<crate::openai_responses_shared::ResponsesWireTools>,
+        ),
+        crate::provider::ProviderError,
+    > {
         let model_id = request
             .model
             .split_once(':')
             .map(|(_, id)| id)
             .unwrap_or(&request.model);
         let config = self.resolve_config(model_id);
+        let mut wire_facts: Option<crate::openai_responses_shared::ResponsesWireTools> = None;
         // Canonical transcript consumption (AIR-020); this wire currently
         // projects by collapse.
         const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
@@ -276,6 +300,23 @@ impl OpenAiResponsesProvider {
         let transcript = transcript.as_ref();
         let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
+        // Task 20.11: compile the tools before the input so grammar replay
+        // items know their custom shape.
+        if !current_tools.is_empty() {
+            let wire = crate::openai_responses_shared::convert_responses_tools(
+                &current_tools,
+                crate::openai_responses_shared::ResponsesToolOptions {
+                    default_strict: config.strict_tools.then_some(true),
+                    supports_strict_mode: config.strict_tools,
+                    supports_grammar_tools: config.supports_grammar_tools,
+                },
+            )?;
+            wire_facts = Some(wire);
+        }
+        let grammar_map = wire_facts
+            .as_ref()
+            .map(|wire| wire.grammar_input_properties.clone())
+            .unwrap_or_default();
 
         // Canonical replay projection (task 20.7) before body building.
         let replay_route = crate::replay::ReplayRoute {
@@ -292,7 +333,11 @@ impl OpenAiResponsesProvider {
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
-            "input": convert_messages(&replay.messages, &replay_route),
+            "input": crate::openai_responses_shared::convert_messages(
+                &replay.messages,
+                &replay_route,
+                &grammar_map,
+            ),
         });
         if !system_prompt.is_empty() {
             body["instructions"] = serde_json::Value::String(system_prompt.clone());
@@ -305,24 +350,8 @@ impl OpenAiResponsesProvider {
         {
             body["temperature"] = serde_json::Value::Number(number);
         }
-        if !current_tools.is_empty() {
-            body["tools"] = serde_json::Value::Array(
-                current_tools
-                    .iter()
-                    .map(|tool| {
-                        let mut value = serde_json::json!({
-                            "type": "function",
-                            "name": tool.name,
-                            "description": tool.description,
-                            "parameters": tool.input_schema,
-                        });
-                        if config.strict_tools {
-                            value["strict"] = serde_json::Value::Bool(true);
-                        }
-                        value
-                    })
-                    .collect(),
-            );
+        if let Some(wire) = &wire_facts {
+            body["tools"] = serde_json::Value::Array(wire.tools.clone());
         }
         if let Some(store) = config.store {
             body["store"] = serde_json::Value::Bool(store);
@@ -351,7 +380,7 @@ impl OpenAiResponsesProvider {
                 body[key.as_str()] = value;
             }
         }
-        Ok(body)
+        Ok((body, wire_facts))
     }
 
     /// Map a complete in-memory SSE body without HTTP.
@@ -398,6 +427,7 @@ impl OpenAiResponsesProvider {
         extra_headers: Vec<(String, String)>,
         provider_id: String,
         requested_model: String,
+        wire_facts: Option<crate::openai_responses_shared::ResponsesWireTools>,
         body: serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
@@ -466,8 +496,6 @@ impl OpenAiResponsesProvider {
                 )
             })
             .collect();
-        callbacks.notify_response(response.status().as_u16(), &observed_headers)?;
-
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
@@ -478,6 +506,9 @@ impl OpenAiResponsesProvider {
                 &provider_id,
             ));
         }
+        // Response callback (V-36): fired exactly once on the successfully
+        // acquired response; rejected dispatches never masquerade.
+        callbacks.notify_response(status.as_u16(), &observed_headers)?;
 
         let mut bytes = response.bytes_stream();
         let mut buffer = String::new();
@@ -487,6 +518,12 @@ impl OpenAiResponsesProvider {
             crate::model_info::WireApi::OpenAiResponses,
             &requested_model,
         );
+        // Task 20.11: the call's constrained-sampling facts ride the mapper.
+        if let Some(wire) = wire_facts {
+            mapper.set_grammar_tools(wire.grammar_input_properties);
+            mapper.set_strict_tools(wire.strict_tools);
+            mapper.seed_diagnostics(wire.diagnostics);
+        }
         mapper.set_snapshot(snapshot);
         let result: Result<(), ProviderError> = async {
             loop {
@@ -654,8 +691,8 @@ impl Provider for OpenAiResponsesProvider {
             .map(|(_, id)| id)
             .unwrap_or(&request.model)
             .to_owned();
-        let mut body = match self.build_request_body(&request) {
-            Ok(body) => body,
+        let (mut body, wire_facts) = match self.compile_request_body(&request) {
+            Ok(compiled) => compiled,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
         if affinity_enabled && let Some(session_id) = session_id.as_deref() {
@@ -707,6 +744,7 @@ impl Provider for OpenAiResponsesProvider {
                     extra_headers,
                     provider_id,
                     requested_model,
+                    wire_facts,
                     body,
                     cancel,
                     timeout,

@@ -1028,6 +1028,7 @@ async fn session_restore_recompiles_unicode_declaration_for_authorized_next_call
             "required": ["value", "count"],
             "additionalProperties": false
         }),
+        constrained_sampling: None,
     };
     let character = '\u{16ea0}'.to_string();
     let historical_raw = json!({"value": character, "count": "7"}).to_string();

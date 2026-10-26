@@ -29,6 +29,7 @@ fn tool(name: &str, description: &str) -> ToolDef {
         name: name.to_owned(),
         description: description.to_owned(),
         input_schema: serde_json::json!({"type": "object"}),
+        constrained_sampling: None,
     }
 }
 
@@ -291,6 +292,7 @@ fn invalid_declarations_fail_before_installation() {
         name: "inert".to_owned(),
         description: "unknown keywords stay inert".to_owned(),
         input_schema: serde_json::json!({"type": "object", "unknownKeyword": {"x": 1}}),
+        constrained_sampling: None,
     };
     let mut transcript = normalize_context(Context::default()).expect("valid context declarations");
     transcript
@@ -304,6 +306,7 @@ fn invalid_declarations_fail_before_installation() {
         name: "bad".to_owned(),
         description: String::new(),
         input_schema: serde_json::json!({"pattern": "["}),
+        constrained_sampling: None,
     };
     let before = transcript.messages().len();
     assert!(
@@ -318,6 +321,7 @@ fn invalid_declarations_fail_before_installation() {
         name: String::new(),
         description: String::new(),
         input_schema: serde_json::json!({"type": "object"}),
+        constrained_sampling: None,
     };
     assert!(
         transcript
@@ -468,4 +472,52 @@ fn native_placement_renders_framed_updates() {
     // The rendered update and the replayed head agree on live section text.
     let head = get_current_system_message(transcript.messages()).unwrap();
     assert_eq!(system_message_text(&head), "base\n\nnew note\n\nvalue");
+}
+
+// --- task 20.11: constrained-sampling declarations on tools ---
+
+mod constrained_tool_serde_tests {
+    use opi_ai::constrained_sampling::ConstrainedSampling;
+    use opi_ai::constrained_sampling::StrictPreference;
+    use opi_ai::message::ToolDef;
+    use serde_json::json;
+
+    #[test]
+    fn tool_def_constrained_sampling_round_trips() {
+        let mut tool = ToolDef {
+            name: "t".into(),
+            description: "d".into(),
+            input_schema: json!({"type": "object"}),
+            constrained_sampling: None,
+        };
+        let legacy = serde_json::to_value(&tool).unwrap();
+        assert!(
+            legacy.get("constrainedSampling").is_none() || legacy["constrainedSampling"].is_null(),
+            "absent config must not serialize a key"
+        );
+        let back: ToolDef = serde_json::from_value(legacy).unwrap();
+        assert_eq!(back, tool);
+
+        tool.constrained_sampling = Some(ConstrainedSampling::JsonSchema {
+            strict: StrictPreference::Require,
+        });
+        let wire = serde_json::to_value(&tool).unwrap();
+        assert_eq!(wire["constrained_sampling"]["type"], json!("json_schema"));
+        assert_eq!(wire["constrained_sampling"]["strict"], json!("require"));
+        let back: ToolDef = serde_json::from_value(wire).unwrap();
+        assert_eq!(back, tool);
+
+        tool.constrained_sampling = Some(ConstrainedSampling::Grammar {
+            openai_lark: Some("start: A".into()),
+            openai_regex: None,
+        });
+        let wire = serde_json::to_value(&tool).unwrap();
+        assert_eq!(wire["constrained_sampling"]["type"], json!("grammar"));
+        assert_eq!(
+            wire["constrained_sampling"]["openaiLark"],
+            json!("start: A")
+        );
+        let back: ToolDef = serde_json::from_value(wire).unwrap();
+        assert_eq!(back, tool);
+    }
 }

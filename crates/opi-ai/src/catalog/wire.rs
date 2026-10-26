@@ -210,6 +210,7 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                 supports_eager_tool_input_streaming: flag("supportsEagerToolInputStreaming")?,
                 force_adaptive_thinking: flag("forceAdaptiveThinking")?,
                 supports_temperature: flag("supportsTemperature")?,
+                supports_strict_tools: false,
             },
         ))),
         WireApi::OpenAiCompletions => Ok(Some(WireCompat::OpenAiCompletions(

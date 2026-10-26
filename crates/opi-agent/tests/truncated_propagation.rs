@@ -33,6 +33,7 @@ impl Tool for TruncatingTool {
             name: self.name.into(),
             description: "returns a truncated result".into(),
             input_schema: json!({ "type": "object", "properties": {} }),
+            constrained_sampling: None,
         }
     }
 

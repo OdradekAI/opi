@@ -141,6 +141,7 @@ impl Tool for EchoTool {
                 "properties": { "text": { "type": "string" } },
                 "required": ["text"]
             }),
+            constrained_sampling: None,
         }
     }
 
@@ -321,6 +322,7 @@ fn base_assistant() -> AssistantMessage {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: 0,
+        diagnostics: Vec::new(),
     }
 }
 
@@ -749,6 +751,7 @@ impl Tool for CountingTool {
                 "properties": { "text": { "type": "string" } },
                 "required": ["text"]
             }),
+            constrained_sampling: None,
         }
     }
 

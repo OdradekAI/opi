@@ -179,6 +179,7 @@ fn base_assistant() -> AssistantMessage {
         stop_reason: StopReason::Stop,
         error_message: None,
         timestamp_ms: 0,
+        diagnostics: Vec::new(),
     }
 }
 

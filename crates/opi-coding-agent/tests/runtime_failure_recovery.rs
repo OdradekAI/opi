@@ -2393,6 +2393,7 @@ impl Tool for CountingTool {
             name: self.name.clone(),
             description: "counting test tool".to_owned(),
             input_schema: serde_json::json!({ "type": "object" }),
+            constrained_sampling: None,
         }
     }
     fn execute(

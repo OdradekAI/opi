@@ -271,6 +271,7 @@ fn present_provider_error(error: &ProviderError) -> String {
         ProviderError::Timeout => "authentication timed out",
         ProviderError::RequestFailed(_)
         | ProviderError::CallbackPhase(_)
+        | ProviderError::StrictToolLimits { .. }
         | ProviderError::UnknownModel { .. } => "authentication request failed",
         ProviderError::StreamError(_) => "authentication stream failed",
         ProviderError::AuthFailed(_) => "authentication failed",

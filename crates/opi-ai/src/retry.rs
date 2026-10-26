@@ -381,13 +381,20 @@ struct AcquisitionInner {
     policy: AcquisitionPolicy,
     /// The single execution lease shares the lock with admission and sealing.
     active: bool,
-    /// Index of the current payload variant. Adaptation (the bounded
-    /// strict-prefer downgrade) is owned by later tasks; every current
-    /// acquisition episode stays on variant 0.
+    /// Index of the current payload variant: 0 ordinary, 1 the single
+    /// rebuilt strict downgrade (task 20.11).
     variant_index: u32,
     /// Total payload variants dispatched at least once (0 before the first
     /// dispatch, 1 afterwards). Shared across variants; never reset.
     variants_used: u32,
+    /// A pending strict-downgrade variant admission: set by a
+    /// source-qualified `StrictToolLimits` failure on the first variant,
+    /// consumed by the next `start_attempt` (V-34: at most one rebuilt
+    /// variant per logical call).
+    pending_strict_variant: Option<&'static str>,
+    /// 1-based sends within the current variant's episode (the
+    /// `amz-sdk-request` attempt number); resets with the variant.
+    variant_dispatches: u32,
     /// Extra sends admitted in the current variant. The shared counter is
     /// what callers cannot reset.
     retries_admitted: u32,
@@ -423,6 +430,8 @@ impl AcquisitionCore {
                 active: false,
                 variant_index: 0,
                 variants_used: 0,
+                pending_strict_variant: None,
+                variant_dispatches: 0,
                 retries_admitted: 0,
                 dispatches: 0,
                 ready_at: None,
@@ -445,6 +454,20 @@ impl AcquisitionCore {
         if inner.active {
             return Err(RetryStartError::AlreadyActive);
         }
+        if inner.pending_strict_variant.is_some() {
+            // Consume the single strict-downgrade admission (V-34/V-36):
+            // the rebuilt variant dispatches immediately with its own fresh
+            // per-variant budget; the total bound stays 2x(1+N) because
+            // `variants_used` caps at 2 and each variant admits at most
+            // `max_retries` extra sends.
+            inner.pending_strict_variant = None;
+            inner.variant_index = 1;
+            inner.variants_used = inner.variants_used.max(2);
+            inner.retries_admitted = 0;
+            inner.ready_at = None;
+            inner.admission = None;
+            inner.variant_dispatches = 0;
+        }
         if let Some(ready_at) = inner.ready_at {
             let now = Instant::now();
             if now < ready_at {
@@ -455,6 +478,7 @@ impl AcquisitionCore {
             inner.ready_at = None;
         }
         inner.dispatches += 1;
+        inner.variant_dispatches += 1;
         inner.active = true;
         Ok(())
     }
@@ -468,10 +492,15 @@ impl AcquisitionCore {
             RetrySourcePolicy::Helper => inner.policy.max_retries.saturating_add(1),
             RetrySourcePolicy::Smithy(config) => config.max_attempts,
         };
+        let payload_variant = match inner.variant_index {
+            0 => crate::provider::PayloadVariant::Ordinary,
+            _ => crate::provider::PayloadVariant::AnthropicStrictDowngrade,
+        };
         crate::provider::AttemptContext {
             invocation_id: invocation_id.to_owned(),
-            attempt: inner.dispatches.max(1),
+            attempt: inner.variant_dispatches.max(1),
             max_attempts,
+            payload_variant,
         }
     }
 
@@ -544,6 +573,19 @@ impl AcquisitionCore {
         }
         if inner.smithy.is_some() {
             Self::note_smithy_failure(&mut inner, cause);
+            return;
+        }
+        if matches!(cause, ProviderError::StrictToolLimits { .. }) {
+            // The source-qualified strict-limit rejection: on the first
+            // variant it admits exactly one rebuilt downgrade variant
+            // (dispatched without a readiness wait); anywhere else it is a
+            // terminal failure.
+            inner.admission = None;
+            if inner.variant_index == 0 && inner.variants_used <= 1 {
+                inner.pending_strict_variant = Some("strict_tool_limits_exceeded");
+            } else {
+                inner.sealed = Some(AcquisitionSeal::Finished);
+            }
             return;
         }
         if !cause.is_retryable() {
@@ -636,6 +678,18 @@ impl AcquisitionCore {
             .lock()
             .expect("acquisition core poisoned")
             .admission
+    }
+
+    /// The pending strict-downgrade variant admission, if the last observed
+    /// failure was a source-qualified `StrictToolLimits` on the first
+    /// variant (task 20.11). The caller dispatches it immediately through
+    /// `start_attempt`; at most one exists per logical call.
+    pub(crate) fn strict_variant_admission(&self) -> Option<&'static str> {
+        let inner = self.inner.lock().expect("acquisition core poisoned");
+        if inner.sealed.is_some() {
+            return None;
+        }
+        inner.pending_strict_variant
     }
 
     /// The sticky sealed state, if the call no longer admits attempts.

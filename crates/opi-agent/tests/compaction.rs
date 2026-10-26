@@ -44,6 +44,7 @@ fn assistant_text(id: &str, text: &str) -> Entry {
             stop_reason: StopReason::Stop,
             error_message: None,
             timestamp_ms: 0,
+            diagnostics: Vec::new(),
         })),
     }
 }

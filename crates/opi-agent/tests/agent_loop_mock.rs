@@ -54,6 +54,7 @@ impl Tool for MockTool {
                 },
                 "required": ["arg"]
             }),
+            constrained_sampling: None,
         }
     }
 
@@ -464,4 +465,79 @@ async fn session_id_reaches_every_request() {
     assert_eq!(calls[1].model, "mock:mock-model");
     assert_eq!(calls[0].session_id.as_deref(), Some("session-a"));
     assert_eq!(calls[1].session_id.as_deref(), Some("session-b"));
+}
+
+// ---------------------------------------------------------------------------
+// Test: task 20.11 — the loop dispatches the SDK's strict-downgrade variant
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn strict_tool_limits_failure_dispatches_the_rebuilt_variant() {
+    use opi_agent::loop_types::{
+        AgentLoopConfig, AgentLoopContext, InferenceConfig, ModelSelection, NextTurnState,
+    };
+    use opi_agent::{AgentEventSink, DiagnosticSink, RecordingSink};
+    use opi_ai::provider::{ProviderError, ProviderErrorSummary};
+    use opi_ai::test_support::MockResponse;
+
+    let provider = MockProvider::new_with_errors(
+        "mock",
+        vec![
+            MockResponse::Error(ProviderError::StrictToolLimits {
+                detail: ProviderErrorSummary::sanitized("Too many strict tools (65)"),
+            }),
+            MockResponse::Events(test_support::text_response("rebuilt variant output")),
+        ],
+    );
+
+    let call_log = provider.call_log_handle();
+    let sink = std::sync::Arc::new(RecordingSink::new());
+    let context = AgentLoopContext {
+        collection: std::sync::Arc::new(single_route_collection(Box::new(provider))),
+        registry: common::test_registry(vec![]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "Hi".into() }],
+                timestamp_ms: 0,
+            }))],
+            ModelSelection::parse_spec("mock:mock-model").unwrap(),
+            InferenceConfig::default(),
+        ),
+        system: None,
+        steering_queue: None,
+        follow_up_queue: None,
+        diagnostic_sink: Some(sink.clone() as Arc<dyn DiagnosticSink>),
+        session_id: None,
+        evidence_sink: None,
+    };
+    let config = AgentLoopConfig::default();
+    let events: AgentEventSink = Box::new(|_| {});
+    let result = opi_agent::agent_loop(
+        context,
+        config,
+        &TestHooks,
+        events,
+        CancellationToken::new(),
+    )
+    .await
+    .into_execution_result();
+
+    assert!(
+        result.is_ok(),
+        "the rebuilt variant completes the turn, got {:?}",
+        result.map(|_| ()).unwrap_err()
+    );
+    assert_eq!(
+        call_log.lock().unwrap().len(),
+        2,
+        "exactly two dispatches: the rejected variant and the rebuild"
+    );
+    assert!(
+        sink.snapshot()
+            .iter()
+            .any(|diagnostic| diagnostic.code == "provider_strict_downgrade"),
+        "the downgrade is recorded once as a product diagnostic"
+    );
 }
