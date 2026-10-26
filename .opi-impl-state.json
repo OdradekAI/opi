@@ -14171,7 +14171,7 @@
       "definition_of_done": "Public partial JSON display follows exact parse/repair order, final object/arguments_error remains authoritative and raw retained. Portable StringEnum emits type:string plus enum rather than unsupported anyOf/const, no TypeBox symbols or JS ABI.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.5",
         "20.10"
@@ -14248,7 +14248,7 @@
           "production_call_sites": [
             "opi_ai::utils::public provisional/final JSON utilities and StringEnum schema constructors (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -14257,7 +14257,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "46e52fa6b39655876c4df45ec2b059b2b41f543e",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -14268,10 +14268,52 @@
         "crates/opi-ai/src/utils/schema.rs",
         "crates/opi-ai/tests/public_utilities.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "69484d62e73a6af87a4e6df39ca53cd3fa0a679b",
+      "evidence": {
+        "Opi-Task": "20.53.2",
+        "Opi-DoD-SHA256": "582f254eb95c0cef5cfd6dacbe68117066b12e1adf810c0fd7a125a1614d4bb3",
+        "Opi-Verification": "library; smoke scoped --crate opi-ai --test public_utilities PASSED (fmt, clippy -D warnings, crate tests); scenario cargo test -p opi-ai --test public_utilities 17 PASS (8 new); doc-check PASS; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P20-S53-2 exercised at opi_ai::message::{repair_json, parse_streaming_json, finalize_tool_arguments, string_enum}; exact pinned parse/repair order observable, final object/arguments_error authoritative with raw retained, portable type:string+enum schema without anyOf/const or TypeBox symbols; no new seam, no new dependency"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-26T07:29:08.099276+00:00",
+          "attempt": 1,
+          "summary": "B.2 gate: user approved (1) TDD on the pinned utils/json-parse.ts + typebox-helpers.ts family - pub repair_json (full pinned semantics, no object gate), pub parse_streaming_json (exact cascade order with an in-repo prefix completer replacing the npm partial-json dependency), pub finalize_tool_arguments (thin delegation to the shipped AIR-048 finalize, semantics unchanged), pub string_enum (portable type:string+enum schema, no anyOf/const/TypeBox symbols), all in message.rs the ToolCall/ToolDef owner; (2) two separate commits (feat task commit with Opi-* footers + ledger checkpoint); (3) network-boundary self-report (in-process JSON text processing; no network, no wiremock, no credentials). Pre-registered rejected: rebasing finalize_text_arguments onto the ungated repair_json - a behavior change to the shipped 20.5/20.10 surface outside minimal change."
+        },
+        {
+          "timestamp": "2026-10-26T07:44:56.868354+00:00",
+          "attempt": 1,
+          "summary": "Delivered the pinned utils/json-parse.ts + typebox-helpers.ts families as four public functions in opi_ai::message (ToolCall/ToolDef owner): repair_json with full pinned semantics (control chars, invalid-escape doubling, truncated \\u, trailing backslash), parse_streaming_json with the exact cascade order and an in-repo prefix completer replacing the npm partial-json dependency (dependency_edge=none honored), finalize_tool_arguments as a thin public delegation to the shipped AIR-048 finalize (semantics unchanged, not rebased onto the ungated repair - pre-registered rejected as a behavior change to the 20.5/20.10 surface), and string_enum portable schema construction. Red phase was a genuine E0432 compile failure; during red/green one test-side fix (a U+FFFD placeholder where a NUL control character was intended) and one implementation fix (the completer must drop a dangling trailing separator before closing) plus clippy redundant-guard; the shipped finalize and all five wire call sites are untouched. fmt/clippy retry after fix. No push.",
+          "gate_results": {
+            "d1_gate": "smoke scoped --crate opi-ai --test public_utilities PASSED (fmt, clippy -D warnings, crate tests + public_utilities)",
+            "d0_scenario": "cargo test -p opi-ai --test public_utilities -> 17 passed / 0 failed (8 new)",
+            "d3_gap_only": "python scripts/opi-doc-check.py PASS; git diff --check clean",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=2 (the in-repo prefix completer approximates npm partial-json on the pinned documented behaviors - revisit when a pinned public helper case requires exact parity beyond dangling structure/truncated token completion; string_enum treats Some(\"\") like None mirroring Pi truthiness - documented in rustdoc), rejected=3 (rebasing finalize_text_arguments onto ungated repair_json - shipped 20.5/20.10 behavior change outside minimal change; a typed options struct for string_enum - no consumer; exposing parse_json_with_repair separately - internal to the cascade, repair_json and finalize cover the public needs), wf_ref=null (degraded single-reviewer path)",
+            "test_disposition": [
+              {
+                "subject": "JSON repair/partial/schema family",
+                "action": "add",
+                "test": "tests/public_utilities.rs +8: repair control-char and escape matrix incl. truncated \\u and trailing backslash; cascade order observability (full-with-repair wins / raw partial / repaired partial / empty fallback); dangling-structure completion (key, value, separators, nesting, truncated number/literal, escaped quote, junk after first value, bare top-level value); finalize authority with raw retention and redacted-safe error; string_enum exact portable keys",
+                "interface": "opi_ai::message::{repair_json, parse_streaming_json, finalize_tool_arguments, string_enum}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.53.2",
+                "action": "retain",
+                "test": "all pre-existing suites unchanged and green in the scoped crate gate; shipped tool_argument_tests and the five wire finalize call sites untouched",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "69484d62e73a6af87a4e6df39ca53cd3fa0a679b"
+          }
+        }
+      ]
     },
     {
       "id": "20.53.3",
@@ -20557,6 +20599,16 @@
       "rejected_count": 3,
       "ran_at": "2026-10-26T06:06:54.782773+00:00",
       "task_id": "20.53.1",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 3,
+      "ran_at": "2026-10-26T07:44:56.868354+00:00",
+      "task_id": "20.53.2",
       "criterion_id": null
     }
   ]
