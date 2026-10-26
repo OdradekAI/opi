@@ -726,6 +726,31 @@ catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
 source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
 
+## 公共 overflow/Length 判别与类型化诊断（P20-S53-3，任务 20.53.3）
+
+`opi_ai::message::{is_context_overflow, is_recoverable_length}` 与
+`opi_ai::provider::{extract_diagnostic_error, DiagnosticErrorInfo}` 补齐锁定
+`utils/overflow.ts` 与 `utils/diagnostics.ts` 工具族：
+
+- **`is_context_overflow(message, context_window)`**（锁定
+  `isContextOverflow`）：错误型溢出先过锁定非溢出排除（throttling /
+  rate-limit 类消息永不判为溢出）再匹配锁定 provider 模式集；Cerebras
+  bodyless `400/413 (no body)` 形状额外要求 `provider == "cerebras"`。
+  给定窗口时还检测静默溢出（`Stop` 且 `input + cache_read > window`）与
+  零输出 Length 截断溢出（`Length` 且 `output == 0` 且
+  `input + cache_read >= 窗口的 99%`）。两个用量分支都要求已知用量
+  （`Usage::reported`）且窗口大于零；unknown 用量绝不转为零。
+- **`is_recoverable_length(message, desired_max_output)`**（锁定
+  `isRecoverableLength`）：`Length` 停止且低于原始期望输出上限（仅已知
+  用量）时为真——调用方可据此做一次有界 compact-and-retry。两个谓词均为
+  纯函数，绝不触发 compaction 或 retry 策略。
+- **`extract_diagnostic_error(&ProviderError)`**（锁定
+  `extractDiagnosticError`）：返回可序列化的
+  `DiagnosticErrorInfo { name, message, http_status, error_name }`——变体
+  名、secret-safe 展示消息（细节载体为 `ProviderErrorSummary`）、类型化
+  `ServiceFault` HTTP 状态与 wire 错误名。原始 provider 载荷永不进入
+  summary；无 stack 字段（Rust 无执行栈对应物）。
+
 ## 公共 JSON repair 与可移植 schema 工具（P20-S53-2，任务 20.53.2）
 
 `opi_ai::message::{repair_json, parse_streaming_json,

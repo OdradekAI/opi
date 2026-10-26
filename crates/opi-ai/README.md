@@ -900,6 +900,37 @@ fetches one distribution-schema-v1 document over HTTP with pooled
 connections and redacted failures. The SDK registers no source, attaches
 no store, and has no pi.dev/default startup fetch policy.
 
+## Public Overflow/Length Predicates and Typed Diagnostics (P20-S53-3, task 20.53.3)
+
+`opi_ai::message::{is_context_overflow, is_recoverable_length}` and
+`opi_ai::provider::{extract_diagnostic_error, DiagnosticErrorInfo}`
+complete the pinned `utils/overflow.ts` and `utils/diagnostics.ts`
+families:
+
+- **`is_context_overflow(message, context_window)`** (pinned
+  `isContextOverflow`): error-based overflow matches the pinned provider
+  pattern set only after the pinned non-overflow exclusions (throttling /
+  rate-limit style messages never classify as overflow); the bodyless
+  Cerebras `400/413 (no body)` shape additionally requires
+  `provider == "cerebras"`. With a caller-supplied window it also detects
+  silent overflow (`Stop` with `input + cache_read > window`) and
+  zero-output Length-stop overflow (`Length` with `output == 0` and
+  `input + cache_read >= 99% of window`). Both usage-based branches
+  require known usage (`Usage::reported`) and a window greater than zero;
+  unknown usage is never converted to zero tokens.
+- **`is_recoverable_length(message, desired_max_output)`** (pinned
+  `isRecoverableLength`): true when a `Length` stop ended below the
+  original desired output limit (known usage only) - the signal a caller
+  may use for one bounded compact-and-retry attempt. Both predicates are
+  pure: they never invoke compaction or retry policy.
+- **`extract_diagnostic_error(&ProviderError)`** (pinned
+  `extractDiagnosticError`): returns a serializable
+  `DiagnosticErrorInfo { name, message, http_status, error_name }` - the
+  variant name, the secret-safe display message (detail carriers are
+  `ProviderErrorSummary`), and the typed `ServiceFault` HTTP status and
+  wire error name. Raw provider payloads never enter the summary, and
+  there is no stack field (no Rust execution-stack analog).
+
 ## Public JSON Repair and Portable Schema Utilities (P20-S53-2, task 20.53.2)
 
 `opi_ai::message::{repair_json, parse_streaming_json,

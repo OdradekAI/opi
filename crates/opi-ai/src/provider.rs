@@ -827,3 +827,73 @@ pub enum ProviderKind {
     Bedrock,
     Azure,
 }
+
+// ---------------------------------------------------------------------------
+// Public typed diagnostic extraction (task 20.53.3, P20-S53-3).
+// Pinned source: `.repo/pi-1.3.0/packages/ai/src/utils/diagnostics.ts`
+// (`DiagnosticErrorInfo`/`extractDiagnosticError`).
+
+/// Typed, secret-safe diagnostic details extracted from a [`ProviderError`]
+/// (pinned `DiagnosticErrorInfo`; task 20.53.3).
+///
+/// `name` is the type-level error name (the [`ProviderError`] variant
+/// discriminant), `message` is the [`ProviderError`] display text whose
+/// detail carrier is a [`ProviderErrorSummary`] - secret-safe by
+/// construction - and the typed code members preserve the structured
+/// carriers a [`ProviderError::ServiceFault`] holds: its HTTP status and the
+/// wire service error type name. The pinned JavaScript shape also carries a
+/// `stack`; Rust has no equivalent execution-stack source, so no stack field
+/// exists here.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct DiagnosticErrorInfo {
+    /// Type-level error name: the `ProviderError` variant discriminant.
+    pub name: &'static str,
+    /// Secret-safe human message (the error's display text).
+    pub message: String,
+    /// Typed HTTP status carried by a service-model fault.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    /// Wire service error type name exposed by a service-model fault.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_name: Option<String>,
+}
+
+/// Extract typed diagnostic details from a [`ProviderError`] (pinned
+/// `extractDiagnosticError`; task 20.53.3, P20-S53-3).
+///
+/// Preserves the typed code carriers (`ServiceFault` HTTP status and wire
+/// error name) and the secret-safe source detail text; never retains raw
+/// provider payloads (those never enter [`ProviderErrorSummary`]).
+pub fn extract_diagnostic_error(error: &ProviderError) -> DiagnosticErrorInfo {
+    let (name, http_status, error_name) = match error {
+        ProviderError::StreamFailure(_) => ("StreamFailure", None, None),
+        ProviderError::RateLimited { .. } => ("RateLimited", None, None),
+        ProviderError::Timeout => ("Timeout", None, None),
+        ProviderError::RequestFailed(_) => ("RequestFailed", None, None),
+        ProviderError::CallbackPhase(_) => ("CallbackPhase", None, None),
+        ProviderError::StrictToolLimits { .. } => ("StrictToolLimits", None, None),
+        ProviderError::StreamError(_) => ("StreamError", None, None),
+        ProviderError::AuthFailed(_) => ("AuthFailed", None, None),
+        ProviderError::CredentialNeeded { .. } => ("CredentialNeeded", None, None),
+        ProviderError::CredentialRevoked { .. } => ("CredentialRevoked", None, None),
+        ProviderError::AccountIdMissing { .. } => ("AccountIdMissing", None, None),
+        ProviderError::LoginCancelled { .. } => ("LoginCancelled", None, None),
+        ProviderError::Network(_) => ("Network", None, None),
+        ProviderError::Config(_) => ("Config", None, None),
+        ProviderError::UnknownModel { .. } => ("UnknownModel", None, None),
+        ProviderError::MissingWireRoute { .. } => ("MissingWireRoute", None, None),
+        ProviderError::WireCompatMismatch { .. } => ("WireCompatMismatch", None, None),
+        ProviderError::ProviderSide(_) => ("ProviderSide", None, None),
+        ProviderError::ServiceFault {
+            status, error_name, ..
+        } => ("ServiceFault", Some(*status), error_name.clone()),
+        ProviderError::UnsupportedCapability(_) => ("UnsupportedCapability", None, None),
+        ProviderError::Cancelled => ("Cancelled", None, None),
+    };
+    DiagnosticErrorInfo {
+        name,
+        message: error.to_string(),
+        http_status,
+        error_name,
+    }
+}

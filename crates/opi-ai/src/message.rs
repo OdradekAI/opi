@@ -690,6 +690,150 @@ pub fn string_enum(
     serde_json::Value::Object(schema)
 }
 
+// ---------------------------------------------------------------------------
+// Public context-overflow and recoverable-Length predicates (task 20.53.3,
+// P20-S53-3). Pinned source: `.repo/pi-1.3.0/packages/ai/src/utils/overflow.ts`.
+
+/// Pinned context-overflow provider error message patterns (25, case
+/// insensitive), merged into one alternation.
+fn context_overflow_pattern() -> &'static regex::Regex {
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    PATTERN.get_or_init(|| {
+        regex::RegexBuilder::new(
+            &[
+                r"prompt (?:is )?too long",               // Anthropic, z.ai
+                r"prompt exceeds max length",             // z.ai CN endpoint
+                r"request_too_large",                     // Anthropic HTTP 413
+                r"input is too long for requested model", // Amazon Bedrock
+                r"exceeds the context window",            // OpenAI
+                r"exceeds (?:the )?(?:model'?s )?maximum context length(?: of [\d,]+ tokens?|\s*\([\d,]+\))", // LiteLLM proxies
+                r"input token count.*exceeds the maximum", // Google (Gemini)
+                r"maximum prompt length is \d+",           // xAI (Grok)
+                r"reduce the length of the messages",      // Groq
+                r"maximum context length is \d+ tokens",   // OpenRouter
+                r"exceeds (?:the )?maximum allowed input length of [\d,]+ tokens?", // OpenRouter/Poolside
+                r"input \(\d+ tokens\) is longer than the model'?s context length \(\d+ tokens\)", // Together AI
+                r"exceeds the limit of \d+",           // GitHub Copilot
+                r"exceeds the available context size", // llama.cpp
+                r"greater than the context length",    // LM Studio
+                r"context window exceeds limit",       // MiniMax
+                r"exceeded model token limit",         // Kimi For Coding
+                r"too large for model with \d+ maximum context length", // Mistral
+                r"prompt has [\d,]+ tokens?, but the configured context size is [\d,]+ tokens?", // DS4
+                r"model_context_window_exceeded", // z.ai finish reason
+                r"prompt too long; exceeded (?:max )?context length", // Ollama
+                r"range of input length should be", // DashScope/Qwen
+                r"context[_ ]length[_ ]exceeded", // generic fallback
+                r"too many tokens",               // generic fallback
+                r"token limit exceeded",          // generic fallback
+            ]
+            .join("|"),
+        )
+        .case_insensitive(true)
+        .build()
+        .expect("pinned overflow pattern set")
+    })
+}
+
+/// Pinned non-overflow patterns (throttling/rate limiting) that exclude an
+/// error message from overflow detection even when it also matches an
+/// overflow pattern.
+fn non_context_overflow_pattern() -> &'static regex::Regex {
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    PATTERN.get_or_init(|| {
+        regex::RegexBuilder::new(
+            r"^(Throttling error|Service unavailable):|rate limit|too many requests",
+        )
+        .case_insensitive(true)
+        .build()
+        .expect("pinned non-overflow pattern set")
+    })
+}
+
+/// Pinned Cerebras bodyless 400/413 overflow shape, applied only when the
+/// message was produced by the `cerebras` provider.
+fn cerebras_bodyless_overflow_pattern() -> &'static regex::Regex {
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    PATTERN.get_or_init(|| {
+        regex::RegexBuilder::new(r"^4(?:00|13)\s*(?:status code)?\s*\(no body\)")
+            .case_insensitive(true)
+            .build()
+            .expect("pinned cerebras bodyless pattern")
+    })
+}
+
+/// Check whether an assistant message represents a context overflow error
+/// (pinned `isContextOverflow`; task 20.53.3, P20-S53-3).
+///
+/// Three cases, in pinned order:
+///
+/// 1. Error-based overflow: `stop_reason` is
+///    [`crate::stream::StopReason::Error`] with an
+///    `error_message` matching a pinned provider overflow pattern. Messages
+///    matching a pinned non-overflow pattern first (throttling/rate-limit
+///    style) are excluded even when they also match an overflow pattern; the
+///    bodyless Cerebras 400/413 shape additionally requires
+///    `provider == "cerebras"`.
+/// 2. Silent overflow: a `Stop` message whose known usage
+///    (`usage.reported`) reports `input_tokens + cache_read_tokens` above the
+///    context window.
+/// 3. Length-stop overflow: a `Length` message with known zero
+///    `output_tokens` whose input plus cache read fills at least 99% of the
+///    context window.
+///
+/// A `context_window` of `None` or `Some(0)` disables the usage-based cases
+/// (the source treats a zero window as absent); unknown usage
+/// (`usage.reported == false`) is never converted to zero tokens. This is a
+/// pure predicate: it never invokes compaction or retry policy.
+pub fn is_context_overflow(message: &AssistantMessage, context_window: Option<u64>) -> bool {
+    if message.stop_reason == crate::stream::StopReason::Error
+        && let Some(error_message) = &message.error_message
+        && !non_context_overflow_pattern().is_match(error_message)
+    {
+        if context_overflow_pattern().is_match(error_message) {
+            return true;
+        }
+        if message.provider == "cerebras"
+            && cerebras_bodyless_overflow_pattern().is_match(error_message)
+        {
+            return true;
+        }
+    }
+    let Some(window) = context_window.filter(|window| *window > 0) else {
+        return false;
+    };
+    if !message.usage.reported {
+        return false;
+    }
+    let input_tokens =
+        u64::from(message.usage.input_tokens) + u64::from(message.usage.cache_read_tokens);
+    match message.stop_reason {
+        crate::stream::StopReason::Stop => input_tokens > window,
+        crate::stream::StopReason::Length if message.usage.output_tokens == 0 => {
+            input_tokens * 100 >= window * 99
+        }
+        _ => false,
+    }
+}
+
+/// Check whether a length stop ended below the caller's or model's intended
+/// output limit (pinned `isRecoverableLength`; task 20.53.3, P20-S53-3).
+///
+/// True when the message stopped for
+/// [`crate::stream::StopReason::Length`],
+/// `desired_max_output` is the original positive limit before any
+/// context-based clamping, and known usage (`usage.reported`) produced fewer
+/// output tokens than that limit - the response may have been caused by
+/// context pressure or provider-side truncation, so a caller may make one
+/// bounded compact-and-retry attempt. Unknown usage is never converted to
+/// zero tokens; this is a pure predicate that never invokes retry policy.
+pub fn is_recoverable_length(message: &AssistantMessage, desired_max_output: u64) -> bool {
+    message.stop_reason == crate::stream::StopReason::Length
+        && desired_max_output > 0
+        && message.usage.reported
+        && u64::from(message.usage.output_tokens) < desired_max_output
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolDef {
     pub name: String,

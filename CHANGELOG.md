@@ -504,6 +504,23 @@
   unchanged.
 ### Added
 
+- `opi-ai`: public context-overflow, recoverable-Length and typed
+  diagnostic predicates (task 20.53.3, P20-S53-3). `is_context_overflow`
+  (pinned `isContextOverflow`) matches the pinned provider overflow error
+  patterns after applying the pinned non-overflow exclusions, gates the
+  bodyless Cerebras 400/413 shape on the `cerebras` provider, and detects
+  silent Stop overflow and zero-output Length-stop overflow against a
+  caller-supplied context window - both usage-based branches require known
+  usage (`Usage::reported`); unknown usage is never converted to zero
+  tokens. `is_recoverable_length` (pinned `isRecoverableLength`) reports a
+  Length stop below the original desired output limit under the same
+  known-usage rule. Both are pure predicates and never invoke compaction or
+  retry policy. `extract_diagnostic_error` (pinned
+  `extractDiagnosticError`) returns a serializable `DiagnosticErrorInfo`
+  with the `ProviderError` variant name, its secret-safe display message
+  (detail carriers are `ProviderErrorSummary`), and the typed service-fault
+  HTTP status and wire error name; no raw provider payloads and no stack
+  field (no Rust execution-stack analog).
 - `opi-ai`: public JSON repair and portable schema construction utilities
   (task 20.53.2, P20-S53-2) in `opi_ai::message`: `repair_json` (pinned
   `repairJson` semantics: raw control characters inside strings become
