@@ -99,6 +99,32 @@ impl ProviderHeaders {
     }
 }
 
+/// Merge provider header override sources case-insensitively (pinned
+/// `providerHeadersToRecord`; task 20.53.6).
+///
+/// Later sources win for the same name (case-insensitively); a winning
+/// override re-inserts at the end of the output, preserving the winner's
+/// original case, and a [`None`] value deletes the name without inserting.
+/// Yields [`None`] when nothing survives. The output is unvalidated config
+/// normalization: feed it to [`ProviderHeaders::try_new`] for wire
+/// validation; this helper never bypasses [`ProviderHeaders::merge_request`]
+/// fail-closed override rejection.
+pub fn merge_provider_header_sources(
+    sources: &[&[(String, Option<String>)]],
+) -> Option<Vec<(String, String)>> {
+    let mut merged: Vec<(String, (String, String))> = Vec::new();
+    for source in sources {
+        for (name, value) in *source {
+            let normalized = name.to_ascii_lowercase();
+            merged.retain(|(existing, _)| *existing != normalized);
+            if let Some(value) = value {
+                merged.push((normalized, (name.clone(), value.clone())));
+            }
+        }
+    }
+    (!merged.is_empty()).then(|| merged.into_iter().map(|(_, pair)| pair).collect())
+}
+
 /// Validate a header-transform output (task 20.51): valid names/values, no
 /// duplicates, and no protected identity/auth/signing name (reserved list plus
 /// the `amz-sdk-*` Smithy signing family, case-insensitive).

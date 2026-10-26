@@ -504,6 +504,29 @@
   unchanged.
 ### Added
 
+- `opi-ai`: public header merge, scoped provider env, and cancellable
+  waits (task 20.53.6, P20-S53-6/7). `provider_headers::
+  merge_provider_header_sources` (pinned `providerHeadersToRecord`)
+  merges override sources case-insensitively - later sources win and
+  re-insert at the end preserving the winner's original case, `None`
+  deletes without inserting, an empty result is `None` - as unvalidated
+  config normalization feeding `ProviderHeaders::try_new`, without
+  touching `merge_request` fail-closed override rejection. New
+  `provider_env::provider_env_value` (pinned `getProviderEnvValue`)
+  resolves a name from a scoped injected map first, then the ambient
+  process environment, faithfully short-circuiting empty values to
+  fallback/`None` like the pinned `||` chain; lazy per-name reads with
+  zero construction-time access and no global caching or mutation, no
+  proxy/identity policy (owners stay `http`/`auth`), and no Bun
+  `/proc/self/environ` fallback. New `cancel::{operation_token,
+  sleep_cancel, race_with_cancel, Cancelled}` (pinned `sleep`,
+  `raceWithAbortSignal`, `operationSignal`) reuse `CancellationToken`:
+  one-way parent-to-child token linkage, timer/listener release on
+  cancel/ready/drop, immediate pre-cancelled failure without polling the
+  operation, and dropping the abandoned operation future as the
+  Rust-native abandoned-promise handling. Deterministic tests use the
+  paused Tokio clock and drop sentinels; no new dependency, no executor
+  or global timer authority.
 - `opi-ai`: public compatibility `short_hash` and UUIDv7 generation
   (task 20.53.4, P20-S53-4/5). `identity::short_hash` (pinned `shortHash`)
   reproduces the pinned JavaScript algorithm exactly - UTF-16 code units

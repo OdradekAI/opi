@@ -726,6 +726,31 @@ catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
 source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
 
+## 公共 header 合并、scoped env 与可取消等待（P20-S53-6，任务 20.53.6）
+
+`provider_headers::merge_provider_header_sources`、新 `provider_env` 模块与新
+`cancel` 模块补齐锁定 `utils/headers.ts`、`utils/provider-env.ts`、
+`utils/sleep.ts`、`utils/abort.ts` 工具族：
+
+- **`merge_provider_header_sources(&[&[(String, Option<String>)]])
+  -> Option<Vec<(String, String)>>`**：多来源 case-insensitive 合并。后源胜出；
+  胜者移至末尾并保留原始大小写（锁定 Map delete+set 顺序）；`None` 删除且不
+  插入；空结果返回 `None`。属未验证的配置归一化，输出送
+  `ProviderHeaders::try_new`；`merge_request` 的 fail-closed 覆盖拒绝不变。
+- **`provider_env::provider_env_value(name, scoped)`**：scoped 注入值优先于
+  ambient `std::env::var`，忠实复刻锁定的 `||` 短路——scoped 空串回退
+  ambient，ambient 空值产出 `None`。仅惰性按名读取：构造期零访问、零全局
+  缓存/变更；不新增代理/身份策略层（属主仍是 `http` 与 `auth`）；无 Bun
+  `/proc/self/environ` 回退。
+- **`cancel::{operation_token, sleep_cancel, race_with_cancel,
+  Cancelled}`**：复用 `CancellationToken` 的可取消等待。
+  `operation_token(Some(&parent))` 返回单向子 token（父取消传子，反向不传）；
+  `sleep_cancel(ms, &token)` 预取消不启计时器，取消/就绪/丢弃均释放计时器；
+  `race_with_cancel(future, &token)` 返回操作输出或 `Cancelled`，预取消立即失
+  败且不轮询操作，取消时丢弃被弃操作 future（Rust 原生的弃约处理）。测试以
+  暂停的 Tokio 时钟与 Drop 哨兵保证确定性。无新依赖；不建执行器或全局计时
+  器权威。
+
 ## 公共 shortHash 与 UUIDv7 身份工具（P20-S53-4，任务 20.53.4）
 
 `opi_ai::identity::{short_hash, UuidV7Generator, UuidV7Error}` 补齐锁定

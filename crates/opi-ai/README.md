@@ -900,6 +900,41 @@ fetches one distribution-schema-v1 document over HTTP with pooled
 connections and redacted failures. The SDK registers no source, attaches
 no store, and has no pi.dev/default startup fetch policy.
 
+## Public Header Merge, Scoped Env, and Cancellable Waits (P20-S53-6, task 20.53.6)
+
+`provider_headers::merge_provider_header_sources`, the new
+`provider_env` module, and the new `cancel` module complete the pinned
+`utils/headers.ts`, `utils/provider-env.ts`, `utils/sleep.ts`, and
+`utils/abort.ts` families:
+
+- **`merge_provider_header_sources(&[&[(String, Option<String>)]])
+  -> Option<Vec<(String, String)>>`**: multi-source case-insensitive
+  merge. Later sources win; a winner re-inserts at the end preserving
+  its original case (the pinned Map delete+set ordering); `None`
+  deletes the name without inserting; an empty result is `None`. This
+  is unvalidated config normalization feeding
+  `ProviderHeaders::try_new`; `merge_request` keeps its fail-closed
+  override rejection.
+- **`provider_env::provider_env_value(name, scoped)`**: scoped
+  injected values precede the ambient `std::env::var` lookup, faithful
+  to the pinned `||` chain - an empty scoped value falls back to
+  ambient and an empty ambient value yields `None`. Lazy per-name
+  reads only: no construction-time access, no global caching or
+  mutation, no proxy/identity policy layer (owners stay `http` and
+  `auth`), and no Bun `/proc/self/environ` fallback.
+- **`cancel::{operation_token, sleep_cancel, race_with_cancel,
+  Cancelled}`**: cancellable waits reusing `CancellationToken`.
+  `operation_token(Some(&parent))` returns a one-way child token
+  (parent cancellation reaches the child, never the reverse);
+  `sleep_cancel(ms, &token)` arms no timer when pre-cancelled and
+  releases the timer on cancel/ready/drop; `race_with_cancel(future,
+  &token)` returns the operation output or `Cancelled`, failing
+  immediately on a pre-cancelled token without polling the operation,
+  and drops the abandoned operation future on cancel (the Rust-native
+  abandoned-promise handling). Tests use the paused Tokio clock and
+  drop sentinels for determinism. No new dependency; no executor or
+  global timer authority.
+
 ## Public shortHash and UUIDv7 Identity Utilities (P20-S53-4, task 20.53.4)
 
 `opi_ai::identity::{short_hash, UuidV7Generator, UuidV7Error}` complete the
