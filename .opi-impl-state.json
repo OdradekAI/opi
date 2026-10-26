@@ -3197,7 +3197,7 @@
       "definition_of_done": "Convert only private wire schema, retain trusted original and per-tool prefer/require. Prove grammar function/custom IDs, wrapping/incremental parse and unsupported-target projection facts. Exactly one source-qualified Anthropic strict-prefer rejection may rebuild one variant before public output, require remains strict, callback and counter semantics match 1+N per variant. No general400 retry, post-handoff downgrade or authority gain. Consume the completed ordinary callback mechanism from 20.51; own the strict-by-callback integration: one new variant reruns onPayload/post-validation while ordinary retry reuses its frozen payload, callback errors stop dispatch, and headers/auth/model remain frozen. Close V-34/V-36/V-41 through real migrated Anthropic/Responses/Codex paths plus Context/replay/Serde proof; do not create a second callback or retry implementation.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.4",
         "20.6",
@@ -3238,7 +3238,7 @@
         },
         {
           "field": "task_owned_paths",
-          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.",
+          "reason": "Known current sources and compiling caller/test references are owned explicitly now. Genuinely new target paths are proposals. Only later-discovered necessary paths may be appended with evidence under the existing workflow rule, never as a substitute for this reviewed inventory. No parent spec/ledger/frozen snapshot ownership.; appended crates/opi-ai/src/message.rs (ToolDef gains the serde-defaulted constrained_sampling declaration field - the DoD's per-tool prefer/require intent lives on the trusted tool declaration) and crates/opi-ai/src/stream.rs (AssistantMessage gains the serde-defaulted diagnostics vector plus AssistantDiagnostic - the DoD's recorded downgrade diagnostic and grammar-target loss land on the message-level record); appended crates/opi-ai/src/model_info.rs (AnthropicMessagesCompat/OpenAiResponsesCompat gain the strict/grammar capability flags the DoD's per-wire resolution consumes) and crates/opi-ai/src/catalog/wire.rs (the x-opi.compat catalog decoder learns the new compat keys); tool_result_wire.rs public-module baseline gains constrained_sampling exactly as its guard message instructs; appended 21 later-discovered paths with diff evidence: the additive ToolDef.constrained_sampling and AssistantMessage.diagnostics fields forced mechanical `constrained_sampling: None`/`diagnostics: Vec::new()` initializer additions (verified: src diffs bedrock/gemini/openai_chat/replay/test_support/transcript carry exactly those lines; the 14 test files carry only those lines) and AnthropicMessagesCompat's new supports_strict_tools flag forced the compat literal sites in opi-coding-agent config.rs/github_copilot.rs (flag false, matching the source's all-bundled-models-default-false evidence); appended the strict-variant mechanism owners: provider.rs (ProviderError::StrictToolLimits + PayloadVariant on AttemptContext), retry.rs (AcquisitionCore's reserved variant counters transition: per-variant budget, total bound 2x(1+N), single pending variant), models.rs (PreparedProviderCall::strict_variant_admission + variant-aware start_attempt), callbacks.rs (STRICT_DOWNGRADE variant label + per-logical-call header-transform freeze per V-36), agent_loop.rs/loop_types.rs/diagnostic.rs (the dispatch branch consumes the admission; exhaustive-match arms for the new error variant); appended openai_responses.rs + openai_codex_responses.rs (the Responses/Codex adapters consume the owned shared tool conversion and seed their mappers with the per-call constrained-sampling facts), agent_loop_mock.rs (loop-level proof that the SDK's strict-variant admission dispatches the rebuilt variant end to end), plus the later-discovered additive-field match-arm sites authority.rs/event.rs/provider_public_safety.rs/interactive_auth.rs (exhaustive-match arms for the new ProviderError variant and AssistantMessage field); appended gemini_fixtures.rs + vertex_fixtures.rs (fail-closed require-guard proof for the Google wires); appended 36 later-discovered paths with diff evidence: 35 files (opi-agent/opi-coding-agent tests, tool definitions, adapter_extension) carry exactly the mechanical `constrained_sampling: None`/`diagnostics: Vec::new()` initializer additions required by the additive ToolDef/AssistantMessage fields (verified: zero non-mechanical hunks via git diff scan); azure_openai.rs carries only the V-36 onResponse success-gating move (notification moved below the status check with a comment)",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#Replacement and exit requirements"
         },
         {
@@ -3308,7 +3308,7 @@
             "opi_ai Anthropic/Responses/Codex adapter preparation",
             "opi_ai::Models native/advanced driver (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-040",
@@ -3321,7 +3321,7 @@
             "opi_ai Anthropic/Responses/Codex adapter preparation",
             "opi_ai::Models native/advanced driver (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S11",
@@ -3334,7 +3334,7 @@
             "opi_ai Anthropic/Responses/Codex adapter preparation",
             "opi_ai::Models native/advanced driver (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-04",
@@ -3347,7 +3347,7 @@
             "opi_ai Anthropic/Responses/Codex adapter preparation",
             "opi_ai::Models native/advanced driver (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-41",
@@ -3360,7 +3360,7 @@
             "opi_ai Anthropic/Responses/Codex adapter preparation",
             "opi_ai::Models native/advanced driver (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-36",
@@ -3373,7 +3373,7 @@
             "opi_ai Anthropic/Responses/Codex adapter preparation",
             "opi_ai::Models native/advanced driver (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-042",
@@ -3386,7 +3386,7 @@
             "opi_ai Anthropic/Responses/Codex adapter preparation",
             "opi_ai::Models native/advanced driver (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -3396,7 +3396,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "a7bb919a00a4e832c52c65b28802ac3efff0d6fc",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -3412,12 +3412,190 @@
         "crates/opi-ai/tests/openai_responses_fixtures.rs",
         "crates/opi-ai/tests/replay_contract.rs",
         "crates/opi-ai/tests/stream_events.rs",
-        "crates/opi-ai/tests/transcript_contract.rs"
+        "crates/opi-ai/tests/transcript_contract.rs",
+        "crates/opi-ai/src/message.rs",
+        "crates/opi-ai/src/stream.rs",
+        "crates/opi-ai/src/model_info.rs",
+        "crates/opi-ai/src/catalog/wire.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs",
+        "crates/opi-ai/src/bedrock/mod.rs",
+        "crates/opi-ai/src/gemini.rs",
+        "crates/opi-ai/src/openai_chat.rs",
+        "crates/opi-ai/src/replay.rs",
+        "crates/opi-ai/src/test_support.rs",
+        "crates/opi-ai/src/transcript.rs",
+        "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs",
+        "crates/opi-ai/tests/api_mapped_provider.rs",
+        "crates/opi-ai/tests/azure_openai_fixtures.rs",
+        "crates/opi-ai/tests/bedrock_fixtures.rs",
+        "crates/opi-ai/tests/context_budget.rs",
+        "crates/opi-ai/tests/mistral_fixtures.rs",
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
+        "crates/opi-ai/tests/openai_codex_responses/replay.rs",
+        "crates/opi-ai/tests/openrouter_fixtures.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/provider_trait.rs",
+        "crates/opi-ai/tests/tool_result_no_leak.rs",
+        "crates/opi-ai/tests/transcript_contract/provider_projection.rs",
+        "crates/opi-coding-agent/src/config.rs",
+        "crates/opi-coding-agent/src/github_copilot.rs",
+        "crates/opi-ai/src/provider.rs",
+        "crates/opi-ai/src/retry.rs",
+        "crates/opi-ai/src/models.rs",
+        "crates/opi-ai/src/callbacks.rs",
+        "crates/opi-agent/src/agent_loop.rs",
+        "crates/opi-agent/src/loop_types.rs",
+        "crates/opi-agent/src/diagnostic.rs",
+        "crates/opi-ai/src/openai_responses.rs",
+        "crates/opi-ai/src/openai_codex_responses.rs",
+        "crates/opi-agent/tests/agent_loop_mock.rs",
+        "crates/opi-agent/src/authority.rs",
+        "crates/opi-agent/src/event.rs",
+        "crates/opi-agent/tests/provider_public_safety.rs",
+        "crates/opi-coding-agent/src/interactive_auth.rs",
+        "crates/opi-ai/tests/gemini_fixtures.rs",
+        "crates/opi-ai/tests/vertex_fixtures.rs",
+        "crates/opi-agent/tests/agent_loop_semantics.rs",
+        "crates/opi-agent/tests/agent_wrapper.rs",
+        "crates/opi-agent/tests/common/mod.rs",
+        "crates/opi-agent/tests/compaction.rs",
+        "crates/opi-agent/tests/diagnostics_runtime.rs",
+        "crates/opi-agent/tests/evidence_runtime.rs",
+        "crates/opi-agent/tests/hooks_queues.rs",
+        "crates/opi-agent/tests/session_branching.rs",
+        "crates/opi-agent/tests/session_context.rs",
+        "crates/opi-agent/tests/session_contract.rs",
+        "crates/opi-agent/tests/thinking_session.rs",
+        "crates/opi-agent/tests/tool_authority.rs",
+        "crates/opi-agent/tests/tool_event_redaction.rs",
+        "crates/opi-agent/tests/tool_validation.rs",
+        "crates/opi-agent/tests/truncated_propagation.rs",
+        "crates/opi-ai/src/azure_openai.rs",
+        "crates/opi-coding-agent/src/adapter_extension.rs",
+        "crates/opi-coding-agent/src/tool/bash.rs",
+        "crates/opi-coding-agent/src/tool/edit.rs",
+        "crates/opi-coding-agent/src/tool/find.rs",
+        "crates/opi-coding-agent/src/tool/glob.rs",
+        "crates/opi-coding-agent/src/tool/grep.rs",
+        "crates/opi-coding-agent/src/tool/ls.rs",
+        "crates/opi-coding-agent/src/tool/read.rs",
+        "crates/opi-coding-agent/src/tool/write.rs",
+        "crates/opi-coding-agent/tests/anthropic_cache_markers.rs",
+        "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+        "crates/opi-coding-agent/tests/interactive_mock.rs",
+        "crates/opi-coding-agent/tests/mock_e2e.rs",
+        "crates/opi-coding-agent/tests/product_evidence.rs",
+        "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+        "crates/opi-coding-agent/tests/runtime_failure_recovery.rs",
+        "crates/opi-coding-agent/tests/session_export.rs",
+        "crates/opi-coding-agent/tests/session_runtime.rs",
+        "crates/opi-coding-agent/tests/system_prompt.rs",
+        "crates/opi-coding-agent/tests/tool_authority.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "2eccca27d787230ad8a4ec581f394ae081ac6985",
+      "evidence": {
+        "Opi-Task": "20.11",
+        "Opi-DoD-SHA256": "28863a56e34837b1669e08449658301f1441987d9b428a8df206f83f7a8a22e8",
+        "Opi-Verification": "workspace; smoke full PASSED (doc-check, fmt, workspace clippy, workspace tests, doc tests, rustdoc); scenario cargo test -p opi-ai --test anthropic_fixtures --test openai_codex_responses --test openai_responses_fixtures --test replay_contract --test stream_events --test transcript_contract 206 PASS (72+25+46+22+28+13); agent-loop variant dispatch proven via agent_loop_mock; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "V-34/V-36/P20-S11/DEL-04/AIR-040/AIR-042 exercised at opi_ai::constrained_sampling, ToolDef.constrained_sampling, AssistantMessage.diagnostics, ProviderError::StrictToolLimits, PreparedProviderCall::strict_variant_admission and the Anthropic/Responses/Codex adapter wire seams via loopback wiremock; V-41 serde chronology proofs retained in stream_events"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-25T23:57:50.094898+00:00",
+          "attempt": 1,
+          "summary": "B.2 authorized (TDD end-to-end, two commits, network-boundary self-report). Baseline: HEAD a7bb919, worktree clean, no baseline dirty files. Plan: public constrained-sampling surface (ConstrainedSampling on ToolDef, make_strict_json_schema per Pi TP-14 clone semantics, prefer/require resolution, grammar lark-preferred with typed pre-dispatch failures, grammar input wrap buffer, original-schema null normalization); Anthropic strict wiring with the single source-qualified 400 downgrade variant through AcquisitionCore's reserved variant counters (per-variant <=1+N, total <=2x(1+N), no reset), strict_variant_admission + loop dispatch branch, message-level downgrade diagnostic, onPayload re-run + post-validation on the new variant, header transform frozen per logical call; Responses/Codex/Azure grammar+strict shared projection with ctc_ association and custom_tool_call_output replay; fail-closed require guard on other migrated adapters; onResponse success gating (V-36 closure).",
+          "b2_gate": "approved: end-to-end TDD + two separate commits + network-boundary self-report (loopback wiremock only)",
+          "baseline_dirty_files": []
+        },
+        {
+          "timestamp": "2026-10-26T03:33:12.521953+00:00",
+          "attempt": 1,
+          "summary": "Delivered the strict/grammar wire projection and the single bounded downgrade variant: new public constrained_sampling module (ConstrainedSampling declarations on ToolDef, make_strict_json_schema pinned to the source TP-14 clone semantics with Anthropic keyword admission, prefer/require resolution, lark-preferring grammar resolution with typed pre-dispatch failures, the incremental grammar input wrap buffer, original-schema null normalization, and the fail-closed require guard for wires without strict projection); Anthropic strict wiring with the source-qualified 400 classification (three marker families + invalid_request_error + actually-dispatched prefer-strict gate, body now read on 400) producing ProviderError::StrictToolLimits; AcquisitionCore variant transition using the counters reserved in 20.4 (pending_strict_variant consumed by check_start: per-variant budget reset, variant_dispatches per episode, total bound 2x(1+N), no reset path) with PreparedProviderCall::strict_variant_admission and a thin agent-loop dispatch branch (one product diagnostic, no second retry implementation); the rebuilt variant re-runs onPayload under its own freeze slot, keeps frozen headers (header transform frozen per logical call per V-36) and auth/model, stamps one anthropic_strict_tools_fallback message diagnostic; Responses/Codex share convert_responses_tools (custom grammar tools, per-tool strict over the wire/null default, recorded grammar-target fallback losses), stream custom_tool_call input through the wrap buffer with typed closed-input failures, finalize raw authoritative arguments, normalize strict nulls, and replay custom_tool_call(_output) with ctc_ ids; onResponse gated to the successfully acquired response across all adapters. 206 scenario tests green across the six owned suites plus agent_loop_mock variant-dispatch proof and four guard suites; D.1 full PASSED after fmt/clippy/rustdoc fix rounds; V-41 partition honored (serde chronology proofs retained in stream_events). One pre-existing flake observed (oauth_flows radius timing test fails only under full parallel load, passes solo 3/3; unrelated to this change). No push.",
+          "gate_results": {
+            "d1_gate": "smoke full PASSED (doc-check, fmt, clippy --workspace --all-targets -D warnings, test --workspace --all-targets, test --workspace --doc, RUSTDOCFLAGS=-D warnings doc --workspace --no-deps)",
+            "d0_scenario": "cargo test -p opi-ai (6 suites) -> 206 passed / 0 failed (72 anthropic_fixtures + 25 openai_codex_responses + 46 openai_responses_fixtures + 22 replay_contract + 28 stream_events + 13 transcript_contract)",
+            "d3_gap_only": "git diff --check clean; python scripts/opi-doc-check.py PASS; tool_result_wire public-module baseline gained constrained_sampling deliberately per its guard instruction",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=3 (36-path ownership append for the additive ToolDef/AssistantMessage/ProviderError/compat surfaces with verified mechanical diffs; grammar fallback on non-Responses wires is silent exactly as the pinned source is silent there while Responses/Codex record the loss; onResponse success-gating tightened across all adapters as the V-36 closure, 20.51 assertions unaffected since all asserted 200), rejected=3 (wiring real strict projection on Chat/Bedrock/Google wires now - fail-closed guard instead, later slice; asynchronous grammar parsing variants - the source algorithm is synchronous incremental; a second header-transform on the rebuilt variant - V-36 forbids re-running it), wf_ref=null (degraded single-reviewer path)",
+            "test_disposition": [
+              {
+                "subject": "strict substrate (V-34/AIR-040)",
+                "action": "add",
+                "test": "anthropic_fixtures.rs constrained_sampling_tests (clone-not-mutate conversion, unsupported shapes, Anthropic keyword admission, prefer/require resolution, grammar resolution lark-preference + typed failures, wrap-buffer monotonic/close, original-schema null normalization); transcript_contract.rs tool serde round-trip; stream_events.rs diagnostics serde round-trip",
+                "interface": "opi_ai::constrained_sampling",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Anthropic strict wire (V-34)",
+                "action": "add",
+                "test": "anthropic_fixtures.rs anthropic_strict_wire_tests (strict/require/plain wire projection, unconvertible prefer fallback, require typed pre-dispatch failure incl. zero-HTTP on strict-unsupported wire)",
+                "interface": "AnthropicProvider body build",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "downgrade variant (V-34/V-36/AIR-042)",
+                "action": "add",
+                "test": "anthropic_fixtures.rs anthropic_strict_variant_tests (marker-400 rebuild with prefer removed/require kept, onPayload x2 + transform x1 + onResponse [200] once, one message diagnostic, non-marker/no-prefer/second-400/callback no-branch, N=1 per-variant budget with total 4 sends, N=0 two sends); agent_loop_mock.rs loop-level variant dispatch + product diagnostic",
+                "interface": "PreparedProviderCall::strict_variant_admission + AcquisitionCore",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Responses/Codex grammar+strict (V-34)",
+                "action": "add",
+                "test": "openai_responses_fixtures.rs responses_constrained_tests (custom tool projection lark-preferring, unsupported-target fallback + loss, no-variant pre-dispatch failure, per-tool strict over wire default, custom_tool_call wrap streaming + raw finalize, closed-input typed failure); openai_codex_responses.rs codex_constrained_tests (null default, strict resolution, fallback loss on message)",
+                "interface": "openai_responses_shared::convert_responses_tools + ResponsesMapper",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "grammar replay association (V-34/20.7 bijection)",
+                "action": "add",
+                "test": "replay_contract.rs grammar_replay_tests (custom_tool_call/custom_tool_call_output with ctc_ id restore, function items never used for grammar tools)",
+                "interface": "openai_responses_shared::convert_messages",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "fail-closed require guard (AIR-040)",
+                "action": "add",
+                "test": "constrained_guard_tests in openai_chat_fixtures.rs, bedrock_fixtures.rs, gemini_fixtures.rs, vertex_fixtures.rs (require typed pre-dispatch failure, prefer non-strict projection)",
+                "interface": "constrained_sampling::assert_supported_constraints",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "onResponse success gating (V-36)",
+                "action": "update",
+                "test": "adapters' response-hook placement moved below the status check (anthropic/openai_responses/openai_codex via shared/openai_chat/bedrock/azure_openai); existing 20.51 assertions retained (all asserted 200)",
+                "interface": "RequestCallbacks::notify_response call sites",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "additive surface",
+                "action": "update",
+                "test": "~75 files gained exactly `constrained_sampling: None`/`diagnostics: Vec::new()` mechanical initializers or the new-field match arms (verified zero other hunks except the documented gating/guard/comment moves)",
+                "interface": "ToolDef/AssistantMessage/ProviderError/compat additive fields",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.11",
+                "action": "retain",
+                "test": "all pre-existing tests in the six owned suites, the 20.51 callback batteries, and workspace-wide",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "2eccca27d787230ad8a4ec581f394ae081ac6985"
+          }
+        }
+      ]
     },
     {
       "id": "20.12",
@@ -20263,6 +20441,16 @@
       "rejected_count": 3,
       "ran_at": "2026-10-25T22:10:27.833425+00:00",
       "task_id": "20.51",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 3,
+      "ran_at": "2026-10-26T03:33:12.521953+00:00",
+      "task_id": "20.11",
       "criterion_id": null
     }
   ]
