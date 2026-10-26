@@ -900,6 +900,36 @@ fetches one distribution-schema-v1 document over HTTP with pooled
 connections and redacted failures. The SDK registers no source, attaches
 no store, and has no pi.dev/default startup fetch policy.
 
+## Public JSON Repair and Portable Schema Utilities (P20-S53-2, task 20.53.2)
+
+`opi_ai::message::{repair_json, parse_streaming_json,
+finalize_tool_arguments, string_enum}` complete the pinned
+`utils/json-parse.ts` and `typebox-helpers.ts` families:
+
+- **`repair_json`** repairs malformed JSON string literals: raw control
+  characters inside strings become valid escapes (`\b`/`\f`/`\n`/`\r`/`\t`
+  or `\u00xx`), a backslash before an invalid escape is doubled so the
+  model-sent text stays literal, `\u` without four hex digits keeps that
+  treatment, legal escapes pass through untouched.
+- **`parse_streaming_json`** is a display-only partial parser with the
+  exact pinned cascade order: empty input -> `{}`; a complete document
+  parses (after escape repair) and is authoritative; otherwise the raw
+  text, then the repaired text, complete as a partial prefix (dangling
+  quotes/brackets are closed, dangling keys/values become `null`,
+  truncated numbers and literals complete conservatively, junk after the
+  first complete top-level value is ignored); finally a valid empty
+  object. It never fails and never overrides final results.
+- **`finalize_tool_arguments`** is the public AIR-048 contract for a
+  finished tool call: empty input finalizes to `{}`; a complete object
+  keeps its owned raw text; escape-only differences return the repaired
+  text; anything else keeps the raw text and a redacted-safe
+  `arguments_error` that never echoes the model-sent text. The final
+  object/`arguments_error` remains authoritative and raw text is retained.
+- **`string_enum`** builds a portable `{"type": "string", "enum": [...]}`
+  schema with optional `description`/`default` (empty strings omitted) -
+  deliberately no `anyOf`/`const` and no TypeBox symbols or JavaScript
+  ABI; the value is ready for `ToolDef::input_schema`.
+
 ## Public Text/System Rendering Utilities (P20-S53-1, task 20.53.1)
 
 `opi_ai::message::{content_text, assistant_content_text,

@@ -314,6 +314,382 @@ fn repair_invalid_escapes(raw: &str) -> Option<String> {
     Some(repaired)
 }
 
+/// Finalize the complete arguments text of a finished tool call under the
+/// public AIR-048 contract (task 20.53.2; delegates to the wire-shared
+/// `ToolCall::finalize_text_arguments`, semantics unchanged).
+///
+/// Returns `(arguments, arguments_error)`: empty input finalizes to `{}`
+/// without an error; a complete JSON object keeps its owned raw text;
+/// input differing only by invalid escape sequences returns the repaired
+/// text; any other final text keeps the owned raw text and carries a
+/// redacted-safe `arguments_error` that never echoes the model-sent text.
+/// The final result is authoritative: a streaming display parse never
+/// overrides it.
+pub fn finalize_tool_arguments(raw: String) -> (String, Option<String>) {
+    ToolCall::finalize_text_arguments(raw)
+}
+
+// ---------------------------------------------------------------------------
+// Public JSON repair and partial-parse utilities (task 20.53.2, P20-S53-2)
+//
+// Pinned source: `.repo/pi-1.3.0/packages/ai/src/utils/json-parse.ts`.
+
+const VALID_JSON_ESCAPES: [char; 8] = ['"', '\\', '/', 'b', 'f', 'n', 'r', 't'];
+
+fn is_json_control_character(ch: char) -> bool {
+    (ch as u32) <= 0x1f
+}
+
+fn escape_json_control_character(ch: char) -> String {
+    match ch {
+        '\u{08}' => "\\b".to_owned(),
+        '\u{0c}' => "\\f".to_owned(),
+        '\n' => "\\n".to_owned(),
+        '\r' => "\\r".to_owned(),
+        '\t' => "\\t".to_owned(),
+        ch => format!("\\u{:04x}", ch as u32),
+    }
+}
+
+/// Repair malformed JSON string literals (pinned `repairJson`).
+///
+/// Inside string literals only: raw control characters become valid JSON
+/// escapes (`\b`/`\f`/`\n`/`\r`/`\t` or `\u00xx`), a backslash before an
+/// invalid escape character is doubled so the model-sent text stays
+/// literal, `\u` without four hex digits keeps that treatment, legal
+/// escapes (including `\uXXXX`) pass through untouched, and a trailing
+/// backslash stays literal. Outside strings the input is copied verbatim.
+/// The result is repaired text, not a parse result: callers decide whether
+/// it now parses.
+pub fn repair_json(raw: &str) -> String {
+    let chars: Vec<char> = raw.chars().collect();
+    let mut repaired = String::with_capacity(raw.len());
+    let mut in_string = false;
+    let mut index = 0;
+    while index < chars.len() {
+        let ch = chars[index];
+        if !in_string {
+            repaired.push(ch);
+            if ch == '"' {
+                in_string = true;
+            }
+            index += 1;
+            continue;
+        }
+        if ch == '"' {
+            repaired.push(ch);
+            in_string = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' {
+            match chars.get(index + 1) {
+                None => {
+                    repaired.push_str("\\\\");
+                    index += 1;
+                }
+                Some(&'u') => {
+                    let hex: String = chars[index + 2..].iter().take(4).collect();
+                    if hex.chars().count() == 4 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                        repaired.push_str("\\u");
+                        repaired.push_str(&hex);
+                        index += 6;
+                    } else {
+                        repaired.push_str("\\\\");
+                        index += 1;
+                    }
+                }
+                Some(&next) if VALID_JSON_ESCAPES.contains(&next) => {
+                    repaired.push('\\');
+                    repaired.push(next);
+                    index += 2;
+                }
+                Some(_) => {
+                    repaired.push_str("\\\\");
+                    index += 1;
+                }
+            }
+            continue;
+        }
+        if is_json_control_character(ch) {
+            repaired.push_str(&escape_json_control_character(ch));
+        } else {
+            repaired.push(ch);
+        }
+        index += 1;
+    }
+    repaired
+}
+
+/// Parse potentially incomplete streaming JSON for display (pinned
+/// `parseStreamingJson` cascade, exact order).
+///
+/// 1. Empty or whitespace input returns an empty object.
+/// 2. A complete document parses (after escape repair) and is
+///    authoritative.
+/// 3. The raw text completes as a partial prefix (dangling quotes,
+///    brackets, keys and values are filled; truncated numbers and literals
+///    complete conservatively; junk after the first complete top-level
+///    value is ignored).
+/// 4. The repaired text completes as a partial prefix.
+/// 5. Otherwise the result is a valid empty object.
+///
+/// This is a display-only projection: it never fails and never serves as a
+/// final-parse authority; `finalize_tool_arguments` owns final results.
+pub fn parse_streaming_json(partial: &str) -> serde_json::Value {
+    if partial.trim().is_empty() {
+        return serde_json::Value::Object(serde_json::Map::new());
+    }
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(partial) {
+        return value;
+    }
+    let repaired = repair_json(partial);
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&repaired) {
+        return value;
+    }
+    complete_partial_json(partial)
+        .or_else(|| complete_partial_json(&repaired))
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()))
+}
+
+/// Which grammatical slot the innermost open container expects next.
+#[derive(Clone, Copy, PartialEq)]
+enum JsonSlot {
+    /// Object: a key string.
+    Key,
+    /// Object: the colon after a closed key string.
+    Colon,
+    /// Object or array: a value or element.
+    Value,
+    /// A complete member/element was just flushed (comma or close next).
+    After,
+}
+
+/// Complete a JSON prefix by filling dangling structure, then parse it.
+/// Returns `None` when even the completed text is not valid JSON.
+fn complete_partial_json(partial: &str) -> Option<serde_json::Value> {
+    let mut completed = String::with_capacity(partial.len() + 8);
+    let mut stack: Vec<(char, JsonSlot)> = Vec::new();
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut token = String::new();
+    let mut top_level_done = false;
+
+    /// A closed string is either a dangling key (colon expected next) or a
+    /// completed value/member (comma or close expected next).
+    fn close_string_slot(stack: &mut [(char, JsonSlot)]) {
+        if let Some((_, slot)) = stack.last_mut() {
+            *slot = if *slot == JsonSlot::Key {
+                JsonSlot::Colon
+            } else {
+                JsonSlot::After
+            };
+        }
+    }
+
+    fn flush_token(
+        out: &mut String,
+        token: &mut String,
+        stack: &mut [(char, JsonSlot)],
+        completed: bool,
+    ) {
+        if token.is_empty() {
+            return;
+        }
+        if completed {
+            // Only the dangling trailing token gets corrective treatment.
+            if let Some(fixed) = fix_dangling_token(token) {
+                out.push_str(&fixed);
+                if let Some((_, slot)) = stack.last_mut() {
+                    *slot = JsonSlot::After;
+                }
+            }
+            token.clear();
+            return;
+        }
+        out.push_str(token);
+        token.clear();
+        if let Some((_, slot)) = stack.last_mut() {
+            *slot = JsonSlot::After;
+        }
+    }
+
+    for ch in partial.chars() {
+        if top_level_done {
+            break;
+        }
+        if in_string {
+            completed.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+                close_string_slot(&mut stack);
+                if stack.is_empty() {
+                    top_level_done = true;
+                }
+            }
+            continue;
+        }
+        match ch {
+            '"' => {
+                flush_token(&mut completed, &mut token, &mut stack, false);
+                completed.push(ch);
+                in_string = true;
+            }
+            '{' => {
+                flush_token(&mut completed, &mut token, &mut stack, false);
+                completed.push(ch);
+                if let Some((_, slot)) = stack.last_mut() {
+                    *slot = JsonSlot::After;
+                }
+                stack.push(('{', JsonSlot::Key));
+            }
+            '[' => {
+                flush_token(&mut completed, &mut token, &mut stack, false);
+                completed.push(ch);
+                if let Some((_, slot)) = stack.last_mut() {
+                    *slot = JsonSlot::After;
+                }
+                stack.push(('[', JsonSlot::Value));
+            }
+            '}' | ']' => {
+                flush_token(&mut completed, &mut token, &mut stack, false);
+                completed.push(ch);
+                if stack.pop().is_some() && !stack.is_empty() {
+                    if let Some((_, slot)) = stack.last_mut() {
+                        *slot = JsonSlot::After;
+                    }
+                } else {
+                    top_level_done = true;
+                }
+            }
+            ',' => {
+                flush_token(&mut completed, &mut token, &mut stack, false);
+                completed.push(ch);
+                if let Some((container, slot)) = stack.last_mut() {
+                    *slot = if *container == '{' {
+                        JsonSlot::Key
+                    } else {
+                        JsonSlot::Value
+                    };
+                }
+            }
+            ':' => {
+                flush_token(&mut completed, &mut token, &mut stack, false);
+                completed.push(ch);
+                if let Some((container, slot)) = stack.last_mut()
+                    && *container == '{'
+                {
+                    *slot = JsonSlot::Value;
+                }
+            }
+            ch if ch.is_whitespace() => {
+                flush_token(&mut completed, &mut token, &mut stack, false);
+                completed.push(ch);
+            }
+            ch => token.push(ch),
+        }
+    }
+
+    flush_token(&mut completed, &mut token, &mut stack, true);
+    if in_string {
+        if escaped {
+            // A dangling escape never contributes a character.
+            completed.pop();
+        }
+        completed.push('"');
+        close_string_slot(&mut stack);
+    }
+    while let Some((container, slot)) = stack.pop() {
+        match (container, slot) {
+            ('{', JsonSlot::Colon) => completed.push_str(":null}"),
+            ('{', JsonSlot::Value) => completed.push_str("null}"),
+            ('{', _) => {
+                if completed.ends_with(',') {
+                    completed.pop();
+                }
+                completed.push('}');
+            }
+            (_, _) => {
+                if completed.ends_with(',') {
+                    completed.pop();
+                }
+                completed.push(']');
+            }
+        }
+    }
+    serde_json::from_str(&completed).ok()
+}
+
+/// Fix a dangling trailing bare token: a valid JSON number passes through
+/// (after dropping a truncated fraction/exponent), a prefix of a JSON
+/// literal completes to the literal, anything else is dropped.
+fn fix_dangling_token(token: &str) -> Option<String> {
+    for literal in ["true", "false", "null"] {
+        if !token.is_empty() && token.len() < literal.len() && literal.starts_with(token) {
+            return Some(literal.to_owned());
+        }
+    }
+    let mut candidate = token.to_owned();
+    loop {
+        if serde_json::from_str::<serde_json::Number>(&candidate).is_ok() {
+            return Some(candidate);
+        }
+        match candidate.chars().next_back() {
+            Some('e' | 'E' | '+' | '-' | '.') => {
+                candidate.pop();
+            }
+            _ => return None,
+        }
+    }
+}
+
+/// Build a portable string-enum JSON Schema for tool parameters (pinned
+/// `StringEnum`; task 20.53.2, P20-S53-2).
+///
+/// Emits `{"type": "string", "enum": [...]}` plus optional `description`
+/// and `default` members (empty strings are omitted, mirroring the pinned
+/// truthiness check). The shape is deliberately portable: providers such
+/// as Google's API do not support `anyOf`/`const` patterns, and no TypeBox
+/// symbols or JavaScript ABI leak into the value - it is a plain
+/// `serde_json::Value` ready for `ToolDef::input_schema`.
+pub fn string_enum(
+    values: &[&str],
+    description: Option<&str>,
+    default: Option<&str>,
+) -> serde_json::Value {
+    let mut schema = serde_json::Map::new();
+    schema.insert(
+        "type".to_owned(),
+        serde_json::Value::String("string".to_owned()),
+    );
+    schema.insert(
+        "enum".to_owned(),
+        serde_json::Value::Array(
+            values
+                .iter()
+                .map(|value| serde_json::Value::String((*value).to_owned()))
+                .collect(),
+        ),
+    );
+    if let Some(text) = description.filter(|text| !text.is_empty()) {
+        schema.insert(
+            "description".to_owned(),
+            serde_json::Value::String(text.to_owned()),
+        );
+    }
+    if let Some(text) = default.filter(|text| !text.is_empty()) {
+        schema.insert(
+            "default".to_owned(),
+            serde_json::Value::String(text.to_owned()),
+        );
+    }
+    serde_json::Value::Object(schema)
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolDef {
     pub name: String,

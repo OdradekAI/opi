@@ -726,6 +726,29 @@ catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
 source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
 
+## 公共 JSON repair 与可移植 schema 工具（P20-S53-2，任务 20.53.2）
+
+`opi_ai::message::{repair_json, parse_streaming_json,
+finalize_tool_arguments, string_enum}` 补齐锁定 `utils/json-parse.ts` 与
+`typebox-helpers.ts` 工具族：
+
+- **`repair_json`** 修复畸形 JSON 字符串字面量：串内原始控制字符转为合法
+  转义（`\b`/`\f`/`\n`/`\r`/`\t` 或 `\u00xx`）；非法转义前的反斜杠加倍，
+  使模型发送的文本保持字面；无四位十六进制的 `\u` 同样处理；合法转义原样
+  保留。
+- **`parse_streaming_json`** 是 display 专用部分解析器，遵循锁定级联序：
+  空输入→`{}`；完整文档（经转义修复）权威解析；否则依次对原始文本、修复
+  文本做前缀补全（闭合悬挂引号/括号、悬挂 key/value→`null`、截断数字与
+  字面量保守补全、忽略首个完整顶层值后的垃圾）；最终兜底为合法空对象。
+  永不失败，也永不凌驾终态结果。
+- **`finalize_tool_arguments`** 是完成 tool call 的公共 AIR-048 契约：空输入
+  终化为 `{}`；完整对象保留其 owned raw 文本；仅转义差异返回修复文本；
+  其余保留 raw 文本并携带 redacted-safe `arguments_error`（绝不回显模型
+  文本）。终态 object/`arguments_error` 权威，raw 保留。
+- **`string_enum`** 构造可移植 `{"type": "string", "enum": [...]}` schema，
+  可选 `description`/`default`（空串省略）——刻意不用 `anyOf`/`const`，无
+  TypeBox 符号或 JavaScript ABI；返回值可直接用于 `ToolDef::input_schema`。
+
 ## 公共 text/system 渲染工具（P20-S53-1，任务 20.53.1）
 
 `opi_ai::message::{content_text, assistant_content_text,

@@ -504,6 +504,20 @@
   unchanged.
 ### Added
 
+- `opi-ai`: public JSON repair and portable schema construction utilities
+  (task 20.53.2, P20-S53-2) in `opi_ai::message`: `repair_json` (pinned
+  `repairJson` semantics: raw control characters inside strings become
+  valid escapes, invalid escape backslashes are doubled so model text stays
+  literal, legal escapes pass through), `parse_streaming_json` (pinned
+  `parseStreamingJson` cascade in exact order - empty input, full parse
+  with repair, partial-prefix completion of the raw text, of the repaired
+  text, then a valid empty object; display-only, never a final authority),
+  `finalize_tool_arguments` (public delegation to the AIR-048 finalize:
+  final object/`arguments_error` stays authoritative and the raw text is
+  retained), and `string_enum` (portable `{"type": "string", "enum": [...]}`
+  schema construction with optional description/default, no anyOf/const or
+  TypeBox symbols). The partial-prefix completer is implemented in-repo;
+  no new dependency.
 - `opi-ai`: public visible-text extraction helpers for the message content
   enums (task 20.53.1, P20-S53-1): `content_text` (user `InputContent`),
   `assistant_content_text` (`AssistantContent`) and `output_content_text`
