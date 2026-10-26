@@ -504,6 +504,22 @@
   unchanged.
 ### Added
 
+- `opi-ai`: public compatibility `short_hash` and UUIDv7 generation
+  (task 20.53.4, P20-S53-4/5). `identity::short_hash` (pinned `shortHash`)
+  reproduces the pinned JavaScript algorithm exactly - UTF-16 code units
+  (surrogate pairs included), 32-bit wrapping multiplies, the sequential
+  self/cross final mix, and the unsigned base36 rendering of `h2` then
+  `h1` - locked by fixtures; it is documented as non-cryptographic and
+  not a durable identity promise, keeping source-qualified crypto hashes
+  (PKCE, AWS signing) with their owning modules. `identity::UuidV7Generator`
+  (pinned `uuidv7`) owns the monotonic state: `generate` takes an injected
+  now-in-milliseconds clock and never regresses on rollback, `generate_at`
+  preserves an explicit integer timestamp in `0..=2^48-1` without advancing
+  the ordinary rollback floor, the 41-bit sequence is seeded from random
+  bytes and incremented until exhaustion, which fails with the typed
+  `UuidV7Error::SequenceExhausted` (deterministically reachable via the
+  `test_support::force_sequence_exhausted` hook). No new dependency and no
+  generic identity framework.
 - `opi-ai`: public context-overflow, recoverable-Length and typed
   diagnostic predicates (task 20.53.3, P20-S53-3). `is_context_overflow`
   (pinned `isContextOverflow`) matches the pinned provider overflow error

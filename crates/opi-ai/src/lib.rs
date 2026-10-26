@@ -24,6 +24,7 @@ mod endpoint;
 mod crypto;
 pub mod gemini;
 pub mod http;
+pub mod identity;
 pub mod message;
 pub mod mistral;
 pub mod model;

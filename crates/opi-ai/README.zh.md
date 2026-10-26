@@ -726,6 +726,27 @@ catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
 source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
 
+## 公共 shortHash 与 UUIDv7 身份工具（P20-S53-4，任务 20.53.4）
+
+`opi_ai::identity::{short_hash, UuidV7Generator, UuidV7Error}` 补齐锁定
+`utils/hash.ts` 与 `utils/uuid.ts` 工具族：
+
+- **`short_hash(&str) -> String`**（锁定 `shortHash`）：兼容标识（会话种子、
+  `fc_` item id）的逐位移植——UTF-16 code unit（代理对计两单元）、32 位回绕
+  乘、顺序终局混合（各流自移 16、他移 13，第二段混合使用已更新的 `h1`）、
+  无符号 base36 先 `h2` 后 `h1` 输出，fixture 以严格 `ToInt32`/`ToUint32`
+  语义预计算锁定。文档明示非密码学、非持久身份承诺；source-qualified
+  crypto hash 的精确编码仍由其属主模块持有（`auth/oauth` PKCE、`auth/aws`
+  签名）。
+- **`UuidV7Generator`**（锁定 `uuidv7`）：持有单调时间戳下限与 41 位序列。
+  `generate(now_ms)` 时钟回退不倒退（有效时间 = `max(now, last)`）；
+  `generate_at(ts)` 原样保留 0..2^48-1 整数时间戳且不推进下限；越界返回
+  类型化 `UuidV7Error::InvalidTimestamp`；序列首用随机字节播种、递增至
+  `UuidV7Error::SequenceExhausted`（测试经
+  `test_support::force_sequence_exhausted` 确定性触发）。字节布局逐位照锁定
+  源（版本 `0x7`、变体 `0b10`、序列散布 b6..b11、保随机 LSB），8-4-4-4-12
+  小写 hex。
+
 ## 公共 overflow/Length 判别与类型化诊断（P20-S53-3，任务 20.53.3）
 
 `opi_ai::message::{is_context_overflow, is_recoverable_length}` 与

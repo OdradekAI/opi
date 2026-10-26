@@ -900,6 +900,33 @@ fetches one distribution-schema-v1 document over HTTP with pooled
 connections and redacted failures. The SDK registers no source, attaches
 no store, and has no pi.dev/default startup fetch policy.
 
+## Public shortHash and UUIDv7 Identity Utilities (P20-S53-4, task 20.53.4)
+
+`opi_ai::identity::{short_hash, UuidV7Generator, UuidV7Error}` complete the
+pinned `utils/hash.ts` and `utils/uuid.ts` families:
+
+- **`short_hash(&str) -> String`** (pinned `shortHash`): exact algorithm
+  port for compat identifiers (session seeds, `fc_` item ids) - UTF-16
+  code units (surrogate pairs contribute two units), 32-bit wrapping
+  multiplies, the sequential final mix (each stream shifts itself by 16
+  and the other by 13, the second mix using the already-updated `h1`),
+  and unsigned base36 output `h2` then `h1`, locked by fixtures computed
+  with strict `ToInt32`/`ToUint32` discipline. Documented
+  non-cryptographic and not a durable identity promise;
+  source-qualified crypto hashes keep their exact encodings in their
+  owning modules (`auth/oauth` PKCE, `auth/aws` signing).
+- **`UuidV7Generator`** (pinned `uuidv7`): owns the monotonic timestamp
+  floor and 41-bit sequence. `generate(now_ms)` never regresses on clock
+  rollback (effective timestamp is `max(now, last)`); `generate_at(ts)`
+  preserves an explicit integer timestamp in `0..=2^48-1` exactly without
+  advancing the floor; out-of-range timestamps fail with the typed
+  `UuidV7Error::InvalidTimestamp`; the sequence is seeded from random
+  bytes on first use and increments until `UuidV7Error::SequenceExhausted`
+  (deterministically reachable in tests via
+  `test_support::force_sequence_exhausted`). Layout follows the pinned
+  source bit for bit (version `0x7`, variant `0b10`, sequence spread
+  across bytes 6-11, random LSB preserved) in 8-4-4-4-12 lowercase hex.
+
 ## Public Overflow/Length Predicates and Typed Diagnostics (P20-S53-3, task 20.53.3)
 
 `opi_ai::message::{is_context_overflow, is_recoverable_length}` and

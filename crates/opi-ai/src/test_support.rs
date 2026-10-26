@@ -528,3 +528,13 @@ pub fn portable_executable_script(
         unimplemented!("portable executable helpers support unix and windows");
     }
 }
+
+/// Force a [`crate::identity::UuidV7Generator`] sequence to its exhaustion
+/// boundary (test hook; production exhaustion needs `2^41` calls).
+///
+/// Task 20.53.4 / P20-S53-4: keeps
+/// [`crate::identity::UuidV7Error::SequenceExhausted`] observable in
+/// deterministic tests.
+pub fn force_sequence_exhausted(generator: &mut crate::identity::UuidV7Generator) {
+    generator.set_sequence_for_tests((1u64 << 41) - 1);
+}
