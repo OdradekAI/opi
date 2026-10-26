@@ -504,6 +504,17 @@
   unchanged.
 ### Added
 
+- `opi-ai`: public visible-text extraction helpers for the message content
+  enums (task 20.53.1, P20-S53-1): `content_text` (user `InputContent`),
+  `assistant_content_text` (`AssistantContent`) and `output_content_text`
+  (`OutputContent`) extract and join text blocks in exact block order,
+  separated by single newlines. Images, tool calls and thinking in both
+  plain and redacted forms are never exposed. The helpers are read-only
+  projections and complete the pinned `utils/text.ts` family together with
+  the existing transcript-owned system renderers (`system_message_text`,
+  `render_system_message_update`), which render the canonical
+  body/section chronology and request-time update framing in exact order
+  without changing canonical input.
 - `opi-ai`: explicit whole-call retry helper (task 20.52, AIR-065/V-57):
   the new `opi_ai::retry_assistant_call` runs a caller-owned produce
   closure (each invocation a NEW logical call — never a re-dispatch,

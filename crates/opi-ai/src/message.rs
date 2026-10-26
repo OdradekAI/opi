@@ -123,6 +123,55 @@ pub enum ImageSource {
     Bytes { data: Vec<u8> },
 }
 
+// ---------------------------------------------------------------------------
+// Visible text extraction (task 20.53.1, P20-S53-1)
+//
+// Pinned source: `.repo/pi-1.3.0/packages/ai/src/utils/text.ts` `contentText`:
+// extract and join the text blocks of message content, in exact block order,
+// joined by newlines. Everything else — images, thinking in both forms, tool
+// calls — is not visible text and never leaks into the rendered string.
+// These helpers are read-only: they borrow content and never mutate it.
+
+/// Extract and join the visible text of user-message content blocks, in
+/// block order, separated by single newlines. Images contribute nothing.
+pub fn content_text(content: &[InputContent]) -> String {
+    content
+        .iter()
+        .filter_map(|block| match block {
+            InputContent::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Extract and join the visible text of assistant-message content blocks,
+/// in block order, separated by single newlines. Thinking (plain and
+/// redacted) and tool calls are never exposed by this rendering.
+pub fn assistant_content_text(content: &[AssistantContent]) -> String {
+    content
+        .iter()
+        .filter_map(|block| match block {
+            AssistantContent::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Extract and join the visible text of tool-result content blocks, in
+/// block order, separated by single newlines. Images contribute nothing.
+pub fn output_content_text(content: &[OutputContent]) -> String {
+    content
+        .iter()
+        .filter_map(|block| match block {
+            OutputContent::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]

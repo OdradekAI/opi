@@ -726,6 +726,24 @@ catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
 source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
 
+## 公共 text/system 渲染工具（P20-S53-1，任务 20.53.1）
+
+`opi_ai::message::{content_text, assistant_content_text,
+output_content_text}` 按块序抽取并拼接消息内容枚举中的**可见文本**块，
+以单个换行连接。图像、工具调用与 thinking（明文与 redacted 两种形态）
+绝不出现在渲染结果中。这些 helper 是只读投影：借用内容，绝不改动
+canonical 输入。
+
+它们与 transcript 所属的 system 渲染器（`opi_ai::transcript::
+system_message_text` 与 `render_system_message_update`）共同构成锁定
+`utils/text.ts` 工具族：初始渲染为正文加插入序存活 sections、以空行连接
+（`null` 值删除 section；空值保留身份但不贡献渲染文本）；更新渲染按名框
+架化每处变更（`Updated system prompt section "n":\n\n…` / `Removed
+system prompt section "n".`）。编年重放
+（`get_current_system_message` / `get_current_system_prompt`）保留
+initial/current 区分：content 追加以空行连接，section 替换保位，删除即移
+除，删后重加移至末尾。
+
 ## 显式 whole-call retry helper（AIR-065/V-57，任务 20.52）
 
 `opi_ai::retry_assistant_call` 以有界 whole-call 重试包裹调用方拥有的

@@ -900,6 +900,27 @@ fetches one distribution-schema-v1 document over HTTP with pooled
 connections and redacted failures. The SDK registers no source, attaches
 no store, and has no pi.dev/default startup fetch policy.
 
+## Public Text/System Rendering Utilities (P20-S53-1, task 20.53.1)
+
+`opi_ai::message::{content_text, assistant_content_text,
+output_content_text}` extract and join the **visible text** blocks of the
+message content enums in exact block order, separated by single newlines.
+Images, tool calls and thinking — in both plain and redacted forms — are
+never exposed by these renderings. The helpers are read-only projections:
+they borrow content and never mutate canonical input.
+
+They complete the pinned `utils/text.ts` family together with the
+transcript-owned system renderers (`opi_ai::transcript::system_message_text`
+and `render_system_message_update`): the initial render is the body followed
+by insertion-ordered live sections joined with blank lines (a `null` value
+removes a section; an empty value keeps its identity but contributes no
+rendered text), and the update render frames each change by name
+(`Updated system prompt section "n":\n\n…` / `Removed system prompt section
+"n".`). Replaying the chronology (`get_current_system_message` /
+`get_current_system_prompt`) preserves the initial/current distinction:
+content appends join with a blank line, a section replacement keeps its
+position, a delete removes it, and a delete-then-readd moves it to the end.
+
 ## Explicit Whole-Call Retry Helper (AIR-065/V-57, task 20.52)
 
 `opi_ai::retry_assistant_call` wraps a caller-owned `produce` closure with
