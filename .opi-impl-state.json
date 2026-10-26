@@ -14014,7 +14014,7 @@
       "definition_of_done": "Public text/system helpers render canonical body/section chronology and updates in exact order without changing canonical input or exposing thinking; reuse transcript owner and preserve initial/current distinctions.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.6",
         "20.7"
@@ -14096,7 +14096,7 @@
           "production_call_sites": [
             "opi_ai::utils::content_text/render_system_message and ordered section rendering (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -14105,7 +14105,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "8ba469707f78f97cf5920ea3ab87af81b8e028c3",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -14115,10 +14115,52 @@
         "crates/opi-ai/src/utils/text.rs",
         "crates/opi-ai/tests/public_utilities.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "8f8897f9aff8ec5f9745ebd56dc7b20289ef964b",
+      "evidence": {
+        "Opi-Task": "20.53.1",
+        "Opi-DoD-SHA256": "ed7c86f6f9958247408f3288019bc96942b824f9c2ced93ceca1c1e71658932f",
+        "Opi-Verification": "library; smoke scoped --crate opi-ai --test public_utilities PASSED (fmt, clippy, crate tests); scenario cargo test -p opi-ai --test public_utilities 9 PASS; doc-check PASS; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P20-S53-1 exercised at opi_ai::message::{content_text, assistant_content_text, output_content_text} with the transcript owner reused unchanged; P20-CONTEXT consumer role respected, no new seam"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-26T05:53:27.332642+00:00",
+          "attempt": 1,
+          "summary": "B.2 gate: user approved (1) end-to-end TDD on the pinned utils/text.ts family - content_text/assistant_content_text/output_content_text over the message.rs content enums as the missing member, reusing the transcript-owned system renderers unchanged; (2) two separate commits (feat task commit with Opi-* footers + ledger checkpoint); (3) network-boundary self-report (in-process string functions; no network, no wiremock, no credentials)."
+        },
+        {
+          "timestamp": "2026-10-26T06:06:54.782773+00:00",
+          "attempt": 1,
+          "summary": "Delivered the missing member of the pinned utils/text.ts family: opi_ai::message::{content_text, assistant_content_text, output_content_text} extract visible text blocks in exact block order joined by single newlines; images, tool calls and thinking (plain and redacted) never surface. Read-only projections over borrowed content; transcript-owned renderers (20.6) reused unchanged per the P20-CONTEXT shared decision (consumer role, no new seam, no rename of the shipped system_message_text surface). 9-test suite covers extraction order per content enum, non-exposure including redacted thinking, initial render with null-removal and empty-value identity retention, exact update framing strings, replay chronology (replace keeps position, delete removes, delete-then-readd moves to end), initial/current distinction, and byte-identical canonical input after every renderer. Red phase was a genuine E0432 compile failure; one test-side fix during red (ImageSource::Base64 data is String, and one assertion order), implementation unchanged from design. fmt-only smoke retry after first scoped run. No push.",
+          "gate_results": {
+            "d1_gate": "smoke scoped --crate opi-ai --test public_utilities PASSED (fmt, clippy -D warnings, crate tests + public_utilities)",
+            "d0_scenario": "cargo test -p opi-ai --test public_utilities -> 9 passed / 0 failed",
+            "d3_gap_only": "python scripts/opi-doc-check.py PASS; git diff --check clean",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=2 (content_text family ships the default '\\n' separator only - Pi's separator parameter has no second consumer, revisit trigger recorded in simplification_ceiling; the 'complete the family' CHANGELOG/README wording leans on the 20.6-owned transcript renderers - owner attribution kept explicit in all artifacts), rejected=3 (a Message-level aggregate dispatch - not in the pinned family shape; a customizable separator parameter - speculative without a consumer; renaming system_message_text to render_system_message - inference-note vocabulary is not an API-name mandate and would break the shipped 20.6 surface), wf_ref=null (degraded single-reviewer path)",
+            "test_disposition": [
+              {
+                "subject": "visible text extraction family",
+                "action": "add",
+                "test": "tests/public_utilities.rs (9): per-enum extraction order and empties, assistant thinking/redacted/tool-call non-exposure, initial render null-removal + empty-identity, exact update framing, replay chronology replace-keeps-position / delete / delete-then-readd-to-end, initial vs current distinction, canonical-input immutability across all renderers",
+                "interface": "opi_ai::message::{content_text, assistant_content_text, output_content_text} + reused transcript renderers",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.53.1",
+                "action": "retain",
+                "test": "all pre-existing suites unchanged and green in the scoped crate gate",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "8f8897f9aff8ec5f9745ebd56dc7b20289ef964b"
+          }
+        }
+      ]
     },
     {
       "id": "20.53.2",
@@ -20505,6 +20547,16 @@
       "rejected_count": 3,
       "ran_at": "2026-10-26T04:57:20.075589+00:00",
       "task_id": "20.52",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 3,
+      "ran_at": "2026-10-26T06:06:54.782773+00:00",
+      "task_id": "20.53.1",
       "criterion_id": null
     }
   ]
