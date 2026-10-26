@@ -14827,7 +14827,7 @@
       "definition_of_done": "Extend the existing MockProvider Events/EventsThenError chat scripts only where a distinct delayed poll, cancellation or ordered multi-block/tool fixture is missing; retain existing arbitrary event scripts and build no second mock driver. This substrate depends only on the chat contracts already delivered by 20.3. Image/classifier/deferred record types and their narrowly necessary scripts are delivered with 20.45-50 after those operation types exist, so this task does not require a future deferred type that depends on it. It claims no HTTP/live/production-consumer proof.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3"
       ],
@@ -14897,7 +14897,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "d982a0da3",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -14907,10 +14907,52 @@
         "crates/opi-ai/src/test_support.rs",
         "crates/opi-ai/tests/test_support_tests.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "53a939b4f71facc80f8fc0aaa9f67bb3dee2fe68",
+      "evidence": {
+        "Opi-Task": "20.53.8",
+        "Opi-DoD-SHA256": "8a8f6222d56330a1910cf3b32dbb6569a88ea6316b6509d67d6345e77e537820",
+        "Opi-Verification": "library; smoke scoped --crate opi-ai --test test_support_tests PASSED (fmt, clippy -D warnings, crate tests, rustdoc -D warnings); scenario cargo test -p opi-ai --test test_support_tests 20 PASS (7 new); doc-check PASS; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "DEL-11 substrate exercised at test_support::{MockResponse::DelayedAfter, MockResponse::HangingUntilCancelled, blocks_response} atop the 20.3 chat contracts; delayed poll, cancellation and ordered multi-block/tool fixtures are observable with existing arbitrary event scripts retained and no second mock driver; no HTTP/live/production-consumer proof claimed"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-26T11:57:05.340966+00:00",
+          "attempt": 1,
+          "summary": "B.2 gate: user approved (1) TDD on the existing MockProvider in test_support.rs only - no second mock driver, public_api=none. Three script shapes pinned to providers/faux.ts: MockResponse::DelayedAfter{pending_attempts, retry_after_ms, events} where the first pending_attempts prepared attempts each yield Err(ProviderError::RateLimited{retry_after_ms}) (pinned pendingFetches countdown to readiness; pollAfterMs maps to the existing retry_after_ms hint, no timers) and the next attempt yields the events, pending_attempts=0 documented as exactly Events; MockResponse::HangingUntilCancelled which yields no events until request.cancel fires then terminates Err(ProviderError::Cancelled) (pinned signal-aborted-to-error at the attempt boundary), pre-cancel failing immediately, built with futures_util::stream::once over token.cancelled() with no new dependency; and blocks_response(Vec<AssistantContent>) emitting Start, per-block TextDelta/ToolCallEnd at content_index in order, and Done with StopReason::ToolUse when any tool call is present else Stop (the ordered multi-block/tool fixture missing from the single-text/single-tool helpers). Behavioral tests land in tests/test_support_tests.rs (+~7, red-first): Delayed prefix RateLimited surface and N+1 readiness, pending=0 equivalence, hang-then-cancel terminal Cancelled, pre-cancel immediate failure, blocks ordering/StopReason, text-only structural equivalence with text_response, and mixed Delayed->Events->EventsThenError queue order. Pre-registered rejected: second mock driver or registration framework; fetchDeferred/cancelDeferred/deferred records and cancelledDeferred counters (20.45-50 per DoD); token-rate and usage-estimate simulation (no consumer); real timers or sleeps (reuse retry hints and CancellationToken); changing Events/Error/EventsThenError semantics or the stream_prepared assertion. (2) two separate commits (feat task commit with Opi-* footers + ledger checkpoint); (3) network self-report (pure in-process; no network, no wiremock, no credentials, no provider APIs)."
+        },
+        {
+          "timestamp": "2026-10-26T12:08:09.423279+00:00",
+          "attempt": 1,
+          "summary": "Delivered the three missing MockProvider script shapes on the existing driver: DelayedAfter (per-entry countdown at the queue head; pending attempts surface RateLimited with the retry_after_ms hint reusing the existing retry mechanism; pending=0 equals Events), HangingUntilCancelled (stream::once over CancellationToken::cancelled, pre-cancel fast-fail), and blocks_response (ordered TextDelta/ToolCallEnd at content_index, ToolUse stop when any tool call). Red phase was genuine E0432 on blocks_response plus E0599 on both new variants; all 20 tests green first try after implementation; D.1 scoped passed with zero retries. One README.zh stray-word fix before commit. Existing Events/Error/EventsThenError semantics and the stream_prepared queue assertion unchanged; deferred records stay with 20.45-50 per DoD. Flagged: none - the shapes have immediate consumers in this task's own behavioral tests, and downstream suites (retry/cancellation fixtures) can adopt them incrementally; test_support is doc(hidden) so no public-API surface was added. No push.",
+          "gate_results": {
+            "d1_gate": "smoke scoped --crate opi-ai --test test_support_tests PASSED (fmt, clippy -D warnings, crate tests + test_support_tests, rustdoc -D warnings)",
+            "d0_scenario": "cargo test -p opi-ai --test test_support_tests -> 20 passed / 0 failed (7 new)",
+            "d3_gap_only": "python scripts/opi-doc-check.py PASS; git diff --check clean",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=0, rejected=5 as pre-registered (second mock driver or registration framework; fetchDeferred/cancelDeferred/deferred records and cancelledDeferred counters - 20.45-50 per DoD; token-rate and usage-estimate simulation with no consumer; real timers or sleeps; changing Events/Error/EventsThenError semantics or the stream_prepared assertion), wf_ref=null (degraded single-reviewer path)",
+            "test_disposition": [
+              {
+                "subject": "MockProvider delayed poll, cancellation, ordered blocks",
+                "action": "add",
+                "test": "tests/test_support_tests.rs +7: Delayed prefix RateLimited with retry_after_ms surface and N+1 readiness, pending=0 equivalence with Events, hang-then-cancel terminal Cancelled under the paused clock, pre-cancel immediate failure, blocks ordering/content_index/ToolUse stop reason, text-only structural equivalence with text_response, mixed Delayed->Events->EventsThenError queue order across four attempts",
+                "interface": "opi_ai::test_support::{MockResponse::DelayedAfter, MockResponse::HangingUntilCancelled, blocks_response} (doc(hidden) test substrate)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.53.8",
+                "action": "retain",
+                "test": "all pre-existing test_support_tests and MockProvider consumer suites unchanged and green",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "53a939b4f71facc80f8fc0aaa9f67bb3dee2fe68"
+          }
+        }
+      ]
     },
     {
       "id": "20.54",
@@ -20765,6 +20807,16 @@
       "rejected_count": 5,
       "ran_at": "2026-10-26T11:46:43.880587+00:00",
       "task_id": "20.53.6",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 5,
+      "ran_at": "2026-10-26T12:08:09.423279+00:00",
+      "task_id": "20.53.8",
       "criterion_id": null
     }
   ]
