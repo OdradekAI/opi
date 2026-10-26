@@ -726,6 +726,28 @@ catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
 source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
 
+## Telemetry 载体：冻结 parent Span 与 Dispatch（任务 20.54，DEL-12）
+
+`telemetry` 提供进程本地 `TelemetryContext` 载体——P20-TELEMETRY 共享决策
+owner；closure test 位于 `tests/telemetry_carrier.rs`。
+
+- **`TelemetryContext::from_span(span)`** 在创建时冻结 parent
+  `tracing::Span` 与当前默认 `Dispatch` 的配对。owned tracing 差异（已评审
+  RDF-14）：tracing span 不保留创建它的 dispatcher，故在 `from_span` 冻结
+  配对；观测绝不采用 poll 时的 ambient dispatch。disabled span 退化为显式
+  `noop()` 态。`Clone` 保留同一配对；上下文 `Send + Sync`。
+- **`in_scope(FnOnce)`** 在冻结配对下（dispatch 设为段默认、parent 仅段内
+  enter）恰好执行一次同步 body，并在返回前恢复 caller 上下文。
+- **`instrument(Future) -> Instrumented<F>`** 是惰性 `Unpin` 包装器（boxed
+  inner future，零 `unsafe`）：每次 poll 与 drop（含未 poll 的 drop）运行同
+  一 scoped 段。无 enter guard 跨 await；每次外层 poll 恰好 poll 一次内层；
+  `Pending` 与输出保真。
+- **`noop()`** 在 no-op dispatcher 下运行同样段落：业务仍恰好执行一次，段内
+  观测被显式静默而不泄漏到 ambient dispatch。
+
+仅载体基底：无 global subscriber/exporter/采样、无领域 span 词汇、无自动
+SDK 调用/attempt span、不序列化不上 wire。SDK 实际传播由后续任务持有。
+
 ## MockProvider 多操作脚本测试支撑（任务 20.53.8，DEL-11）
 
 `test_support` 按钉定 `providers/faux.ts` 为既有 `MockProvider` chat 脚本补齐

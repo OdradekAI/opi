@@ -47,6 +47,7 @@ pub mod retry;
 pub use retry::retry_assistant_call;
 pub mod schema;
 pub mod stream;
+pub mod telemetry;
 #[doc(hidden)]
 pub mod test_support;
 mod text_decode;

@@ -22,6 +22,7 @@ futures-util = { workspace = true }
 uuid = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }
+tracing-core = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }

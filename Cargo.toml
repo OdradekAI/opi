@@ -91,6 +91,7 @@ regex = "1"
 
 # observability
 tracing = "0.1"
+tracing-core = "0.1"
 
 # markdown
 pulldown-cmark = "0.13"

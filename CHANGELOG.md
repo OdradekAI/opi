@@ -504,6 +504,28 @@
   unchanged.
 ### Added
 
+- `opi-ai`: process-local telemetry carrier `TelemetryContext` (task
+  20.54, DEL-12; P20-TELEMETRY owner). `from_span(tracing::Span)` freezes
+  the parent span together with the current default `Dispatch` at creation
+  time - the reviewed RDF-14 owned tracing difference, since tracing spans
+  do not retain their creating dispatcher; observation never adopts
+  poll-time ambient dispatch. A disabled span degrades to the explicit
+  `noop()` state. `Clone` retains the same pair and the context is
+  `Send + Sync`. `in_scope(FnOnce)` runs the synchronous body exactly once
+  under the frozen pair and restores the caller context; `instrument(Future)`
+  returns a lazy `Unpin` wrapper (boxed inner, zero `unsafe`) whose every
+  poll and whose drop - including an unpolled drop - run one short scoped
+  section installing the frozen dispatch and entering the parent for the
+  section only: no enter guard crosses an await, each outer poll polls the
+  wrapped future exactly once, `Pending` and the output are preserved. The
+  disabled carrier runs the same sections under a no-op dispatcher:
+  business work still executes exactly once while section observation is
+  explicitly silenced. New direct dependency `tracing-core = "0.1"`
+  (workspace): the locked tree already carried tracing-core 0.1.36 as
+  tracing 0.1.44's dependency, so this only grants direct visibility.
+  Carrier substrate only - no global subscriber/exporter/sampling, no
+  domain span vocabulary, no automatic SDK spans, nothing serialized or
+  sent on the wire; SDK propagation is owned by later tasks.
 - `opi-ai`: scripted multi-operation test support on the existing
   MockProvider (task 20.53.8, DEL-11; no second mock driver, public API
   unchanged). New `MockResponse::DelayedAfter { pending_attempts,

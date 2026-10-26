@@ -900,6 +900,37 @@ fetches one distribution-schema-v1 document over HTTP with pooled
 connections and redacted failures. The SDK registers no source, attaches
 no store, and has no pi.dev/default startup fetch policy.
 
+## Telemetry Carrier: Frozen Parent Span plus Dispatch (task 20.54, DEL-12)
+
+`telemetry` provides the process-local `TelemetryContext` carrier - the
+P20-TELEMETRY shared-decision owner; the closure test lives at
+`tests/telemetry_carrier.rs`.
+
+- **`TelemetryContext::from_span(span)`** freezes the parent
+  `tracing::Span` together with the current default `Dispatch` at
+  creation time. Owned tracing difference (reviewed RDF-14): tracing
+  spans do not retain their creating dispatcher, so the pair is frozen
+  at `from_span`; observation never adopts poll-time ambient dispatch. A
+  disabled span degrades to the explicit `noop()` state. `Clone`
+  retains the same pair; the context is `Send + Sync`.
+- **`in_scope(FnOnce)`** runs the synchronous body exactly once under
+  the frozen pair (dispatch installed as the section default, parent
+  entered for the section only) and restores the caller context before
+  returning.
+- **`instrument(Future) -> Instrumented<F>`** is a lazy `Unpin` wrapper
+  (boxed inner future, zero `unsafe`) whose every poll and whose drop -
+  including an unpolled drop - run the same scoped section. No enter
+  guard crosses an await; each outer poll polls the wrapped future
+  exactly once; `Pending` and the output are preserved.
+- **`noop()`** runs the same sections under a no-op dispatcher:
+  business work still executes exactly once while section observation
+  is explicitly silenced instead of leaking to ambient dispatch.
+
+Carrier substrate only: no global subscriber/exporter/sampling, no
+domain span vocabulary, no automatic SDK call/attempt spans, nothing
+serialized or placed on the wire. SDK propagation through actual
+operations is owned by later tasks.
+
 ## Scripted Multi-Operation MockProvider Support (task 20.53.8, DEL-11)
 
 `test_support` extends the existing `MockProvider` chat scripts with the
