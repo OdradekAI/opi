@@ -726,6 +726,29 @@ catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
 source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
 
+## 显式 whole-call retry helper（AIR-065/V-57，任务 20.52）
+
+`opi_ai::retry_assistant_call` 以有界 whole-call 重试包裹调用方拥有的
+`produce` 闭包。闭包每次调用都是一个**新 logical call**——helper 绝不重派旧
+调用、绝不改动 transcript、绝不重执行工具、绝不重置 prepared call 预算。省
+略 policy（或 `enabled: false`）即恰好一次调用。
+
+- 分类（`WholeCallRetryPolicy` + `classify_whole_call_retry`）遵循锁定源的模
+  式表：quota/billing/usage-limit 耗尽**先否决**，其后才是暂态族——供应商负
+  载与 429/5xx/520/524 状态、网关转发（"unable to forward upstream"、
+  "service temporarily unavailable"）、网络/传输失败、流提前结束、流中显式
+  重试指引、gRPC `ResourceExhausted`、订阅用量抖动。
+- 有效停止（Stop/Length/ToolUse——含未来的 Deferred 变体）与 abort 绝不重
+  试；预算耗尽返回最终错误消息。
+- 回调顺序精确：`on_retry_scheduled` → 可取消的指数退避（调用方给基数，
+  delay 默认 cap 60s）→ `on_retry_attempt_start` → 新调用；
+  `on_retry_finished` 在循环结束恰好一次，且仅当确已 schedule 过重试。回调
+  失败以 typed `WholeCallRetryError::Callback` 停止循环。
+- 退避期间取消返回重标为 `Aborted` 的失败消息——错误文本剔除、部分内容与
+  usage 保留。
+- helper 自身绝不切换 provider/model/auth（那是调用方工厂的事），也绝不接
+  产品恢复；host 重试政策仍属 host。
+
 ## 受限采样：strict wire 投影与有界降级变体（AIR-040/V-34，任务 20.11）
 
 `ToolDef.constrained_sampling` 携带逐工具意图——`json_schema` 的

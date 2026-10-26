@@ -841,3 +841,372 @@ mod acquisition_tests {
         ));
     }
 }
+
+// ============================================================================
+// Explicit whole-call retry helper (AIR-065 / V-57, task 20.52)
+// ============================================================================
+//
+// This section is deliberately independent of the acquisition core above:
+// the low-level machinery owns attempts *within* one logical call, while
+// this helper owns the caller-opted restart of *whole* logical calls. Each
+// invocation of the caller's `produce` closure is a new logical call (the
+// helper never re-dispatches an old one, never mutates transcripts, never
+// re-executes tools and never resets a prepared call's budget); omission or
+// a disabled policy means exactly one call. Classification follows the
+// pinned source pattern lists: quota/billing/usage-limit exhaustion vetoes
+// first, then the transient families (provider load, gateway forwarding,
+// network/transport, premature stream endings, explicit retry guidance).
+
+/// Default cap for whole-call retry backoff delays (60s). Product recovery
+/// policy stays with the host; the SDK helper only bounds a caller-supplied
+/// schedule.
+pub const DEFAULT_WHOLE_CALL_RETRY_MAX_DELAY_MS: u64 = 60_000;
+
+/// Caller-owned whole-call retry schedule. `max_retries` counts EXTRA
+/// complete calls; the initial call never counts as a retry.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct WholeCallRetryPolicy {
+    /// Opt-in switch; `false` (or omitting the policy) makes one call.
+    pub enabled: bool,
+    /// Extra complete calls after the initial one (0 = never retry).
+    pub max_retries: u32,
+    /// Base delay in ms; per-attempt delay is `base * 2^(attempt-1)`.
+    pub base_delay_ms: u64,
+    /// Optional per-call cap in ms; defaults to
+    /// [`DEFAULT_WHOLE_CALL_RETRY_MAX_DELAY_MS`].
+    pub max_delay_ms: Option<u64>,
+}
+
+/// Exponential whole-call backoff: `base_delay_ms * 2^(attempt-1)`
+/// (saturating) capped at `max_delay_ms` or the 60s default.
+pub fn whole_call_retry_delay_ms(policy: &WholeCallRetryPolicy, attempt: u32) -> u64 {
+    let exponent = attempt.saturating_sub(1).min(63);
+    let delay = policy.base_delay_ms.saturating_mul(1u64 << exponent);
+    delay.min(
+        policy
+            .max_delay_ms
+            .unwrap_or(DEFAULT_WHOLE_CALL_RETRY_MAX_DELAY_MS),
+    )
+}
+
+/// Message-level classification for the whole-call helper.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WholeCallRetryClassification {
+    /// A successful stop (Stop/Length/ToolUse/Deferred/...): never retried.
+    Valid,
+    /// Cancellation: terminal and never successful, never retried.
+    Aborted,
+    /// Transient provider/transport failure: a new call may help.
+    Transient,
+    /// Deterministic failure (including quota/billing/usage vetoes).
+    Terminal,
+}
+
+fn non_retryable_limit_pattern() -> &'static regex::Regex {
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    PATTERN.get_or_init(|| {
+        regex::RegexBuilder::new(
+            [
+                // Subscription/account limits surfaced as 429 JSON error types.
+                "GoUsageLimitError",
+                "FreeUsageLimitError",
+                "Monthly usage limit reached",
+                "available balance",
+                // Generic quota/budget/billing exhaustion.
+                "insufficient_quota",
+                "out of budget",
+                "quota exceeded",
+                "billing",
+                // Subscription-shared usage limits that reset after hours.
+                "subscription_sharing_usage_limit_exceeded",
+            ]
+            .join("|")
+            .as_str(),
+        )
+        .case_insensitive(true)
+        .build()
+        .expect("vetted literal pattern set")
+    })
+}
+
+fn retryable_transient_pattern() -> &'static regex::Regex {
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    PATTERN.get_or_init(|| {
+        regex::RegexBuilder::new(
+            [
+                // Provider load, HTTP status and server-side transients.
+                "overloaded",
+                "server_busy",
+                "servers are currently busy",
+                "currently experiencing high demand",
+                "model is at capacity",
+                "rate.?limit",
+                "too many requests",
+                "429",
+                "500",
+                "502",
+                "503",
+                "504",
+                "520",
+                "524",
+                "service.?(?:is.?)?(?:temporarily.?)?unavailable",
+                "server.?error",
+                "internal.?error",
+                // Transient upstream failures relayed by wrappers/gateways.
+                "provider.?returned.?(?:an.?)?error",
+                "exceeded request buffer limit while retrying upstream",
+                "unable to forward upstream",
+                // Network, proxy and fetch transport failures.
+                "network.?error",
+                "connection.?error",
+                "connection.?refused",
+                "connection.?lost",
+                "other side closed",
+                "fetch failed",
+                "getaddrinfo",
+                "ENOTFOUND",
+                "EAI_AGAIN",
+                "upstream.?connect",
+                "reset before headers",
+                "socket hang up",
+                "socket connection was closed",
+                "timed? out",
+                "timeout",
+                "terminated",
+                // WebSocket transports reporting close/error text.
+                "websocket.?closed",
+                "websocket.?error",
+                // Premature stream endings from SDKs and transports.
+                "ended without",
+                "stream ended before message_stop",
+                "stream ended before a terminal response event",
+                "http2 request did not get a response",
+                "pending stream has been canceled",
+                // Provider-requested retry-delay caps flow through the outer
+                // policy so callers can surface or abort the backoff.
+                "retry delay",
+                // Explicit mid-stream retry guidance.
+                "you can retry your request",
+                "try your request again",
+                "please retry your request",
+                // gRPC based providers.
+                "ResourceExhausted",
+                // Subscription usage/user data temporarily unavailable.
+                "subscription_sharing_usage_unavailable",
+                "subscription_sharing_user_unavailable",
+            ]
+            .join("|")
+            .as_str(),
+        )
+        .case_insensitive(true)
+        .build()
+        .expect("vetted literal pattern set")
+    })
+}
+
+/// Classify a finished message for whole-call retry: quota/billing/usage
+/// limits veto first; only then may a transient family classify as
+/// retryable. Messages that are not failures are valid; aborts are terminal.
+pub fn classify_whole_call_retry(
+    message: &crate::message::AssistantMessage,
+) -> WholeCallRetryClassification {
+    match message.stop_reason {
+        crate::stream::StopReason::Aborted => WholeCallRetryClassification::Aborted,
+        crate::stream::StopReason::Error => {
+            let Some(error_message) = message.error_message.as_deref() else {
+                return WholeCallRetryClassification::Terminal;
+            };
+            if non_retryable_limit_pattern().is_match(error_message) {
+                WholeCallRetryClassification::Terminal
+            } else if retryable_transient_pattern().is_match(error_message) {
+                WholeCallRetryClassification::Transient
+            } else {
+                WholeCallRetryClassification::Terminal
+            }
+        }
+        _ => WholeCallRetryClassification::Valid,
+    }
+}
+
+/// A retry-callback failure the caller's closure reported; the helper
+/// surfaces it instead of continuing or swallowing it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetryCallbackFailure {
+    /// Caller-supplied, already-sanitized detail.
+    pub detail: String,
+}
+
+impl std::fmt::Display for RetryCallbackFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.detail)
+    }
+}
+
+impl std::error::Error for RetryCallbackFailure {}
+
+/// Typed helper failures. The loop itself never fails on provider errors
+/// (those return as messages); only callback failures surface here.
+#[derive(Debug, thiserror::Error)]
+pub enum WholeCallRetryError {
+    /// A retry callback failed; the loop stopped without another call.
+    #[error("whole-call retry callback failed: {0}")]
+    Callback(#[from] RetryCallbackFailure),
+}
+
+/// Optional lifecycle callbacks around each whole-call retry, mirroring the
+/// pinned source contract: `on_retry_scheduled` fires before the backoff
+/// sleep, `on_retry_attempt_start` after it (immediately before the retried
+/// call), and `on_retry_finished` exactly once when the loop ends — but only
+/// if a retry was ever scheduled. All are optional and may fail explicitly.
+pub struct WholeCallRetryCallbacks<'a> {
+    /// `(attempt, max_attempts, delay_ms, error_message)` before each sleep.
+    pub on_retry_scheduled: Option<OnRetryScheduled<'a>>,
+    /// Fired after the backoff sleep, before the retried call starts.
+    pub on_retry_attempt_start: Option<OnRetryAttemptStart<'a>>,
+    /// `(success, attempt, final_error)` once at loop end, only when a retry
+    /// was scheduled (`success` is true only for a valid final message).
+    pub on_retry_finished: Option<OnRetryFinished<'a>>,
+}
+
+/// Callback fired before the backoff sleep of each retry (1-indexed).
+pub type OnRetryScheduled<'a> =
+    Box<dyn FnMut(u32, u32, u64, &str) -> Result<(), RetryCallbackFailure> + Send + 'a>;
+/// Callback fired after the backoff sleep, before the retried call starts.
+pub type OnRetryAttemptStart<'a> = Box<dyn FnMut() -> Result<(), RetryCallbackFailure> + Send + 'a>;
+/// Callback fired once at loop end (only when a retry was scheduled).
+pub type OnRetryFinished<'a> =
+    Box<dyn FnMut(bool, u32, Option<&str>) -> Result<(), RetryCallbackFailure> + Send + 'a>;
+
+impl<'a> WholeCallRetryCallbacks<'a> {
+    /// An empty callback set: the loop runs silently.
+    pub fn new() -> Self {
+        Self {
+            on_retry_scheduled: None,
+            on_retry_attempt_start: None,
+            on_retry_finished: None,
+        }
+    }
+}
+
+impl Default for WholeCallRetryCallbacks<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Run one assistant-producing closure with bounded whole-call retry on
+/// transient failures (AIR-065).
+///
+/// - Omitted/disabled policy: `produce` runs exactly once and its message
+///   returns unchanged (no callbacks fire).
+/// - Valid stops and aborts return immediately; aborts are never retried.
+/// - Quota/billing/usage-limit errors veto before transient classification
+///   and fail fast; exhausted budgets return the final error message.
+/// - Each retry is a NEW logical call from `produce` (never a re-dispatch),
+///   separated by `on_retry_scheduled` → cancellable backoff sleep →
+///   `on_retry_attempt_start`, in that order, with `on_retry_finished` once
+///   at the end (only if a retry was scheduled).
+/// - Cancellation during the backoff returns the failed message re-stamped
+///   `Aborted` (error text dropped, partial content and usage preserved).
+/// - A failing callback aborts the loop with
+///   [`WholeCallRetryError::Callback`] and no further calls.
+///
+/// The helper never switches provider/model/auth (that is the caller's
+/// `produce` closure), never wires product recovery, never merges streamed
+/// output and never resets a prepared call's budget.
+pub async fn retry_assistant_call<F, Fut>(
+    mut produce: F,
+    policy: Option<&WholeCallRetryPolicy>,
+    cancel: tokio_util::sync::CancellationToken,
+    mut callbacks: Option<WholeCallRetryCallbacks<'_>>,
+) -> Result<crate::message::AssistantMessage, WholeCallRetryError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = crate::message::AssistantMessage>,
+{
+    let max_attempts = match policy {
+        Some(policy) if policy.enabled => policy.max_retries,
+        _ => 0,
+    };
+
+    fn fire_finished<'a>(
+        callbacks: &mut Option<WholeCallRetryCallbacks<'a>>,
+        success: bool,
+        attempt: u32,
+        final_error: Option<&str>,
+    ) -> Result<(), WholeCallRetryError> {
+        if let Some(callbacks) = callbacks
+            && let Some(on_retry_finished) = callbacks.on_retry_finished.as_mut()
+        {
+            on_retry_finished(success, attempt, final_error)?;
+        }
+        Ok(())
+    }
+
+    let mut attempt: u32 = 0;
+    let mut last_retry: Option<(u32, String)> = None;
+    loop {
+        let response = produce().await;
+        match response.stop_reason {
+            crate::stream::StopReason::Aborted => {
+                if let Some((scheduled_attempt, _)) = &last_retry {
+                    fire_finished(&mut callbacks, false, *scheduled_attempt, None)?;
+                }
+                return Ok(response);
+            }
+            crate::stream::StopReason::Error => {
+                let transient =
+                    classify_whole_call_retry(&response) == WholeCallRetryClassification::Transient;
+                if attempt >= max_attempts || !transient {
+                    if let Some((scheduled_attempt, _)) = &last_retry {
+                        fire_finished(
+                            &mut callbacks,
+                            false,
+                            *scheduled_attempt,
+                            response.error_message.as_deref(),
+                        )?;
+                    }
+                    return Ok(response);
+                }
+                attempt += 1;
+                let error_message = response
+                    .error_message
+                    .clone()
+                    .unwrap_or_else(|| "Unknown error".into());
+                last_retry = Some((attempt, error_message.clone()));
+                let delay_ms =
+                    whole_call_retry_delay_ms(policy.expect("enabled policy with budget"), attempt);
+                if let Some(callbacks) = callbacks.as_mut()
+                    && let Some(on_retry_scheduled) = callbacks.on_retry_scheduled.as_mut()
+                {
+                    on_retry_scheduled(attempt, max_attempts, delay_ms, &error_message)?;
+                }
+                let sleep = tokio::time::sleep(Duration::from_millis(delay_ms));
+                tokio::select! {
+                    _ = sleep => {}
+                    _ = cancel.cancelled() => {
+                        fire_finished(&mut callbacks, false, attempt, Some(&error_message))?;
+                        // Normalize a cancelled backoff to the same aborted
+                        // message shape as provider stream aborts: the error
+                        // text goes away, partial content and usage stay.
+                        let mut aborted = response;
+                        aborted.stop_reason = crate::stream::StopReason::Aborted;
+                        aborted.error_message = None;
+                        return Ok(aborted);
+                    }
+                }
+                if let Some(callbacks) = callbacks.as_mut()
+                    && let Some(on_retry_attempt_start) = callbacks.on_retry_attempt_start.as_mut()
+                {
+                    on_retry_attempt_start()?;
+                }
+            }
+            _ => {
+                if let Some((scheduled_attempt, _)) = &last_retry {
+                    fire_finished(&mut callbacks, true, *scheduled_attempt, None)?;
+                }
+                return Ok(response);
+            }
+        }
+    }
+}

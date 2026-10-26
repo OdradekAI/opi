@@ -504,6 +504,30 @@
   unchanged.
 ### Added
 
+- `opi-ai`: explicit whole-call retry helper (task 20.52, AIR-065/V-57):
+  the new `opi_ai::retry_assistant_call` runs a caller-owned produce
+  closure (each invocation a NEW logical call — never a re-dispatch,
+  transcript mutation, tool re-execution or prepared-budget reset) with
+  bounded retry on transient failures. Omission or a disabled policy
+  means exactly one call; `max_retries` counts extra complete calls.
+  Classification follows the pinned source pattern lists with
+  quota/billing/usage-limit exhaustion vetoing first, then the transient
+  families (provider load/status 429/5xx/520/524, gateway forwarding such
+  as "unable to forward upstream" and "service temporarily unavailable",
+  network/transport, premature stream endings, explicit mid-stream retry
+  guidance, gRPC `ResourceExhausted`, subscription usage hiccups). Valid
+  stops (Stop/Length/ToolUse/Deferred) and aborts never retry; a failed
+  retry budget returns the final error message. Callbacks observe the
+  exact order — `on_retry_scheduled` → cancellable exponential backoff
+  (caller-supplied schedule, delay cap defaulting to 60s) →
+  `on_retry_attempt_start` → the new call — with `on_retry_finished`
+  exactly once at loop end, only when a retry was scheduled; a failing
+  callback stops the loop with the typed
+  `WholeCallRetryError::Callback`. Cancellation during the backoff
+  returns the failed message re-stamped `Aborted` (error text dropped,
+  partial content and usage preserved). The helper itself never switches
+  provider/model/auth and never wires product recovery: host policy
+  stays with the host.
 - `opi-ai`: strict／grammar wire projection and the single bounded
   downgrade variant (task 20.51 follow-on, AIR-040/AIR-042/V-34/V-36, DEL-04
   ordinary slice). The private wire schema conversion (`make_strict_json_schema`,

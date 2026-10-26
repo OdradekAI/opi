@@ -900,6 +900,35 @@ fetches one distribution-schema-v1 document over HTTP with pooled
 connections and redacted failures. The SDK registers no source, attaches
 no store, and has no pi.dev/default startup fetch policy.
 
+## Explicit Whole-Call Retry Helper (AIR-065/V-57, task 20.52)
+
+`opi_ai::retry_assistant_call` wraps a caller-owned `produce` closure with
+bounded whole-call retry on transient failures. Each invocation of the
+closure is a **new logical call** — the helper never re-dispatches an old
+one, never mutates transcripts, never re-executes tools and never resets a
+prepared call's budget. Omitting the policy (or `enabled: false`) means
+exactly one call.
+
+- Classification (`WholeCallRetryPolicy` + `classify_whole_call_retry`)
+  follows the pinned source pattern lists: quota/billing/usage-limit
+  exhaustion vetoes first, then the transient families — provider load and
+  429/5xx/520/524 statuses, gateway forwarding ("unable to forward
+  upstream", "service temporarily unavailable"), network/transport
+  failures, premature stream endings, explicit mid-stream retry guidance,
+  gRPC `ResourceExhausted`, subscription usage hiccups.
+- Valid stops (Stop/Length/ToolUse — and any future Deferred variant) and
+  aborts never retry; an exhausted budget returns the final error message.
+- Callback order is exact: `on_retry_scheduled` → cancellable exponential
+  backoff (caller-supplied base, delay capped at 60s by default) →
+  `on_retry_attempt_start` → the new call; `on_retry_finished` fires
+  exactly once at loop end, only when a retry was scheduled. A failing
+  callback stops the loop with the typed `WholeCallRetryError::Callback`.
+- Cancellation during the backoff returns the failed message re-stamped
+  `Aborted` — error text dropped, partial content and usage preserved.
+- The helper itself never switches provider/model/auth (that is the
+  caller's factory) and never wires product recovery; host retry policy
+  stays with the host.
+
 ## Constrained Sampling: Strict Wire Projection and the Bounded Downgrade Variant (AIR-040/V-34, task 20.11)
 
 `ToolDef.constrained_sampling` carries the per-tool intent — `json_schema`

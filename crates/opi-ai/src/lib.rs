@@ -40,6 +40,8 @@ pub mod provider_headers;
 pub mod registry;
 pub mod replay;
 pub mod retry;
+
+pub use retry::retry_assistant_call;
 pub mod schema;
 pub mod stream;
 #[doc(hidden)]
