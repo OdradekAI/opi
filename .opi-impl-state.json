@@ -14324,7 +14324,7 @@
       "definition_of_done": "Public diagnostics preserve typed code/path and secret-safe source details. Context overflow exclusion plus Stop/Length known-usage branches and recoverable-Length comparison match source without invoking compaction/retry or converting unknown to zero.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.35"
@@ -14401,7 +14401,7 @@
           "production_call_sites": [
             "opi_ai::utils::typed diagnostics/context-overflow/recoverable-length public helpers (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -14410,7 +14410,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "4bd94886e4562b3be453a9511476517c171c7087",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -14420,10 +14420,52 @@
         "crates/opi-ai/src/utils/diagnostics.rs",
         "crates/opi-ai/tests/public_utilities.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "80fa83ce2c1a9973de913f613b8a311328891a6a",
+      "evidence": {
+        "Opi-Task": "20.53.3",
+        "Opi-DoD-SHA256": "2173789fa38e5c42d8fbd5e75d379e5f41cbf7cbfebe8396504132b34f2663ae",
+        "Opi-Verification": "library; smoke scoped --crate opi-ai --test public_utilities PASSED (fmt, clippy -D warnings, crate tests, rustdoc -D warnings; one rustdoc-link retry); scenario cargo test -p opi-ai --test public_utilities 26 PASS (9 new); doc-check PASS; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "P20-S53-3 exercised at opi_ai::message::{is_context_overflow, is_recoverable_length} and opi_ai::provider::{extract_diagnostic_error, DiagnosticErrorInfo}; exclusion-before-match order, Stop/Length known-usage branches and recoverable-Length comparison observable against the pinned source behavior without invoking compaction/retry or converting unknown usage to zero; typed code and secret-safe source details preserved; no new seam, no new dependency"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-26T09:19:38.457489+00:00",
+          "attempt": 1,
+          "summary": "B.2 gate: user approved (1) TDD on the pinned utils/overflow.ts + diagnostics.ts family - pub is_context_overflow (3 non-overflow exclusion patterns first, 25 pinned overflow patterns, cerebras bodyless pattern gated on provider=='cerebras', silent-overflow Stop branch and Length-stop >=99% branch both gated on usage.reported and a >0 window mirroring the source's falsy-window guard), pub is_recoverable_length (Length + desired>0 + reported + output<desired; unknown usage never converts to zero), in message.rs the AssistantMessage owner; plus typed diagnostics extraction in provider.rs the ProviderError owner: DiagnosticErrorInfo carrying the variant name, the secret-safe Display message (ProviderErrorSummary detail carrier), and the typed ServiceFault http status / provider error name, with no JS stack analog; (2) two separate commits (feat task commit with Opi-* footers + ledger checkpoint); (3) network-boundary self-report (pure in-process predicates over constructed values; no network, no wiremock, no credentials). Pre-registered rejected: merging with the 20.52 retry.rs veto pattern list (different pinned family), attaching pinned-shape diagnostics onto the 20.11-owned AssistantMessage.diagnostics field, publicly exposing the pattern lists, and any unknown-usage-to-zero conversion."
+        },
+        {
+          "timestamp": "2026-10-26T09:36:37.454087+00:00",
+          "attempt": 1,
+          "summary": "Delivered the pinned utils/overflow.ts + utils/diagnostics.ts families: is_context_overflow in message.rs (AssistantMessage owner) with 25 pinned overflow patterns merged into one case-insensitive alternation behind OnceLock<Regex> (retry.rs house style), 3 pinned non-overflow exclusions checked first, cerebras-gated bodyless 400/413 shape, silent Stop and zero-output Length branches both gated on Usage::reported and a >0 window (Some(0) mirrors the JS falsy-window guard), and is_recoverable_length with the same known-usage rule; plus extract_diagnostic_error/DiagnosticErrorInfo in provider.rs (ProviderError owner) preserving the variant name, the secret-safe Display message and the typed ServiceFault status/wire error name with no stack field. Red phase was a genuine E0432 on the three new functions. Two approved-proposal deviations recorded: (1) DiagnosticErrorInfo uses flat http_status/error_name Option fields instead of a single DiagnosticErrorCode enum - ServiceFault carries both codes and a one-value enum would lose one; simpler and lossless. (2) The pinned pattern count is 25 (proposal said 26); the test side condensed to 9 dense tests (28-message positive table, 4-message exclusion table, boundary and negative matrices) instead of ~15 fine-grained fns. One D.1 retry: rustdoc broken intra-doc links on StopReason references (fixed to fully qualified crate::stream paths); fmt/clippy/tests passed on first run. No push.",
+          "gate_results": {
+            "d1_gate": "smoke scoped --crate opi-ai --test public_utilities PASSED (fmt, clippy -D warnings, crate tests + public_utilities, rustdoc -D warnings)",
+            "d0_scenario": "cargo test -p opi-ai --test public_utilities -> 26 passed / 0 failed (9 new)",
+            "d3_gap_only": "python scripts/opi-doc-check.py PASS; git diff --check clean",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=2 (the 25 patterns merge into a single alternation regex per house style - per-pattern diagnosis requires the pinned source comments, acceptable for a static set; Some(0) window disables the usage branches as the JS falsy mirror - any future window=0 semantic needs new source evidence), rejected=3 (merging with the 20.52 retry.rs veto pattern list - different pinned family; attaching pinned-shape diagnostics onto the 20.11-owned AssistantMessage.diagnostics field; publicly exposing the pattern lists - getOverflowPatterns is a Pi test hook and predicate observability covers the port), wf_ref=null (degraded single-reviewer path)",
+            "test_disposition": [
+              {
+                "subject": "overflow/Length/diagnostics family",
+                "action": "add",
+                "test": "tests/public_utilities.rs +9: pinned 28-message pattern table, non-overflow exclusion table, cerebras gating, silent-stop branch, length-stop 99% boundary, recoverable-length comparison matrix, ServiceFault typed codes, secret-safety canary, untyped variants",
+                "interface": "opi_ai::message::{is_context_overflow, is_recoverable_length}; opi_ai::provider::{extract_diagnostic_error, DiagnosticErrorInfo}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.53.3",
+                "action": "retain",
+                "test": "all pre-existing suites unchanged and green in the scoped crate gate; retry.rs veto patterns and the 20.11 diagnostics field untouched",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "80fa83ce2c1a9973de913f613b8a311328891a6a"
+          }
+        }
+      ]
     },
     {
       "id": "20.53.4",
@@ -20609,6 +20651,16 @@
       "rejected_count": 3,
       "ran_at": "2026-10-26T07:44:56.868354+00:00",
       "task_id": "20.53.2",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 3,
+      "ran_at": "2026-10-26T09:36:37.454087+00:00",
+      "task_id": "20.53.3",
       "criterion_id": null
     }
   ]
