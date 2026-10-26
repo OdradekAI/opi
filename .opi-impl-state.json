@@ -14963,7 +14963,7 @@
       "definition_of_done": "Implement small private pinned synchronous wrappers and public from_span/noop/clone/in_scope/instrument using the source Span Dispatch, disabled/no-source noop, no enter guard over await and no extra poll. Prove A-create/B-poll/cross-thread/Pending/unpolled-drop/producer/noop business-output preservation. This carrier substrate alone does not close actual SDK propagation.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.1"
       ],
@@ -15033,7 +15033,7 @@
       "substrate_only": true,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "c480833d3",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -15043,10 +15043,52 @@
         "crates/opi-ai/src/telemetry.rs",
         "crates/opi-ai/tests/telemetry_carrier.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "9ec2bf6f1638504119258d17da4822f893aec2ca",
+      "evidence": {
+        "Opi-Task": "20.54",
+        "Opi-DoD-SHA256": "e400f4c431adc643806608c7e637220f872a0a6f7c3ee985760a554e1ef98dad",
+        "Opi-Verification": "library; smoke scoped --crate opi-ai --test telemetry_carrier PASSED (fmt, clippy -D warnings, crate tests + telemetry_carrier, rustdoc -D warnings); scenario cargo test -p opi-ai --test telemetry_carrier 9 PASS; doc-check PASS; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "DEL-12 substrate exercised at opi_ai::telemetry::{TelemetryContext, Instrumented} proving A-create/B-poll/cross-thread/Pending/unpolled-drop/producer/noop business-output preservation with no enter guard crossing await and no extra poll; actual SDK propagation explicitly not claimed"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-26T12:21:00.245850+00:00",
+          "attempt": 1,
+          "summary": "B.2 gate: user approved (1) TDD on a new crates/opi-ai/src/telemetry.rs module (shared decision P20-TELEMETRY owner, closure test crates/opi-ai/tests/telemetry_carrier.rs). Surface: TelemetryContext{state} Clone Send+Sync with CarrierState::{Noop, Active{parent: tracing::Span, dispatch: tracing_core::Dispatch}}; from_span freezes the (parent, current-default Dispatch) pair at creation - tracing Spans do not retain their creating dispatcher (Inner={meta,id}), so the RDF-14 sanctioned owned difference freezes the ambient default at from_span time, never at later poll; parent.is_disabled() degrades to the explicit Noop state. noop() explicit. in_scope(FnOnce) and instrument(Future)->Instrumented<F> run synchronous scoped sections: Active = with_default(frozen dispatch, || parent.enter() guard + body), Noop = with_default(Dispatch::none(), body) - guards created and dropped inside each section so no enter guard crosses await, each outer poll polls inner exactly once, and poll and Drop (unpolled included) share the same scoped rule via an Option<Pin<Box<F>>> inner making Instrumented Unpin with zero unsafe. Dependency edge: root adds tracing-core='0.1' with opi-ai workspace=true - the locked tree already carries tracing-core 0.1.36 as tracing 0.1.44's dependency, so this only grants direct visibility with no new code in tree. Tests (in-memory Recorder Subscriber, no exporter, no global subscriber): A-create frozen routing incl. later-ambient negative, B-poll + Pending + no-extra-poll via manual noop_waker polling with a poll counter, cross-thread clone migration + Send/Sync static assertions, unpolled-drop scoped event, producer via tokio::spawn, noop output preservation + exactly-once business work + in-scope events shadowed by Dispatch::none + caller context restored, disabled span -> noop, laziness. Pre-registered rejected: generic span DSL/callback-schema compatibility or domain span families/startSpan wrappers (AIR-055 explicitly not claimed); global subscriber init/exporter/flush/sampling (host-owned); Stream instrument wrapper (no consumer yet - lands with the first SDK propagation owner, revisit trigger=first consumer); Span->Dispatch extraction API (upstream does not exist; RDF-14 frozen difference sanctioned); automatic SDK call/attempt spans; any telemetry serialization/wire. (2) two separate commits (feat task commit including Cargo manifest changes with Opi-* footers + ledger checkpoint); (3) network self-report: pure in-process; no network, no credentials, no provider APIs; tracing-core resolves from the local cached registry at the already-locked version."
+        },
+        {
+          "timestamp": "2026-10-26T12:37:53.695136+00:00",
+          "attempt": 1,
+          "summary": "Delivered the P20-TELEMETRY carrier substrate: TelemetryContext{CarrierState::Noop|Active{parent,dispatch}} with from_span freezing the (parent, Dispatch::default-at-call) pair, noop explicit, in_scope scoped sync section, instrument returning a lazy Unpin Instrumented wrapper (Option<Pin<Box<F>>>, zero unsafe) whose polls and drops - unpolled drops included - run the same scoped section; disabled span degrades to noop. tracing-core gained as direct workspace dependency - already locked 0.1.36 as tracing 0.1.44's dependency, Cargo.lock records only the opi-ai edge. Red phase was a genuine E0432 on opi_ai::telemetry (after fixing two test-authoring imports: tracing_core::dispatcher not dispatch, and a shadowed recorder binding); first green run failed only on the fixture recording the parent span's own creation - fixed inside the RecordingSubscriber, no production change; then 9/9 green. D.1 needed two retries: rustdoc broken intra-doc links [Pending] -> [std::task::Poll::Pending]; README.zh marker regex initially targeted the English title. Flagged: (a) no internal production call sites yet - carrier substrate per DoD, consumers 20.16/20.36-50/20.55 registered in the shared decision, revisit trigger=first SDK propagation owner; (b) from_span freezes the ambient default dispatch rather than literally extracting the span's dispatcher - upstream tracing offers no such API and RDF-14 sanctions the frozen-pair owned difference, documented in the module docs. No push.",
+          "gate_results": {
+            "d1_gate": "smoke scoped --crate opi-ai --test telemetry_carrier PASSED (fmt, clippy -D warnings, crate tests + telemetry_carrier, rustdoc -D warnings) after two retries",
+            "d0_scenario": "cargo test -p opi-ai --test telemetry_carrier -> 9 passed / 0 failed",
+            "d3_gap_only": "python scripts/opi-doc-check.py PASS; git diff --check clean",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=2 (no internal production call sites yet - substrate per DoD with shared-decision consumer registration and revisit trigger=first SDK propagation owner; frozen ambient-default capture instead of literal span-dispatch extraction - upstream API absent, RDF-14 sanctioned owned difference documented in module docs), rejected=5 as pre-registered (generic span DSL/callback-schema compatibility and domain span families/startSpan wrappers; global subscriber init/exporter/flush/sampling; Stream instrument wrapper until first consumer; Span->Dispatch extraction API; automatic SDK spans and any telemetry serialization/wire), wf_ref=null (degraded single-reviewer path)",
+            "test_disposition": [
+              {
+                "subject": "TelemetryContext carrier proofs",
+                "action": "add",
+                "test": "tests/telemetry_carrier.rs (shared-decision closure test, 9 tests): A-create frozen routing incl. later-ambient negative, in_scope frozen routing + caller restore, one-poll-per-poll + Pending preserved + laziness, unpolled scoped drop, cross-thread clone + Send/Sync assertions, producer via tokio::spawn, noop in_scope/instrument exactly-once + output preserved + ambient shadowing, disabled span -> noop",
+                "interface": "opi_ai::telemetry::{TelemetryContext::from_span/noop/in_scope/instrument, Instrumented}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.54",
+                "action": "retain",
+                "test": "all pre-existing suites unchanged and green",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "9ec2bf6f1638504119258d17da4822f893aec2ca"
+          }
+        }
+      ]
     },
     {
       "id": "20.55",
@@ -20817,6 +20859,16 @@
       "rejected_count": 5,
       "ran_at": "2026-10-26T12:08:09.423279+00:00",
       "task_id": "20.53.8",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 5,
+      "ran_at": "2026-10-26T12:37:53.695136+00:00",
+      "task_id": "20.54",
       "criterion_id": null
     }
   ]
