@@ -504,6 +504,29 @@
   unchanged.
 ### Added
 
+- `opi-ai`: scripted multi-operation test support on the existing
+  MockProvider (task 20.53.8, DEL-11; no second mock driver, public API
+  unchanged). New `MockResponse::DelayedAfter { pending_attempts,
+  retry_after_ms, events }` (pinned faux `pendingFetches`) withholds the
+  events while the first `pending_attempts` prepared attempts each fail
+  with `ProviderError::RateLimited` carrying `retry_after_ms` - the
+  chat-level analog of the pinned `pollAfterMs` hint, reusing the
+  existing retry mechanism instead of timers; `pending_attempts: 0`
+  behaves exactly like `Events`. New `MockResponse::HangingUntilCancelled`
+  yields no events until the request's cancellation token fires and then
+  terminates with `ProviderError::Cancelled`, failing immediately when
+  pre-cancelled (the attempt-boundary form of the pinned
+  signal-aborted-to-error behavior), built with
+  `futures_util::stream::once` over `CancellationToken::cancelled`. New
+  `blocks_response(Vec<AssistantContent>)` fixture emits one event per
+  block in order (`TextDelta` for text, `ToolCallEnd` for tool calls,
+  `content_index` matching position) and a `Done` with `StopReason::
+  ToolUse` when any tool call is present, else `Stop` - the ordered
+  multi-block/tool shape the single-purpose helpers cannot express; it
+  panics for `Thinking`/`RedactedThinking` blocks by contract. Existing
+  `Events`/`Error`/`EventsThenError` semantics and the
+  `stream_prepared` queue-assertion are unchanged; deferred records and
+  their scripts stay with 20.45-50.
 - `opi-ai`: public header merge, scoped provider env, and cancellable
   waits (task 20.53.6, P20-S53-6/7). `provider_headers::
   merge_provider_header_sources` (pinned `providerHeadersToRecord`)

@@ -357,3 +357,278 @@ fn mock_provider_is_send_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<MockProvider>();
 }
+
+// ---------------------------------------------------------------------------
+// task 20.53.8: scripted delayed poll, cancellation, ordered multi-block
+// ---------------------------------------------------------------------------
+
+use opi_ai::message::{AssistantContent, ToolCall};
+use opi_ai::provider::ProviderError;
+use opi_ai::test_support::{MockResponse, blocks_response};
+
+fn scripted_request(cancel: CancellationToken) -> Request {
+    Request {
+        model: "mock-model".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![],
+            tools: vec![],
+        })
+        .expect("valid context declarations"),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel,
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        callbacks: Default::default(),
+    }
+}
+
+#[tokio::test]
+async fn delayed_poll_yields_rate_limited_then_events() {
+    let provider = MockProvider::new_with_errors(
+        "test",
+        vec![MockResponse::DelayedAfter {
+            pending_attempts: 2,
+            retry_after_ms: Some(37),
+            events: test_support::text_response("ready"),
+        }],
+    );
+    for attempt in 0..2 {
+        let stream = provider.stream_prepared(
+            scripted_request(CancellationToken::new()),
+            opi_ai::test_support::resolved_auth(),
+        );
+        let events: Vec<_> = stream.collect::<Vec<_>>().await;
+        assert_eq!(events.len(), 1, "pending attempt {attempt}");
+        assert!(matches!(
+            events[0].as_ref().unwrap_err(),
+            ProviderError::RateLimited {
+                retry_after_ms: Some(37)
+            }
+        ));
+    }
+    let stream = provider.stream_prepared(
+        scripted_request(CancellationToken::new()),
+        opi_ai::test_support::resolved_auth(),
+    );
+    let events: Vec<_> = stream.collect::<Vec<_>>().await;
+    assert_eq!(events.len(), 3);
+    assert_eq!(provider.stream_call_count(), 3);
+}
+
+#[tokio::test]
+async fn delayed_poll_with_zero_pending_matches_events() {
+    let plain = MockProvider::new("test", vec![test_support::text_response("same")]);
+    let delayed = MockProvider::new_with_errors(
+        "test",
+        vec![MockResponse::DelayedAfter {
+            pending_attempts: 0,
+            retry_after_ms: None,
+            events: test_support::text_response("same"),
+        }],
+    );
+    let plain_events: Vec<_> = plain
+        .stream_prepared(
+            scripted_request(CancellationToken::new()),
+            opi_ai::test_support::resolved_auth(),
+        )
+        .collect::<Vec<_>>()
+        .await;
+    let delayed_events: Vec<_> = delayed
+        .stream_prepared(
+            scripted_request(CancellationToken::new()),
+            opi_ai::test_support::resolved_auth(),
+        )
+        .collect::<Vec<_>>()
+        .await;
+    assert_eq!(plain_events.len(), delayed_events.len());
+    assert_eq!(plain_events.len(), 3);
+    assert_eq!(delayed.stream_call_count(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn hanging_response_fails_with_cancelled_when_token_fires() {
+    let token = CancellationToken::new();
+    let cancel_at = token.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        cancel_at.cancel();
+    });
+    let provider = MockProvider::new_with_errors("test", vec![MockResponse::HangingUntilCancelled]);
+    let events: Vec<_> = provider
+        .stream_prepared(
+            scripted_request(token),
+            opi_ai::test_support::resolved_auth(),
+        )
+        .collect::<Vec<_>>()
+        .await;
+    assert_eq!(events.len(), 1);
+    assert!(matches!(
+        events[0].as_ref().unwrap_err(),
+        ProviderError::Cancelled
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn hanging_response_pre_cancelled_fails_immediately() {
+    let token = CancellationToken::new();
+    token.cancel();
+    let provider = MockProvider::new_with_errors("test", vec![MockResponse::HangingUntilCancelled]);
+    let events: Vec<_> = provider
+        .stream_prepared(
+            scripted_request(token),
+            opi_ai::test_support::resolved_auth(),
+        )
+        .collect::<Vec<_>>()
+        .await;
+    assert_eq!(events.len(), 1);
+    assert!(matches!(
+        events[0].as_ref().unwrap_err(),
+        ProviderError::Cancelled
+    ));
+}
+
+#[test]
+fn blocks_response_orders_blocks_and_uses_tool_use_stop() {
+    let blocks = vec![
+        AssistantContent::Text {
+            text: "Let me check.".into(),
+        },
+        AssistantContent::ToolCall {
+            tool_call: ToolCall {
+                id: "t1".into(),
+                name: "lookup".into(),
+                arguments: "{}".into(),
+                arguments_error: None,
+            },
+        },
+        AssistantContent::ToolCall {
+            tool_call: ToolCall {
+                id: "t2".into(),
+                name: "store".into(),
+                arguments: "[]".into(),
+                arguments_error: None,
+            },
+        },
+    ];
+    let events = blocks_response(blocks);
+    assert_eq!(events.len(), 5);
+    assert!(matches!(events[0], AssistantStreamEvent::Start { .. }));
+    let delta = match &events[1] {
+        AssistantStreamEvent::TextDelta {
+            content_index,
+            delta,
+            ..
+        } => (*content_index, delta.clone()),
+        other => panic!("expected TextDelta, got {other:?}"),
+    };
+    assert_eq!(delta, (0, "Let me check.".to_owned()));
+    let tool_one = match &events[2] {
+        AssistantStreamEvent::ToolCallEnd {
+            content_index,
+            tool_call,
+            ..
+        } => (*content_index, tool_call.id.clone()),
+        other => panic!("expected ToolCallEnd, got {other:?}"),
+    };
+    assert_eq!(tool_one, (1, "t1".to_owned()));
+    let tool_two = match &events[3] {
+        AssistantStreamEvent::ToolCallEnd {
+            content_index,
+            tool_call,
+            ..
+        } => (*content_index, tool_call.id.clone()),
+        other => panic!("expected ToolCallEnd, got {other:?}"),
+    };
+    assert_eq!(tool_two, (2, "t2".to_owned()));
+    match &events[4] {
+        AssistantStreamEvent::Done { reason, message } => {
+            assert_eq!(*reason, StopReason::ToolUse);
+            assert_eq!(message.content.len(), 3);
+        }
+        other => panic!("expected Done, got {other:?}"),
+    }
+}
+
+#[test]
+fn blocks_response_text_only_matches_text_response_shape() {
+    let blocks = blocks_response(vec![AssistantContent::Text { text: "hi".into() }]);
+    let plain = test_support::text_response("hi");
+    assert_eq!(blocks.len(), plain.len());
+    let delta = match &blocks[1] {
+        AssistantStreamEvent::TextDelta { delta, .. } => delta.clone(),
+        other => panic!("expected TextDelta, got {other:?}"),
+    };
+    assert_eq!(delta, "hi");
+    assert!(matches!(
+        &blocks[2],
+        AssistantStreamEvent::Done {
+            reason: StopReason::Stop,
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn mixed_script_queue_consumes_in_order() {
+    let partial = {
+        let mut partial = test_support::base_assistant();
+        partial.content.push(AssistantContent::Text {
+            text: "half".into(),
+        });
+        vec![AssistantStreamEvent::Start {
+            partial: test_support::base_assistant(),
+        }]
+    };
+    let provider = MockProvider::new_with_errors(
+        "test",
+        vec![
+            MockResponse::DelayedAfter {
+                pending_attempts: 1,
+                retry_after_ms: None,
+                events: test_support::text_response("delayed"),
+            },
+            MockResponse::Events(test_support::text_response("plain")),
+            MockResponse::EventsThenError(
+                partial,
+                ProviderError::RateLimited {
+                    retry_after_ms: None,
+                },
+            ),
+        ],
+    );
+    let collect = |p: &MockProvider| {
+        let stream = p.stream_prepared(
+            scripted_request(CancellationToken::new()),
+            opi_ai::test_support::resolved_auth(),
+        );
+        futures_util::stream::StreamExt::collect::<Vec<_>>(stream)
+    };
+    let first: Vec<_> = collect(&provider).await;
+    assert!(matches!(
+        first[0].as_ref().unwrap_err(),
+        ProviderError::RateLimited {
+            retry_after_ms: None
+        }
+    ));
+    let second: Vec<_> = collect(&provider).await;
+    assert_eq!(second.len(), 3);
+    let third: Vec<_> = collect(&provider).await;
+    assert_eq!(third.len(), 3);
+    let fourth: Vec<_> = collect(&provider).await;
+    assert!(fourth[0].is_ok());
+    assert!(matches!(
+        fourth[1].as_ref().unwrap_err(),
+        ProviderError::RateLimited {
+            retry_after_ms: None
+        }
+    ));
+    assert_eq!(provider.stream_call_count(), 4);
+}

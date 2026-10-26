@@ -142,6 +142,29 @@ pub enum MockResponse {
     /// would never be observed. Build the partial prefix only (e.g. `Start` +
     /// `TextDelta`).
     EventsThenError(Vec<AssistantStreamEvent>, ProviderError),
+    /// Successful stream events withheld for a number of prepared attempts
+    /// (task 20.53.8, pinned faux `pendingFetches`).
+    ///
+    /// The first `pending_attempts` prepared attempts each fail with
+    /// [`ProviderError::RateLimited`] carrying `retry_after_ms` (the
+    /// chat-level analog of the pinned `pollAfterMs` hint, reusing the
+    /// existing retry mechanism instead of timers); the next attempt yields
+    /// `events`. `pending_attempts: 0` behaves exactly like
+    /// [`MockResponse::Events`]. One variant value spans those attempts,
+    /// mirroring the pinned per-entry countdown.
+    DelayedAfter {
+        pending_attempts: usize,
+        retry_after_ms: Option<u64>,
+        events: Vec<AssistantStreamEvent>,
+    },
+    /// No events until the request's cancellation token fires, then a
+    /// terminal [`ProviderError::Cancelled`] (task 20.53.8).
+    ///
+    /// Models a hanging attempt for deterministic cancellation tests: the
+    /// attempt-boundary form of the pinned signal-aborted-to-error behavior.
+    /// The stream never completes on its own; a pre-cancelled request fails
+    /// immediately.
+    HangingUntilCancelled,
 }
 
 /// A mock provider that returns pre-programmed response sequences.
@@ -317,6 +340,59 @@ pub fn tool_call_response(
     ]
 }
 
+/// Helper: build an ordered multi-block response (Start -> per-block events
+/// -> Done) (task 20.53.8).
+///
+/// Emits one event per block in order - `TextDelta` for text blocks and
+/// `ToolCallEnd` for tool-call blocks, with `content_index` matching the
+/// block position - and finishes with `Done`, using `StopReason::ToolUse`
+/// when any tool call is present, else `StopReason::Stop`. This is the
+/// ordered multi-block/tool fixture the single-purpose `text_response` and
+/// `tool_call_response` helpers cannot express.
+///
+/// # Panics
+///
+/// Panics for `Thinking`/`RedactedThinking` blocks: this fixture scripts
+/// only the text/tool ordering contract.
+pub fn blocks_response(blocks: Vec<crate::message::AssistantContent>) -> Vec<AssistantStreamEvent> {
+    let uses_tools = blocks
+        .iter()
+        .any(|block| matches!(block, crate::message::AssistantContent::ToolCall { .. }));
+    let mut partial = base_assistant();
+    partial.content = blocks.clone();
+    let mut events = vec![AssistantStreamEvent::Start {
+        partial: base_assistant(),
+    }];
+    for (content_index, block) in blocks.iter().enumerate() {
+        match block {
+            crate::message::AssistantContent::Text { text } => {
+                events.push(AssistantStreamEvent::TextDelta {
+                    content_index,
+                    delta: text.clone(),
+                    partial: partial.clone(),
+                });
+            }
+            crate::message::AssistantContent::ToolCall { tool_call } => {
+                events.push(AssistantStreamEvent::ToolCallEnd {
+                    content_index,
+                    tool_call: tool_call.clone(),
+                    partial: partial.clone(),
+                });
+            }
+            other => panic!("blocks_response scripts only Text and ToolCall blocks, got {other:?}"),
+        }
+    }
+    events.push(AssistantStreamEvent::Done {
+        reason: if uses_tools {
+            StopReason::ToolUse
+        } else {
+            StopReason::Stop
+        },
+        message: partial,
+    });
+    events
+}
+
 /// Helper: build an error response (Start ->Error).
 ///
 /// Emits the legacy in-band `Error` terminal on purpose: this fixture models
@@ -351,13 +427,28 @@ impl Provider for MockProvider {
     /// `stream_call_count` then records one entry per attempt, so a counting
     /// resolver can prove auth is resolved once across retries.
     fn stream_prepared(&self, request: Request, _auth: crate::auth::ResolvedAuth) -> EventStream {
+        let cancel = request.cancel.clone();
         self.call_log.lock().unwrap().push(request);
         let mut responses = self.responses.lock().unwrap();
         assert!(
             !responses.is_empty(),
             "MockProvider: stream_prepared() called more times than responses were configured"
         );
-        let response = responses.remove(0);
+        // A `DelayedAfter` entry stays at the head while its countdown lasts;
+        // everything else is consumed in order.
+        let response = match responses.first_mut() {
+            Some(MockResponse::DelayedAfter {
+                pending_attempts,
+                retry_after_ms,
+                ..
+            }) if *pending_attempts > 0 => {
+                *pending_attempts -= 1;
+                MockResponse::Error(ProviderError::RateLimited {
+                    retry_after_ms: *retry_after_ms,
+                })
+            }
+            _ => responses.remove(0),
+        };
         match response {
             MockResponse::Events(events) => {
                 let stream =
@@ -372,6 +463,18 @@ impl Provider for MockProvider {
                 let ok_events = events.into_iter().map(Ok::<_, ProviderError>);
                 let err = std::iter::once(Err(e));
                 let stream = futures_util::stream::iter(ok_events.chain(err));
+                Box::pin(stream)
+            }
+            MockResponse::DelayedAfter { events, .. } => {
+                let stream =
+                    futures_util::stream::iter(events.into_iter().map(Ok::<_, ProviderError>));
+                Box::pin(stream)
+            }
+            MockResponse::HangingUntilCancelled => {
+                let stream = futures_util::stream::once(async move {
+                    cancel.cancelled().await;
+                    Err(ProviderError::Cancelled)
+                });
                 Box::pin(stream)
             }
         }

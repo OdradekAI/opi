@@ -726,6 +726,31 @@ catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
 source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
 
+## MockProvider 多操作脚本测试支撑（任务 20.53.8，DEL-11）
+
+`test_support` 按钉定 `providers/faux.ts` 为既有 `MockProvider` chat 脚本补齐
+三种形态——不建第二 mock driver，公共 API 不变：
+
+- **`MockResponse::DelayedAfter { pending_attempts, retry_after_ms,
+  events }`**（钉定 `pendingFetches`）：前 `pending_attempts` 次 prepared
+  attempt 各产出携带 `retry_after_ms` 的
+  `ProviderError::RateLimited`（钉定 `pollAfterMs` 的 chat 级对应物，复用既有
+  retry 机制而非计时器）；下一次 attempt 产出脚本 events。
+  `pending_attempts: 0` 与 `Events` 完全一致。单个变体值跨这些 attempt，
+  对应钉定的按条目递减：首个条目在倒计时期间保持队首，其余按序消费。
+- **`MockResponse::HangingUntilCancelled`**：不产出任何事件直到请求的
+  cancellation token 触发，随后以 `ProviderError::Cancelled` 终止；预取消立即
+  失败。为钉定 signal-aborted-to-error 在 attempt 边界的形态，以
+  `futures_util::stream::once` 叠加 `CancellationToken::cancelled` 构造——无计
+  时器、无新依赖。
+- **`blocks_response(Vec<AssistantContent>)`**：有序多块/tool
+  fixture——text 块发 `TextDelta`、tool-call 块发 `ToolCallEnd`，
+  `content_index` 与块位置一致；含任意 tool call 则 `Done` 用
+  `StopReason::ToolUse`，否则 `Stop`。按契约对
+  `Thinking`/`RedactedThinking` 块 panic。既有
+  `Events`/`Error`/`EventsThenError` 语义与 `stream_prepared`
+  队列断言不变；deferred record 及其脚本随 20.45-50 交付。
+
 ## 公共 header 合并、scoped env 与可取消等待（P20-S53-6，任务 20.53.6）
 
 `provider_headers::merge_provider_header_sources`、新 `provider_env` 模块与新

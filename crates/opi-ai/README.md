@@ -900,6 +900,35 @@ fetches one distribution-schema-v1 document over HTTP with pooled
 connections and redacted failures. The SDK registers no source, attaches
 no store, and has no pi.dev/default startup fetch policy.
 
+## Scripted Multi-Operation MockProvider Support (task 20.53.8, DEL-11)
+
+`test_support` extends the existing `MockProvider` chat scripts with the
+three shapes pinned to `providers/faux.ts` - no second mock driver, no
+public API change:
+
+- **`MockResponse::DelayedAfter { pending_attempts, retry_after_ms,
+  events }`** (pinned `pendingFetches`): the first `pending_attempts`
+  prepared attempts each fail with `ProviderError::RateLimited`
+  carrying `retry_after_ms` (the chat-level analog of the pinned
+  `pollAfterMs` hint, reusing the existing retry mechanism instead of
+  timers); the next attempt yields the events.
+  `pending_attempts: 0` behaves exactly like `Events`. One variant value
+  spans those attempts, mirroring the pinned per-entry countdown.
+- **`MockResponse::HangingUntilCancelled`**: yields no events until the
+  request's cancellation token fires, then terminates with
+  `ProviderError::Cancelled`; a pre-cancelled request fails immediately.
+  The attempt-boundary form of the pinned signal-aborted-to-error
+  behavior, built with `futures_util::stream::once` over
+  `CancellationToken::cancelled` - no timers, no new dependency.
+- **`blocks_response(Vec<AssistantContent>)`**: the ordered
+  multi-block/tool fixture - `TextDelta` for text blocks and
+  `ToolCallEnd` for tool calls, `content_index` matching block position,
+  `Done` with `StopReason::ToolUse` when any tool call is present else
+  `Stop`. Panics for `Thinking`/`RedactedThinking` blocks by contract.
+  Existing `Events`/`Error`/`EventsThenError` semantics and the
+  `stream_prepared` queue-assertion are unchanged; deferred records and
+  their scripts stay with 20.45-50.
+
 ## Public Header Merge, Scoped Env, and Cancellable Waits (P20-S53-6, task 20.53.6)
 
 `provider_headers::merge_provider_header_sources`, the new
