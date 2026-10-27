@@ -3616,6 +3616,43 @@
             ],
             "test_impact_this_maintenance": "none"
           }
+        },
+        {
+          "timestamp": "2026-10-27T16:54:52.745352+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair 59d2430; retain original delivery/footer identity. Grammar required properties use literal map keys, including slash/tilde names, with original schema and wrapper identity preserved. F6 remains withdrawn as a confirmed defect and unresolved as a source-precedence question.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-59d2430:20.11",
+            "evidence_ref": "P20-N4-REPAIR-59d2430",
+            "repair_commit": "59d2430ac9f85a646cb56bab076db8b4d14fc667",
+            "role": "direct-repair",
+            "finding_ids": [
+              "F7"
+            ],
+            "source_adjudication_ids": [
+              "F6"
+            ],
+            "verification": "Commands/input identity/results are in the common root record and retained receipt; maintenance executes no Rust/Cargo tests.",
+            "test_disposition": [
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "add",
+                "test": "crates/opi-ai/tests/public_utilities.rs",
+                "interface": "Grammar helper and real Responses builder",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/public_utilities.rs",
+                "interface": "Grammar helper and real Responses builder",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -4730,6 +4767,52 @@
             ],
             "test_impact_this_maintenance": "none"
           }
+        },
+        {
+          "timestamp": "2026-10-27T16:54:52.745352+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair 59d2430; retain original delivery/footer identity. Valid provider events seal fallback/reconnect independently of the public-output full-input retry boundary. Fallback retains safe diagnostics. Native connect budget is independent, omitted=15s and zero=disabled; idle zero disables its timer. Next acquire evicts five-minute idle connections while retaining the existing 55-minute absolute age and busy-call finality.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-59d2430:20.16",
+            "evidence_ref": "P20-N4-REPAIR-59d2430",
+            "repair_commit": "59d2430ac9f85a646cb56bab076db8b4d14fc667",
+            "role": "direct-repair",
+            "finding_ids": [
+              "F1",
+              "F8",
+              "F9",
+              "F10"
+            ],
+            "source_adjudication_ids": [],
+            "verification": "Commands/input identity/results are in the common root record and retained receipt; maintenance executes no Rust/Cargo tests.",
+            "test_disposition": [
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "add",
+                "test": "crates/opi-ai/tests/codex_native_options.rs; crates/opi-ai/tests/codex_native_options/deadlines.rs; crates/opi-ai/tests/codex_native_options/lifetimes.rs; crates/opi-ai/tests/openai_codex_responses.rs",
+                "interface": "Real Models/Codex/Upgrade/private codec, native options and local peer",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "update",
+                "test": "crates/opi-ai/tests/codex_native_options.rs; crates/opi-ai/tests/codex_native_options/deadlines.rs; crates/opi-ai/tests/codex_native_options/lifetimes.rs; crates/opi-ai/tests/openai_codex_responses.rs",
+                "interface": "Real Models/Codex/Upgrade/private codec, native options and local peer",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/codex_native_options.rs; crates/opi-ai/tests/codex_native_options/deadlines.rs; crates/opi-ai/tests/codex_native_options/lifetimes.rs; crates/opi-ai/tests/openai_codex_responses.rs",
+                "interface": "Real Models/Codex/Upgrade/private codec, native options and local peer",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -5009,6 +5092,31 @@
                 "action": "update",
                 "test": "crates/opi-ai/tests/resource_cleanup.rs; crates/opi-ai/tests/openai_codex_responses.rs",
                 "interface": "Current real SDK public entry points",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-27T16:54:52.745352+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair 59d2430; retain original delivery/footer identity. Linked revalidation of the repaired WS path and pool lifetimes through real resource cleanup, busy/idle cases and packaged active/idle cleanup. No new generation/cutoff/store-rotation implementation is attributed to this commit. Original first-poll, namespace, parent-token and awaited local-release contracts remain preserved.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-59d2430:20.17",
+            "evidence_ref": "P20-N4-REPAIR-59d2430",
+            "repair_commit": "59d2430ac9f85a646cb56bab076db8b4d14fc667",
+            "role": "linked-revalidation",
+            "finding_ids": [],
+            "source_adjudication_ids": [],
+            "verification": "Commands/input identity/results are in the common root record and retained receipt; maintenance executes no Rust/Cargo tests.",
+            "test_disposition": [
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/resource_cleanup.rs; crates/opi-ai/tests/openai_codex_responses.rs; crates/opi-ai/tests/codex_native_options/lifetimes.rs",
+                "interface": "Real Models/Codex generation and local connection release",
                 "replacement": null,
                 "slim_candidate": null
               }
@@ -10062,6 +10170,49 @@
             ],
             "test_impact_this_maintenance": "none"
           }
+        },
+        {
+          "timestamp": "2026-10-27T16:54:52.745352+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair 59d2430; retain original delivery/footer identity. The no-store refresh branch rechecks cancellation at the synchronous memory-commit boundary. Store-owned commit/ACK behavior remains unchanged; external-barrier, source-self-cancel and pre-cancel controls retain prior publication for store/no-store, and offline OAuth/provider/source counters remain zero.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-59d2430:20.33",
+            "evidence_ref": "P20-N4-REPAIR-59d2430",
+            "repair_commit": "59d2430ac9f85a646cb56bab076db8b4d14fc667",
+            "role": "direct-repair",
+            "finding_ids": [
+              "F3"
+            ],
+            "source_adjudication_ids": [],
+            "verification": "Commands/input identity/results are in the common root record and retained receipt; maintenance executes no Rust/Cargo tests.",
+            "test_disposition": [
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "add",
+                "test": "crates/opi-ai/tests/provider_collection.rs",
+                "interface": "Models refresh_with source publication and store/no-store controls",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "update",
+                "test": "crates/opi-ai/tests/provider_collection.rs",
+                "interface": "Models refresh_with source publication and store/no-store controls",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/provider_collection.rs",
+                "interface": "Models refresh_with source publication and store/no-store controls",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -14116,6 +14267,51 @@
             ],
             "test_impact_this_maintenance": "none"
           }
+        },
+        {
+          "timestamp": "2026-10-27T16:54:52.745352+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair 59d2430; retain original delivery/footer identity. Chat/Responses/Codex validate streaming payload structure after onPayload and before transport, retaining legal extensions and once-per-variant payload freezing. Invalid shapes fail CallbackPhase with zero dispatch. Header/payload ordering was not changed: F5 remains withdrawn as a universal direct-adapter defect and pending source applicability adjudication.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-59d2430:20.51",
+            "evidence_ref": "P20-N4-REPAIR-59d2430",
+            "repair_commit": "59d2430ac9f85a646cb56bab076db8b4d14fc667",
+            "role": "direct-repair",
+            "finding_ids": [
+              "F4"
+            ],
+            "source_adjudication_ids": [
+              "F5"
+            ],
+            "verification": "Commands/input identity/results are in the common root record and retained receipt; maintenance executes no Rust/Cargo tests.",
+            "test_disposition": [
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "add",
+                "test": "crates/opi-ai/tests/request_enrichment.rs",
+                "interface": "Models ordinary Chat/Responses/Codex, SSE/WS/Auto and frozen acquisition bytes",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "update",
+                "test": "crates/opi-ai/tests/request_enrichment.rs",
+                "interface": "Models ordinary Chat/Responses/Codex, SSE/WS/Auto and frozen acquisition bytes",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/request_enrichment.rs",
+                "interface": "Models ordinary Chat/Responses/Codex, SSE/WS/Auto and frozen acquisition bytes",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -14291,6 +14487,41 @@
               }
             ],
             "commit": "3104da4c2e4ddb97ffdd809c2973b7c3cb1db1ea"
+          }
+        },
+        {
+          "timestamp": "2026-10-27T16:54:52.745352+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair 59d2430; retain original delivery/footer identity. Real Chat/Responses HTTP429 paths retain quota/billing/usage-limit facts as a fixed safe canonical label without replacing RateLimited status/hints, changing acquisition admission, or changing whole-call regex/order. Direct/Models controls prove quota veto, transient retry, acquisition0/1, byte freezes and pending-body cancellation.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-59d2430:20.52",
+            "evidence_ref": "P20-N4-REPAIR-59d2430",
+            "repair_commit": "59d2430ac9f85a646cb56bab076db8b4d14fc667",
+            "role": "direct-repair",
+            "finding_ids": [
+              "F2"
+            ],
+            "source_adjudication_ids": [],
+            "verification": "Commands/input identity/results are in the common root record and retained receipt; maintenance executes no Rust/Cargo tests.",
+            "test_disposition": [
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "add",
+                "test": "crates/opi-ai/tests/whole_call_retry.rs",
+                "interface": "Actual Chat/Responses failures through explicit whole-call and acquisition owners",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/whole_call_retry.rs",
+                "interface": "Actual Chat/Responses failures through explicit whole-call and acquisition owners",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -15262,6 +15493,41 @@
               }
             ],
             "commit": "53a939b4f71facc80f8fc0aaa9f67bb3dee2fe68"
+          }
+        },
+        {
+          "timestamp": "2026-10-27T16:54:52.745352+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair 59d2430; retain original delivery/footer identity. blocks_response constructs each owned partial from the emitted block prefix; earlier snapshots stay independent and Done retains complete content. Existing delayed/cancel/arbitrary scripts remain unchanged. This is a fixture correction, not transport proof or image/classifier/deferred completion.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-59d2430:20.53.8",
+            "evidence_ref": "P20-N4-REPAIR-59d2430",
+            "repair_commit": "59d2430ac9f85a646cb56bab076db8b4d14fc667",
+            "role": "direct-repair",
+            "finding_ids": [
+              "F11"
+            ],
+            "source_adjudication_ids": [],
+            "verification": "Commands/input identity/results are in the common root record and retained receipt; maintenance executes no Rust/Cargo tests.",
+            "test_disposition": [
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "add",
+                "test": "crates/opi-ai/tests/test_support_tests.rs",
+                "interface": "Existing MockProvider block fixture",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "Committed follow-up regression proof; see common receipt for exact tests/counts",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/test_support_tests.rs",
+                "interface": "Existing MockProvider block fixture",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -20988,6 +21254,220 @@
           "no Phase exit/archive",
           "no commit/push/publication",
           "no cache cleanup/live provider/account/network trial"
+        ]
+      }
+    },
+    {
+      "timestamp": "2026-10-27T16:54:52.745352+00:00",
+      "attempt": 0,
+      "summary": "User-approved fourth-node follow-up repair evidence maintenance for committed 59d2430. Append current repair/source/ownership proof and preserve the earlier fb13da43 record. Eight implementation defects and F11 fixture defect are repaired; current assembled node remains evidence insufficient for F5/F6 source adjudication, without restoring withdrawn defect judgments. No implementation/evaluator/Phase exit or fabricated Opi evidence.",
+      "gate_results": {
+        "record_id": "P20-N4-REPAIR-59d2430",
+        "repair_commit": "59d2430ac9f85a646cb56bab076db8b4d14fc667",
+        "repair_parent": "9f273cb589e528e63c9de4a4364ff05e63e01e70",
+        "repair_tree": "dfadbd411c51e7213f33fb988919f0631a1ed721",
+        "reviewed_committed_baseline": "9f273cb589e528e63c9de4a4364ff05e63e01e70",
+        "increment_start_commit": "52eeaa372f077ebec3cc35d6e1350320b6b35a3e",
+        "predecessor_record": "P20-N4-REPAIR-fb13da43",
+        "node_tasks": [
+          "20.32",
+          "20.33",
+          "20.35",
+          "20.51",
+          "20.11",
+          "20.52",
+          "20.53.1",
+          "20.53.2",
+          "20.53.3",
+          "20.53.4",
+          "20.53.6",
+          "20.53.8",
+          "20.54",
+          "20.16",
+          "20.17"
+        ],
+        "direct_repair_tasks": [
+          "20.11",
+          "20.16",
+          "20.33",
+          "20.51",
+          "20.52",
+          "20.53.8"
+        ],
+        "linked_revalidation_tasks": [
+          "20.17"
+        ],
+        "retained_tasks": [
+          "20.32",
+          "20.35",
+          "20.53.1",
+          "20.53.2",
+          "20.53.3",
+          "20.53.4",
+          "20.53.6",
+          "20.54"
+        ],
+        "current_node_verdict": "evidence insufficient",
+        "remaining_confirmed_implementation_defects": [],
+        "resolved_findings": {
+          "implementation": [
+            "F1",
+            "F2",
+            "F3",
+            "F4",
+            "F7",
+            "F8",
+            "F9",
+            "F10"
+          ],
+          "fixture": [
+            "F11"
+          ]
+        },
+        "required_scope_evidence_gaps": [
+          {
+            "id": "F5",
+            "task": "20.51",
+            "kind": "source applicability adjudication",
+            "finding_disposition": "withdrawn as confirmed universal direct-adapter defect",
+            "observation": "Actual Models Bedrock/Gemini/Vertex controls observe payload then headers; Pi transformHeaders is Models-only. No universal direct-adapter relative-order contract is established.",
+            "disposition": "Retain the observed boundary and request source adjudication; do not restore the withdrawn global finding, reorder callbacks, mark implementation blocked, or claim node closure."
+          },
+          {
+            "id": "F6",
+            "task": "20.11",
+            "kind": "explicit global strict / per-tool Prefer source precedence adjudication",
+            "finding_disposition": "withdrawn as confirmed default-behavior defect",
+            "observation": "Rust and pinned Pi controls agree: nonforcing global strict permits unsupported Prefer fallback; explicit forcing strict can fail. The original counterexample used explicit true.",
+            "disposition": "Retain current defaults and forced-strict precedence pending source adjudication under spec-draft source-return rule; do not mark the gap resolved or the node unconditionally passing."
+          }
+        ],
+        "commit_binding": {
+          "path": "E:/opi/acceptance/phase20-node4-59d2430-20261028/repair/commit-verification.json",
+          "sha256": "8c52f6ec24356e5c63125a586a6b76d0429079cb1afaeccd415626d107c25fcf"
+        },
+        "owned_file_inventory": {
+          "path": "E:/opi/acceptance/phase20-node4-59d2430-20261028/commit-binding.json",
+          "sha256": "fa45254ef064ab3bbb23688557ba602de3bdc645fac3e6b685465324f4e802ad"
+        },
+        "runtime_verification_receipt": {
+          "path": "E:/opi/acceptance/phase20-node4-59d2430-20261028/repair/verification.json",
+          "sha256": "0251e133d8b1b91ed74d0aa19907c18e03d716a2bc1a4e484690054d4139b49a"
+        },
+        "review_report": {
+          "path": "E:/opi/acceptance/phase20-node4-59d2430-20261028/repair/review.md",
+          "sha256": "ce764b50354d5e9a9f0ad98da0438954d34f86cef6f3bd86865d21b72cd3f648"
+        },
+        "r0_evidence": {
+          "path": "E:/opi/acceptance/phase20-node4-59d2430-20261028/r0/RESULTS.txt",
+          "sha256": "a43d63753d20b90c978d2e6aecb2d35dd9f54ea7c1c0f82a7c331401a3499361"
+        },
+        "evidence_retention_index": {
+          "path": "E:/opi/acceptance/phase20-node4-59d2430-20261028/evidence-index.json",
+          "sha256": "03eb80c493993be27bbec9ac93120dde1d45ac20d1049cd953ea3e1a0831becd"
+        },
+        "evidence_retention": "330 exact-byte source copies plus one derived commit/source ownership receipt. Shared cache and original probe executables remain untouched; preserved metadata describes original execution state.",
+        "source_binding": "Runtime and package proof ran before the repair commit on baseline 9f273cb589e528e63c9de4a4364ff05e63e01e70 plus the frozen working-tree changes. All 24 committed task blobs and 201 archived src/test files match the current committed source. Original archive VCS metadata and receipts remain unchanged; this is not relabeled as a clean-checkout rebuild.",
+        "verification": {
+          "kind": "reused prior executions; no Rust/Cargo execution by this maintenance",
+          "commands_and_results": {
+            "path": "E:/opi/acceptance/phase20-node4-59d2430-20261028/repair/verification.json",
+            "sha256": "0251e133d8b1b91ed74d0aa19907c18e03d716a2bc1a4e484690054d4139b49a"
+          },
+          "workspace": {
+            "passed": 6007,
+            "failed": 0,
+            "ignored": 20
+          },
+          "workspace_suites": 254,
+          "focused_binary_results": {
+            "openai_codex_responses": 73,
+            "codex_native_options": 21,
+            "resource_cleanup": 16,
+            "codex_telemetry": 1,
+            "whole_call_retry": 18,
+            "request_enrichment": 32,
+            "provider_collection": 68,
+            "public_utilities": 51,
+            "test_support_tests": 22
+          },
+          "focused_passed": 302,
+          "mechanical_final_check_exits": {
+            "fmt": 0,
+            "clippy": 0,
+            "workspace-test": 0,
+            "doc-test": 0,
+            "rustdoc": 0,
+            "package-ws": 0,
+            "f2-final": 0
+          },
+          "ignored_tests": {
+            "total": 20,
+            "external_material_or_Docker": 15,
+            "parent_invoked_helper_entries": 5,
+            "details_ref": "repair/verification.json"
+          },
+          "R0_boundary": "External probes executed against the fixed pre-repair library for unchanged ordering/strict mechanisms. They are not evidence of repaired-binary transport behavior."
+        },
+        "sdk_package": {
+          "archive": {
+            "path": "E:/opi/acceptance/phase20-node4-59d2430-20261028/sdk/opi-ai-0.8.3.crate",
+            "sha256": "72ab353c9825b1dc9db8080011d36e11db859db67982d0ebd0e0ff4a8869912f"
+          },
+          "evidence": {
+            "path": "E:/opi/acceptance/phase20-node4-59d2430-20261028/sdk/evidence.json",
+            "sha256": "18eea419c2cf99da34e46a595960188186422d127843f80c4651f57450060ec5"
+          },
+          "summary": {
+            "path": "E:/opi/acceptance/phase20-node4-59d2430-20261028/repair/package-summary.json",
+            "sha256": "7eeb2821c922b6b99b8f21631c3b904954a33b869243a8486d0b47c8a5a482ca"
+          },
+          "profiles": [
+            {
+              "name": "ordinary",
+              "private_protocol": 95,
+              "public_upgrade": 16,
+              "external_models_codex": 10
+            },
+            {
+              "name": "union-default",
+              "private_protocol": 95,
+              "public_upgrade": 16,
+              "external_models_codex": 10
+            },
+            {
+              "name": "union-c-zlib",
+              "private_protocol": 95,
+              "public_upgrade": 16,
+              "external_models_codex": 10
+            }
+          ],
+          "scope": "Local current SDK RDF-24 package proof with actual registry/features/checksums/native provenance; not final SDK/three-platform acceptance. Historical 20.15 companion proof retains its original identity."
+        },
+        "historical_identity": "Preserve all original task delivery commits/start commits/Opi-* evidence, statuses, scenarios, counters, prior notes, source pins, graph confirmation, verify_runs and phase history. 59d2430 has no Opi-* task footers: record it as follow-up repair, not replacement task delivery, manual recovery or synthetic evaluator execution.",
+        "later_responsibilities": {
+          "20.34": "Full builtin OpenRouter/Radius/operation policy and all-adapter pricing/default assembly remain pending.",
+          "20.45-20.50": "Image/classifier/deferred scripts follow actual operation types; current mock slice remains chat only.",
+          "20.55": "Full-operation telemetry propagation remains pending; carrier and Codex proof do not close it.",
+          "20.57": "This package is a source-bound local predecessor, not final assembled SDK distribution acceptance.",
+          "20.58": "Ubuntu x86_64-unknown-linux-gnu/rustc1.97.1 three-feature proof does not close the platform/MSRV matrix."
+        },
+        "repair_test_impact": {
+          "add": 29,
+          "update": 3,
+          "delete": 0,
+          "retain": "all other tests"
+        },
+        "test_impact_this_maintenance": "none; runtime/test source unchanged, no Rust/Cargo rerun",
+        "human_confirmation": "The user replied 同意 to the concrete bounded ledger evidence-maintenance proposal. This authorizes the listed coordination-note appends and exact-byte evidence retention only; no task/graph/evaluator/Phase exit or Git commit is authorized.",
+        "not_executed": [
+          "no task execution or plan admission",
+          "no new Opi-* footer or verify_runs/evaluator entry",
+          "no status/scenario/DoD/dependency/verification/ownership/source-pin/graph-confirmation mutation",
+          "no Phase exit/archive",
+          "no production/test/spec edit",
+          "no staging/commit/push/publication",
+          "no shared cache cleanup, live provider, real account, hydration or download"
         ]
       }
     }
