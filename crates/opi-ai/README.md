@@ -931,6 +931,36 @@ domain span vocabulary, no automatic SDK call/attempt spans, nothing
 serialized or placed on the wire. SDK propagation through actual
 operations is owned by later tasks.
 
+## Instance Resource Generation, Pool Cleanup and Awaited Release (task 20.17)
+
+The Codex WebSocket family now registers one resource generation per call
+and exposes session-scoped cleanup through the public
+`Models::cleanup_session_resources` entry (`codex_resources` module;
+tests at `tests/openai_codex_responses.rs`).
+
+- **Registration:** every WS-family call registers before any wire auth
+  attach or header/body transform; pure `Sse`-preference calls stay
+  unregistered. Phases (`prepared`/`connecting`/`busy`/`temporary`/
+  `active-fallback`) track the work classes the cutoff must cancel.
+- **Cutoff semantics:** `cleanup_session_resources(Some(id))` cancels the
+  matching old generations and pooled connections and awaits their local
+  owned exits; late publish, the bounded WS retries and a late SSE leg are
+  forbidden after the cutoff. `None` cancels everything (including
+  sessionless work); an unmatched id is a no-op that retains idle reuse;
+  `Some("")` is a typed failure with zero effects.
+- **Release:** dropped calls start their release (the producer work is
+  cancelled with the consumer), but barrier completion is only ever
+  claimed by observing the exits. Removed pooled connections close
+  source-style: Close frame, flush, short bounded confirmation; a close
+  that cannot be confirmed is reported as an unconfirmed effect while the
+  remaining release continues.
+- **Isolation:** two `Models` sharing session ids stay isolated per
+  provider; caller parent tokens, external cancel owners, credentials and
+  catalogs are never touched, and delivered terminals are retained.
+- **Dispatch:** providers opt in through the new default-None
+  `Provider::session_resources` hook; `Models` aggregates every owner's
+  report and typed failures.
+
 ## Real Codex WebSocket Transport: Auto/Delta/Continuation (task 20.16, DEL-07)
 
 The Codex adapter now owns the real WebSocket production path through the

@@ -504,6 +504,26 @@
   unchanged.
 ### Added
 
+- `opi-ai`: instance resource generation, pool cleanup and awaited local
+  release (task 20.17, DEL-07 slice). New public `codex_resources` module
+  (P20-RESOURCES seam): a `SessionResourceOwner` cleanup surface exposed by
+  providers through the new default-None `Provider::session_resources`
+  hook, `Models::cleanup_session_resources(Option<&str>)` aggregation, and
+  typed `CleanupReport`/`CleanupError`. Every Codex WS-family call registers
+  one resource generation before any auth attach or header/body transform;
+  the cleanup cutoff cancels matching old prepared/connecting/busy/
+  temporary/active-fallback work, awaits its local owned exits (guard drops
+  observed through a revision watch - never a dropped-flag claim), forbids
+  late publish, bounded retries and the late SSE leg, and closes removed
+  pooled connections source-style (Close frame, flush, short bounded
+  confirmation; failures reported as unconfirmed effects while the
+  remaining release continues). `Some(nonempty id)` cancels only that
+  session (unmatched is a no-op that retains idle reuse), `None` cancels
+  everything including sessionless generations, and `Some("")` is a typed
+  zero-effect failure. Dropping a call starts its release (producer work is
+  cancelled with it) but never claims barrier completion; caller parent
+  tokens, external owners, credentials and catalogs stay untouched, and
+  pure `Sse`-preference calls remain unregistered.
 - `opi-ai`: real Codex WebSocket/Auto/continuation public path (task
   20.16, DEL-07; RDF-24). New neutral `Request::transport`
   (`TransportPreference::Auto` default, plus `Sse`, `Websocket`,

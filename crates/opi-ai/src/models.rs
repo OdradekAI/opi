@@ -938,6 +938,43 @@ impl Models {
         self.auth_context = context;
     }
 
+    /// Cancel and await the session-scoped connection resources of every
+    /// registered resource-owning provider (task 20.17).
+    ///
+    /// - `Some(nonempty id)` cancels only the generations and pooled
+    ///   connections registered under that exact session (an unmatched id is
+    ///   a no-op);
+    /// - `None` cancels everything, including sessionless generations;
+    /// - `Some("")` fails as
+    ///   [`CleanupError::EmptySessionId`](crate::codex_resources::CleanupError::EmptySessionId)
+    ///   with zero effects.
+    ///
+    /// The returned barrier waits for the cancelled calls' local owned
+    /// exits and the bounded connection closes; one owner's failure never
+    /// aborts the remaining release — unconfirmed effects are aggregated
+    /// into the returned report. Caller parent tokens, external cancel
+    /// owners, credentials and catalogs are never touched.
+    pub async fn cleanup_session_resources(
+        &self,
+        session: Option<&str>,
+    ) -> Result<crate::codex_resources::CleanupReport, crate::codex_resources::CleanupError> {
+        if session == Some("") {
+            return Err(crate::codex_resources::CleanupError::EmptySessionId);
+        }
+        let handles: Vec<crate::codex_resources::CleanupHandle> = self
+            .registry
+            .providers()
+            .iter()
+            .filter_map(|provider| provider.session_resources())
+            .map(|owner| owner.cleanup_session_resources(session))
+            .collect();
+        let mut report = crate::codex_resources::CleanupReport::default();
+        for handle in handles {
+            report.merge(handle.resolve().await?);
+        }
+        Ok(report)
+    }
+
     /// Attach the credential store backing store-sourced auth checks,
     /// resolution, and [`logout`](Self::logout).
     ///

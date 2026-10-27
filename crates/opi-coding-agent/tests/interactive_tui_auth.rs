@@ -160,8 +160,11 @@ fn auth_services(presenter: TestPresenter, server: &MockServer) -> InteractiveTu
             .build()
             .unwrap(),
         server.uri(),
-        Duration::from_secs(2),
-        Duration::from_secs(2),
+        // Localhost mock-wire budget: generous enough to absorb
+        // full-workspace parallel load (task 20.17 flake repair; no test
+        // asserts the timeout path, so widening never weakens a negative).
+        Duration::from_secs(10),
+        Duration::from_secs(10),
     )
 }
 

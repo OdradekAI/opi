@@ -283,6 +283,14 @@ impl ProviderRegistry {
         self.providers.iter().find(|p| p.id() == id).cloned()
     }
 
+    /// All registered providers in registration order (task 20.17):
+    /// session resource cleanup fans out across every provider's optional
+    /// [`session_resources`](crate::provider::Provider::session_resources)
+    /// surface.
+    pub(crate) fn providers(&self) -> &[Arc<dyn Provider>] {
+        &self.providers
+    }
+
     /// Return all models across all providers and the override layer.
     ///
     /// Each entry is `(provider_id, &ModelInfo)`. Layering (first wins):

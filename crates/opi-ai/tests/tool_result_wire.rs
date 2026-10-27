@@ -472,6 +472,9 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         // DEL-10 (task 20.32): the offline bundled model catalog loader is a
         // deliberate later-phase addition.
         "catalog",
+        // Task 20.17: resource generation/lease/cleanup (P20-RESOURCES) is a
+        // deliberate addition.
+        "codex_resources",
         "config",
         // Task 20.11: constrained sampling (strict wire projection and
         // grammar tools) is a deliberate later-phase addition.

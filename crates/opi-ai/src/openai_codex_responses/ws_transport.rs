@@ -29,6 +29,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::auth::{AuthScheme, ResolvedAuth};
 use crate::callbacks::RequestCallbacks;
+use crate::codex_resources::{GenerationGuard, GenerationPhase};
 use crate::http::HttpClient;
 use crate::message::AssistantMessage;
 use crate::openai_responses_shared::{
@@ -64,6 +65,44 @@ const CONNECTION_LIMIT_CODE: &str = "websocket_connection_limit_reached";
 pub(super) struct WsTransportState {
     connections: Mutex<HashMap<(String, String), PooledConnection>>,
     fallback_sessions: Mutex<HashSet<String>>,
+    /// Resource generation registry (task 20.17): every WS-family call
+    /// registers one generation before wire work; cleanup cutoffs cancel
+    /// the matching old work and await its local exits.
+    resources: std::sync::Arc<crate::codex_resources::ResourceRegistry>,
+}
+
+impl WsTransportState {
+    pub(super) fn registry(&self) -> &std::sync::Arc<crate::codex_resources::ResourceRegistry> {
+        &self.resources
+    }
+
+    /// Remove the pooled connections and sticky fallback markers matched by
+    /// the cleanup selector. Returns the taken drivers (to close) and the
+    /// number of cleared fallback markers. `None` matches everything.
+    pub(super) fn take_cleanup_connections(&self, session: Option<&str>) -> (Vec<Driver>, usize) {
+        let mut drivers = Vec::new();
+        {
+            let mut connections = self.connections.lock().unwrap();
+            let matched_keys: Vec<(String, String)> = connections
+                .keys()
+                .filter(|(pooled_session, _)| match session {
+                    Some(target) => pooled_session == target,
+                    None => true,
+                })
+                .cloned()
+                .collect();
+            for key in matched_keys {
+                if let Some(entry) = connections.remove(&key) {
+                    drivers.push(entry.driver);
+                }
+            }
+        }
+        let cleared = match session {
+            Some(target) => usize::from(self.fallback_sessions.lock().unwrap().remove(target)),
+            None => self.fallback_sessions.lock().unwrap().drain().count(),
+        };
+        (drivers, cleared)
+    }
 }
 
 struct PooledConnection {
@@ -314,11 +353,19 @@ pub(super) async fn drive(
     wire_facts: Option<ResponsesWireTools>,
     route: ReplayRoute,
     timeout: Option<Duration>,
-    cancel: CancellationToken,
+    lease: &GenerationGuard,
     callbacks: RequestCallbacks,
     snapshot: ProducerSnapshot,
     tx: tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
 ) -> WsLoopOutcome {
+    // The generation token carries the cleanup cutoff and the linked caller
+    // parent cancellation; every select arm below observes it.
+    let cancel = lease.token();
+    // Prepared-phase cutoff: a cleanup that fired before this producer
+    // started never reaches the wire.
+    if cancel.is_cancelled() {
+        return WsLoopOutcome::Terminal(ProviderError::Cancelled);
+    }
     let (account_id, bearer) = match bearer_parts(resolved) {
         Ok(parts) => parts,
         Err(error) => return WsLoopOutcome::Terminal(error),
@@ -351,6 +398,11 @@ pub(super) async fn drive(
     let mut retried_missing = false;
     let mut retried_limit = false;
     loop {
+        // Cutoff forbids late retries: a cancelled generation never starts
+        // another attempt.
+        if cancel.is_cancelled() {
+            return WsLoopOutcome::Terminal(ProviderError::Cancelled);
+        }
         let outcome = attempt(
             state,
             client,
@@ -365,7 +417,7 @@ pub(super) async fn drive(
             wire_facts.as_ref(),
             &route,
             timeout,
-            &cancel,
+            lease,
             &callbacks,
             &snapshot,
             &tx,
@@ -523,11 +575,12 @@ async fn attempt(
     wire_facts: Option<&ResponsesWireTools>,
     route: &ReplayRoute,
     timeout: Option<Duration>,
-    cancel: &CancellationToken,
+    lease: &GenerationGuard,
     callbacks: &RequestCallbacks,
     snapshot: &ProducerSnapshot,
     tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
 ) -> AttemptOutcome {
+    let cancel = lease.token();
     let url = ws_url(base_url);
     let websocket_request_id = session_key
         .map(str::to_owned)
@@ -538,13 +591,14 @@ async fn attempt(
         TransportPreference::WebsocketCached | TransportPreference::Auto
     ) && session_key.is_some();
 
+    lease.set_phase(GenerationPhase::Connecting);
     let (mut acquired, pooled_continuation) = match acquire(
         state,
         client,
         &url,
         &headers,
         session_key.map(|session| (session, account_id)),
-        cancel,
+        &cancel,
     )
     .await
     {
@@ -556,6 +610,11 @@ async fn attempt(
             };
         }
     };
+    lease.set_phase(if acquired.pooled_key.is_some() {
+        GenerationPhase::Busy
+    } else {
+        GenerationPhase::Temporary
+    });
     if use_cached_context && pooled_continuation.is_some() {
         *continuation = pooled_continuation;
     }
@@ -588,7 +647,7 @@ async fn attempt(
         &frame_body,
         &mut mapper,
         timeout,
-        cancel,
+        &cancel,
         callbacks,
         tx,
     )
@@ -639,8 +698,13 @@ async fn attempt(
             }
         }
         Err(flow) => {
-            // Failed attempts never return a connection to the pool; the
-            // owner's Drop releases IO without protocol output.
+            // Failed attempts never return a connection to the pool. A
+            // cancelled generation completes an explicit prompt Close (the
+            // source's silent close); other failures release IO through the
+            // owner's Drop without protocol output.
+            if matches!(flow, AttemptFlow::Terminal(ProviderError::Cancelled)) {
+                let _ = silent_close(&mut acquired.driver).await;
+            }
             AttemptOutcome {
                 flow: flow.into(),
                 continuation: None,
@@ -656,6 +720,31 @@ async fn close_temporary(driver: &mut Driver) {
     let _ = driver
         .finish_close(Some(tokio::time::Instant::now() + CLOSE_BUDGET))
         .await;
+}
+
+/// Budget for confirming a silent close on cleanup: unlike a completed
+/// temporary connection (the full [`CLOSE_BUDGET`]), cancelled and
+/// cleaned-up connections never block the release on an unresponsive peer
+/// for long.
+const SILENT_CLOSE_CONFIRM: Duration = Duration::from_millis(250);
+
+/// Source-style silent close for cancelled and cleaned-up connections
+/// (task 20.17): write the Close frame, flush, then confirm the close
+/// handshake within a short bounded budget instead of waiting on a remote
+/// acknowledgement without deadline. A write failure or confirmation
+/// timeout is the reported unconfirmed effect; IO is always released.
+pub(super) async fn silent_close(driver: &mut Driver) -> Result<(), String> {
+    driver
+        .queue(8, &1000_u16.to_be_bytes(), false, ws::fresh_mask())
+        .map_err(|fault| format!("close frame rejected: {fault:?}"))?;
+    driver
+        .flush()
+        .await
+        .map_err(|fault| format!("close frame not written: {fault:?}"))?;
+    driver
+        .finish_close(Some(tokio::time::Instant::now() + SILENT_CLOSE_CONFIRM))
+        .await
+        .map_err(|fault| format!("close handshake unconfirmed: {fault:?}"))
 }
 
 fn error_code(value: &serde_json::Value) -> Option<&str> {
@@ -682,7 +771,19 @@ async fn run_stream(
     if let Err(fault) = driver.queue(1, payload.as_bytes(), false, ws::fresh_mask()) {
         return Err(classify_transport_fault(&fault, false, mapper));
     }
-    if let Err(fault) = driver.flush().await {
+    // Active send cancellation: the cutoff is observed before the request
+    // frame leaves the local buffer whenever possible.
+    let flushed = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Err(crate::ws::io::Fault::Closed),
+        result = driver.flush() => result,
+    };
+    if let Err(fault) = flushed {
+        if cancel.is_cancelled() {
+            return Err(AttemptFlow::Terminal(
+                mapper.failure(ProviderError::Cancelled),
+            ));
+        }
         return Err(classify_transport_fault(&fault, false, mapper));
     }
 

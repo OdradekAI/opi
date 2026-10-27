@@ -369,9 +369,49 @@ impl OpenAiCodexResponsesProvider {
     }
 }
 
+impl crate::codex_resources::SessionResourceOwner for OpenAiCodexResponsesProvider {
+    fn cleanup_session_resources(
+        &self,
+        session: Option<&str>,
+    ) -> crate::codex_resources::CleanupHandle {
+        if session == Some("") {
+            return crate::codex_resources::CleanupHandle::failed(
+                crate::codex_resources::CleanupError::EmptySessionId,
+            );
+        }
+        let (drivers, cleared_markers) = self.ws_state.take_cleanup_connections(session);
+        let (cancelled, pending) = self.ws_state.registry().cleanup(session);
+        let registry = self.ws_state.registry().clone();
+        crate::codex_resources::CleanupHandle::from_future(async move {
+            // Awaited local release: wait for the cancelled generations'
+            // owned exits (guard drops), then close the removed pooled
+            // connections source-style. One close failure never aborts the
+            // remaining release.
+            registry.await_exits(&pending).await;
+            let mut report = crate::codex_resources::CleanupReport {
+                cancelled_generations: cancelled,
+                closed_connections: 0,
+                cleared_fallback_sessions: cleared_markers,
+                unconfirmed_effects: Vec::new(),
+            };
+            for mut driver in drivers {
+                match ws_transport::silent_close(&mut driver).await {
+                    Ok(()) => report.closed_connections += 1,
+                    Err(detail) => report.unconfirmed_effects.push(detail),
+                }
+            }
+            Ok(report)
+        })
+    }
+}
+
 impl Provider for OpenAiCodexResponsesProvider {
     fn id(&self) -> &str {
         PROVIDER_ID
+    }
+
+    fn session_resources(&self) -> Option<&dyn crate::codex_resources::SessionResourceOwner> {
+        Some(self)
     }
 
     fn models(&self) -> &[ModelInfo] {
@@ -385,6 +425,22 @@ impl Provider for OpenAiCodexResponsesProvider {
     ) -> EventStream {
         // Same as `stream` but skips per-call auth resolution: the collection
         // resolved and froze authentication once for the logical call.
+        // Resource generation registration (task 20.17): every WS-family
+        // call registers before any auth attach or header/body transform so
+        // a cleanup cutoff can cancel it in every phase. Pure SSE-preference
+        // calls are not part of the WebSocket resource family and stay
+        // unregistered.
+        let transport = request.transport;
+        let session_key: Option<String> = if request.cache_retention != CacheRetention::Disabled {
+            request.session_id.clone().filter(|id| !id.is_empty())
+        } else {
+            None
+        };
+        let lease = if transport != TransportPreference::Sse {
+            Some(self.ws_state.registry().register_arc(session_key.clone()))
+        } else {
+            None
+        };
         if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
             return Box::pin(stream::once(async move { Err(error) }));
         }
@@ -446,14 +502,6 @@ impl Provider for OpenAiCodexResponsesProvider {
         let client = self.client.client().clone();
         let http_client = self.client.clone();
         let ws_state = self.ws_state.clone();
-        let transport = request.transport;
-        // WebSocket pooling and continuation are keyed on the caller's
-        // explicit session id only; generated per-call ids stay sessionless.
-        let session_key: Option<String> = if request.cache_retention != CacheRetention::Disabled {
-            request.session_id.clone().filter(|id| !id.is_empty())
-        } else {
-            None
-        };
         let cont_route = crate::replay::ReplayRoute {
             wire: crate::model_info::WireApi::OpenAiCodexResponses,
             provider: PROVIDER_ID.to_owned(),
@@ -487,6 +535,20 @@ impl Provider for OpenAiCodexResponsesProvider {
 
         let tx_closed = tx.clone();
         let producer_cancel = cancel.clone();
+        // One-way link: caller-parent cancellation fires the generation
+        // token (cleanup cutoffs fire it directly). The link exits when
+        // either side fires, including the guard's drop-time cancel.
+        if let Some(guard) = lease.as_ref() {
+            let parent = cancel.clone();
+            let entry = guard.token();
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = parent.cancelled() => entry.cancel(),
+                    _ = entry.cancelled() => {}
+                }
+            });
+        }
+        let lease = lease;
         tokio::spawn(async move {
             let work = async {
                 let extra_headers = match extra_headers {
@@ -529,7 +591,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                         wire_facts.clone(),
                         cont_route,
                         timeout,
-                        cancel.clone(),
+                        lease.as_ref().expect("ws-family call registered"),
                         callbacks.clone(),
                         producer_snapshot.clone(),
                         tx.clone(),
@@ -538,6 +600,20 @@ impl Provider for OpenAiCodexResponsesProvider {
                     match outcome {
                         ws_transport::WsLoopOutcome::Done => {}
                         ws_transport::WsLoopOutcome::Fallback => {
+                            let guard = lease.as_ref().expect("ws-family call registered");
+                            if guard.token().is_cancelled() {
+                                // Cutoff forbids a late SSE leg.
+                                let _ = send_or_cancel(
+                                    &guard.token(),
+                                    &tx,
+                                    Err(ProviderError::Cancelled),
+                                )
+                                .await;
+                                return;
+                            }
+                            guard
+                                .set_phase(crate::codex_resources::GenerationPhase::ActiveFallback);
+                            let cancel = guard.token();
                             stream_sse(
                                 client,
                                 resolved,

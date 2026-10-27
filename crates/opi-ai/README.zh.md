@@ -748,6 +748,31 @@ owner；closure test 位于 `tests/telemetry_carrier.rs`。
 仅载体基底：无 global subscriber/exporter/采样、无领域 span 词汇、无自动
 SDK 调用/attempt span、不序列化不上 wire。SDK 实际传播由后续任务持有。
 
+## 实例 Resource Generation／Pool 清理／Await 释放（任务 20.17）
+
+Codex WebSocket 族现在为每次调用注册一个 resource generation，并通过公共
+`Models::cleanup_session_resources` 入口暴露按 session 的清理
+（`codex_resources` 模块；测试位于 `tests/openai_codex_responses.rs`）。
+
+- **注册：** 每个 WS 族调用在一切 wire 鉴权附加与 header/body transform
+  之前注册；纯 `Sse` 偏好调用不注册。阶段
+  （`prepared`/`connecting`/`busy`/`temporary`/`active-fallback`）跟踪
+  cutoff 必须取消的工作类别。
+- **Cutoff 语义：** `cleanup_session_resources(Some(id))` 取消匹配的旧
+  generation 与池化连接并 await 其本地所属退出；cutoff 之后禁止迟到
+  publish、有界 WS 重试与迟到 SSE 腿。`None` 取消全部（含 sessionless）；
+  未匹配 id 为 no-op 并保留 idle 复用；`Some("")` 为零副作用的 typed
+  失败。
+- **释放：** 丢弃调用即开始释放（producer 工作随消费者一同取消），但
+  barrier 完成只能由观察到退出一方宣称。被移除的池化连接以源风格关闭：
+  Close 帧、flush、短有界确认；无法确认的关闭作为 unconfirmed effect 上
+  报，其余释放继续。
+- **隔离：** 两个 `Models` 共享同一 session id 时仍按 provider 隔离；调用
+  方父 token、外部取消 owner、凭据与目录绝不受动，已交付终态保留。
+- **分发：** provider 通过新增的默认 `None` 的
+  `Provider::session_resources` 钩子加入；`Models` 聚合各 owner 的报告与
+  typed 失败。
+
 ## 真实 Codex WebSocket 传输：Auto／Delta／续传（任务 20.16，DEL-07）
 
 Codex adapter 现持有经严格 Upgrade 桥进入私有 frame/PMD/Close owner 的真实

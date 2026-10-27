@@ -108,6 +108,17 @@ pub trait Provider: Send + Sync {
         crate::retry::AcquisitionPolicy::default()
     }
 
+    /// The provider's session-scoped connection resource owner, if any
+    /// (task 20.17). Providers that hold per-session connection pools or
+    /// in-flight generation work return their
+    /// [`SessionResourceOwner`](crate::codex_resources::SessionResourceOwner)
+    /// surface here so [`Models::cleanup_session_resources`](crate::Models::cleanup_session_resources)
+    /// can drive the cleanup barrier across every registered provider.
+    /// The default `None` excludes resource-less providers from cleanup.
+    fn session_resources(&self) -> Option<&dyn crate::codex_resources::SessionResourceOwner> {
+        None
+    }
+
     /// Replace this provider's effective model catalog before it is shared.
     ///
     /// Mapped providers use this construction-time hook to materialize
