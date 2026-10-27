@@ -1331,12 +1331,12 @@ impl OpenAiChatProvider {
         let status = response.status();
         if !status.is_success() {
             let headers = response.headers().clone();
-            return Err(map_http_status(
-                status,
-                &headers,
-                auth_invalid_policy,
-                &provider_id,
-            ));
+            let cause = map_http_status(status, &headers, auth_invalid_policy, &provider_id);
+            return Err(if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                crate::http::openai_rate_limit_detail(response, cause, &cancel).await
+            } else {
+                cause
+            });
         }
         // Response callback (V-36): fired exactly once on the successfully
         // acquired response; rejected dispatches never masquerade.
@@ -1783,7 +1783,13 @@ impl Provider for OpenAiChatProvider {
                 let body = match callbacks
                     .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
                     .await
-                {
+                    .and_then(|body| {
+                        crate::callbacks::validate_openai_payload_shape(
+                            &body,
+                            crate::callbacks::OpenAiPayloadShape::Chat,
+                        )?;
+                        Ok(body)
+                    }) {
                     Ok(body) => body,
                     Err(error) => {
                         let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;

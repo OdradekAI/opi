@@ -345,7 +345,8 @@ pub fn tool_call_response(
 ///
 /// Emits one event per block in order - `TextDelta` for text blocks and
 /// `ToolCallEnd` for tool-call blocks, with `content_index` matching the
-/// block position - and finishes with `Done`, using `StopReason::ToolUse`
+/// block position and each partial containing only the emitted prefix -
+/// and finishes with `Done`, using `StopReason::ToolUse`
 /// when any tool call is present, else `StopReason::Stop`. This is the
 /// ordered multi-block/tool fixture the single-purpose `text_response` and
 /// `tool_call_response` helpers cannot express.
@@ -359,11 +360,11 @@ pub fn blocks_response(blocks: Vec<crate::message::AssistantContent>) -> Vec<Ass
         .iter()
         .any(|block| matches!(block, crate::message::AssistantContent::ToolCall { .. }));
     let mut partial = base_assistant();
-    partial.content = blocks.clone();
     let mut events = vec![AssistantStreamEvent::Start {
         partial: base_assistant(),
     }];
     for (content_index, block) in blocks.iter().enumerate() {
+        partial.content.push(block.clone());
         match block {
             crate::message::AssistantContent::Text { text } => {
                 events.push(AssistantStreamEvent::TextDelta {

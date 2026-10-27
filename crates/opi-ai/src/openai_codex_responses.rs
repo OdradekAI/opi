@@ -608,6 +608,10 @@ impl Provider for OpenAiCodexResponsesProvider {
         let callbacks = request.callbacks.clone();
         let telemetry = request.telemetry_context.clone();
         let timeout = request.timeout;
+        let websocket_connect_timeout = self
+            .native_options
+            .as_ref()
+            .and_then(|options| options.websocket_connect_timeout);
         let session_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
             Some(
                 request
@@ -698,7 +702,13 @@ impl Provider for OpenAiCodexResponsesProvider {
                     _ = cancel.cancelled() => Err(ProviderError::Cancelled),
                     result = callbacks.apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body) => result,
                 };
-                let body = match transformed {
+                let body = match transformed.and_then(|body| {
+                    crate::callbacks::validate_openai_payload_shape(
+                        &body,
+                        crate::callbacks::OpenAiPayloadShape::Responses,
+                    )?;
+                    Ok(body)
+                }) {
                     Ok(body) => body,
                     Err(error) => {
                         let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
@@ -738,6 +748,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                         wire_facts.clone(),
                         cont_route,
                         timeout,
+                        websocket_connect_timeout,
                         &lease.as_ref().expect("ws-family call registered").guard,
                         callbacks.clone(),
                         producer_snapshot.clone(),
@@ -746,7 +757,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                     .await;
                     match outcome {
                         ws_transport::WsLoopOutcome::Done => {}
-                        ws_transport::WsLoopOutcome::Fallback => {
+                        ws_transport::WsLoopOutcome::Fallback(reason) => {
                             let guard = lease.as_ref().expect("ws-family call registered");
                             if guard.token().is_cancelled() {
                                 // Cutoff forbids a late SSE leg.
@@ -762,10 +773,25 @@ impl Provider for OpenAiCodexResponsesProvider {
                                 .guard
                                 .set_phase(crate::codex_resources::GenerationPhase::ActiveFallback);
                             let cancel = guard.token();
+                            let mut wire_facts = wire_facts.unwrap_or(
+                                crate::openai_responses_shared::ResponsesWireTools {
+                                    tools: Vec::new(),
+                                    grammar_input_properties: Default::default(),
+                                    strict_tools: Vec::new(),
+                                    diagnostics: Vec::new(),
+                                },
+                            );
+                            wire_facts
+                                .diagnostics
+                                .push(crate::stream::AssistantDiagnostic {
+                                    kind: "codex_websocket_fallback".into(),
+                                    reason: reason.into(),
+                                    detail: None,
+                                });
                             stream_sse(
                                 client,
                                 resolved,
-                                wire_facts,
+                                Some(wire_facts),
                                 base_url,
                                 requested_model,
                                 extra_headers,

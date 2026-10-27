@@ -1715,9 +1715,11 @@ impl Models {
             .await
     }
 
-    /// [`refresh`](Self::refresh) observing `token`: when the token fires,
-    /// fetching stops, nothing is persisted or published, and the report
-    /// status is [`RefreshStatus::Cancelled`].
+    /// [`refresh`](Self::refresh) observing `token`: cancellation observed
+    /// before publication stops fetching and leaves the current publication
+    /// intact, with report status [`RefreshStatus::Cancelled`]. Without a
+    /// store, the final token check begins the synchronous memory commit;
+    /// later cancellation cannot roll back that completed publication.
     pub async fn refresh_with(
         &mut self,
         allow_network: bool,
@@ -1915,6 +1917,13 @@ impl Models {
                 }
             },
             None => {
+                // A fetch can return success in the same poll that an external
+                // caller cancels. Recheck at the synchronous memory commit
+                // boundary, after every fetch and before replacing any state.
+                if token.is_cancelled() {
+                    report.status = RefreshStatus::Cancelled;
+                    return Ok(report);
+                }
                 self.registry.replace_all_dynamic_catalogs(merged);
                 self.catalog_publishers = publishers;
             }

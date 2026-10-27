@@ -403,6 +403,17 @@
 
 ### Fixed
 
+- `opi-ai`: Codex seals fallback/reconnect on valid provider events even before
+  public output, preserves safe fallback diagnostics, disables idle/connect
+  timers for explicit zero, and evicts idle/aged pooled connections on acquire.
+  `CodexOptions::websocket_connect_timeout` selects the independent connection
+  budget (omitted: 15 seconds) without adding a wire field. Chat/Responses keep
+  safe quota facts for explicit whole-call retry while preserving acquisition
+  status/hints. Chat/Responses/Codex reject malformed callback payload shapes
+  before dispatch while retaining legal extensions. Store-free catalog refresh fences cancelled late results,
+  grammar keys use literal property names, and multi-block mock partials retain
+  only the content emitted at each event.
+
 - `opi-ai`: ordinary and advanced acquisition share one bounded owner, including
   forwarded Anthropic strict variants; successful response headers seal retries
   before callbacks or body errors. Async callbacks preserve ordered raw

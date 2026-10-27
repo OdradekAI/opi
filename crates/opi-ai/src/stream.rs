@@ -615,6 +615,17 @@ fn setup_failure_message(cause: &ProviderError) -> crate::message::AssistantMess
     }
 }
 
+/// Retain an attested classification fact without replacing the acquisition
+/// cause or admitting provider-controlled text into the canonical message.
+pub(crate) fn setup_failure_with_detail(
+    cause: ProviderError,
+    detail: &'static str,
+) -> ProviderError {
+    let mut message = setup_failure_message(&cause);
+    message.error_message = Some(detail.to_owned());
+    cause.with_partial(message)
+}
+
 // ---------------------------------------------------------------------------
 // ChatStream (task 20.2, AIR-003/AIR-047 / P20-FINAL)
 // ---------------------------------------------------------------------------

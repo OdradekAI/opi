@@ -726,7 +726,8 @@ wire compat 载荷）经显式 `x-opi` 扩展往返，纯 v1 文档
 catalog。未注册显式 catalog source 时，native provider 的 `Ok(None)` 恢复其内置
 catalog；存在显式 source 时，该 native 未发布结果保留最后已知 source catalog。
 权威的 `Ok(Some([]))` 仍会将其替换为空 catalog。`refresh_with` 观察
-`CancellationToken`——被取消的轮次不抓取、不持久化、不发布任何内容。
+`CancellationToken`——提交前观察到取消即保留先前发布，包括 source 在观察取消的
+同次 poll 中返回成功的情况。无 store 时，最终 token 检查是同步内存提交的起点。
 已 prepare 的调用在刷新后保持冻结绑定。`DynamicCatalogSource` 是
 宿主自定义 catalog source 的公开接缝；`HttpCatalogSource` 经池化连接
 抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
@@ -826,6 +827,7 @@ provider，也不以 `sampling_params` 承载 native 参数。
 | `tool_choice` | `CodexToolChoice` 枚举 | 省略 → `auto`；枚举 `None` 发送 `"none"` | 显式 native 值覆盖默认；`tool_choice` |
 | `SimpleOptions::tool_choice` | `Option<SimpleToolChoice>`（`Auto` / `None`） | 省略 → Codex `auto` | Codex 中性映射至 `tool_choice`；当前不支持此项的 route 在 auth 前拒绝显式值 |
 | `Request::temperature` | 可选无量纲数值 | 省略或非有限值 → 缺失；零有效 | request 值；`temperature` |
+| `websocket_connect_timeout` | 可选 `Duration` | 省略 → 15 秒；零禁用连接计时器 | 按调用冻结的本地连接预算；独立于 `Request::timeout`，不序列化 |
 | `Request::max_tokens` | 可选 token 数 | Codex 不发送输出上限 wire 字段，包含显式零 | simple 准备保留共享预算语义；native 调用在 wire 映射前保留 request |
 
 封闭 native 枚举拒绝无效序列化拼写。无效完整 record 或错误 wire 以 typed 配置错误
@@ -840,7 +842,8 @@ provider，也不以 `sampling_params` 承载 native 参数。
 - **真实链路：** `response.create` 以带掩码的 text 帧发送；事件经与 SSE 完
   全相同的分类器解码，两种传输发布一致的公开事件；临时连接完成显式客户
   端 Close；无终态的 EOF 绝不算成功；`Request::timeout` 即 WebSocket 空闲
-  超时；取消覆盖活跃与空闲两态。
+  超时（零禁用该计时器）；取消覆盖活跃与空闲两态。下次 acquire 淘汰释放后
+  空闲满 5 分钟或连接年龄满 55 分钟的连接及其续传状态；不打断 busy 调用。
 - **Delta／续传**（Auto/WebsocketCached 且有 session）：仅当非 input 字段
   未变且“上次完整 input＋实际响应 items”构成新 input 的精确前缀时发送
   `previous_response_id`＋delta input，否则发送完整 input。仅成功终态且带
@@ -849,7 +852,9 @@ provider，也不以 `sampling_params` 承载 native 参数。
   input 重试；`websocket_connection_limit_reached` 在生成开始前恰允许一次
   重连；WS→SSE 回退仅在首个有效 provider 事件之前的传输类失败上触发并按
   session 粘滞。abort/API/auth/协议失败绝不伪装为传输丢失；已交付输出后的
-  错误终止该流并保全 partial。
+  错误终止该流并保全 partial。有效且非空的 provider event type 即封闭回退和
+  重连，即使 mapper 未发布公开事件。合法 SSE 回退保留
+  `codex_websocket_fallback` 诊断及原有 sampling 诊断，仅含固定原因，无 raw 错误文本。
 - **Upgrade 桥：** `WsUpgradeRequest::headers` 增加调用方握手头（握手保留
   名被拒绝）。
 - **打包：** `ws` conformance family 新增真实链 consumer 检查（外部
@@ -876,7 +881,8 @@ provider，也不以 `sampling_params` 承载 native 参数。
 - **`blocks_response(Vec<AssistantContent>)`**：有序多块/tool
   fixture——text 块发 `TextDelta`、tool-call 块发 `ToolCallEnd`，
   `content_index` 与块位置一致；含任意 tool call 则 `Done` 用
-  `StopReason::ToolUse`，否则 `Stop`。按契约对
+  `StopReason::ToolUse`，否则 `Stop`。每个 partial 仅包含已发出的 block 前缀，
+  先前快照保持独立。按契约对
   `Thinking`/`RedactedThinking` 块 panic。既有
   `Events`/`Error`/`EventsThenError` 语义与 `stream_prepared`
   队列断言不变；deferred record 及其脚本随 20.45-50 交付。
@@ -1006,6 +1012,9 @@ initial/current 区分：content 追加以空行连接，section 替换保位，
   载与 429/5xx/520/524 状态、网关转发（"unable to forward upstream"、
   "service temporarily unavailable"）、网络/传输失败、流提前结束、流中显式
   重试指引、gRPC `ResourceExhausted`、订阅用量抖动。
+- Chat/Responses 的 HTTP 429 从指定 JSON error 字段保留 quota/billing/usage-limit
+  分类，以固定安全消息标签表达。typed `RateLimited` 原因与 retry hint 不变，
+  acquisition 保持其独立 429 发送策略；不暴露 raw 错误体。
 - 有效停止（Stop/Length/ToolUse——含未来的 Deferred 变体）与 abort 绝不重
   试；预算耗尽返回最终错误消息。
 - 回调顺序精确：`on_retry_scheduled` → 可取消的指数退避（调用方给基数，
@@ -1052,6 +1061,9 @@ initial/current 区分：content 追加以空行连接，section 替换保位，
   replay 以 `ctc_` id 还原
   `custom_tool_call(_output)` 项（function call 保持 `fc_` 前缀）。
 
+grammar 输入属性名按 schema 的 literal key 查找，包括 `/` 与 `~`；包装保留精确
+名称，trusted schema 不变。
+
 ## 功能请求回调（AIR-059/V-51 普通切片，任务 20.51）
 
 `callbacks::RequestCallbacks`（随 `Request.callbacks` 携带，默认为空）附加四类
@@ -1067,7 +1079,7 @@ await；取消可结束 pending 回调而不再发送。
 | 回调 | 时机 | 合同 |
 |---|---|---|
 | `with_header_transform` | 每个 logical call 一次，作用于组装后的每调用集合 | 输出整体替换该集合；非保护项的省略/设置/删除受支持。已存在的受保护 identity/auth/signing 项可原样返回；删除、修改或引入受保护项在派发前 typed 失败。适配器拥有的凭据不进入变换。 |
-| `with_on_payload` | 采样/compat/wire 投影之后，作用于最终请求体 | `Ok(None)` 保持原体；`Ok(Some(v))` 校验后替换：JSON object、model 身份不变、输出预算不得上调。每个 payload variant 只运行一次——普通获取重试按字节复用冻结体（`ORDINARY_PAYLOAD_VARIANT`）。 |
+| `with_on_payload` | 采样/compat/wire 投影之后，作用于最终请求体 | `Ok(None)` 保持原体；`Ok(Some(v))` 校验后替换：JSON object、model 身份不变、输出预算不得上调。Chat/Responses/Codex 还在派发前检查 streaming wire shape，保留未知扩展及合法 content/tool 变更。每个 payload variant 只运行一次——普通获取重试按字节复用冻结体（`ORDINARY_PAYLOAD_VARIANT`）。 |
 | `with_on_response` | 在适配器来源定义的响应观测点触发，携带 status 与 headers，先于 body 处理 | Codex SSE 也在分类前观测非成功状态；未产生响应的失败不通知。成功响应 handoff 封闭普通 acquisition retry。 |
 | `with_on_raw` | 每个已解析 provider wire 事件，严格先于其归一化发射，按 wire 顺序 | 只读；失败以 typed 错误终止当前调用并保留已交付的 partial。 |
 

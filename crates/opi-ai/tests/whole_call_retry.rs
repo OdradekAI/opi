@@ -536,7 +536,7 @@ mod frozen_target_wire {
 
     const OK_SSE: &str = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg-ok\",\"model\":\"claude-sonnet-4-5-20250514\",\"usage\":{\"input_tokens\":3,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"recovered\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":4}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
 
-    fn logical_request() -> Request {
+    pub(super) fn logical_request() -> Request {
         Request {
             transport: Default::default(),
             model: "anthropic:claude-sonnet-4-5-20250514".into(),
@@ -712,5 +712,316 @@ mod frozen_target_wire {
         assert_eq!(result.stop_reason, StopReason::Error);
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 1, "no automatic recovery without opt-in");
+    }
+}
+
+mod quota_transport {
+    use super::*;
+    use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
+    use opi_ai::models::{CompatMetadata, Models};
+    use opi_ai::provider::{Provider, ProviderError};
+    use opi_ai::stream::ChatStream;
+    use secrecy::SecretString;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    };
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers};
+
+    async fn exercise(responses: bool, via_models: bool, body: serde_json::Value, expected: u32) {
+        let server = MockServer::start().await;
+        let endpoint = if responses {
+            "/v1/responses"
+        } else {
+            "/v1/chat/completions"
+        };
+        Mock::given(matchers::method("POST"))
+            .and(matchers::path(endpoint))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .insert_header("retry-after", "1")
+                    .set_body_json(body),
+            )
+            .mount(&server)
+            .await;
+        let provider: Box<dyn Provider> = if responses {
+            Box::new(opi_ai::openai_responses::OpenAiResponsesProvider::new(
+                Some(server.uri()),
+            ))
+        } else {
+            Box::new(opi_ai::openai_chat::OpenAiChatProvider::new(Some(
+                server.uri(),
+            )))
+        };
+        let record =
+            opi_ai::ChatModelRecord::new(provider.id(), provider.models().first().unwrap().clone());
+        let requested_model = provider.models().first().unwrap().id.clone();
+        let expected_model = requested_model.clone();
+        let mut models = Models::new();
+        // Direct and Models consumers use the same frozen local endpoint.
+        let direct: Option<Arc<dyn Provider>> = if via_models {
+            models
+                .register_route(
+                    provider,
+                    Arc::new(StaticAuthResolver::new(
+                        AuthScheme::Bearer,
+                        SecretString::from("quota-test-key"),
+                    )),
+                    AuthProvenanceSource::Static,
+                    CompatMetadata {
+                        openai_compatible: true,
+                        profile: None,
+                    },
+                )
+                .unwrap();
+            None
+        } else {
+            Some(Arc::from(provider))
+        };
+        let models = Arc::new(models);
+        let calls = Arc::new(AtomicU32::new(0));
+        let counter = calls.clone();
+        let result = retry_assistant_call(
+            move || {
+                let models = models.clone();
+                let direct = direct.clone();
+                let record = record.clone();
+                let requested_model = requested_model.clone();
+                counter.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    let mut request = super::frozen_target_wire::logical_request();
+                    request.model = requested_model;
+                    let failure =
+                        if let Some(provider) = direct {
+                            ChatStream::new(provider.stream_prepared(
+                                request,
+                                opi_ai::test_support::resolved_bearer_auth(),
+                            ))
+                            .result()
+                            .await
+                            .unwrap_err()
+                        } else {
+                            models
+                                .complete_simple(record, request, Default::default())
+                                .await
+                                .unwrap_err()
+                        };
+                    assert!(
+                        matches!(
+                            failure.cause(),
+                            ProviderError::RateLimited {
+                                retry_after_ms: Some(1000)
+                            }
+                        ),
+                        "typed acquisition cause is preserved: {failure:?}"
+                    );
+                    failure.into_parts().0
+                }
+            },
+            Some(&transient_policy(1, 0)),
+            tokio_util::sync::CancellationToken::new(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            expected,
+            "responses={responses} Models={via_models}"
+        );
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), expected as usize);
+        for request in sent {
+            let payload: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+            assert_eq!(payload["model"], expected_model);
+            assert!(request.body.windows(5).any(|bytes| bytes == b"Hello"));
+        }
+        assert_eq!(result.stop_reason, StopReason::Error);
+        assert!(result.content.is_empty());
+        assert!(!format!("{result:?}").contains("PRIVATE_CANARY"));
+    }
+
+    #[tokio::test]
+    async fn quota_429_veto_reaches_whole_call_retry_through_real_adapters() {
+        for responses in [false, true] {
+            for via_models in [false, true] {
+                for error in [
+                    serde_json::json!({"code":"insufficient_quota", "message":"PRIVATE_CANARY"}),
+                    serde_json::json!({"type":"FreeUsageLimitError", "message":"PRIVATE_CANARY"}),
+                    serde_json::json!({"message":"billing limit reached PRIVATE_CANARY"}),
+                ] {
+                    exercise(responses, via_models, serde_json::json!({"error":error}), 1).await;
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn transient_429_keeps_explicit_whole_call_retry() {
+        for responses in [false, true] {
+            for via_models in [false, true] {
+                exercise(responses, via_models, serde_json::json!({"error":{"code":"rate_limit_exceeded","message":"PRIVATE_CANARY transient"}}), 2).await;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn unrelated_quota_text_does_not_override_status_classification() {
+        for responses in [false, true] {
+            exercise(responses, true, serde_json::json!({"metadata":{"message":"billing PRIVATE_CANARY"},"error":{"code":429}}), 2).await;
+            exercise(responses, true, serde_json::Value::Null, 2).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn quota_detail_does_not_change_acquisition_budget_or_payload_freeze() {
+        for responses in [false, true] {
+            for max_retries in [0, 1] {
+                let server = MockServer::start().await;
+                Mock::given(matchers::method("POST"))
+                    .respond_with(
+                        ResponseTemplate::new(429)
+                            .insert_header("retry-after", "0")
+                            .set_body_json(
+                                serde_json::json!({"error":{"code":"insufficient_quota"}}),
+                            ),
+                    )
+                    .mount(&server)
+                    .await;
+                let provider: Box<dyn Provider> = if responses {
+                    Box::new(opi_ai::openai_responses::OpenAiResponsesProvider::new(
+                        Some(server.uri()),
+                    ))
+                } else {
+                    Box::new(opi_ai::openai_chat::OpenAiChatProvider::new(Some(
+                        server.uri(),
+                    )))
+                };
+                let target = format!("{}:{}", provider.id(), provider.models()[0].id);
+                let mut models = Models::new();
+                models
+                    .register_route(
+                        provider,
+                        Arc::new(StaticAuthResolver::new(
+                            AuthScheme::Bearer,
+                            SecretString::from("quota-test-key"),
+                        )),
+                        AuthProvenanceSource::Static,
+                        CompatMetadata {
+                            openai_compatible: true,
+                            profile: None,
+                        },
+                    )
+                    .unwrap();
+                let payload_calls = Arc::new(AtomicU32::new(0));
+                let response_calls = Arc::new(AtomicU32::new(0));
+                let payload_sink = payload_calls.clone();
+                let response_sink = response_calls.clone();
+                let mut request = super::frozen_target_wire::logical_request();
+                request.model = target.clone();
+                request.callbacks = opi_ai::callbacks::RequestCallbacks::new()
+                    .with_on_payload(Arc::new(move |_| {
+                        payload_sink.fetch_add(1, Ordering::SeqCst);
+                        Ok(None)
+                    }))
+                    .with_on_response(Arc::new(move |_, _| {
+                        response_sink.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    }));
+                let call = models
+                    .prepare_call_with_policy(
+                        &target,
+                        request,
+                        opi_ai::retry::AcquisitionPolicy::with_max_retries(max_retries),
+                    )
+                    .await
+                    .unwrap();
+                for attempt in 0..=max_retries {
+                    let failure = ChatStream::new(call.start_attempt().unwrap())
+                        .result()
+                        .await
+                        .unwrap_err();
+                    assert!(matches!(
+                        failure.cause(),
+                        ProviderError::RateLimited {
+                            retry_after_ms: Some(0)
+                        }
+                    ));
+                    assert!(
+                        failure
+                            .message()
+                            .error_message
+                            .as_ref()
+                            .unwrap()
+                            .contains("quota exceeded")
+                    );
+                    let admission = call.retry_admission();
+                    if attempt < max_retries {
+                        let admission = admission.unwrap();
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            admission.delay_ms.max(1),
+                        ))
+                        .await;
+                    } else {
+                        assert!(admission.is_none());
+                    }
+                }
+                assert_eq!(payload_calls.load(Ordering::SeqCst), 1);
+                assert_eq!(response_calls.load(Ordering::SeqCst), 0);
+                let sent = server.received_requests().await.unwrap();
+                assert_eq!(sent.len(), (max_retries + 1) as usize);
+                assert!(sent.iter().all(|request| request.body == sent[0].body));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelling_pending_429_body_aborts_without_retry_or_raw_text() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for responses in [false, true] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let (headers_sent, received) = tokio::sync::oneshot::channel();
+            let peer = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut buffer = [0; 8192];
+                assert!(socket.read(&mut buffer).await.unwrap() > 0);
+                socket.write_all(b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 4096\r\nConnection: close\r\n\r\n{").await.unwrap();
+                headers_sent.send(()).unwrap();
+                loop {
+                    if socket.read(&mut buffer).await.unwrap_or(0) == 0 {
+                        break;
+                    }
+                }
+            });
+            let provider: Box<dyn Provider> = if responses {
+                Box::new(opi_ai::openai_responses::OpenAiResponsesProvider::new(
+                    Some(endpoint),
+                ))
+            } else {
+                Box::new(opi_ai::openai_chat::OpenAiChatProvider::new(Some(endpoint)))
+            };
+            let request = super::frozen_target_wire::logical_request();
+            let cancel = request.cancel.clone();
+            let result = tokio::spawn(
+                ChatStream::new(
+                    provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
+                )
+                .result(),
+            );
+            received.await.unwrap();
+            cancel.cancel();
+            let failure = tokio::time::timeout(std::time::Duration::from_secs(2), result)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap_err();
+            assert!(matches!(failure.cause(), ProviderError::Cancelled));
+            assert_eq!(failure.message().stop_reason, StopReason::Aborted);
+            tokio::time::timeout(std::time::Duration::from_secs(2), peer)
+                .await
+                .unwrap()
+                .unwrap();
+        }
     }
 }

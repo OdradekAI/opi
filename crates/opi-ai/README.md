@@ -902,8 +902,10 @@ erasing other providers' catalogs. Without explicit catalog sources, a native
 provider's `Ok(None)` restores its builtin catalog. With an explicit source,
 that absence of a native publication retains the last-known source catalog;
 an authoritative `Ok(Some([]))` still replaces it with an empty catalog.
-`refresh_with` observes a `CancellationToken` — a
-cancelled round fetches, persists, and publishes nothing. Already-prepared
+`refresh_with` observes a `CancellationToken` — cancellation observed before
+commit retains the prior publication, including a source returning success in
+the poll that observes cancellation. Without a store, the final token check
+starts the synchronous memory commit. Already-prepared
 calls keep their frozen bindings across refreshes. `DynamicCatalogSource`
 is the public seam for host-plugged catalog sources; `HttpCatalogSource`
 fetches one distribution-schema-v1 document over HTTP with pooled
@@ -1023,6 +1025,7 @@ do not mutate the registered provider or use `sampling_params` as a carrier.
 | `service_tier` | `CodexServiceTier` enum | Omitted stays absent; `Some(Null)` sends JSON null | Explicit native value; `service_tier` |
 | `text_verbosity` | `CodexTextVerbosity` enum | Omitted → `low` | Explicit native value overrides the default; `text.verbosity` |
 | `tool_choice` | `CodexToolChoice` enum | Omitted → `auto`; enum `None` sends `"none"` | Explicit native value overrides the default; `tool_choice` |
+| `websocket_connect_timeout` | optional `Duration` | Omitted → 15 seconds; zero disables the connect timer | Frozen local connection budget; independent of `Request::timeout`, never serialized |
 | `SimpleOptions::tool_choice` | `Option<SimpleToolChoice>` (`Auto` / `None`) | Omitted → Codex `auto` | Neutral Codex mapping to `tool_choice`; currently unsupported routes reject an explicit value before auth |
 | `Request::temperature` | optional unitless number | Omitted or non-finite → absent; zero is valid | Request value; `temperature` |
 | `Request::max_tokens` | optional token count | Codex omits an output-limit wire field, including explicit zero | Simple preparation retains its shared budget semantics; native calls preserve the request before wire mapping |
@@ -1042,7 +1045,9 @@ transport, cache, cancellation and timeout inputs remain on `Request`.
   decode through the exact SSE classifier, so both transports publish
   identical public events; explicit client Close completes temporary
   connections; EOF without a terminal is never success; `Request::timeout`
-  is the WebSocket idle timeout; cancellation is active and idle.
+  is the WebSocket idle timeout (zero disables its timer); cancellation is active
+  and idle. The next acquire evicts connections idle for five minutes after
+  release or aged 55 minutes, dropping their continuation; busy calls continue.
 - **Delta/continuation** (Auto/WebsocketCached with a session):
   `previous_response_id` + delta input are sent only when the non-input
   fields are unchanged and the previous full input plus the actual response
@@ -1055,7 +1060,10 @@ transport, cache, cancellation and timeout inputs remain on `Request`.
   WS->SSE fallback fires only for transport-class failures before the first
   effective provider event and is sticky per session. Abort/API/auth/
   protocol failures never masquerade as transport loss; an output-delivered
-  error ends that stream with the partial preserved.
+  error ends that stream with the partial preserved. A valid nonempty provider
+  event type seals fallback/reconnect even when the mapper emits no public event.
+  Legal SSE fallback retains a `codex_websocket_fallback` diagnostic alongside
+  existing sampling diagnostics, with a fixed reason and no raw error text.
 - **Upgrade bridge:** `WsUpgradeRequest::headers` adds caller handshake
   headers (handshake-managed names are reserved and rejected).
 - **Packaging:** the `ws` conformance family now includes a real-chain
@@ -1086,7 +1094,8 @@ public API change:
   multi-block/tool fixture - `TextDelta` for text blocks and
   `ToolCallEnd` for tool calls, `content_index` matching block position,
   `Done` with `StopReason::ToolUse` when any tool call is present else
-  `Stop`. Panics for `Thinking`/`RedactedThinking` blocks by contract.
+  `Stop`. Each partial contains only the emitted block prefix; earlier snapshots
+  remain independent. Panics for `Thinking`/`RedactedThinking` blocks by contract.
   Existing `Events`/`Error`/`EventsThenError` semantics and the
   `stream_prepared` queue-assertion are unchanged; deferred records and
   their scripts stay with 20.45-50.
@@ -1252,6 +1261,10 @@ exactly one call.
   upstream", "service temporarily unavailable"), network/transport
   failures, premature stream endings, explicit mid-stream retry guidance,
   gRPC `ResourceExhausted`, subscription usage hiccups.
+- Chat/Responses HTTP 429 errors retain quota/billing/usage-limit classification
+  from the designated JSON error fields as a fixed safe message label. The typed
+  `RateLimited` cause and retry hint remain unchanged; acquisition retains its
+  own 429 send policy. Raw error bodies are never exposed.
 - Valid stops (Stop/Length/ToolUse — and any future Deferred variant) and
   aborts never retry; an exhausted budget returns the final error message.
 - Callback order is exact: `on_retry_scheduled` → cancellable exponential
@@ -1312,6 +1325,9 @@ adapters resolve it at body-build time:
   `custom_tool_call(_output)` items with `ctc_` ids (`fc_` stays the
   function-call prefix).
 
+Grammar input property names are literal schema keys, including `/` and `~`;
+the wrapper retains the exact name and leaves the trusted schema unchanged.
+
 ## Functional Request Callbacks (AIR-059/V-51 ordinary slice, task 20.51)
 
 `callbacks::RequestCallbacks` (carried on `Request.callbacks`, default empty)
@@ -1330,7 +1346,7 @@ data, and cancellation can end a pending callback without another send.
 | Callback | Timing | Contract |
 |---|---|---|
 | `with_header_transform` | Once per logical call, on the assembled per-call set | Output replaces the set; omission/set/removal of non-protected entries is supported. Protected identity/auth/signing entries already present may be returned unchanged; removing, changing or introducing them fails typed before dispatch. Adapter-owned credentials remain outside the transform. |
-| `with_on_payload` | After sampling/compat/wire projection, on the final body | `Ok(None)` keeps the body; `Ok(Some(v))` replaces it after validation: JSON object, unchanged model identity, output budget never raised. Runs once per payload variant — an ordinary acquisition retry reuses the frozen body byte-for-byte (`ORDINARY_PAYLOAD_VARIANT`). |
+| `with_on_payload` | After sampling/compat/wire projection, on the final body | `Ok(None)` keeps the body; `Ok(Some(v))` replaces it after validation: JSON object, unchanged model identity, output budget never raised. Chat/Responses/Codex also validate the streaming wire shape before dispatch, preserving unknown extensions and legal content/tool changes. Runs once per payload variant — an ordinary acquisition retry reuses the frozen body byte-for-byte (`ORDINARY_PAYLOAD_VARIANT`). |
 | `with_on_response` | At the adapter's source-defined response observation point, with status and headers, before body processing | Codex SSE also observes non-success statuses before classification. Failures without a response are not notified. Successful response handoff seals ordinary acquisition retry. |
 | `with_on_raw` | Per parsed provider wire event, strictly before its normalized emission, in wire order | Read-only; a failure ends the current call with the typed error while preserving the delivered partial. |
 

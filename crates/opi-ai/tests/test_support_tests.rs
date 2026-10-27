@@ -508,6 +508,100 @@ async fn hanging_response_pre_cancelled_fails_immediately() {
 }
 
 #[test]
+fn blocks_response_text_prefix_snapshots() {
+    assert_blocks_response_prefix_snapshots(
+        vec![
+            AssistantContent::Text {
+                text: "first".into(),
+            },
+            AssistantContent::Text {
+                text: "second".into(),
+            },
+        ],
+        StopReason::Stop,
+    );
+}
+
+#[test]
+fn blocks_response_text_tool_text_prefix_snapshots() {
+    assert_blocks_response_prefix_snapshots(
+        vec![
+            AssistantContent::Text {
+                text: "before".into(),
+            },
+            AssistantContent::ToolCall {
+                tool_call: ToolCall {
+                    id: "t1".into(),
+                    name: "lookup".into(),
+                    arguments: "{}".into(),
+                    arguments_error: None,
+                },
+            },
+            AssistantContent::Text {
+                text: "after".into(),
+            },
+        ],
+        StopReason::ToolUse,
+    );
+}
+
+fn assert_blocks_response_prefix_snapshots(
+    blocks: Vec<AssistantContent>,
+    expected_stop: StopReason,
+) {
+    let mut events = blocks_response(blocks.clone());
+    assert_eq!(events.len(), blocks.len() + 2);
+    match &events[0] {
+        AssistantStreamEvent::Start { partial } => assert!(partial.content.is_empty()),
+        other => panic!("expected Start, got {other:?}"),
+    }
+    match events.last_mut().unwrap() {
+        AssistantStreamEvent::Done { reason, message } => {
+            assert_eq!(*reason, expected_stop);
+            assert_eq!(message.content, blocks);
+            // A later owned message cannot alter previously emitted snapshots.
+            message.content.clear();
+        }
+        other => panic!("expected Done, got {other:?}"),
+    }
+    for (index, block) in blocks.iter().enumerate() {
+        let (content_index, partial) = match (&events[index + 1], block) {
+            (
+                AssistantStreamEvent::TextDelta {
+                    content_index,
+                    delta,
+                    partial,
+                },
+                AssistantContent::Text { text },
+            ) => {
+                assert_eq!(delta, text);
+                (*content_index, partial)
+            }
+            (
+                AssistantStreamEvent::ToolCallEnd {
+                    content_index,
+                    tool_call,
+                    partial,
+                },
+                AssistantContent::ToolCall {
+                    tool_call: expected,
+                },
+            ) => {
+                assert_eq!(tool_call, expected);
+                (*content_index, partial)
+            }
+            (other, _) => panic!("unexpected event for block {index}: {other:?}"),
+        };
+        assert_eq!(content_index, index);
+        assert_eq!(
+            partial.content,
+            blocks[..=index],
+            "snapshot at block {index}"
+        );
+    }
+}
+
+#[test]
 fn blocks_response_orders_blocks_and_uses_tool_use_stop() {
     let blocks = vec![
         AssistantContent::Text {

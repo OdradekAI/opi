@@ -740,3 +740,9 @@ mod continuation {
         assert_eq!(frames[2]["input"], json!([]));
     }
 }
+
+#[path = "codex_native_options/deadlines.rs"]
+mod deadlines;
+
+#[path = "codex_native_options/lifetimes.rs"]
+mod lifetimes;

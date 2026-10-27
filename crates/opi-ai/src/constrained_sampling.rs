@@ -471,7 +471,9 @@ fn infer_grammar_input_property(tool: &ToolDef) -> Result<String, ConstrainedSam
     }
     let input_property = required[0].as_str().expect("checked above").to_owned();
     let property = schema
-        .pointer(&format!("/properties/{input_property}"))
+        .get("properties")
+        .and_then(Value::as_object)
+        .and_then(|properties| properties.get(&input_property))
         .ok_or_else(|| {
             fail(format!(
                 "grammar requires a properties entry for {input_property}"

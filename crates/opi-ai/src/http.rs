@@ -79,6 +79,38 @@ const DEFAULT_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 const ERROR_BODY_CLASSIFICATION_MAX_BYTES: usize = 8 * 1024;
 const ERROR_BODY_CLASSIFICATION_DEADLINE: Duration = Duration::from_secs(1);
 
+/// Preserve quota/billing/usage-limit facts on OpenAI-family 429 failures for
+/// the explicit whole-call classifier. The typed status/hint cause stays intact:
+/// acquisition policy still owns whether another send is admitted. Only the
+/// designated error fields are inspected; raw text never leaves this boundary.
+/// The existing request timeout and caller cancellation govern the body read.
+pub(crate) async fn openai_rate_limit_detail(
+    response: reqwest::Response,
+    cause: ProviderError,
+    cancel: &CancellationToken,
+) -> ProviderError {
+    let body = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return ProviderError::Cancelled,
+        body = response.bytes() => body,
+    };
+    let Ok(body) = body else { return cause };
+    let Ok(body) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        return cause;
+    };
+    let veto = ["code", "type", "message"].into_iter().any(|field| {
+        body.get("error")
+            .and_then(|error| error.get(field))
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|detail| crate::retry::non_retryable_limit_pattern().is_match(detail))
+    });
+    if veto {
+        crate::stream::setup_failure_with_detail(cause, "rate limited: quota exceeded")
+    } else {
+        cause
+    }
+}
+
 /// Read the bounded response prefix needed for provider-specific error
 /// classification.
 ///

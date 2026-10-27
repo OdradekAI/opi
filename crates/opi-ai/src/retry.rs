@@ -902,7 +902,7 @@ pub enum WholeCallRetryClassification {
     Terminal,
 }
 
-fn non_retryable_limit_pattern() -> &'static regex::Regex {
+pub(crate) fn non_retryable_limit_pattern() -> &'static regex::Regex {
     static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     PATTERN.get_or_init(|| {
         regex::RegexBuilder::new(

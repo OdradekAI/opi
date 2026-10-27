@@ -3360,6 +3360,19 @@ mod catalog_store_refresh_20_33 {
         fetches: Arc<AtomicUsize>,
     }
 
+    struct CountingOAuthResolver(Arc<AtomicUsize>);
+
+    impl AuthResolver for CountingOAuthResolver {
+        fn resolve(&self) -> BoxAuthFuture<'_, Result<ResolvedAuth, ProviderError>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {
+                Err(ProviderError::CredentialNeeded {
+                    provider_id: "dyn".to_owned(),
+                })
+            })
+        }
+    }
+
     impl Provider for CountingRefreshProvider {
         fn id(&self) -> &str {
             self.id
@@ -3387,6 +3400,160 @@ mod catalog_store_refresh_20_33 {
     struct FixedCatalogSource {
         id: String,
         catalogs: HashMap<String, Vec<ModelInfo>>,
+    }
+
+    enum CancelAtCatalogResult {
+        External {
+            entered: Arc<std::sync::Barrier>,
+            released: Arc<std::sync::Barrier>,
+        },
+        Source,
+        BeforeRefresh,
+    }
+
+    struct CancellingCatalogSource {
+        fetches: Arc<AtomicUsize>,
+        cancellation: Arc<CancelAtCatalogResult>,
+    }
+
+    impl DynamicCatalogSource for CancellingCatalogSource {
+        fn id(&self) -> &str {
+            "cancel-at-result"
+        }
+
+        fn fetch(
+            &self,
+            token: CancellationToken,
+        ) -> futures_util::future::BoxFuture<
+            'static,
+            Result<HashMap<String, Vec<ModelInfo>>, ProviderError>,
+        > {
+            let later = self.fetches.fetch_add(1, Ordering::SeqCst) > 0;
+            let cancellation = self.cancellation.clone();
+            Box::pin(async move {
+                if later {
+                    match cancellation.as_ref() {
+                        CancelAtCatalogResult::External { entered, released } => {
+                            // Keep this poll pending synchronously until the external
+                            // thread cancels, then return a successful late result.
+                            entered.wait();
+                            released.wait();
+                        }
+                        CancelAtCatalogResult::Source => token.cancel(),
+                        CancelAtCatalogResult::BeforeRefresh => {}
+                    }
+                }
+                let id = if later { "late" } else { "old" };
+                Ok(HashMap::from([(
+                    "dyn".to_owned(),
+                    vec![model_info(id, id)],
+                )]))
+            })
+        }
+    }
+
+    async fn assert_cancelled_catalog_retains_publication(
+        with_store: bool,
+        cancellation: CancelAtCatalogResult,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("models-store.json");
+        let mut collection = Models::new();
+        register(
+            &mut collection,
+            Box::new(RefreshProvider::new("dyn", vec![])),
+        );
+        if with_store {
+            collection.set_models_store(ModelsStore::open(&path).unwrap());
+        }
+        let fetches = Arc::new(AtomicUsize::new(0));
+        let cancellation = Arc::new(cancellation);
+        collection.register_catalog_source(Arc::new(CancellingCatalogSource {
+            fetches: fetches.clone(),
+            cancellation: cancellation.clone(),
+        }));
+        collection.refresh(true).await.unwrap();
+        assert!(collection.resolve("dyn:old").is_ok());
+        let persisted = with_store.then(|| std::fs::read(&path).unwrap());
+
+        let token = CancellationToken::new();
+        let external = match cancellation.as_ref() {
+            CancelAtCatalogResult::External { entered, released } => {
+                let (entered, released) = (entered.clone(), released.clone());
+                let token = token.clone();
+                Some(std::thread::spawn(move || {
+                    entered.wait();
+                    token.cancel();
+                    released.wait();
+                }))
+            }
+            CancelAtCatalogResult::BeforeRefresh => {
+                token.cancel();
+                None
+            }
+            CancelAtCatalogResult::Source => None,
+        };
+        let report = collection.refresh_with(true, &token).await.unwrap();
+        if let Some(external) = external {
+            external.join().unwrap();
+        }
+        assert!(token.is_cancelled());
+        assert_eq!(
+            report.status(),
+            RefreshStatus::Cancelled,
+            "store={with_store}"
+        );
+        assert!(collection.resolve("dyn:old").is_ok(), "store={with_store}");
+        assert!(
+            collection.resolve("dyn:late").is_err(),
+            "store={with_store}"
+        );
+        let expected_fetches =
+            if matches!(cancellation.as_ref(), CancelAtCatalogResult::BeforeRefresh) {
+                1
+            } else {
+                2
+            };
+        assert_eq!(fetches.load(Ordering::SeqCst), expected_fetches);
+        if let Some(persisted) = persisted {
+            assert_eq!(std::fs::read(&path).unwrap(), persisted);
+            let reopened = ModelsStore::open(&path).unwrap();
+            assert_eq!(reopened.revision(), 1);
+            assert_eq!(reopened.snapshot().catalogs["dyn"][0].id, "old");
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_catalog_external_result_preserves_old_revision() {
+        for with_store in [true, false] {
+            assert_cancelled_catalog_retains_publication(
+                with_store,
+                CancelAtCatalogResult::External {
+                    entered: Arc::new(std::sync::Barrier::new(2)),
+                    released: Arc::new(std::sync::Barrier::new(2)),
+                },
+            )
+            .await;
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_catalog_source_result_preserves_old_revision() {
+        for with_store in [true, false] {
+            assert_cancelled_catalog_retains_publication(with_store, CancelAtCatalogResult::Source)
+                .await;
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_catalog_before_refresh_preserves_old_revision_without_fetch() {
+        for with_store in [true, false] {
+            assert_cancelled_catalog_retains_publication(
+                with_store,
+                CancelAtCatalogResult::BeforeRefresh,
+            )
+            .await;
+        }
     }
 
     impl DynamicCatalogSource for FixedCatalogSource {
@@ -3458,15 +3625,27 @@ mod catalog_store_refresh_20_33 {
             .unwrap();
 
         let fetches = Arc::new(AtomicUsize::new(0));
+        let auth_resolutions = Arc::new(AtomicUsize::new(0));
+        let source_fetches = Arc::new(AtomicUsize::new(0));
         let mut collection = Models::new();
-        register(
-            &mut collection,
-            Box::new(CountingRefreshProvider {
-                id: "dyn",
-                fresh: vec![model_info("fresh-1", "Fresh 1")],
-                fetches: fetches.clone(),
-            }),
-        );
+        collection
+            .register_route(
+                Box::new(CountingRefreshProvider {
+                    id: "dyn",
+                    fresh: vec![model_info("fresh-1", "Fresh 1")],
+                    fetches: fetches.clone(),
+                }),
+                Arc::new(CountingOAuthResolver(auth_resolutions.clone())),
+                AuthProvenanceSource::OAuth {
+                    kind: "offline-fixture".to_owned(),
+                },
+                CompatMetadata::default(),
+            )
+            .unwrap();
+        collection.register_catalog_source(Arc::new(CancellingCatalogSource {
+            fetches: source_fetches.clone(),
+            cancellation: Arc::new(CancelAtCatalogResult::BeforeRefresh),
+        }));
         collection.set_models_store(store);
 
         // Offline refresh: restore the persisted cache, never fetch.
@@ -3477,6 +3656,8 @@ mod catalog_store_refresh_20_33 {
             "refresh(false) restores without network"
         );
         assert_eq!(fetches.load(Ordering::SeqCst), 0, "no provider fetch");
+        assert_eq!(source_fetches.load(Ordering::SeqCst), 0, "no source fetch");
+        assert_eq!(auth_resolutions.load(Ordering::SeqCst), 0, "no OAuth work");
         assert!(collection.resolve("dyn:stored-1").is_ok());
         assert!(
             collection.resolve("dyn:fresh-1").is_err(),

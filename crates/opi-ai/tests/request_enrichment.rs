@@ -1059,6 +1059,282 @@ async fn async_callbacks_yield_freeze_once_and_preserve_observer_order() {
 }
 
 #[tokio::test]
+async fn payload_callback_chat_wire_shapes_fail_before_dispatch() {
+    assert_invalid_payload_wire_shapes(
+        false,
+        vec![
+            ("messages scalar", serde_json::json!({"messages": 123})),
+            ("message scalar", serde_json::json!({"messages": [123]})),
+            (
+                "message content scalar",
+                serde_json::json!({"messages": [{"role":"user","content":123}]}),
+            ),
+            (
+                "tool call scalar",
+                serde_json::json!({"messages": [{"role":"assistant","tool_calls":[123]}]}),
+            ),
+            ("tools scalar", serde_json::json!({"tools": 123})),
+            ("tool scalar", serde_json::json!({"tools": [123]})),
+            (
+                "function wrapper scalar",
+                serde_json::json!({"tools": [{"type":"function","function":123}]}),
+            ),
+            (
+                "tool choice scalar",
+                serde_json::json!({"tool_choice": 123}),
+            ),
+            (
+                "response format scalar",
+                serde_json::json!({"response_format": 123}),
+            ),
+            ("non-streaming", serde_json::json!({"stream": false})),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn payload_callback_responses_wire_shapes_fail_before_dispatch() {
+    assert_invalid_payload_wire_shapes(
+        true,
+        vec![
+            ("input scalar", serde_json::json!({"input": 123})),
+            ("input item scalar", serde_json::json!({"input": [123]})),
+            ("tools scalar", serde_json::json!({"tools": 123})),
+            ("tool scalar", serde_json::json!({"tools": [123]})),
+            (
+                "parameters scalar",
+                serde_json::json!({"tools": [{"type":"function","name":"probe","parameters":123}]}),
+            ),
+            (
+                "custom format scalar",
+                serde_json::json!({"tools": [{"type":"custom","name":"probe","format":123}]}),
+            ),
+            (
+                "tool choice scalar",
+                serde_json::json!({"tool_choice": 123}),
+            ),
+            ("reasoning scalar", serde_json::json!({"reasoning": 123})),
+            ("text wrapper scalar", serde_json::json!({"text": 123})),
+            ("non-streaming", serde_json::json!({"stream": false})),
+        ],
+    )
+    .await;
+}
+
+async fn payload_wire_fixture(
+    responses: bool,
+) -> (MockServer, opi_ai::Models, opi_ai::ChatModelRecord, Request) {
+    let server = MockServer::start().await;
+    let sse = if responses {
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r1\",\"status\":\"completed\",\"output\":[]}}\n\n"
+    } else {
+        "data: {\"id\":\"c1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+    };
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(sse))
+        .mount(&server)
+        .await;
+    let provider: Box<dyn Provider> = if responses {
+        Box::new(opi_ai::openai_responses::OpenAiResponsesProvider::new(
+            Some(server.uri()),
+        ))
+    } else {
+        Box::new(opi_ai::openai_chat::OpenAiChatProvider::new(Some(
+            server.uri(),
+        )))
+    };
+    let record = opi_ai::ChatModelRecord::new(provider.id(), provider.models()[0].clone());
+    let mut models = opi_ai::Models::new();
+    models
+        .register_route(
+            provider,
+            Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::Bearer,
+                secrecy::SecretString::from("offline-payload-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+            Default::default(),
+        )
+        .unwrap();
+    let request = make_openai_chat_request(CancellationToken::new(), None);
+    (server, models, record, request)
+}
+
+async fn assert_invalid_payload_wire_shapes(
+    responses: bool,
+    cases: Vec<(&str, serde_json::Value)>,
+) {
+    let (server, models, record, request) = payload_wire_fixture(responses).await;
+    let mut unexpected = Vec::new();
+    for (label, patch) in cases {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let mut request = request.clone();
+        request.callbacks = RequestCallbacks::new().with_on_payload(Arc::new(move |body| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            let mut replacement = body.clone();
+            for (key, value) in patch.as_object().unwrap() {
+                replacement[key] = value.clone();
+            }
+            Ok(Some(replacement))
+        }));
+        let sent_before = server.received_requests().await.unwrap().len();
+        let result = models
+            .complete_simple(record.clone(), request, Default::default())
+            .await;
+        let sent = server.received_requests().await.unwrap().len() - sent_before;
+        let typed_failure = result
+            .as_ref()
+            .err()
+            .is_some_and(|failure| matches!(failure.cause(), ProviderError::CallbackPhase(_)));
+        if !typed_failure || sent != 0 || calls.load(Ordering::SeqCst) != 1 {
+            unexpected.push(format!(
+                "{label}: typed={typed_failure}, sends={sent}, result={result:?}"
+            ));
+        }
+    }
+    assert!(unexpected.is_empty(), "{}", unexpected.join("\n"));
+}
+
+#[tokio::test]
+async fn payload_callback_keeps_legal_chat_and_responses_wire_changes() {
+    for responses in [false, true] {
+        let (server, models, record, mut request) = payload_wire_fixture(responses).await;
+        request.callbacks = RequestCallbacks::new().with_on_payload(Arc::new(move |body| {
+            let mut replacement = body.clone();
+            replacement["vendor_extension"] = serde_json::json!({"arbitrary":[1,true]});
+            if responses {
+                replacement["input"] = serde_json::json!("replacement input");
+                replacement["tools"] = serde_json::json!([
+                    {"type":"function","name":"probe","parameters":{"type":"object"}},
+                    {"type":"custom","name":"custom_probe","format":{"type":"text"}},
+                    {"type":"future_vendor_tool","future_field":123}
+                ]);
+                replacement["text"] = serde_json::json!({"format":{"type":"text"}});
+            } else {
+                replacement["messages"] = serde_json::json!([
+                    {"role":"user","content":[{"type":"text","text":"replacement input"}]}
+                ]);
+                replacement["tools"] = serde_json::json!([
+                    {"type":"function","function":{"name":"probe","parameters":{"type":"object"}}},
+                    {"type":"custom","custom":{"name":"custom_probe","format":{"type":"text"}}}
+                ]);
+                replacement["response_format"] = serde_json::json!({"type":"json_object"});
+            }
+            Ok(Some(replacement))
+        }));
+        models
+            .complete_simple(record, request, Default::default())
+            .await
+            .expect("shape-preserving callback change remains supported");
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 1);
+        let body = request_body_json(&sent[0]);
+        assert_eq!(
+            body["vendor_extension"]["arbitrary"],
+            serde_json::json!([1, true])
+        );
+        assert_eq!(
+            body["tools"].as_array().unwrap().len(),
+            if responses { 3 } else { 2 }
+        );
+        assert_eq!(
+            body[if responses { "input" } else { "messages" }],
+            if responses {
+                serde_json::json!("replacement input")
+            } else {
+                serde_json::json!([{"role":"user","content":[{"type":"text","text":"replacement input"}]}])
+            }
+        );
+    }
+}
+
+#[tokio::test]
+async fn payload_callback_codex_corrupt_input_fails_before_transport() {
+    struct CodexAuth;
+    impl opi_ai::auth::AuthResolver for CodexAuth {
+        fn resolve<'a>(
+            &'a self,
+        ) -> opi_ai::BoxAuthFuture<'a, Result<opi_ai::auth::ResolvedAuth, ProviderError>> {
+            Box::pin(async {
+                let mut auth = opi_ai::test_support::resolved_bearer_auth();
+                auth.account_id = Some("offline-payload-account".into());
+                Ok(auth)
+            })
+        }
+    }
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r1\",\"status\":\"completed\",\"output\":[]}}\n\n",
+        ))
+        .mount(&server)
+        .await;
+    let model = ModelInfo::new(
+        "gpt-5.4",
+        "GPT-5.4",
+        opi_ai::WireApi::OpenAiCodexResponses,
+        ModelCapabilities::new(100_000, 10_000).with_streaming(true),
+    );
+    let provider = opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
+        Some(server.uri()),
+        vec![model.clone()],
+        Arc::new(HttpClient::new()),
+    );
+    let record = opi_ai::ChatModelRecord::new(provider.id(), model);
+    let mut models = opi_ai::Models::new();
+    models
+        .register_route(
+            Box::new(provider),
+            Arc::new(CodexAuth),
+            opi_ai::AuthProvenanceSource::Static,
+            Default::default(),
+        )
+        .unwrap();
+    let mut unexpected = Vec::new();
+    for transport in [
+        opi_ai::provider::TransportPreference::Sse,
+        opi_ai::provider::TransportPreference::Websocket,
+        opi_ai::provider::TransportPreference::Auto,
+    ] {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let mut request = make_openai_chat_request(CancellationToken::new(), None);
+        request.transport = transport;
+        request.callbacks = RequestCallbacks::new().with_on_payload(Arc::new(move |body| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            let mut replacement = body.clone();
+            replacement["input"] = serde_json::json!(123);
+            Ok(Some(replacement))
+        }));
+        let sent_before = server.received_requests().await.unwrap().len();
+        let result = models
+            .complete_simple(record.clone(), request, Default::default())
+            .await;
+        let sent = server.received_requests().await.unwrap();
+        let posts = sent[sent_before..]
+            .iter()
+            .filter(|request| request.method == "POST")
+            .count();
+        let upgrades = sent[sent_before..]
+            .iter()
+            .filter(|request| request.method == "GET")
+            .count();
+        let typed_failure = result
+            .as_ref()
+            .err()
+            .is_some_and(|failure| matches!(failure.cause(), ProviderError::CallbackPhase(_)));
+        if !typed_failure || posts != 0 || upgrades != 0 || calls.load(Ordering::SeqCst) != 1 {
+            unexpected.push(format!(
+                "{transport:?}: typed={typed_failure}, posts={posts}, upgrades={upgrades}, result={result:?}"
+            ));
+        }
+    }
+    assert!(unexpected.is_empty(), "{}", unexpected.join("\n"));
+}
+
+#[tokio::test]
 async fn payload_callback_freezes_once_across_ordinary_acquisition_retry() {
     use opi_ai::auth::{AuthProvenanceSource, StaticAuthResolver};
     use opi_ai::http::HttpClientBuilder;
@@ -1143,6 +1419,7 @@ async fn payload_callback_freezes_once_across_ordinary_acquisition_retry() {
     );
     let sent = server.received_requests().await.unwrap();
     assert_eq!(sent.len(), 2);
+    assert_eq!(sent[1].body, sent[0].body, "frozen request bytes");
     let first_body = request_body_json(&sent[0]);
     let second_body = request_body_json(&sent[1]);
     assert_eq!(

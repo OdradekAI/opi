@@ -53,6 +53,8 @@ const OPENAI_BETA_RESPONSES_WEBSOCKETS: &str = "responses_websockets=2026-02-06"
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Source-pinned maximum pooled connection age.
 const MAX_CONNECTION_AGE: Duration = Duration::from_secs(55 * 60);
+/// Source-pinned idle lifetime, checked only on the next acquire.
+const MAX_IDLE_TIME: Duration = Duration::from_secs(5 * 60);
 /// Budget for the explicit client Close after a completed temporary
 /// connection. The ws owner accepts only absolute deadlines; this bounds the
 /// handshake without waiting on an unresponsive peer forever.
@@ -177,7 +179,8 @@ struct PooledConnection {
     endpoint: String,
     driver: Driver,
     compression: bool,
-    created_at: std::time::Instant,
+    created_at: tokio::time::Instant,
+    released_at: tokio::time::Instant,
     continuation: Option<WsContinuation>,
 }
 
@@ -231,8 +234,9 @@ struct WsContinuation {
 pub(super) enum WsLoopOutcome {
     /// The public stream finished (terminal or delivered error).
     Done,
-    /// Transport-class failure before public output: continue on SSE.
-    Fallback,
+    /// Transport-class failure before the first provider event: continue on SSE
+    /// with a fixed, redacted-safe diagnostic reason.
+    Fallback(&'static str),
     /// Typed terminal failure to publish (partial preserved).
     Terminal(ProviderError),
 }
@@ -241,7 +245,7 @@ pub(super) enum WsLoopOutcome {
 enum AttemptFlow {
     RetryFullInput(ProviderError),
     Reconnect(ProviderError),
-    Fallback,
+    Fallback(&'static str),
     Terminal(ProviderError),
 }
 
@@ -251,7 +255,7 @@ enum AttemptFlow {
 struct Acquired<'a> {
     reservation: Option<PoolReservation<'a>>,
     compression: bool,
-    created_at: Option<std::time::Instant>,
+    created_at: Option<tokio::time::Instant>,
     driver: Driver,
 }
 
@@ -320,14 +324,14 @@ fn classify_upgrade_error(error: &WsUpgradeError) -> AttemptFlow {
             if cause.is_timeout() {
                 AttemptFlow::Terminal(ProviderError::Timeout)
             } else {
-                AttemptFlow::Fallback
+                AttemptFlow::Fallback("upgrade_transport_error")
             }
         }
         // Authentication and rate-limit statuses stay typed terminal
         // failures; any other non-101 response means the endpoint did not
         // speak WebSocket for this attempt, which is a transport mismatch.
         WsUpgradeError::Status(status) if !matches!(status, 401 | 403 | 429 | 408 | 504) => {
-            AttemptFlow::Fallback
+            AttemptFlow::Fallback("upgrade_status")
         }
         WsUpgradeError::Status(status) => {
             AttemptFlow::Terminal(super::map_http_upgrade_status(*status))
@@ -345,7 +349,7 @@ fn classify_upgrade_error(error: &WsUpgradeError) -> AttemptFlow {
 /// resending them over another transport would repeat the logical request.
 fn classify_transport_fault(
     fault: &crate::ws::io::Fault,
-    emitted_any: bool,
+    received_event: bool,
     mapper: &ResponsesMapper,
 ) -> AttemptFlow {
     let terminal = |summary: &'static str| {
@@ -362,26 +366,33 @@ fn classify_transport_fault(
     ) {
         return terminal("OpenAI Codex returned malformed streaming data");
     }
-    if emitted_any {
+    if received_event {
         terminal("WebSocket transport failed after stream start")
     } else {
-        AttemptFlow::Fallback
+        AttemptFlow::Fallback(match fault {
+            crate::ws::io::Fault::TransportEof | crate::ws::io::Fault::Closed => "transport_eof",
+            crate::ws::io::Fault::CloseTimeout => "idle_timeout",
+            _ => "transport_error",
+        })
     }
 }
 
 /// The transport ended (clean Close, close frame or EOF) without a terminal
-/// event: EOF is never success. Before public output this is a transport
-/// loss eligible for the bounded SSE fallback; after output it ends the
+/// event: EOF is never success. Before the first provider event this is a transport
+/// loss eligible for the bounded SSE fallback; after that event it ends the
 /// stream terminally.
-fn websocket_closed_before_completion(emitted_any: bool, mapper: &ResponsesMapper) -> AttemptFlow {
-    if emitted_any {
+fn websocket_closed_before_completion(
+    received_event: bool,
+    mapper: &ResponsesMapper,
+) -> AttemptFlow {
+    if received_event {
         AttemptFlow::Terminal(mapper.failure(ProviderError::StreamError(
             ProviderErrorSummary::attested_static(
                 "WebSocket stream closed before response.completed",
             ),
         )))
     } else {
-        AttemptFlow::Fallback
+        AttemptFlow::Fallback("transport_eof")
     }
 }
 
@@ -465,6 +476,7 @@ pub(super) async fn drive(
     wire_facts: Option<ResponsesWireTools>,
     route: ReplayRoute,
     timeout: Option<Duration>,
+    connect_timeout: Option<Duration>,
     lease: &GenerationGuard,
     callbacks: RequestCallbacks,
     snapshot: ProducerSnapshot,
@@ -487,7 +499,7 @@ pub(super) async fn drive(
     if let Some(session) = session_key.as_deref()
         && state.fallback_sessions.lock().unwrap().contains(session)
     {
-        return WsLoopOutcome::Fallback;
+        return WsLoopOutcome::Fallback("session_fallback");
     }
 
     let mut continuation: Option<WsContinuation> = None;
@@ -513,6 +525,7 @@ pub(super) async fn drive(
             wire_facts.as_ref(),
             &route,
             timeout,
+            connect_timeout,
             lease,
             &callbacks,
             &snapshot,
@@ -532,7 +545,7 @@ pub(super) async fn drive(
             AttemptFlowResult::RetryFullInput(error) | AttemptFlowResult::Reconnect(error) => {
                 return WsLoopOutcome::Terminal(error);
             }
-            AttemptFlowResult::Fallback => {
+            AttemptFlowResult::Fallback(reason) => {
                 if let Some(session) = session_key.as_deref()
                     && lease
                         .with_live(|| {
@@ -546,7 +559,7 @@ pub(super) async fn drive(
                 {
                     return WsLoopOutcome::Terminal(ProviderError::Cancelled);
                 }
-                return WsLoopOutcome::Fallback;
+                return WsLoopOutcome::Fallback(reason);
             }
             AttemptFlowResult::Terminal(error) => {
                 if let Some(session) = session_key.as_deref()
@@ -578,11 +591,12 @@ enum AttemptFlowResult {
     Done,
     RetryFullInput(ProviderError),
     Reconnect(ProviderError),
-    Fallback,
+    Fallback(&'static str),
     Terminal(ProviderError),
 }
 
 /// Acquire or open one WebSocket connection for this call.
+#[allow(clippy::too_many_arguments)]
 async fn acquire<'a>(
     state: &'a WsTransportState,
     client: &HttpClient,
@@ -590,6 +604,7 @@ async fn acquire<'a>(
     headers: &[(String, String)],
     pooled_key: Option<(&str, &str)>,
     cancel: &CancellationToken,
+    connect_timeout: Option<Duration>,
     lease: &GenerationGuard,
 ) -> Result<(Acquired<'a>, Option<WsContinuation>), AttemptFlow> {
     let mut previous = None;
@@ -619,7 +634,10 @@ async fn acquire<'a>(
         })
     });
     if let Some(mut entry) = previous {
-        if entry.endpoint == url && entry.created_at.elapsed() < MAX_CONNECTION_AGE {
+        if entry.endpoint == url
+            && entry.created_at.elapsed() < MAX_CONNECTION_AGE
+            && entry.released_at.elapsed() < MAX_IDLE_TIME
+        {
             return Ok((
                 Acquired {
                     reservation,
@@ -630,8 +648,9 @@ async fn acquire<'a>(
                 entry.continuation,
             ));
         }
-        // Endpoint and age belong to the frozen connection identity. Release
-        // an ineligible idle socket before connecting its replacement.
+        // Check idle and absolute age only on acquire: neither interrupts a
+        // busy generation. Expiry drops the continuation with its socket.
+        // Release the ineligible connection before opening its replacement.
         if let Err(detail) = silent_close(&mut entry.driver).await {
             lease.record_unconfirmed(detail);
         }
@@ -650,18 +669,23 @@ async fn acquire<'a>(
             client_no_context_takeover: true,
             client_max_window_bits: Some(None),
         });
+    let connect = async {
+        let budget = connect_timeout.unwrap_or(CONNECT_TIMEOUT);
+        if budget.is_zero() {
+            ws::upgrade(client, upgrade)
+                .await
+                .map_err(|error| classify_upgrade_error(&error))
+        } else {
+            match tokio::time::timeout(budget, ws::upgrade(client, upgrade)).await {
+                Ok(result) => result.map_err(|error| classify_upgrade_error(&error)),
+                Err(_) => Err(AttemptFlow::Terminal(ProviderError::Timeout)),
+            }
+        }
+    };
     let upgraded = tokio::select! {
         biased;
         _ = cancel.cancelled() => return Err(AttemptFlow::Terminal(ProviderError::Cancelled)),
-        attempt = tokio::time::timeout(CONNECT_TIMEOUT, ws::upgrade(client, upgrade)) => {
-            match attempt {
-                Ok(result) => match result {
-                    Ok(upgraded) => upgraded,
-                    Err(error) => return Err(classify_upgrade_error(&error)),
-                },
-                Err(_) => return Err(AttemptFlow::Terminal(ProviderError::Timeout)),
-            }
-        }
+        result = connect => result?,
     };
     let parameters =
         upgraded
@@ -683,7 +707,7 @@ async fn acquire<'a>(
         Acquired {
             reservation,
             compression,
-            created_at: Some(std::time::Instant::now()),
+            created_at: Some(tokio::time::Instant::now()),
             driver,
         },
         None,
@@ -707,6 +731,7 @@ async fn attempt(
     wire_facts: Option<&ResponsesWireTools>,
     route: &ReplayRoute,
     timeout: Option<Duration>,
+    connect_timeout: Option<Duration>,
     lease: &GenerationGuard,
     callbacks: &RequestCallbacks,
     snapshot: &ProducerSnapshot,
@@ -731,6 +756,7 @@ async fn attempt(
         &headers,
         session_key.map(|session| (session, account_id)),
         &cancel,
+        connect_timeout,
         lease,
     )
     .await
@@ -821,7 +847,10 @@ async fn attempt(
                 endpoint: url,
                 driver: acquired.driver,
                 compression: acquired.compression,
-                created_at: acquired.created_at.unwrap_or_else(std::time::Instant::now),
+                created_at: acquired
+                    .created_at
+                    .unwrap_or_else(tokio::time::Instant::now),
+                released_at: tokio::time::Instant::now(),
                 continuation: final_continuation.clone(),
             });
             if !delivered_error && let Some(reservation) = acquired.reservation.as_ref() {
@@ -935,13 +964,14 @@ async fn run_stream(
     }
 
     let mut emitted_any = false;
+    let mut received_event = false;
     let mut delivered_error = false;
     loop {
         if mapper.saw_done {
             return Ok((delivered_error, successful_terminal(mapper.partial())));
         }
         let next = async {
-            match timeout {
+            match timeout.filter(|budget| !budget.is_zero()) {
                 Some(budget) => match tokio::time::timeout(budget, driver.next()).await {
                     Ok(next) => next,
                     Err(_) => Err(crate::ws::io::Fault::CloseTimeout),
@@ -961,19 +991,19 @@ async fn run_stream(
         let message = match message {
             Ok(message) => message,
             Err(fault) => {
-                return Err(classify_transport_fault(&fault, emitted_any, mapper));
+                return Err(classify_transport_fault(&fault, received_event, mapper));
             }
         };
         let Some(message) = message else {
             // Transport ended (clean Close or EOF) without a terminal event:
             // EOF is never success.
-            return Err(websocket_closed_before_completion(emitted_any, mapper));
+            return Err(websocket_closed_before_completion(received_event, mapper));
         };
         match message.opcode {
-            8 => return Err(websocket_closed_before_completion(emitted_any, mapper)),
+            8 => return Err(websocket_closed_before_completion(received_event, mapper)),
             9 => {
                 if let Err(fault) = driver.queue(10, &message.payload, false, ws::fresh_mask()) {
-                    return Err(classify_transport_fault(&fault, emitted_any, mapper));
+                    return Err(classify_transport_fault(&fault, received_event, mapper));
                 }
                 let flushed = tokio::select! {
                     biased;
@@ -981,7 +1011,7 @@ async fn run_stream(
                     result = driver.flush() => result,
                 };
                 if let Err(fault) = flushed {
-                    return Err(classify_transport_fault(&fault, emitted_any, mapper));
+                    return Err(classify_transport_fault(&fault, received_event, mapper));
                 }
                 continue;
             }
@@ -1022,19 +1052,19 @@ async fn run_stream(
                 if let Err(error) = result { return Err(AttemptFlow::Terminal(mapper.failure(error))); }
             }
         }
-        // Bounded pre-output retries: intercept the two classified error
-        // codes before any public event exists.
-        if !emitted_any && value.get("type").and_then(serde_json::Value::as_str) == Some("error") {
+        // Missing-previous recovery precedes public output; connection-limit
+        // recovery has the stricter first-provider-event boundary.
+        if value.get("type").and_then(serde_json::Value::as_str) == Some("error") {
             let upstream = || {
                 mapper.failure(ProviderError::StreamError(
                     ProviderErrorSummary::attested_static(UPSTREAM_STREAM_ERROR),
                 ))
             };
             match error_code(&value) {
-                Some(MISSING_RESPONSE_CODE) => {
+                Some(MISSING_RESPONSE_CODE) if !emitted_any => {
                     return Err(AttemptFlow::RetryFullInput(upstream()));
                 }
-                Some(CONNECTION_LIMIT_CODE) => {
+                Some(CONNECTION_LIMIT_CODE) if !received_event => {
                     return Err(AttemptFlow::Reconnect(upstream()));
                 }
                 _ => {}
@@ -1042,10 +1072,14 @@ async fn run_stream(
         }
         match ResponsesEvent::try_from_json_str(&text) {
             ParsedEvent::Valid(event) => {
-                // The recovery boundary is the provider event, even when its
+                // Ordinary recovery seals at the provider event, even when its
                 // mapper emits no public content (for example message setup).
-                if !matches!(event, ResponsesEvent::Ignore) {
-                    emitted_any = true;
+                if value
+                    .get("type")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|kind| !kind.is_empty())
+                {
+                    received_event = true;
                 }
                 let event = match event {
                     ResponsesEvent::Error { .. } => ResponsesEvent::Error {
@@ -1088,7 +1122,7 @@ impl From<AttemptFlow> for AttemptFlowResult {
         match flow {
             AttemptFlow::RetryFullInput(error) => Self::RetryFullInput(error),
             AttemptFlow::Reconnect(error) => Self::Reconnect(error),
-            AttemptFlow::Fallback => Self::Fallback,
+            AttemptFlow::Fallback(reason) => Self::Fallback(reason),
             AttemptFlow::Terminal(error) => Self::Terminal(error),
         }
     }

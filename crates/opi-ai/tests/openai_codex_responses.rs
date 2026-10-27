@@ -1927,6 +1927,9 @@ mod ws_branches {
                         if turn == 0 {
                             write_frame(&mut stream, 1, completed_event().as_bytes());
                         } else {
+                            // An ignored provider event seals ordinary fallback and reconnect,
+                            // but the separate missing-previous branch still precedes public output.
+                            write_frame(&mut stream, 1, br#"{"type":"response.in_progress"}"#);
                             let error = r#"{"type":"error","code":"previous_response_not_found"}"#;
                             write_frame(&mut stream, 1, error.as_bytes());
                         }
@@ -3381,6 +3384,10 @@ mod ws_protocol_regressions {
         MaskedFrame,
         InvalidPmd,
         SilentProviderEvent,
+        IgnoredProviderEvent(bool),
+        TypelessEvent,
+        PreEventEof(Arc<AtomicUsize>),
+        ZeroIdleTimeout,
         OutboundPmd,
         AsyncRaw(Arc<AtomicUsize>),
         Ping,
@@ -3408,8 +3415,10 @@ mod ws_protocol_regressions {
 
     async fn run(script: Script) -> (Result<AssistantMessage, opi_ai::stream::CallFailure>, usize) {
         let outbound_pmd = matches!(script, Script::OutboundPmd);
+        let fallback_probe = matches!(script, Script::PreEventEof(_));
+        let zero_idle = matches!(script, Script::ZeroIdleTimeout);
         let raw_counter = match &script {
-            Script::AsyncRaw(count) => Some(count.clone()),
+            Script::AsyncRaw(count) | Script::PreEventEof(count) => Some(count.clone()),
             _ => None,
         };
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -3453,6 +3462,25 @@ mod ws_protocol_regressions {
                 Script::SilentProviderEvent => {
                     write_frame(&mut socket, 1, br#"{"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"message-1","content":[]}}"#);
                 }
+                Script::IgnoredProviderEvent(reconnect) => {
+                    write_frame(&mut socket, 1, br#"{"type":"response.in_progress","response":{"id":"response-1","status":"in_progress"}}"#);
+                    if reconnect {
+                        write_frame(
+                            &mut socket,
+                            1,
+                            br#"{"type":"error","code":"websocket_connection_limit_reached"}"#,
+                        );
+                    }
+                }
+                Script::ZeroIdleTimeout => {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    write_frame(&mut socket, 1, super::ws_path::completed_event().as_bytes());
+                    if let Ok((8, _)) = read_small_frame(&mut socket) {
+                        write_frame(&mut socket, 8, &[]);
+                    }
+                }
+                Script::PreEventEof(_) => {}
+                Script::TypelessEvent => write_frame(&mut socket, 1, br#"{"unrelated":true}"#),
                 Script::OutboundPmd => {
                     write_frame(&mut socket, 1, super::ws_path::completed_event().as_bytes());
                     assert_eq!(read_small_frame(&mut socket)?.0, 8);
@@ -3521,7 +3549,11 @@ mod ws_protocol_regressions {
         let mut request = request();
         request.session_id = None;
         request.cache_retention = CacheRetention::Disabled;
-        request.timeout = Some(std::time::Duration::from_millis(100));
+        request.timeout = Some(if zero_idle {
+            std::time::Duration::ZERO
+        } else {
+            std::time::Duration::from_millis(100)
+        });
         if let Some(counter) = raw_counter {
             request.callbacks =
                 opi_ai::callbacks::RequestCallbacks::new().with_async_on_raw(move |_| {
@@ -3532,6 +3564,18 @@ mod ws_protocol_regressions {
                         Ok(())
                     }
                 });
+        }
+        if fallback_probe {
+            request.context.append_system_change(opi_ai::transcript::SystemMessage {
+                tools_added: vec![ToolDef {
+                    name: "grammar-tool".into(), description: "local".into(),
+                    input_schema: serde_json::json!({"type":"object","properties":{"input":{"type":"string"}},"required":["input"]}),
+                    constrained_sampling: Some(opi_ai::constrained_sampling::ConstrainedSampling::Grammar {
+                        openai_lark: Some("start: WORD".into()), openai_regex: None,
+                    }),
+                }],
+                ..Default::default()
+            }).unwrap();
         }
         if outbound_pmd {
             request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -3626,6 +3670,69 @@ mod ws_protocol_regressions {
             "a valid provider event closes fallback even when it emits no public content"
         );
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn ignored_provider_event_seals_fallback() {
+        let (result, posts) = run(Script::IgnoredProviderEvent(false)).await;
+        assert_eq!(
+            posts, 0,
+            "in_progress is a provider event even without mapped content"
+        );
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn ignored_provider_event_seals_connection_limit_reconnect() {
+        let (result, posts) = run(Script::IgnoredProviderEvent(true)).await;
+        assert_eq!(posts, 0);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn typeless_json_keeps_pre_event_fallback() {
+        let (result, posts) = run(Script::TypelessEvent).await;
+        assert_eq!(posts, 1);
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn pre_event_eof_successful_sse_retains_transport_and_sampling_diagnostics() {
+        let raw = Arc::new(AtomicUsize::new(0));
+        let (result, posts) = run(Script::PreEventEof(raw.clone())).await;
+        let message = result.expect("pre-event EOF may fall back once");
+        assert_eq!(posts, 1);
+        assert_eq!(
+            raw.load(Ordering::SeqCst),
+            1,
+            "only the real SSE event invokes raw"
+        );
+        assert!(
+            message
+                .diagnostics
+                .iter()
+                .any(|d| d.kind == "constrained_sampling_fallback")
+        );
+        let diagnostic = message
+            .diagnostics
+            .iter()
+            .find(|d| d.kind == "codex_websocket_fallback")
+            .expect("successful SSE must retain the WS failure reason");
+        assert_eq!(diagnostic.reason, "transport_eof");
+        assert!(
+            diagnostic.detail.is_none(),
+            "no raw errors, endpoints or credentials"
+        );
+    }
+
+    #[tokio::test]
+    async fn zero_idle_timeout_waits_for_pending_websocket_event() {
+        let (result, posts) = run(Script::ZeroIdleTimeout).await;
+        assert_eq!(posts, 0);
+        assert!(
+            result.is_ok(),
+            "zero disables the Codex WS pending-read timer: {result:?}"
+        );
     }
 
     #[tokio::test]

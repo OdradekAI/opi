@@ -104,6 +104,10 @@ pub struct CodexOptions {
     pub service_tier: Option<CodexServiceTier>,
     pub text_verbosity: Option<CodexTextVerbosity>,
     pub tool_choice: Option<CodexToolChoice>,
+    /// Independent WebSocket connection budget (source `websocketConnectTimeoutMs`).
+    /// Omission uses 15 seconds; zero disables the connect timer. Frozen per call,
+    /// this local transport option is never included in the request body.
+    pub websocket_connect_timeout: Option<std::time::Duration>,
     simple: bool,
 }
 

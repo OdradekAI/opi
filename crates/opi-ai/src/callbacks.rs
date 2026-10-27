@@ -556,3 +556,125 @@ fn validate_payload_replacement(
     }
     Ok(())
 }
+
+#[derive(Clone, Copy)]
+pub(crate) enum OpenAiPayloadShape {
+    Chat,
+    Responses,
+}
+
+/// Check the structural fields consumed by the streaming adapters after the
+/// callback. Unknown fields and tool kinds remain available to custom routes;
+/// schema contents and provider-specific semantic constraints are not checked.
+pub(crate) fn validate_openai_payload_shape(
+    body: &serde_json::Value,
+    shape: OpenAiPayloadShape,
+) -> Result<(), ProviderError> {
+    use serde_json::Value;
+
+    let fail = |field: &str| {
+        ProviderError::CallbackPhase(ProviderErrorSummary::sanitized(format!(
+            "payload callback output has invalid OpenAI {field} wire shape"
+        )))
+    };
+    if body.get("stream").and_then(Value::as_bool) != Some(true) {
+        return Err(fail("stream"));
+    }
+    match shape {
+        OpenAiPayloadShape::Chat => {
+            let messages = body
+                .get("messages")
+                .and_then(Value::as_array)
+                .ok_or_else(|| fail("messages"))?;
+            if !messages.iter().all(|message| {
+                message.is_object()
+                    && optional_wire_field(message, "role", Value::is_string)
+                    && optional_wire_field(message, "content", |content| {
+                        content.is_null() || content.is_string() || object_array(content)
+                    })
+                    && optional_wire_field(message, "tool_calls", |calls| {
+                        calls.is_null() || object_array(calls)
+                    })
+            }) {
+                return Err(fail("messages"));
+            }
+            for field in ["stream_options", "response_format"] {
+                if !optional_wire_field(body, field, object_or_null) {
+                    return Err(fail(field));
+                }
+            }
+        }
+        OpenAiPayloadShape::Responses => {
+            if !body
+                .get("input")
+                .is_some_and(|input| input.is_string() || object_array(input))
+            {
+                return Err(fail("input"));
+            }
+            for field in ["reasoning", "text"] {
+                if !optional_wire_field(body, field, object_or_null) {
+                    return Err(fail(field));
+                }
+            }
+        }
+    }
+    if !optional_wire_field(body, "tools", |tools| {
+        tools.is_null()
+            || tools
+                .as_array()
+                .is_some_and(|tools| tools.iter().all(openai_tool_shape))
+    }) {
+        return Err(fail("tools"));
+    }
+    if !optional_wire_field(body, "tool_choice", |choice| {
+        choice.is_null() || choice.is_string() || choice.is_object()
+    }) {
+        return Err(fail("tool_choice"));
+    }
+    Ok(())
+}
+
+fn optional_wire_field(
+    value: &serde_json::Value,
+    field: &str,
+    accepts: fn(&serde_json::Value) -> bool,
+) -> bool {
+    value.get(field).is_none_or(accepts)
+}
+
+fn object_array(value: &serde_json::Value) -> bool {
+    value
+        .as_array()
+        .is_some_and(|items| items.iter().all(serde_json::Value::is_object))
+}
+
+fn object_or_null(value: &serde_json::Value) -> bool {
+    value.is_object() || value.is_null()
+}
+
+fn openai_tool_shape(tool: &serde_json::Value) -> bool {
+    if !tool.is_object() || !optional_wire_field(tool, "type", serde_json::Value::is_string) {
+        return false;
+    }
+    match tool.get("type").and_then(serde_json::Value::as_str) {
+        Some("function" | "custom") => {
+            let valid_definition = |definition: &serde_json::Value| {
+                ["name", "description"].into_iter().all(|field| {
+                    optional_wire_field(definition, field, |value| {
+                        value.is_string() || value.is_null()
+                    })
+                }) && optional_wire_field(definition, "strict", |value| {
+                    value.is_boolean() || value.is_null()
+                }) && optional_wire_field(definition, "parameters", |value| {
+                    value.is_object() || value.is_boolean() || value.is_null()
+                }) && optional_wire_field(definition, "format", object_or_null)
+            };
+            valid_definition(tool)
+                && ["function", "custom"].into_iter().all(|field| {
+                    tool.get(field)
+                        .is_none_or(|value| object_or_null(value) && valid_definition(value))
+                })
+        }
+        _ => true,
+    }
+}
