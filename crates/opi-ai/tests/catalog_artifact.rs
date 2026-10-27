@@ -170,6 +170,31 @@ fn wrong_bundle_schema_version_rejected_last_known_retained() {
 }
 
 #[test]
+fn incompatible_data_or_minimum_reader_version_preserves_last_known() {
+    let (catalog_bytes, manifest_bytes) = Catalog::builtin_bundle_bytes();
+    for (field, version) in [
+        ("data_schema_version", 5),
+        ("data_schema_version", 7),
+        ("min_reader", 2),
+    ] {
+        let (handle, held) = handle_with_builtin();
+        let mut manifest: Value = serde_json::from_slice(manifest_bytes).unwrap();
+        if field == "min_reader" {
+            manifest[field]["bundle_schema_version"] = Value::from(version);
+        } else {
+            manifest[field] = Value::from(version);
+        }
+        assert!(
+            handle
+                .try_install(catalog_bytes, &serde_json::to_vec(&manifest).unwrap())
+                .is_err(),
+            "incompatible {field}={version} must be rejected before publication"
+        );
+        assert!(std::sync::Arc::ptr_eq(&handle.current(), &held));
+    }
+}
+
+#[test]
 fn missing_provider_rejected_last_known_retained() {
     let (handle, held) = handle_with_builtin();
     let mutated = mutated_catalog(|catalog| {

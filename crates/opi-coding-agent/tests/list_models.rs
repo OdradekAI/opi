@@ -765,6 +765,7 @@ async fn stored_only_credential_lists_models_through_async_orchestration() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     use futures_util::StreamExt;

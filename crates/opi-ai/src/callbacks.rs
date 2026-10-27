@@ -4,10 +4,10 @@
 //! fire at source-defined timing inside the real direct adapters — never by
 //! re-deriving wire facts from a normalized [`crate::provider::EventStream`]:
 //!
-//! - `transform_headers` — applied exactly once per dispatch to the merged
+//! - `transform_headers` — applied exactly once per logical call to the merged
 //!   per-call header set (configured profile, route-managed, per-request).
-//!   Protected identity/auth/signing names are never part of that set; the
-//!   transform output is revalidated and may not introduce a protected name,
+//!   Protected identity/auth/signing entries may be retained unchanged when
+//!   present in the input. The output may not add, change or remove them,
 //!   duplicate a name, or carry an invalid name/value. Removing or rewriting a
 //!   non-protected entry is the supported omission/set/removal behavior.
 //! - `on_payload` — invoked after sampling/compat/wire projection with the
@@ -16,17 +16,18 @@
 //!   raised). The callback runs once per payload variant; an ordinary
 //!   acquisition retry re-enters the adapter with the same variant and reuses
 //!   the frozen body byte-for-byte.
-//! - `on_response` — invoked with the HTTP status and response headers once a
-//!   response has been received, before any stream event is normalized
-//!   downstream. Failures that never produce a response (connect errors,
-//!   timeouts) are not notified.
+//! - `on_response` — invoked with status and headers at the adapter's
+//!   source-defined response observation point, before body processing.
+//!   Codex SSE also observes non-success statuses before classification;
+//!   successful response handoff seals ordinary acquisition retry. Failures
+//!   without a response (connect errors, timeouts) are not notified.
 //! - `on_raw` — invoked with each parsed provider wire event, in wire order,
 //!   strictly before its normalized emission. Read-only; a failure terminates
 //!   the current call with a typed error while preserving the already
 //!   delivered partial.
 //!
 //! Google wires (Gemini/Vertex) support the payload and header-transform
-//! families but reject response/raw observers with a typed
+//! families and parsed raw observation but reject response observers with a typed
 //! [`crate::provider::ProviderError::UnsupportedCapability`] before dispatch.
 //!
 //! Callback failures are functional failures: they surface as
@@ -34,6 +35,8 @@
 //! swallowed by telemetry, never triggering a new call).
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use crate::provider::{ProviderError, ProviderErrorSummary};
@@ -82,7 +85,8 @@ impl std::fmt::Display for CallbackError {
 impl std::error::Error for CallbackError {}
 
 /// Header-transform callback: receives the merged per-call header set and
-/// returns the replacement set. Protected names cannot appear in the output.
+/// returns the replacement set. Protected values may be retained unchanged;
+/// adding, changing or removing a protected identity is rejected.
 pub type HeaderTransformFn =
     Arc<dyn Fn(&[(String, String)]) -> Result<Vec<(String, String)>, CallbackError> + Send + Sync>;
 
@@ -100,32 +104,68 @@ pub type ResponseFn =
 /// normalization.
 pub type RawFn = Arc<dyn Fn(&serde_json::Value) -> Result<(), CallbackError> + Send + Sync>;
 
-#[derive(Default)]
-struct RequestCallbacksInner {
-    header_transform: Option<HeaderTransformFn>,
-    on_payload: Option<PayloadFn>,
-    on_response: Option<ResponseFn>,
-    on_raw: Option<RawFn>,
-    /// Frozen per-variant bodies produced by the payload callback. Shared
-    /// through `Request` clones, so an ordinary acquisition retry (which
-    /// re-clones the frozen request) reuses the frozen body without
-    /// re-invoking the callback.
-    frozen_payloads: Mutex<HashMap<String, serde_json::Value>>,
-    /// The transformed header set, frozen after the first dispatch of the
-    /// logical call (V-36: the merged headers stay unchanged and the strict
-    /// branch never re-runs the transform).
-    frozen_headers: Mutex<Option<Vec<(String, String)>>>,
+type HeaderList = Vec<(String, String)>;
+type CallbackFuture<T> = Pin<Box<dyn Future<Output = Result<T, CallbackError>> + Send>>;
+type AsyncHeaderTransformFn = Arc<dyn Fn(HeaderList) -> CallbackFuture<HeaderList> + Send + Sync>;
+type AsyncPayloadFn =
+    Arc<dyn Fn(serde_json::Value) -> CallbackFuture<Option<serde_json::Value>> + Send + Sync>;
+type AsyncResponseFn = Arc<dyn Fn(u16, HeaderList) -> CallbackFuture<()> + Send + Sync>;
+type AsyncRawFn = Arc<dyn Fn(serde_json::Value) -> CallbackFuture<()> + Send + Sync>;
+
+#[derive(Clone)]
+enum HeaderTransform {
+    Sync(HeaderTransformFn),
+    Async(AsyncHeaderTransformFn),
+}
+#[derive(Clone)]
+enum Payload {
+    Sync(PayloadFn),
+    Async(AsyncPayloadFn),
+}
+#[derive(Clone)]
+enum Response {
+    Sync(ResponseFn),
+    Async(AsyncResponseFn),
+}
+#[derive(Clone)]
+enum Raw {
+    Sync(RawFn),
+    Async(AsyncRawFn),
 }
 
-/// The functional-callback set carried by [`crate::provider::Request`].
+#[derive(Default)]
+struct RequestCallbacksInner {
+    header_transform: Option<HeaderTransform>,
+    on_payload: Option<Payload>,
+    on_response: Option<Response>,
+    on_raw: Option<Raw>,
+}
+
+#[derive(Default)]
+struct CallState {
+    payloads: Mutex<HashMap<String, Result<serde_json::Value, ProviderError>>>,
+    headers: Mutex<Option<Result<HeaderList, ProviderError>>>,
+    // Only call-local callback execution is serialized. Cache locks are never
+    // retained while awaiting a functional callback.
+    execution: tokio::sync::Mutex<()>,
+}
+
+/// Functional callback definitions carried by [`crate::provider::Request`].
 ///
-/// Cloning shares the callback set and the frozen payload map (the value is an
-/// `Arc`), which is exactly the once-per-variant freezing contract across
-/// ordinary acquisition retries of one logical call. Constructing a second
-/// `RequestCallbacks` for a new logical call starts a fresh, empty set.
+/// Cloning shares definitions. SDK call boundaries create a fresh private
+/// execution scope; retries of that logical call share its frozen headers and
+/// per-variant payloads. Reusing a definition set never reuses another call's
+/// wire input. Synchronous builders remain available; async builders receive
+/// owned input and may yield without blocking the runtime.
 #[derive(Clone, Default)]
 pub struct RequestCallbacks {
     inner: Arc<RequestCallbacksInner>,
+    state: Arc<CallState>,
+    scoped: bool,
+    // A forwarding adapter must retain the existing attempt's variant instead
+    // of creating a nested acquisition owner. This is SDK-owned call state,
+    // never a caller-supplied callback or wire field.
+    attempt: Option<crate::provider::AttemptContext>,
 }
 
 impl std::fmt::Debug for RequestCallbacks {
@@ -140,167 +180,338 @@ impl std::fmt::Debug for RequestCallbacks {
 }
 
 impl RequestCallbacks {
-    /// An empty callback set (the default).
+    pub(crate) fn with_attempt(&self, attempt: crate::provider::AttemptContext) -> Self {
+        let mut callbacks = self.clone();
+        callbacks.attempt = Some(attempt);
+        callbacks
+    }
+
+    pub(crate) fn inherited_attempt(&self) -> Option<crate::provider::AttemptContext> {
+        self.attempt.clone()
+    }
+    /// An empty callback definition set.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Attach a header-transform callback (consuming builder).
+    pub(crate) fn for_call(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            state: Arc::default(),
+            scoped: true,
+            attempt: None,
+        }
+    }
+
+    pub(crate) fn ensure_call_scope(&self) -> Self {
+        if self.scoped {
+            self.clone()
+        } else {
+            self.for_call()
+        }
+    }
+
+    fn definitions_mut(&mut self) -> &mut RequestCallbacksInner {
+        Arc::get_mut(&mut self.inner)
+            .expect("RequestCallbacks builders run before the set is shared")
+    }
+
+    /// Attach a synchronous assembled-header transform.
     pub fn with_header_transform(mut self, transform: HeaderTransformFn) -> Self {
-        Arc::get_mut(&mut self.inner)
-            .expect("RequestCallbacks builders run before the set is shared")
-            .header_transform = Some(transform);
+        self.definitions_mut().header_transform = Some(HeaderTransform::Sync(transform));
+        self
+    }
+    /// Attach a synchronous post-projection payload callback.
+    pub fn with_on_payload(mut self, callback: PayloadFn) -> Self {
+        self.definitions_mut().on_payload = Some(Payload::Sync(callback));
+        self
+    }
+    /// Attach a synchronous response observer.
+    pub fn with_on_response(mut self, callback: ResponseFn) -> Self {
+        self.definitions_mut().on_response = Some(Response::Sync(callback));
+        self
+    }
+    /// Attach a synchronous parsed raw-event observer.
+    pub fn with_on_raw(mut self, callback: RawFn) -> Self {
+        self.definitions_mut().on_raw = Some(Raw::Sync(callback));
         self
     }
 
-    /// Attach a payload callback (consuming builder).
-    pub fn with_on_payload(mut self, on_payload: PayloadFn) -> Self {
-        Arc::get_mut(&mut self.inner)
-            .expect("RequestCallbacks builders run before the set is shared")
-            .on_payload = Some(on_payload);
+    /// Attach an async-capable transform receiving an owned assembled-header set.
+    pub fn with_async_header_transform<F, Fut>(mut self, callback: F) -> Self
+    where
+        F: Fn(Vec<(String, String)>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Vec<(String, String)>, CallbackError>> + Send + 'static,
+    {
+        self.definitions_mut().header_transform =
+            Some(HeaderTransform::Async(Arc::new(move |headers| {
+                Box::pin(callback(headers))
+            })));
+        self
+    }
+    /// Attach an async-capable payload callback receiving the owned wire body.
+    pub fn with_async_on_payload<F, Fut>(mut self, callback: F) -> Self
+    where
+        F: Fn(serde_json::Value) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<serde_json::Value>, CallbackError>> + Send + 'static,
+    {
+        self.definitions_mut().on_payload = Some(Payload::Async(Arc::new(move |body| {
+            Box::pin(callback(body))
+        })));
+        self
+    }
+    /// Attach an async-capable observer receiving owned status/header facts.
+    pub fn with_async_on_response<F, Fut>(mut self, callback: F) -> Self
+    where
+        F: Fn(u16, Vec<(String, String)>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<(), CallbackError>> + Send + 'static,
+    {
+        self.definitions_mut().on_response =
+            Some(Response::Async(Arc::new(move |status, headers| {
+                Box::pin(callback(status, headers))
+            })));
+        self
+    }
+    /// Attach an ordered async-capable observer receiving a parsed raw wire value.
+    pub fn with_async_on_raw<F, Fut>(mut self, callback: F) -> Self
+    where
+        F: Fn(serde_json::Value) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<(), CallbackError>> + Send + 'static,
+    {
+        self.definitions_mut().on_raw =
+            Some(Raw::Async(Arc::new(move |event| Box::pin(callback(event)))));
         self
     }
 
-    /// Attach a response callback (consuming builder).
-    pub fn with_on_response(mut self, on_response: ResponseFn) -> Self {
-        Arc::get_mut(&mut self.inner)
-            .expect("RequestCallbacks builders run before the set is shared")
-            .on_response = Some(on_response);
-        self
-    }
-
-    /// Attach a raw-event callback (consuming builder).
-    pub fn with_on_raw(mut self, on_raw: RawFn) -> Self {
-        Arc::get_mut(&mut self.inner)
-            .expect("RequestCallbacks builders run before the set is shared")
-            .on_raw = Some(on_raw);
-        self
-    }
-
-    /// Whether no callback is attached. Adapters use this as the zero-cost
-    /// fast path.
+    /// Whether no callback family is attached.
     pub fn is_empty(&self) -> bool {
         self.inner.header_transform.is_none()
             && self.inner.on_payload.is_none()
             && self.inner.on_response.is_none()
             && self.inner.on_raw.is_none()
     }
-
-    /// Whether a response or raw observer is attached. Google wires reject
-    /// these observers with a typed unsupported-capability failure before
-    /// dispatch.
+    /// Whether a response or raw observer is attached.
     pub fn has_wire_observers(&self) -> bool {
-        self.inner.on_response.is_some() || self.inner.on_raw.is_some()
+        self.has_response_observer() || self.inner.on_raw.is_some()
+    }
+    pub(crate) fn has_response_observer(&self) -> bool {
+        self.inner.on_response.is_some()
     }
 
-    /// Apply the header transform to the merged per-call header set.
-    ///
-    /// The transform runs exactly once per logical call: the first dispatch
-    /// computes the output and freezes it, and every later dispatch —
-    /// ordinary acquisition retries and the strict downgrade variant alike —
-    /// reuses the frozen set (V-36: the strict branch re-runs only
-    /// `on_payload`). The output replaces the merged set after
-    /// revalidation: names must be valid, unique, and non-protected
-    /// (`RESERVED_PROVIDER_HEADERS`, the `amz-sdk-*` signing family,
-    /// case-insensitive). Validation failure is a typed callback-phase
-    /// failure; without a transform the merged set is returned unchanged.
+    /// Apply a synchronous header transform, freezing its result for this call.
+    /// An async-only transform requires [`Self::apply_header_transform_async`].
     pub fn apply_header_transform(
         &self,
         merged: &[(String, String)],
-    ) -> Result<Vec<(String, String)>, ProviderError> {
+    ) -> Result<HeaderList, ProviderError> {
+        let transform = match self.inner.header_transform.as_ref() {
+            None => return Ok(merged.to_vec()),
+            Some(HeaderTransform::Sync(callback)) => callback,
+            Some(HeaderTransform::Async(_)) => return Err(async_required("header transform")),
+        };
+        let _execution = self
+            .state
+            .execution
+            .try_lock()
+            .map_err(|_| execution_in_progress())?;
+        if let Some(frozen) = self
+            .state
+            .headers
+            .lock()
+            .expect("frozen headers poisoned")
+            .as_ref()
+        {
+            return frozen.clone();
+        }
+        let result = transform(merged)
+            .map_err(|error| error.into_provider_error("header transform"))
+            .and_then(|output| validate_headers(merged, output));
+        *self.state.headers.lock().expect("frozen headers poisoned") = Some(result.clone());
+        result
+    }
+
+    /// Apply and await the assembled-header transform once for this logical call.
+    pub async fn apply_header_transform_async(
+        &self,
+        merged: &[(String, String)],
+    ) -> Result<HeaderList, ProviderError> {
         let Some(transform) = self.inner.header_transform.as_ref() else {
             return Ok(merged.to_vec());
         };
+        let _execution = self.state.execution.lock().await;
         if let Some(frozen) = self
-            .inner
-            .frozen_headers
+            .state
+            .headers
             .lock()
-            .expect("frozen header set poisoned")
+            .expect("frozen headers poisoned")
             .as_ref()
         {
-            return Ok(frozen.clone());
+            return frozen.clone();
         }
-        let output =
-            transform(merged).map_err(|error| error.into_provider_error("header transform"))?;
-        crate::provider_headers::validate_transform_output(&output).map_err(|error| {
-            ProviderError::CallbackPhase(ProviderErrorSummary::sanitized(format!(
-                "header transform output is invalid: {error}"
-            )))
-        })?;
-        *self
-            .inner
-            .frozen_headers
-            .lock()
-            .expect("frozen header set poisoned") = Some(output.clone());
-        Ok(output)
+        let output = match transform {
+            HeaderTransform::Sync(callback) => callback(merged),
+            HeaderTransform::Async(callback) => callback(merged.to_vec()).await,
+        };
+        let result = output
+            .map_err(|error| error.into_provider_error("header transform"))
+            .and_then(|output| validate_headers(merged, output));
+        *self.state.headers.lock().expect("frozen headers poisoned") = Some(result.clone());
+        result
     }
 
-    /// Apply the payload callback for `variant` to the post-projection
-    /// `body`.
-    ///
-    /// Runs the callback at most once per variant; later same-variant calls
-    /// (ordinary acquisition retries through the shared `Request`) return the
-    /// frozen body without re-invoking the callback. A replacement must be a
-    /// JSON object, must not retarget the model identity, and must not raise
-    /// the resolved output budget; violations are typed callback failures.
+    /// Apply a synchronous payload callback and validate/freeze its variant.
+    /// An async-only callback requires [`Self::apply_payload_async`].
     pub fn apply_payload(
         &self,
         variant: &str,
         body: serde_json::Value,
     ) -> Result<serde_json::Value, ProviderError> {
-        let Some(on_payload) = self.inner.on_payload.as_ref() else {
-            return Ok(body);
+        let callback = match self.inner.on_payload.as_ref() {
+            None => return Ok(body),
+            Some(Payload::Sync(callback)) => callback,
+            Some(Payload::Async(_)) => return Err(async_required("payload")),
         };
+        let _execution = self
+            .state
+            .execution
+            .try_lock()
+            .map_err(|_| execution_in_progress())?;
         if let Some(frozen) = self
-            .inner
-            .frozen_payloads
+            .state
+            .payloads
             .lock()
-            .expect("frozen payload map poisoned")
+            .expect("frozen payloads poisoned")
             .get(variant)
         {
-            return Ok(frozen.clone());
+            return frozen.clone();
         }
-        let replacement =
-            match on_payload(&body).map_err(|error| error.into_provider_error("payload"))? {
-                Some(replacement) => {
-                    validate_payload_replacement(&body, &replacement)?;
-                    replacement
-                }
-                // `Ok(None)` keeps the projected body; freeze it so a same-variant
-                // retry does not re-invoke the callback.
-                None => body,
-            };
-        self.inner
-            .frozen_payloads
+        let result = callback(&body)
+            .map_err(|error| error.into_provider_error("payload"))
+            .and_then(|replacement| validate_and_replace(body, replacement));
+        self.state
+            .payloads
             .lock()
-            .expect("frozen payload map poisoned")
-            .insert(variant.to_string(), replacement.clone());
-        Ok(replacement)
+            .expect("frozen payloads poisoned")
+            .insert(variant.to_owned(), result.clone());
+        result
     }
 
-    /// Notify the response observer with the received status and headers.
+    /// Await, validate and freeze the payload callback once per admitted variant.
+    pub async fn apply_payload_async(
+        &self,
+        variant: &str,
+        body: serde_json::Value,
+    ) -> Result<serde_json::Value, ProviderError> {
+        let Some(callback) = self.inner.on_payload.as_ref() else {
+            return Ok(body);
+        };
+        let _execution = self.state.execution.lock().await;
+        if let Some(frozen) = self
+            .state
+            .payloads
+            .lock()
+            .expect("frozen payloads poisoned")
+            .get(variant)
+        {
+            return frozen.clone();
+        }
+        let replacement = match callback {
+            Payload::Sync(callback) => callback(&body),
+            Payload::Async(callback) => callback(body.clone()).await,
+        };
+        let result = replacement
+            .map_err(|error| error.into_provider_error("payload"))
+            .and_then(|replacement| validate_and_replace(body, replacement));
+        self.state
+            .payloads
+            .lock()
+            .expect("frozen payloads poisoned")
+            .insert(variant.to_owned(), result.clone());
+        result
+    }
+
+    /// Notify a synchronous response observer; async-only observers fail typed.
     pub fn notify_response(
         &self,
         status: u16,
         headers: &[(String, String)],
     ) -> Result<(), ProviderError> {
-        let Some(on_response) = self.inner.on_response.as_ref() else {
-            return Ok(());
-        };
-        on_response(status, headers).map_err(|error| error.into_provider_error("response"))
+        match self.inner.on_response.as_ref() {
+            None => Ok(()),
+            Some(Response::Sync(callback)) => {
+                callback(status, headers).map_err(|error| error.into_provider_error("response"))
+            }
+            Some(Response::Async(_)) => Err(async_required("response")),
+        }
     }
-
-    /// Notify the raw observer with one parsed provider wire event.
-    pub fn notify_raw(&self, event: &serde_json::Value) -> Result<(), ProviderError> {
-        let Some(on_raw) = self.inner.on_raw.as_ref() else {
-            return Ok(());
+    /// Await the functional response observer at the protocol's handoff point.
+    pub async fn notify_response_async(
+        &self,
+        status: u16,
+        headers: &[(String, String)],
+    ) -> Result<(), ProviderError> {
+        let result = match self.inner.on_response.as_ref() {
+            None => return Ok(()),
+            Some(Response::Sync(callback)) => callback(status, headers),
+            Some(Response::Async(callback)) => callback(status, headers.to_vec()).await,
         };
-        on_raw(event).map_err(|error| error.into_provider_error("raw"))
+        result.map_err(|error| error.into_provider_error("response"))
+    }
+    /// Notify a synchronous raw observer; async-only observers fail typed.
+    pub fn notify_raw(&self, event: &serde_json::Value) -> Result<(), ProviderError> {
+        match self.inner.on_raw.as_ref() {
+            None => Ok(()),
+            Some(Raw::Sync(callback)) => {
+                callback(event).map_err(|error| error.into_provider_error("raw"))
+            }
+            Some(Raw::Async(_)) => Err(async_required("raw")),
+        }
+    }
+    /// Await each raw observation before its normalized event is produced.
+    pub async fn notify_raw_async(&self, event: &serde_json::Value) -> Result<(), ProviderError> {
+        let result = match self.inner.on_raw.as_ref() {
+            None => return Ok(()),
+            Some(Raw::Sync(callback)) => callback(event),
+            Some(Raw::Async(callback)) => callback(event.clone()).await,
+        };
+        result.map_err(|error| error.into_provider_error("raw"))
     }
 }
 
-/// Post-transform wire validation: the replacement must stay a JSON object,
-/// keep the model identity, and not raise the resolved output budget.
+fn async_required(phase: &str) -> ProviderError {
+    ProviderError::CallbackPhase(ProviderErrorSummary::sanitized(format!(
+        "{phase} callback requires asynchronous invocation"
+    )))
+}
+fn execution_in_progress() -> ProviderError {
+    ProviderError::CallbackPhase(ProviderErrorSummary::attested_static(
+        "a callback is already executing for this logical call",
+    ))
+}
+fn validate_headers(
+    merged: &[(String, String)],
+    output: HeaderList,
+) -> Result<HeaderList, ProviderError> {
+    crate::provider_headers::validate_transform_output(&output, merged).map_err(|error| {
+        ProviderError::CallbackPhase(ProviderErrorSummary::sanitized(format!(
+            "header transform output is invalid: {error}"
+        )))
+    })?;
+    Ok(output)
+}
+fn validate_and_replace(
+    body: serde_json::Value,
+    replacement: Option<serde_json::Value>,
+) -> Result<serde_json::Value, ProviderError> {
+    match replacement {
+        Some(replacement) => {
+            validate_payload_replacement(&body, &replacement)?;
+            Ok(replacement)
+        }
+        None => Ok(body),
+    }
+}
+
 fn validate_payload_replacement(
     original: &serde_json::Value,
     replacement: &serde_json::Value,
@@ -313,32 +524,35 @@ fn validate_payload_replacement(
     if !replacement.is_object() {
         return Err(fail("JSON object wire shape"));
     }
-    if let (Some(original_model), Some(replacement_model)) = (
-        original.get("model").and_then(|value| value.as_str()),
-        replacement.get("model").and_then(|value| value.as_str()),
-    ) && original_model != replacement_model
-    {
+    if original.get("model") != replacement.get("model") {
         return Err(fail("frozen model identity"));
     }
-    if let (Some(original_limit), Some(replacement_limit)) = (
-        original.get("max_tokens").and_then(|value| value.as_u64()),
-        replacement
-            .get("max_tokens")
-            .and_then(|value| value.as_u64()),
-    ) && replacement_limit > original_limit
-    {
-        return Err(fail("resolved output budget ceiling"));
-    }
-    if let (Some(original_limit), Some(replacement_limit)) = (
-        original
-            .get("max_output_tokens")
-            .and_then(|value| value.as_u64()),
-        replacement
-            .get("max_output_tokens")
-            .and_then(|value| value.as_u64()),
-    ) && replacement_limit > original_limit
-    {
-        return Err(fail("resolved output budget ceiling"));
+    const BUDGET_PATHS: [&str; 5] = [
+        "/max_tokens",
+        "/max_completion_tokens",
+        "/max_output_tokens",
+        "/generationConfig/maxOutputTokens",
+        "/inferenceConfig/maxTokens",
+    ];
+    let ceiling = BUDGET_PATHS
+        .iter()
+        .filter_map(|path| original.pointer(path).and_then(serde_json::Value::as_u64))
+        .min();
+    for path in BUDGET_PATHS {
+        match replacement.pointer(path) {
+            Some(value) => {
+                let value = value
+                    .as_u64()
+                    .ok_or_else(|| fail("integer output budget wire shape"))?;
+                if ceiling.is_some_and(|ceiling| value > ceiling) {
+                    return Err(fail("resolved output budget ceiling"));
+                }
+            }
+            None if original.pointer(path).is_some() => {
+                return Err(fail("resolved output budget ceiling"));
+            }
+            None => {}
+        }
     }
     Ok(())
 }

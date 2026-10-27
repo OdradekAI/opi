@@ -1340,7 +1340,6 @@ impl OpenAiChatProvider {
         }
         // Response callback (V-36): fired exactly once on the successfully
         // acquired response; rejected dispatches never masquerade.
-        callbacks.notify_response(status.as_u16(), &observed_headers)?;
         snapshot.received_response();
 
         let mut byte_stream = response.bytes_stream();
@@ -1354,6 +1353,10 @@ impl OpenAiChatProvider {
         );
 
         mapper.set_snapshot(snapshot);
+        callbacks
+            .notify_response_async(status.as_u16(), &observed_headers)
+            .await
+            .map_err(|error| mapper.failure(error))?;
         let result: Result<(), ProviderError> = async {
             loop {
                 let chunk = tokio::select! {
@@ -1383,8 +1386,9 @@ impl OpenAiChatProvider {
                     // Raw observer first: strictly before normalization, in
                     // wire order (task 20.51); failure ends the call with the
                     // partial preserved.
-                    if let Some(raw) = raw.as_ref()
-                        && let Err(error) = callbacks.notify_raw(raw)
+                    if !mapper.saw_done
+                        && let Some(raw) = raw.as_ref()
+                        && let Err(error) = callbacks.notify_raw_async(raw).await
                     {
                         return Err(mapper.failure(error));
                     }
@@ -1680,9 +1684,10 @@ fn serialize_messages(
 impl Provider for OpenAiChatProvider {
     fn stream_prepared(
         &self,
-        request: Request,
+        mut request: Request,
         resolved: crate::auth::ResolvedAuth,
     ) -> EventStream {
+        request.callbacks = request.callbacks.ensure_call_scope();
         // Same as `stream` but skips per-call auth resolution: the collection
         // resolved and froze authentication once for the logical call.
         if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
@@ -1731,26 +1736,13 @@ impl Provider for OpenAiChatProvider {
                     .map(|name| (name.into(), clamped.clone())),
             );
         }
-        let extra_headers = copilot_headers
-            .and_then(|copilot_headers| {
-                extra_headers.extend(copilot_headers);
-                self.headers
-                    .merge_request(&extra_headers, &request.extra_headers)
-            })
-            // Header transform (task 20.51): applied once to the merged
-            // per-call set, revalidated against protected names.
-            .and_then(|merged| request.callbacks.apply_header_transform(&merged));
+        let extra_headers = copilot_headers.and_then(|copilot_headers| {
+            extra_headers.extend(copilot_headers);
+            self.headers
+                .merge_request(&extra_headers, &request.extra_headers)
+        });
         let timeout = request.timeout;
         let body = match self.build_request_body(&request) {
-            Ok(body) => body,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        // Payload callback (task 20.51): after sampling/compat/wire
-        // projection, once per variant, frozen across ordinary retries.
-        let body = match request
-            .callbacks
-            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-        {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
@@ -1775,6 +1767,24 @@ impl Provider for OpenAiChatProvider {
             let work = async {
                 let extra_headers = match extra_headers {
                     Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                        return;
+                    }
+                };
+                let extra_headers =
+                    match callbacks.apply_header_transform_async(&extra_headers).await {
+                        Ok(headers) => headers,
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                            return;
+                        }
+                    };
+                let body = match callbacks
+                    .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                    .await
+                {
+                    Ok(body) => body,
                     Err(error) => {
                         let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
                         return;
@@ -1809,6 +1819,7 @@ impl Provider for OpenAiChatProvider {
 
             tokio::select! {
                 biased;
+                _ = producer_cancel.cancelled() => (),
                 _ = tx_closed.closed() => (),
                 _ = work => {},
             }

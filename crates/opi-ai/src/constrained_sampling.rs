@@ -547,13 +547,12 @@ pub struct GrammarInputBuffer {
 impl GrammarInputBuffer {
     /// A fresh buffer for the tool's input property.
     pub fn new(input_property: String, initial_input: String) -> Self {
-        let started = !initial_input.is_empty();
         Self {
             input_property,
             input: initial_input,
-            // A non-empty initial input (replayed custom calls) counts as
-            // already started; the wrapper opens with the first delta.
-            started,
+            // Retained input is canonical state, not an already-emitted
+            // wrapper. The first delta/close emits that prefix as well.
+            started: false,
             closed: false,
         }
     }
@@ -597,7 +596,11 @@ pub fn append_grammar_tool_input_delta(
     if !next_input.starts_with(buffer.input.as_str()) {
         return Err(fail("changed non-monotonically".into()));
     }
-    let input_delta = &next_input[buffer.input.len()..];
+    let input_delta = if buffer.started {
+        &next_input[buffer.input.len()..]
+    } else {
+        next_input
+    };
     if !close && input_delta.is_empty() {
         return Ok(None);
     }

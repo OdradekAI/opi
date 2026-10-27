@@ -532,6 +532,41 @@ fn rates(input: f64) -> Pricing {
     }
 }
 
+#[test]
+fn constructed_pricing_accepts_zero_unsorted_and_duplicate_thresholds() {
+    let pricing = ModelPricing::try_new(
+        rates(1.0),
+        vec![
+            PricingTier {
+                input_tokens_above: 10,
+                pricing: rates(4.0),
+            },
+            PricingTier {
+                input_tokens_above: 0,
+                pricing: rates(2.0),
+            },
+            PricingTier {
+                input_tokens_above: 0,
+                pricing: rates(3.0),
+            },
+        ],
+    )
+    .expect("source-valid tier ordering and zero threshold remain accepted");
+    assert_eq!(
+        pricing.effective_for_usage(&Usage::reported(0, 1, 0, 0, None, None)),
+        rates(1.0)
+    );
+    assert_eq!(
+        pricing.effective_for_usage(&Usage::reported(1, 0, 0, 0, None, None)),
+        rates(2.0)
+    );
+    assert_eq!(
+        pricing.effective_for_usage(&Usage::reported(11, 0, 0, 0, None, None)),
+        rates(4.0)
+    );
+    assert_eq!(pricing.effective(1), rates(2.0));
+}
+
 fn tiered() -> ModelPricing {
     ModelPricing::try_new(
         rates(1.0),
@@ -635,8 +670,8 @@ fn tiered_selection_uses_prompt_side_tokens_strictly_exceeded() {
 fn tiered_selection_keeps_first_equal_duplicate_and_highest_threshold() {
     // Wire-originated tier lists may repeat a threshold or arrive unsorted:
     // the scan keeps the first of equal duplicates and the highest strictly
-    // exceeded threshold. Struct literals bypass `try_new` validation, which
-    // still rejects duplicates for constructed catalogs.
+    // exceeded threshold, preserving the source ordering without sorting or
+    // deduplicating the caller's metadata.
     let unsorted = ModelPricing {
         base: rates(1.0),
         tiers: vec![

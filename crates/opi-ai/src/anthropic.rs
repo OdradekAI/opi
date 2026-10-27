@@ -461,7 +461,8 @@ impl AnthropicMapper {
     }
 
     pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
-        cause.with_partial(self.partial.clone())
+        self.snapshot
+            .failure(cause.with_partial(self.partial.clone()))
     }
 
     pub fn new() -> Self {
@@ -862,6 +863,7 @@ pub fn model_catalog() -> Vec<ModelInfo> {
 }
 
 /// Concrete Anthropic Messages API provider.
+#[derive(Clone)]
 pub struct AnthropicProvider {
     provider_id: String,
     default_base_url: String,
@@ -1235,10 +1237,11 @@ impl AnthropicProvider {
     /// recorded downgrade diagnostic on the message).
     fn stream_dispatch(
         &self,
-        request: Request,
+        mut request: Request,
         resolved: crate::auth::ResolvedAuth,
         variant: crate::provider::PayloadVariant,
     ) -> EventStream {
+        request.callbacks = request.callbacks.ensure_call_scope();
         // Same as `stream` but skips per-call auth resolution: the collection
         // resolved and froze authentication once for the logical call.
         if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
@@ -1268,15 +1271,20 @@ impl AnthropicProvider {
                     return Box::pin(stream::once(async move { Err(error) }));
                 }
             };
-        // Payload callback (task 20.51/20.11): after sampling/compat/wire
-        // projection, once per variant, frozen across ordinary retries; the
-        // rebuilt downgrade variant re-runs it under its own slot (V-36).
-        let body = match request.callbacks.apply_payload(variant.label(), body) {
-            Ok(body) => body,
-            Err(error) => {
-                return Box::pin(stream::once(async move { Err(error) }));
-            }
-        };
+        let preferred_strict_names: Vec<String> = strict_tools
+            .iter()
+            .filter(|tool| {
+                matches!(
+                    tool.constrained_sampling,
+                    Some(
+                        crate::constrained_sampling::ConstrainedSampling::JsonSchema {
+                            strict: crate::constrained_sampling::StrictPreference::Prefer
+                        }
+                    )
+                )
+            })
+            .map(|tool| tool.name.clone())
+            .collect();
         let cancel = request.cancel.clone();
         let timeout = request.timeout;
         let copilot_headers = if self.copilot_headers {
@@ -1291,15 +1299,10 @@ impl AnthropicProvider {
         } else {
             Ok(Vec::new())
         };
-        let extra_headers = copilot_headers
-            .and_then(|route_headers| {
-                self.headers
-                    .merge_request(&route_headers, &request.extra_headers)
-            })
-            // Header transform (task 20.51): applied once to the merged
-            // per-call set; the output is revalidated against the protected
-            // identity/auth/signing names.
-            .and_then(|merged| request.callbacks.apply_header_transform(&merged));
+        let extra_headers = copilot_headers.and_then(|route_headers| {
+            self.headers
+                .merge_request(&route_headers, &request.extra_headers)
+        });
         let callbacks = request.callbacks.clone();
         let http_client = self.client.client().clone();
         // The downgrade diagnostic rides the rebuilt variant's message from
@@ -1331,6 +1334,39 @@ impl AnthropicProvider {
                         return;
                     }
                 };
+                let extra_headers =
+                    match callbacks.apply_header_transform_async(&extra_headers).await {
+                        Ok(headers) => headers,
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                            return;
+                        }
+                    };
+                let body = match callbacks.apply_payload_async(variant.label(), body).await {
+                    Ok(body) => body,
+                    Err(error) => {
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                        return;
+                    }
+                };
+                let has_preferred_strict = has_preferred_strict
+                    && body
+                        .get("tools")
+                        .and_then(serde_json::Value::as_array)
+                        .is_some_and(|tools| {
+                            tools.iter().any(|tool| {
+                                tool.get("strict").and_then(serde_json::Value::as_bool)
+                                    == Some(true)
+                                    && tool
+                                        .get("name")
+                                        .and_then(serde_json::Value::as_str)
+                                        .is_some_and(|name| {
+                                            preferred_strict_names
+                                                .iter()
+                                                .any(|preferred| preferred == name)
+                                        })
+                            })
+                        });
                 let base_url = credential_base_url_enabled
                     .then(|| resolved.base_url.clone())
                     .flatten()
@@ -1362,6 +1398,7 @@ impl AnthropicProvider {
 
             tokio::select! {
                 biased;
+                _ = producer_cancel.cancelled() => (),
                 _ = tx_closed.closed() => (),
                 _ = work => {},
             }
@@ -1489,15 +1526,6 @@ impl AnthropicProvider {
                 &provider_id,
             ));
         }
-        // Response callback (V-36): read-only, and fired exactly once on
-        // the successfully acquired response — a rejected dispatch (the
-        // strict-limit 400, a 429, an auth failure) never masquerades as a
-        // success callback. Failures that never produce a response (connect
-        // errors, timeouts) are not notified.
-        callbacks.notify_response(status.as_u16(), &observed_headers)?;
-
-        let mut byte_stream = response.bytes_stream();
-        let mut buffer = Vec::new();
         let mut mapper = AnthropicMapper::new_for_provider(&provider_id);
         mapper.set_strict_tools(strict_tools);
         mapper.seed_diagnostics(diagnostics_seed);
@@ -1508,7 +1536,18 @@ impl AnthropicProvider {
         // alias when the Agent derives actual-route evidence.
         mapper.partial.response_model = Some(String::new());
 
+        // Successful headers hand off response ownership before callbacks
+        // or body processing. A later error cannot authorize another send.
+        snapshot.received_response();
         mapper.set_snapshot(snapshot);
+        // Only the successfully acquired response is observed; strict-limit
+        // rejections never masquerade as a success callback.
+        callbacks
+            .notify_response_async(status.as_u16(), &observed_headers)
+            .await
+            .map_err(|error| mapper.failure(error))?;
+        let mut byte_stream = response.bytes_stream();
+        let mut buffer = Vec::new();
         let result: Result<(), ProviderError> = async {
             loop {
                 let chunk = tokio::select! {
@@ -1537,11 +1576,14 @@ impl AnthropicProvider {
                 }
 
                 for (parsed, raw) in drain_sse_events(&mut buffer, eof)? {
+                    if mapper.saw_done {
+                        return Ok(());
+                    }
                     // Raw observer first: strictly before normalization, in
                     // wire order; its failure ends the call with the partial
                     // preserved (task 20.51).
                     if let Some(raw) = raw.as_ref()
-                        && let Err(error) = callbacks.notify_raw(raw)
+                        && let Err(error) = callbacks.notify_raw_async(raw).await
                     {
                         return Err(mapper.failure(error));
                     }
@@ -1936,7 +1978,7 @@ impl Provider for AnthropicProvider {
         request: Request,
         resolved: crate::auth::ResolvedAuth,
     ) -> EventStream {
-        self.stream_dispatch(request, resolved, crate::provider::PayloadVariant::Ordinary)
+        crate::models::drive_resolved_call(Arc::new(self.clone()), request, resolved)
     }
 
     /// The acquisition owner's per-attempt entry (task 20.11): the rebuilt
@@ -2172,6 +2214,7 @@ mod tests {
             extra_headers: vec![],
             cache_retention,
             session_id: None,
+            telemetry_context: None,
             callbacks: Default::default(),
         }
     }

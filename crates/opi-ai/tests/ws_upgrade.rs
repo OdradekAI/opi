@@ -593,16 +593,11 @@ async fn upgrade_rejects_extensions_that_were_never_offered() {
 }
 
 #[tokio::test]
-async fn upgrade_refuses_clients_without_the_none_redirect_policy() {
-    let client = HttpClient::new();
-    let error = match ws::upgrade(
-        &client,
-        WsUpgradeRequest::new(Url::parse("ws://127.0.0.1:1").unwrap()),
-    )
-    .await
-    {
-        Err(error) => error,
-        Ok(_) => panic!("upgrade unexpectedly succeeded"),
-    };
-    assert!(matches!(error, WsUpgradeError::Detach(message) if message.contains("RedirectPolicy")));
+async fn default_redirect_policy_still_uses_the_dedicated_upgrade_client() {
+    let peer = Peer::spawn(|_| Ok(()), |head| response_101(head, &[]));
+    let upgraded = ws::upgrade(&HttpClient::new(), WsUpgradeRequest::new(peer.url()))
+        .await
+        .expect("ordinary HTTP redirects do not disable strict Upgrade");
+    drop(upgraded);
+    peer.finish().unwrap();
 }

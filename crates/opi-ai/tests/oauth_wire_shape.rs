@@ -76,6 +76,7 @@ fn sample_request(model: &str) -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -643,7 +644,9 @@ async fn codex_responses_targets_codex_path_with_required_headers_and_account_id
 
     let provider = codex_provider(&server);
     let resolved = codex_auth("codex-bearer", Some("acct-fixed"));
-    let mut stream = provider.stream_prepared(sample_request("openai-codex:gpt-5"), resolved);
+    let mut request = sample_request("openai-codex:gpt-5");
+    request.transport = opi_ai::provider::TransportPreference::Sse;
+    let mut stream = provider.stream_prepared(request, resolved);
     drain(&mut stream).await;
 
     let req = one_captured_request(&server).await;

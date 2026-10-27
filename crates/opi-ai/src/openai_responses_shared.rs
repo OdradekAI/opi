@@ -654,12 +654,16 @@ impl ResponsesMapper {
         event: ResponsesEvent,
     ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
         let events = self.process_inner(event);
+        if events.iter().any(Result::is_err) {
+            self.saw_done = true;
+        }
         self.snapshot.record(&self.partial);
         events
     }
 
     pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
-        cause.with_partial(self.partial.clone())
+        self.snapshot
+            .failure(cause.with_partial(self.partial.clone()))
     }
 
     pub(crate) fn new(provider: &str, wire: crate::model_info::WireApi, model: &str) -> Self {
@@ -844,7 +848,7 @@ impl ResponsesMapper {
             ResponsesEvent::CustomToolCallInputDelta {
                 output_index,
                 delta,
-            } => match self.append_custom_input(output_index, &delta, false) {
+            } => match self.append_custom_input_increment(output_index, &delta) {
                 Ok(Some(wrapped_delta)) => {
                     let Some(content_index) = self
                         .tool_calls
@@ -887,12 +891,56 @@ impl ResponsesMapper {
             },
             ResponsesEvent::OutputItemDone { output_index, item } => {
                 if item.item_type == "custom_tool_call" {
+                    if self
+                        .tool_calls
+                        .iter()
+                        .any(|state| state.output_index == output_index && state.ended)
+                    {
+                        return Vec::new();
+                    }
+                    let mut events = if self
+                        .tool_calls
+                        .iter()
+                        .all(|state| state.output_index != output_index)
+                    {
+                        self.process_inner(ResponsesEvent::OutputItemAdded {
+                            output_index,
+                            item: item.clone(),
+                        })
+                    } else {
+                        Vec::new()
+                    };
                     self.update_tool_call(output_index, &item);
-                    return self
-                        .finish_tool_call(output_index)
-                        .into_iter()
-                        .map(Ok)
-                        .collect();
+                    let input = item.input.clone().unwrap_or_else(|| {
+                        self.tool_calls
+                            .iter()
+                            .find(|state| state.output_index == output_index)
+                            .and_then(|state| state.custom_input.as_ref())
+                            .map(|custom| custom.buffer.input().to_owned())
+                            .unwrap_or_default()
+                    });
+                    match self.append_custom_input(output_index, &input, true) {
+                        Ok(Some(delta)) => {
+                            if let Some(state) = self
+                                .tool_calls
+                                .iter()
+                                .find(|state| state.output_index == output_index)
+                            {
+                                events.push(Ok(AssistantStreamEvent::ToolCallDelta {
+                                    content_index: state.content_index,
+                                    delta,
+                                    partial: self.partial.clone(),
+                                }));
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            events.push(Err(self.failure(error)));
+                            return events;
+                        }
+                    }
+                    events.extend(self.finish_tool_call(output_index).map(Ok));
+                    return events;
                 }
                 if item.item_type != "function_call" {
                     return Vec::new();
@@ -926,9 +974,17 @@ impl ResponsesMapper {
                 let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> =
                     self.end_text().into_iter().map(Ok).collect();
                 for (output_index, item) in output.iter().enumerate() {
-                    if item.item_type == "function_call" || item.item_type == "custom_tool_call" {
+                    if item.item_type == "custom_tool_call" {
+                        events.extend(self.process_inner(ResponsesEvent::OutputItemDone {
+                            output_index,
+                            item: item.clone(),
+                        }));
+                    } else if item.item_type == "function_call" {
                         self.update_tool_call(output_index, item);
                     }
+                }
+                if events.iter().any(Result::is_err) {
+                    return events;
                 }
                 let unfinished: Vec<usize> = self
                     .tool_calls
@@ -1077,6 +1133,25 @@ impl ResponsesMapper {
             tool_call,
             partial: self.partial.clone(),
         })
+    }
+
+    /// Accumulate the wire's incremental input before updating the wrapping
+    /// buffer, whose input contract is the complete value observed so far.
+    fn append_custom_input_increment(
+        &mut self,
+        output_index: usize,
+        delta: &str,
+    ) -> Result<Option<String>, ProviderError> {
+        let Some(custom) = self
+            .tool_calls
+            .iter()
+            .find(|state| state.output_index == output_index)
+            .and_then(|state| state.custom_input.as_ref())
+        else {
+            return Ok(None);
+        };
+        let next_input = format!("{}{delta}", custom.buffer.input());
+        self.append_custom_input(output_index, &next_input, false)
     }
 
     /// Append one raw grammar-input increment (task 20.11): the buffer

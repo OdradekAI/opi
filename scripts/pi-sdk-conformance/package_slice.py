@@ -158,7 +158,7 @@ FAMILIES: dict[str, dict[str, Any]] = {
     },
     "ws": {
         "crate": "opi-ai",
-        "private_test_minimum": 93,
+        "private_test_minimum": 95,
         "public_test_minimum": 15,
         "public_codec_status": "CLOSED: task 20.16 real-chain consumer check",
         "consumer": "consumer-ws",
@@ -201,7 +201,7 @@ FAMILIES: dict[str, dict[str, Any]] = {
                 ],
             },
         ],
-        "expected_checks": 7,
+        "expected_checks": 10,
     },
 }
 
@@ -554,7 +554,7 @@ def run_packaged_ws_checks(
                   or entries[0].get("checksum") != reviewed["checksum"]):
                 raise ValueError(f"unreviewed private WS library lock entry for {name}")
         output = run(f"private-ws-test-{tag}",
-                     ["cargo", "test", *manifest, "--lib", "ws::", "--offline", "--locked", *flags],
+                     ["cargo", "test", *manifest, "--lib", "ws::", "--offline", "--locked", *flags, "--", "--skip", "auth::aws::"],
                      package)
         private_passed = check_ws_test_report(
             output, family["private_test_minimum"], "private protocol supplements")

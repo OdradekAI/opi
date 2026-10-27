@@ -62,6 +62,15 @@ impl PayloadVariant {
 /// no production refresh trigger; callers that invoke [`Provider::refresh_models`]
 /// own collection-level atomic replacement.
 pub trait Provider: Send + Sync {
+    /// Validate explicit neutral options before authentication. The default
+    /// rejects options this adapter has not admitted rather than losing them.
+    fn validate_simple_options(
+        &self,
+        _model: &ModelInfo,
+        options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        options.validate_default()
+    }
     /// Unique identifier for this provider instance (e.g. "anthropic").
     fn id(&self) -> &str;
 
@@ -97,6 +106,34 @@ pub trait Provider: Send + Sync {
         _attempt: AttemptContext,
     ) -> EventStream {
         self.stream_prepared(request, auth)
+    }
+
+    /// Dispatch using the logical call's already registered resource generation.
+    /// The default excludes resource-less adapters; resource-owning adapters
+    /// retain the lease in their producer until its local connection exits.
+    fn stream_resource_attempt(
+        &self,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: AttemptContext,
+        _resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.stream_attempt(request, auth, attempt)
+    }
+
+    /// Dispatch using the frozen complete record and the neutral options of
+    /// this logical call. Metadata-aware adapters consume this record at the
+    /// wire boundary; the default forwards resource and attempt ownership.
+    fn stream_model_resource_attempt(
+        &self,
+        _model: ModelInfo,
+        _options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.stream_resource_attempt(request, auth, attempt, resources)
     }
 
     /// The provider's protocol-default acquisition policy for ordinary
@@ -242,6 +279,9 @@ pub struct Request {
     /// at their source-defined timing. The default is empty; see
     /// [`crate::callbacks`].
     pub callbacks: crate::callbacks::RequestCallbacks,
+    /// Explicit process-local observation context. Omission preserves ambient
+    /// host logging and never captures a Span implicitly. Never serialized.
+    pub telemetry_context: Option<crate::telemetry::TelemetryContext>,
     /// Preferred transport for providers that support multiple transports
     /// (task 20.16). Defaults to [`TransportPreference::Auto`].
     pub transport: TransportPreference,
@@ -412,6 +452,20 @@ pub fn validate_request_for_model(
     model: Option<&ModelInfo>,
     request: &Request,
 ) -> Result<(), ProviderError> {
+    validate_request_structure_for_model(provider_id, model, request)?;
+    if let Some(model) = model {
+        validate_thinking_for_model(provider_id, model, request)?;
+    }
+    Ok(())
+}
+
+/// Validate model metadata and input content independently of neutral thinking.
+/// Native adapters use this when their typed options own reasoning semantics.
+pub fn validate_request_structure_for_model(
+    provider_id: &str,
+    model: Option<&ModelInfo>,
+    request: &Request,
+) -> Result<(), ProviderError> {
     // Image preflight: a known text-only model rejects image input before the call.
     if request.contains_image_content()
         && let Some(model) = model
@@ -438,30 +492,37 @@ pub fn validate_request_for_model(
             },
             other => ProviderError::Config(ProviderErrorSummary::sanitized(other.to_string())),
         })?;
-        // Resolve the level only when thinking is enabled: a disabled request
-        // with a stale level must not be rejected (the level is unused). An
-        // enabled request still requires thinking capability even when its
-        // selected level is `None`.
-        if request.thinking.enabled {
-            if !model.capabilities.supports_thinking {
-                return Err(ProviderError::UnsupportedCapability(
-                    ProviderErrorSummary::sanitized(format!(
-                        "model '{}' for provider '{}' does not support thinking",
-                        model.id, provider_id
-                    )),
-                ));
-            }
-            model
-                .thinking_level_map
-                .resolve(request.thinking.level)
-                .map_err(|error| {
-                    ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(
-                        error.to_string(),
-                    ))
-                })?;
-        }
     }
+    Ok(())
+}
 
+fn validate_thinking_for_model(
+    provider_id: &str,
+    model: &ModelInfo,
+    request: &Request,
+) -> Result<(), ProviderError> {
+    // Resolve the level only when thinking is enabled: a disabled request
+    // with a stale level must not be rejected (the level is unused). An
+    // enabled request still requires thinking capability even when its
+    // selected level is `None`.
+    if request.thinking.enabled {
+        if !model.capabilities.supports_thinking {
+            return Err(ProviderError::UnsupportedCapability(
+                ProviderErrorSummary::sanitized(format!(
+                    "model '{}' for provider '{}' does not support thinking",
+                    model.id, provider_id
+                )),
+            ));
+        }
+        model
+            .thinking_level_map
+            .resolve(request.thinking.level)
+            .map_err(|error| {
+                ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(
+                    error.to_string(),
+                ))
+            })?;
+    }
     Ok(())
 }
 

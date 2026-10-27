@@ -21,13 +21,32 @@ use crate::provider::{
     TransportPreference,
 };
 
-mod ws_transport;
+mod native;
+pub(crate) mod ws_transport;
 use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_cancel};
+pub use native::{
+    CodexChatApi, CodexOptions, CodexReasoningEffort, CodexReasoningSummary, CodexServiceTier,
+    CodexTextVerbosity, CodexToolChoice,
+};
 
 const PROVIDER_ID: &str = "openai-codex";
 const DEFAULT_BASE_URL: &str = "https://chatgpt.com/backend-api";
 const RESPONSES_PATH: &str = "/codex/responses";
 const MALFORMED_STREAM_ERROR: &str = "OpenAI Codex returned malformed streaming data";
+
+fn validate_simple_model(model: &ModelInfo) -> Result<(), ProviderError> {
+    if model.id.trim().is_empty()
+        || model.wire_api != crate::model_info::WireApi::OpenAiCodexResponses
+        || model.validate().is_err()
+    {
+        return Err(ProviderError::Config(
+            ProviderErrorSummary::attested_static(
+                "Codex calls require a valid complete Codex model record",
+            ),
+        ));
+    }
+    Ok(())
+}
 const UPSTREAM_STREAM_ERROR: &str = "OpenAI Codex returned a streaming error";
 const MANAGED_HEADERS: &[&str] = &[
     "authorization",
@@ -47,11 +66,13 @@ const MANAGED_HEADERS: &[&str] = &[
 /// include the non-secret ChatGPT account id. Provider-managed authorization,
 /// account, originator, beta, content, accept, and session headers are
 /// reserved from `Request::extra_headers`.
+#[derive(Clone)]
 pub struct OpenAiCodexResponsesProvider {
     base_url: String,
     models: Vec<ModelInfo>,
     client: Arc<HttpClient>,
     ws_state: Arc<ws_transport::WsTransportState>,
+    native_options: Option<CodexOptions>,
 }
 
 impl OpenAiCodexResponsesProvider {
@@ -61,6 +82,7 @@ impl OpenAiCodexResponsesProvider {
             models,
             client,
             ws_state: Arc::default(),
+            native_options: None,
         }
     }
 
@@ -156,25 +178,12 @@ impl OpenAiCodexResponsesProvider {
         if let Some(wire) = &wire_facts {
             body["tools"] = serde_json::Value::Array(wire.tools.clone());
         }
-        if request.thinking.enabled {
-            let effort = self
-                .models
-                .iter()
-                .find(|model| model.id == model_id)
-                .and_then(|model| {
-                    model
-                        .thinking_level_map
-                        .resolve(request.thinking.level)
-                        .ok()
-                })
-                .flatten();
-            if let Some(effort) = effort {
-                body["reasoning"] = serde_json::json!({
-                    "effort": effort,
-                    "summary": "auto",
-                });
-            }
-        }
+        native::apply_native_options(
+            &mut body,
+            request,
+            self.native_options.as_ref(),
+            self.models.iter().find(|model| model.id == model_id),
+        )?;
         if let Some(temperature) = request.temperature
             && let Some(number) = serde_json::Number::from_f64(temperature)
         {
@@ -269,9 +278,17 @@ impl OpenAiCodexResponsesProvider {
                 )
             })
             .collect();
-        callbacks.notify_response(response.status().as_u16(), &observed_headers)?;
-
         let status = response.status();
+        if status.is_success() {
+            snapshot.received_response();
+        }
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(snapshot.failure(ProviderError::Cancelled)),
+            result = callbacks.notify_response_async(status.as_u16(), &observed_headers) => {
+                result.map_err(|error| snapshot.failure(error))?;
+            }
+        }
         if !status.is_success() {
             let headers = response.headers().clone();
             return Err(map_http_status(status, &headers));
@@ -317,7 +334,11 @@ impl OpenAiCodexResponsesProvider {
                     // Raw observer (task 20.51): the frame's parsed wire JSON
                     // before the codex mapper; failure preserves the partial.
                     if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&frame.data)
-                        && let Err(error) = callbacks.notify_raw(&raw)
+                        && let Err(error) = tokio::select! {
+                            biased;
+                            _ = cancel.cancelled() => Err(ProviderError::Cancelled),
+                            result = callbacks.notify_raw_async(&raw) => result,
+                        }
                     {
                         return Err(mapper.failure(error));
                     }
@@ -370,42 +391,115 @@ impl OpenAiCodexResponsesProvider {
 }
 
 impl crate::codex_resources::SessionResourceOwner for OpenAiCodexResponsesProvider {
+    fn new_namespace(&self) -> Arc<dyn crate::codex_resources::SessionResourceOwner> {
+        Arc::new(CodexResourceOwner {
+            state: Arc::default(),
+        })
+    }
+
+    fn register_call(
+        &self,
+        request: &Request,
+    ) -> Option<crate::codex_resources::CallResourceLease> {
+        (request.transport != TransportPreference::Sse)
+            .then(|| crate::codex_resources::CallResourceLease::new(self.ws_state.clone(), request))
+    }
+
     fn cleanup_session_resources(
         &self,
         session: Option<&str>,
     ) -> crate::codex_resources::CleanupHandle {
-        if session == Some("") {
-            return crate::codex_resources::CleanupHandle::failed(
-                crate::codex_resources::CleanupError::EmptySessionId,
-            );
-        }
-        let (drivers, cleared_markers) = self.ws_state.take_cleanup_connections(session);
-        let (cancelled, pending) = self.ws_state.registry().cleanup(session);
-        let registry = self.ws_state.registry().clone();
-        crate::codex_resources::CleanupHandle::from_future(async move {
-            // Awaited local release: wait for the cancelled generations'
-            // owned exits (guard drops), then close the removed pooled
-            // connections source-style. One close failure never aborts the
-            // remaining release.
-            registry.await_exits(&pending).await;
-            let mut report = crate::codex_resources::CleanupReport {
-                cancelled_generations: cancelled,
-                closed_connections: 0,
-                cleared_fallback_sessions: cleared_markers,
-                unconfirmed_effects: Vec::new(),
-            };
-            for mut driver in drivers {
-                match ws_transport::silent_close(&mut driver).await {
-                    Ok(()) => report.closed_connections += 1,
-                    Err(detail) => report.unconfirmed_effects.push(detail),
-                }
-            }
-            Ok(report)
-        })
+        cleanup_state(self.ws_state.clone(), session)
     }
 }
 
+struct CodexResourceOwner {
+    state: Arc<ws_transport::WsTransportState>,
+}
+
+impl Drop for CodexResourceOwner {
+    fn drop(&mut self) {
+        self.state.registry().cleanup(None);
+        // Drop initiates local IO release; an explicit cleanup owns the await.
+        drop(self.state.take_cleanup_connections(None));
+        self.state.drop_pending_closes();
+    }
+}
+
+impl crate::codex_resources::SessionResourceOwner for CodexResourceOwner {
+    fn new_namespace(&self) -> Arc<dyn crate::codex_resources::SessionResourceOwner> {
+        Arc::new(Self {
+            state: Arc::default(),
+        })
+    }
+
+    fn register_call(
+        &self,
+        request: &Request,
+    ) -> Option<crate::codex_resources::CallResourceLease> {
+        (request.transport != TransportPreference::Sse)
+            .then(|| crate::codex_resources::CallResourceLease::new(self.state.clone(), request))
+    }
+
+    fn cleanup_session_resources(
+        &self,
+        session: Option<&str>,
+    ) -> crate::codex_resources::CleanupHandle {
+        cleanup_state(self.state.clone(), session)
+    }
+}
+
+fn cleanup_state(
+    state: Arc<ws_transport::WsTransportState>,
+    session: Option<&str>,
+) -> crate::codex_resources::CleanupHandle {
+    if session == Some("") {
+        return crate::codex_resources::CleanupHandle::failed(
+            crate::codex_resources::CleanupError::EmptySessionId,
+        );
+    }
+    let (cancelled, pending, (close_jobs, cleared_markers)) = state
+        .registry()
+        .cleanup_with(session, || state.prepare_cleanup(session));
+    crate::codex_resources::CleanupHandle::from_future(async move {
+        state.registry().await_exits(&pending).await;
+        let mut report = crate::codex_resources::CleanupReport {
+            cancelled_generations: cancelled,
+            closed_connections: 0,
+            cleared_fallback_sessions: cleared_markers,
+            unconfirmed_effects: Vec::new(),
+        };
+        let mut completed = Vec::with_capacity(close_jobs.len());
+        for job in close_jobs {
+            let id = job.id;
+            match job.resolve().await {
+                Ok(()) => report.closed_connections += 1,
+                Err(detail) => report.unconfirmed_effects.push(detail),
+            }
+            completed.push(id);
+        }
+        // There is no await after consuming stored results. Dropping a
+        // partially polled barrier therefore leaves every release observable.
+        state.finish_cleanup(&completed);
+        report
+            .unconfirmed_effects
+            .extend(state.registry().take_unconfirmed(&pending));
+        if report.unconfirmed_effects.is_empty() {
+            Ok(report)
+        } else {
+            Err(crate::codex_resources::CleanupError::Incomplete { report })
+        }
+    })
+}
+
 impl Provider for OpenAiCodexResponsesProvider {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        validate_simple_model(model)
+    }
     fn id(&self) -> &str {
         PROVIDER_ID
     }
@@ -423,6 +517,43 @@ impl Provider for OpenAiCodexResponsesProvider {
         request: Request,
         resolved: crate::auth::ResolvedAuth,
     ) -> EventStream {
+        crate::models::drive_resolved_call(Arc::new(self.clone()), request, resolved)
+    }
+
+    fn stream_attempt(
+        &self,
+        request: Request,
+        resolved: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+    ) -> EventStream {
+        self.stream_resource_attempt(request, resolved, attempt, None)
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        if let Err(error) = validate_simple_model(&model) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
+        let mut provider = self.clone();
+        provider.models = vec![model];
+        provider.native_options = Some(native::simple_options(&options));
+        provider.stream_resource_attempt(request, auth, attempt, resources)
+    }
+
+    fn stream_resource_attempt(
+        &self,
+        request: Request,
+        resolved: crate::auth::ResolvedAuth,
+        _attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
         // Same as `stream` but skips per-call auth resolution: the collection
         // resolved and froze authentication once for the logical call.
         // Resource generation registration (task 20.17): every WS-family
@@ -436,11 +567,15 @@ impl Provider for OpenAiCodexResponsesProvider {
         } else {
             None
         };
-        let lease = if transport != TransportPreference::Sse {
-            Some(self.ws_state.registry().register_arc(session_key.clone()))
-        } else {
-            None
-        };
+        let lease = resources.or_else(|| {
+            (transport != TransportPreference::Sse).then(|| {
+                crate::codex_resources::CallResourceLease::new(self.ws_state.clone(), &request)
+            })
+        });
+        let activity = lease.as_ref().and_then(|lease| lease.activity());
+        if lease.is_some() && activity.is_none() {
+            return Box::pin(stream::once(async { Err(ProviderError::Cancelled) }));
+        }
         if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
             return Box::pin(stream::once(async move { Err(error) }));
         }
@@ -457,10 +592,7 @@ impl Provider for OpenAiCodexResponsesProvider {
             .iter()
             .find(|model| model.id == model_id)
             .and_then(|model| model.base_url.clone());
-        let extra_headers = validate_headers(&request.extra_headers)
-            // Header transform (task 20.51) on the per-call set, revalidated
-            // against protected/managed names before any dispatch.
-            .and_then(|merged| request.callbacks.apply_header_transform(&merged));
+        let extra_headers = validate_headers(&request.extra_headers);
         let requested_model = request
             .model
             .split_once(':')
@@ -473,14 +605,8 @@ impl Provider for OpenAiCodexResponsesProvider {
         };
         // Payload callback (task 20.51): once per variant, frozen across
         // ordinary retries, on the codex mapper body.
-        let body = match request
-            .callbacks
-            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-        {
-            Ok(body) => body,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
         let callbacks = request.callbacks.clone();
+        let telemetry = request.telemetry_context.clone();
         let timeout = request.timeout;
         let session_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
             Some(
@@ -498,10 +624,14 @@ impl Provider for OpenAiCodexResponsesProvider {
         } else {
             None
         };
-        let cancel = request.cancel.clone();
+        let cancel = lease
+            .as_ref()
+            .map_or_else(|| request.cancel.child_token(), |lease| lease.token());
         let client = self.client.client().clone();
         let http_client = self.client.clone();
-        let ws_state = self.ws_state.clone();
+        let ws_state = lease
+            .as_ref()
+            .map_or_else(|| self.ws_state.clone(), |lease| lease.state.clone());
         let cont_route = crate::replay::ReplayRoute {
             wire: crate::model_info::WireApi::OpenAiCodexResponses,
             provider: PROVIDER_ID.to_owned(),
@@ -538,21 +668,38 @@ impl Provider for OpenAiCodexResponsesProvider {
         // One-way link: caller-parent cancellation fires the generation
         // token (cleanup cutoffs fire it directly). The link exits when
         // either side fires, including the guard's drop-time cancel.
-        if let Some(guard) = lease.as_ref() {
-            let parent = cancel.clone();
-            let entry = guard.token();
-            tokio::spawn(async move {
-                tokio::select! {
-                    _ = parent.cancelled() => entry.cancel(),
-                    _ = entry.cancelled() => {}
-                }
-            });
-        }
         let lease = lease;
-        tokio::spawn(async move {
+        let producer = async move {
+            let _activity = activity;
+            let owner_cancel = producer_cancel.clone();
+            let release_snapshot = producer_snapshot.clone();
             let work = async {
                 let extra_headers = match extra_headers {
                     Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                        return;
+                    }
+                };
+                let transformed = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => Err(ProviderError::Cancelled),
+                    result = callbacks.apply_header_transform_async(&extra_headers) => result,
+                };
+                let extra_headers = match transformed {
+                    Ok(headers) => headers,
+                    Err(error) => {
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                        return;
+                    }
+                };
+                let transformed = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => Err(ProviderError::Cancelled),
+                    result = callbacks.apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body) => result,
+                };
+                let body = match transformed {
+                    Ok(body) => body,
                     Err(error) => {
                         let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
                         return;
@@ -591,7 +738,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                         wire_facts.clone(),
                         cont_route,
                         timeout,
-                        lease.as_ref().expect("ws-family call registered"),
+                        &lease.as_ref().expect("ws-family call registered").guard,
                         callbacks.clone(),
                         producer_snapshot.clone(),
                         tx.clone(),
@@ -612,6 +759,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                                 return;
                             }
                             guard
+                                .guard
                                 .set_phase(crate::codex_resources::GenerationPhase::ActiveFallback);
                             let cancel = guard.token();
                             stream_sse(
@@ -640,12 +788,24 @@ impl Provider for OpenAiCodexResponsesProvider {
                 }
             };
 
+            tokio::pin!(work);
             tokio::select! {
                 biased;
-                _ = tx_closed.closed() => (),
-                _ = work => {},
+                _ = &mut work => {},
+                _ = tx_closed.closed() => {
+                    // A delivered terminal stays final and still owns bounded
+                    // pool publication/Close. Active receiver drop cancels
+                    // inward, then waits for that same local release path.
+                    if !release_snapshot.terminal_delivered() { owner_cancel.cancel(); }
+                    work.await;
+                }
             }
-        });
+        };
+        if let Some(context) = telemetry {
+            tokio::spawn(context.instrument(producer));
+        } else {
+            tokio::spawn(producer);
+        }
         Box::pin(CancelAwareReceiverStream::with_snapshot(
             rx,
             stream_cancel,
@@ -674,6 +834,7 @@ async fn stream_sse(
     tx: tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     producer_cancel: CancellationToken,
 ) {
+    let failure_snapshot = snapshot.clone();
     if let Err(error) = OpenAiCodexResponsesProvider::stream_http(
         client,
         resolved,
@@ -692,7 +853,7 @@ async fn stream_sse(
     )
     .await
     {
-        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+        let _ = send_or_cancel(&producer_cancel, &tx, Err(failure_snapshot.failure(error))).await;
     }
 }
 

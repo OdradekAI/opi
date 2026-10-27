@@ -436,6 +436,10 @@ impl RefreshReport {
 /// description.
 pub struct Models {
     registry: ProviderRegistry,
+    resource_owners: HashMap<String, Arc<dyn crate::codex_resources::SessionResourceOwner>>,
+    all_resource_owners:
+        Arc<std::sync::Mutex<Vec<Arc<dyn crate::codex_resources::SessionResourceOwner>>>>,
+    registration_gate: Arc<std::sync::Mutex<()>>,
     auth: HashMap<String, AuthDescriptor>,
     compat: HashMap<String, CompatMetadata>,
     /// Redacted, precomputed probe state for [`AuthDescriptor::StoreCredential`]
@@ -475,6 +479,9 @@ pub struct Models {
     /// Explicitly registered dynamic-catalog sources, fetched only during
     /// `refresh(true)` rounds in registration order.
     catalog_sources: Vec<std::sync::Arc<dyn crate::catalog::DynamicCatalogSource>>,
+    /// Publisher ownership from the same acknowledged revision as each
+    /// dynamic catalog; unrelated sources cannot retain a native snapshot.
+    catalog_publishers: HashMap<String, crate::catalog::store::CatalogPublisher>,
     /// Whether the attached store's snapshot has already been restored into
     /// the registry during a refresh round.
     store_restored: bool,
@@ -486,6 +493,9 @@ impl Models {
     pub fn new() -> Self {
         Self {
             registry: ProviderRegistry::new(),
+            resource_owners: HashMap::new(),
+            all_resource_owners: Arc::default(),
+            registration_gate: Arc::default(),
             auth: HashMap::new(),
             compat: HashMap::new(),
             probed: HashMap::new(),
@@ -498,6 +508,7 @@ impl Models {
             credential_store: None,
             models_store: None,
             catalog_sources: Vec::new(),
+            catalog_publishers: HashMap::new(),
             store_restored: false,
         }
     }
@@ -512,8 +523,23 @@ impl Models {
     /// [`prepare_call`](Self::prepare_call) returns
     /// [`ModelsError::RouteNotDispatchable`].
     pub fn from_registry(registry: ProviderRegistry) -> Self {
+        let resource_owners: HashMap<_, _> = registry
+            .providers()
+            .iter()
+            .filter_map(|provider| {
+                provider
+                    .session_resources()
+                    .map(|owner| (provider.id().to_owned(), owner.new_namespace()))
+            })
+            .collect();
+        let all_resource_owners = Arc::new(std::sync::Mutex::new(
+            resource_owners.values().cloned().collect(),
+        ));
         Self {
             registry,
+            resource_owners,
+            all_resource_owners,
+            registration_gate: Arc::default(),
             auth: HashMap::new(),
             compat: HashMap::new(),
             probed: HashMap::new(),
@@ -526,6 +552,7 @@ impl Models {
             credential_store: None,
             models_store: None,
             catalog_sources: Vec::new(),
+            catalog_publishers: HashMap::new(),
             store_restored: false,
         }
     }
@@ -547,7 +574,11 @@ impl Models {
         compat: CompatMetadata,
     ) -> Result<(), RegistrationError> {
         let id = provider.id().to_owned();
+        let resource_owner = provider
+            .session_resources()
+            .map(|owner| owner.new_namespace());
         self.registry.register_provider(provider)?;
+        self.replace_resource_owner(&id, resource_owner);
         self.resolvers.remove(&id);
         self.oauth_routes.remove(&id);
         self.sources.remove(&id);
@@ -576,7 +607,11 @@ impl Models {
         compat: CompatMetadata,
     ) -> Result<(), RegistrationError> {
         let id = provider.id().to_owned();
+        let resource_owner = provider
+            .session_resources()
+            .map(|owner| owner.new_namespace());
         self.registry.register_provider(provider)?;
+        self.replace_resource_owner(&id, resource_owner);
         self.oauth_routes.remove(&id);
         self.auth.remove(&id);
         self.probed.remove(&id);
@@ -615,6 +650,7 @@ impl Models {
         if provider_id.trim().is_empty() {
             return Err(RegistrationError::EmptyProviderId);
         }
+        let resource_owner = api.session_resources().map(|owner| owner.new_namespace());
         let dispatch: Arc<dyn ChatApiDispatch> = Arc::new(TypedChatApi { api });
         // Catalog-invisible route: a Provider with no models keeps the adapter
         // dispatchable through provider-route entries without listing it.
@@ -623,6 +659,7 @@ impl Models {
                 provider_id: provider_id.clone(),
                 dispatch: Arc::clone(&dispatch),
             }))?;
+        self.replace_resource_owner(&provider_id, resource_owner.clone());
         self.auth.remove(&provider_id);
         self.oauth_routes.remove(&provider_id);
         self.probed.remove(&provider_id);
@@ -635,6 +672,7 @@ impl Models {
                 provider_id,
                 options_type: TypeId::of::<O>(),
                 dispatch,
+                resource_owner,
             },
         );
         Ok(ChatApiHandle {
@@ -670,22 +708,36 @@ impl Models {
         (resolver, source)
     }
 
+    fn replace_resource_owner(
+        &mut self,
+        provider: &str,
+        owner: Option<Arc<dyn crate::codex_resources::SessionResourceOwner>>,
+    ) {
+        self.resource_owners.remove(provider);
+        if let Some(owner) = owner {
+            // Earlier revisions stay reachable by cleanup and owned calls.
+            self.all_resource_owners.lock().unwrap().push(owner.clone());
+            self.resource_owners.insert(provider.to_owned(), owner);
+        }
+    }
+
     fn chat_api_binding<O: Send + 'static>(
         &self,
         record: &ChatModelRecord,
         options: &NativeOptions<O>,
         auth_plan: AuthPlan,
     ) -> FrozenChatBinding {
-        let entry = self
-            .chat_apis
-            .get(options.api_id())
-            .map(|registration| ChatApiEntry {
-                provider_id: registration.provider_id.clone(),
-                options_type: registration.options_type,
-                dispatch: Arc::clone(&registration.dispatch),
-            });
+        let registration = self.chat_apis.get(options.api_id());
+        let resource_owner = registration.and_then(|entry| entry.resource_owner.clone());
+        let entry = registration.map(|registration| ChatApiEntry {
+            provider_id: registration.provider_id.clone(),
+            options_type: registration.options_type,
+            dispatch: Arc::clone(&registration.dispatch),
+        });
         FrozenChatBinding {
             record: record.clone(),
+            registration_gate: self.registration_gate.clone(),
+            resource_owner,
             route: FrozenRoute::ChatApi {
                 api_id: options.api_id().clone(),
                 entry,
@@ -698,6 +750,8 @@ impl Models {
         let provider = self.registry.get_provider_arc(record.provider_id());
         FrozenChatBinding {
             record: record.clone(),
+            registration_gate: self.registration_gate.clone(),
+            resource_owner: self.resource_owners.get(record.provider_id()).cloned(),
             route: FrozenRoute::Provider {
                 provider_id: record.provider_id().to_owned(),
                 provider,
@@ -749,7 +803,7 @@ impl Models {
     ) -> ChatCall {
         options.apply(&mut request);
         let binding = self.provider_binding(&record);
-        ChatCall::new(binding, request, CallOptions::Simple)
+        ChatCall::new(binding, request, CallOptions::Simple(options))
     }
 
     /// Neutral entry driven to the single final outcome. Construction freezes
@@ -838,9 +892,23 @@ impl Models {
         policy: crate::retry::AcquisitionPolicy,
     ) -> Result<PreparedProviderCall, ModelsError> {
         let (provider_ref, model) = self.registry.resolve(spec)?;
+        request.callbacks = request.callbacks.for_call();
         let provider_id = provider_ref.id().to_owned();
         let model_id = model.id.clone();
         let wire_api = model.wire_api;
+        let resource_owner = self.resource_owners.get(&provider_id).cloned();
+        let resources = {
+            let _registration = self.registration_gate.lock().unwrap();
+            resource_owner
+                .as_ref()
+                .and_then(|owner| owner.register_call(&request))
+        };
+        request.cancel = resources
+            .as_ref()
+            .map_or_else(|| request.cancel.child_token(), |lease| lease.token());
+        if request.cancel.is_cancelled() {
+            return Err(ModelsError::CallCancelled);
+        }
         let canonical_request_model = format!("{provider_id}:{model_id}");
         if request.model != canonical_request_model {
             return Err(ModelsError::RequestRouteMismatch {
@@ -878,12 +946,16 @@ impl Models {
         };
         Ok(PreparedProviderCall {
             provider,
-            request,
+            request: Box::new(request),
             auth,
             route,
             credential_terminal: Arc::new(AtomicBool::new(false)),
             acquisition: Arc::new(crate::retry::AcquisitionCore::new(policy)),
             invocation_id: uuid::Uuid::new_v4().to_string(),
+            resources,
+            resource_owner,
+            selected_model: Some(Box::new(model.clone())),
+            simple_options: SimpleOptions::default(),
         })
     }
 
@@ -954,25 +1026,58 @@ impl Models {
     /// aborts the remaining release — unconfirmed effects are aggregated
     /// into the returned report. Caller parent tokens, external cancel
     /// owners, credentials and catalogs are never touched.
-    pub async fn cleanup_session_resources(
+    pub fn cleanup_session_resources(
         &self,
         session: Option<&str>,
-    ) -> Result<crate::codex_resources::CleanupReport, crate::codex_resources::CleanupError> {
-        if session == Some("") {
-            return Err(crate::codex_resources::CleanupError::EmptySessionId);
+    ) -> impl Future<
+        Output = Result<
+            crate::codex_resources::CleanupReport,
+            crate::codex_resources::CleanupError,
+        >,
+    >
+    + Send
+    + 'static
+    + use<> {
+        let session = session.map(str::to_owned);
+        let resource_owners = self.all_resource_owners.clone();
+        let registration_gate = self.registration_gate.clone();
+        async move {
+            if session.as_deref() == Some("") {
+                return Err(crate::codex_resources::CleanupError::EmptySessionId);
+            }
+            // Every owner's cutoff is established on this Future's first poll,
+            // before awaiting any one owner's releases.
+            let handles: Vec<crate::codex_resources::CleanupHandle> = {
+                // This lock also gates every Models first-poll registration.
+                // All namespace cutoffs therefore precede any later generation,
+                // even when calls are first-polled concurrently on other threads.
+                let _registration = registration_gate.lock().unwrap();
+                let owners = resource_owners.lock().unwrap();
+                owners
+                    .iter()
+                    .map(|owner| owner.cleanup_session_resources(session.as_deref()))
+                    .collect()
+            };
+            let mut report = crate::codex_resources::CleanupReport::default();
+            for handle in handles {
+                match handle.resolve().await {
+                    Ok(effects) => report.merge(effects),
+                    Err(crate::codex_resources::CleanupError::Incomplete { report: effects }) => {
+                        report.merge(effects)
+                    }
+                    Err(crate::codex_resources::CleanupError::EmptySessionId) => {
+                        report
+                            .unconfirmed_effects
+                            .push("a resource owner rejected the cleanup selector".into());
+                    }
+                }
+            }
+            if report.unconfirmed_effects.is_empty() {
+                Ok(report)
+            } else {
+                Err(crate::codex_resources::CleanupError::Incomplete { report })
+            }
         }
-        let handles: Vec<crate::codex_resources::CleanupHandle> = self
-            .registry
-            .providers()
-            .iter()
-            .filter_map(|provider| provider.session_resources())
-            .map(|owner| owner.cleanup_session_resources(session))
-            .collect();
-        let mut report = crate::codex_resources::CleanupReport::default();
-        for handle in handles {
-            report.merge(handle.resolve().await?);
-        }
-        Ok(report)
     }
 
     /// Attach the credential store backing store-sourced auth checks,
@@ -1626,7 +1731,7 @@ impl Models {
         // Restore the persisted cache before any network work.
         if !self.store_restored {
             if let Some(store) = &self.models_store {
-                let snapshot = store.snapshot();
+                let (snapshot, publishers) = store.snapshot_with_publishers();
                 for (id, models) in &snapshot.catalogs {
                     report.entries.push(RefreshReportEntry {
                         id: id.clone(),
@@ -1637,6 +1742,7 @@ impl Models {
                 }
                 self.registry
                     .replace_all_dynamic_catalogs(snapshot.catalogs);
+                self.catalog_publishers = publishers;
             }
             self.store_restored = true;
         }
@@ -1653,6 +1759,8 @@ impl Models {
 
         // Merge over the current publication: failures retain prior data.
         let mut merged = self.registry.dynamic_catalogs();
+        let mut publishers = self.catalog_publishers.clone();
+        publishers.retain(|provider, _| merged.contains_key(provider));
         let mut cancelled = false;
 
         let mut ids: Vec<String> = self
@@ -1687,6 +1795,8 @@ impl Models {
                                 models: models.len(),
                             },
                         });
+                        publishers
+                            .insert(id.clone(), crate::catalog::store::CatalogPublisher::Native);
                         merged.insert(id, models);
                     }
                     Err(error) => report.entries.push(RefreshReportEntry {
@@ -1695,12 +1805,22 @@ impl Models {
                     }),
                 },
                 Ok(None) => {
-                    // No dynamic snapshot: fall back to built-in models.
+                    // Native absence cannot erase a confirmed source-owned
+                    // publication while that source remains registered. A
+                    // different provider's source confers no such ownership.
+                    let source_owned = matches!(publishers.get(&id),
+                        Some(crate::catalog::store::CatalogPublisher::Source { id: source_id })
+                        if self.catalog_sources.iter().any(|source| source.id() == source_id));
+                    if !source_owned {
+                        merged.remove(&id);
+                        publishers.remove(&id);
+                    }
                     report.entries.push(RefreshReportEntry {
                         id: id.clone(),
-                        outcome: RefreshOutcome::Published { models: 0 },
+                        outcome: RefreshOutcome::Published {
+                            models: merged.get(&id).map_or(0, Vec::len),
+                        },
                     });
-                    merged.remove(&id);
                 }
                 Err(error) => report.entries.push(RefreshReportEntry {
                     id: id.clone(),
@@ -1741,6 +1861,12 @@ impl Models {
                             match validate_dynamic_catalog(&provider_id, &models) {
                                 Ok(()) => {
                                     published += models.len();
+                                    publishers.insert(
+                                        provider_id.clone(),
+                                        crate::catalog::store::CatalogPublisher::Source {
+                                            id: source.id().to_owned(),
+                                        },
+                                    );
                                     merged.insert(provider_id, models);
                                 }
                                 Err(error) => {
@@ -1773,9 +1899,10 @@ impl Models {
         }
 
         match guard {
-            Some(guard) => match guard.commit(merged).await {
-                Ok(commit) => {
+            Some(guard) => match guard.commit_with_publishers(merged, publishers).await {
+                Ok((commit, publishers)) => {
                     self.registry.replace_all_dynamic_catalogs(commit.catalogs);
+                    self.catalog_publishers = publishers;
                 }
                 Err(crate::catalog::StoreCommitError::Superseded { .. }) => {
                     report.status = RefreshStatus::Superseded;
@@ -1787,7 +1914,10 @@ impl Models {
                     return Err(ModelsError::CatalogStore(error));
                 }
             },
-            None => self.registry.replace_all_dynamic_catalogs(merged),
+            None => {
+                self.registry.replace_all_dynamic_catalogs(merged);
+                self.catalog_publishers = publishers;
+            }
         }
         Ok(report)
     }
@@ -1897,7 +2027,7 @@ pub struct StrictVariantAdmission {
 /// model-visible state.
 pub struct PreparedProviderCall {
     provider: Arc<dyn Provider>,
-    request: Request,
+    request: Box<Request>,
     auth: ResolvedAuth,
     route: PreparedRoute,
     /// Set when an attempt reports that the frozen credential is unavailable
@@ -1909,6 +2039,11 @@ pub struct PreparedProviderCall {
     /// The logical call's stable retry-invocation identifier (the wire
     /// `amz-sdk-invocation-id`; task 20.20).
     invocation_id: String,
+    resources: Option<crate::codex_resources::CallResourceLease>,
+    resource_owner: Option<Arc<dyn crate::codex_resources::SessionResourceOwner>>,
+    // Retain the complete record without inflating callers' inline async state.
+    selected_model: Option<Box<ModelInfo>>,
+    simple_options: SimpleOptions,
 }
 
 struct AttemptStream {
@@ -1921,6 +2056,7 @@ struct AttemptStream {
     /// lease released before send from a dropped dispatch with unknown
     /// effect.
     polled: bool,
+    _resource_owner: Option<Arc<dyn crate::codex_resources::SessionResourceOwner>>,
 }
 
 impl AttemptStream {
@@ -2124,11 +2260,28 @@ impl PreparedProviderCall {
         // Adapters may eagerly spawn their producer in `stream_prepared`.
         // Defer that invocation too, so an unpolled lease has no effects.
         let provider = self.provider.clone();
-        let request = self.request.clone();
+        let mut request = (*self.request).clone();
         let auth = self.auth.clone();
         let attempt = self.acquisition.attempt_context(&self.invocation_id);
+        request.callbacks = request.callbacks.with_attempt(attempt.clone());
+        let resources = self.resources.clone();
+        let selected_model = self.selected_model.clone();
+        let simple_options = self.simple_options.clone();
         let stream = Box::pin(
-            stream::once(async move { provider.stream_attempt(request, auth, attempt) }).flatten(),
+            stream::once(async move {
+                match selected_model {
+                    Some(model) => provider.stream_model_resource_attempt(
+                        *model,
+                        simple_options,
+                        request,
+                        auth,
+                        attempt,
+                        resources,
+                    ),
+                    None => provider.stream_resource_attempt(request, auth, attempt, resources),
+                }
+            })
+            .flatten(),
         );
         Ok(Box::pin(AttemptStream {
             inner: stream,
@@ -2137,16 +2290,145 @@ impl PreparedProviderCall {
             acquisition: self.acquisition.clone(),
             released: false,
             polled: false,
+            _resource_owner: self.resource_owner.clone(),
         }))
     }
+}
+
+/// Drive ordinary and direct calls with the same per-call acquisition owner
+/// used by advanced preparation. Admitted retries consume their existing
+/// counters; only the source-qualified strict admission creates a new variant.
+pub(crate) fn drive_resolved_call(
+    provider: Arc<dyn Provider>,
+    request: Request,
+    auth: ResolvedAuth,
+) -> EventStream {
+    if let Some(attempt) = request.callbacks.inherited_attempt() {
+        return provider.stream_attempt(request, auth, attempt);
+    }
+    // Direct adapters are lazy too. Retain their registration in the public
+    // stream, rather than only in a producer that can finish before delivery.
+    Box::pin(
+        stream::once(async move {
+            let mut request = request;
+            request.callbacks = request.callbacks.for_call();
+            let resources = provider
+                .session_resources()
+                .and_then(|owner| owner.register_call(&request));
+            drive_resolved_call_registered(
+                provider,
+                request,
+                auth,
+                resources,
+                None,
+                None,
+                SimpleOptions::default(),
+            )
+        })
+        .flatten(),
+    )
+}
+
+fn drive_resolved_call_registered(
+    provider: Arc<dyn Provider>,
+    mut request: Request,
+    auth: ResolvedAuth,
+    resources: Option<crate::codex_resources::CallResourceLease>,
+    resource_owner: Option<Arc<dyn crate::codex_resources::SessionResourceOwner>>,
+    selected_model: Option<ModelInfo>,
+    simple_options: SimpleOptions,
+) -> EventStream {
+    request.callbacks = request.callbacks.ensure_call_scope();
+    request.cancel = resources
+        .as_ref()
+        .map_or_else(|| request.cancel.child_token(), |lease| lease.token());
+    let route = PreparedRoute {
+        provider_id: provider.id().to_owned(),
+        model_id: request
+            .model
+            .split_once(':')
+            .map_or(request.model.as_str(), |(_, id)| id)
+            .to_owned(),
+        wire_api: provider
+            .models()
+            .iter()
+            .find(|model| {
+                model.id
+                    == request
+                        .model
+                        .split_once(':')
+                        .map_or(request.model.as_str(), |(_, id)| id)
+            })
+            .map_or(crate::model_info::WireApi::OpenAiCompletions, |model| {
+                model.wire_api
+            }),
+    };
+    let policy = provider.acquisition_policy_default();
+    let prepared = PreparedProviderCall {
+        provider,
+        request: Box::new(request),
+        auth,
+        route,
+        credential_terminal: Arc::new(AtomicBool::new(false)),
+        acquisition: Arc::new(crate::retry::AcquisitionCore::new(policy)),
+        invocation_id: uuid::Uuid::new_v4().to_string(),
+        resources,
+        resource_owner,
+        selected_model: selected_model.map(Box::new),
+        simple_options,
+    };
+    Box::pin(stream::unfold(
+        (prepared, None::<EventStream>, false),
+        |(prepared, mut current, finished)| async move {
+            use futures_util::StreamExt;
+            if finished {
+                return None;
+            }
+            loop {
+                if current.is_none() {
+                    current = match prepared.start_attempt() {
+                        Ok(attempt) => Some(attempt),
+                        Err(error) => {
+                            return Some((Err(models_error_cause(error)), (prepared, None, true)));
+                        }
+                    };
+                }
+                match current.as_mut().expect("attempt initialized").next().await {
+                    Some(Err(error)) => {
+                        if prepared.strict_variant_admission().is_some() {
+                            current = None;
+                            continue;
+                        }
+                        if let Some(admission) = prepared.retry_admission() {
+                            tokio::select! {
+                                biased;
+                                _ = prepared.request.cancel.cancelled() => {
+                                    return Some((Err(ProviderError::Cancelled), (prepared, None, true)));
+                                }
+                                _ = tokio::time::sleep(Duration::from_millis(admission.delay_ms)) => {}
+                            }
+                            current = None;
+                            continue;
+                        }
+                        return Some((Err(error), (prepared, None, true)));
+                    }
+                    Some(Ok(event)) => {
+                        let terminal = event.is_terminal();
+                        return Some((Ok(event), (prepared, current, terminal)));
+                    }
+                    None => return None,
+                }
+            }
+        },
+    ))
 }
 
 // ---------------------------------------------------------------------------
 // Shared compiler and auth resolution (the sole state machine)
 // ---------------------------------------------------------------------------
 
-/// The one request compiler shared by advanced preparation and every ordinary
-/// entry: default output limit, context clamp, thinking resolution, and
+/// Request preparation for neutral calls and the advanced entry: default
+/// output limit, context clamp, thinking resolution, and
 /// capability/wire validation, in that order, without mutating the caller's
 /// original `Request` (the compiler receives an owned copy).
 fn compile_prepared_request(
@@ -2172,23 +2454,12 @@ fn compile_prepared_request(
     }
     let context_limit = model.capabilities.context_window;
     if context_limit > 0 {
-        let transcript = request.context.messages();
-        let current_system = crate::transcript::get_current_system_prompt(transcript);
-        let current_tools = crate::transcript::get_current_tools(transcript);
-        // The replayed prompt and tool set are estimated through their own
-        // parameters, so system messages must not be counted again as part of
-        // the message walk.
-        let conversation: Vec<crate::message::Message> = transcript
-            .iter()
-            .filter(|message| !matches!(message, crate::message::Message::System(_)))
-            .cloned()
-            .collect();
-        let occupied = crate::context::estimate_context_tokens(
-            (!current_system.is_empty()).then_some(current_system.as_str()),
-            &conversation,
-            &current_tools,
-        )
-        .tokens;
+        // Canonical system/tool declarations carry chronology and timestamp
+        // facts needed to validate an anchor and estimate its tail. Passing
+        // replayed current values separately would lose those facts or count
+        // the same declaration twice.
+        let occupied =
+            crate::context::estimate_context_tokens(None, request.context.messages(), &[]).tokens;
         let available = context_limit
             .saturating_sub(occupied)
             .saturating_sub(4_096)
@@ -2362,6 +2633,8 @@ impl ChatModelRecord {
 /// compiler runs; `None` leaves the request untouched.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SimpleOptions {
+    /// Explicit tool selection on an adapter that admits this neutral option.
+    pub tool_choice: Option<SimpleToolChoice>,
     /// Sampling temperature override.
     pub temperature: Option<f64>,
     /// Output-limit override.
@@ -2372,7 +2645,24 @@ pub struct SimpleOptions {
     pub stop_sequences: Vec<String>,
 }
 
+/// Neutral tool selection. Adapter-specific forced-tool forms remain native.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SimpleToolChoice {
+    Auto,
+    None,
+}
+
 impl SimpleOptions {
+    pub(crate) fn validate_default(&self) -> Result<(), ProviderError> {
+        if self.tool_choice.is_some() {
+            return Err(ProviderError::UnsupportedCapability(
+                ProviderErrorSummary::attested_static(
+                    "this adapter does not support the neutral tool selection option",
+                ),
+            ));
+        }
+        Ok(())
+    }
     fn apply(&self, request: &mut Request) {
         if self.temperature.is_some() {
             request.temperature = self.temperature;
@@ -2395,6 +2685,62 @@ impl SimpleOptions {
 /// its exact [`ApiId`], its provider route identity, its complete record, and
 /// the neutral-to-native mapping used by the simple entry.
 pub trait ChatApi<O: Send + 'static>: Send + Sync {
+    /// Validate explicit neutral options before auth. Adapters opt in only to
+    /// options their simple mapping consumes; defaults reject new wire inputs.
+    fn validate_simple_options(
+        &self,
+        _model: &ModelInfo,
+        options: &SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        options.validate_default()
+    }
+    /// Validate the fields consumed by this API's native entry before auth.
+    /// Native adapters that replace neutral fields validate their own options
+    /// and retain the common structural/model checks.
+    fn validate_native_request(
+        &self,
+        model: &ModelInfo,
+        request: &Request,
+        _options: &O,
+    ) -> Result<(), ProviderError> {
+        crate::provider::validate_request_for_model(self.provider_id(), Some(model), request)
+    }
+
+    /// Dispatch with the caller's frozen complete record. The default keeps
+    /// existing custom adapters source-compatible; metadata-aware adapters
+    /// consume this record rather than their construction-time exemplar.
+    fn stream_model_resource_prepared(
+        &self,
+        _model: ModelInfo,
+        request: Request,
+        options: O,
+        auth: ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.stream_resource_prepared(request, options, auth, resources)
+    }
+
+    /// Map the neutral options consumed by this registered API.
+    fn simple_options_for(&self, _options: &SimpleOptions) -> O {
+        self.simple_options()
+    }
+
+    /// Instance-owned connection resources, when this API has a transport pool.
+    fn session_resources(&self) -> Option<&dyn crate::codex_resources::SessionResourceOwner> {
+        None
+    }
+
+    /// Consume a generation registered before authentication. Resource-owning
+    /// APIs forward it to their real adapter; other APIs use the ordinary seam.
+    fn stream_resource_prepared(
+        &self,
+        request: Request,
+        options: O,
+        auth: ResolvedAuth,
+        _resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.stream_prepared(request, options, auth)
+    }
     /// The exact API identity this adapter serves.
     fn api_id(&self) -> &ApiId;
 
@@ -2492,6 +2838,9 @@ struct ChatApiRegistration {
     provider_id: String,
     options_type: TypeId,
     dispatch: Arc<dyn ChatApiDispatch>,
+    // The namespace follows this exact adapter revision, independently of a
+    // later provider-route replacement under the same provider id.
+    resource_owner: Option<Arc<dyn crate::codex_resources::SessionResourceOwner>>,
 }
 
 /// The registration snapshot captured by a call at creation.
@@ -2503,12 +2852,25 @@ struct ChatApiEntry {
 
 /// Object-safe dispatch over one fixed options type.
 trait ChatApiDispatch: Send + Sync {
-    fn simple_options_erased(&self) -> Box<dyn Any + Send>;
+    fn validate_simple_erased(
+        &self,
+        model: &ModelInfo,
+        options: &SimpleOptions,
+    ) -> Result<(), ProviderError>;
+    fn simple_options_erased(&self, options: &SimpleOptions) -> Box<dyn Any + Send>;
+    fn validate_native_erased(
+        &self,
+        model: &ModelInfo,
+        request: &Request,
+        options: &(dyn Any + Send),
+    ) -> Result<(), ProviderError>;
     fn stream_prepared_erased(
         &self,
+        model: ModelInfo,
         request: Request,
         options: Box<dyn Any + Send>,
         auth: ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
     ) -> EventStream;
 }
 
@@ -2517,18 +2879,43 @@ struct TypedChatApi<O: Send + 'static> {
 }
 
 impl<O: Send + 'static> ChatApiDispatch for TypedChatApi<O> {
-    fn simple_options_erased(&self) -> Box<dyn Any + Send> {
-        Box::new(self.api.simple_options())
+    fn validate_simple_erased(
+        &self,
+        model: &ModelInfo,
+        options: &SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        self.api.validate_simple_options(model, options)
+    }
+    fn simple_options_erased(&self, options: &SimpleOptions) -> Box<dyn Any + Send> {
+        Box::new(self.api.simple_options_for(options))
+    }
+
+    fn validate_native_erased(
+        &self,
+        model: &ModelInfo,
+        request: &Request,
+        options: &(dyn Any + Send),
+    ) -> Result<(), ProviderError> {
+        let options = options.downcast_ref::<O>().ok_or_else(|| {
+            ProviderError::Config(ProviderErrorSummary::attested_static(
+                "native options type does not match the registered chat api",
+            ))
+        })?;
+        self.api.validate_native_request(model, request, options)
     }
 
     fn stream_prepared_erased(
         &self,
+        model: ModelInfo,
         request: Request,
         options: Box<dyn Any + Send>,
         auth: ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
     ) -> EventStream {
         match options.downcast::<O>() {
-            Ok(options) => self.api.stream_prepared(request, *options, auth),
+            Ok(options) => self
+                .api
+                .stream_model_resource_prepared(model, request, *options, auth, resources),
             Err(_) => Box::pin(stream::once(async {
                 Err(ProviderError::Config(
                     ProviderErrorSummary::attested_static(
@@ -2549,6 +2936,13 @@ struct ChatApiRouteProvider {
 }
 
 impl Provider for ChatApiRouteProvider {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        options: &SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        self.dispatch.validate_simple_erased(model, options)
+    }
     fn id(&self) -> &str {
         &self.provider_id
     }
@@ -2558,9 +2952,28 @@ impl Provider for ChatApiRouteProvider {
         &[]
     }
 
-    fn stream_prepared(&self, request: Request, auth: ResolvedAuth) -> EventStream {
-        let options = self.dispatch.simple_options_erased();
-        self.dispatch.stream_prepared_erased(request, options, auth)
+    fn stream_prepared(&self, _request: Request, _auth: ResolvedAuth) -> EventStream {
+        Box::pin(stream::once(async move {
+            Err(ProviderError::Config(
+                ProviderErrorSummary::attested_static(
+                    "registered chat APIs require a complete model record through Models",
+                ),
+            ))
+        }))
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: ModelInfo,
+        simple: SimpleOptions,
+        request: Request,
+        auth: ResolvedAuth,
+        _attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        let options = self.dispatch.simple_options_erased(&simple);
+        self.dispatch
+            .stream_prepared_erased(model, request, options, auth, resources)
     }
 }
 
@@ -2573,6 +2986,8 @@ struct FrozenChatBinding {
     record: ChatModelRecord,
     route: FrozenRoute,
     auth_plan: AuthPlan,
+    resource_owner: Option<Arc<dyn crate::codex_resources::SessionResourceOwner>>,
+    registration_gate: Arc<std::sync::Mutex<()>>,
 }
 
 enum FrozenRoute {
@@ -2607,7 +3022,7 @@ impl AuthPlan {
 }
 
 enum CallOptions {
-    Simple,
+    Simple(SimpleOptions),
     Native {
         type_id: TypeId,
         value: Box<dyn Any + Send>,
@@ -2637,6 +3052,20 @@ struct ChatCallSetup {
     options: CallOptions,
 }
 
+struct ResourceApiStream {
+    inner: EventStream,
+    _resources: Option<crate::codex_resources::CallResourceLease>,
+    _owner: Option<Arc<dyn crate::codex_resources::SessionResourceOwner>>,
+}
+
+impl Stream for ResourceApiStream {
+    type Item = Result<AssistantStreamEvent, ProviderError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.get_mut().inner.as_mut().poll_next(cx)
+    }
+}
+
 enum ChatCallState {
     NotStarted(Box<ChatCallSetup>),
     Starting(BoxFuture<'static, Result<ChatStream, CallFailure>>),
@@ -2645,7 +3074,8 @@ enum ChatCallState {
 }
 
 impl ChatCall {
-    fn new(binding: FrozenChatBinding, request: Request, options: CallOptions) -> Self {
+    fn new(binding: FrozenChatBinding, mut request: Request, options: CallOptions) -> Self {
+        request.callbacks = request.callbacks.for_call();
         Self {
             state: ChatCallState::NotStarted(Box::new(ChatCallSetup {
                 binding,
@@ -2753,6 +3183,19 @@ async fn materialize_chat_call(
 ) -> Result<ChatStream, CallFailure> {
     // Canonical model identity comes from the frozen complete record.
     request.model = binding.record.spec();
+    let resources = {
+        let _registration = binding.registration_gate.lock().unwrap();
+        binding
+            .resource_owner
+            .as_ref()
+            .and_then(|owner| owner.register_call(&request))
+    };
+    request.cancel = resources
+        .as_ref()
+        .map_or_else(|| request.cancel.child_token(), |lease| lease.token());
+    if request.cancel.is_cancelled() {
+        return Err(CallFailure::from_partial(None, ProviderError::Cancelled));
+    }
 
     let event_stream = match binding.route {
         FrozenRoute::ChatApi { api_id, entry } => {
@@ -2778,14 +3221,24 @@ async fn materialize_chat_call(
                     api_id.as_str()
                 )));
             }
-            compile_prepared_request(
-                binding.record.provider_id(),
-                binding.record.info(),
-                &mut request,
-            )
-            .map_err(|error| CallFailure::from_partial(None, error))?;
+            entry
+                .dispatch
+                .validate_native_erased(binding.record.info(), &request, value.as_ref())
+                .map_err(|error| CallFailure::from_partial(None, error))?;
             let auth = resolve_binding_auth(&binding.auth_plan, &request.cancel).await?;
-            entry.dispatch.stream_prepared_erased(request, value, auth)
+            let retained_resources = resources.clone();
+            let stream = entry.dispatch.stream_prepared_erased(
+                binding.record.info().clone(),
+                request,
+                value,
+                auth,
+                resources,
+            );
+            Box::pin(ResourceApiStream {
+                inner: stream,
+                _resources: retained_resources,
+                _owner: binding.resource_owner,
+            }) as EventStream
         }
         FrozenRoute::Provider {
             provider_id,
@@ -2794,6 +3247,12 @@ async fn materialize_chat_call(
             let Some(provider) = provider else {
                 return Err(setup_failure(format!("unknown provider: {provider_id}")));
             };
+            let CallOptions::Simple(simple_options) = options else {
+                unreachable!("native entries dispatch through chat APIs")
+            };
+            provider
+                .validate_simple_options(binding.record.info(), &simple_options)
+                .map_err(|error| CallFailure::from_partial(None, error))?;
             compile_prepared_request(
                 binding.record.provider_id(),
                 binding.record.info(),
@@ -2801,7 +3260,15 @@ async fn materialize_chat_call(
             )
             .map_err(|error| CallFailure::from_partial(None, error))?;
             let auth = resolve_binding_auth(&binding.auth_plan, &request.cancel).await?;
-            provider.stream_prepared(request, auth)
+            drive_resolved_call_registered(
+                provider,
+                request,
+                auth,
+                resources,
+                binding.resource_owner,
+                Some(binding.record.info().clone()),
+                simple_options,
+            )
         }
     };
     Ok(ChatStream::new(event_stream))

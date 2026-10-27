@@ -242,9 +242,8 @@ impl ToolCall {
     ///
     /// Returns `(arguments, arguments_error)`: empty input finalizes to `{}`
     /// without an error; a complete JSON object keeps its owned raw text;
-    /// input that only differs by invalid escape sequences (for example
-    /// `\u…`-shaped sequences such as `\usepackage`) is repaired so the
-    /// escaped text stays literal and later fields survive; any other final
+    /// complete objects with invalid escapes or raw control characters in
+    /// strings are repaired without truncating later fields; any other final
     /// text (incomplete, non-object) keeps the owned raw text and carries a
     /// redacted-safe `arguments_error`, never a partial-prefix success.
     pub(crate) fn finalize_text_arguments(raw: String) -> (String, Option<String>) {
@@ -255,74 +254,23 @@ impl ToolCall {
         if serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&raw).is_ok() {
             return (raw, None);
         }
-        if let Some(repaired) = repair_invalid_escapes(&raw)
-            && serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&repaired).is_ok()
-        {
+        let repaired = repair_json(&raw);
+        if serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&repaired).is_ok() {
             return (repaired, None);
         }
         (raw, Some(NOT_AN_OBJECT.to_owned()))
     }
 }
 
-/// Repair invalid JSON escape sequences by escaping the stray backslash, so
-/// the model-sent text stays literal and later fields keep parsing.
-///
-/// `\x` where `x` is not a legal JSON escape (and `\u` without four hex
-/// digits) becomes `\\x` in the repaired text. Returns `None` when the input
-/// is not shaped like a JSON object (no repair is attempted).
-fn repair_invalid_escapes(raw: &str) -> Option<String> {
-    let mut chars = raw.chars().peekable();
-    if chars.next() != Some('{') {
-        return None;
-    }
-    let mut repaired = String::with_capacity(raw.len());
-    repaired.push('{');
-    let mut in_string = false;
-    while let Some(ch) = chars.next() {
-        if !in_string {
-            if ch == '"' {
-                in_string = true;
-            }
-            repaired.push(ch);
-            continue;
-        }
-        match ch {
-            '"' => {
-                in_string = false;
-                repaired.push(ch);
-            }
-            '\\' => {
-                let Some(&next) = chars.peek() else {
-                    // Trailing backslash inside a string: keep it literal.
-                    repaired.push_str("\\\\");
-                    break;
-                };
-                let legal = matches!(next, '"' | '\\' | '/' | 'b' | 'f' | 'n' | 'r' | 't')
-                    || (next == 'u' && {
-                        let hex: String = chars.clone().skip(1).take(4).collect();
-                        hex.len() == 4 && hex.chars().all(|c| c.is_ascii_hexdigit())
-                    });
-                if legal {
-                    repaired.push('\\');
-                } else {
-                    repaired.push_str("\\\\");
-                }
-            }
-            _ => repaired.push(ch),
-        }
-    }
-    Some(repaired)
-}
-
 /// Finalize the complete arguments text of a finished tool call under the
 /// public AIR-048 contract (task 20.53.2; delegates to the wire-shared
-/// `ToolCall::finalize_text_arguments`, semantics unchanged).
+/// `ToolCall::finalize_text_arguments`).
 ///
 /// Returns `(arguments, arguments_error)`: empty input finalizes to `{}`
 /// without an error; a complete JSON object keeps its owned raw text;
-/// input differing only by invalid escape sequences returns the repaired
-/// text; any other final text keeps the owned raw text and carries a
-/// redacted-safe `arguments_error` that never echoes the model-sent text.
+/// complete objects with invalid escapes or control characters in strings
+/// return repaired text; any other final text keeps the owned raw text and
+/// carries a redacted-safe `arguments_error` that never echoes model-sent text.
 /// The final result is authoritative: a streaming display parse never
 /// overrides it.
 pub fn finalize_tool_arguments(raw: String) -> (String, Option<String>) {

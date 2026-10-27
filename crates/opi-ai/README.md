@@ -77,7 +77,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `ProviderError` / `ProviderErrorCategory` | Provider failure taxonomy: auth, config, request, network, rate_limit, provider, stream, capability, and cancelled (timeouts classify as network). |
 | `ProviderErrorSummary` | Closed redaction-safe provider-error text. Public construction is limited to `redacted()`, `authentication_rejected()`, and `from_untrusted(...)`; arbitrary provider payloads are not retained. |
 | `ProviderRegistry` | Resolves `provider:model`, registers custom providers, and layers model overrides. |
-| `Models` / `AuthDescriptor` / `AuthCheck` | Unstable-0.x single driver above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. Ordinary native/simple/direct entries and advanced `prepare_call` share one compiler, auth resolution, attempt seam, and collector. |
+| `Models` / `AuthDescriptor` / `AuthCheck` | Unstable-0.x single driver above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. Native/simple/direct and advanced entries share validation and the call lifecycle; native options retain adapter budget semantics, while simple/advanced preparation applies the shared output budget. |
 | `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | Typed custom chat adapter registration with its exact API identity and fixed options type; handle-created options carry the API/type tag and stay portable across instances with compatible registrations. |
 | `ToolCall::arguments_error` | Optional final-parse outcome for textual tool arguments (AIR-048): empty input finalizes to `{}`, repairable invalid escapes stay literal, and incomplete/non-object finals keep the owned raw text plus this error, never a partial-prefix success. Historical records without the field keep deserializing. |
 | `ChatModelRecord` / `SimpleOptions` / `ChatCall` | Complete caller-owned chat record (provider id, bare model id, exact wire) usable without catalog membership; neutral simple options; the lazy ordinary-call owner that captures input at construction and starts auth on first poll. |
@@ -232,9 +232,10 @@ counters, skip the wait, or stack sends beyond the frozen budget.
 the first poll. Dropping an unpolled lease sends nothing. The HTTP backend's
 protocol-NACK retries are disabled; extra sends require SDK admission.
 
-Before authentication, `prepare_call` resolves an omitted `Request.max_tokens`
-to the selected registry model's `max_output_tokens` capacity, including model
-overrides and refreshed catalogs. An explicit request limit remains a ceiling.
+Before authentication, `prepare_call` and neutral simple calls resolve an omitted
+`Request.max_tokens` to the selected complete model record's
+`max_output_tokens` capacity, including applicable overrides and refreshed
+catalogs. An explicit request limit remains a ceiling.
 If enabled thinking has a budget at or above that default output limit,
 preparation fails with a typed capability error before auth or dispatch. Both
 implicit and explicit ceilings are then reduced to fit estimated remaining
@@ -243,14 +244,16 @@ no longer fits is reduced to leave 1024 answer tokens where possible. The
 non-adaptive Anthropic wire resolves an omitted thinking budget from its level
 and rejects ceilings that cannot fit its minimum thinking and answer room
 before authentication; adaptive effort does not use a numeric minimum. The
-`context` module estimates messages, system text and tool schemas; the last
+`context` module estimates the original canonical message chronology, including
+later System changes and tool declarations; the last
 applicable positive successful usage (non-error, non-aborted, timestamp not
 older than its prefix, any model identity) anchors the estimate and only
 messages after the anchor are estimated, with no same-model or full-text
-lower bound. Every
-attempt reuses the resolved limit. Direct provider adapter calls retain their
-existing default behavior; this is a per-request output limit, independent of
-any product turn-count budget.
+lower bound. Every attempt reuses the resolved limit. Typed native `ChatApi`
+calls still validate route and capabilities, but preserve native omission and
+explicit limits instead of applying the simple budget default or clamp. Direct
+provider adapter calls retain their wire defaults. These are per-request output
+limits, independent of any product turn-count budget.
 
 `ProviderError::AccountIdMissing { provider_id }` is the separate,
 non-retryable case where a credential exists but the selected wire requires
@@ -381,6 +384,9 @@ OpenAI Responses native semantics (`ResponsesConfig`): `store` and
 compatibility metadata; `request.thinking` plus the selected
 `ModelInfo::thinking_level_map` is authoritative for Chat and Responses wire
 output.
+For native Responses requests, an omitted or zero `max_tokens` omits
+`max_output_tokens`; a positive value is sent with a minimum of 16. Simple
+calls resolve their shared budget before this wire mapping.
 `previous_response_id` is intentionally absent — Responses requests are built
 as Chat-Completions analogues, so server-side response chaining is not wired.
 
@@ -410,12 +416,11 @@ pinning. There is no server-side session chain.
 ## WebSocket Upgrade (RDF-24)
 
 `ws::upgrade` performs the strict dynamic Upgrade over the shared,
-source-qualified `HttpClient` (explicit proxy/TLS profile, redirects must be
-disabled per client: an upgrade request against a client with a redirect
-policy fails typed instead of silently following). Classic Upgrade uses the
-client's private HTTP/1.1 transport, retaining the same frozen trust, mTLS
-identity and proxy configuration without source rediscovery. Ordinary requests
-retain their configured H2/H1 behavior. The bridge owns the
+source-qualified `HttpClient` with its explicit proxy/TLS profile. Classic
+Upgrade uses the client's private HTTP/1.1 transport with redirects disabled,
+retaining the same frozen trust, mTLS identity and proxy configuration without
+source rediscovery. Ordinary requests retain their configured redirect policy
+and H2/H1 behavior. The bridge owns the
 request shape (`Connection: Upgrade`, `Upgrade: websocket`,
 `Sec-WebSocket-Version: 13`, a fresh 16-byte `Sec-WebSocket-Key` from the
 pinned platform entropy, offered subprotocols and an optional
@@ -850,7 +855,7 @@ input rather than a reconstruction trigger.
 
 `Catalog::builtin()` parses and validates the embedded bytes once per
 process — no network I/O, account probing, or generator execution —
-re-verifying the artifact digest, bundle/data schema versions, provider set,
+re-verifying the artifact digest, bundle/data schema and minimum-reader versions, provider set,
 every entry's data contract (identity, modalities, capabilities, cost),
 `type:id` uniqueness per provider, and the structure digest. Any mismatch
 is a typed, fail-closed `CatalogError`; no partial catalog exists.
@@ -880,7 +885,9 @@ nothing; reopening a store restores the last-known revision before any
 network work. The persisted file is the Pi *distribution* schema
 (`models.schema.json`), a different artifact from the hydration data (v6)
 embedded in the builtin bundle; opi-only fidelity (streaming, cache flags,
-pricing tiers, exact thinking maps, wire compat payloads) round-trips
+pricing tiers in their original order (including zero thresholds and duplicates),
+sampling maps at base and thinking levels, exact thinking maps, and wire compat
+payloads including strict-tool support) round-trips
 through an explicit `x-opi` extension, and plain v1 documents decode with
 closed defaults.
 
@@ -891,8 +898,11 @@ providers in deterministic sorted order, then registered catalog sources in
 registration order. Outcomes are per-provider: successes publish, failures
 retain that provider's prior data and report a redacted error
 (`RefreshOutcome::{Published,Failed,Restored}` in `RefreshReport`) without
-erasing other providers' catalogs; `Ok(None)` falls the provider back to
-built-in models. `refresh_with` observes a `CancellationToken` — a
+erasing other providers' catalogs. Without explicit catalog sources, a native
+provider's `Ok(None)` restores its builtin catalog. With an explicit source,
+that absence of a native publication retains the last-known source catalog;
+an authoritative `Ok(Some([]))` still replaces it with an empty catalog.
+`refresh_with` observes a `CancellationToken` — a
 cancelled round fetches, persists, and publishes nothing. Already-prepared
 calls keep their frozen bindings across refreshes. `DynamicCatalogSource`
 is the public seam for host-plugged catalog sources; `HttpCatalogSource`
@@ -907,10 +917,9 @@ P20-TELEMETRY shared-decision owner; the closure test lives at
 `tests/telemetry_carrier.rs`.
 
 - **`TelemetryContext::from_span(span)`** freezes the parent
-  `tracing::Span` together with the current default `Dispatch` at
-  creation time. Owned tracing difference (reviewed RDF-14): tracing
-  spans do not retain their creating dispatcher, so the pair is frozen
-  at `from_span`; observation never adopts poll-time ambient dispatch. A
+  `tracing::Span` together with its own `Dispatch`, obtained through
+  `Span::with_subscriber`. The source span determines the pair even when
+  another subscriber is current at creation or poll time. A
   disabled span degrades to the explicit `noop()` state. `Clone`
   retains the same pair; the context is `Send + Sync`.
 - **`in_scope(FnOnce)`** runs the synchronous body exactly once under
@@ -924,42 +933,66 @@ P20-TELEMETRY shared-decision owner; the closure test lives at
   exactly once; `Pending` and the output are preserved.
 - **`noop()`** runs the same sections under a no-op dispatcher:
   business work still executes exactly once while section observation
-  is explicitly silenced instead of leaking to ambient dispatch.
+  is explicitly silenced instead of leaking to ambient dispatch. Independent
+  host logging outside the wrapped section keeps its own subscriber.
 
-Carrier substrate only: no global subscriber/exporter/sampling, no
-domain span vocabulary, no automatic SDK call/attempt spans, nothing
-serialized or placed on the wire. SDK propagation through actual
-operations is owned by later tasks.
+`Request::telemetry_context: Option<TelemetryContext>` explicitly carries this
+pair into the real Codex producer, including its async callbacks and SSE
+fallback. Omission captures no implicit ambient context. No carrier is
+serialized or placed on the wire, and no global subscriber, exporter, sampling
+policy or automatic SDK root span is installed. Propagation across all SDK
+operations remains later work (20.55); the actual Codex path is also covered by
+`tests/codex_telemetry.rs`.
 
 ## Instance Resource Generation, Pool Cleanup and Awaited Release (task 20.17)
 
 The Codex WebSocket family now registers one resource generation per call
 and exposes session-scoped cleanup through the public
 `Models::cleanup_session_resources` entry (`codex_resources` module;
-tests at `tests/openai_codex_responses.rs`).
+tests at `tests/openai_codex_responses.rs` and `tests/resource_cleanup.rs`).
 
-- **Registration:** every WS-family call registers before any wire auth
-  attach or header/body transform; pure `Sse`-preference calls stay
-  unregistered. Phases (`prepared`/`connecting`/`busy`/`temporary`/
-  `active-fallback`) track the work classes the cutoff must cancel.
-- **Cutoff semantics:** `cleanup_session_resources(Some(id))` cancels the
-  matching old generations and pooled connections and awaits their local
-  owned exits; late publish, the bounded WS retries and a late SSE leg are
-  forbidden after the cutoff. `None` cancels everything (including
-  sessionless work); an unmatched id is a no-op that retains idle reuse;
-  `Some("")` is a typed failure with zero effects.
-- **Release:** dropped calls start their release (the producer work is
-  cancelled with the consumer), but barrier completion is only ever
-  claimed by observing the exits. Removed pooled connections close
-  source-style: Close frame, flush, short bounded confirmation; a close
-  that cannot be confirmed is reported as an unconfirmed effect while the
-  remaining release continues.
-- **Isolation:** two `Models` sharing session ids stay isolated per
-  provider; caller parent tokens, external cancel owners, credentials and
-  catalogs are never touched, and delivered terminals are retained.
-- **Dispatch:** providers opt in through the new default-None
-  `Provider::session_resources` hook; `Models` aggregates every owner's
-  report and typed failures.
+- **Registration:** the call's first poll atomically registers its generation
+  before any auth, transform or network await. Pure `Sse`-preference calls stay
+  unregistered. The original complete session id remains the cleanup identity
+  even with `Disabled` cache retention. Phases (`prepared`/`connecting`/`busy`/
+  `temporary`/`active-fallback`) include the same call's SSE fallback.
+- **Cutoff semantics:** the returned cleanup Future owns its selected owners
+  and session and establishes all cutoffs on its **first poll**. This differs
+  from the credential mutation barrier's synchronous construction cutoff.
+  `Some(nonempty id)` selects matching old generations and pooled connections;
+  `None` selects everything, including sessionless work; an unmatched id is a
+  no-op retaining idle reuse; `Some("")` is a typed zero-effect failure. Late
+  attachment, publication, reconnect and entry into SSE are forbidden. Calls
+  first polled after the cutoff get a new generation; an already registered
+  `PreparedProviderCall` keeps its old generation even for an unpolled attempt.
+- **Release:** cleanup awaits library-owned producers, connections and bounded
+  closes. A retained, dormant caller preparation/auth Future needs no further
+  poll for cleanup to finish; its next poll sees latched cancellation. Dropping
+  a polled cleanup Future does not undo its close marks, and another cleanup can
+  await the remaining exits. Drop initiates release without claiming an await
+  barrier. Removed connections send Close and flush before bounded confirmation;
+  one failure still allows the other releases and returns
+  `CleanupError::Incomplete { report }` with confirmed counts and unconfirmed
+  effects. A delivered terminal stays final while protocol release continues.
+- **Isolation:** `SessionResourceOwner::new_namespace` gives each `Models`
+  registration an independent namespace, including when two instances wrap the
+  same provider/client and full session id. Caller parent tokens, credentials,
+  catalogs and independent store-owned rotations remain untouched. Owned call
+  guards retain their resources across `Models` drop, removal or replacement;
+  successful calls may retain an idle cached connection.
+- **Dispatch:** resource-owning providers expose `Provider::session_resources`
+  and forward the registered lease through `stream_resource_attempt`.
+  `Provider::stream_model_resource_attempt` also carries the caller's frozen
+  complete record and simple options; its default forwards resource and attempt
+  ownership. Typed `ChatApi` registrations expose `session_resources` and
+  `stream_resource_prepared`, with `stream_model_resource_prepared` for the
+  selected record. The default `validate_native_request` and `simple_options_for`
+  hooks preserve existing custom adapters; metadata-aware adapters override
+  them to validate native fields and map consumed neutral options. Resource-less
+  defaults remain inert.
+  `validate_simple_options` rejects explicit neutral options by default;
+  adapters admit an option only when their simple mapper consumes it.
+  `Models` attempts every owner's release and aggregates the results.
 
 ## Real Codex WebSocket Transport: Auto/Delta/Continuation (task 20.16, DEL-07)
 
@@ -968,12 +1001,43 @@ strict Upgrade bridge into the private frame/PMD/Close owner
 (`openai_codex_responses/ws_transport.rs`; tests at
 `tests/openai_codex_responses.rs`).
 
+`openai_codex_responses::CodexChatApi::new(Arc<OpenAiCodexResponsesProvider>,
+ModelInfo) -> Result<Self, ProviderError>` registers the real adapter through
+`ChatApi<CodexOptions>`. Pass the adapter, resolver and auth source to
+`Models::register_chat_api`, create tagged options with `handle.options(opts)`,
+then call `Models::stream(record, request, options)`. Construct the
+non-exhaustive `CodexOptions` with `Default::default()` and set its public fields.
+Native defaults preserve the native reasoning omission/off mapping; neutral
+simple calls map `Request::thinking` instead. Both entries consume the frozen
+complete `ChatModelRecord` selected for the call, including its thinking map,
+rather than the constructor's exemplar or a same-ID catalog entry. Native Codex
+does not consume neutral `Request::thinking`, including unsupported neutral
+levels; common structural and selected-model validation still runs before auth.
+Options are frozen per call and
+do not mutate the registered provider or use `sampling_params` as a carrier.
+
+| Input | Type / unit | Omission, zero or null | Precedence and wire field |
+|---|---|---|---|
+| `reasoning_effort` | `CodexReasoningEffort` enum | Omitted uses the supported model's off mapping; `Some(None)` explicitly requests off | Native effort uses the model's mapping or native spelling, independently of neutral thinking; `reasoning.effort` |
+| `reasoning_summary` | `CodexReasoningSummary` enum | Omitted or `Null` becomes `auto` when an effort is serialized; otherwise unused | Native summary; `reasoning.summary` |
+| `service_tier` | `CodexServiceTier` enum | Omitted stays absent; `Some(Null)` sends JSON null | Explicit native value; `service_tier` |
+| `text_verbosity` | `CodexTextVerbosity` enum | Omitted → `low` | Explicit native value overrides the default; `text.verbosity` |
+| `tool_choice` | `CodexToolChoice` enum | Omitted → `auto`; enum `None` sends `"none"` | Explicit native value overrides the default; `tool_choice` |
+| `SimpleOptions::tool_choice` | `Option<SimpleToolChoice>` (`Auto` / `None`) | Omitted → Codex `auto` | Neutral Codex mapping to `tool_choice`; currently unsupported routes reject an explicit value before auth |
+| `Request::temperature` | optional unitless number | Omitted or non-finite → absent; zero is valid | Request value; `temperature` |
+| `Request::max_tokens` | optional token count | Codex omits an output-limit wire field, including explicit zero | Simple preparation retains its shared budget semantics; native calls preserve the request before wire mapping |
+
+Closed native enums reject invalid serialized spellings. Invalid complete
+records or wrong wires fail with typed configuration errors; registration and
+options identity/type mismatches fail before auth or network work. Common
+transport, cache, cancellation and timeout inputs remain on `Request`.
+
 - **Transport resolution:** `Request::transport`
   (`TransportPreference::{Auto, Sse, Websocket, WebsocketCached}`, default
   `Auto`) resolves first; omitted and explicit `Auto` follow the same delta
-  rules. An explicit WebSocket demand requires an `HttpClient` built with
-  `RedirectPolicy::None` (typed configuration failure otherwise); `Auto`
-  with any other policy resolves to SSE.
+  rules. The dedicated HTTP/1.1 Upgrade client disables redirects and retains
+  the `HttpClient`'s frozen TLS identity, trust and proxy inputs. Ordinary HTTP
+  keeps its configured redirect policy; that policy does not force `Auto` to SSE.
 - **Real chain:** `response.create` travels as a masked text frame; events
   decode through the exact SSE classifier, so both transports publish
   identical public events; explicit client Close completes temporary
@@ -1133,7 +1197,7 @@ finalize_tool_arguments, string_enum}` complete the pinned
   treatment, legal escapes pass through untouched.
 - **`parse_streaming_json`** is a display-only partial parser with the
   exact pinned cascade order: empty input -> `{}`; a complete document
-  parses (after escape repair) and is authoritative; otherwise the raw
+  parses (after escape repair) for display; otherwise the raw
   text, then the repaired text, complete as a partial prefix (dangling
   quotes/brackets are closed, dangling keys/values become `null`,
   truncated numbers and literals complete conservatively, junk after the
@@ -1141,8 +1205,9 @@ finalize_tool_arguments, string_enum}` complete the pinned
   object. It never fails and never overrides final results.
 - **`finalize_tool_arguments`** is the public AIR-048 contract for a
   finished tool call: empty input finalizes to `{}`; a complete object
-  keeps its owned raw text; escape-only differences return the repaired
-  text; anything else keeps the raw text and a redacted-safe
+  keeps its owned raw text; a complete object repaired only for invalid escapes
+  or raw string control characters returns the repaired text; anything else
+  keeps the raw text and a redacted-safe
   `arguments_error` that never echoes the model-sent text. The final
   object/`arguments_error` remains authoritative and raw text is retained.
 - **`string_enum`** builds a portable `{"type": "string", "enum": [...]}`
@@ -1230,15 +1295,20 @@ adapters resolve it at body-build time:
   post-validation under its own freeze slot, reuses the frozen
   headers/auth/model (the header transform now runs once per logical call),
   and records one `anthropic_strict_tools_fallback` diagnostic on the
-  message. Other 400s, callback errors, cancellation and post-Start
-  failures never branch.
+  message. Ordinary `Models` and direct Anthropic calls use the same
+  acquisition owner as advanced attempts; forwarding wrappers inherit it and
+  cannot create a second retry budget. Successful response headers seal
+  acquisition before response callbacks or body parsing, even if no public
+  event has been emitted. Other 400s, callback errors, cancellation and
+  post-handoff failures never branch; `require` never downgrades.
 - Responses/Codex project grammar tools as `custom` tools, lark preferred
   over regex; unsupported targets fall back to a plain JSON function tool
   with the loss recorded on the message, and a supported target without a
   usable variant or schema shape fails before dispatch. Streaming wraps the
   raw `custom_tool_call` input incrementally into `{"<property>":"…"}`
   (monotonic growth, single close, typed failure on violation) while the
-  raw input stays the authoritative final arguments; replay restores
+  accumulated raw input supplies the authoritative final arguments, including
+  terminal-only input; a contradictory terminal input fails typed. Replay restores
   `custom_tool_call(_output)` items with `ctc_` ids (`fc_` stays the
   function-call prefix).
 
@@ -1249,26 +1319,34 @@ attaches four observer families. They fire inside the real direct adapters at
 their source-defined timing — never reconstructed from a normalized
 `EventStream`, and never by stacking a second driver:
 
+Callback definitions may be shared and cloned, while header/body freezes belong
+to one logical call. Independent calls get independent state; acquisition
+retries and strict variants keep the same call owner. Each synchronous builder
+also has an async counterpart: `with_async_header_transform`,
+`with_async_on_payload`, `with_async_on_response` and `with_async_on_raw`.
+Adapters await them in order before sending or normalizing the corresponding
+data, and cancellation can end a pending callback without another send.
+
 | Callback | Timing | Contract |
 |---|---|---|
-| `with_header_transform` | Once per dispatch, on the merged per-call set | Output replaces the set; omission/set/removal of non-protected entries is supported. Protected identity/auth/signing names (the reserved provider list plus `amz-sdk-*`) never enter the transform and its output is revalidated — touching one is a typed failure before dispatch. |
+| `with_header_transform` | Once per logical call, on the assembled per-call set | Output replaces the set; omission/set/removal of non-protected entries is supported. Protected identity/auth/signing entries already present may be returned unchanged; removing, changing or introducing them fails typed before dispatch. Adapter-owned credentials remain outside the transform. |
 | `with_on_payload` | After sampling/compat/wire projection, on the final body | `Ok(None)` keeps the body; `Ok(Some(v))` replaces it after validation: JSON object, unchanged model identity, output budget never raised. Runs once per payload variant — an ordinary acquisition retry reuses the frozen body byte-for-byte (`ORDINARY_PAYLOAD_VARIANT`). |
-| `with_on_response` | Once a response exists, with status and headers, before any body processing or error mapping | Failures that never produce a response (connect errors, timeouts) are not notified. |
+| `with_on_response` | At the adapter's source-defined response observation point, with status and headers, before body processing | Codex SSE also observes non-success statuses before classification. Failures without a response are not notified. Successful response handoff seals ordinary acquisition retry. |
 | `with_on_raw` | Per parsed provider wire event, strictly before its normalized emission, in wire order | Read-only; a failure ends the current call with the typed error while preserving the delivered partial. |
 
 Adapter coverage: Anthropic, OpenAI Chat (including the Mistral and OpenRouter
 profiles), OpenAI Responses (including Azure), Codex, and Bedrock wire all four
 families (Bedrock raw events are the parsed smithy frames as
 `{type, ...payload}`; the Smithy signing headers are transform-protected).
-Google wires (Gemini/Vertex) support the payload and header-transform families
-and reject response/raw observers with a typed `UnsupportedCapability` before
-any dispatch — two source facts (no HTTP response hook, no raw support), one
-fail-closed gate. A callback failure is a functional failure of the call:
+Google wires (Gemini/Vertex) support payload, header transforms and parsed raw
+observation before normalization. Their unavailable HTTP response hook rejects
+an attached response observer with typed `UnsupportedCapability` before dispatch.
+A callback failure is a functional failure of the call:
 `ProviderError::CallbackPhase`, redacted, never retryable, never swallowed by
 telemetry, never triggering a new call. Callbacks are runtime function values,
-not JSON configuration; this slice closes the ordinary path only — strict
-variant interaction (20.11), newly introduced operation APIs (20.43–50) and
-full AIR-059/V-51 closure (20.57) are separate slices.
+not JSON configuration. This slice includes ordinary calls and strict variants;
+new operation APIs (20.43–50) and full AIR-059/V-51 closure (20.57) retain their
+separate acceptance boundaries.
 
 ## Estimator, Sampling and Pricing Metadata (V-45/AIR-053/AIR-062, task 20.35)
 
@@ -1296,7 +1374,7 @@ twice.
 | numeric-Claude thinking budget | level table 1024/2048/8192/16384 (xhigh/max → high), then clamped to leave answer room | omitted budget → level default | budgets below 1024 are rejected before auth | level default < explicit budget |
 | sampling params | per-key JSON map | empty map → no merge | keys absent stay absent | model base < effective level < request |
 | temperature | named field | `None` → omitted per adapter gating | NaN omitted | sampling map overrides the named field (merged last) |
-| pricing tiers | selection on input+cacheRead+cacheWrite, strict `>`, highest wins, first of equal duplicates | no tiers → base rates | tier threshold 0 rejected at construction | tier rates apply to the whole request |
+| pricing tiers | selection on input+cacheRead+cacheWrite, strict `>`, highest wins, first of equal duplicates | no tiers → base rates | threshold 0 valid; order and duplicates preserved | tier rates apply to the whole request |
 | 1h cache write | subset at 2× input rate | `None` → all short-cache | explicit 0 valid, distinct from absent | subset, never double counted |
 | service tier | flex 0.5×, priority/fast 2× (`gpt-5.5`: 2.5×), default 1× | absent → 1× | unrecognized wire value → absent | applies to every cost component |
 
@@ -1305,9 +1383,9 @@ sampling map, as the last body step so model and request sampling override
 named request fields; other adapters ignore it. The Responses adapter parses
 the response `service_tier` into `Usage`. OpenRouter image `parse_usage` is
 the explicit source exception: image usage keeps base model rates without
-tier selection. opi has no Pi-Messages wire, so its native/simple
-passthrough clause (forward-only temperature/maxTokens, no common budget
-builder) is inapplicable and nothing bypasses the shared mechanism.
+tier selection. opi has no Pi-Messages wire, so that wire's native/simple
+passthrough clause is inapplicable. Native `ChatApi` calls follow the adapter
+budget semantics described above.
 Metadata alone never creates a new pre-dispatch limit or
 resize; the duplicate static `reasoning_effort` compat keys still parse and
 only gain hard errors after their AIR-022 replacement proof.

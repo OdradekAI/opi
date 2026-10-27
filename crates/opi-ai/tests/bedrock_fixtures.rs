@@ -83,6 +83,7 @@ fn text_stream_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -122,6 +123,7 @@ fn tool_call_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -704,6 +706,7 @@ async fn url_image_rejected_with_clear_error() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     let stream = provider.stream_prepared(request, test_auth());
@@ -1093,6 +1096,7 @@ fn lifecycle_text_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -7751,7 +7755,7 @@ mod smithy_retry {
 use opi_ai::callbacks::RequestCallbacks;
 
 #[tokio::test]
-async fn bedrock_payload_and_response_callbacks_flow_through_converse_stream() {
+async fn bedrock_async_payload_and_response_callbacks_flow_through_converse_stream() {
     let body_bytes = bedrock_text_lifecycle_bytes();
     let payload_bodies: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -7772,20 +7776,32 @@ async fn bedrock_payload_and_response_callbacks_flow_through_converse_stream() {
     let provider = BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()));
     let mut request = lifecycle_text_request();
     request.callbacks = RequestCallbacks::new()
-        .with_on_payload(std::sync::Arc::new(move |body| {
-            payload_recorder.lock().unwrap().push(body.clone());
-            Ok(None)
-        }))
-        .with_on_response(std::sync::Arc::new(move |status, headers| {
-            response_recorder.lock().unwrap().push(format!("{status}"));
-            assert!(
-                headers
-                    .iter()
-                    .any(|(name, _)| name.eq_ignore_ascii_case("content-type")),
-                "bedrock response callback sees the event-stream content type"
-            );
-            Ok(())
-        }));
+        .with_async_header_transform(|headers| async move {
+            tokio::task::yield_now().await;
+            Ok(headers)
+        })
+        .with_async_on_payload(move |body| {
+            let payload_recorder = payload_recorder.clone();
+            async move {
+                tokio::task::yield_now().await;
+                payload_recorder.lock().unwrap().push(body.clone());
+                Ok(None)
+            }
+        })
+        .with_async_on_response(move |status, headers| {
+            let response_recorder = response_recorder.clone();
+            async move {
+                tokio::task::yield_now().await;
+                response_recorder.lock().unwrap().push(format!("{status}"));
+                assert!(
+                    headers
+                        .iter()
+                        .any(|(name, _)| name.eq_ignore_ascii_case("content-type")),
+                    "bedrock response callback sees the event-stream content type"
+                );
+                Ok(())
+            }
+        });
 
     let events = collect_events(provider.stream_prepared(request, test_auth())).await;
     assert!(
@@ -7927,6 +7943,7 @@ mod constrained_guard_tests {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            telemetry_context: None,
             callbacks: Default::default(),
         }
     }

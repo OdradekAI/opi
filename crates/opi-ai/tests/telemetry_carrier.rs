@@ -137,6 +137,21 @@ async fn from_span_captures_dispatch_at_creation_not_at_later_poll() {
 }
 
 #[test]
+fn from_span_uses_the_spans_dispatch_even_when_capture_has_another_default() {
+    let (source, source_dispatch) = recorder();
+    let (ambient, ambient_dispatch) = recorder();
+    let parent =
+        dispatcher::with_default(&source_dispatch, || tracing::span!(Level::INFO, "parent"));
+    let context =
+        dispatcher::with_default(&ambient_dispatch, || TelemetryContext::from_span(parent));
+    context.in_scope(|| {
+        tracing::span!(Level::INFO, "cross_source_probe").in_scope(|| ());
+    });
+    assert_eq!(*source.spans.lock().unwrap(), vec!["cross_source_probe"]);
+    assert!(ambient.spans.lock().unwrap().is_empty());
+}
+
+#[test]
 fn in_scope_routes_to_frozen_dispatch_and_restores_caller() {
     let (frozen_recorder, context) = captured_context();
     let (ambient_recorder, ambient) = recorder();

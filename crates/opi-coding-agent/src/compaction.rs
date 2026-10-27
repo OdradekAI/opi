@@ -382,6 +382,7 @@ pub(crate) fn summary_request(
             tools: vec![] }).expect("valid context declarations"), max_tokens: Some(RESERVE_TOKENS * 4 / 5), temperature: None, sampling_params: Default::default(),
         thinking: ThinkingConfig::default(), stop_sequences: vec![], metadata: None, cancel,
         timeout: None, extra_headers: vec![], cache_retention: CacheRetention::None, session_id: None,
+        telemetry_context: None,
         callbacks: Default::default() }
 }
 

@@ -968,6 +968,7 @@ fn make_test_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -1122,6 +1123,7 @@ fn make_tool_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -1344,6 +1346,7 @@ fn make_tool_result_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -1435,6 +1438,7 @@ fn validate_rejects_image_on_text_only_openai_compatible_profile() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     let err = validate_request_capabilities(&provider, &image_request)
@@ -1642,6 +1646,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -1723,6 +1728,7 @@ async fn profile_extra_headers_reach_the_http_wire() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -1781,6 +1787,7 @@ async fn stream_cancellation_aborts_before_completion() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     let mut stream =
@@ -1856,6 +1863,7 @@ async fn chat_final_tool_call(arguments: &str) -> AssistantStreamEvent {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     use opi_ai::provider::Provider as _;
@@ -1994,6 +2002,7 @@ fn chat_callbacks_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -2090,7 +2099,7 @@ async fn chat_payload_replacement_reaches_the_wire() {
 }
 
 #[tokio::test]
-async fn chat_response_and_raw_callbacks_fire_in_source_order() {
+async fn chat_async_response_and_raw_callbacks_fire_in_source_order() {
     let order: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let raw_recorder = order.clone();
@@ -2108,21 +2117,37 @@ async fn chat_response_and_raw_callbacks_fire_in_source_order() {
     let provider = OpenAiChatProvider::new(Some(server.uri()));
     let mut request = chat_callbacks_request();
     request.callbacks = RequestCallbacks::new()
-        .with_on_response(std::sync::Arc::new(move |status, _headers| {
-            response_recorder
-                .lock()
-                .unwrap()
-                .push(format!("response:{status}"));
-            Ok(())
-        }))
-        .with_on_raw(std::sync::Arc::new(move |event| {
-            // The sentinel `[DONE]` frame is not JSON and is never a raw event.
-            raw_recorder
-                .lock()
-                .unwrap()
-                .push(format!("raw:{}", event["object"].as_str().unwrap_or("?")));
-            Ok(())
-        }));
+        .with_async_header_transform(|headers| async move {
+            tokio::task::yield_now().await;
+            Ok(headers)
+        })
+        .with_async_on_payload(|_| async {
+            tokio::task::yield_now().await;
+            Ok(None)
+        })
+        .with_async_on_response(move |status, _headers| {
+            let response_recorder = response_recorder.clone();
+            async move {
+                tokio::task::yield_now().await;
+                response_recorder
+                    .lock()
+                    .unwrap()
+                    .push(format!("response:{status}"));
+                Ok(())
+            }
+        })
+        .with_async_on_raw(move |event| {
+            let raw_recorder = raw_recorder.clone();
+            async move {
+                tokio::task::yield_now().await;
+                // The sentinel `[DONE]` frame is not JSON and is never a raw event.
+                raw_recorder
+                    .lock()
+                    .unwrap()
+                    .push(format!("raw:{}", event["object"].as_str().unwrap_or("?")));
+                Ok(())
+            }
+        });
 
     let norm_recorder = order.clone();
     let mut stream =
@@ -2196,6 +2221,7 @@ mod constrained_guard_tests {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            telemetry_context: None,
             callbacks: Default::default(),
         }
     }

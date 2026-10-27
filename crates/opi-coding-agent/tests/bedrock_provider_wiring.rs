@@ -321,6 +321,7 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
         extra_headers: vec![],
         cache_retention: opi_ai::provider::CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     let _ = &mut request;

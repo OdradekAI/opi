@@ -103,48 +103,41 @@ fn pricing_tier_uses_strict_greater_than_boundary() {
 }
 
 #[test]
-fn pricing_rejects_non_finite_negative_duplicate_and_unsorted_tiers() {
+fn pricing_validates_rates_without_narrowing_source_tier_order() {
     assert!(ModelPricing::try_new(pricing(f64::NAN), Vec::new()).is_err());
     assert!(ModelPricing::try_new(pricing(-1.0), Vec::new()).is_err());
-    assert!(
-        ModelPricing::try_new(
-            pricing(1.0),
-            vec![
-                PricingTier {
-                    input_tokens_above: 10,
-                    pricing: pricing(2.0),
-                },
-                PricingTier {
-                    input_tokens_above: 10,
-                    pricing: pricing(3.0),
-                },
-            ],
-        )
-        .is_err()
-    );
-    assert!(
-        ModelPricing::try_new(
-            pricing(1.0),
-            vec![
-                PricingTier {
-                    input_tokens_above: 20,
-                    pricing: pricing(2.0),
-                },
-                PricingTier {
-                    input_tokens_above: 10,
-                    pricing: pricing(3.0),
-                },
-            ],
-        )
-        .is_err()
-    );
+    let tiers = ModelPricing::try_new(
+        pricing(1.0),
+        vec![
+            PricingTier {
+                input_tokens_above: 20,
+                pricing: pricing(2.0),
+            },
+            PricingTier {
+                input_tokens_above: 10,
+                pricing: pricing(3.0),
+            },
+            PricingTier {
+                input_tokens_above: 10,
+                pricing: pricing(4.0),
+            },
+            PricingTier {
+                input_tokens_above: 0,
+                pricing: pricing(5.0),
+            },
+        ],
+    )
+    .expect("zero, duplicate and unordered thresholds are source-valid");
+    assert_eq!(tiers.effective(1), pricing(5.0));
+    assert_eq!(tiers.effective(11), pricing(3.0));
+    assert_eq!(tiers.effective(21), pricing(2.0));
     assert!(
         ModelPricing::try_new(
             pricing(1.0),
             vec![PricingTier {
                 input_tokens_above: 0,
-                pricing: pricing(2.0),
-            }],
+                pricing: pricing(-1.0),
+            }]
         )
         .is_err()
     );
@@ -190,6 +183,7 @@ fn unsupported_thinking_request(provider_id: &str, model_id: &str) -> Request {
         extra_headers: Vec::new(),
         cache_retention: Default::default(),
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }

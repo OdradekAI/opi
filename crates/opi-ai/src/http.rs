@@ -203,8 +203,8 @@ impl HttpClient {
     }
 
     /// Classic WebSocket Upgrade uses H1 with the same frozen trust, identity,
-    /// proxy and send policy as ordinary HTTP. Its pool cannot reuse an H2
-    /// connection negotiated for another request.
+    /// and proxy as ordinary HTTP, with redirects disabled for strict Upgrade.
+    /// Its pool cannot reuse an H2 connection negotiated for another request.
     pub(crate) fn websocket_client(&self) -> &reqwest::Client {
         &self.websocket
     }
@@ -338,19 +338,19 @@ impl HttpClientBuilder {
         let defaults = TlsOptions::default();
         let frozen = self.tls_options.as_ref().unwrap_or(&defaults).freeze()?;
         // Clone the already validated TLS state, including its instance provider
-        // and client identity. Only the classic Upgrade ALPN differs; no second
-        // trust/credential/environment discovery occurs here.
-        let websocket_config = (!frozen.http1_only).then(|| {
-            let mut config = frozen.config.clone();
-            config.alpn_protocols = vec![b"http/1.1".to_vec()];
-            config
-        });
-        let build = |config, http1_only| -> Result<reqwest::Client, HttpClientBuildError> {
+        // and client identity. Classic Upgrade uses H1 and rejects redirects;
+        // no second trust/credential/environment discovery occurs here.
+        let mut websocket_config = frozen.config.clone();
+        websocket_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+        let build = |config,
+                     http1_only,
+                     redirects: RedirectPolicy|
+         -> Result<reqwest::Client, HttpClientBuildError> {
             let mut builder = reqwest::Client::builder()
                 .pool_max_idle_per_host(self.max_idle_per_host)
                 .pool_idle_timeout(Some(self.idle_timeout))
                 .retry(reqwest::retry::never())
-                .redirect(self.redirect_policy.to_reqwest())
+                .redirect(redirects.to_reqwest())
                 .no_proxy()
                 .use_preconfigured_tls(config);
             if http1_only {
@@ -365,11 +365,8 @@ impl HttpClientBuilder {
             }
             Ok(builder.build()?)
         };
-        let inner = build(frozen.config, frozen.http1_only)?;
-        let websocket = match websocket_config {
-            Some(config) => build(config, true)?,
-            None => inner.clone(),
-        };
+        let inner = build(frozen.config, frozen.http1_only, self.redirect_policy)?;
+        let websocket = build(websocket_config, true, RedirectPolicy::None)?;
         Ok(HttpClient {
             inner,
             websocket,

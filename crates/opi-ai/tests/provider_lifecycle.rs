@@ -41,6 +41,7 @@ fn make_request(cancel: CancellationToken) -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -836,8 +837,8 @@ fn many_delta_events_fixture(count: usize) -> Vec<u8> {
 
 #[tokio::test]
 async fn anthropic_cancel_discards_buffered_events_at_the_queue_barrier() {
-    // Fill the bounded queue far beyond its 64 slots while the consumer has
-    // not polled, then cancel: the first delivered item must be the typed
+    // Start the lazy producer, then fill the bounded queue far beyond its
+    // 64 slots before consuming events. After cancellation the next item is typed
     // cancellation, never a pre-cancel buffered event.
     let (url, sent_rx, _closed_rx) = staged_sse_server(many_delta_events_fixture(200)).await;
     let provider = AnthropicProvider::new(Some(url));
@@ -846,10 +847,14 @@ async fn anthropic_cancel_discards_buffered_events_at_the_queue_barrier() {
         make_request(cancel.clone()),
         opi_ai::test_support::resolved_auth(),
     );
+    assert!(futures_util::poll!(stream.next()).is_pending());
 
     // Confirm the wait point: the server handed the whole payload to the
     // socket, so the producer has parsed events and is parked on the queue.
-    sent_rx.await.expect("server wrote payload");
+    tokio::time::timeout(std::time::Duration::from_secs(2), sent_rx)
+        .await
+        .expect("producer starts after the first poll")
+        .expect("server wrote payload");
 
     // Confirm the queue wait point: one event is demonstrably buffered
     // behind the next, so pre-cancel events exist to discard.
@@ -968,7 +973,11 @@ async fn anthropic_cancel_at_the_connect_barrier_is_immediately_visible() {
         opi_ai::test_support::resolved_auth(),
     );
 
-    connected_rx.await.expect("server accepted the request");
+    assert!(futures_util::poll!(stream.next()).is_pending());
+    tokio::time::timeout(std::time::Duration::from_secs(2), connected_rx)
+        .await
+        .expect("lazy producer reaches the connect barrier")
+        .expect("server accepted the request");
     cancel.cancel();
     use futures_util::StreamExt as _;
     let first = tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())

@@ -12,6 +12,7 @@ use crate::provider::{ProviderError, ProviderErrorSummary};
 /// single list so a future provider cannot accidentally inherit a narrower
 /// gate.
 pub(crate) const RESERVED_PROVIDER_HEADERS: &[&str] = &[
+    "host",
     "authorization",
     "x-api-key",
     "api-key",
@@ -25,6 +26,8 @@ pub(crate) const RESERVED_PROVIDER_HEADERS: &[&str] = &[
     "x-client-request-id",
     "x-session-affinity",
     "x-initiator",
+    "x-goog-api-key",
+    "x-goog-user-project",
 ];
 
 /// Validated provider-configured headers kept separate from route-managed and
@@ -126,30 +129,50 @@ pub fn merge_provider_header_sources(
 }
 
 /// Validate a header-transform output (task 20.51): valid names/values, no
-/// duplicates, and no protected identity/auth/signing name (reserved list plus
-/// the `amz-sdk-*` Smithy signing family, case-insensitive).
-pub(crate) fn validate_transform_output(headers: &[(String, String)]) -> Result<(), String> {
+/// duplicates, and unchanged protected identity/auth/signing values. A
+/// protected name absent from the assembled input cannot be introduced.
+pub(crate) fn validate_transform_output(
+    headers: &[(String, String)],
+    original: &[(String, String)],
+) -> Result<(), String> {
     let mut names = BTreeSet::new();
     for (name, value) in headers {
         if let Err(error) = validate_pair(name, value) {
             return Err(error.to_string());
         }
         let normalized = name.to_ascii_lowercase();
-        if RESERVED_PROVIDER_HEADERS.contains(&normalized.as_str()) {
+        if is_protected_header(&normalized)
+            && !original.iter().any(|(prior_name, prior_value)| {
+                prior_name.eq_ignore_ascii_case(name) && prior_value == value
+            })
+        {
             return Err(format!(
                 "transform output touches the protected header '{name}'"
-            ));
-        }
-        if normalized.starts_with("amz-sdk-") {
-            return Err(format!(
-                "transform output touches the Smithy signing header '{name}'"
             ));
         }
         if !names.insert(normalized) {
             return Err(format!("transform output duplicates the header '{name}'"));
         }
     }
+    for (name, value) in original {
+        if is_protected_header(name)
+            && !headers.iter().any(|(next_name, next_value)| {
+                next_name.eq_ignore_ascii_case(name) && next_value == value
+            })
+        {
+            return Err(format!(
+                "transform output removes protected header '{name}'"
+            ));
+        }
+    }
     Ok(())
+}
+
+pub(crate) fn is_protected_header(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    RESERVED_PROVIDER_HEADERS.contains(&name.as_str())
+        || name.starts_with("amz-sdk-")
+        || name.starts_with("x-amz-")
 }
 
 fn validate_pair(name: &str, value: &str) -> Result<(), ProviderHeadersError> {

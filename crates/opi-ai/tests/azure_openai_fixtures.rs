@@ -62,6 +62,7 @@ fn text_request() -> opi_ai::provider::Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -105,6 +106,7 @@ fn tool_request() -> opi_ai::provider::Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -844,7 +846,7 @@ async fn cancellation_during_response_body_is_typed_and_prompt() {
 use opi_ai::callbacks::RequestCallbacks;
 
 #[tokio::test]
-async fn azure_callbacks_flow_through_shared_responses_wire() {
+async fn azure_async_callbacks_flow_through_shared_responses_wire() {
     let order: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let raw_recorder = order.clone();
@@ -878,24 +880,40 @@ async fn azure_callbacks_flow_through_shared_responses_wire() {
     let payload_counter = payload_calls.clone();
     let mut request = text_request();
     request.callbacks = RequestCallbacks::new()
-        .with_on_payload(std::sync::Arc::new(move |_body| {
-            payload_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(None)
-        }))
-        .with_on_response(std::sync::Arc::new(move |status, _headers| {
-            response_recorder
-                .lock()
-                .unwrap()
-                .push(format!("response:{status}"));
-            Ok(())
-        }))
-        .with_on_raw(std::sync::Arc::new(move |event| {
-            raw_recorder
-                .lock()
-                .unwrap()
-                .push(format!("raw:{}", event["object"].as_str().unwrap_or("?")));
-            Ok(())
-        }));
+        .with_async_header_transform(|headers| async move {
+            tokio::task::yield_now().await;
+            Ok(headers)
+        })
+        .with_async_on_payload(move |_body| {
+            let payload_counter = payload_counter.clone();
+            async move {
+                tokio::task::yield_now().await;
+                payload_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(None)
+            }
+        })
+        .with_async_on_response(move |status, _headers| {
+            let response_recorder = response_recorder.clone();
+            async move {
+                tokio::task::yield_now().await;
+                response_recorder
+                    .lock()
+                    .unwrap()
+                    .push(format!("response:{status}"));
+                Ok(())
+            }
+        })
+        .with_async_on_raw(move |event| {
+            let raw_recorder = raw_recorder.clone();
+            async move {
+                tokio::task::yield_now().await;
+                raw_recorder
+                    .lock()
+                    .unwrap()
+                    .push(format!("raw:{}", event["object"].as_str().unwrap_or("?")));
+                Ok(())
+            }
+        });
 
     let events = collect_events(provider.stream_prepared(request, auth)).await;
     assert!(

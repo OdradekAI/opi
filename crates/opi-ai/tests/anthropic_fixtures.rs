@@ -490,6 +490,7 @@ async fn cache_1h_malformed_subset_stops_production_stream_with_non_retryable_er
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -957,6 +958,7 @@ fn build_request_body_includes_thinking_when_enabled() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -1001,6 +1003,7 @@ fn build_request_body_uses_default_budget_when_none() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -1043,6 +1046,7 @@ fn build_request_body_omits_thinking_when_disabled() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -1514,6 +1518,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -1587,6 +1592,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
@@ -1644,6 +1650,7 @@ mod request_compatibility {
             extra_headers: Vec::new(),
             cache_retention: CacheRetention::None,
             session_id: None,
+            telemetry_context: None,
             callbacks: Default::default(),
         }
     }
@@ -1770,6 +1777,7 @@ fn callbacks_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -1824,7 +1832,7 @@ async fn payload_callback_observes_final_wire_body_after_projection() {
 }
 
 #[tokio::test]
-async fn response_callback_precedes_every_stream_event() {
+async fn async_response_callback_precedes_every_stream_event() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .respond_with(ResponseTemplate::new(200).set_body_string(callbacks_sse()))
@@ -1836,8 +1844,10 @@ async fn response_callback_precedes_every_stream_event() {
     let response_recorder = order.clone();
     let provider = AnthropicProvider::new(Some(server.uri()));
     let mut request = callbacks_request();
-    request.callbacks =
-        RequestCallbacks::new().with_on_response(std::sync::Arc::new(move |status, headers| {
+    request.callbacks = RequestCallbacks::new().with_async_on_response(move |status, headers| {
+        let response_recorder = response_recorder.clone();
+        async move {
+            tokio::task::yield_now().await;
             response_recorder
                 .lock()
                 .unwrap()
@@ -1849,7 +1859,8 @@ async fn response_callback_precedes_every_stream_event() {
                 "response callback sees the wire response headers"
             );
             Ok(())
-        }));
+        }
+    });
 
     let event_recorder = order.clone();
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
@@ -1865,6 +1876,58 @@ async fn response_callback_precedes_every_stream_event() {
         order.iter().filter(|m| m.as_str() == "event").count() >= 1,
         "normalized stream events follow the response callback"
     );
+}
+
+#[tokio::test]
+async fn cancelled_async_anthropic_payload_exits_before_dispatch() {
+    use std::sync::Arc;
+    struct NotifyDrop(Arc<tokio::sync::Notify>);
+    impl Drop for NotifyDrop {
+        fn drop(&mut self) {
+            self.0.notify_one();
+        }
+    }
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let dropped = Arc::new(tokio::sync::Notify::new());
+    let marker = entered.clone();
+    let release = dropped.clone();
+    let mut request = callbacks_request();
+    let cancel = request.cancel.clone();
+    request.callbacks = RequestCallbacks::new().with_async_on_payload(move |_| {
+        let marker = marker.clone();
+        let release = release.clone();
+        async move {
+            let _drop = NotifyDrop(release);
+            marker.notify_one();
+            std::future::pending::<()>().await;
+            Ok(None)
+        }
+    });
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    // The direct adapter is lazy; poll the result concurrently with the barrier.
+    let result = opi_ai::stream::ChatStream::new(stream).result();
+    tokio::pin!(result);
+    tokio::select! {_ = entered.notified()=>{}, outcome=&mut result=>panic!("callback ended early: {outcome:?}"), _=tokio::time::sleep(std::time::Duration::from_secs(1))=>panic!("payload not polled")}
+    cancel.cancel();
+    let failure = tokio::time::timeout(std::time::Duration::from_secs(1), &mut result)
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(
+        failure.cause().category(),
+        opi_ai::provider::ProviderErrorCategory::Cancelled
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(1), dropped.notified())
+        .await
+        .unwrap();
+    server.verify().await;
 }
 
 #[tokio::test]
@@ -2351,6 +2414,7 @@ mod anthropic_strict_wire_tests {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            telemetry_context: None,
             callbacks: Default::default(),
         }
     }
@@ -2619,6 +2683,7 @@ mod anthropic_strict_variant_tests {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            telemetry_context: None,
             callbacks,
         }
     }
@@ -2629,6 +2694,132 @@ mod anthropic_strict_variant_tests {
 
     async fn wait_retry(admission: opi_ai::retry::RetryAdmission) {
         tokio::time::sleep(std::time::Duration::from_millis(admission.delay_ms.max(1))).await;
+    }
+
+    async fn ordinary_strict_variant_contract(direct: bool) {
+        let server = MockServer::start().await;
+        let models = strict_variant_setup(&server, 400, strict_limits_400()).await;
+        let payload_calls = Arc::new(AtomicUsize::new(0));
+        let payload_probe = payload_calls.clone();
+        let header_calls = Arc::new(AtomicUsize::new(0));
+        let header_probe = header_calls.clone();
+        let responses = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let response_probe = responses.clone();
+        let request = variant_request(
+            vec![
+                strict_tool("prefer-tool", StrictPreference::Prefer),
+                strict_tool("require-tool", StrictPreference::Require),
+            ],
+            RequestCallbacks::new()
+                .with_on_payload(Arc::new(move |_| {
+                    payload_probe.fetch_add(1, Ordering::SeqCst);
+                    Ok(None)
+                }))
+                .with_header_transform(Arc::new(move |headers| {
+                    header_probe.fetch_add(1, Ordering::SeqCst);
+                    Ok(headers.to_vec())
+                }))
+                .with_on_response(Arc::new(move |status, _| {
+                    response_probe.lock().unwrap().push(status);
+                    Ok(())
+                })),
+        );
+        let message = if direct {
+            let (provider, _) = models.resolve("test:strict-model").unwrap();
+            ChatStream::new(
+                provider.stream_prepared(request, opi_ai::test_support::resolved_auth()),
+            )
+            .result()
+            .await
+        } else {
+            models
+                .complete_simple(
+                    opi_ai::ChatModelRecord::new(
+                        "test",
+                        models.get_model("test", "strict-model").unwrap(),
+                    ),
+                    request,
+                    Default::default(),
+                )
+                .await
+        }
+        .expect("ordinary entry drives its single admitted strict variant");
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 2);
+        let first: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+        let second: serde_json::Value = serde_json::from_slice(&sent[1].body).unwrap();
+        assert_eq!(first["tools"][0]["strict"], true);
+        assert!(second["tools"][0].get("strict").is_none());
+        assert_eq!(second["tools"][1]["strict"], true);
+        assert_eq!(first["model"], second["model"]);
+        assert_eq!(sent[0].headers["x-api-key"], sent[1].headers["x-api-key"]);
+        assert_eq!(payload_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(header_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(*responses.lock().unwrap(), vec![200]);
+        assert_eq!(
+            message
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.kind == "anthropic_strict_tools_fallback")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn ordinary_models_drives_the_single_strict_variant() {
+        ordinary_strict_variant_contract(false).await;
+    }
+
+    #[tokio::test]
+    async fn ordinary_direct_adapter_drives_the_single_strict_variant() {
+        ordinary_strict_variant_contract(true).await;
+    }
+
+    #[tokio::test]
+    async fn successful_headers_seal_acquisition_before_a_body_timeout() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let peer = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
+            let mut head = Vec::new();
+            while !head.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                socket.read_exact(&mut byte).unwrap();
+                head.push(byte[0]);
+            }
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n")
+                .unwrap();
+            socket.flush().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        });
+        let models = strict_models(format!("http://127.0.0.1:{port}"));
+        let mut request = variant_request(vec![], RequestCallbacks::default());
+        request.timeout = Some(std::time::Duration::from_millis(50));
+        let call = models
+            .prepare_call_with_policy(
+                "test:strict-model",
+                request,
+                AcquisitionPolicy::with_max_retries(1),
+            )
+            .await
+            .unwrap();
+        let error = ChatStream::new(call.start_attempt().unwrap())
+            .result()
+            .await
+            .expect_err("successful headers precede the body timeout");
+        assert!(matches!(error.cause(), ProviderError::Timeout));
+        assert!(call.retry_admission().is_none(), "no post-handoff resend");
+        assert_eq!(
+            call.acquisition_seal(),
+            Some(opi_ai::retry::AcquisitionSeal::PostHandoff)
+        );
+        peer.join().unwrap();
     }
 
     #[tokio::test]
@@ -2944,5 +3135,35 @@ mod anthropic_strict_variant_tests {
         );
         let sent = server.received_requests().await.unwrap();
         assert!(sent.is_empty(), "zero HTTP dispatch for a callback failure");
+    }
+
+    #[tokio::test]
+    async fn post_payload_wire_without_prefer_strict_does_not_admit_downgrade() {
+        let server = MockServer::start().await;
+        let models = strict_variant_setup(&server, 400, strict_limits_400()).await;
+        let callbacks = RequestCallbacks::new().with_on_payload(Arc::new(|body| {
+            let mut body = body.clone();
+            for tool in body["tools"].as_array_mut().unwrap() {
+                tool.as_object_mut().unwrap().remove("strict");
+            }
+            Ok(Some(body))
+        }));
+        let call = models
+            .prepare_call_with_policy(
+                "test:strict-model",
+                variant_request(
+                    vec![strict_tool("prefer-tool", StrictPreference::Prefer)],
+                    callbacks,
+                ),
+                AcquisitionPolicy::with_max_retries(0),
+            )
+            .await
+            .unwrap();
+        ChatStream::new(call.start_attempt().unwrap())
+            .result()
+            .await
+            .expect_err("source marker without actual strict wire stays final");
+        assert!(call.strict_variant_admission().is_none());
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 }

@@ -78,6 +78,7 @@ fn request_with_truncated_tool_result() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }

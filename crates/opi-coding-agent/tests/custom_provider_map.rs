@@ -615,6 +615,7 @@ max_output_tokens = 8192
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            telemetry_context: None,
             callbacks: Default::default(),
         };
         let spec = request.model.clone();
@@ -759,6 +760,7 @@ max_output_tokens = 8192
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     // Phase 17.5: auth moved off the provider object onto the collection route.
@@ -900,6 +902,7 @@ max_output_tokens = 8192
                 extra_headers: vec![],
                 cache_retention: CacheRetention::None,
                 session_id: None,
+                telemetry_context: None,
                 callbacks: Default::default(),
             };
 
@@ -1060,6 +1063,7 @@ send_session_id_header = true
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: Some(session_id.into()),
+            telemetry_context: None,
             callbacks: Default::default(),
         };
         let spec = request.model.clone();

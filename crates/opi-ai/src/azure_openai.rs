@@ -223,7 +223,12 @@ impl Provider for AzureOpenAIProvider {
         &self.models
     }
 
-    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+    fn stream_prepared(
+        &self,
+        mut request: Request,
+        auth: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        request.callbacks = request.callbacks.ensure_call_scope();
         let secret = auth.secret.expose_secret();
         let api_key = match auth.scheme {
             crate::auth::AuthScheme::ApiKey => secret.to_string(),
@@ -248,15 +253,6 @@ impl Provider for AzureOpenAIProvider {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
-        // Payload callback (task 20.51): once per variant, frozen across
-        // ordinary retries, on the inner chat projection.
-        let body = match request
-            .callbacks
-            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-        {
-            Ok(body) => body,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
         let cancel = request.cancel;
         let timeout = request.timeout;
         let extra_headers = request.extra_headers;
@@ -271,19 +267,25 @@ impl Provider for AzureOpenAIProvider {
         let tx_closed = tx.clone();
         tokio::spawn(async move {
             let run = async {
-                let result = stream_azure_http(
-                    http_client,
-                    api_key,
-                    &url,
-                    requested_model,
-                    &body,
-                    producer_cancel.clone(),
-                    timeout,
-                    extra_headers,
-                    callbacks,
-                    producer_snapshot,
-                    &tx,
-                )
+                let result = async {
+                    let body = callbacks
+                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                        .await?;
+                    stream_azure_http(
+                        http_client,
+                        api_key,
+                        &url,
+                        requested_model,
+                        &body,
+                        producer_cancel.clone(),
+                        timeout,
+                        extra_headers,
+                        callbacks,
+                        producer_snapshot,
+                        &tx,
+                    )
+                    .await
+                }
                 .await;
                 match result {
                     Ok(()) | Err(ProviderError::Cancelled) => {}
@@ -339,7 +341,9 @@ async fn stream_azure_http(
         .collect();
     // Header transform (task 20.51) on the merged per-call set; the output is
     // revalidated against protected identity/auth/signing names.
-    let transformed = callbacks.apply_header_transform(&transformable)?;
+    let transformed = callbacks
+        .apply_header_transform_async(&transformable)
+        .await?;
     let mut headers = route_headers.clone();
     headers.extend(transformed);
     let mut req = http_client.post(url);
@@ -385,7 +389,7 @@ async fn stream_azure_http(
     }
     // Response callback (V-36): fired exactly once on the successfully
     // acquired response; rejected dispatches never masquerade.
-    callbacks.notify_response(status.as_u16(), &observed_headers)?;
+    snapshot.received_response();
 
     let mut byte_stream = response.bytes_stream();
     let mut buffer = String::new();
@@ -399,6 +403,10 @@ async fn stream_azure_http(
     let mut saw_done = false;
 
     mapper.set_snapshot(snapshot);
+    callbacks
+        .notify_response_async(status.as_u16(), &observed_headers)
+        .await
+        .map_err(|error| mapper.failure(error))?;
     let result: Result<(), ProviderError> = async {
         loop {
             let chunk = tokio::select! {
@@ -426,8 +434,9 @@ async fn stream_azure_http(
             for (parsed, raw) in drain_sse_events(&mut buffer) {
                 // Raw observer (task 20.51): parsed wire JSON before
                 // normalization; failure preserves the partial.
-                if let Some(raw) = raw.as_ref()
-                    && let Err(error) = callbacks.notify_raw(raw)
+                if !saw_done
+                    && let Some(raw) = raw.as_ref()
+                    && let Err(error) = callbacks.notify_raw_async(raw).await
                 {
                     return Err(mapper.failure(error));
                 }

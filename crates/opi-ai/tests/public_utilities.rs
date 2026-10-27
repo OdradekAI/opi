@@ -420,6 +420,35 @@ fn finalize_tool_arguments_keeps_final_contract_public_and_authoritative() {
 }
 
 #[test]
+fn final_tool_arguments_repairs_complete_objects_without_partial_completion() {
+    for raw in [
+        r#" {"a":"x\qy"}"#,
+        "{\"a\":\"x\ny\"}",
+        r#"{"a":"escaped\"quote","b":"x\qy"}"#,
+    ] {
+        let (arguments, error) = finalize_tool_arguments(raw.to_owned());
+        assert!(
+            error.is_none(),
+            "complete repairable object failed: {error:?}"
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&arguments).unwrap(),
+            parse_streaming_json(raw)
+        );
+    }
+    let raw = "{\"a\":\"x\ny\",\"unfinished\":";
+    let (arguments, error) = finalize_tool_arguments(raw.to_owned());
+    assert_eq!(
+        arguments, raw,
+        "incomplete final text remains available unchanged"
+    );
+    assert!(
+        error.is_some(),
+        "display repair cannot authorize a partial final object"
+    );
+}
+
+#[test]
 fn string_enum_emits_portable_schema() {
     let schema = string_enum(&["add", "subtract"], None, None);
     assert_eq!(

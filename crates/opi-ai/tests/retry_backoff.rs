@@ -181,6 +181,7 @@ async fn mock_provider_returns_error_response() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     use futures_util::StreamExt;
@@ -425,6 +426,7 @@ mod acquisition {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            telemetry_context: None,
             callbacks: Default::default(),
         }
     }

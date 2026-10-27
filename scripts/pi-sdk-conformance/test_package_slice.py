@@ -214,11 +214,11 @@ class WsFamilyTests(unittest.TestCase):
         ws = FAMILIES["ws"]
         self.assertEqual(ws["crate"], "opi-ai")
         self.assertNotIn("package_dir", ws)
-        self.assertEqual(ws["private_test_minimum"], 93)
+        self.assertEqual(ws["private_test_minimum"], 95)
         self.assertEqual(ws["public_test_minimum"], 15)
         self.assertEqual(ws["public_codec_status"], "CLOSED: task 20.16 real-chain consumer check")
         self.assertEqual(ws["consumer"], "consumer-ws")
-        self.assertEqual(ws["expected_checks"], 7)
+        self.assertEqual(ws["expected_checks"], 10)
         self.assertEqual(
             [p["name"] for p in ws["profiles"]],
             ["ordinary", "union-default", "union-c-zlib"],
@@ -727,6 +727,7 @@ class WsPackageBoundaryTests(unittest.TestCase):
             self.assertIn(str(self.package / "Cargo.toml"), command)
             self.assertIn("--lib", command)
             self.assertIn("ws::", command)
+            self.assertEqual(command[-3:], ["--", "--skip", "auth::aws::"])
             if index:
                 self.assertIn(["flate2/default", "flate2/zlib"][index - 1], command)
             self.assertNotIn("opi-ws", " ".join(command))

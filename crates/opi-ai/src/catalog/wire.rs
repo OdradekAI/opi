@@ -18,7 +18,7 @@
 //! extension still decode: v1 fields win and opi-only capabilities take
 //! closed defaults.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde_json::{Map, Value, json};
 
@@ -30,6 +30,7 @@ use crate::model_info::{
 use crate::stream::Pricing;
 
 use super::ModelsStoreError;
+use super::store::CatalogPublisher;
 
 /// The distribution schema identity the store and HTTP documents declare.
 pub(crate) const DISTRIBUTION_SCHEMA_ID: &str = "https://pi.dev/schemas/models.schema.json";
@@ -142,6 +143,7 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
             "supportsEagerToolInputStreaming": inner.supports_eager_tool_input_streaming,
             "forceAdaptiveThinking": inner.force_adaptive_thinking,
             "supportsTemperature": inner.supports_temperature,
+            "supportsStrictTools": inner.supports_strict_tools,
         }),
         WireCompat::OpenAiCompletions(inner) => json!({
             "api": WireApi::OpenAiCompletions.as_str(),
@@ -210,7 +212,12 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                 supports_eager_tool_input_streaming: flag("supportsEagerToolInputStreaming")?,
                 force_adaptive_thinking: flag("forceAdaptiveThinking")?,
                 supports_temperature: flag("supportsTemperature")?,
-                supports_strict_tools: false,
+                supports_strict_tools: match value.get("supportsStrictTools") {
+                    None => false,
+                    Some(value) => value
+                        .as_bool()
+                        .ok_or("x-opi.compat field 'supportsStrictTools' must be a boolean")?,
+                },
             },
         ))),
         WireApi::OpenAiCompletions => Ok(Some(WireCompat::OpenAiCompletions(
@@ -309,6 +316,22 @@ pub(crate) fn encode_model_entry(model: &ModelInfo) -> Value {
         thinking_map_to_extension(&model.thinking_level_map),
     );
     extension.insert("compat".to_owned(), compat_to_extension(&model.compat));
+    extension.insert(
+        "samplingParams".to_owned(),
+        Value::Object(model.sampling_params.clone()),
+    );
+    extension.insert(
+        "samplingParamsByThinkingLevel".to_owned(),
+        Value::Object(
+            model
+                .sampling_params_by_thinking_level
+                .iter()
+                .map(|(level, params)| {
+                    (level_key(*level).to_owned(), Value::Object(params.clone()))
+                })
+                .collect(),
+        ),
+    );
     if let Some(pricing) = &model.pricing
         && let Some(tiers) = (!pricing.tiers.is_empty()).then(|| {
             Value::Array(
@@ -404,6 +427,30 @@ pub(crate) fn decode_model_entry(entry: &Value) -> Result<ModelInfo, String> {
     if let Some(thinking) = extension.and_then(|ext| ext.get("thinking")) {
         model = model.with_thinking_level_map(thinking_map_from_extension(thinking)?);
     }
+    if let Some(params) = extension.and_then(|ext| ext.get("samplingParams")) {
+        model.sampling_params = params
+            .as_object()
+            .ok_or("x-opi.samplingParams must be an object")?
+            .clone();
+    }
+    if let Some(levels) = extension.and_then(|ext| ext.get("samplingParamsByThinkingLevel")) {
+        for (key, params) in levels
+            .as_object()
+            .ok_or("x-opi.samplingParamsByThinkingLevel must be an object")?
+        {
+            let level = level_from_key(key)
+                .ok_or_else(|| format!("unknown sampling thinking level '{key}'"))?;
+            model.sampling_params_by_thinking_level.insert(
+                level,
+                params
+                    .as_object()
+                    .ok_or_else(|| {
+                        format!("sampling parameters for thinking level '{key}' must be an object")
+                    })?
+                    .clone(),
+            );
+        }
+    }
 
     if let Some(cost) = entry.get("cost") {
         let base = pricing_from_json(cost)?;
@@ -445,18 +492,20 @@ pub(crate) fn decode_model_entry(entry: &Value) -> Result<ModelInfo, String> {
 pub(crate) fn encode_store_document(
     revision: u64,
     catalogs: &BTreeMap<String, Vec<ModelInfo>>,
+    publishers: &HashMap<String, CatalogPublisher>,
 ) -> Value {
     let mut providers = Map::new();
     for (provider_id, models) in catalogs {
-        providers.insert(
-            provider_id.clone(),
-            json!({
-                "models": models
-                    .iter()
-                    .map(encode_model_entry)
-                    .collect::<Vec<_>>(),
-            }),
-        );
+        let mut provider = json!({
+            "models": models
+                .iter()
+                .map(encode_model_entry)
+                .collect::<Vec<_>>(),
+        });
+        if let Some(publisher) = publishers.get(provider_id) {
+            provider[EXTENSION_KEY] = json!({"publisher": publisher});
+        }
+        providers.insert(provider_id.clone(), provider);
     }
     json!({
         "$schema": DISTRIBUTION_SCHEMA_ID,
@@ -467,9 +516,13 @@ pub(crate) fn encode_store_document(
 
 /// Decode a store document previously written by
 /// [`encode_store_document`].
-pub(crate) fn decode_store_document(
-    document: &Value,
-) -> Result<(u64, BTreeMap<String, Vec<ModelInfo>>), ModelsStoreError> {
+pub(crate) struct DecodedStore {
+    pub revision: u64,
+    pub catalogs: BTreeMap<String, Vec<ModelInfo>>,
+    pub publishers: BTreeMap<String, CatalogPublisher>,
+}
+
+pub(crate) fn decode_store_document(document: &Value) -> Result<DecodedStore, ModelsStoreError> {
     let corrupt = |message: String| ModelsStoreError::Corrupt { message };
     let providers = document
         .get("providers")
@@ -480,6 +533,7 @@ pub(crate) fn decode_store_document(
         .and_then(Value::as_u64)
         .unwrap_or(0);
     let mut catalogs = BTreeMap::new();
+    let mut publishers = BTreeMap::new();
     for (provider_id, provider) in providers {
         let Some(models) = provider.get("models").and_then(Value::as_array) else {
             return Err(corrupt(format!(
@@ -494,6 +548,26 @@ pub(crate) fn decode_store_document(
             );
         }
         catalogs.insert(provider_id.clone(), decoded);
+        if let Some(extension) = provider.get(EXTENSION_KEY) {
+            let extension = extension.as_object().ok_or_else(|| {
+                corrupt(format!(
+                    "provider '{provider_id}' x-opi extension must be an object"
+                ))
+            })?;
+            if let Some(value) = extension.get("publisher") {
+                let publisher: CatalogPublisher =
+                    serde_json::from_value(value.clone()).map_err(|_| {
+                        corrupt(format!(
+                            "provider '{provider_id}' has invalid publisher metadata"
+                        ))
+                    })?;
+                publishers.insert(provider_id.clone(), publisher);
+            }
+        }
     }
-    Ok((revision, catalogs))
+    Ok(DecodedStore {
+        revision,
+        catalogs,
+        publishers,
+    })
 }

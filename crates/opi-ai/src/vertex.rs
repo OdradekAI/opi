@@ -14,7 +14,9 @@ use futures_util::{StreamExt, stream};
 use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
-use crate::gemini::{GeminiMapper, GeminiProvider, ParsedEvent, drain_sse_data, parse_sse_data};
+use crate::gemini::{
+    GeminiMapper, GeminiProvider, ParsedEvent, drain_sse_payloads, parse_sse_data,
+};
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::provider::{
@@ -196,14 +198,17 @@ impl Provider for VertexProvider {
         &self.models
     }
 
-    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
-        // Google wires have no HTTP response hook and no raw-event support:
-        // wire observers are rejected before dispatch instead of being
-        // silently ignored (task 20.51).
-        if request.callbacks.has_wire_observers() {
+    fn stream_prepared(
+        &self,
+        mut request: Request,
+        auth: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        request.callbacks = request.callbacks.ensure_call_scope();
+        // Google exposes parsed raw chunks but has no HTTP response hook.
+        if request.callbacks.has_response_observer() {
             return Box::pin(stream::iter(vec![Err(
                 ProviderError::UnsupportedCapability(ProviderErrorSummary::attested_static(
-                    "Google wires do not support response or raw-event callbacks",
+                    "Google wires do not support response callbacks",
                 )),
             )]));
         }
@@ -250,15 +255,6 @@ impl Provider for VertexProvider {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
-        // Payload callback (task 20.51): once per variant on the shared
-        // Google projection, frozen across ordinary retries.
-        let body = match request
-            .callbacks
-            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-        {
-            Ok(body) => body,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
         let callbacks = request.callbacks.clone();
         let cancel = request.cancel;
         let timeout = request.timeout;
@@ -273,19 +269,25 @@ impl Provider for VertexProvider {
         let tx_closed = tx.clone();
         tokio::spawn(async move {
             let run = async {
-                let result = stream_vertex_http(
-                    http_client,
-                    auth_mode,
-                    &url,
-                    requested_model,
-                    &body,
-                    producer_cancel.clone(),
-                    timeout,
-                    extra_headers,
-                    callbacks,
-                    producer_snapshot,
-                    &tx,
-                )
+                let result = async {
+                    let body = callbacks
+                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                        .await?;
+                    stream_vertex_http(
+                        http_client,
+                        auth_mode,
+                        &url,
+                        requested_model,
+                        &body,
+                        producer_cancel.clone(),
+                        timeout,
+                        extra_headers,
+                        callbacks,
+                        producer_snapshot,
+                        &tx,
+                    )
+                    .await
+                }
                 .await;
                 match result {
                     Ok(()) | Err(ProviderError::Cancelled) => {}
@@ -382,7 +384,9 @@ async fn stream_vertex_http(
         })
         .cloned()
         .collect();
-    let transformed = callbacks.apply_header_transform(&transformable)?;
+    let transformed = callbacks
+        .apply_header_transform_async(&transformable)
+        .await?;
     let mut headers = route_headers.clone();
     headers.extend(transformed);
     let mut req = http_client.post(url);
@@ -418,6 +422,7 @@ async fn stream_vertex_http(
         return Err(map_vertex_status(status, None, &headers));
     }
 
+    snapshot.received_response();
     let mut byte_stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut decoder = crate::text_decode::StreamTextDecoder::new();
@@ -453,29 +458,34 @@ async fn stream_vertex_http(
             })?;
             buffer.push_str(&decoder.push(&chunk));
 
-            for parsed in drain_sse_data(&mut buffer) {
-                match parsed {
-                    ParsedEvent::Valid(event) => {
-                        for item in mapper.process(event) {
-                            let is_terminal = match &item {
-                                Ok(terminal_event) => terminal_event.is_terminal(),
-                                Err(_) => true,
-                            };
-                            if !send_or_cancel(&cancel, tx, item).await? {
-                                return Ok(());
-                            }
-                            if is_terminal {
-                                saw_done = true;
+            for data in drain_sse_payloads(&mut buffer) {
+                if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&data) {
+                    callbacks.notify_raw_async(&raw).await?;
+                }
+                for parsed in ParsedEvent::from_data(&data) {
+                    match parsed {
+                        ParsedEvent::Valid(event) => {
+                            for item in mapper.process(event) {
+                                let is_terminal = match &item {
+                                    Ok(terminal_event) => terminal_event.is_terminal(),
+                                    Err(_) => true,
+                                };
+                                if !send_or_cancel(&cancel, tx, item).await? {
+                                    return Ok(());
+                                }
+                                if is_terminal {
+                                    saw_done = true;
+                                }
                             }
                         }
-                    }
-                    ParsedEvent::Malformed => {
-                        let err =
-                            ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                                "Vertex returned a malformed streaming frame",
-                            ));
-                        if !send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await? {
-                            return Ok(());
+                        ParsedEvent::Malformed => {
+                            let err =
+                                ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                                    "Vertex returned a malformed streaming frame",
+                                ));
+                            if !send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await? {
+                                return Ok(());
+                            }
                         }
                     }
                 }

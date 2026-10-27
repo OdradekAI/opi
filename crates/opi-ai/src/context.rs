@@ -53,13 +53,7 @@ pub fn estimate_message_tokens(message: &Message) -> u64 {
         // A system message rounds its rendered body and sections once, then
         // adds the serialized added/removed tool lists, each rounded once.
         Message::System(system) => {
-            let mut chars = system.content.encode_utf16().count() as u64;
-            for section in &system.sections {
-                if let Some(value) = &section.value {
-                    chars += value.encode_utf16().count() as u64;
-                }
-            }
-            chars_to_tokens(chars)
+            estimate_text_tokens(&crate::transcript::system_message_text(system))
                 + estimate_tools_tokens(&system.tools_added)
                 + estimate_tools_tokens(&system.tools_removed)
         }

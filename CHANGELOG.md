@@ -2,6 +2,22 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): `Request` gains optional
+  `telemetry_context: Option<TelemetryContext>`; request literals add `None`
+  when no explicit parent is supplied. `SimpleOptions` gains
+  `tool_choice: Option<SimpleToolChoice>`; struct literals add `tool_choice: None`
+  or use `..Default::default()`. Codex admits neutral `Auto`/`None`; other
+  currently unsupported routes reject an explicit choice before auth.
+  Resource owners implement
+  `SessionResourceOwner::new_namespace`; typed `ChatApi` adapters with resources
+  forward leases through `session_resources`/`stream_resource_prepared`.
+  Metadata-aware adapters consume the frozen complete record through the default
+  `Provider::stream_model_resource_attempt` and
+  `ChatApi::stream_model_resource_prepared` hooks; `ChatApi::validate_native_request`
+  and `simple_options_for` retain defaults for existing custom adapters.
+  `CleanupError::Incomplete { report }` carries confirmed releases and
+  unconfirmed effects when cleanup cannot fully confirm completion.
+
 - `opi-ai`: `provider::Request` gains a `callbacks:
   callbacks::RequestCallbacks` field (task 20.51): header-transform,
   payload, response and raw-event functional callbacks ride the request
@@ -387,6 +403,26 @@
 
 ### Fixed
 
+- `opi-ai`: ordinary and advanced acquisition share one bounded owner, including
+  forwarded Anthropic strict variants; successful response headers seal retries
+  before callbacks or body errors. Async callbacks preserve ordered raw
+  observation, per-call header freezes and per-variant payload freezes; Google
+  raw callbacks are supported. Codex telemetry retains the source span's
+  subscriber, and cleanup registers before auth, isolates instance namespaces,
+  cancels pending producers and awaits all local releases without repolling a
+  dormant caller Future.
+- `opi-ai`: native Chat/Responses calls retain native token-limit omission and
+  explicit values; simple preparation estimates the canonical System chronology
+  after usage anchors. Catalog source failures retain acknowledged revisions;
+  store round-trips retain sampling/strict metadata and zero, duplicate or
+  unordered pricing tiers. Final JSON parsing repairs complete object strings
+  with control characters as well as invalid escapes; grammar deltas accumulate
+  and terminal-only custom-tool input is retained.
+- `opi-ai`: `CodexChatApi` exposes the real Codex adapter through
+  `ChatApi<CodexOptions>`, with typed reasoning effort/summary, service tier,
+  text verbosity and tool choice. Native defaults remain distinct from simple
+  thinking mapping, and explicit service-tier null survives on the wire.
+
 - SDK OAuth routes resolve acknowledged stored identities through the same
   flow used for login and refresh before dispatch. Initial identity selection
   happens inside the store slot, including fresh-token reads. Replacing the
@@ -557,9 +593,8 @@
   registry checksums plus AWS-LC and C-libz native provenance recorded.
 - `opi-ai`: process-local telemetry carrier `TelemetryContext` (task
   20.54, DEL-12; P20-TELEMETRY owner). `from_span(tracing::Span)` freezes
-  the parent span together with the current default `Dispatch` at creation
-  time - the reviewed RDF-14 owned tracing difference, since tracing spans
-  do not retain their creating dispatcher; observation never adopts
+  the parent span together with its own `Dispatch` through
+  `Span::with_subscriber`; observation never adopts creation-time or
   poll-time ambient dispatch. A disabled span degrades to the explicit
   `noop()` state. `Clone` retains the same pair and the context is
   `Send + Sync`. `in_scope(FnOnce)` runs the synchronous body exactly once
@@ -574,9 +609,12 @@
   explicitly silenced. New direct dependency `tracing-core = "0.1"`
   (workspace): the locked tree already carried tracing-core 0.1.36 as
   tracing 0.1.44's dependency, so this only grants direct visibility.
-  Carrier substrate only - no global subscriber/exporter/sampling, no
-  domain span vocabulary, no automatic SDK spans, nothing serialized or
-  sent on the wire; SDK propagation is owned by later tasks.
+  No global subscriber/exporter/sampling, domain span vocabulary or automatic
+  SDK root span is installed; nothing is serialized or sent on the wire.
+  Optional `Request::telemetry_context` propagates through the real Codex
+  producer and callbacks; omission captures no implicit ambient context.
+  Noop observation is scoped and does not disable independent host logging.
+  Full-operation propagation remains owned by task 20.55.
 - `opi-ai`: scripted multi-operation test support on the existing
   MockProvider (task 20.53.8, DEL-11; no second mock driver, public API
   unchanged). New `MockResponse::DelayedAfter { pending_attempts,
@@ -732,8 +770,9 @@
   input as the authoritative final arguments; replay restores
   `custom_tool_call(_output)` items with `ctc_` ids while function calls
   keep `fc_`. Returned explicit nulls normalize back onto the original
-  trusted schema. Response callbacks now fire exactly once on the
-  successfully acquired response across all adapters.
+  trusted schema. Response callbacks observe each adapter's source-defined
+  response point; Codex SSE also observes non-success statuses before
+  classification.
 - `opi-ai`: the credential-store mutation surface moved from IO-free
   primitives to store-owned serialized mutations (P20-STORE / task 20.22).
   `CredentialStore` gains `modify` and `mutation_barrier` (default
@@ -750,22 +789,24 @@
   ordinary slice). `callbacks::RequestCallbacks` carries four observer
   families wired through `Models` and every migrated real direct adapter
   (Anthropic, OpenAI Chat incl. Mistral/OpenRouter profiles, OpenAI
-  Responses incl. Azure, Codex, Bedrock; Google wires support the payload
-  and header-transform families and reject response/raw observers with a
+  Responses incl. Azure, Codex, Bedrock; Google wires support the payload,
+  header-transform and parsed raw families and reject response observers with a
   typed `UnsupportedCapability` before dispatch). `onPayload` observes
   the post-projection wire body — `Ok(None)` keeps it, `Ok(Some)` may
   replace it under validation (JSON object, unchanged model identity,
   output budget never raised) — and runs once per payload variant, with
   ordinary acquisition retries reusing the frozen body byte-for-byte.
-  `onResponse` fires with status and headers once a response exists
-  (failures that never produce a response are not notified); `onRaw`
+  `onResponse` fires with status and headers at each adapter's source-defined
+  response observation point; Codex SSE also notifies non-success responses
+  before classification. Failures without a response are not notified. `onRaw`
   observes each parsed provider wire event strictly before its
   normalized emission, and a raw failure ends the call with the partial
-  preserved. The header transform applies once per dispatch to the
-  merged per-call set; protected identity/auth/signing names (the
-  reserved provider list plus the `amz-sdk-*` family) never enter the
-  transform and its output is revalidated, giving the supported
-  omission/set/removal behavior with the selected identity intact.
+  preserved. The header transform applies once per logical call to the
+  assembled per-call set; protected identity/auth/signing values already
+  present may be returned unchanged, while introduction, removal and changes
+  fail typed. Adapter-owned credentials stay outside the transform. Shared
+  definitions retain independent freeze state across calls, and async builders
+  await each callback in source order.
 - `opi-ai`: sampling and pricing-tier metadata with the shared resolution
   mechanism (task 20.35, AIR-062/V-45). `ModelInfo` gains
   `sampling_params` and `sampling_params_by_thinking_level` with
@@ -1348,8 +1389,9 @@
 - `opi-ai`: one `Models` front door for chat calls (AIR-045). Native
   `stream`/`complete`, neutral `stream_simple`/`complete_simple`, direct
   `stream_direct`/`complete_direct` (injected, already-resolved auth) and
-  advanced `prepare_call` share the sole request compiler, auth resolution,
-  attempt seam and `ChatStream` collector. Ordinary calls capture the owned
+  advanced `prepare_call` share validation, auth resolution, the attempt seam
+  and `ChatStream` collector. Native options retain adapter budget semantics;
+  simple and advanced preparation apply the shared budget. Ordinary calls capture the owned
   input, the caller's complete record, and the registered adapter at
   construction (`Send + 'static`), and authentication starts on the first
   poll; pre-auth failures (unregistered ApiId, options type/provider

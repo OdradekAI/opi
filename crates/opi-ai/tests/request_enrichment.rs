@@ -69,6 +69,7 @@ fn request_new_scalars_default_to_none_empty() {
         extra_headers: vec![],
         cache_retention: CacheRetention::default(),
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     assert!(req.timeout.is_none());
@@ -102,6 +103,7 @@ fn request_scalars_carry_explicit_values() {
         extra_headers: headers.clone(),
         cache_retention: CacheRetention::Long,
         session_id: Some("sess-abc".into()),
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     assert_eq!(req.timeout, Some(Duration::from_secs(30)));
@@ -611,6 +613,7 @@ fn make_anthropic_request(cancel: CancellationToken, timeout: Option<Duration>) 
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -639,6 +642,7 @@ fn make_openai_chat_request(cancel: CancellationToken, session_id: Option<String
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -689,6 +693,7 @@ fn request_sampling_params_default_empty_and_carried() {
         extra_headers: vec![],
         cache_retention: CacheRetention::default(),
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
         sampling_params: Default::default(),
     };
@@ -871,6 +876,185 @@ fn payload_replacement_raising_output_budget_fails_typed() {
     assert!(
         matches!(outcome, Err(ProviderError::CallbackPhase(_))),
         "raising the resolved output budget must fail typed"
+    );
+}
+
+#[test]
+fn payload_validation_covers_wire_budget_paths_and_required_model() {
+    for pointer in [
+        "/max_tokens",
+        "/max_completion_tokens",
+        "/max_output_tokens",
+        "/generationConfig/maxOutputTokens",
+        "/inferenceConfig/maxTokens",
+    ] {
+        for changed in [
+            serde_json::json!(65),
+            serde_json::json!(-1),
+            serde_json::json!("64"),
+            serde_json::Value::Null,
+        ] {
+            let mut original =
+                serde_json::json!({"model":"frozen", "generationConfig":{}, "inferenceConfig":{}});
+            let (parent, key) = pointer.rsplit_once('/').unwrap();
+            original
+                .pointer_mut(parent)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert(key.into(), serde_json::json!(64));
+            let mut replacement = original.clone();
+            *replacement.pointer_mut(pointer).unwrap() = changed;
+            let callbacks = RequestCallbacks::new()
+                .with_on_payload(Arc::new(move |_| Ok(Some(replacement.clone()))));
+            assert!(
+                matches!(
+                    callbacks.apply_payload("ordinary", original),
+                    Err(ProviderError::CallbackPhase(_))
+                ),
+                "wire budget {pointer} must be checked"
+            );
+        }
+    }
+    for replacement in [
+        serde_json::json!({}),
+        serde_json::json!({"model":null}),
+        serde_json::json!({"model":false}),
+    ] {
+        let callbacks = RequestCallbacks::new()
+            .with_on_payload(Arc::new(move |_| Ok(Some(replacement.clone()))));
+        assert!(matches!(
+            callbacks.apply_payload("ordinary", serde_json::json!({"model":"frozen"})),
+            Err(ProviderError::CallbackPhase(_))
+        ));
+    }
+}
+
+#[test]
+fn header_transform_cannot_introduce_protected_route_identity() {
+    for name in [
+        "Host",
+        "X-Goog-Api-Key",
+        "X-Goog-User-Project",
+        "X-Amz-Date",
+        "X-Amz-Security-Token",
+    ] {
+        let callbacks = RequestCallbacks::new()
+            .with_header_transform(Arc::new(move |_| Ok(vec![(name.into(), "changed".into())])));
+        assert!(
+            matches!(
+                callbacks.apply_header_transform(&[]),
+                Err(ProviderError::CallbackPhase(_))
+            ),
+            "protected transform header {name} must fail"
+        );
+    }
+}
+
+#[test]
+fn header_identity_transform_preserves_existing_protected_values() {
+    let original = vec![
+        ("X-Initiator".into(), "user".into()),
+        ("x-custom".into(), "value".into()),
+    ];
+    let callbacks =
+        RequestCallbacks::new().with_header_transform(Arc::new(|headers| Ok(headers.to_vec())));
+    assert_eq!(
+        callbacks.apply_header_transform(&original).unwrap(),
+        original
+    );
+    let callbacks = RequestCallbacks::new().with_header_transform(Arc::new(|_| Ok(vec![])));
+    assert!(matches!(
+        callbacks.apply_header_transform(&original),
+        Err(ProviderError::CallbackPhase(_))
+    ));
+}
+
+#[tokio::test]
+async fn async_callbacks_yield_freeze_once_and_preserve_observer_order() {
+    let order = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let headers_order = order.clone();
+    let payload_order = order.clone();
+    let response_order = order.clone();
+    let raw_order = order.clone();
+    let callbacks = RequestCallbacks::new()
+        .with_async_header_transform(move |headers| {
+            let order = headers_order.clone();
+            async move {
+                tokio::task::yield_now().await;
+                order.lock().unwrap().push("headers");
+                Ok(headers)
+            }
+        })
+        .with_async_on_payload(move |body| {
+            let order = payload_order.clone();
+            async move {
+                tokio::task::yield_now().await;
+                order.lock().unwrap().push("payload");
+                Ok(Some(body))
+            }
+        })
+        .with_async_on_response(move |status, _headers| {
+            let order = response_order.clone();
+            async move {
+                tokio::task::yield_now().await;
+                assert_eq!(status, 200);
+                order.lock().unwrap().push("response");
+                Ok(())
+            }
+        })
+        .with_async_on_raw(move |raw| {
+            let order = raw_order.clone();
+            async move {
+                tokio::task::yield_now().await;
+                assert_eq!(raw["wire"], true);
+                order.lock().unwrap().push("raw");
+                Ok(())
+            }
+        });
+    let headers = vec![("x-custom".into(), "first".into())];
+    assert!(matches!(
+        callbacks.apply_header_transform(&headers),
+        Err(ProviderError::CallbackPhase(_))
+    ));
+    assert!(matches!(
+        callbacks.apply_payload("ordinary", serde_json::json!({})),
+        Err(ProviderError::CallbackPhase(_))
+    ));
+    assert!(matches!(
+        callbacks.notify_response(200, &[]),
+        Err(ProviderError::CallbackPhase(_))
+    ));
+    assert!(matches!(
+        callbacks.notify_raw(&serde_json::json!({})),
+        Err(ProviderError::CallbackPhase(_))
+    ));
+    assert_eq!(
+        callbacks
+            .apply_header_transform_async(&headers)
+            .await
+            .unwrap(),
+        headers
+    );
+    assert_eq!(
+        callbacks.apply_header_transform_async(&[]).await.unwrap(),
+        headers
+    );
+    let body = serde_json::json!({"model":"frozen", "max_tokens":64});
+    let (first, second) = tokio::join!(
+        callbacks.apply_payload_async("ordinary", body.clone()),
+        callbacks.apply_payload_async("ordinary", body.clone())
+    );
+    assert_eq!(first.unwrap(), body);
+    assert_eq!(second.unwrap(), body);
+    callbacks.notify_response_async(200, &[]).await.unwrap();
+    callbacks
+        .notify_raw_async(&serde_json::json!({"wire":true}))
+        .await
+        .unwrap();
+    assert_eq!(
+        *order.lock().unwrap(),
+        ["headers", "payload", "response", "raw"]
     );
 }
 

@@ -13,8 +13,8 @@
 //! compression resources without automatic protocol output.
 //!
 //! The transport stays source-qualified: the shared [`HttpClient`] keeps its
-//! explicit proxy profile, TLS profile and redirect policy. Upgrades require
-//! [`RedirectPolicy::None`], so a 3xx is terminal. There is no hidden auth
+//! explicit proxy and TLS profiles. Its dedicated Upgrade client always
+//! rejects redirects, so a 3xx is terminal. There is no hidden auth
 //! discovery, automatic resend, reconnect or fallback.
 
 // The private protocol state machines are consumed by the real Codex
@@ -26,7 +26,7 @@ pub(crate) mod pmd;
 #[cfg(test)]
 mod tests;
 
-use crate::http::{HttpClient, RedirectPolicy};
+use crate::http::HttpClient;
 use base64::Engine as _;
 use thiserror::Error;
 use url::Url;
@@ -323,19 +323,14 @@ fn negotiate_pmd(entries: &[String], offer: &PmdOffer) -> Result<NegotiatedPmd, 
 /// Perform the strict dynamic Upgrade through the source-qualified
 /// [`HttpClient`] and detach the upgraded stream.
 ///
-/// The client must have been built with [`RedirectPolicy::None`]: any 3xx
-/// is reported as [`WsUpgradeError::Status`] and never followed. The
+/// The dedicated Upgrade client reports any 3xx as [`WsUpgradeError::Status`]
+/// and never follows it, independently of ordinary HTTP's redirect policy. The
 /// returned stream and [`Negotiation::driver_parameters`] remain caller-owned;
 /// this function does not start the private protocol state machine.
 pub async fn upgrade(
     client: &HttpClient,
     request: WsUpgradeRequest,
 ) -> Result<UpgradedWs, WsUpgradeError> {
-    if client.redirect_policy() != RedirectPolicy::None {
-        return Err(WsUpgradeError::Detach(
-            "upgrades require an HttpClient with RedirectPolicy::None".into(),
-        ));
-    }
     let nonce = fresh_nonce();
     let key = b64(nonce);
     let url = request.http_url();

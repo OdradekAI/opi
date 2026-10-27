@@ -26,6 +26,67 @@ async fn collect_stream(stream: EventStream) -> Vec<AssistantStreamEvent> {
     stream.filter_map(|r| async move { r.ok() }).collect().await
 }
 
+#[tokio::test]
+async fn successful_headers_seal_acquisition_before_a_body_timeout() {
+    use std::io::{Read, Write};
+    use std::sync::Arc;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let peer = std::thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        socket
+            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .unwrap();
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            socket.read_exact(&mut byte).unwrap();
+            head.push(byte[0]);
+        }
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n")
+            .unwrap();
+        socket.flush().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    });
+    let provider = OpenAiResponsesProvider::new(Some(format!("http://127.0.0.1:{port}")));
+    let model_id = provider.models()[0].id.clone();
+    let mut models = opi_ai::Models::new();
+    models
+        .register_route(
+            Box::new(provider),
+            Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::Bearer,
+                secrecy::SecretString::from("fake-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+            Default::default(),
+        )
+        .unwrap();
+    let mut request = responses_text_request();
+    request.model = format!("openai-responses:{model_id}");
+    request.timeout = Some(std::time::Duration::from_millis(50));
+    let call = models
+        .prepare_call_with_policy(
+            &request.model.clone(),
+            request,
+            opi_ai::retry::AcquisitionPolicy::with_max_retries(1),
+        )
+        .await
+        .unwrap();
+    let error = opi_ai::stream::ChatStream::new(call.start_attempt().unwrap())
+        .result()
+        .await
+        .expect_err("successful headers precede the body timeout");
+    assert!(matches!(error.cause(), ProviderError::Timeout));
+    assert!(call.retry_admission().is_none(), "no post-handoff resend");
+    assert_eq!(
+        call.acquisition_seal(),
+        Some(opi_ai::retry::AcquisitionSeal::PostHandoff)
+    );
+    peer.join().unwrap();
+}
+
 // ---------------------------------------------------------------------------
 // Provider identity
 // ---------------------------------------------------------------------------
@@ -103,6 +164,7 @@ fn responses_request_body_uses_input_field() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     let body = provider.build_request_body(&request).unwrap();
@@ -154,6 +216,7 @@ fn responses_request_body_strips_provider_prefix() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     let body = provider.build_request_body(&request).unwrap();
@@ -200,6 +263,7 @@ fn responses_tool_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -1260,6 +1324,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -1341,6 +1406,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     let mut stream =
@@ -1398,6 +1464,7 @@ fn responses_text_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -1448,7 +1515,7 @@ async fn responses_payload_callback_sees_projected_input_body() {
 }
 
 #[tokio::test]
-async fn responses_response_and_raw_callbacks_follow_source_order() {
+async fn responses_async_response_and_raw_callbacks_follow_source_order() {
     let order: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let raw_recorder = order.clone();
@@ -1472,20 +1539,36 @@ async fn responses_response_and_raw_callbacks_follow_source_order() {
     let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let mut request = responses_text_request();
     request.callbacks = RequestCallbacks::new()
-        .with_on_response(std::sync::Arc::new(move |status, _headers| {
-            response_recorder
-                .lock()
-                .unwrap()
-                .push(format!("response:{status}"));
-            Ok(())
-        }))
-        .with_on_raw(std::sync::Arc::new(move |event| {
-            raw_recorder
-                .lock()
-                .unwrap()
-                .push(format!("raw:{}", event["type"].as_str().unwrap_or("?")));
-            Ok(())
-        }));
+        .with_async_header_transform(|headers| async move {
+            tokio::task::yield_now().await;
+            Ok(headers)
+        })
+        .with_async_on_payload(|_| async {
+            tokio::task::yield_now().await;
+            Ok(None)
+        })
+        .with_async_on_response(move |status, _headers| {
+            let response_recorder = response_recorder.clone();
+            async move {
+                tokio::task::yield_now().await;
+                response_recorder
+                    .lock()
+                    .unwrap()
+                    .push(format!("response:{status}"));
+                Ok(())
+            }
+        })
+        .with_async_on_raw(move |event| {
+            let raw_recorder = raw_recorder.clone();
+            async move {
+                tokio::task::yield_now().await;
+                raw_recorder
+                    .lock()
+                    .unwrap()
+                    .push(format!("raw:{}", event["type"].as_str().unwrap_or("?")));
+                Ok(())
+            }
+        });
 
     collect_stream(provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()))
         .await;
@@ -1674,6 +1757,7 @@ mod responses_constrained_tests {
             "",
             r#"data: {"type":"response.completed","response":{"id":"resp_1","model":"gpt-4o","usage":{"input_tokens":3,"output_tokens":2}}}"#,
             "",
+            "",
         ]
         .join("\n")
     }
@@ -1696,11 +1780,16 @@ mod responses_constrained_tests {
                 ..Default::default()
             },
         );
-        let events = collect_stream(provider.stream_prepared(
-            request_with(vec![grammar_tool(Some("start: WORD"), None)]),
-            opi_ai::test_support::resolved_bearer_auth(),
-        ))
-        .await;
+        let events: Vec<_> = provider
+            .stream_prepared(
+                request_with(vec![grammar_tool(Some("start: WORD"), None)]),
+                opi_ai::test_support::resolved_bearer_auth(),
+            )
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .map(|event| event.expect("valid custom input deltas must not emit a failure"))
+            .collect();
 
         // The streaming deltas carry the wrapped JSON object text.
         let deltas: Vec<&str> = events
@@ -1732,6 +1821,112 @@ mod responses_constrained_tests {
     }
 
     #[tokio::test]
+    async fn custom_tool_initial_input_is_included_in_the_first_wrapped_delta() {
+        let server = MockServer::start().await;
+        let sse = custom_tool_call_sse()
+            .replace(r#""input":"""#, r#""input":"he""#)
+            .replace(r#""delta":"hel""#, r#""delta":"l""#);
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(sse),
+            )
+            .mount(&server)
+            .await;
+        let provider = OpenAiResponsesProvider::new_with_config(
+            Some(server.uri()),
+            ResponsesConfig {
+                supports_grammar_tools: true,
+                ..Default::default()
+            },
+        );
+        let events: Vec<_> = provider
+            .stream_prepared(
+                request_with(vec![grammar_tool(Some("start: WORD"), None)]),
+                opi_ai::test_support::resolved_bearer_auth(),
+            )
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .map(|event| event.expect("initial input plus wire increments is valid"))
+            .collect();
+        let delta = events
+            .iter()
+            .filter_map(|event| match event {
+                AssistantStreamEvent::ToolCallDelta { delta, .. } => Some(delta.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(delta, r#"{"input":"hello"}"#);
+    }
+
+    #[tokio::test]
+    async fn custom_tool_terminal_item_preserves_input_without_input_done() {
+        for added in [true, false] {
+            let server = MockServer::start().await;
+            let mut wire = Vec::new();
+            if added {
+                wire.push(serde_json::json!({
+                    "type": "response.output_item.added", "output_index": 0,
+                    "item": {"type": "custom_tool_call", "id": "ctc_terminal",
+                        "call_id": "call_terminal", "name": "grammar-tool", "input": ""}
+                }));
+            }
+            wire.push(serde_json::json!({
+                "type": "response.output_item.done", "output_index": 0,
+                "item": {"type": "custom_tool_call", "id": "ctc_terminal",
+                    "call_id": "call_terminal", "name": "grammar-tool", "input": "hello"}
+            }));
+            wire.push(serde_json::json!({
+                "type": "response.completed", "response": {"id": "resp_terminal",
+                    "model": "gpt-4o", "output": []}
+            }));
+            let sse = wire
+                .into_iter()
+                .map(|value| format!("data: {value}\n\n"))
+                .collect::<String>();
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(sse),
+                )
+                .mount(&server)
+                .await;
+            let provider = OpenAiResponsesProvider::new_with_config(
+                Some(server.uri()),
+                ResponsesConfig {
+                    supports_grammar_tools: true,
+                    ..Default::default()
+                },
+            );
+            let message = opi_ai::stream::ChatStream::new(provider.stream_prepared(
+                request_with(vec![grammar_tool(Some("start: WORD"), None)]),
+                opi_ai::test_support::resolved_bearer_auth(),
+            ))
+            .result()
+            .await
+            .expect("terminal custom input is a complete valid call");
+            let tool = message
+                .content
+                .iter()
+                .find_map(|content| match content {
+                    opi_ai::message::AssistantContent::ToolCall { tool_call } => Some(tool_call),
+                    _ => None,
+                })
+                .expect("terminal item creates and finishes its tool slot");
+            assert_eq!(tool.id, "call_terminal|ctc_terminal");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&tool.arguments).unwrap(),
+                serde_json::json!({"input": "hello"}),
+                "terminal input is authoritative whether the added event was present"
+            );
+            assert!(tool.arguments_error.is_none());
+        }
+    }
+
+    #[tokio::test]
     async fn custom_tool_call_closed_input_violation_is_observable() {
         let server = MockServer::start().await;
         // The done event's input contradicts the accumulated deltas.
@@ -1755,15 +1950,21 @@ mod responses_constrained_tests {
             },
         );
         use futures_util::StreamExt;
-        let failure = provider
+        let results = provider
             .stream_prepared(
                 request_with(vec![grammar_tool(Some("start: WORD"), None)]),
                 opi_ai::test_support::resolved_bearer_auth(),
             )
             .collect::<Vec<_>>()
-            .await
+            .await;
+        let failure_index = results.iter().position(Result::is_err).expect("failure");
+        assert!(
+            results[failure_index + 1..].is_empty(),
+            "a grammar failure seals the mapper instead of later finalizing successfully"
+        );
+        let failure = results
             .into_iter()
-            .find_map(|item| item.err())
+            .find_map(Result::err)
             .expect("the non-monotonic close fails typed");
         let is_typed_stream_failure = match &failure {
             ProviderError::StreamError(_) => true,
@@ -1775,6 +1976,61 @@ mod responses_constrained_tests {
         assert!(
             is_typed_stream_failure,
             "closed-input violation surfaces as a typed stream failure, got {failure:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn custom_tool_completed_input_cannot_rewrite_the_streamed_prefix() {
+        let server = MockServer::start().await;
+        let wire = [
+            serde_json::json!({
+                "type": "response.output_item.added", "output_index": 0,
+                "item": {"type": "custom_tool_call", "id": "ctc_terminal",
+                    "call_id": "call_terminal", "name": "grammar-tool", "input": ""}
+            }),
+            serde_json::json!({
+                "type": "response.custom_tool_call_input.delta", "output_index": 0,
+                "delta": "hel"
+            }),
+            serde_json::json!({
+                "type": "response.completed", "response": {"id": "resp_terminal",
+                    "model": "gpt-4o", "output": [{"type": "custom_tool_call",
+                        "id": "ctc_terminal", "call_id": "call_terminal",
+                        "name": "grammar-tool", "input": "hexlo"}]}
+            }),
+        ];
+        let sse = wire
+            .into_iter()
+            .map(|value| format!("data: {value}\n\n"))
+            .collect::<String>();
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(sse),
+            )
+            .mount(&server)
+            .await;
+        let provider = OpenAiResponsesProvider::new_with_config(
+            Some(server.uri()),
+            ResponsesConfig {
+                supports_grammar_tools: true,
+                ..Default::default()
+            },
+        );
+        let results = provider
+            .stream_prepared(
+                request_with(vec![grammar_tool(Some("start: WORD"), None)]),
+                opi_ai::test_support::resolved_bearer_auth(),
+            )
+            .collect::<Vec<_>>()
+            .await;
+        assert!(results.last().is_some_and(Result::is_err));
+        assert_eq!(results.iter().filter(|result| result.is_err()).count(), 1);
+        assert!(
+            !results
+                .iter()
+                .any(|result| matches!(result, Ok(AssistantStreamEvent::Done { .. })))
         );
     }
 }

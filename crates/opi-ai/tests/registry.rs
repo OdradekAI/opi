@@ -529,6 +529,16 @@ async fn store_codec_round_trips_full_model_fidelity() {
     ));
 
     let mut priced = full;
+    priced
+        .sampling_params
+        .insert("temperature".into(), serde_json::json!(0.37));
+    priced.sampling_params_by_thinking_level.insert(
+        ThinkingLevel::High,
+        serde_json::json!({"top_p": 0.8})
+            .as_object()
+            .unwrap()
+            .clone(),
+    );
     priced.pricing = Some(ModelPricing {
         base: Pricing {
             input_cost_per_mtok: 1.0,
@@ -563,6 +573,11 @@ async fn store_codec_round_trips_full_model_fidelity() {
     assert_eq!(back.base_url.as_deref(), Some("https://example.test/v1"));
     assert_eq!(back.capabilities, priced.capabilities);
     assert_eq!(back.pricing, priced.pricing);
+    assert_eq!(back.sampling_params, priced.sampling_params);
+    assert_eq!(
+        back.sampling_params_by_thinking_level,
+        priced.sampling_params_by_thinking_level
+    );
     for level in ThinkingLevel::ALL {
         assert_eq!(
             back.thinking_level_map.resolve(level).ok(),
@@ -570,6 +585,31 @@ async fn store_codec_round_trips_full_model_fidelity() {
             "thinking map fidelity must survive the store round trip for {level:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn store_codec_preserves_anthropic_strict_tool_support() {
+    let mut model = ModelInfo::new(
+        "strict",
+        "Strict",
+        WireApi::AnthropicMessages,
+        ModelCapabilities::new(100_000, 10_000),
+    );
+    if let opi_ai::WireCompat::AnthropicMessages(compat) = &mut model.compat {
+        compat.supports_strict_tools = true;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let store = ModelsStore::open(dir.path().join("models.json")).unwrap();
+    store
+        .begin()
+        .commit(HashMap::from([("anthropic".into(), vec![model.clone()])]))
+        .await
+        .unwrap();
+    let restored = ModelsStore::open(store.path()).unwrap();
+    assert_eq!(
+        restored.snapshot().catalogs["anthropic"][0].compat,
+        model.compat
+    );
 }
 
 #[test]

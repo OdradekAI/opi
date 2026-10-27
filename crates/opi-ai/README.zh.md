@@ -71,7 +71,7 @@ OpenAI-compatible profile 加入。
 | `ProviderError` / `ProviderErrorCategory` | Provider 失败分类：auth、config、request、network、rate_limit、provider、stream、capability 和 cancelled（超时归为 network）。 |
 | `ProviderErrorSummary` | 封闭且可安全脱敏的 Provider error 文本。公共构造仅限 `redacted()`、`authentication_rejected()` 与 `from_untrusted(...)`；不会保留任意 Provider payload。 |
 | `ProviderRegistry` | 解析 `provider:model`、注册自定义 Provider、叠加模型覆盖。 |
-| `Models` / `AuthDescriptor` / `AuthCheck` | unstable-0.x 唯一 driver，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。普通 native/simple/direct 入口与 advanced `prepare_call` 共用同一 compiler、鉴权解析、attempt seam 与 collector。 |
+| `Models` / `AuthDescriptor` / `AuthCheck` | unstable-0.x 唯一 driver，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。native/simple/direct 与高级入口共用校验及调用生命周期；native options 保留适配器预算语义，simple/高级准备采用共享输出预算。 |
 | `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | 类型化自定义 chat adapter 注册，携带精确 API 身份与固定 options 类型；由 handle 创建的 options 携带 API/类型标签，可在具备兼容注册的实例间移植。 |
 | `ToolCall::arguments_error` | 文本 tool 参数的最终解析结果标记（AIR-048）：空输入归一为 `{}`，可修复的非法转义保留字面文本，不完整/非对象最终文本保留自有 raw 并携带该错误，绝不以 partial-prefix 成功执行；缺少该字段的历史记录仍可反序列化。 |
 | `ChatModelRecord` / `SimpleOptions` / `ChatCall` | 调用方持有的完整 chat record（provider id、裸模型 id、精确 wire），无需目录成员即可调用；中性 simple options；构造时捕获输入、首次 poll 才启动鉴权的惰性普通调用 owner。 |
@@ -194,18 +194,20 @@ attempt 记录为
 因此成功不再重开 prepared call：重试按 admission 调度，新逻辑调用需重新 prepare。主循环消费方
 读取 admission、可取消地等待并再次进入 `start_attempt`；无法重置计数、跳过等待或在冻结预算之外叠加 send。
 
-`prepare_call` 在鉴权前把省略的 `Request.max_tokens` 解析为所选 registry model 的
-`max_output_tokens` 容量，包含 model override 和刷新后的 catalog。显式 request 上限
+`prepare_call` 与中性 simple 调用在鉴权前把省略的 `Request.max_tokens` 解析为所选
+完整 model record 的 `max_output_tokens` 容量，包含适用的 model override 和刷新后的
+catalog。显式 request 上限
 仍作为上限。若已启用 thinking 的 budget 大于或等于该默认输出上限，preparation 会在
 鉴权和派发前返回类型化 capability 错误。每次 attempt 都复用解析后的上限。
 隐式与显式上限都会按估算的剩余上下文收缩，预留 4096 token 安全余量，最少保留一个
 输出 token。无法装入收缩后上限的 thinking 会缩小，尽可能留出 1024 token 回答空间。
 非 adaptive Anthropic 按 thinking 等级解析省略的预算；无法同时容纳最小 thinking
 预算和回答空间的上限会在鉴权前被拒绝。adaptive effort 不使用该数字预算下限。
-`context` 模块估算消息、system 文本和工具 schema；最后一个适用的正向成功 usage
+`context` 模块估算原始 canonical 消息编年，包含后续 System 变更及工具声明；最后一个适用的正向成功 usage
 （非 Error／Aborted、时间戳不早于前缀、不限模型身份）充当锚点，只估算锚点之后的
-消息，不再有同模型／全文下界。直接调用 provider adapter 仍保留原有默认行为；
-这是每个 request 的输出上限，与产品的轮数预算相互独立。
+消息，不再有同模型／全文下界。类型化 native `ChatApi` 调用仍校验 route 与能力，
+但保留 native 的省略及显式上限，不应用 simple 预算默认值或夹取。直接调用 provider
+adapter 保留其 wire 默认值。这些是每个 request 的输出上限，与产品的轮数预算相互独立。
 
 `ProviderError::AccountIdMissing { provider_id }` 是独立且不可重试的情形：凭据存在，
 但缺少所选 wire 要求的 account identity。产品层通过显式 `/login <provider>` 修复；
@@ -315,6 +317,8 @@ HTTP 响应的 `model` 保留请求模型，`response_model` 保存服务端报�
 OpenAI Responses 原生语义（`ResponsesConfig`）：`store` 和 `strict_tools`
 已实现。静态 `reasoning_effort` 仅保留为遗留兼容性元数据；`request.thinking`
 与所选 `ModelInfo::thinking_level_map` 是 Chat 和 Responses wire 输出的权威来源。
+native Responses 请求省略 `max_tokens` 或设为零时不发送 `max_output_tokens`；正值以
+最小 16 发送。simple 调用在此 wire 映射前先解析共享预算。
 `previous_response_id` 刻意缺省——Responses 请求按
 Chat-Completions 类比构造，因此服务端响应链未被接入。
 
@@ -340,11 +344,10 @@ OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是�
 
 ## WebSocket Upgrade（RDF-24）
 
-`ws::upgrade` 在共享的 source-qualified `HttpClient` 上执行严格动态 Upgrade
-（显式代理/TLS profile；重定向必须按 client 关闭：对带有重定向策略的 client
-发起 Upgrade 会类型化失败，而不是静默跟随）。经典 Upgrade 使用该 client 的私有
-HTTP/1.1 传输，保留同一份冻结的 trust、mTLS 身份与代理配置，不重新发现来源；普通请求
-保持原有 H2/H1 配置。该桥拥有请求形状（`Connection:
+`ws::upgrade` 在共享的 source-qualified `HttpClient` 上按其显式代理/TLS profile
+执行严格动态 Upgrade。经典 Upgrade 使用该 client 禁用重定向的私有 HTTP/1.1 传输，
+保留同一份冻结的 trust、mTLS 身份与代理配置，不重新发现来源；普通请求保留其
+已配置的重定向策略与 H2/H1 行为。该桥拥有请求形状（`Connection:
 Upgrade`、`Upgrade: websocket`、`Sec-WebSocket-Version: 13`、来自固定平台熵源的新鲜
 16 字节 `Sec-WebSocket-Key`、已提议的 subprotocol 与可选的 `permessage-deflate`
 offer）以及 101 响应的严格校验：状态与 HTTP 版本、精确的 `Sec-WebSocket-Accept`
@@ -686,7 +689,7 @@ artifact 缺失是阻断性输入而不是重建触发条件。
 
 `Catalog::builtin()` 每进程解析并校验一次内嵌字节——无网络 I/O、无账户探测、
 不运行 generator——重新校验 artifact 摘要、bundle/data schema 版本、
-provider 集合、每个条目的数据合同（identity、模态、能力、cost）、每 provider
+最低 reader 版本、provider 集合、每个条目的数据合同（identity、模态、能力、cost）、每 provider
 的 `type:id` 唯一性与结构摘要。任一不匹配都是 typed、fail-closed 的
 `CatalogError`；不存在部分可用的 catalog。按操作限定的 getter
 （`models(provider, operation)`、`model(provider, operation, id)`）公开
@@ -709,8 +712,9 @@ schema v1 JSON 加 `opi` revision 头），再返回确切被确认的 map，
 不触碰已发布状态；被取消的 guard 不落盘；重开 store 时先于任何网络
 工作恢复最后已知 revision。持久化文件采用 Pi 的 *distribution* schema
 （`models.schema.json`），与内置 bundle 内嵌的 hydration 数据（v6）是
-不同 artifact；opi 特有保真度（streaming、cache 开关、计价分层、精确
-thinking 映射、wire compat 载荷）经显式 `x-opi` 扩展往返，纯 v1 文档
+不同 artifact；opi 特有保真度（streaming、cache 开关、保持原序的计价分层，含零阈值及重复项、
+base 与 thinking 等级的 sampling 映射、精确 thinking 映射、含 strict-tool 支持的
+wire compat 载荷）经显式 `x-opi` 扩展往返，纯 v1 文档
 以封闭默认值解码。
 
 `Models::refresh(allow_network)` 是唯一刷新入口：`refresh(false)` 不做
@@ -719,7 +723,9 @@ thinking 映射、wire compat 载荷）经显式 `x-opi` 扩展往返，纯 v1 �
 已注册 catalog source。结果按 provider 隔离：成功者发布，失败者保留
 该 provider 的旧数据并以脱敏错误上报（`RefreshReport` 中的
 `RefreshOutcome::{Published,Failed,Restored}`），不会抹掉其他 provider 的
-catalog；`Ok(None)` 让 provider 回退到内置模型。`refresh_with` 观察
+catalog。未注册显式 catalog source 时，native provider 的 `Ok(None)` 恢复其内置
+catalog；存在显式 source 时，该 native 未发布结果保留最后已知 source catalog。
+权威的 `Ok(Some([]))` 仍会将其替换为空 catalog。`refresh_with` 观察
 `CancellationToken`——被取消的轮次不抓取、不持久化、不发布任何内容。
 已 prepare 的调用在刷新后保持冻结绑定。`DynamicCatalogSource` 是
 宿主自定义 catalog source 的公开接缝；`HttpCatalogSource` 经池化连接
@@ -731,10 +737,9 @@ source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
 `telemetry` 提供进程本地 `TelemetryContext` 载体——P20-TELEMETRY 共享决策
 owner；closure test 位于 `tests/telemetry_carrier.rs`。
 
-- **`TelemetryContext::from_span(span)`** 在创建时冻结 parent
-  `tracing::Span` 与当前默认 `Dispatch` 的配对。owned tracing 差异（已评审
-  RDF-14）：tracing span 不保留创建它的 dispatcher，故在 `from_span` 冻结
-  配对；观测绝不采用 poll 时的 ambient dispatch。disabled span 退化为显式
+- **`TelemetryContext::from_span(span)`** 通过 `Span::with_subscriber` 冻结 parent
+  `tracing::Span` 与其自身 `Dispatch` 的配对。即使创建或 poll 时另有当前
+  subscriber，配对仍由源 span 决定。disabled span 退化为显式
   `noop()` 态。`Clone` 保留同一配对；上下文 `Send + Sync`。
 - **`in_scope(FnOnce)`** 在冻结配对下（dispatch 设为段默认、parent 仅段内
   enter）恰好执行一次同步 body，并在返回前恢复 caller 上下文。
@@ -743,35 +748,56 @@ owner；closure test 位于 `tests/telemetry_carrier.rs`。
   一 scoped 段。无 enter guard 跨 await；每次外层 poll 恰好 poll 一次内层；
   `Pending` 与输出保真。
 - **`noop()`** 在 no-op dispatcher 下运行同样段落：业务仍恰好执行一次，段内
-  观测被显式静默而不泄漏到 ambient dispatch。
+  观测被显式静默而不泄漏到 ambient dispatch。包装段外的独立宿主日志仍使用自身
+  subscriber。
 
-仅载体基底：无 global subscriber/exporter/采样、无领域 span 词汇、无自动
-SDK 调用/attempt span、不序列化不上 wire。SDK 实际传播由后续任务持有。
+`Request::telemetry_context: Option<TelemetryContext>` 显式将该配对带入真实 Codex
+producer，覆盖其异步回调与 SSE 回退。省略时不隐式捕获 ambient 上下文。载体不序列化、
+不上 wire，不安装 global subscriber、exporter、采样政策或自动 SDK root span。
+全 SDK 操作传播仍归后续工作（20.55）；真实 Codex 路径另由
+`tests/codex_telemetry.rs` 覆盖。
 
 ## 实例 Resource Generation／Pool 清理／Await 释放（任务 20.17）
 
 Codex WebSocket 族现在为每次调用注册一个 resource generation，并通过公共
 `Models::cleanup_session_resources` 入口暴露按 session 的清理
-（`codex_resources` 模块；测试位于 `tests/openai_codex_responses.rs`）。
+（`codex_resources` 模块；测试位于 `tests/openai_codex_responses.rs` 与
+`tests/resource_cleanup.rs`）。
 
-- **注册：** 每个 WS 族调用在一切 wire 鉴权附加与 header/body transform
-  之前注册；纯 `Sse` 偏好调用不注册。阶段
-  （`prepared`/`connecting`/`busy`/`temporary`/`active-fallback`）跟踪
-  cutoff 必须取消的工作类别。
-- **Cutoff 语义：** `cleanup_session_resources(Some(id))` 取消匹配的旧
-  generation 与池化连接并 await 其本地所属退出；cutoff 之后禁止迟到
-  publish、有界 WS 重试与迟到 SSE 腿。`None` 取消全部（含 sessionless）；
-  未匹配 id 为 no-op 并保留 idle 复用；`Some("")` 为零副作用的 typed
-  失败。
-- **释放：** 丢弃调用即开始释放（producer 工作随消费者一同取消），但
-  barrier 完成只能由观察到退出一方宣称。被移除的池化连接以源风格关闭：
-  Close 帧、flush、短有界确认；无法确认的关闭作为 unconfirmed effect 上
-  报，其余释放继续。
-- **隔离：** 两个 `Models` 共享同一 session id 时仍按 provider 隔离；调用
-  方父 token、外部取消 owner、凭据与目录绝不受动，已交付终态保留。
-- **分发：** provider 通过新增的默认 `None` 的
-  `Provider::session_resources` 钩子加入；`Models` 聚合各 owner 的报告与
-  typed 失败。
+- **注册：** 调用首次 poll 时、在任何 auth、transform 或 network await 之前，
+  原子注册 generation。纯 `Sse` 偏好调用不注册。即使 cache retention 为
+  `Disabled`，清理身份仍是原始完整 session id。阶段
+  （`prepared`/`connecting`/`busy`/`temporary`/`active-fallback`）覆盖同一调用
+  的 SSE 回退。
+- **Cutoff 语义：** 返回的 cleanup Future 自有选定的 owner 与 session，在其
+  **首次 poll** 建立所有 cutoff；这不同于 credential mutation barrier 在构造时
+  同步捕获 cutoff。`Some(非空 id)` 选择匹配的旧 generation 与池化连接；`None`
+  选择全部，含 sessionless；未匹配 id 为保留 idle 复用的 no-op；`Some("")` 为
+  零副作用的 typed 失败。cutoff 后禁止迟到挂接、发布、重连及转入 SSE。此后才首次
+  poll 的调用获得新 generation；已登记的 `PreparedProviderCall` 保持旧 generation，
+  即使 attempt 从未 poll。
+- **释放：** cleanup 等待库拥有的 producer、连接及有界关闭。调用方保留但暂停的
+  preparation/auth Future 无须再次 poll，cleanup 即可完成；其下一次 poll 会看到
+  已锁存取消。丢弃已 poll 的 cleanup Future 不撤销关闭标记，再次 cleanup 可继续等待
+  剩余退出。Drop 只发起释放，不宣称 await barrier 完成。被移除的连接发送 Close 并
+  flush 后有界等待确认；某一步失败仍尝试其余释放，以
+  `CleanupError::Incomplete { report }` 返回已确认计数及未确认效果。已交付终态保持
+  最终性，协议释放可继续进行。
+- **隔离：** `SessionResourceOwner::new_namespace` 为每个 `Models` 注册建立独立
+  namespace，即使两个实例包装同一 provider/client 且使用同一完整 session id。
+  调用方父 token、凭据、catalog 及独立 store-owned rotation 保持原样。owned call
+  guard 在 `Models` drop、remove 或 replace 后仍持有资源；成功调用可保留 idle 缓存连接。
+- **分发：** 持有资源的 provider 公开 `Provider::session_resources`，并经
+  `stream_resource_attempt` 转交已登记 lease。`Provider::stream_model_resource_attempt`
+  还携带调用方冻结的完整 record 与 simple options；默认实现转交 resource 与 attempt
+  所有权。类型化 `ChatApi` 注册提供 `session_resources`、`stream_resource_prepared`
+  以及携带所选 record 的 `stream_model_resource_prepared`。默认的
+  `validate_native_request` 与 `simple_options_for` 钩子保留既有自定义适配器行为；
+  消费元数据的适配器覆盖它们以校验 native 字段并映射其使用的中性选项。
+  无资源默认实现不产生效果。
+  `validate_simple_options` 默认拒绝显式中性选项；只有 simple 映射确实消费某个
+  选项时，适配器才接纳该选项。
+  `Models` 尝试所有 owner 的释放并聚合结果。
 
 ## 真实 Codex WebSocket 传输：Auto／Delta／续传（任务 20.16，DEL-07）
 
@@ -779,11 +805,38 @@ Codex adapter 现持有经严格 Upgrade 桥进入私有 frame/PMD/Close owner �
 WebSocket 生产路径（`openai_codex_responses/ws_transport.rs`；测试位于
 `tests/openai_codex_responses.rs`）。
 
+`openai_codex_responses::CodexChatApi::new(Arc<OpenAiCodexResponsesProvider>,
+ModelInfo) -> Result<Self, ProviderError>` 经 `ChatApi<CodexOptions>` 注册真实
+适配器。将适配器、resolver 与 auth source 传给 `Models::register_chat_api`，用
+`handle.options(opts)` 创建带标签的 options，再调用
+`Models::stream(record, request, options)`。non-exhaustive 的 `CodexOptions` 以
+`Default::default()` 构造后设置公开字段。native 默认值保留原生 reasoning 的省略/off
+映射；中性 simple 调用则映射 `Request::thinking`。两个入口都消费本次调用所选并冻结的
+完整 `ChatModelRecord`（包括 thinking 映射），而非构造时的示例 record 或同 ID 的
+catalog 项。native Codex 不消费中性 `Request::thinking`，包括中性入口不支持的级别；
+公共结构校验与所选模型校验仍在 auth 前执行。options 按调用冻结，不修改已注册
+provider，也不以 `sampling_params` 承载 native 参数。
+
+| 输入 | 类型／单位 | 省略、零或 null | 优先级与 wire 字段 |
+|---|---|---|---|
+| `reasoning_effort` | `CodexReasoningEffort` 枚举 | 省略采用受支持模型的 off 映射；`Some(None)` 显式请求 off | native effort 采用模型映射或 native 拼写，独立于中性 thinking；`reasoning.effort` |
+| `reasoning_summary` | `CodexReasoningSummary` 枚举 | 序列化 effort 时，省略或 `Null` 变为 `auto`；否则不使用 | native summary；`reasoning.summary` |
+| `service_tier` | `CodexServiceTier` 枚举 | 省略保持缺失；`Some(Null)` 发送 JSON null | 显式 native 值；`service_tier` |
+| `text_verbosity` | `CodexTextVerbosity` 枚举 | 省略 → `low` | 显式 native 值覆盖默认；`text.verbosity` |
+| `tool_choice` | `CodexToolChoice` 枚举 | 省略 → `auto`；枚举 `None` 发送 `"none"` | 显式 native 值覆盖默认；`tool_choice` |
+| `SimpleOptions::tool_choice` | `Option<SimpleToolChoice>`（`Auto` / `None`） | 省略 → Codex `auto` | Codex 中性映射至 `tool_choice`；当前不支持此项的 route 在 auth 前拒绝显式值 |
+| `Request::temperature` | 可选无量纲数值 | 省略或非有限值 → 缺失；零有效 | request 值；`temperature` |
+| `Request::max_tokens` | 可选 token 数 | Codex 不发送输出上限 wire 字段，包含显式零 | simple 准备保留共享预算语义；native 调用在 wire 映射前保留 request |
+
+封闭 native 枚举拒绝无效序列化拼写。无效完整 record 或错误 wire 以 typed 配置错误
+失败；注册、options 身份或类型不匹配在 auth/网络工作前失败。公共 transport、cache、
+取消与 timeout 输入仍在 `Request` 上。
+
 - **传输解析：** `Request::transport`
   （`TransportPreference::{Auto, Sse, Websocket, WebsocketCached}`，默认
-  `Auto`）先行解析；省略与显式 `Auto` 遵循同一 delta 规则。显式 WebSocket
-  需要以 `RedirectPolicy::None` 构建的 `HttpClient`（否则 typed 配置错误）；
-  其他策略下的 `Auto` 解析为 SSE。
+  `Auto`）先行解析；省略与显式 `Auto` 遵循同一 delta 规则。专用 HTTP/1.1 Upgrade
+  client 禁用重定向，并保留 `HttpClient` 冻结的 TLS 身份、信任与 proxy 输入。
+  普通 HTTP 保留其已配置的重定向策略；该策略不会强制 `Auto` 转为 SSE。
 - **真实链路：** `response.create` 以带掩码的 text 帧发送；事件经与 SSE 完
   全相同的分类器解码，两种传输发布一致的公开事件；临时连接完成显式客户
   端 Close；无终态的 EOF 绝不算成功；`Request::timeout` 即 WebSocket 空闲
@@ -910,12 +963,13 @@ finalize_tool_arguments, string_enum}` 补齐锁定 `utils/json-parse.ts` 与
   使模型发送的文本保持字面；无四位十六进制的 `\u` 同样处理；合法转义原样
   保留。
 - **`parse_streaming_json`** 是 display 专用部分解析器，遵循锁定级联序：
-  空输入→`{}`；完整文档（经转义修复）权威解析；否则依次对原始文本、修复
+  空输入→`{}`；完整文档（经转义修复）用于显示；否则依次对原始文本、修复
   文本做前缀补全（闭合悬挂引号/括号、悬挂 key/value→`null`、截断数字与
   字面量保守补全、忽略首个完整顶层值后的垃圾）；最终兜底为合法空对象。
   永不失败，也永不凌驾终态结果。
 - **`finalize_tool_arguments`** 是完成 tool call 的公共 AIR-048 契约：空输入
-  终化为 `{}`；完整对象保留其 owned raw 文本；仅转义差异返回修复文本；
+  终化为 `{}`；完整对象保留其 owned raw 文本；仅修复非法转义或字符串原始控制字符后
+  成为完整对象时返回修复文本；
   其余保留 raw 文本并携带 redacted-safe `arguments_error`（绝不回显模型
   文本）。终态 object/`arguments_error` 权威，raw 保留。
 - **`string_enum`** 构造可移植 `{"type": "string", "enum": [...]}` schema，
@@ -985,13 +1039,17 @@ initial/current 区分：content 追加以空行连接，section 替换保位，
   ≤2×(1+N)，N=0 仍两次 send，无任何重置路径）。重建在新冻结槽重跑
   `onPayload` 与 post-validation，复用冻结的 headers/auth/model（header
   transform 现为每逻辑调用一次），并在消息上记录一次
-  `anthropic_strict_tools_fallback` 诊断。其他 400、回调错误、取消与
-  Start 后失败一律不分支。
+  `anthropic_strict_tools_fallback` 诊断。普通 `Models` 与直连 Anthropic 调用
+  采用与高级 attempt 相同的 acquisition owner；转发 wrapper 继承该 owner，不能
+  创建第二份重试预算。成功响应头在 response 回调或 body 解析前即封闭 acquisition，
+  即使尚无公开事件。其他 400、回调错误、取消与 handoff 后失败一律不分支；
+  `require` 绝不降级。
 - Responses/Codex 将 grammar 工具投影为 `custom` 工具，lark 优先 regex；
   不支持目标退普通 JSON function 工具并在消息上记录 loss，支持目标无可用
   variant/schema 则派发前失败。流式将 `custom_tool_call` 原始输入增量封装
-  为 `{"<property>":"…"}`（单调增长、单次 close、违规 typed 失败），原始输
-  入仍是权威最终参数；replay 以 `ctc_` id 还原
+  为 `{"<property>":"…"}`（单调增长、单次 close、违规 typed 失败），累积的原始
+  输入构成权威最终参数，包含仅终态携带的 input；矛盾的终态 input 以 typed 失败结束。
+  replay 以 `ctc_` id 还原
   `custom_tool_call(_output)` 项（function call 保持 `fc_` 前缀）。
 
 ## 功能请求回调（AIR-059/V-51 普通切片，任务 20.51）
@@ -1000,23 +1058,29 @@ initial/current 区分：content 追加以空行连接，section 替换保位，
 观察者，在真实直连适配器内按其源定义的时机触发——绝不从归一化 `EventStream`
 反推，也绝不叠加第二个驱动：
 
+回调定义可共享及克隆，header/body 冻结状态属于单次 logical call。独立调用各自持有
+状态；acquisition 重试与 strict variant 保持同一调用 owner。每个同步 builder 都有
+异步对应：`with_async_header_transform`、`with_async_on_payload`、
+`with_async_on_response` 与 `with_async_on_raw`。适配器在发送或归一化对应数据前按序
+await；取消可结束 pending 回调而不再发送。
+
 | 回调 | 时机 | 合同 |
 |---|---|---|
-| `with_header_transform` | 每次派发一次，作用于合并后的每调用集合 | 输出整体替换该集合；非保护项的省略/设置/删除受支持。保护性 identity/auth/signing 名单（保留字列表加 `amz-sdk-*`）绝不进入变换，输出重校验——触碰即派发前 typed 失败。 |
+| `with_header_transform` | 每个 logical call 一次，作用于组装后的每调用集合 | 输出整体替换该集合；非保护项的省略/设置/删除受支持。已存在的受保护 identity/auth/signing 项可原样返回；删除、修改或引入受保护项在派发前 typed 失败。适配器拥有的凭据不进入变换。 |
 | `with_on_payload` | 采样/compat/wire 投影之后，作用于最终请求体 | `Ok(None)` 保持原体；`Ok(Some(v))` 校验后替换：JSON object、model 身份不变、输出预算不得上调。每个 payload variant 只运行一次——普通获取重试按字节复用冻结体（`ORDINARY_PAYLOAD_VARIANT`）。 |
-| `with_on_response` | 响应存在时一次，携带 status 与 headers，先于任何 body 处理或错误映射 | 从未产生响应的失败（连接错误、超时）不通知。 |
+| `with_on_response` | 在适配器来源定义的响应观测点触发，携带 status 与 headers，先于 body 处理 | Codex SSE 也在分类前观测非成功状态；未产生响应的失败不通知。成功响应 handoff 封闭普通 acquisition retry。 |
 | `with_on_raw` | 每个已解析 provider wire 事件，严格先于其归一化发射，按 wire 顺序 | 只读；失败以 typed 错误终止当前调用并保留已交付的 partial。 |
 
 适配器覆盖：Anthropic、OpenAI Chat（含 Mistral 与 OpenRouter profile）、
 OpenAI Responses（含 Azure）、Codex 与 Bedrock 接线全部四类（Bedrock raw 事件
 为已解析 smithy 帧 `{type, ...payload}`；Smithy 签名头受变换保护）。Google
-wire（Gemini/Vertex）支持 payload 与 header-transform 两类，对 response/raw
-观察者在任何派发之前以 typed `UnsupportedCapability` 拒绝——两个源事实
-（无 HTTP response hook、无 raw 支持）共用一个 fail-closed 门。回调失败是
+wire（Gemini/Vertex）支持 payload、header-transform 及归一化前的已解析 raw
+观测；其 HTTP response hook 不可用，附加 response 观察者会在派发前以 typed
+`UnsupportedCapability` 拒绝。回调失败是
 调用的功能失败：`ProviderError::CallbackPhase`，已脱敏、永不重试、不被遥测
-吞掉、不触发新调用。回调是运行时函数值，不是 JSON 配置；本切片只收普通
-路径——strict variant 交互（20.11）、新引入的操作 API（20.43–50）与完整
-AIR-059/V-51 收口（20.57）是独立切片。
+吞掉、不触发新调用。回调是运行时函数值，不是 JSON 配置；本切片包含普通调用及
+strict variant。新操作 API（20.43–50）与完整 AIR-059/V-51 收口（20.57）保留各自
+独立验收边界。
 
 ## 估算器、Sampling 与计价元数据（V-45/AIR-053/AIR-062，任务 20.35）
 
@@ -1038,7 +1102,7 @@ sections 取整一次，added／removed 工具列表的序列化 JSON 各自单�
 | 数字 Claude thinking 预算 | 等级表 1024/2048/8192/16384（xhigh/max → high），再夹取留出回答空间 | 省略预算 → 等级默认 | 低于 1024 的预算在鉴权前拒绝 | 等级默认 < 显式预算 |
 | sampling 参数 | 按键合并的 JSON 映射 | 空映射 → 不合并 | 缺失键保持缺失 | 模型基座 < 生效等级 < request |
 | temperature | 具名字段 | `None` → 按适配器门控省略 | NaN 省略 | sampling 映射覆盖具名字段（最后合并） |
-| 计价 tier | 以 input+cacheRead+cacheWrite 选择，严格大于，取最高，相等重复取首个 | 无 tier → 基础费率 | 构造时拒绝 0 阈值 | 命中费率适用于整个请求 |
+| 计价 tier | 以 input+cacheRead+cacheWrite 选择，严格大于，取最高，相等重复取首个 | 无 tier → 基础费率 | 零阈值有效；保持原序及重复项 | 命中费率适用于整个请求 |
 | 1h 缓存写入 | 子集按 2× 输入费率 | `None` → 全部短缓存 | 显式 0 有效，与缺失区分 | 子集，永不重复计费 |
 | service tier | flex 0.5×、priority/fast 2×（`gpt-5.5`：2.5×）、default 1× | 缺失 → 1× | 未识别的 wire 值保持缺失 | 作用于每个成本分量 |
 
@@ -1046,8 +1110,8 @@ sections 取整一次，added／removed 工具列表的序列化 JSON 各自单�
 最后一步，使模型与 request 的 sampling 覆盖具名请求字段；其他适配器忽略它。
 Responses 适配器把响应中的 `service_tier` 解析进 `Usage`。OpenRouter 图片
 `parse_usage` 是显式源例外：图片用量保留基础模型费率，不做 tier 选择。opi 没有
-Pi-Messages wire，其 native/simple 直传条款（只转发 temperature/maxTokens、不走
-公共预算构建器）不适用，没有绕过共享机制的路径。元数据本身永远不会产生新的派发前限制或缩放；重复的静态 `reasoning_effort` compat 键
+Pi-Messages wire，因此该 wire 的 native/simple 直传条款不适用。native `ChatApi`
+调用遵循前述适配器预算语义。元数据本身永远不会产生新的派发前限制或缩放；重复的静态 `reasoning_effort` compat 键
 仍然解析，只有在 AIR-022 替换证明之后才会开始硬报错。
 
 ## 非目标

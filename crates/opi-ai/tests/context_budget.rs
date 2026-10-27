@@ -249,17 +249,17 @@ fn system_message_rounds_prompt_sections_and_tool_lists_separately() {
         }],
         timestamp_ms: 0,
     });
-    let body_and_sections = estimate_text_tokens("aa");
+    let body_and_sections = estimate_text_tokens("a\n\na");
     let added = estimate_text_tokens(&serde_json::to_string(&system_tools_added(&system)).unwrap());
     let removed =
         estimate_text_tokens(&serde_json::to_string(&system_tools_removed(&system)).unwrap());
     let expected = body_and_sections + added + removed;
     assert_eq!(estimate_message_tokens(&system), expected);
     // Separate rounding must not collapse into one round over the raw sum:
-    // the 2-char body and the added-tool JSON each leave unused capacity, so
+    // the rendered body and the added-tool JSON each leave unused capacity, so
     // their separate ceils exceed the single ceil over the concatenation.
     let combined = estimate_text_tokens(&format!(
-        "aa{}{}",
+        "a\n\na{}{}",
         serde_json::to_string(&system_tools_added(&system)).unwrap(),
         serde_json::to_string(&system_tools_removed(&system)).unwrap(),
     ));

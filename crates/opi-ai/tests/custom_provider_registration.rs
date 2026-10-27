@@ -287,6 +287,7 @@ async fn stream_from_custom_provider() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -544,6 +545,7 @@ struct OtherOptions {
 
 #[derive(Clone, Debug, PartialEq)]
 struct ObservedCall {
+    selected_model: ModelInfo,
     request_model: String,
     max_tokens: Option<u64>,
     temperature: Option<f64>,
@@ -588,7 +590,31 @@ impl ChatApi<EchoOptions> for EchoChatApi {
         options: EchoOptions,
         auth: ResolvedAuth,
     ) -> opi_ai::provider::EventStream {
+        self.record_call(self.record.clone(), request, options, auth)
+    }
+
+    fn stream_model_resource_prepared(
+        &self,
+        model: ModelInfo,
+        request: Request,
+        options: EchoOptions,
+        auth: ResolvedAuth,
+        _resources: Option<opi_ai::codex_resources::CallResourceLease>,
+    ) -> opi_ai::provider::EventStream {
+        self.record_call(model, request, options, auth)
+    }
+}
+
+impl EchoChatApi {
+    fn record_call(
+        &self,
+        model: ModelInfo,
+        request: Request,
+        options: EchoOptions,
+        auth: ResolvedAuth,
+    ) -> opi_ai::provider::EventStream {
         self.observed.lock().unwrap().push(ObservedCall {
+            selected_model: model,
             request_model: request.model,
             max_tokens: request.max_tokens,
             temperature: request.temperature,
@@ -685,6 +711,7 @@ fn models_request() -> Request {
         extra_headers: vec![],
         cache_retention: opi_ai::provider::CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -828,9 +855,68 @@ async fn models_frozen_record_is_not_replaced_by_same_id_catalog_data() {
         .await
         .unwrap();
     let call = observed_call(&observed);
-    // The frozen caller record's limit (1,024) reached the adapter; the
-    // catalog record's larger default did not replace it.
-    assert_eq!(call.max_tokens, Some(1_024));
+    // The complete record reaches the adapter without filling a native
+    // omission from either the caller's or the catalog's output capacity.
+    assert_eq!(call.selected_model.capabilities.max_output_tokens, 1_024);
+    assert_eq!(call.max_tokens, None);
+}
+
+#[tokio::test]
+async fn codex_wire_metadata_does_not_admit_unconsumed_simple_tool_selection() {
+    for typed_api in [false, true] {
+        let mut models = Models::new();
+        let resolver = Arc::new(CountingResolver {
+            calls: AtomicUsize::new(0),
+        });
+        let record = ModelInfo::new(
+            "custom-codex",
+            "custom",
+            WireApi::OpenAiCodexResponses,
+            ModelCapabilities::new(100_000, 1_024).with_streaming(true),
+        );
+        let observed: Observed = Arc::default();
+        if typed_api {
+            models
+                .register_chat_api(
+                    Arc::new(EchoChatApi {
+                        api: ApiId::new("custom-codex"),
+                        provider_id: "custom".into(),
+                        record: record.clone(),
+                        text: "unused".into(),
+                        observed: observed.clone(),
+                    }),
+                    resolver.clone(),
+                    AuthProvenanceSource::Static,
+                )
+                .unwrap();
+        } else {
+            models
+                .register_route(
+                    custom_provider("custom", vec![record.clone()]),
+                    resolver.clone(),
+                    AuthProvenanceSource::Static,
+                    Default::default(),
+                )
+                .unwrap();
+        }
+        let failure = models
+            .complete_simple(
+                ChatModelRecord::new("custom", record),
+                models_request(),
+                SimpleOptions {
+                    tool_choice: Some(opi_ai::SimpleToolChoice::None),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            failure.cause(),
+            ProviderError::UnsupportedCapability(_)
+        ));
+        assert_eq!(resolver.calls.load(Ordering::SeqCst), 0);
+        assert!(observed.lock().unwrap().is_empty());
+    }
 }
 
 #[tokio::test]

@@ -5,8 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
-# The actual extracted SDK artifact. The public API currently proves
-# strict Upgrade and the detached raw stream; the codec remains private.
+# Only the actual extracted SDK artifact supplies production code. Protocol
+# behavior is observed through Models/Codex plus public Upgrade negatives.
 opi-ai = { path = "@PACKAGE@" }
 tokio = { version = "=1.52.3", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
 tokio-util = "=0.7.18"

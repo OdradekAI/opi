@@ -284,7 +284,8 @@ impl GeminiMapper {
     }
 
     pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
-        cause.with_partial(self.partial.clone())
+        self.snapshot
+            .failure(cause.with_partial(self.partial.clone()))
     }
 
     pub(crate) fn new(provider: &str, wire: crate::model_info::WireApi, model: &str) -> Self {
@@ -807,7 +808,9 @@ impl GeminiProvider {
             })
             .cloned()
             .collect();
-        let transformed = callbacks.apply_header_transform(&transformable)?;
+        let transformed = callbacks
+            .apply_header_transform_async(&transformable)
+            .await?;
         let mut headers = route_headers.clone();
         headers.extend(transformed);
         let mut request = http_client.post(&url);
@@ -842,6 +845,7 @@ impl GeminiProvider {
             return Err(map_gemini_error(status, None, &headers));
         }
 
+        snapshot.received_response();
         let mut byte_stream = response.bytes_stream();
         let mut buffer = String::new();
         let mut decoder = crate::text_decode::StreamTextDecoder::new();
@@ -878,21 +882,26 @@ impl GeminiProvider {
                 })?;
                 buffer.push_str(&decoder.push(&chunk));
 
-                for parsed in drain_sse_data(&mut buffer) {
-                    match parsed {
-                        ParsedEvent::Valid(event) => {
-                            for item in mapper.process(event) {
-                                if !send_or_cancel(&cancel, tx, item).await? {
-                                    return Ok(());
+                for data in drain_sse_payloads(&mut buffer) {
+                    if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&data) {
+                        callbacks.notify_raw_async(&raw).await?;
+                    }
+                    for parsed in ParsedEvent::from_data(&data) {
+                        match parsed {
+                            ParsedEvent::Valid(event) => {
+                                for item in mapper.process(event) {
+                                    if !send_or_cancel(&cancel, tx, item).await? {
+                                        return Ok(());
+                                    }
                                 }
                             }
-                        }
-                        ParsedEvent::Malformed => {
-                            let err = ProviderError::StreamError(
-                                ProviderErrorSummary::attested_static(MALFORMED_STREAM_FRAME),
-                            );
-                            if !send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await? {
-                                return Ok(());
+                            ParsedEvent::Malformed => {
+                                let err = ProviderError::StreamError(
+                                    ProviderErrorSummary::attested_static(MALFORMED_STREAM_FRAME),
+                                );
+                                if !send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await? {
+                                    return Ok(());
+                                }
                             }
                         }
                     }
@@ -920,7 +929,7 @@ impl GeminiProvider {
 // ---------------------------------------------------------------------------
 
 /// Drain complete SSE events from the buffer (delimited by `\n\n`).
-pub(crate) fn drain_sse_data(buffer: &mut String) -> Vec<ParsedEvent> {
+pub(crate) fn drain_sse_payloads(buffer: &mut String) -> Vec<String> {
     if buffer.contains('\r') {
         *buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
     }
@@ -930,7 +939,7 @@ pub(crate) fn drain_sse_data(buffer: &mut String) -> Vec<ParsedEvent> {
         let end = idx + 2;
         let chunk: String = buffer.drain(..end).collect();
         for data in parse_sse_data(&chunk) {
-            events.extend(ParsedEvent::from_data(&data));
+            events.push(data);
         }
     }
     events
@@ -970,14 +979,17 @@ fn map_gemini_error(
 }
 
 impl Provider for GeminiProvider {
-    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
-        // Google wires have no HTTP response hook and no raw-event support
-        // (two source facts, one gate): wire observers are rejected before
-        // dispatch instead of being silently ignored (task 20.51).
-        if request.callbacks.has_wire_observers() {
+    fn stream_prepared(
+        &self,
+        mut request: Request,
+        auth: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        request.callbacks = request.callbacks.ensure_call_scope();
+        // Google exposes parsed raw chunks but has no HTTP response hook.
+        if request.callbacks.has_response_observer() {
             return Box::pin(stream::iter(vec![Err(
                 ProviderError::UnsupportedCapability(ProviderErrorSummary::attested_static(
-                    "Google wires do not support response or raw-event callbacks",
+                    "Google wires do not support response callbacks",
                 )),
             )]));
         }
@@ -1002,15 +1014,6 @@ impl Provider for GeminiProvider {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
-        // Payload callback (task 20.51): once per variant on the shared
-        // Google projection, frozen across ordinary retries.
-        let body = match request
-            .callbacks
-            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-        {
-            Ok(body) => body,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
         let callbacks = request.callbacks.clone();
         let cancel = request.cancel.clone();
         let timeout = request.timeout;
@@ -1025,19 +1028,25 @@ impl Provider for GeminiProvider {
         let tx_closed = tx.clone();
         tokio::spawn(async move {
             let run = async {
-                let result = Self::stream_http(
-                    http_client,
-                    api_key,
-                    base_url,
-                    model_id,
-                    &body,
-                    producer_cancel.clone(),
-                    timeout,
-                    extra_headers,
-                    callbacks,
-                    producer_snapshot,
-                    &tx,
-                )
+                let result = async {
+                    let body = callbacks
+                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                        .await?;
+                    Self::stream_http(
+                        http_client,
+                        api_key,
+                        base_url,
+                        model_id,
+                        &body,
+                        producer_cancel.clone(),
+                        timeout,
+                        extra_headers,
+                        callbacks,
+                        producer_snapshot,
+                        &tx,
+                    )
+                    .await
+                }
                 .await;
                 match result {
                     Ok(()) | Err(ProviderError::Cancelled) => {}

@@ -16,6 +16,7 @@ pub(crate) enum Fault {
     Frame(frame::Fault),
     Pmd(pmd::Fault),
     Io(io::Error),
+    TransportEof,
     Closed,
     Busy,
     CloseNotStarted,
@@ -31,6 +32,7 @@ impl fmt::Display for Fault {
             Self::Frame(e) => fmt::Display::fmt(e, f),
             Self::Pmd(e) => fmt::Display::fmt(e, f),
             Self::Io(e) => fmt::Display::fmt(e, f),
+            Self::TransportEof => f.write_str("transport EOF before Close"),
             Self::Closed => f.write_str("WebSocket owner is terminal or closing"),
             Self::Busy => f.write_str("outgoing frame is pending"),
             Self::CloseNotStarted => f.write_str("caller has not queued a Close"),
@@ -274,9 +276,7 @@ impl Core {
         let result = (|| {
             self.frame.as_mut().ok_or(Fault::Closed)?.eof()?;
             self.messages.as_mut().ok_or(Fault::Closed)?.eof()?;
-            Err(Fault::Frame(frame::Fault::Protocol(
-                "transport EOF before Close",
-            )))
+            Err(Fault::TransportEof)
         })();
         self.release();
         result
@@ -375,6 +375,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
             terminal: None,
         })
     }
+    /// A resumed Close borrow must not enqueue a second Close frame.
+    pub(crate) fn close_started(&self) -> bool {
+        self.close_queued
+    }
+
     #[cfg(test)]
     pub(crate) fn close_state(&self) -> CloseState {
         match (
@@ -872,5 +877,31 @@ mod cancellation_tests {
         impl<T: ?Sized + Sync> AmbiguousIfSync<IsSync> for T {}
         let _ = <pmd::Decoder as AmbiguousIfSync<_>>::check;
         let _ = <Driver<DuplexStream> as AmbiguousIfSync<_>>::check;
+    }
+}
+
+#[cfg(test)]
+mod eof_boundary_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn eof_at_a_message_boundary_is_typed_transport_loss() {
+        let (io, peer) = tokio::io::duplex(8);
+        drop(peer);
+        let mut driver = Driver::new(io, None).unwrap();
+        assert!(matches!(driver.next().await, Err(Fault::TransportEof)));
+    }
+
+    #[tokio::test]
+    async fn eof_in_a_frame_remains_a_protocol_failure() {
+        use tokio::io::AsyncWriteExt;
+        let (io, mut peer) = tokio::io::duplex(8);
+        peer.write_all(&[0x81, 2, b'a']).await.unwrap();
+        drop(peer);
+        let mut driver = Driver::new(io, None).unwrap();
+        assert!(matches!(
+            driver.next().await,
+            Err(Fault::Frame(frame::Fault::Protocol(_)))
+        ));
     }
 }

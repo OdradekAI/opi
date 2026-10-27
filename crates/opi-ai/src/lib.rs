@@ -81,7 +81,7 @@ pub use models::{
     ApiId, AuthCheck, AuthCheckKind, AuthDescriptor, AuthResolutionOverrides, ChatApi,
     ChatApiHandle, ChatCall, ChatModelRecord, CompatMetadata, Models, ModelsError, NativeOptions,
     PreparedProviderCall, PreparedRoute, RefreshOutcome, RefreshReport, RefreshReportEntry,
-    RefreshStatus, SecretKey, SimpleOptions,
+    RefreshStatus, SecretKey, SimpleOptions, SimpleToolChoice,
 };
 pub use mutation::{
     BarrierEntry, BarrierReport, CredentialMutationOp, CredentialRevision, CredentialUpdateOp,

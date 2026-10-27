@@ -333,6 +333,7 @@ fn vertex_request_body_uses_gemini_format() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     let body = provider.build_request_body(&request).unwrap();
@@ -420,6 +421,7 @@ fn lifecycle_text_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }
@@ -2399,14 +2401,13 @@ mod adc_impersonation {
 }
 
 // ---------------------------------------------------------------------------
-// Task 20.51: vertex callbacks — payload flows, wire observers typed
-// unsupported (P20-S51)
+// Functional Vertex callbacks: payload/raw supported, response unsupported.
 // ---------------------------------------------------------------------------
 
 use opi_ai::callbacks::RequestCallbacks;
 
 #[tokio::test]
-async fn vertex_wire_observers_unsupported_but_payload_callback_flows() {
+async fn vertex_response_observer_unsupported_but_payload_callback_flows() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(wiremock::matchers::body_partial_json(
@@ -2455,7 +2456,7 @@ async fn vertex_wire_observers_unsupported_but_payload_callback_flows() {
     );
     server.verify().await;
 
-    // Wire observers are explicitly unsupported on Google wires.
+    // HTTP response observers are explicitly unsupported on Google wires.
     let observer_provider = VertexProvider::new(
         "my-project".into(),
         "us-central1".into(),
@@ -2474,6 +2475,76 @@ async fn vertex_wire_observers_unsupported_but_payload_callback_flows() {
     }
     assert!(typed, "vertex rejects response observers before dispatch");
     observer_server.verify().await;
+}
+
+#[tokio::test]
+async fn vertex_async_raw_observer_sees_wire_fields_before_normalization() {
+    let raw = serde_json::json!({"wire_only":"retained","candidates":[{"content":{"parts":[{"text":"Hi"}]},"finishReason":"STOP"}]});
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(format!("data: {raw}\n\n")),
+        )
+        .mount(&server)
+        .await;
+    let seen = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = seen.clone();
+    let mut request = lifecycle_text_request();
+    request.callbacks = RequestCallbacks::new().with_async_on_raw(move |value| {
+        let count = count.clone();
+        async move {
+            tokio::task::yield_now().await;
+            assert_eq!(value["wire_only"], "retained");
+            count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    });
+    let provider = VertexProvider::new(
+        "my-project".into(),
+        "us-central1".into(),
+        Some(server.uri()),
+    );
+    let mut stream =
+        provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
+    let mut done = false;
+    while let Some(item) = stream.next().await {
+        let event = item.expect("Vertex raw observer is supported");
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 1);
+        done |= matches!(event, AssistantStreamEvent::Done { .. });
+    }
+    assert!(done);
+}
+
+#[tokio::test]
+async fn vertex_transform_cannot_introduce_google_or_host_identity() {
+    for name in ["Host", "X-Goog-Api-Key", "X-Goog-User-Project"] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let mut request = lifecycle_text_request();
+        request.callbacks =
+            RequestCallbacks::new().with_header_transform(std::sync::Arc::new(move |_| {
+                Ok(vec![(name.into(), "changed".into())])
+            }));
+        let provider = VertexProvider::new(
+            "my-project".into(),
+            "us-central1".into(),
+            Some(server.uri()),
+        );
+        let failure = opi_ai::stream::ChatStream::new(
+            provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
+        )
+        .result()
+        .await
+        .unwrap_err();
+        assert!(matches!(failure.cause(), ProviderError::CallbackPhase(_)));
+        server.verify().await;
+    }
 }
 
 mod constrained_guard_tests {
@@ -2519,6 +2590,7 @@ mod constrained_guard_tests {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            telemetry_context: None,
             callbacks: Default::default(),
         }
     }

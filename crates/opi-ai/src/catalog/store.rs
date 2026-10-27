@@ -36,6 +36,15 @@ use crate::model_info::ModelInfo;
 
 use super::wire;
 
+/// The publisher of one acknowledged provider snapshot. Missing metadata
+/// denotes an older or caller-owned publication with unknown provenance.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum CatalogPublisher {
+    Native,
+    Source { id: String },
+}
+
 /// Typed failure while opening or decoding a [`ModelsStore`] file.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -94,6 +103,7 @@ pub struct StoreCommit {
 struct StoreInner {
     revision: u64,
     catalogs: HashMap<String, Vec<ModelInfo>>,
+    publishers: HashMap<String, CatalogPublisher>,
 }
 
 /// Handle to the persisted dynamic-catalog store. Cloning shares one inner
@@ -130,10 +140,11 @@ impl ModelsStore {
                     serde_json::from_slice(&bytes).map_err(|error| ModelsStoreError::Corrupt {
                         message: format!("store file is not valid JSON: {error}"),
                     })?;
-                let (revision, catalogs) = wire::decode_store_document(&document)?;
+                let decoded = wire::decode_store_document(&document)?;
                 StoreInner {
-                    revision,
-                    catalogs: catalogs.into_iter().collect(),
+                    revision: decoded.revision,
+                    catalogs: decoded.catalogs.into_iter().collect(),
+                    publishers: decoded.publishers.into_iter().collect(),
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => StoreInner::default(),
@@ -157,11 +168,20 @@ impl ModelsStore {
 
     /// Read the currently published state without modifying anything.
     pub fn snapshot(&self) -> StoreSnapshot {
+        self.snapshot_with_publishers().0
+    }
+
+    pub(crate) fn snapshot_with_publishers(
+        &self,
+    ) -> (StoreSnapshot, HashMap<String, CatalogPublisher>) {
         let inner = self.inner.lock().expect("store poisoned");
-        StoreSnapshot {
-            revision: inner.revision,
-            catalogs: inner.catalogs.clone(),
-        }
+        (
+            StoreSnapshot {
+                revision: inner.revision,
+                catalogs: inner.catalogs.clone(),
+            },
+            inner.publishers.clone(),
+        )
     }
 
     /// Begin a refresh attempt at the current revision. The returned guard
@@ -210,6 +230,16 @@ impl RefreshGuard {
         self,
         catalogs: HashMap<String, Vec<ModelInfo>>,
     ) -> Result<StoreCommit, StoreCommitError> {
+        self.commit_with_publishers(catalogs, HashMap::new())
+            .await
+            .map(|(commit, _)| commit)
+    }
+
+    pub(crate) async fn commit_with_publishers(
+        self,
+        catalogs: HashMap<String, Vec<ModelInfo>>,
+        mut publishers: HashMap<String, CatalogPublisher>,
+    ) -> Result<(StoreCommit, HashMap<String, CatalogPublisher>), StoreCommitError> {
         if self
             .token
             .as_ref()
@@ -219,7 +249,8 @@ impl RefreshGuard {
         }
         // Deterministic provider ordering keeps the serialized bytes stable.
         let ordered: BTreeMap<String, Vec<ModelInfo>> = catalogs.into_iter().collect();
-        let document = wire::encode_store_document(self.guard_revision + 1, &ordered);
+        publishers.retain(|provider, _| ordered.contains_key(provider));
+        let document = wire::encode_store_document(self.guard_revision + 1, &ordered, &publishers);
         let bytes = serde_json::to_vec_pretty(&document)
             .map_err(|error| ModelsStoreError::Corrupt {
                 message: format!("store document failed to encode: {error}"),
@@ -241,9 +272,13 @@ impl RefreshGuard {
         std::fs::rename(&temp_path, &self.path).map_err(ModelsStoreError::Io)?;
         inner.revision += 1;
         inner.catalogs = ordered.into_iter().collect();
-        Ok(StoreCommit {
-            revision: inner.revision,
-            catalogs: inner.catalogs.clone(),
-        })
+        inner.publishers = publishers;
+        Ok((
+            StoreCommit {
+                revision: inner.revision,
+                catalogs: inner.catalogs.clone(),
+            },
+            inner.publishers.clone(),
+        ))
     }
 }

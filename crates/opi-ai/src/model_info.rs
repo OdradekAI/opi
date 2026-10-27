@@ -432,30 +432,14 @@ impl ModelPricing {
 
     pub fn validate(&self) -> Result<(), ModelInfoError> {
         validate_pricing(&self.base)?;
-        let mut previous = None;
         for tier in &self.tiers {
-            if tier.input_tokens_above == 0 {
-                return Err(ModelInfoError::InvalidPricing(
-                    "pricing tier threshold must be greater than zero".into(),
-                ));
-            }
-            if previous.is_some_and(|value| value >= tier.input_tokens_above) {
-                return Err(ModelInfoError::InvalidPricing(
-                    "pricing tier thresholds must be unique and strictly ascending".into(),
-                ));
-            }
             validate_pricing(&tier.pricing)?;
-            previous = Some(tier.input_tokens_above);
         }
         Ok(())
     }
 
     pub fn effective(&self, input_tokens: u64) -> Pricing {
-        self.tiers
-            .iter()
-            .take_while(|tier| input_tokens > tier.input_tokens_above)
-            .last()
-            .map_or(self.base, |tier| tier.pricing)
+        self.effective_for_prompt_tokens(input_tokens)
     }
 
     /// Tier selection over one request's usage (AIR-062).
@@ -463,20 +447,24 @@ impl ModelPricing {
     /// Counts `input + cache_read + cache_write` tokens only, picks the
     /// highest threshold that was strictly exceeded, and keeps the first of
     /// equal duplicate thresholds; the chosen rates apply to the whole
-    /// request. The scan does not assume ordering, so wire-originated tier
-    /// lists are handled before catalog validation runs.
+    /// request. Zero thresholds, duplicates and arbitrary input ordering are
+    /// accepted; only the individual rates are validated.
     pub fn effective_for_usage(&self, usage: &Usage) -> Pricing {
         let prompt_tokens = u64::from(usage.input_tokens)
             + u64::from(usage.cache_read_tokens)
             + u64::from(usage.cache_write_tokens);
+        self.effective_for_prompt_tokens(prompt_tokens)
+    }
+
+    fn effective_for_prompt_tokens(&self, prompt_tokens: u64) -> Pricing {
         let mut rates = self.base;
-        let mut matched_threshold = 0u64;
+        let mut matched_threshold = None;
         for tier in &self.tiers {
             if prompt_tokens > tier.input_tokens_above
-                && tier.input_tokens_above > matched_threshold
+                && matched_threshold.is_none_or(|matched| tier.input_tokens_above > matched)
             {
                 rates = tier.pricing;
-                matched_threshold = tier.input_tokens_above;
+                matched_threshold = Some(tier.input_tokens_above);
             }
         }
         rates

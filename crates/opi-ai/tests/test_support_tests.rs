@@ -67,6 +67,7 @@ async fn stream_yields_text_response_events() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -117,6 +118,7 @@ async fn stream_yields_tool_call_response_events() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -170,6 +172,7 @@ async fn stream_yields_error_response_events() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -220,6 +223,7 @@ async fn multiple_stream_calls_consume_responses_in_order() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 
@@ -250,6 +254,7 @@ async fn multiple_stream_calls_consume_responses_in_order() {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            telemetry_context: None,
             callbacks: Default::default(),
         },
         opi_ai::test_support::resolved_auth(),
@@ -392,6 +397,7 @@ fn scripted_request(cancel: CancellationToken) -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }

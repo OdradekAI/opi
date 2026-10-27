@@ -24,6 +24,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use futures_util::FutureExt;
+use futures_util::future::{BoxFuture, Shared};
 use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
@@ -62,24 +64,88 @@ const CONNECTION_LIMIT_CODE: &str = "websocket_connection_limit_reached";
 /// connections with their continuation state, and the per-session WS→SSE
 /// fallback marker.
 #[derive(Default)]
-pub(super) struct WsTransportState {
-    connections: Mutex<HashMap<(String, String), PooledConnection>>,
+pub(crate) struct WsTransportState {
+    connections: Mutex<HashMap<(String, String), PoolSlot>>,
     fallback_sessions: Mutex<HashSet<String>>,
+    pending_closes: Mutex<PendingCloses>,
     /// Resource generation registry (task 20.17): every WS-family call
     /// registers one generation before wire work; cleanup cutoffs cancel
     /// the matching old work and await its local exits.
     resources: std::sync::Arc<crate::codex_resources::ResourceRegistry>,
 }
 
+type SharedClose = Shared<BoxFuture<'static, Result<(), String>>>;
+
+#[derive(Default)]
+struct PendingCloses {
+    next_id: u64,
+    jobs: HashMap<u64, (String, SharedClose)>,
+}
+
+pub(super) struct CleanupClose {
+    pub(super) id: u64,
+    future: SharedClose,
+}
+
+impl CleanupClose {
+    pub(super) async fn resolve(self) -> Result<(), String> {
+        self.future.await
+    }
+}
+
 impl WsTransportState {
-    pub(super) fn registry(&self) -> &std::sync::Arc<crate::codex_resources::ResourceRegistry> {
+    /// Called under the generation cutoff lock. The state retains each Close
+    /// separately from its waiters, so dropping one barrier cannot discard
+    /// unfinished release or make another session wait for it.
+    pub(super) fn prepare_cleanup(&self, session: Option<&str>) -> (Vec<CleanupClose>, usize) {
+        let (drivers, cleared) = self.take_cleanup_connections(session);
+        let mut pending = self.pending_closes.lock().unwrap();
+        for (session, mut driver) in drivers {
+            pending.next_id += 1;
+            let id = pending.next_id;
+            let future = async move { silent_close(&mut driver).await }
+                .boxed()
+                .shared();
+            pending.jobs.insert(id, (session, future));
+        }
+        let jobs = pending
+            .jobs
+            .iter()
+            .filter(|(_, (stored_session, _))| {
+                session.is_none_or(|target| stored_session == target)
+            })
+            .map(|(&id, (_, future))| CleanupClose {
+                id,
+                future: future.clone(),
+            })
+            .collect();
+        (jobs, cleared)
+    }
+
+    /// Remove completed results only after the whole barrier has awaited its
+    /// selected work. A dropped waiter leaves both successes and failures
+    /// available for the next cleanup.
+    pub(super) fn finish_cleanup(&self, completed: &[u64]) {
+        let mut pending = self.pending_closes.lock().unwrap();
+        for id in completed {
+            pending.jobs.remove(id);
+        }
+    }
+
+    pub(super) fn drop_pending_closes(&self) {
+        self.pending_closes.lock().unwrap().jobs.clear();
+    }
+    pub(crate) fn registry(&self) -> &std::sync::Arc<crate::codex_resources::ResourceRegistry> {
         &self.resources
     }
 
     /// Remove the pooled connections and sticky fallback markers matched by
     /// the cleanup selector. Returns the taken drivers (to close) and the
     /// number of cleared fallback markers. `None` matches everything.
-    pub(super) fn take_cleanup_connections(&self, session: Option<&str>) -> (Vec<Driver>, usize) {
+    pub(crate) fn take_cleanup_connections(
+        &self,
+        session: Option<&str>,
+    ) -> (Vec<(String, Driver)>, usize) {
         let mut drivers = Vec::new();
         {
             let mut connections = self.connections.lock().unwrap();
@@ -92,8 +158,10 @@ impl WsTransportState {
                 .cloned()
                 .collect();
             for key in matched_keys {
-                if let Some(entry) = connections.remove(&key) {
-                    drivers.push(entry.driver);
+                if let Some(slot) = connections.remove(&key)
+                    && let Some(entry) = slot.idle
+                {
+                    drivers.push((key.0, entry.driver));
                 }
             }
         }
@@ -106,9 +174,49 @@ impl WsTransportState {
 }
 
 struct PooledConnection {
+    endpoint: String,
     driver: Driver,
+    compression: bool,
     created_at: std::time::Instant,
     continuation: Option<WsContinuation>,
+}
+
+/// A busy reservation remains visible while its driver is outside the map.
+/// Overlapping calls use temporary connections rather than replacing it.
+struct PoolSlot {
+    marker: std::sync::Arc<()>,
+    idle: Option<PooledConnection>,
+}
+
+struct PoolReservation<'a> {
+    connections: &'a Mutex<HashMap<(String, String), PoolSlot>>,
+    key: (String, String),
+    marker: std::sync::Arc<()>,
+}
+
+impl PoolReservation<'_> {
+    fn publish(&self, connection: &mut Option<PooledConnection>) -> bool {
+        let mut connections = self.connections.lock().unwrap();
+        if let Some(slot) = connections.get_mut(&self.key)
+            && std::sync::Arc::ptr_eq(&slot.marker, &self.marker)
+        {
+            slot.idle = connection.take();
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl Drop for PoolReservation<'_> {
+    fn drop(&mut self) {
+        let mut connections = self.connections.lock().unwrap();
+        if connections.get(&self.key).is_some_and(|slot| {
+            slot.idle.is_none() && std::sync::Arc::ptr_eq(&slot.marker, &self.marker)
+        }) {
+            connections.remove(&self.key);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -140,8 +248,9 @@ enum AttemptFlow {
 /// One acquired connection: pooled entries carry their slot identity and
 /// return to the map on success; temporary connections complete an explicit
 /// client Close.
-struct Acquired {
-    pooled_key: Option<(String, String)>,
+struct Acquired<'a> {
+    reservation: Option<PoolReservation<'a>>,
+    compression: bool,
     created_at: Option<std::time::Instant>,
     driver: Driver,
 }
@@ -231,9 +340,9 @@ fn classify_upgrade_error(error: &WsUpgradeError) -> AttemptFlow {
     }
 }
 
-/// Socket-layer faults are transport-class losses (fallback before public
-/// output, terminal after it), except text-payload UTF-8 violations, which
-/// stay protocol failures like the reviewed source's decode errors.
+/// Only transport loss can fall back before the first provider event.
+/// Frame/PMD validation, allocation and owner-state failures are terminal;
+/// resending them over another transport would repeat the logical request.
 fn classify_transport_fault(
     fault: &crate::ws::io::Fault,
     emitted_any: bool,
@@ -244,9 +353,12 @@ fn classify_transport_fault(
             ProviderErrorSummary::attested_static(summary),
         )))
     };
-    if matches!(
+    if !matches!(
         fault,
-        crate::ws::io::Fault::Frame(crate::ws::frame::Fault::Utf8)
+        crate::ws::io::Fault::Io(_)
+            | crate::ws::io::Fault::TransportEof
+            | crate::ws::io::Fault::Closed
+            | crate::ws::io::Fault::CloseTimeout
     ) {
         return terminal("OpenAI Codex returned malformed streaming data");
     }
@@ -370,22 +482,6 @@ pub(super) async fn drive(
         Ok(parts) => parts,
         Err(error) => return WsLoopOutcome::Terminal(error),
     };
-    // The strict Upgrade bridge requires a redirect-free client. An explicit
-    // WebSocket demand with an incapable client is a configuration error
-    // (fail-closed); the default Auto transport resolves to SSE instead,
-    // because the WS attempt cannot run on this client. This is a local
-    // configuration resolution, never a transport failure eligible for the
-    // sticky fallback marker.
-    if client.redirect_policy() != crate::http::RedirectPolicy::None {
-        if transport == TransportPreference::Auto {
-            return WsLoopOutcome::Fallback;
-        }
-        return WsLoopOutcome::Terminal(ProviderError::Config(
-            ProviderErrorSummary::attested_static(
-                "Codex WebSocket transport requires an HttpClient with RedirectPolicy::None",
-            ),
-        ));
-    }
     // Per-session sticky fallback: once recorded, later calls in the same
     // session resolve to SSE without touching WebSocket again.
     if let Some(session) = session_key.as_deref()
@@ -437,24 +533,35 @@ pub(super) async fn drive(
                 return WsLoopOutcome::Terminal(error);
             }
             AttemptFlowResult::Fallback => {
-                if let Some(session) = session_key.as_deref() {
-                    state
-                        .fallback_sessions
-                        .lock()
-                        .unwrap()
-                        .insert(session.to_owned());
+                if let Some(session) = session_key.as_deref()
+                    && lease
+                        .with_live(|| {
+                            state
+                                .fallback_sessions
+                                .lock()
+                                .unwrap()
+                                .insert(session.to_owned())
+                        })
+                        .is_none()
+                {
+                    return WsLoopOutcome::Terminal(ProviderError::Cancelled);
                 }
                 return WsLoopOutcome::Fallback;
             }
             AttemptFlowResult::Terminal(error) => {
                 if let Some(session) = session_key.as_deref()
                     && matches!(error, ProviderError::Network(_) | ProviderError::Timeout)
+                    && lease
+                        .with_live(|| {
+                            state
+                                .fallback_sessions
+                                .lock()
+                                .unwrap()
+                                .insert(session.to_owned())
+                        })
+                        .is_none()
                 {
-                    state
-                        .fallback_sessions
-                        .lock()
-                        .unwrap()
-                        .insert(session.to_owned());
+                    return WsLoopOutcome::Terminal(ProviderError::Cancelled);
                 }
                 return WsLoopOutcome::Terminal(error);
             }
@@ -476,36 +583,59 @@ enum AttemptFlowResult {
 }
 
 /// Acquire or open one WebSocket connection for this call.
-async fn acquire(
-    state: &WsTransportState,
+async fn acquire<'a>(
+    state: &'a WsTransportState,
     client: &HttpClient,
     url: &str,
     headers: &[(String, String)],
     pooled_key: Option<(&str, &str)>,
     cancel: &CancellationToken,
-) -> Result<(Acquired, Option<WsContinuation>), AttemptFlow> {
-    if let Some((session, account)) = pooled_key {
+    lease: &GenerationGuard,
+) -> Result<(Acquired<'a>, Option<WsContinuation>), AttemptFlow> {
+    let mut previous = None;
+    let reservation = pooled_key.and_then(|(session, account)| {
+        let key = (session.to_owned(), account.to_owned());
         let mut connections = state.connections.lock().unwrap();
-        if let Some(entry) = connections.remove(&(session.to_owned(), account.to_owned()))
-            && entry.created_at.elapsed() < MAX_CONNECTION_AGE
+        if connections
+            .get(&key)
+            .is_some_and(|slot| slot.idle.is_none())
         {
+            return None;
+        }
+        let marker = std::sync::Arc::new(());
+        previous = connections
+            .insert(
+                key.clone(),
+                PoolSlot {
+                    marker: marker.clone(),
+                    idle: None,
+                },
+            )
+            .and_then(|slot| slot.idle);
+        Some(PoolReservation {
+            connections: &state.connections,
+            key,
+            marker,
+        })
+    });
+    if let Some(mut entry) = previous {
+        if entry.endpoint == url && entry.created_at.elapsed() < MAX_CONNECTION_AGE {
             return Ok((
                 Acquired {
-                    pooled_key: Some((session.to_owned(), account.to_owned())),
+                    reservation,
                     created_at: Some(entry.created_at),
                     driver: entry.driver,
+                    compression: entry.compression,
                 },
                 entry.continuation,
             ));
         }
-        // Age-capped entries were removed above and are dropped; proactive
-        // idle timers and pool cleanup remain the registered resources
-        // owner's task.
+        // Endpoint and age belong to the frozen connection identity. Release
+        // an ineligible idle socket before connecting its replacement.
+        if let Err(detail) = silent_close(&mut entry.driver).await {
+            lease.record_unconfirmed(detail);
+        }
     }
-    // A fresh connection under a session key still becomes the pooled
-    // connection for that key (released on success), like the reviewed
-    // source's cache-insert on creation.
-    let pooled_key = pooled_key.map(|(session, account)| (session.to_owned(), account.to_owned()));
     let uri = match url::Url::parse(url) {
         Ok(uri) => uri,
         Err(_) => {
@@ -543,6 +673,7 @@ async fn acquire(
                 server_max_window_bits: pmd.server_max_window_bits,
                 client_max_window_bits: pmd.client_max_window_bits.unwrap_or(15),
             });
+    let compression = parameters.is_some();
     let driver = crate::ws::io::Driver::new(upgraded.stream, parameters).map_err(|_| {
         AttemptFlow::Terminal(ProviderError::StreamError(
             ProviderErrorSummary::attested_static("WebSocket owner initialization failed"),
@@ -550,7 +681,8 @@ async fn acquire(
     })?;
     Ok((
         Acquired {
-            pooled_key,
+            reservation,
+            compression,
             created_at: Some(std::time::Instant::now()),
             driver,
         },
@@ -599,6 +731,7 @@ async fn attempt(
         &headers,
         session_key.map(|session| (session, account_id)),
         &cancel,
+        lease,
     )
     .await
     {
@@ -610,7 +743,10 @@ async fn attempt(
             };
         }
     };
-    lease.set_phase(if acquired.pooled_key.is_some() {
+    // The attached WS transport seals generic acquisition. Its own bounded
+    // reconnect/full-input/fallback branches retain their separate budgets.
+    snapshot.received_response();
+    lease.set_phase(if acquired.reservation.is_some() {
         GenerationPhase::Busy
     } else {
         GenerationPhase::Temporary
@@ -645,6 +781,7 @@ async fn attempt(
     let outcome = run_stream(
         &mut acquired.driver,
         &frame_body,
+        acquired.compression,
         &mut mapper,
         timeout,
         &cancel,
@@ -680,17 +817,25 @@ async fn attempt(
             };
             // Output-delivered errors end that stream: the connection does
             // not return to the pool.
-            if !delivered_error && let Some(key) = acquired.pooled_key.take() {
-                state.connections.lock().unwrap().insert(
-                    key,
-                    PooledConnection {
-                        driver: acquired.driver,
-                        created_at: acquired.created_at.unwrap_or_else(std::time::Instant::now),
-                        continuation: final_continuation.clone(),
-                    },
-                );
-            } else {
-                close_temporary(&mut acquired.driver).await;
+            let mut returning = Some(PooledConnection {
+                endpoint: url,
+                driver: acquired.driver,
+                compression: acquired.compression,
+                created_at: acquired.created_at.unwrap_or_else(std::time::Instant::now),
+                continuation: final_continuation.clone(),
+            });
+            if !delivered_error && let Some(reservation) = acquired.reservation.as_ref() {
+                let _ = lease.with_live(|| reservation.publish(&mut returning));
+            }
+            if let Some(mut temporary) = returning {
+                let closed = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => silent_close(&mut temporary.driver).await,
+                    result = close_temporary(&mut temporary.driver) => result,
+                };
+                if let Err(detail) = closed {
+                    lease.record_unconfirmed(detail);
+                }
             }
             AttemptOutcome {
                 flow: AttemptFlowResult::Done,
@@ -702,8 +847,10 @@ async fn attempt(
             // cancelled generation completes an explicit prompt Close (the
             // source's silent close); other failures release IO through the
             // owner's Drop without protocol output.
-            if matches!(flow, AttemptFlow::Terminal(ProviderError::Cancelled)) {
-                let _ = silent_close(&mut acquired.driver).await;
+            if matches!(flow, AttemptFlow::Terminal(ProviderError::Cancelled))
+                && let Err(detail) = silent_close(&mut acquired.driver).await
+            {
+                lease.record_unconfirmed(detail);
             }
             AttemptOutcome {
                 flow: flow.into(),
@@ -714,35 +861,33 @@ async fn attempt(
 }
 
 /// Complete the explicit client Close on a temporary connection.
-async fn close_temporary(driver: &mut Driver) {
-    let _ = driver.queue(8, &1000_u16.to_be_bytes(), false, ws::fresh_mask());
-    let _ = driver.flush().await;
-    let _ = driver
-        .finish_close(Some(tokio::time::Instant::now() + CLOSE_BUDGET))
-        .await;
+async fn close_temporary(driver: &mut Driver) -> Result<(), String> {
+    close_with_budget(driver, CLOSE_BUDGET).await
 }
 
-/// Budget for confirming a silent close on cleanup: unlike a completed
-/// temporary connection (the full [`CLOSE_BUDGET`]), cancelled and
-/// cleaned-up connections never block the release on an unresponsive peer
-/// for long.
+/// Cleanup confirms a peer Close only within this local release budget.
 const SILENT_CLOSE_CONFIRM: Duration = Duration::from_millis(250);
 
-/// Source-style silent close for cancelled and cleaned-up connections
-/// (task 20.17): write the Close frame, flush, then confirm the close
-/// handshake within a short bounded budget instead of waiting on a remote
-/// acknowledgement without deadline. A write failure or confirmation
-/// timeout is the reported unconfirmed effect; IO is always released.
 pub(super) async fn silent_close(driver: &mut Driver) -> Result<(), String> {
+    close_with_budget(driver, SILENT_CLOSE_CONFIRM).await
+}
+
+/// A single caller deadline covers the Close write, flush, peer response,
+/// transport shutdown and EOF. Dropping the borrow leaves state in Driver.
+async fn close_with_budget<S>(
+    driver: &mut crate::ws::io::Driver<S>,
+    budget: Duration,
+) -> Result<(), String>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    if !driver.close_started() {
+        driver
+            .queue(8, &1000_u16.to_be_bytes(), false, ws::fresh_mask())
+            .map_err(|fault| format!("close frame rejected: {fault:?}"))?;
+    }
     driver
-        .queue(8, &1000_u16.to_be_bytes(), false, ws::fresh_mask())
-        .map_err(|fault| format!("close frame rejected: {fault:?}"))?;
-    driver
-        .flush()
-        .await
-        .map_err(|fault| format!("close frame not written: {fault:?}"))?;
-    driver
-        .finish_close(Some(tokio::time::Instant::now() + SILENT_CLOSE_CONFIRM))
+        .finish_close(Some(tokio::time::Instant::now() + budget))
         .await
         .map_err(|fault| format!("close handshake unconfirmed: {fault:?}"))
 }
@@ -758,9 +903,11 @@ fn error_code(value: &serde_json::Value) -> Option<&str> {
 /// Drive the event stream for one attempt. Returns whether a successful
 /// completion with a response id was observed (continuation publication is
 /// the caller's decision).
+#[allow(clippy::too_many_arguments)]
 async fn run_stream(
     driver: &mut Driver,
     frame_body: &serde_json::Value,
+    compression: bool,
     mapper: &mut ResponsesMapper,
     timeout: Option<Duration>,
     cancel: &CancellationToken,
@@ -768,7 +915,7 @@ async fn run_stream(
     tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
 ) -> Result<(bool, bool), AttemptFlow> {
     let payload = serde_json::to_string(frame_body).unwrap_or_default();
-    if let Err(fault) = driver.queue(1, payload.as_bytes(), false, ws::fresh_mask()) {
+    if let Err(fault) = driver.queue(1, payload.as_bytes(), compression, ws::fresh_mask()) {
         return Err(classify_transport_fault(&fault, false, mapper));
     }
     // Active send cancellation: the cutoff is observed before the request
@@ -822,23 +969,42 @@ async fn run_stream(
             // EOF is never success.
             return Err(websocket_closed_before_completion(emitted_any, mapper));
         };
-        if message.opcode != 1 {
-            if message.opcode == 8 {
-                return Err(websocket_closed_before_completion(emitted_any, mapper));
+        match message.opcode {
+            8 => return Err(websocket_closed_before_completion(emitted_any, mapper)),
+            9 => {
+                if let Err(fault) = driver.queue(10, &message.payload, false, ws::fresh_mask()) {
+                    return Err(classify_transport_fault(&fault, emitted_any, mapper));
+                }
+                let flushed = tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => return Err(AttemptFlow::Terminal(mapper.failure(ProviderError::Cancelled))),
+                    result = driver.flush() => result,
+                };
+                if let Err(fault) = flushed {
+                    return Err(classify_transport_fault(&fault, emitted_any, mapper));
+                }
+                continue;
             }
-            continue;
+            10 => continue,
+            _ => {}
         }
-        let text = match std::str::from_utf8(&message.payload) {
-            Ok(text) => text,
-            Err(_) => {
-                return Err(AttemptFlow::Terminal(mapper.failure(
-                    ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                        "OpenAI Codex returned malformed streaming data",
-                    )),
-                )));
+        let text = if message.opcode == 2 {
+            // The source projects binary messages with replacement decoding;
+            // text frames have already passed strict UTF-8 validation.
+            String::from_utf8_lossy(&message.payload)
+        } else {
+            match std::str::from_utf8(&message.payload) {
+                Ok(text) => std::borrow::Cow::Borrowed(text),
+                Err(_) => {
+                    return Err(AttemptFlow::Terminal(mapper.failure(
+                        ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                            "OpenAI Codex returned malformed streaming data",
+                        )),
+                    )));
+                }
             }
         };
-        let value: serde_json::Value = match serde_json::from_str(text) {
+        let value: serde_json::Value = match serde_json::from_str(&text) {
             Ok(value) => value,
             Err(_) => {
                 // Invalid JSON is a protocol failure: never fallback.
@@ -849,8 +1015,12 @@ async fn run_stream(
                 )));
             }
         };
-        if let Err(error) = callbacks.notify_raw(&value) {
-            return Err(AttemptFlow::Terminal(mapper.failure(error)));
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(AttemptFlow::Terminal(mapper.failure(ProviderError::Cancelled))),
+            result = callbacks.notify_raw_async(&value) => {
+                if let Err(error) = result { return Err(AttemptFlow::Terminal(mapper.failure(error))); }
+            }
         }
         // Bounded pre-output retries: intercept the two classified error
         // codes before any public event exists.
@@ -870,8 +1040,13 @@ async fn run_stream(
                 _ => {}
             }
         }
-        match ResponsesEvent::try_from_json_str(text) {
+        match ResponsesEvent::try_from_json_str(&text) {
             ParsedEvent::Valid(event) => {
+                // The recovery boundary is the provider event, even when its
+                // mapper emits no public content (for example message setup).
+                if !matches!(event, ResponsesEvent::Ignore) {
+                    emitted_any = true;
+                }
                 let event = match event {
                     ResponsesEvent::Error { .. } => ResponsesEvent::Error {
                         message: UPSTREAM_STREAM_ERROR.to_owned(),
@@ -916,5 +1091,25 @@ impl From<AttemptFlow> for AttemptFlowResult {
             AttemptFlow::Fallback => Self::Fallback,
             AttemptFlow::Terminal(error) => Self::Terminal(error),
         }
+    }
+}
+
+#[cfg(test)]
+mod close_deadline_tests {
+    use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn cleanup_deadline_bounds_a_blocked_close_write_and_flush() {
+        let (io, _held_peer) = tokio::io::duplex(1);
+        let mut driver = crate::ws::io::Driver::new(io, None).unwrap();
+        let started = tokio::time::Instant::now();
+        let result = tokio::time::timeout(
+            SILENT_CLOSE_CONFIRM * 2,
+            close_with_budget(&mut driver, SILENT_CLOSE_CONFIRM),
+        )
+        .await
+        .expect("the cleanup deadline must include writing the Close frame");
+        assert!(result.is_err(), "an unresponsive peer cannot confirm Close");
+        assert_eq!(started.elapsed(), SILENT_CLOSE_CONFIRM);
     }
 }

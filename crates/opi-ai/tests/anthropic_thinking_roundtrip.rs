@@ -70,6 +70,7 @@ fn request(messages: Vec<Message>) -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::Disabled,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }

@@ -396,6 +396,7 @@ async fn openai_chat_provider_routes_http_requests_through_proxy() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
 

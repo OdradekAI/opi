@@ -998,6 +998,7 @@ fn oauth_assembly_request(id: &str) -> opi_ai::provider::Request {
         extra_headers: vec![],
         cache_retention: opi_ai::provider::CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     }
 }

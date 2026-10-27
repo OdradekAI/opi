@@ -380,17 +380,13 @@ impl Provider for BedrockProvider {
         self.stream_prepared(request, auth)
     }
 
-    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+    fn stream_prepared(
+        &self,
+        mut request: Request,
+        auth: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        request.callbacks = request.callbacks.ensure_call_scope();
         let body = match self.build_converse_body(&request) {
-            Ok(body) => body,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        // Payload callback (task 20.51): once per variant on the
-        // converse-stream projection, frozen across ordinary retries.
-        let body = match request
-            .callbacks
-            .apply_payload(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-        {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
@@ -511,20 +507,26 @@ impl Provider for BedrockProvider {
         let tx_closed = tx.clone();
         tokio::spawn(async move {
             let run = async {
-                let result = Self::stream_http(
-                    http_client,
-                    credentials,
-                    bearer_token,
-                    base_url,
-                    &model_id,
-                    &body,
-                    producer_cancel.clone(),
-                    timeout,
-                    extra_headers,
-                    callbacks,
-                    producer_snapshot,
-                    &tx,
-                )
+                let result = async {
+                    let body = callbacks
+                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                        .await?;
+                    Self::stream_http(
+                        http_client,
+                        credentials,
+                        bearer_token,
+                        base_url,
+                        &model_id,
+                        &body,
+                        producer_cancel.clone(),
+                        timeout,
+                        extra_headers,
+                        callbacks,
+                        producer_snapshot,
+                        &tx,
+                    )
+                    .await
+                }
                 .await;
                 match result {
                     Ok(()) | Err(ProviderError::Cancelled) => {}
@@ -569,7 +571,15 @@ impl BedrockProvider {
     ) -> Result<(), ProviderError> {
         // Header transform (task 20.51) on the per-call set before signing;
         // the output is revalidated so no signing/identity name can enter.
-        let extra_headers = callbacks.apply_header_transform(&extra_headers)?;
+        // Retry-observability headers belong to the attempt, not the frozen
+        // functional transform. Preserve the freshly stamped send counter.
+        let (attempt_headers, transformable): (Vec<_>, Vec<_>) = extra_headers
+            .into_iter()
+            .partition(|(name, _)| name.to_ascii_lowercase().starts_with("amz-sdk-"));
+        let mut extra_headers = callbacks
+            .apply_header_transform_async(&transformable)
+            .await?;
+        extra_headers.extend(attempt_headers);
         let path = format!("/model/{model_id}/converse-stream");
         let payload = serde_json::to_vec(body).unwrap_or_default();
         let host = base_url
@@ -704,13 +714,17 @@ impl BedrockProvider {
         }
         // Response callback (V-36): fired exactly once on the successfully
         // acquired response; rejected dispatches never masquerade.
-        callbacks.notify_response(status.as_u16(), &observed_headers)?;
+        snapshot.received_response();
 
         let mut byte_stream = response.bytes_stream();
         let mut buffer: Vec<u8> = Vec::new();
         let mut mapper = BedrockMapper::new(model_id);
 
         mapper.set_snapshot(snapshot);
+        callbacks
+            .notify_response_async(status.as_u16(), &observed_headers)
+            .await
+            .map_err(|error| mapper.failure(error))?;
         let result: Result<(), ProviderError> = async {
             loop {
                 let chunk = tokio::select! {
@@ -767,7 +781,9 @@ impl BedrockProvider {
                             raw[key] = value;
                         }
                     }
-                    if let Err(error) = callbacks.notify_raw(&raw) {
+                    if !(mapper.saw_done && mapper.pending_done.is_none())
+                        && let Err(error) = callbacks.notify_raw_async(&raw).await
+                    {
                         return Err(mapper.failure(error));
                     }
                     for event in parse_bedrock_event(&frame.event_type, payload_str) {
@@ -1106,7 +1122,8 @@ impl BedrockMapper {
     }
 
     pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
-        cause.with_partial(self.partial.clone())
+        self.snapshot
+            .failure(cause.with_partial(self.partial.clone()))
     }
 
     fn new(model: &str) -> Self {

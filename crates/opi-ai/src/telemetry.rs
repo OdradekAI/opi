@@ -9,12 +9,9 @@
 //!
 //! ## Owned tracing difference
 //!
-//! A `tracing` span does not retain the dispatcher it was created against
-//! (`tracing-core` resolves the dispatcher at use time from the thread
-//! default), so the carrier freezes the pair `(parent, Dispatch)` at
-//! [`from_span`](TelemetryContext::from_span) time: the current default
-//! dispatch is captured together with the parent span. This is the reviewed
-//! RDF-14 owned difference. The essential contract is preserved: observation
+//! The carrier obtains the Span's creating dispatcher through
+//! `Span::with_subscriber` and freezes the pair `(parent, Dispatch)` at
+//! [`from_span`](TelemetryContext::from_span) time. Observation
 //! never adopts poll-time ambient dispatch - the frozen pair, not whatever is
 //! default when the wrapped work actually polls, routes the observation.
 //!
@@ -67,23 +64,18 @@ enum CarrierState {
 }
 
 impl TelemetryContext {
-    /// Freeze the given parent span together with the current default
-    /// dispatch (see the [module docs](self#owned-tracing-difference) for the
-    /// owned tracing difference: spans do not retain their creating
-    /// dispatcher, so the pair is frozen here, never re-read at poll time).
+    /// Freeze the given parent together with its creating dispatch. Neither
+    /// capture-time nor poll-time ambient dispatch can replace that source.
     ///
     /// A disabled span (`Span::none()` or subscriber-disabled) degrades to
     /// the explicit [`noop`](Self::noop) state.
     #[must_use]
     pub fn from_span(parent: Span) -> Self {
-        if parent.is_disabled() {
+        let Some(dispatch) = parent.with_subscriber(|(_, dispatch)| dispatch.clone()) else {
             return Self::noop();
-        }
+        };
         Self {
-            state: CarrierState::Active {
-                parent,
-                dispatch: Dispatch::default(),
-            },
+            state: CarrierState::Active { parent, dispatch },
         }
     }
 

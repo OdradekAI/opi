@@ -762,9 +762,16 @@ pub(crate) struct ProducerSnapshot(std::sync::Arc<std::sync::Mutex<ProducerState
 struct ProducerState {
     message: Option<crate::message::AssistantMessage>,
     response_received: bool,
+    terminal_delivered: bool,
 }
 
 impl ProducerSnapshot {
+    pub(crate) fn terminal_delivered(&self) -> bool {
+        self.0
+            .lock()
+            .expect("producer snapshot lock")
+            .terminal_delivered
+    }
     pub(crate) fn record(&self, message: &crate::message::AssistantMessage) {
         self.0.lock().expect("producer snapshot lock").message = Some(message.clone());
     }
@@ -835,7 +842,17 @@ impl Stream for CancelAwareReceiverStream {
         }
 
         match this.rx.as_mut() {
-            Some(rx) => rx.poll_recv(cx),
+            Some(rx) => {
+                let item = rx.poll_recv(cx);
+                if matches!(&item, Poll::Ready(Some(Ok(event))) if event.is_terminal()) {
+                    this.snapshot
+                        .0
+                        .lock()
+                        .expect("producer snapshot lock")
+                        .terminal_delivered = true;
+                }
+                item
+            }
             None => Poll::Ready(None),
         }
     }

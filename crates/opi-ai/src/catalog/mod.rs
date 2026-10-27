@@ -107,6 +107,22 @@ pub enum CatalogError {
         /// Version declared by the manifest.
         found: u32,
     },
+    /// The artifact uses a hydration schema this reader does not support.
+    #[error("model-data schema version {found} is not supported (expected {supported})")]
+    DataSchemaVersion {
+        /// Hydration schema this reader supports.
+        supported: u32,
+        /// Hydration schema declared by the manifest.
+        found: u32,
+    },
+    /// The bundle requires a newer reader than the installed bundle reader.
+    #[error("catalog requires bundle reader {required}, installed reader is {supported}")]
+    MinimumReaderVersion {
+        /// Installed bundle reader version.
+        supported: u32,
+        /// Minimum reader version required by the manifest.
+        required: u32,
+    },
     /// The artifact bytes do not match the digest recorded in the manifest
     /// (tampered or truncated artifact).
     #[error("catalog digest {found} does not match manifest digest {expected}")]
@@ -340,7 +356,7 @@ impl Catalog {
 
     /// Validate and build a catalog from raw bundle bytes.
     ///
-    /// Checks, in order: manifest shape, bundle schema version, artifact
+    /// Checks, in order: manifest shape, bundle/data schema and reader versions, artifact
     /// digest, provider set, per-entry contract, duplicate `type:id`
     /// identity, and the structure digest. Any failure returns a typed
     /// [`CatalogError`] and no catalog.
@@ -356,6 +372,18 @@ impl Catalog {
             return Err(CatalogError::BundleSchemaVersion {
                 supported: BUNDLE_SCHEMA_VERSION,
                 found: manifest.bundle_schema_version,
+            });
+        }
+        if manifest.data_schema_version != DATA_SCHEMA_VERSION {
+            return Err(CatalogError::DataSchemaVersion {
+                supported: DATA_SCHEMA_VERSION,
+                found: manifest.data_schema_version,
+            });
+        }
+        if manifest.min_reader.bundle_schema_version > BUNDLE_SCHEMA_VERSION {
+            return Err(CatalogError::MinimumReaderVersion {
+                supported: BUNDLE_SCHEMA_VERSION,
+                required: manifest.min_reader.bundle_schema_version,
             });
         }
 
@@ -572,9 +600,15 @@ struct Manifest {
     artifact: ManifestArtifact,
     source: ManifestSource,
     data_schema_version: u32,
+    min_reader: MinimumReader,
     structure_sha256: String,
     providers: Vec<String>,
     generator: ManifestGenerator,
+}
+
+#[derive(Debug, Deserialize)]
+struct MinimumReader {
+    bundle_schema_version: u32,
 }
 
 #[derive(Debug, Deserialize)]

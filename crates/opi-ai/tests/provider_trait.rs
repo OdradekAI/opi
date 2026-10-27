@@ -145,6 +145,7 @@ fn request_builds_with_all_fields() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     assert_eq!(req.model, "claude-sonnet-4-5-20250514");
@@ -185,6 +186,7 @@ fn request_cancellation_propagates() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     cancel.cancel();
@@ -276,6 +278,7 @@ async fn custom_provider_untrusted_constructor_discards_error_payloads() {
             extra_headers: vec![],
             cache_retention: CacheRetention::None,
             session_id: None,
+            telemetry_context: None,
             callbacks: Default::default(),
         },
         opi_ai::test_support::resolved_auth(),
@@ -331,6 +334,7 @@ async fn provider_trait_yields_done_event() {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        telemetry_context: None,
         callbacks: Default::default(),
     };
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
