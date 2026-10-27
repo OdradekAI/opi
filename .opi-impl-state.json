@@ -3594,6 +3594,28 @@
             ],
             "commit": "2eccca27d787230ad8a4ec581f394ae081ac6985"
           }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair fb13da43; retain original delivery/footer identity. Models/ordinary/direct Anthropic share acquisition and forwarded variant/send budget; payload reruns only for admitted variants. Successful handoff seals retries before callbacks/body. Grammar deltas and authoritative terminal custom input are retained; mapper errors seal.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:20.11",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "verification": "Commands/input states are in root record; no runtime tests rerun by maintenance.",
+            "test_disposition": [
+              {
+                "subject": "Scoped repair regression coverage",
+                "action": "update",
+                "test": "crates/opi-ai/tests/node4_preparation.rs; crates/opi-ai/tests/anthropic_fixtures.rs; crates/opi-ai/tests/openai_responses_fixtures.rs; crates/opi-ai/tests/openai_codex_responses.rs; crates/opi-ai/tests/replay_contract.rs",
+                "interface": "Current real SDK public entry points",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -4496,7 +4518,7 @@
             "opi_ai Codex direct adapter",
             "opi_ai::Models::stream/stream_simple (target)"
           ],
-          "status": "closed"
+          "status": "met"
         },
         {
           "id": "P20-S16",
@@ -4513,7 +4535,7 @@
             "opi_ai Codex direct adapter",
             "opi_ai::Models::stream/stream_simple (target)"
           ],
-          "status": "closed"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.16",
@@ -4526,7 +4548,7 @@
             "opi_ai Codex direct adapter",
             "opi_ai::Models::stream/stream_simple (target)"
           ],
-          "status": "closed"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -4686,6 +4708,28 @@
             ],
             "commit": "5dc3bdbb1f975d858ce5645460bf32fb86304524"
           }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair fb13da43; retain original delivery/footer identity. Default Auto now uses actual WS via a dedicated H1/no-redirect Upgrade client while ordinary HTTP policy stays configured. Endpoint-qualified pooling, PMD/window8/Pong/Binary/fallback and boxed frozen inputs are exercised. Typed Codex native/simple requests consume selected records. E is 95 private/16 Upgrade/10 real consumers per graph; historical 134 ws:: tests also matched auth::aws::, not 134 pure protocol tests.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:20.16",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "verification": "Commands/input states are in root record; no runtime tests rerun by maintenance.",
+            "test_disposition": [
+              {
+                "subject": "Scoped repair regression coverage",
+                "action": "update",
+                "test": "crates/opi-ai/tests/openai_codex_responses.rs; crates/opi-ai/tests/codex_native_options.rs; crates/opi-ai/tests/codex_telemetry.rs; crates/opi-ai/tests/ws_upgrade.rs",
+                "interface": "Current real SDK public entry points",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -4797,7 +4841,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "closed"
+          "status": "met"
         },
         {
           "id": "AIR-035",
@@ -4810,7 +4854,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "closed"
+          "status": "met"
         },
         {
           "id": "P20-S17",
@@ -4823,7 +4867,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "closed"
+          "status": "met"
         },
         {
           "id": "P20-ACTOR-07",
@@ -4836,7 +4880,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "closed"
+          "status": "met"
         },
         {
           "id": "DEL-07",
@@ -4849,7 +4893,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "closed"
+          "status": "met"
         },
         {
           "id": "V-30",
@@ -4862,7 +4906,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "closed"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -4948,6 +4992,28 @@
               }
             ],
             "commit": "bfdde41d521ec284d9fcf79b0f5ec4ec480bec89"
+          }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair fb13da43; retain original delivery/footer identity. WS-family Codex calls through Models/native/advanced register generation at first poll before auth/transform. Cleanup first poll establishes cutoff. ApiId dispatch and namespace stay paired across route replacement; exact session IDs, parent isolation, dormant callers, retained pending-close barriers, terminal finality and aggregate unconfirmed effects are covered.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:20.17",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "verification": "Commands/input states are in root record; no runtime tests rerun by maintenance.",
+            "test_disposition": [
+              {
+                "subject": "Scoped repair regression coverage",
+                "action": "update",
+                "test": "crates/opi-ai/tests/resource_cleanup.rs; crates/opi-ai/tests/openai_codex_responses.rs",
+                "interface": "Current real SDK public entry points",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -9697,6 +9763,28 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair fb13da43; retain original delivery/footer identity. Staging now rejects unsupported data schema/minimum-reader metadata while retaining last-known revision and custom model usability. Original authentic artifact/source/version/digest were not replaced or regenerated.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:20.32",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "verification": "Commands/input states are in root record; no runtime tests rerun by maintenance.",
+            "test_disposition": [
+              {
+                "subject": "Scoped repair regression coverage",
+                "action": "update",
+                "test": "crates/opi-ai/tests/catalog_artifact.rs",
+                "interface": "Current real SDK public entry points",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -9951,6 +10039,28 @@
               }
             ],
             "commit": "3a0acc8f1130f03243d431469fa10f5c11a35661"
+          }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair fb13da43; retain original delivery/footer identity. Publisher provenance and model maps share persisted ACK publication. Unrelated sources cannot prevent native None clear; failed same-provider explicit source retains its revision across restore. Sampling-by-level and strict metadata round-trip. Full builtin policy remains 20.34.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:20.33",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "verification": "Commands/input states are in root record; no runtime tests rerun by maintenance.",
+            "test_disposition": [
+              {
+                "subject": "Scoped repair regression coverage",
+                "action": "update",
+                "test": "crates/opi-ai/tests/node4_preparation.rs; crates/opi-ai/tests/registry.rs; crates/opi-ai/tests/provider_collection.rs",
+                "interface": "Current real SDK public entry points",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -10587,6 +10697,27 @@
             "task_status_preserved": "failing",
             "test_impact_this_maintenance": "none"
           }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Predecessor handoff only; no execution/status/contract change. Reuse ACK/publisher provenance, sampling/pricing, frozen complete records, native/simple mapping and callbacks; retain full builtin/operation and all-adapter assembly scope.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:handoff:20.34",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "task_status_preserved": "failing",
+            "test_disposition": [
+              {
+                "subject": "Ledger-only evidence handoff",
+                "action": "none",
+                "test": "none",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
         }
       ]
     },
@@ -10942,6 +11073,28 @@
               }
             ],
             "commit": "d4c8e968f30e9ffa0a1088214f7bcaa2a8b264e9"
+          }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair fb13da43; retain original delivery/footer identity. Canonical System chronology after usage anchors feeds estimation. Native Chat/Responses preserve omission/explicit wire semantics; simple/advanced retain shared budgeting. Zero/duplicate/unordered pricing tiers use highest strictly-exceeded threshold and first equal. Real Codex native/simple captures reuse selected metadata; all-adapter assembly remains 20.34.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:20.35",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "verification": "Commands/input states are in root record; no runtime tests rerun by maintenance.",
+            "test_disposition": [
+              {
+                "subject": "Scoped repair regression coverage",
+                "action": "update",
+                "test": "crates/opi-ai/tests/node4_preparation.rs; crates/opi-ai/tests/context_budget.rs; crates/opi-ai/tests/usage_cost.rs; crates/opi-ai/tests/model_wire_metadata.rs; crates/opi-ai/tests/codex_native_options.rs",
+                "interface": "Current real SDK public entry points",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -13941,6 +14094,28 @@
             ],
             "commit": "2510f8601d0c5e6977075cfeb510399f7a4c01f5"
           }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair fb13da43; retain original delivery/footer identity. Async callbacks execute in source order, with call-local headers and per-variant payload freezes. Protected values may be retained unchanged; all wire budgets/model identity are validated. Google parsed raw is supported, response observer remains unsupported. Codex SSE observes non-success response heads before classification; historical universal-success-only/Google-raw-rejection descriptions are superseded.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:20.51",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "verification": "Commands/input states are in root record; no runtime tests rerun by maintenance.",
+            "test_disposition": [
+              {
+                "subject": "Scoped repair regression coverage",
+                "action": "update",
+                "test": "crates/opi-ai/tests/request_enrichment.rs; crates/opi-ai/tests/provider_diagnostics.rs; crates/opi-ai/tests/anthropic_fixtures.rs; crates/opi-ai/tests/openai_chat_fixtures.rs; crates/opi-ai/tests/openai_responses_fixtures.rs; crates/opi-ai/tests/azure_openai_fixtures.rs; crates/opi-ai/tests/bedrock_fixtures.rs; crates/opi-ai/tests/gemini_fixtures.rs; crates/opi-ai/tests/vertex_fixtures.rs; crates/opi-ai/tests/openai_codex_responses.rs",
+                "interface": "Current real SDK public entry points",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -14426,6 +14601,28 @@
               }
             ],
             "commit": "69484d62e73a6af87a4e6df39ca53cd3fa0a679b"
+          }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair fb13da43; retain original delivery/footer identity. Complete-object final arguments now use common repair for invalid escapes/control characters. Incomplete/non-object final values preserve raw and authoritative arguments_error, not display-only partial repair. Portable StringEnum contract remains intact.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:20.53.2",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "verification": "Commands/input states are in root record; no runtime tests rerun by maintenance.",
+            "test_disposition": [
+              {
+                "subject": "Scoped repair regression coverage",
+                "action": "update",
+                "test": "crates/opi-ai/tests/public_utilities.rs; crates/opi-ai/tests/provider_lifecycle.rs; crates/opi-ai/tests/openai_responses_fixtures.rs",
+                "interface": "Current real SDK public entry points",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -15202,6 +15399,28 @@
             ],
             "commit": "9ec2bf6f1638504119258d17da4822f893aec2ca"
           }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Follow-up repair fb13da43; retain original delivery/footer identity. Source dispatcher is extracted with tracing 0.1.44 Span::with_subscriber, not ambient default. Historical no-API/ambient-capture explanations are superseded. Carrier clone/poll/drop/noop business behavior remains; Request::telemetry_context and real Codex producer/callback propagation resolve first-consumer observation only, not 20.55 all-operation acceptance.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:20.54",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "verification": "Commands/input states are in root record; no runtime tests rerun by maintenance.",
+            "test_disposition": [
+              {
+                "subject": "Scoped repair regression coverage",
+                "action": "update",
+                "test": "crates/opi-ai/tests/telemetry_carrier.rs; crates/opi-ai/tests/codex_telemetry.rs",
+                "interface": "Current real SDK public entry points",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -15443,7 +15662,29 @@
       "verified_at_commit": null,
       "evidence": null,
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Predecessor handoff only; no execution/status/contract change. Reuse source-Span carrier, Request::telemetry_context and actual Codex producer/callback propagation; each operation still owns real wiring, while this task owns all-operation/cross-path acceptance.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:handoff:20.55",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "task_status_preserved": "failing",
+            "test_disposition": [
+              {
+                "subject": "Ledger-only evidence handoff",
+                "action": "none",
+                "test": "none",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.56",
@@ -16906,6 +17147,27 @@
             "task_status_preserved": "failing",
             "test_impact_this_maintenance": "none"
           }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Predecessor handoff only; no execution/status/contract change. E is a local source-bound RDF-24 predecessor proof only. Rebind final assembled SDK evidence to then-current source; preserve 20.15 history and retired gate identity.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:handoff:20.57",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "task_status_preserved": "failing",
+            "test_disposition": [
+              {
+                "subject": "Ledger-only evidence handoff",
+                "action": "none",
+                "test": "none",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
         }
       ]
     },
@@ -17217,6 +17479,27 @@
             "evidence_classification": "predecessor handoff only; future task not executed",
             "task_status_preserved": "failing",
             "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-27T12:30:30.792147+00:00",
+          "attempt": 0,
+          "summary": "Predecessor handoff only; no execution/status/contract change. Ubuntu Rust 1.97.1 ordinary/default/C-zlib evidence is not three native platforms or final MSRV/Phase exit. Retain this task scope.",
+          "gate_results": {
+            "record_id": "P20-N4-REPAIR-fb13da43:handoff:20.58",
+            "evidence_ref": "P20-N4-REPAIR-fb13da43",
+            "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+            "task_status_preserved": "failing",
+            "test_disposition": [
+              {
+                "subject": "Ledger-only evidence handoff",
+                "action": "none",
+                "test": "none",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
           }
         }
       ]
@@ -20413,6 +20696,300 @@
     {
       "timestamp": "2026-10-25T07:50:28.672233+00:00",
       "summary": "Human explicitly confirmed the complete onboarding/parameter graph with confirm-all and selected write-only installation. Install exactly the reviewed 68-task array (SHA256 ab7fcba57e2453cfea5aa397508168be53f0bd080e966885b9c98ae862646168), retaining 32 passing objects, all dependencies/runtime history and 16 registered sources. HOST-CFG/HOST-VALUES remain independent unregistered delivery candidates. No production edits, task execution, staging, commit or publication authorized; unrelated research file preserved and excluded."
+    },
+    {
+      "timestamp": "2026-10-27T12:30:30.792147+00:00",
+      "attempt": 0,
+      "summary": "User-approved fourth-node repair evidence maintenance for committed fb13da43. Append current corrections and immutable proof references, normalize nine closed values to met, preserve original delivery/graph/history identities. Maintenance only; no implementation/evaluator/Phase exit or fabricated Opi evidence.",
+      "gate_results": {
+        "record_id": "P20-N4-REPAIR-fb13da43",
+        "repair_commit": "fb13da43af40f327a591275456999b0895cc54f4",
+        "repair_parent": "06a38c03c27293911ae9a6929eead950e40ad4e1",
+        "repair_tree": "e75d56f775f3e2b8f29da897cf75cae3ac5f5da5",
+        "original_node_baseline": "06a38c03c27293911ae9a6929eead950e40ad4e1",
+        "increment_start_commit": "52eeaa372f077ebec3cc35d6e1350320b6b35a3e",
+        "node_tasks": [
+          "20.32",
+          "20.33",
+          "20.35",
+          "20.51",
+          "20.11",
+          "20.52",
+          "20.53.1",
+          "20.53.2",
+          "20.53.3",
+          "20.53.4",
+          "20.53.6",
+          "20.53.8",
+          "20.54",
+          "20.16",
+          "20.17"
+        ],
+        "repair_note_tasks": [
+          "20.11",
+          "20.16",
+          "20.17",
+          "20.32",
+          "20.33",
+          "20.35",
+          "20.51",
+          "20.53.2",
+          "20.54"
+        ],
+        "retained_tasks": [
+          "20.52",
+          "20.53.1",
+          "20.53.3",
+          "20.53.4",
+          "20.53.6",
+          "20.53.8"
+        ],
+        "handoff_tasks": [
+          "20.34",
+          "20.55",
+          "20.57",
+          "20.58"
+        ],
+        "source_binding": "E was built before commit on the parent/dirty working tree. All 199 packaged src/test files were compared byte-for-byte with fb13da43; the commit receipt also binds the later two Unreleased prose-only corrections. Original VCS metadata/receipts are preserved, not relabeled as a clean-checkout build.",
+        "commit_binding": {
+          "path": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/commit-binding/commit-verification.json",
+          "sha256": "63a2d70e2eef0ba45dfc707603d488862c9a63bdc54c0a76c2c7034ba0f0a3f1"
+        },
+        "owned_file_inventory": {
+          "path": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/commit-binding/staged-inventory.json",
+          "sha256": "6fb2b1784e4083b6d6fe05140d10bcca35950d2b53ac4dbbd64cf8dd9097396e"
+        },
+        "runtime_verification_receipt": {
+          "path": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/repair-runtime/repair-verification-final.json",
+          "sha256": "dfe0674ef715d28834eaa199657348e86cb1dc405ff744fb4e06f440bfdb409b"
+        },
+        "evidence_retention_index": {
+          "path": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/evidence-index.json",
+          "sha256": "afe6537883e13c6c713ebdba4964cdca8b8dc185ebfa3ee15efa6db5ad5bcd5f"
+        },
+        "evidence_retention": "289 exact-byte copies retain E archive/extracted sources, consumer inputs/lock/metadata/native raw receipts, runtime logs and commit bindings. evidence-index maps original paths to retained copies without rewriting original embedded paths. Shared Cargo cache and external native binary references were not moved/copied/cleaned.",
+        "sdk_package": {
+          "path": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/sdk-e/opi-ai-0.8.3.crate",
+          "sha256": "cdccd5fb893512bf27b1c4841d19bab2bfdd895820f346d7460c699bce84e5c3",
+          "evidence": {
+            "path": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/sdk-e/evidence.json",
+            "sha256": "f274a57256d57f5a1afd9f0b1c64c9095506fbc668bf195e292a60220aa4b8e8"
+          },
+          "step_count": 28,
+          "all_step_exits_zero": true,
+          "packaged_source_test_files_bound_to_commit": 199,
+          "profiles": [
+            {
+              "name": "ordinary",
+              "private_protocol": 95,
+              "public_upgrade": 16,
+              "external_models_codex": 10
+            },
+            {
+              "name": "union-default",
+              "private_protocol": 95,
+              "public_upgrade": 16,
+              "external_models_codex": 10
+            },
+            {
+              "name": "union-c-zlib",
+              "private_protocol": 95,
+              "public_upgrade": 16,
+              "external_models_codex": 10
+            }
+          ],
+          "scope": "Local RDF-24 SDK package proof with versions/checksums/features/native output provenance; not final SDK or three-platform exit."
+        },
+        "verification": [
+          {
+            "command": "cargo fmt --check --all",
+            "result": "PASS",
+            "log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-node4-readonly-ue8qn0hx\\clippy-namespace-final.log",
+            "note": "Direct fmt exit 0 before final Clippy; fmt has no output on success.",
+            "evidence_origin": "Reverified retained execution/source identity; not rerun by this metadata maintenance.",
+            "retained_log": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/repair-runtime/clippy-namespace-final.log"
+          },
+          {
+            "command": "cargo clippy --offline --locked -j 2 --workspace --all-targets -- -D warnings",
+            "result": "PASS",
+            "log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-node4-readonly-ue8qn0hx\\clippy-namespace-final.log",
+            "evidence_origin": "Reverified retained execution/source identity; not rerun by this metadata maintenance.",
+            "retained_log": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/repair-runtime/clippy-namespace-final.log"
+          },
+          {
+            "command": "cargo test --offline --locked -j 2 --no-fail-fast --workspace --all-targets",
+            "result": "PASS",
+            "log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-node4-readonly-ue8qn0hx\\workspace-tests-verified.log",
+            "environment": {
+              "RUST_TEST_THREADS": "2",
+              "PATH_prefix": "D:/Program Files/Git/usr/bin"
+            },
+            "input_state": "SDK D, before the last private ApiId namespace retention fix; all targets exit 0. Unaffected evidence reused under check-selection-only.",
+            "evidence_origin": "Reverified retained execution/source identity; not rerun by this metadata maintenance.",
+            "retained_log": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/repair-runtime/workspace-tests-verified.log"
+          },
+          {
+            "command": "cargo test --offline --locked -j 2 -p opi-ai --test resource_cleanup --test codex_native_options --test custom_provider_registration --test node4_preparation --test openai_codex_responses",
+            "result": "PASS",
+            "log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-node4-readonly-ue8qn0hx\\focused-namespace-final.log",
+            "input_state": "Current SDK E; all affected entry points rerun after the last private namespace fix.",
+            "passed": 145,
+            "binary_counts": {
+              "resource_cleanup": 16,
+              "codex_native_options": 15,
+              "custom_provider_registration": 34,
+              "node4_preparation": 12,
+              "openai_codex_responses": 68
+            },
+            "evidence_origin": "Reverified retained execution/source identity; not rerun by this metadata maintenance.",
+            "retained_log": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/repair-runtime/focused-namespace-final.log"
+          },
+          {
+            "command": "cargo test --offline --locked -j 2 --workspace --doc",
+            "result": "PASS",
+            "log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-node4-readonly-ue8qn0hx\\doctests-namespace-final.log",
+            "evidence_origin": "Reverified retained execution/source identity; not rerun by this metadata maintenance.",
+            "retained_log": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/repair-runtime/doctests-namespace-final.log"
+          },
+          {
+            "command": "cargo doc --offline --locked -j 2 --workspace --no-deps",
+            "result": "PASS",
+            "log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-node4-readonly-ue8qn0hx\\rustdoc-namespace-final.log",
+            "environment": {
+              "RUSTDOCFLAGS": "-D warnings"
+            },
+            "evidence_origin": "Reverified retained execution/source identity; not rerun by this metadata maintenance.",
+            "retained_log": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/repair-runtime/rustdoc-namespace-final.log"
+          },
+          {
+            "command": "python scripts/pi-sdk-conformance/test_package_slice.py",
+            "result": "PASS",
+            "log": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-node4-readonly-ue8qn0hx\\package-harness-unit-final.log",
+            "passed": 55,
+            "evidence_origin": "Reverified retained execution/source identity; not rerun by this metadata maintenance.",
+            "retained_log": "E:/opi/acceptance/phase20-node4-fb13da43-20261027/repair-runtime/package-harness-unit-final.log"
+          },
+          {
+            "command": "python scripts/opi-doc-check.py",
+            "result": "PASS",
+            "input_state": "current",
+            "evidence_origin": "Reverified retained execution/source identity; not rerun by this metadata maintenance."
+          },
+          {
+            "command": "git diff --check",
+            "result": "PASS",
+            "input_state": "current",
+            "evidence_origin": "Reverified retained execution/source identity; not rerun by this metadata maintenance."
+          }
+        ],
+        "verification_reuse": "Workspace all-targets PASS is the pre-final-namespace SDK D state. The last private ApiId owner lookup and regression were covered by 145 affected tests, full Clippy/doctests/rustdoc and final E graphs. No claim that the whole workspace suite reran at E. Unaffected evidence is reused per change-scope-and-check-selection.",
+        "scenario_status_normalization": {
+          "source": ".agents/skills/opi-implement/references/ledger-schema.md#Field Semantics",
+          "reason": "Normalize the out-of-enum spelling closed to met; preserve the already-satisfied meaning. Existing guard did not check this enum.",
+          "changes": [
+            {
+              "task": "20.16",
+              "scenario": "AIR-036",
+              "before": "closed",
+              "after": "met"
+            },
+            {
+              "task": "20.16",
+              "scenario": "P20-S16",
+              "before": "closed",
+              "after": "met"
+            },
+            {
+              "task": "20.16",
+              "scenario": "ONB-03-20.16",
+              "before": "closed",
+              "after": "met"
+            },
+            {
+              "task": "20.17",
+              "scenario": "V-29",
+              "before": "closed",
+              "after": "met"
+            },
+            {
+              "task": "20.17",
+              "scenario": "AIR-035",
+              "before": "closed",
+              "after": "met"
+            },
+            {
+              "task": "20.17",
+              "scenario": "P20-S17",
+              "before": "closed",
+              "after": "met"
+            },
+            {
+              "task": "20.17",
+              "scenario": "P20-ACTOR-07",
+              "before": "closed",
+              "after": "met"
+            },
+            {
+              "task": "20.17",
+              "scenario": "DEL-07",
+              "before": "closed",
+              "after": "met"
+            },
+            {
+              "task": "20.17",
+              "scenario": "V-30",
+              "before": "closed",
+              "after": "met"
+            }
+          ]
+        },
+        "historical_identity": "Preserve original verified_at_commit/evidence/start_commit, counters, all old notes and verify_runs. fb13da43 has no Opi-* task footers: it is a scoped follow-up repair, not a replacement task delivery/manual recovery or synthetic evaluator run.",
+        "retained_observations": "Six unchanged utility/whole-call/mock owners retain their prior scope, tests and caveats. In particular no new JS-runtime cross-check is claimed for 20.53.4. No image/classifier/deferred mock closure is inferred.",
+        "later_responsibilities": {
+          "20.34": "Full builtin OpenRouter/Radius/operation policy and all-adapter pricing/default assembly remain pending.",
+          "20.36-20.50": "Each operation retains actual telemetry wiring; new operation mock scripts follow their actual type owners.",
+          "20.55": "Carrier and real Codex propagation exist; all-operation/cross-path acceptance remains pending.",
+          "20.57": "Reuse E as a source-bound predecessor; final assembled SDK package acceptance still requires current-source proof.",
+          "20.58": "Ubuntu three-feature-graph proof is not final native platform/MSRV acceptance.",
+          "20.15": "Keep historical companion identity; no relabeling as current SDK proof or revival of retired publication gates."
+        },
+        "test_disposition": [
+          {
+            "subject": "New regression binaries/oracle helpers",
+            "action": "add",
+            "test": "crates/opi-ai/tests/codex_native_options.rs; crates/opi-ai/tests/codex_telemetry.rs; crates/opi-ai/tests/node4_preparation.rs; crates/opi-ai/tests/openai_codex_responses/deflate_audit.rs; crates/opi-ai/tests/resource_cleanup.rs; scripts/pi-sdk-conformance/consumer-ws/src/deflate_audit.rs",
+            "interface": "Real SDK and packaged public consumer seams",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Changed adapter/protocol/metadata fixtures and verification harness",
+            "action": "update",
+            "test": "crates/opi-ai/src/ws/io.rs; crates/opi-ai/tests/anthropic_fixtures.rs; crates/opi-ai/tests/azure_openai_fixtures.rs; crates/opi-ai/tests/bedrock_fixtures.rs; crates/opi-ai/tests/catalog_artifact.rs; crates/opi-ai/tests/context_budget.rs; crates/opi-ai/tests/custom_provider_registration.rs; crates/opi-ai/tests/gemini_fixtures.rs; crates/opi-ai/tests/model_wire_metadata.rs; crates/opi-ai/tests/oauth_wire_shape.rs; crates/opi-ai/tests/openai_chat_fixtures.rs; crates/opi-ai/tests/openai_codex_responses.rs; crates/opi-ai/tests/openai_responses_fixtures.rs; crates/opi-ai/tests/provider_lifecycle.rs; crates/opi-ai/tests/public_utilities.rs; crates/opi-ai/tests/registry.rs; crates/opi-ai/tests/request_enrichment.rs; crates/opi-ai/tests/telemetry_carrier.rs; crates/opi-ai/tests/usage_cost.rs; crates/opi-ai/tests/vertex_fixtures.rs; crates/opi-ai/tests/ws_upgrade.rs; scripts/pi-sdk-conformance/consumer-ws/Cargo.toml; scripts/pi-sdk-conformance/consumer-ws/src/main.rs; scripts/pi-sdk-conformance/package_slice.py; scripts/pi-sdk-conformance/test_package_slice.py",
+            "interface": "Existing highest practical public SDK/transport seams",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Caller behavior retained through optional-field literal migrations",
+            "action": "retain",
+            "test": "crates/opi-agent/tests/preparation_transaction.rs; crates/opi-agent/tests/provider_public_safety.rs; crates/opi-ai/tests/anthropic_thinking_roundtrip.rs; crates/opi-ai/tests/api_mapped_provider.rs; crates/opi-ai/tests/gemini_lifecycle.rs; crates/opi-ai/tests/http_acceptance.rs; crates/opi-ai/tests/image_provider_serialization.rs; crates/opi-ai/tests/mistral_fixtures.rs; crates/opi-ai/tests/oauth_flows.rs; crates/opi-ai/tests/oauth_store_integration.rs; crates/opi-ai/tests/openai_compat_lifecycle.rs; crates/opi-ai/tests/openai_responses_lifecycle.rs; crates/opi-ai/tests/openrouter_fixtures.rs; crates/opi-ai/tests/per_request_auth.rs; crates/opi-ai/tests/provider_collection.rs; crates/opi-ai/tests/provider_diagnostics.rs; crates/opi-ai/tests/provider_error_classes.rs; crates/opi-ai/tests/provider_trait.rs; crates/opi-ai/tests/proxy_support.rs; crates/opi-ai/tests/replay_contract.rs; crates/opi-ai/tests/retry_backoff.rs; crates/opi-ai/tests/test_support_tests.rs; crates/opi-ai/tests/tls_contract.rs; crates/opi-ai/tests/tool_result_no_leak.rs; crates/opi-ai/tests/tool_result_wire.rs; crates/opi-ai/tests/transcript_contract.rs; crates/opi-ai/tests/transcript_contract/provider_projection.rs; crates/opi-ai/tests/whole_call_retry.rs; crates/opi-coding-agent/tests/anthropic_cache_markers.rs; crates/opi-coding-agent/tests/bedrock_provider_wiring.rs; crates/opi-coding-agent/tests/custom_provider_map.rs; crates/opi-coding-agent/tests/custom_provider_registration.rs; crates/opi-coding-agent/tests/extension_mapped_catalog.rs; crates/opi-coding-agent/tests/github_copilot_provider.rs; crates/opi-coding-agent/tests/list_models.rs; crates/opi-coding-agent/tests/oauth_auth.rs; crates/opi-coding-agent/tests/product_source_barrier.rs; crates/opi-coding-agent/tests/provider_factory.rs; crates/opi-coding-agent/tests/provider_runtime.rs; crates/opi-coding-agent/tests/runtime_failure_recovery.rs",
+            "interface": "telemetry_context=None/tool_choice=None",
+            "replacement": null,
+            "slim_candidate": null
+          }
+        ],
+        "test_impact_this_maintenance": "none; runtime/test source unchanged and no Cargo rerun",
+        "human_confirmation": "User approved the concrete bounded proposal with 同意. Metadata/evidence retention only: no new task/graph/evaluator/Phase exit, staging/commit/push/publication authority.",
+        "not_executed": [
+          "no new implementation or evaluator invocation",
+          "no new Opi-* footer or verify_runs entry",
+          "no task status/DoD/dependency/spec-pin/verification/ownership mutation",
+          "no Phase exit/archive",
+          "no commit/push/publication",
+          "no cache cleanup/live provider/account/network trial"
+        ]
+      }
     }
   ],
   "verify_runs": [
