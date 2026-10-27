@@ -83,7 +83,9 @@ Use the cross-reference matrix to verify every source key against current
 committed evidence and assign its disposition, falsifiable closure key and
 family key. Preserve source identities/evidence; textual ID duplicates remain
 separate. Resolve disagreement by evidence and schedule at the highest source
-severity.
+severity among dependency-ready batches. Resolve evidence questions before
+sealing fixes; preserve residual proof or authority obligations even when a
+finding's original claim is refuted.
 
 After current-set validation, an indexed report's validated historical appendix
 may guide regression checks and exact raw-proof lookup under the shared
@@ -105,7 +107,7 @@ closure keys; every source key still needs exactly one disposition.
 
 Use the plan template. `READY-FOR-APPLY` requires exact strict-union coverage,
 complete closure decisions/proofs, required red-before evidence, no unresolved
-decision and exact active-index binding. Otherwise produce a validated
+decision or remaining obligation, and exact active-index binding. Otherwise produce a validated
 `DRAFT-UNRESOLVED`.
 
 Run the dispositions validator, then:
@@ -115,15 +117,18 @@ python .agents/skills/_shared/scripts/validate_assurance_artifact.py plan docs/s
 ```
 
 Present the emitted digest and wait for a new apply invocation containing that
-exact digest. When no code change is admissible, use the no-change result path
-defined by the disposition contract.
+exact digest. If every disposition is no-action, use the disposition contract's
+[no-change result](../_shared/references/remediation-disposition-contract.md#no-change-result)
+branch instead. A draft containing both fixes and unresolved items stays a draft;
+there is no partial-apply branch.
 
 ## `mode=apply`
 
 ### Apply-only reference
 
 Load `references/execution-protocol.md` only for apply. It owns admission,
-closure batches, incidental repairs, result validation and materialization.
+closure batches, incidental repairs, actual-source proof, result validation,
+materialization and the ledger-owner handoff.
 Proceed through the approved batches without renewed permission inside that
 scope. Changed index/member bytes, plan digest, source drift after the remediation
 head or overlapping unowned paths fail admission before production edits. The

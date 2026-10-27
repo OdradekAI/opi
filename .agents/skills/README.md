@@ -86,6 +86,11 @@ Open the selected `SKILL.md`, then only references required by its active mode.
   A validated indexed history appendix may guide current verification and exact
   raw-proof lookup, never source membership or closure. An appendix added after
   approval changes the index binding and makes that plan stale.
+  Residual proof or authority obligations keep the whole plan draft. A planning
+  [no-change result](_shared/references/remediation-disposition-contract.md#no-change-result)
+  records an all-no-action set without apply permission or a Phase verdict.
+  Applied results require source/diff proof under the execution protocol and a
+  ledger-owner handoff; Git authorization remains separate.
 - Local preparation and verification continue within existing authorization.
   Reconfirm when the authorized object, scope or required binding changes,
   or a workflow explicitly requires a fresh final gate. Public, destructive,

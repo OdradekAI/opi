@@ -76,6 +76,11 @@ flowchart TD
   定义机械校验边界，无需因计划 commit 重新封存 HEAD。
   已验证的 indexed 历史附录只能引导当前核验与精确原始证明查找，不能决定来源或关闭。
   批准后追加附录会改变 index 绑定，使原计划失效。
+  残留证明义务或权威裁定会使整个计划保持 draft。计划分支的
+  [no-change 结果](_shared/references/remediation-disposition-contract.md#no-change-result)
+  记录全部无需行动的处置，不授予 apply 权限或 Phase 结论。
+  已执行修复的结果须按执行协议核对源码与 diff，并提供账本所有者交接；
+  Git 操作仍需独立授权。
 - 在已有授权内继续本地准备与验证。授权对象、范围、必要绑定改变，或所属工作流明确
   要求新的最终关卡时才重新确认。公开、破坏性、凭据及付费操作始终受其所属授权限制。
 

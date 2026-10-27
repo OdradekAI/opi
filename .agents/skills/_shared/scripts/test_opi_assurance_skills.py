@@ -147,6 +147,7 @@ def disposition_record(
         },
         "verified_at": REMEDIATION_HEAD,
         "verification_status": "Confirmed",
+        "remaining_obligations": [],
         "final_severity": "Major",
         "final_severity_rationale": "The mandatory durable binding is absent.",
         "closure_key": "session.runtime-binding",
@@ -455,6 +456,8 @@ class AssuranceFixture(unittest.TestCase):
             "**Disposition artifact**: `remediation.plan.dispositions.jsonl`\n"
             "**Unresolved decisions**: none\n\n"
             f"{source_lines}\n\n"
+            "### Batch B1: Runtime binding\n\n"
+            "**Dependencies**: []\n\n"
             "#### Fix B1.1: Persist the runtime binding\n\n"
             "- **Closure predicate**: reconstructed sessions retain the binding\n"
             "- **Red-before**: `cargo test binding` -> FAIL\n"
@@ -501,6 +504,7 @@ class AssuranceFixture(unittest.TestCase):
         result_path.write_text(
             "# Phase 17 Remediation Result\n\n"
             "**Status**: COMPLETE\n"
+            "**Outcome**: APPLIED\n"
             f"**Audit index SHA-256**: `{sha256(index_path)}`\n"
             f"**Plan SHA-256**: `{digest.hexdigest()}`\n"
             f"**Changed paths**: {json.dumps(paths)}\n",
@@ -1375,6 +1379,12 @@ class ApplyAdmissionTests(AssuranceFixture):
             ),
             encoding="utf-8",
         )
+        self.dispositions_path.write_text(
+            self.dispositions_path.read_text(encoding="utf-8").replace(
+                REMEDIATION_HEAD, self.source_head
+            ),
+            encoding="utf-8",
+        )
         self.digest = self.plan_digest()
 
     def commit_paths(self, *paths: Path) -> None:
@@ -1524,13 +1534,18 @@ class ApplyAdmissionTests(AssuranceFixture):
         for head in ("0" * 40, independent.stdout.strip()):
             with self.subTest(head=head):
                 text = self.plan_path.read_text(encoding="utf-8")
+                records = self.dispositions_path.read_text(encoding="utf-8")
                 self.plan_path.write_text(
                     text.replace(self.source_head, head), encoding="utf-8"
+                )
+                self.dispositions_path.write_text(
+                    records.replace(self.source_head, head), encoding="utf-8"
                 )
                 result = self.admission(self.plan_digest())
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn("committed ancestor of HEAD", result.stderr)
                 self.plan_path.write_text(text, encoding="utf-8")
+                self.dispositions_path.write_text(records, encoding="utf-8")
 
     def test_draft_plan_cannot_be_applied(self) -> None:
         self.plan_path.write_text(

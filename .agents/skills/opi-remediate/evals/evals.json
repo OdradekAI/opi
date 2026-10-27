@@ -133,6 +133,116 @@
         "Does not rewrite the approved plan retroactively.",
         "Retains the unchanged independent finding authority while requiring a new plan binding."
       ]
+    },
+    {
+      "id": 13,
+      "prompt": "Use $opi-remediate mode=plan phase=20. Current evidence refutes a finding about default strict behavior because its counterexample explicitly enabled a forcing option. The registered sources still disagree on precedence for that explicit option. May the disposition be Refuted with an executable plan?",
+      "expected_output": "Refute only the default-behavior claim, retain the explicit-option source question in remaining_obligations, and keep the whole plan DRAFT-UNRESOLVED. Do not change defaults or treat Refuted as requirement acceptance.",
+      "files": [],
+      "expectations": [
+        "Names the exact proposition defeated and the observation that remains valid.",
+        "Records the source-precedence question in remaining_obligations and preserves the current source key.",
+        "Blocks READY/apply while the obligation remains; does not infer Phase PASS or modify the audit record."
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "Use $opi-remediate mode=plan phase=17. Independent current evidence refutes every indexed finding and no source change is needed. How does planning finish without inventing a repair?",
+      "expected_output": "Validate a DRAFT-UNRESOLVED fixed plan containing only no-action dispositions, then a COMPLETE result with Outcome NO-CHANGE and empty Changed paths. Preserve strict-union identities, actual verification observations and no-action result statuses; no apply invocation is needed because no repair is performed.",
+      "files": [],
+      "expectations": [
+        "Creates no batch, Fix item, incidental record or product edit.",
+        "Uses metadata/no-action records with null batch and empty changed_paths rather than fictitious behavioral red/green.",
+        "Binds the current index and validated draft digest and makes no conformance or commit claim."
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "Use $opi-remediate mode=apply phase=17 with an exact draft digest. B1 is a confirmed repair, while a separate finding is Cannot confirm with a remaining evidence obligation. The user asks to execute only B1. Does the current skill admit that subset?",
+      "expected_output": "No. The existing global READY gate still requires no unresolved decision or remaining obligation. Preserve the full finding union and draft, and do not begin a subset or remove the unresolved source to manufacture READY.",
+      "files": [],
+      "expectations": [
+        "Rejects apply admission even when B1 appears independent.",
+        "Retains the unconfirmed finding and its remaining_obligations.",
+        "Does not introduce a node scope or partial-apply protocol."
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "Use $opi-remediate mode=plan phase=17. B1 depends on B2 and B2 depends on B1; both findings have observed red-before checks. Can the plan be ready if a reviewer promises to choose an order later?",
+      "expected_output": "No. The declared batch graph must have unique matching IDs, known dependencies and a topological declaration order. Reject the cycle before sealing an executable plan.",
+      "files": [],
+      "expectations": [
+        "Validates Dependencies as JSON arrays against exactly the non-null disposition batch set.",
+        "Rejects cycles, self-dependencies and unknown batch IDs rather than choosing an arbitrary order.",
+        "Keeps evidence questions in planning rather than deferring a semantic decision into apply."
+      ]
+    },
+    {
+      "id": 17,
+      "prompt": "Use $opi-remediate mode=apply phase=17 with the exact approved digest. Result Markdown and dispositions agree on session.rs, but the real task delta also changes worker.rs. Is the result ready for handoff?",
+      "expected_output": "No. Record-level path agreement is insufficient. The external source proof must compare actual task changes with the attributed result paths and reject the unrecorded worker.rs change.",
+      "files": [],
+      "expectations": [
+        "Checks actual worktree delta against the baseline receipt, including added and deleted files.",
+        "Does not silently revise the approved plan or ignore a real change because both reports omit it.",
+        "Preserves carried-in work and explains whether replanning or a permitted incidental record is required."
+      ]
+    },
+    {
+      "id": 18,
+      "prompt": "Use $opi-remediate mode=apply phase=17 with the approved digest. All checks passed against the captured tested source. A helper file was edited afterward, and an older dirty-source package has the same log hash as before. Can the result reuse those checks and relabel the package as a clean build of the final commit?",
+      "expected_output": "No. The changed tested source invalidates that source-state comparison. Rerun the affected checks against newly captured input within scope and separately prove package applicability, preserving its original dirty-build identity.",
+      "files": [],
+      "expectations": [
+        "Rejects tested-input drift even if test commands or log hashes are unchanged.",
+        "Distinguishes source receipt consistency from actual test execution, assertion quality and external client/material applicability.",
+        "Does not rewrite original package VCS metadata or rerun unaffected checks without a reason."
+      ]
+    },
+    {
+      "id": 19,
+      "prompt": "The user explicitly authorizes a remediation commit. The baseline includes an unrelated research file, and that file is now also staged with the fix. May source proof pass because the research contents were preserved?",
+      "expected_output": "No. Content preservation does not make unrelated staged work part of the authorized commit. Preserve the research work and verify an index containing only task-owned changes, required fixed outputs and the byte-frozen bound current audit artifacts before committing; verify final commit contents afterward.",
+      "files": [],
+      "expectations": [
+        "Uses whole-index verification after explicit Git authorization, permits unchanged bound frozen audit artifacts, and rejects unrelated staged paths including carried-in staged work.",
+        "Preserves the carried-in research content and ownership without destructive cleanup.",
+        "Does not treat a proof command as permission to stage, commit or push."
+      ]
+    },
+    {
+      "id": 20,
+      "prompt": "The applied remediation result passes its source proof. Several original implementation tasks are already passing, but their ledger evidence predates the repair. Should opi-remediate update the task delivery SHA or automatically invoke opi-implement?",
+      "expected_output": "No. Provide a ledger-owner handoff with direct-repair/linked-revalidation/retained task mapping, repair source identity, evidence and open obligations. The owning workflow decides maintenance; preserve original delivery identities when proposing follow-up notes.",
+      "files": [],
+      "expectations": [
+        "Does not write the ledger, product specification or invoke another explicit-only skill.",
+        "Distinguishes original task delivery from a follow-up repair and avoids fabricated Opi footers.",
+        "Reports a challenged status for owner review rather than silently preserving or promoting it."
+      ]
+    },
+    {
+      "id": 21,
+      "prompt": "Use $opi-remediate mode=plan phase=20. A retry/resource test passes because the connection is eventually closed, but the source requires no reconnect after the first valid provider event and cleanup to await the local producer. Is the final-state assertion sufficient red/green evidence?",
+      "expected_output": "No. The closure predicate must distinguish the relevant event boundaries and observe reconnect/send counts, forbidden late actions and producer-exit timing through the actual consumer.",
+      "files": [],
+      "expectations": [
+        "Separates first valid provider event from first public output when the contract does.",
+        "Uses both sides of timing boundaries and exact counts or budgets rather than only eventual success.",
+        "Reuses the shared boundary/test-execution obligations without treating a mock-only or zero-test run as transport proof."
+      ]
+    },
+    {
+      "id": 22,
+      "prompt": "An older approved remediation plan lacks remaining_obligations. May the agent insert empty arrays into its dispositions and continue apply with the old digest?",
+      "expected_output": "No. Regenerate and validate the fixed plan under the current contract, assess residual obligations truthfully, and obtain apply approval for the new exact digest. Required-field maintenance cannot preserve byte-bound approval.",
+      "files": [],
+      "expectations": [
+        "Rejects the missing required field instead of assuming an empty obligation set.",
+        "Does not mutate an approved plan and reuse the old plan_sha256.",
+        "Preserves the exact active-index binding and global unresolved gate."
+      ]
     }
   ]
 }

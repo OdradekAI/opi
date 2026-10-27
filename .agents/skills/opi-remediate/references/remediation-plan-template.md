@@ -17,7 +17,7 @@ directory. The JSONL contract is
 
 ## Current Finding Verification
 
-| Source run / Finding ID | Verification | Source and final severity + rationale | Closure key/family | Batch | Decision |
+| Source run / Finding ID | Verification and counter-evidence | Source and final severity + rationale | Closure key/family | Batch | Decision / remaining obligations |
 |---|---|---|---|---|---|
 | ... | ... | ... | ... | ... | ... |
 
@@ -35,12 +35,22 @@ historical disposition fields. An absent appendix requires no reconstruction.
 Use `none` when ready. A draft may stop before fix design when a decision
 determines the closure predicate; do not add placeholder fixes.
 
+## Planning Evidence Work
+
+| Question | Source/build inputs | Positive / negative controls | Distinguishing observation | Dependent decision |
+|---|---|---|---|---|
+| ... | ... | ... | ... | ... |
+
+Use `none` when no additional probe is needed. Complete this work before sealing
+an executable plan. Carry any residual proof or authority gap into the source
+disposition's `remaining_obligations`; any such gap keeps the whole plan draft.
+
 ## Closure Batches
 
 ### Batch B1: <one behavioral closure>
 
 **Closure predicate**: <one falsifiable outcome>
-**Dependencies**: <earlier batches or none>
+**Dependencies**: []
 **Verification union**: <deduplicated checks>
 
 #### Fix B1.1: <short title>
@@ -61,10 +71,17 @@ determines the closure predicate; do not add placeholder fixes.
 
 ## Exclusions
 
-| Finding ID | Disposition | Current evidence/authority |
-|---|---|---|
-| ... | Refuted / Cannot confirm / Info-no-action / Returned to shaping / Deferred by registered source | ... |
+| Source run / Finding ID | Disposition | Refuted claim / retained observation | Remaining obligation and authority |
+|---|---|---|---|
+| ... | Refuted / Cannot confirm / Info-no-action / Returned to shaping / Deferred by registered source | ... | ... |
 ```
+
+Use a JSON array such as `["B1"]` for dependent batches and declare batches in
+topological order. Their IDs must match the non-null disposition batch IDs
+exactly. For timing-sensitive behavior, the closure predicate identifies event
+order, exact counts/budgets and forbidden late actions under the matrix's proof
+rules. A no-change plan has no batch or Fix headings; use the shared contract's
+no-change result branch without inventing a modification.
 
 Every source key in the indexed strict union must appear in a fix or exclusion
 and in exactly one plan disposition. Similar IDs never merge. After

@@ -24,6 +24,14 @@ For every `(audit_run_id, id)`:
 4. retain source severity and record evidence/rationale for any final change;
 5. define `closure_key`, `family_key`, decision, and exact disposition.
 
+For a refuted or narrowed claim, record the minimum proposition that failed,
+the strongest counter-evidence, the observations that still hold, and which
+changes the remaining uncertainty prevents. Populate `remaining_obligations`
+under the disposition contract; an empty list is not a new audit verdict.
+For example, an explicit-option counterexample can refute a claim about the
+default while leaving explicit-option precedence unresolved. Preserve both
+conclusions and leave the plan draft while the latter obligation remains.
+
 `Cannot confirm` is not `Refuted`. Findings from different indexed
 reviewer/model runs remain separate evidence. Coverage is descriptive, never a
 vote. Schedule a shared repair at the highest source severity while retaining
@@ -34,6 +42,11 @@ specifications, or runtime evidence resolves the conflict. `Refuted` and final
 severity changes require that independent evidence; another reviewer's
 contrary conclusion is insufficient. Do not appeal to which model, title, or
 conclusion appeared earlier.
+
+Use evidence work before fix design when a premise is uncertain. Record the
+question, fixed source/build inputs, positive and negative controls, observation
+that would distinguish the alternatives, and the decision it gates. Do not turn
+an unconfirmed behavior into a production fix merely to obtain a green check.
 
 When rejecting a source identity, state all three boundaries explicitly: the
 current run/digest controls admission, title similarity cannot substitute for
@@ -70,6 +83,16 @@ Two findings may share a closure batch only when all are true:
 Shared files, family keys, severity, or suggested refactors are insufficient.
 Use `family_key` to describe adjacent current paths without merging their
 closure predicates.
+
+For asynchronous state, retry, cancellation or resource-lifetime findings,
+express the closure predicate as the required event order, counts or budgets,
+and actions forbidden after the relevant handoff or cutoff. Distinguish separate
+boundaries such as response acquisition, first valid provider event and public
+output when the source does. Test both sides of the boundary through the actual
+consumer, following the existing
+[boundary and test proof obligations](../../opi-audit/references/audit-proof-obligations.md#boundary-proof)
+and [Rust execution check](../../opi-audit/references/test-execution-check.md)
+when applicable. A final state alone cannot prove an intermediate invariant.
 
 ## Coverage
 

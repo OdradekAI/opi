@@ -133,6 +133,7 @@ DISPOSITION_FIELDS = {
     "source",
     "verified_at",
     "verification_status",
+    "remaining_obligations",
     "final_severity",
     "final_severity_rationale",
     "closure_key",
@@ -1076,6 +1077,8 @@ def validate_finding_disposition(
         errors.append(prefix + "verified_at must be a full lowercase commit SHA")
     if record.get("verification_status") not in VERIFICATION:
         errors.append(prefix + "invalid verification_status")
+    if not string_list(record.get("remaining_obligations")):
+        errors.append(prefix + "remaining_obligations must be an array of non-empty strings")
     if record.get("final_severity") not in SEVERITIES:
         errors.append(prefix + "invalid final_severity")
     for field in ("final_severity_rationale", "closure_key", "family_key", "decision"):
@@ -1088,6 +1091,34 @@ def validate_finding_disposition(
         errors.append(prefix + "invalid change_kind")
     if not string_list(record.get("changed_paths")):
         errors.append(prefix + "changed_paths must be a list of non-empty paths")
+    decision = record.get("decision", "")
+    if isinstance(decision, str) and decision.startswith("fix:"):
+        if record.get("verification_status") not in {"Confirmed", "Partially confirmed"}:
+            errors.append(prefix + "fix requires Confirmed or Partially confirmed")
+        if not nonempty_string(closure_batch) or not string_list(
+            record.get("changed_paths"), allow_empty=False
+        ):
+            errors.append(prefix + "fix requires a closure batch and changed paths")
+    elif isinstance(decision, str) and decision.startswith("no-action:"):
+        if (
+            closure_batch is not None
+            or record.get("changed_paths") != []
+            or record.get("change_kind") != "metadata"
+        ):
+            errors.append(prefix + "no-action requires metadata, no batch and no changed paths")
+        if stage == "result" and record.get("remediation_status") not in {
+            "Refuted", "Cannot confirm", "Info/No action",
+            "Returned to shaping", "Deferred by registered source",
+        }:
+            errors.append(prefix + "no-action cannot claim Closed or an applied repair")
+        if (
+            stage == "result"
+            and record.get("remediation_status") in {"Refuted", "Cannot confirm"}
+            and record.get("remediation_status") != record.get("verification_status")
+        ):
+            errors.append(prefix + "result evidence status must match verification_status")
+    elif not (isinstance(decision, str) and decision.startswith("pending:")):
+        errors.append(prefix + "decision must begin with fix:, no-action: or pending:")
     if record.get("change_kind") == "behavioral" and "red_before" not in record:
         errors.append(prefix + "behavioral disposition requires red_before")
     if record.get("change_kind") != "behavioral" and not (
@@ -1211,7 +1242,7 @@ def validate_disposition_records(
     expected_report = f"remediation.{stage}.md"
     if not path.with_name(expected_report).is_file():
         errors.append(f"missing fixed report sibling: {expected_report}")
-    records = load_jsonl(path, errors)
+    records = load_jsonl(path, errors, allow_empty=True)
     seen_sources: set[tuple[str, str]] = set()
     seen_incidentals: set[str] = set()
     batch_keys: dict[str, str] = {}
@@ -1290,6 +1321,47 @@ def read_text(path: Path, errors: list[str]) -> str:
         return ""
 
 
+def validate_batch_dependencies(text: str, records: list[dict[str, Any]]) -> list[str]:
+    """Check declared batches as a topologically ordered graph, without scheduling."""
+    errors: list[str] = []
+    headings = list(
+        re.finditer(r"(?m)^### Batch ([A-Za-z0-9][A-Za-z0-9._-]*):[^\n]*$", text)
+    )
+    names = [heading.group(1) for heading in headings]
+    if len(set(names)) != len(names):
+        errors.append("duplicate closure batch header")
+    expected = {
+        record["closure_batch"]
+        for record in records
+        if nonempty_string(record.get("closure_batch"))
+    }
+    if set(names) != expected:
+        errors.append("batch headers must exactly cover disposition closure batches")
+    positions = {name: index for index, name in enumerate(names)}
+    for index, heading in enumerate(headings):
+        name = heading.group(1)
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        block = text[heading.end():end].split("#### Fix", 1)[0]
+        fields = re.findall(r"(?m)^\*\*Dependencies\*\*:[ \t]*(.*)$", block)
+        try:
+            dependencies = json.loads(fields[0]) if len(fields) == 1 else None
+        except json.JSONDecodeError:
+            dependencies = None
+        if not string_list(dependencies):
+            errors.append(f"batch {name} dependencies must be one JSON array")
+            continue
+        if len(set(dependencies)) != len(dependencies):
+            errors.append(f"batch {name} has duplicate dependencies")
+        for dependency in dependencies:
+            if dependency not in positions:
+                errors.append(f"batch {name} has unknown dependency {dependency}")
+            elif positions[dependency] >= index:
+                errors.append(
+                    f"batch {name} dependency {dependency} violates acyclic topological order"
+                )
+    return errors
+
+
 def validate_plan(path: Path) -> list[str]:
     errors: list[str] = []
     if path.name != "remediation.plan.md":
@@ -1322,6 +1394,10 @@ def validate_plan(path: Path) -> list[str]:
         context=context,
     )
     errors.extend(f"plan disposition: {error}" for error in disposition_errors)
+    errors.extend(validate_batch_dependencies(text, records))
+    for record in records:
+        if record.get("verified_at") != remediation_head:
+            errors.append("disposition verified_at must match Remediation head")
 
     finding_keys = set(context.findings_by_key)
     disposition_keys = {
@@ -1361,6 +1437,8 @@ def validate_plan(path: Path) -> list[str]:
         for record in records:
             if record.get("record_kind") != "finding-disposition":
                 continue
+            if record.get("remaining_obligations"):
+                errors.append("READY-FOR-APPLY requires no remaining obligations")
             key = source_key(record)
             finding_id = key[1] if key is not None else "<invalid>"
             if key is not None and finding_id not in text:
@@ -1460,6 +1538,7 @@ def stable_disposition_drift(
         "source",
         "verified_at",
         "verification_status",
+        "remaining_obligations",
         "final_severity",
         "final_severity_rationale",
         "closure_key",
@@ -1509,6 +1588,27 @@ def validate_result(path: Path) -> list[str]:
     text = read_text(path, errors)
     if header_value(text, "Status") != "COMPLETE":
         errors.append("result Status must be COMPLETE")
+    outcome = header_value(text, "Outcome")
+    plan_text = read_text(plan_path, errors)
+    plan_status = header_value(plan_text, "Status")
+    if outcome == "APPLIED":
+        if plan_status != "READY-FOR-APPLY":
+            errors.append("APPLIED requires READY-FOR-APPLY")
+    elif outcome == "NO-CHANGE":
+        if plan_status != "DRAFT-UNRESOLVED":
+            errors.append("NO-CHANGE requires a DRAFT-UNRESOLVED plan")
+        if re.search(r"(?m)^#### Fix\s", plan_text) or any(
+            record.get("record_kind") != "finding-disposition"
+            or not str(record.get("decision", "")).startswith("no-action:")
+            or record.get("closure_batch") is not None
+            or record.get("changed_paths") != []
+            for record in plan_records + result_records
+        ):
+            errors.append(
+                "NO-CHANGE requires only no-action dispositions and no Fix items, batches or edits"
+            )
+    else:
+        errors.append("result Outcome must be APPLIED or NO-CHANGE")
     if unquote_code(header_value(text, "Audit index SHA-256")) != context.index_sha256:
         errors.append("result Audit index SHA-256 does not match current audit")
     try:

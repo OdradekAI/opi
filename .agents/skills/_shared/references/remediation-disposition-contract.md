@@ -31,6 +31,7 @@ Plan and result stages use this record shape:
   },
   "verified_at": "236c380f0c5eea541190cc1a0f5c1d62f983b4e8",
   "verification_status": "Confirmed",
+  "remaining_obligations": [],
   "final_severity": "Major",
   "final_severity_rationale": "The mandatory durable binding is absent.",
   "closure_key": "session.runtime-binding",
@@ -60,8 +61,8 @@ identities are invalid. Findings with the same textual ID or repair remain
 separate source records and require separate dispositions, although they may
 share a closure batch and verification evidence.
 
-Reviewer disagreement is not a vote. The highest source severity controls
-scheduling priority while every source severity and rationale remains
+Reviewer disagreement is not a vote. Among dependency-ready batches, the highest
+source severity controls scheduling priority while every source severity and rationale remains
 unchanged. A final severity change or `Refuted` disposition requires independent
 current evidence; another peer's contrary conclusion is insufficient.
 
@@ -80,11 +81,60 @@ or `Refuted`. `change_kind` is `behavioral`, `test-only`, `documentation`, or
 changes require either `red_before` or a concrete
 `red_before_not_applicable` reason.
 
+`verified_at` equals the plan's `Remediation head`. It identifies the evidence
+baseline; result records preserve it rather than relabeling an earlier execution
+with a later repair commit. Current applicability and the final source state
+require their own evidence under the execution protocol.
+
+`remaining_obligations` is a required array of non-empty strings, or `[]` when
+this disposition has no known residual obligation. Record missing proof and
+unresolved source applicability or precedence here, with the affected criterion
+and the evidence or authority needed. Refuting a finding's claim does not mark
+its linked requirements `met` or remove their proof obligations. Any non-empty
+array keeps the entire plan `DRAFT-UNRESOLVED`; exclusions do not bypass this
+gate. New evidence that changes an approved disposition requires a new plan.
+
+Use `fix:<decision>` only for `Confirmed` or `Partially confirmed` findings,
+with a non-null closure batch and non-empty changed paths. An exclusion uses
+`no-action:<reason>`, `closure_batch: null`, `changed_paths: []`, and
+`change_kind: metadata`: that metadata is the disposition, not a product edit.
+Its result status is `Refuted`, `Cannot confirm`, `Info/No action`, `Returned to
+shaping`, or `Deferred by registered source`, never `Closed` or `Not closed`.
+If the result uses `Refuted` or `Cannot confirm`, it must equal the plan's
+`verification_status`; these evidence conclusions cannot be interchanged.
+The other three statuses record an administrative disposition without replacing
+the verification conclusion. Keep the original source record unchanged.
+In the decision and rationale, identify the exact
+claim refuted, strongest counter-evidence, surviving observations, and the
+resulting limits on permissible changes. A draft may use `pending:<question>`
+while that decision is still being investigated.
+
 At plan stage, `green_after.observed` is `not-run`, and no
 `remediation_status` is allowed. At result stage, green-after is observed and
 `remediation_status` is `Closed`, `Not closed`, `Deferred by registered
 source`, `Returned to shaping`, `Info/No action`, `Refuted`, or `Cannot
 confirm`.
+
+Older plans missing required fields must be regenerated and validated before
+use; the resulting bytes have a new plan digest and require new apply approval.
+Adding fields to an approved plan does not preserve its approval.
+
+## Evidence work and closure dependencies
+
+Resolve evidence questions during planning before sealing a repair decision.
+For each probe, record its question, source/build inputs, positive and negative
+controls, distinguishing observation, and dependent decision. Static proof and
+external local probes need no fictitious production edit. Record actual commands
+and observations; a compiler or fixture-setup failure is not a behavioral red.
+Evidence work cannot become an apply-time conditional choice of product meaning.
+
+Each planned closure batch has one `### Batch <id>: <title>` heading and one
+`**Dependencies**` JSON array of earlier batch IDs (`[]` for none). These headings
+and the non-null disposition `closure_batch` values must name exactly the same
+batches. IDs and dependency entries are unique; unknown dependencies, self-edges,
+cycles and a declaration before its prerequisites are invalid. Execute in that
+topological order and require each prerequisite to pass before continuing.
+This does not admit a subset of an unresolved plan.
 
 ## Plan approval identity
 
@@ -126,6 +176,40 @@ It validates the fixed plan, live set, ready status, exact approved digest and
 committed source boundary. The execution protocol still owns carried-in path
 inventory and overlapping unowned-change admission. Planning and applying do
 not grant commit authorization; commit only on an explicit user request.
+
+## No-change result
+
+The planning branch may finish without a repair or apply invocation when every
+current finding has an explicit `no-action:` disposition. Keep the fixed plan
+`DRAFT-UNRESOLVED`; it is not an executable plan, including when all claims have
+been refuted and `Unresolved decisions` is `none`. Validate the plan and bind its
+emitted digest in the fixed result. Use:
+
+```markdown
+**Status**: COMPLETE
+**Outcome**: NO-CHANGE
+**Audit index SHA-256**: `<exact active index digest>`
+**Plan SHA-256**: `<validated draft digest>`
+**Changed paths**: []
+```
+
+There are no closure batches, Fix items, changed source paths or incidental
+records. Preserve exact strict-union coverage, source identities and all residual
+obligations. Copy the plan dispositions, filling each `green_after.observed` with
+the actual verification observation and the matching no-action result status.
+For static verification, name the actual inspection command and its observation;
+use a concrete `red_before_not_applicable` reason instead of a fabricated test.
+
+`COMPLETE` describes the completed disposition report. It grants no apply
+permission, requirement closure or Phase verdict. Missing evidence and authority
+decisions remain explicit, including when the original implementation-defect
+claim is refuted. Compare final Git state with the recorded planning inventory:
+only this Phase's fixed plan/result outputs may be newly changed; preserve all
+carried-in work. If any repair was made, this branch is unavailable.
+
+The ordinary result uses `**Outcome**: APPLIED` and requires the approved
+`READY-FOR-APPLY` plan. A draft with some fix decisions cannot produce either an
+applied result or a no-change result; retain the validated draft and its gaps.
 
 ## Bounded incidental repair
 
@@ -170,12 +254,15 @@ manifest/lockfile, implementation ledger, or public schema. It needs its own
 observed FAIL/PASS. If any guardrail fails, stop and create a new plan.
 Non-blocking observations are reported but not fixed.
 
-`remediation.result.md` records the active `Audit index SHA-256`, approved
+`remediation.result.md` records `Outcome`, the active `Audit index SHA-256`,
 `Plan SHA-256`, and a JSON array in `Changed paths`. The array must equal the
 union of paths attributed by planned and accepted incidental result records.
 Narrative-only corrections fail validation. Result dispositions cover exactly
 the plan source-key set. The `Changed paths` value is machine-checked, not
-narrative metadata.
+narrative metadata. This agreement between records is not a comparison with Git.
+For an applied result, the
+[execution protocol](../../opi-remediate/references/execution-protocol.md#source-and-materialization-proof)
+also requires actual-delta and tested-input proof before completion.
 
 Validate with:
 
