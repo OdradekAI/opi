@@ -4698,7 +4698,7 @@
       "definition_of_done": "Register resource generation on first poll before auth/transform; cleanup cutoff cancels matching old prepared/connecting/busy/temporary/active-fallback work, awaits local owned exits, forbids late publish/retry/SSE. Some exact nonemptyID, None including sessionless, empty typed failure and unmatched no-op are distinct. Isolate two Models/shared leases, keep caller parent token/external owners/credentials/catalog intact, retain delivered terminal and idle reuse. Cleanup failure continues remaining release and reports unconfirmed effects; Drop starts release but never claims barrier completion. Consume the same 20.16 private protocol Connection and P20-RESOURCES lease/generation owner, without another frame/PMD/Close state machine. Cover active and idle codec cancellation, borrowed-future drop/resume and awaited local release on the real Models/Codex path; migrated primitive tests alone cannot close session cleanup or complete DEL-07.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.16"
@@ -4797,7 +4797,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "AIR-035",
@@ -4810,7 +4810,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "P20-S17",
@@ -4823,7 +4823,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "P20-ACTOR-07",
@@ -4836,7 +4836,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "DEL-07",
@@ -4849,7 +4849,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "open"
+          "status": "closed"
         },
         {
           "id": "V-30",
@@ -4862,7 +4862,7 @@
             "opi_ai::Models::cleanup_session_resources (target)",
             "opi_ai Codex connection lease/drop (target)"
           ],
-          "status": "open"
+          "status": "closed"
         }
       ],
       "production_call_sites": [
@@ -4872,7 +4872,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "71e0cc66",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -4889,10 +4889,68 @@
         "crates/opi-ai/tests/resource_cleanup.rs",
         "crates/opi-ai/tests/openai_codex_responses/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "bfdde41d521ec284d9fcf79b0f5ec4ec480bec89",
+      "evidence": {
+        "Opi-Task": "20.17",
+        "Opi-DoD-SHA256": "4290f60e9a040e30b5354aadcd933abdc7a40f94658669ae8e59304fad2a0ef0",
+        "Opi-Verification": "workspace; smoke full PASSED (fmt, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets 258 suites, doc tests, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps); scenario cargo test -p opi-ai --test openai_codex_responses 54 PASS; cargo test -p opi-ai 2002 PASS / 0 failed; tool_result_wire baseline deliberate update; doc-check PASS; git diff --check clean",
+        "Opi-Evaluator": "passed",
+        "Opi-Acceptance": "V-29/AIR-035/P20-S17/P20-ACTOR-07/V-30 and the DEL-07 cleanup slice exercised on the real Models -> Codex -> Upgrade -> private protocol owner path with generation cutoffs, awaited local release, pool/marker cleanup and isolation; 20.34/20.57/20.58 ownership preserved"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-27T03:21:44.760187+00:00",
+          "attempt": 1,
+          "summary": "Started execution after the B.2 gate was approved (TDD scope, two commits, offline self-report with disclose-on-deviation). Research anchored on pi session-resources.ts (registry + AggregateError) and closeOpenAICodexWebSocketSessions (session/all close semantics), readiness-ws section 8 resource clauses, and the shipped 20.16 ws_transport pool/continuation/fallback state. Design: codex_resources registry with per-generation tokens and Drop-starts-release guards, Provider::session_resources default-None dispatch, Models::cleanup_session_resources aggregation, cutoff checks forbidding late publish/retry/SSE, close_temporary reuse for pooled closes (no second frame/PMD/Close state machine)."
+        },
+        {
+          "timestamp": "2026-10-27T06:18:40.476289+00:00",
+          "attempt": 1,
+          "summary": "Delivered instance resource generation/pool cleanup/awaited release: new public codex_resources seam (ResourceRegistry + GenerationGuard + revision-watch barriers, SessionResourceOwner, CleanupHandle/Report/Error), Provider::session_resources default-None dispatch, Models::cleanup_session_resources aggregation with the Some(nonempty)/None/Some(\"\")/unmatched distinct cases, WS-family registration in stream_prepared before any auth attach or transform with a one-way parent->entry link task, cutoff checks at drive entry/loop-top/before bounded retries/before the SSE leg plus a cancel arm on the initial request-frame flush, silent pooled closes through the same private Driver (Close+flush+250ms bounded confirmation) with unconfirmable closes reported as unconfirmed effects while the remaining release continues, and registry.rs pub(crate) provider iteration. TDD rounds: red E0432/E0599x12 on the missing surface; per-round behavioral reds fixed the scripted peer (byte-wise head consumption, blocking accepted sockets, script loop semantics, script/POST connection accounting), the lazy ChatCall start semantics (tests now start calls via one bounded first-event drive before cleanup-relative timing), the std::pin::pin! ownership trap (drop of the pin must drop the ChatCall), and one redundant inner rx-drop arm (the 20.16 producer-level receiver-closed cancellation already owns the borrowed-future drop release, so the inner arm was removed and the drop test asserts the real release semantics: generation exits with the connection, later cleanup reports zeros). Deviations disclosed: (1) interactive_tui_auth localhost mock-wire budget widened 2s->10s - pre-existing flakes systematically blocked full-workspace runs (three consecutive full runs, different tests, same authentication-timeout signature; solo runs always passed); test-only, no test asserts the timeout path; (2) silent_close uses a short 250ms bounded confirmation instead of the source's no-wait so unconfirmable closes are observable (DoD permits deadline-bounded waits); (3) public API growth is the approved B.2 surface (codex_resources module, Provider::session_resources default method, Models::cleanup_session_resources). Network: pure in-process local peers; zero new downloads, offline lock/cache held.",
+          "gate_results": {
+            "d1_gate": "smoke full PASSED after the disclosed mock-wire flake repair and a rustdoc private-link fix (crate::ws::io::Driver -> crate::ws::io text reference)",
+            "d0_scenario": "cargo test -p opi-ai --test openai_codex_responses -> 54 passed / 0 failed; cargo test -p opi-ai -> 2002 passed / 0 failed",
+            "d3_gap_only": "python scripts/opi-doc-check.py PASS; git diff --check clean",
+            "d2_exec": "7 lenses L-D1..L-D7, must_fix=0, flagged=3 (mock-wire budget repair disclosed with three-full-run evidence; silent_close 250ms bounded confirmation instead of no-wait; borrowed-future drop release relies on the existing producer-level rx-closed cancellation rather than a WS-internal arm - verified by test), rejected=8 as pre-registered (generic pool framework/background sweeping; extra Provider lifecycle hooks; cleanup timeout config keys; public cancellation registry export; SSE-only registration; second PMD/Close implementation; telemetry propagation; 20.34/20.57/20.58 acceptance not advanced), wf_ref=null (degraded single-reviewer path)",
+            "test_disposition": [
+              {
+                "subject": "session cleanup",
+                "action": "add",
+                "test": "tests/openai_codex_responses.rs ws_resources module (12 tests)",
+                "interface": "opi_ai::codex_resources + Models::cleanup_session_resources + Provider::session_resources",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "module-set guard",
+                "action": "update",
+                "test": "tool_result_wire baseline + codex_resources entry (guard-authorized deliberate update)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "tui auth mock budget",
+                "action": "update",
+                "test": "interactive_tui_auth auth_services 2s->10s (pre-existing load flake; disclosed)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.17",
+                "action": "retain",
+                "test": "all pre-existing suites unchanged and green (2002 opi-ai, 258 workspace)",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "commit": "bfdde41d521ec284d9fcf79b0f5ec4ec480bec89"
+          }
+        }
+      ]
     },
     {
       "id": "20.18",
@@ -20936,6 +20994,16 @@
       "rejected_count": 7,
       "ran_at": "2026-10-26T19:54:36.460010+00:00",
       "task_id": "20.16",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 8,
+      "ran_at": "2026-10-27T06:18:40.476289+00:00",
+      "task_id": "20.17",
       "criterion_id": null
     }
   ]
