@@ -31,6 +31,7 @@ fn sample_assistant_message() -> AssistantMessage {
         error_message: None,
         timestamp_ms: 1000,
         diagnostics: Vec::new(),
+        duration_ms: None,
     }
 }
 

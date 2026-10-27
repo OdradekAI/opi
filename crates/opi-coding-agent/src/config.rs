@@ -414,29 +414,35 @@ pub struct OpenAiCompatibleProviderConfig {
     pub base_url: String,
     /// Models advertised by this profile.
     pub models: Vec<ConfiguredModelConfig>,
-    /// Optional role override for system messages.
-    pub system_role_override: Option<String>,
+    /// Normalized instruction-role policy (`None` follows the adapter's
+    /// provider inference). Replaces the retired `system_role_override`.
+    pub instruction_role: Option<opi_ai::model_info::ChatInstructionRole>,
+    /// Normalized store-field policy (`None` follows inference). Replaces the
+    /// retired `supports_store` boolean.
+    pub store: Option<opi_ai::model_info::ChatStoreField>,
     /// Optional request field name for max token limits.
     pub max_tokens_field: Option<String>,
     /// Whether tool result messages should include a `name` field.
     pub tool_result_name_field: bool,
-    /// Whether usage can appear throughout the stream.
-    pub usage_in_stream: bool,
+    /// Whether `stream_options.include_usage` is sent; `None` follows the
+    /// adapter inference baseline (enabled).
+    pub usage_in_stream: Option<bool>,
     /// Emit `"strict": true` on function tool definitions.
     pub strict_tool_schema: bool,
-    /// Legacy compatibility metadata for reasoning profiles. Request thinking
-    /// and the selected model's thinking map are authoritative for wire output.
-    pub reasoning_effort: Option<String>,
     /// Emit `prompt_cache_key` for OpenAI prompt-cache affinity.
     pub cache_key: Option<String>,
     /// Extra request headers (session-affinity) applied to every request.
     pub extra_headers: Vec<(String, String)>,
-    /// Compatibility-metadata flag for legacy assistant-after-tool-result wires.
+    /// Compatibility flag for legacy assistant-after-tool-result wires.
     pub require_assistant_after_tool_result: bool,
     /// Optional chat completions endpoint path relative to base_url.
     pub chat_completions_path: Option<String>,
     /// Proxy configuration.
     pub proxy: Option<ProviderProxyConfig>,
+    /// Retired profile keys or unparseable normalized values detected during
+    /// merge; any entry fails validation with a migration error (task 20.36 /
+    /// V-11) before any provider construction or network activity.
+    pub compat_migration_errors: Vec<String>,
 }
 
 /// Model metadata from provider profile configuration.
@@ -449,9 +455,9 @@ pub struct ConfiguredModelConfig {
     pub supports_images: bool,
     pub supports_streaming: bool,
     pub supports_thinking: bool,
-    /// Model-level override of the profile `system_role_override` (wins when
+    /// Model-level override of the profile `instruction_role` (wins when
     /// present).
-    pub system_role_override: Option<String>,
+    pub instruction_role: Option<opi_ai::model_info::ChatInstructionRole>,
     /// Model-level override of the profile `max_tokens_field` (wins when
     /// present).
     pub max_tokens_field: Option<String>,
@@ -606,19 +612,31 @@ struct TomlCustomCompat {
     supports_eager_tool_input_streaming: Option<bool>,
     force_adaptive_thinking: Option<bool>,
     supports_temperature: Option<bool>,
+    // Retired Chat-wire keys, kept as explicit detectors so each config
+    // position errors with a migration pointer (task 20.36 / V-11).
     system_role_override: Option<String>,
+    supports_store: Option<bool>,
+    supports_developer_role: Option<bool>,
+    reasoning_effort: Option<String>,
+    // Normalized Chat compat keys (single normalization rule).
+    store_field: Option<String>,
+    instruction_role: Option<String>,
+    thinking_format: Option<String>,
+    supports_reasoning_effort: Option<bool>,
     max_tokens_field: Option<String>,
     tool_result_name_field: Option<bool>,
     usage_in_stream: Option<bool>,
     strict_tool_schema: Option<bool>,
-    reasoning_effort: Option<String>,
     cache_key: Option<String>,
     send_session_affinity_headers: Option<bool>,
     require_assistant_after_tool_result: Option<bool>,
+    requires_thinking_as_text: Option<bool>,
+    requires_reasoning_content_on_assistant_messages: Option<bool>,
+    zai_tool_stream: Option<bool>,
+    vllm_priority: Option<i64>,
+    thinking_token_budget_field: Option<String>,
+    supports_thinking_token_budget: Option<bool>,
     chat_completions_path: Option<String>,
-    supports_store: Option<bool>,
-    supports_developer_role: Option<bool>,
-    supports_reasoning_effort: Option<bool>,
     store: Option<bool>,
     strict_tools: Option<bool>,
     responses_path: Option<String>,
@@ -727,6 +745,8 @@ struct TomlOpenAiCompatibleProvider {
     base_url: Option<String>,
     models: Option<Vec<TomlConfiguredModel>>,
     system_role_override: Option<String>,
+    instruction_role: Option<String>,
+    store: Option<String>,
     max_tokens_field: Option<String>,
     tool_result_name_field: Option<bool>,
     usage_in_stream: Option<bool>,
@@ -750,6 +770,7 @@ struct TomlConfiguredModel {
     supports_streaming: Option<bool>,
     supports_thinking: Option<bool>,
     system_role_override: Option<String>,
+    instruction_role: Option<String>,
     max_tokens_field: Option<String>,
 }
 
@@ -1064,8 +1085,41 @@ impl TomlConfig {
             if let Some(v) = profile.base_url {
                 target.base_url = v;
             }
-            if let Some(v) = profile.system_role_override {
-                target.system_role_override = Some(v);
+            if profile.system_role_override.is_some() {
+                target.compat_migration_errors.push(
+                    "retired key 'system_role_override': use 'instruction_role' \
+                     (auto|system|developer_for_reasoning|developer) instead"
+                        .into(),
+                );
+            }
+            if profile.reasoning_effort.is_some() {
+                target.compat_migration_errors.push(
+                    "retired key 'reasoning_effort': per-call thinking intent and \
+                     the model thinking-level map own reasoning wire output"
+                        .into(),
+                );
+            }
+            if let Some(v) = profile.instruction_role {
+                match v.parse::<opi_ai::model_info::ChatInstructionRole>() {
+                    Ok(role) => target.instruction_role = Some(role),
+                    Err(message) => {
+                        target.compat_migration_errors.push(format!(
+                            "providers.openai_compatible.{}.instruction_role: {message}",
+                            target.id
+                        ));
+                    }
+                }
+            }
+            if let Some(v) = profile.store {
+                match v.parse::<opi_ai::model_info::ChatStoreField>() {
+                    Ok(store) => target.store = Some(store),
+                    Err(message) => {
+                        target.compat_migration_errors.push(format!(
+                            "providers.openai_compatible.{}.store: {message}",
+                            target.id
+                        ));
+                    }
+                }
             }
             if let Some(v) = profile.max_tokens_field {
                 target.max_tokens_field = Some(v);
@@ -1074,13 +1128,10 @@ impl TomlConfig {
                 target.tool_result_name_field = v;
             }
             if let Some(v) = profile.usage_in_stream {
-                target.usage_in_stream = v;
+                target.usage_in_stream = Some(v);
             }
             if let Some(v) = profile.strict_tool_schema {
                 target.strict_tool_schema = v;
-            }
-            if let Some(v) = profile.reasoning_effort {
-                target.reasoning_effort = Some(v);
             }
             if let Some(v) = profile.cache_key {
                 target.cache_key = Some(v);
@@ -1099,6 +1150,25 @@ impl TomlConfig {
                     .into_iter()
                     .map(|model| {
                         let id = model.id.unwrap_or_default();
+                        if model.system_role_override.is_some() {
+                            target.compat_migration_errors.push(
+                                "retired model key 'system_role_override': use \
+                                 'instruction_role' (auto|system|developer_for_reasoning|developer)"
+                                    .into(),
+                            );
+                        }
+                        let instruction_role =
+                            model.instruction_role.as_deref().and_then(|value| {
+                                value
+                                    .parse::<opi_ai::model_info::ChatInstructionRole>()
+                                    .map_err(|message| {
+                                        target.compat_migration_errors.push(format!(
+                                            "model '{id}' instruction_role: {message}"
+                                        ));
+                                        message
+                                    })
+                                    .ok()
+                            });
                         ConfiguredModelConfig {
                             display_name: model.display_name.unwrap_or_else(|| id.clone()),
                             id,
@@ -1107,7 +1177,7 @@ impl TomlConfig {
                             supports_images: model.supports_images.unwrap_or(false),
                             supports_streaming: model.supports_streaming.unwrap_or(true),
                             supports_thinking: model.supports_thinking.unwrap_or(false),
-                            system_role_override: model.system_role_override,
+                            instruction_role,
                             max_tokens_field: model.max_tokens_field,
                         }
                     })
@@ -1271,6 +1341,23 @@ pub fn validate_provider_namespace(config: &OpiConfig) -> Result<(), ConfigError
 /// requirement. Called at every site that produces a final `OpiConfig`.
 pub fn validate_execution_config(config: &OpiConfig) -> Result<(), ConfigError> {
     validate_rules(&config.execution)
+}
+
+/// Task 20.36 (AIR-022/V-11): retired Chat compat keys and malformed
+/// normalized values surface as explicit migration errors at every config
+/// position, before provider construction, authentication or HTTP dispatch.
+pub fn validate_chat_compat_migration(config: &OpiConfig) -> Result<(), ConfigError> {
+    for profile in config.providers.openai_compatible.values() {
+        if let Some(error) = profile.compat_migration_errors.first() {
+            return Err(ConfigError::InvalidCustomProvider {
+                provider: profile.id.clone(),
+                model: None,
+                field: "compat",
+                message: error.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn validate_rules(exec: &ExecutionConfig) -> Result<(), ConfigError> {
@@ -1615,31 +1702,137 @@ fn custom_compat(
             })
         }
         opi_ai::WireApi::OpenAiCompletions => {
-            let mut compat = opi_ai::model_info::OpenAiCompletionsCompat {
-                system_role_override: raw.system_role_override,
+            // Retired keys error with a migration pointer, never serde-ignore
+            // (AIR-022 / V-11).
+            if raw.system_role_override.is_some() {
+                return Err(invalid_custom(
+                    provider_id,
+                    Some(model_id),
+                    "compat.system_role_override",
+                    "retired key: use compat.instruction_role (auto|system|developer_for_reasoning|developer)",
+                ));
+            }
+            if raw.supports_store.is_some() {
+                return Err(invalid_custom(
+                    provider_id,
+                    Some(model_id),
+                    "compat.supports_store",
+                    "retired key: use compat.store_field (omit|send_false)",
+                ));
+            }
+            if raw.supports_developer_role.is_some() {
+                return Err(invalid_custom(
+                    provider_id,
+                    Some(model_id),
+                    "compat.supports_developer_role",
+                    "retired key: use compat.instruction_role (auto|system|developer_for_reasoning|developer)",
+                ));
+            }
+            if raw.reasoning_effort.is_some() {
+                return Err(invalid_custom(
+                    provider_id,
+                    Some(model_id),
+                    "compat.reasoning_effort",
+                    "retired key: per-call thinking intent and the model thinking-level map own reasoning wire output",
+                ));
+            }
+            let store = match raw.store_field.as_deref() {
+                None => None,
+                Some("auto") => None,
+                Some(parsed) => Some(
+                    parsed
+                        .parse::<opi_ai::model_info::ChatStoreField>()
+                        .map_err(|_| {
+                            invalid_custom(
+                                provider_id,
+                                Some(model_id),
+                                "compat.store_field",
+                                "must be omit|send_false|auto",
+                            )
+                        })?,
+                ),
+            };
+            let instruction_role = match raw.instruction_role.as_deref() {
+                None => None,
+                Some(parsed) => Some(
+                    parsed
+                        .parse::<opi_ai::model_info::ChatInstructionRole>()
+                        .map_err(|_| {
+                            invalid_custom(
+                                provider_id,
+                                Some(model_id),
+                                "compat.instruction_role",
+                                "must be auto|system|developer_for_reasoning|developer",
+                            )
+                        })?,
+                ),
+            };
+            let thinking_format = match raw.thinking_format.as_deref() {
+                None => None,
+                Some(parsed) => Some(
+                    parsed
+                        .parse::<opi_ai::model_info::ChatThinkingFormat>()
+                        .map_err(|_| {
+                            invalid_custom(
+                                provider_id,
+                                Some(model_id),
+                                "compat.thinking_format",
+                                "must be a declared chat thinking format",
+                            )
+                        })?,
+                ),
+            };
+            let thinking_token_budget_field = match raw.thinking_token_budget_field.as_deref() {
+                None => None,
+                Some(parsed) => Some(match parsed {
+                    "thinking_token_budget" => {
+                        opi_ai::model_info::ChatThinkingTokenBudgetField::ThinkingTokenBudget
+                    }
+                    "thinking_budget" => {
+                        opi_ai::model_info::ChatThinkingTokenBudgetField::ThinkingBudget
+                    }
+                    "thinking_budget_tokens" => {
+                        opi_ai::model_info::ChatThinkingTokenBudgetField::ThinkingBudgetTokens
+                    }
+                    _ => {
+                        return Err(invalid_custom(
+                            provider_id,
+                            Some(model_id),
+                            "compat.thinking_token_budget_field",
+                            "must be thinking_token_budget|thinking_budget|thinking_budget_tokens",
+                        ));
+                    }
+                }),
+            };
+            opi_ai::WireCompat::OpenAiCompletions(opi_ai::model_info::OpenAiCompletionsCompat {
+                store,
+                instruction_role,
+                thinking_format,
+                supports_reasoning_effort: raw.supports_reasoning_effort,
+                usage_in_stream: raw.usage_in_stream,
+                max_tokens_field: raw.max_tokens_field,
                 tool_result_name_field: raw.tool_result_name_field.unwrap_or_default(),
-                usage_in_stream: raw.usage_in_stream.unwrap_or_default(),
                 strict_tool_schema: raw.strict_tool_schema.unwrap_or_default(),
-                reasoning_effort: raw.reasoning_effort,
                 cache_key: raw.cache_key,
-                send_session_affinity_headers: raw
-                    .send_session_affinity_headers
-                    .unwrap_or_default(),
+                send_session_affinity_headers: raw.send_session_affinity_headers,
                 require_assistant_after_tool_result: raw
                     .require_assistant_after_tool_result
                     .unwrap_or_default(),
-                supports_store: raw.supports_store.unwrap_or_default(),
-                supports_developer_role: raw.supports_developer_role.unwrap_or_default(),
-                supports_reasoning_effort: raw.supports_reasoning_effort.unwrap_or_default(),
-                ..Default::default()
-            };
-            if let Some(value) = raw.max_tokens_field {
-                compat.max_tokens_field = value;
-            }
-            if let Some(value) = raw.chat_completions_path {
-                compat.chat_completions_path = value;
-            }
-            opi_ai::WireCompat::OpenAiCompletions(compat)
+                requires_thinking_as_text: raw.requires_thinking_as_text.unwrap_or_default(),
+                requires_reasoning_content_on_assistant_messages: raw
+                    .requires_reasoning_content_on_assistant_messages,
+                zai_tool_stream: raw.zai_tool_stream.unwrap_or_default(),
+                vllm_priority: raw.vllm_priority,
+                thinking_token_budget_field,
+                supports_thinking_token_budget: raw
+                    .supports_thinking_token_budget
+                    .unwrap_or_default(),
+                chat_template_kwargs: Default::default(),
+                chat_template_args: Default::default(),
+                chat_completions_path: raw
+                    .chat_completions_path
+                    .unwrap_or_else(|| "/v1/chat/completions".into()),
+            })
         }
         opi_ai::WireApi::OpenAiResponses => {
             let mut compat = opi_ai::model_info::OpenAiResponsesCompat {
@@ -1682,6 +1875,10 @@ fn reject_wrong_compat_fields(
     match wire {
         opi_ai::WireApi::AnthropicMessages => reject_fields!(
             system_role_override,
+            store_field,
+            instruction_role,
+            thinking_format,
+            supports_reasoning_effort,
             max_tokens_field,
             tool_result_name_field,
             usage_in_stream,
@@ -1690,10 +1887,15 @@ fn reject_wrong_compat_fields(
             cache_key,
             send_session_affinity_headers,
             require_assistant_after_tool_result,
+            requires_thinking_as_text,
+            requires_reasoning_content_on_assistant_messages,
+            zai_tool_stream,
+            vllm_priority,
+            thinking_token_budget_field,
+            supports_thinking_token_budget,
             chat_completions_path,
             supports_store,
             supports_developer_role,
-            supports_reasoning_effort,
             store,
             strict_tools,
             responses_path,
@@ -1713,6 +1915,9 @@ fn reject_wrong_compat_fields(
             force_adaptive_thinking,
             supports_temperature,
             system_role_override,
+            store_field,
+            instruction_role,
+            thinking_format,
             max_tokens_field,
             tool_result_name_field,
             usage_in_stream,
@@ -1720,10 +1925,15 @@ fn reject_wrong_compat_fields(
             cache_key,
             send_session_affinity_headers,
             require_assistant_after_tool_result,
+            requires_thinking_as_text,
+            requires_reasoning_content_on_assistant_messages,
+            zai_tool_stream,
+            vllm_priority,
+            thinking_token_budget_field,
+            supports_thinking_token_budget,
             chat_completions_path,
             supports_store,
             supports_developer_role,
-            supports_reasoning_effort,
         ),
         _ => unreachable!("custom_wire restricts the wire set"),
     }
@@ -1846,6 +2056,7 @@ fn parse_toml(contents: &str, path: &Path) -> Result<OpiConfig, ConfigError> {
     config.providers.custom = validate_custom_providers(custom)?;
     validate_provider_namespace(&config)?;
     validate_execution_config(&config)?;
+    validate_chat_compat_migration(&config)?;
     validate_max_output_tokens(&config)?;
     validate_tool_timeout(&config)?;
     Ok(config)
@@ -1947,6 +2158,7 @@ impl StagedConfig {
         config.providers.custom = validate_custom_providers(custom)?;
         validate_provider_namespace(&config)?;
         validate_execution_config(&config)?;
+        validate_chat_compat_migration(&config)?;
         validate_max_output_tokens(&config)?;
         validate_tool_timeout(&config)?;
         Ok(config)

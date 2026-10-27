@@ -802,6 +802,18 @@ impl Models {
         options: SimpleOptions,
     ) -> ChatCall {
         options.apply(&mut request);
+        // Neutral entry: clamp the requested thinking level to the nearest
+        // supported level (Pi streamSimple) before the shared compiler's
+        // per-wire thinking preflight; native entries retain exact levels and
+        // fail typed preflight instead.
+        if request.thinking.enabled
+            && let Some(level) = record
+                .info()
+                .thinking_level_map
+                .nearest_supported(request.thinking.level)
+        {
+            request.thinking.level = level;
+        }
         let binding = self.provider_binding(&record);
         ChatCall::new(binding, request, CallOptions::Simple(options))
     }

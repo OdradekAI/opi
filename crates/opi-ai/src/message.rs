@@ -53,6 +53,12 @@ pub struct AssistantMessage {
     /// historical messages deserialize without it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<crate::stream::AssistantDiagnostic>,
+    /// Monotonic adapter response-stream duration (AIR-061): measured from
+    /// response-stream activation/first body bytes to terminal. `None` when
+    /// not measured (setup failures before activation, older records);
+    /// forwarding and serialization retain known values without recomputation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

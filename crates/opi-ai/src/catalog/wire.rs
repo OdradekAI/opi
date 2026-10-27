@@ -24,8 +24,8 @@ use serde_json::{Map, Value, json};
 
 use crate::model_info::{
     AnthropicMessagesCompat, ModelCapabilities, ModelInfo, OpenAiCodexResponsesCompat,
-    OpenAiCompletionsCompat, OpenAiResponsesCompat, ThinkingLevel, ThinkingLevelMap,
-    ThinkingLevelMapping, WireApi, WireCompat,
+    OpenAiResponsesCompat, ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping, WireApi,
+    WireCompat,
 };
 use crate::stream::Pricing;
 
@@ -147,19 +147,43 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
         }),
         WireCompat::OpenAiCompletions(inner) => json!({
             "api": WireApi::OpenAiCompletions.as_str(),
-            "systemRoleOverride": inner.system_role_override,
+            "storeField": match &inner.store {
+                Some(crate::model_info::ChatStoreField::Omit) => json!("omit"),
+                Some(crate::model_info::ChatStoreField::SendFalse) => json!("send_false"),
+                None => serde_json::Value::Null,
+            },
+            "instructionRole": match &inner.instruction_role {
+                Some(crate::model_info::ChatInstructionRole::Auto) => json!("auto"),
+                Some(crate::model_info::ChatInstructionRole::System) => json!("system"),
+                Some(crate::model_info::ChatInstructionRole::DeveloperForReasoning) => {
+                    json!("developer_for_reasoning")
+                }
+                Some(crate::model_info::ChatInstructionRole::Developer) => json!("developer"),
+                None => serde_json::Value::Null,
+            },
+            "thinkingFormat": match &inner.thinking_format {
+                Some(format) => json!(format.wire_name()),
+                None => serde_json::Value::Null,
+            },
+            "supportsReasoningEffort": inner.supports_reasoning_effort,
             "maxTokensField": inner.max_tokens_field,
             "toolResultNameField": inner.tool_result_name_field,
             "usageInStream": inner.usage_in_stream,
             "strictToolSchema": inner.strict_tool_schema,
-            "reasoningEffort": inner.reasoning_effort,
             "cacheKey": inner.cache_key,
             "sendSessionAffinityHeaders": inner.send_session_affinity_headers,
             "requireAssistantAfterToolResult": inner.require_assistant_after_tool_result,
+            "requiresThinkingAsText": inner.requires_thinking_as_text,
+            "requiresReasoningContentOnAssistantMessages":
+                inner.requires_reasoning_content_on_assistant_messages,
+            "zaiToolStream": inner.zai_tool_stream,
+            "vllmPriority": inner.vllm_priority,
+            "thinkingTokenBudgetField": inner
+                .thinking_token_budget_field
+                .as_ref()
+                .map(|field| field.wire_name()),
+            "supportsThinkingTokenBudget": inner.supports_thinking_token_budget,
             "chatCompletionsPath": inner.chat_completions_path,
-            "supportsStore": inner.supports_store,
-            "supportsDeveloperRole": inner.supports_developer_role,
-            "supportsReasoningEffort": inner.supports_reasoning_effort,
         }),
         WireCompat::OpenAiResponses(inner) => json!({
             "api": WireApi::OpenAiResponses.as_str(),
@@ -193,6 +217,51 @@ fn opt_string(value: &Value, key: &str) -> Result<Option<String>, String> {
     }
 }
 
+fn opt_flag(value: &Value, key: &str) -> Result<Option<bool>, String> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Bool(flag)) => Ok(Some(*flag)),
+        Some(_) => Err(format!("field '{key}' must be a boolean when present")),
+    }
+}
+
+fn parse_chat_thinking_format(
+    value: &Value,
+    key: &str,
+) -> Result<Option<crate::model_info::ChatThinkingFormat>, String> {
+    match value.get(key).and_then(Value::as_str) {
+        None => Ok(None),
+        Some(name) => Ok(Some(name.parse().map_err(|_| {
+            format!("field '{key}' carries unknown thinking format '{name}'")
+        })?)),
+    }
+}
+
+fn reject_retired_chat_compat_keys(value: &Value) -> Result<(), String> {
+    for (old, replacement) in [
+        (
+            "systemRoleOverride",
+            "instructionRole (auto|system|developer_for_reasoning|developer)",
+        ),
+        ("supportsStore", "storeField (omit|send_false)"),
+        (
+            "supportsDeveloperRole",
+            "instructionRole (auto|system|developer_for_reasoning|developer)",
+        ),
+        (
+            "reasoningEffort",
+            "per-call thinking intent plus the model thinking-level map",
+        ),
+    ] {
+        if value.get(old).is_some_and(|v| !v.is_null()) {
+            return Err(format!(
+                "retired x-opi.compat key '{old}': use {replacement} instead"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
     let Some(api) = value.get("api").and_then(Value::as_str) else {
         return Ok(None);
@@ -220,31 +289,83 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                 },
             },
         ))),
-        WireApi::OpenAiCompletions => Ok(Some(WireCompat::OpenAiCompletions(
-            OpenAiCompletionsCompat {
-                system_role_override: opt_string(value, "systemRoleOverride")?,
-                max_tokens_field: value
-                    .get("maxTokensField")
-                    .and_then(Value::as_str)
-                    .unwrap_or("max_tokens")
-                    .to_owned(),
-                tool_result_name_field: flag("toolResultNameField")?,
-                usage_in_stream: flag("usageInStream")?,
-                strict_tool_schema: flag("strictToolSchema")?,
-                reasoning_effort: opt_string(value, "reasoningEffort")?,
-                cache_key: opt_string(value, "cacheKey")?,
-                send_session_affinity_headers: flag("sendSessionAffinityHeaders")?,
-                require_assistant_after_tool_result: flag("requireAssistantAfterToolResult")?,
-                chat_completions_path: value
-                    .get("chatCompletionsPath")
-                    .and_then(Value::as_str)
-                    .unwrap_or("/v1/chat/completions")
-                    .to_owned(),
-                supports_store: flag("supportsStore")?,
-                supports_developer_role: flag("supportsDeveloperRole")?,
-                supports_reasoning_effort: flag("supportsReasoningEffort")?,
-            },
-        ))),
+        WireApi::OpenAiCompletions => {
+            reject_retired_chat_compat_keys(value)?;
+            let thinking_token_budget_field = match value
+                .get("thinkingTokenBudgetField")
+                .and_then(Value::as_str)
+            {
+                None => None,
+                Some("thinking_token_budget") => {
+                    Some(crate::model_info::ChatThinkingTokenBudgetField::ThinkingTokenBudget)
+                }
+                Some("thinking_budget") => {
+                    Some(crate::model_info::ChatThinkingTokenBudgetField::ThinkingBudget)
+                }
+                Some("thinking_budget_tokens") => {
+                    Some(crate::model_info::ChatThinkingTokenBudgetField::ThinkingBudgetTokens)
+                }
+                Some(other) => {
+                    return Err(format!(
+                        "field 'thinkingTokenBudgetField' carries unknown budget field '{other}'"
+                    ));
+                }
+            };
+            Ok(Some(WireCompat::OpenAiCompletions(
+                crate::model_info::OpenAiCompletionsCompat {
+                    store: match value.get("storeField").and_then(Value::as_str) {
+                        None | Some("auto") => None,
+                        Some("omit") => Some(crate::model_info::ChatStoreField::Omit),
+                        Some("send_false") => Some(crate::model_info::ChatStoreField::SendFalse),
+                        Some(other) => {
+                            return Err(format!(
+                                "field 'storeField' carries unknown store policy '{other}'"
+                            ));
+                        }
+                    },
+                    instruction_role: match value.get("instructionRole").and_then(Value::as_str) {
+                        None | Some("auto") => Some(crate::model_info::ChatInstructionRole::Auto),
+                        Some("system") => Some(crate::model_info::ChatInstructionRole::System),
+                        Some("developer_for_reasoning") => {
+                            Some(crate::model_info::ChatInstructionRole::DeveloperForReasoning)
+                        }
+                        Some("developer") => {
+                            Some(crate::model_info::ChatInstructionRole::Developer)
+                        }
+                        Some(other) => {
+                            return Err(format!(
+                                "field 'instructionRole' carries unknown role policy '{other}'"
+                            ));
+                        }
+                    },
+                    thinking_format: parse_chat_thinking_format(value, "thinkingFormat")?,
+                    supports_reasoning_effort: opt_flag(value, "supportsReasoningEffort")?,
+                    usage_in_stream: opt_flag(value, "usageInStream")?,
+                    max_tokens_field: opt_string(value, "maxTokensField")?,
+                    tool_result_name_field: flag("toolResultNameField")?,
+                    strict_tool_schema: flag("strictToolSchema")?,
+                    cache_key: opt_string(value, "cacheKey")?,
+                    send_session_affinity_headers: opt_flag(value, "sendSessionAffinityHeaders")?,
+                    require_assistant_after_tool_result: flag("requireAssistantAfterToolResult")?,
+                    requires_thinking_as_text: flag("requiresThinkingAsText")?,
+                    requires_reasoning_content_on_assistant_messages: opt_flag(
+                        value,
+                        "requiresReasoningContentOnAssistantMessages",
+                    )?,
+                    zai_tool_stream: flag("zaiToolStream")?,
+                    vllm_priority: value.get("vllmPriority").and_then(Value::as_i64),
+                    thinking_token_budget_field,
+                    supports_thinking_token_budget: flag("supportsThinkingTokenBudget")?,
+                    chat_template_kwargs: Default::default(),
+                    chat_template_args: Default::default(),
+                    chat_completions_path: value
+                        .get("chatCompletionsPath")
+                        .and_then(Value::as_str)
+                        .unwrap_or("/v1/chat/completions")
+                        .to_owned(),
+                },
+            )))
+        }
         WireApi::OpenAiResponses => Ok(Some(WireCompat::OpenAiResponses(OpenAiResponsesCompat {
             store: value.get("store").and_then(Value::as_bool),
             reasoning_effort: opt_string(value, "reasoningEffort")?,

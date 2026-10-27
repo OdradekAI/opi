@@ -279,6 +279,29 @@ impl ThinkingLevelMap {
             }),
         }
     }
+
+    /// Clamp one requested level to the nearest supported level: exact match
+    /// first, then the nearest higher level, then the nearest lower level
+    /// (Pi `clampThinkingLevel`; used by the neutral simple entry so an
+    /// unavailable level degrades instead of failing).
+    pub fn nearest_supported(&self, level: ThinkingLevel) -> Option<ThinkingLevel> {
+        let supported = |level: ThinkingLevel| self.resolve(level).is_ok();
+        if supported(level) {
+            return Some(level);
+        }
+        let order = ThinkingLevel::ALL;
+        let requested = order.iter().position(|candidate| *candidate == level)?;
+        for candidate in &order[requested..] {
+            if supported(*candidate) {
+                return Some(*candidate);
+            }
+        }
+        order[..requested]
+            .iter()
+            .rev()
+            .find(|candidate| supported(**candidate))
+            .copied()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -297,39 +320,213 @@ pub struct AnthropicMessagesCompat {
     pub supports_strict_tools: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChatStoreField {
+    Omit,
+    SendFalse,
+}
+
+impl std::str::FromStr for ChatStoreField {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "omit" => Ok(Self::Omit),
+            "send_false" => Ok(Self::SendFalse),
+            other => Err(format!(
+                "unknown chat store policy '{other}' (expected omit|send_false)"
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChatInstructionRole {
+    Auto,
+    System,
+    DeveloperForReasoning,
+    Developer,
+}
+
+impl std::str::FromStr for ChatInstructionRole {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "system" => Ok(Self::System),
+            "developer_for_reasoning" => Ok(Self::DeveloperForReasoning),
+            "developer" => Ok(Self::Developer),
+            other => Err(format!(
+                "unknown chat instruction role '{other}' \
+                 (expected auto|system|developer_for_reasoning|developer)"
+            )),
+        }
+    }
+}
+
+impl ChatThinkingFormat {
+    pub fn wire_name(&self) -> &'static str {
+        match self {
+            Self::OpenAi => "openai",
+            Self::OpenRouter => "openrouter",
+            Self::DeepSeek => "deepseek",
+            Self::Together => "together",
+            Self::Baseten => "baseten",
+            Self::Zai => "zai",
+            Self::Qwen => "qwen",
+            Self::QwenChatTemplate => "qwen-chat-template",
+            Self::ChatTemplate => "chat-template",
+            Self::StringThinking => "string-thinking",
+            Self::AntLing => "ant-ling",
+        }
+    }
+}
+
+impl std::str::FromStr for ChatThinkingFormat {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Ok(match value {
+            "openai" => Self::OpenAi,
+            "openrouter" => Self::OpenRouter,
+            "deepseek" => Self::DeepSeek,
+            "together" => Self::Together,
+            "baseten" => Self::Baseten,
+            "zai" => Self::Zai,
+            "qwen" => Self::Qwen,
+            "qwen-chat-template" => Self::QwenChatTemplate,
+            "chat-template" => Self::ChatTemplate,
+            "string-thinking" => Self::StringThinking,
+            "ant-ling" => Self::AntLing,
+            other => {
+                return Err(format!("unknown chat thinking format '{other}'"));
+            }
+        })
+    }
+}
+/// Declared Chat reasoning wire formats (task 20.36, AIR-022/V-11). The
+/// closed set is frozen from the pinned Pi 1.3.0 compat schema; each variant
+/// owns its on/off/null/omission wire projection in the Chat adapter.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum ChatThinkingFormat {
+    #[default]
+    OpenAi,
+    OpenRouter,
+    DeepSeek,
+    Together,
+    Baseten,
+    Zai,
+    Qwen,
+    QwenChatTemplate,
+    ChatTemplate,
+    StringThinking,
+    AntLing,
+}
+
+/// Top-level request field used by OpenAI-compatible servers to cap reasoning
+/// tokens: `thinking_token_budget` (vLLM), `thinking_budget` (Qwen/DashScope/
+/// SGLang) and `thinking_budget_tokens` (llama.cpp).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChatThinkingTokenBudgetField {
+    ThinkingTokenBudget,
+    ThinkingBudget,
+    ThinkingBudgetTokens,
+}
+
+impl ChatThinkingTokenBudgetField {
+    pub fn wire_name(&self) -> &'static str {
+        match self {
+            Self::ThinkingTokenBudget => "thinking_token_budget",
+            Self::ThinkingBudget => "thinking_budget",
+            Self::ThinkingBudgetTokens => "thinking_budget_tokens",
+        }
+    }
+}
+
+/// One `chat_template_kwargs`/`chat_template_args` value: a wire literal or a
+/// `$var` reference resolved at request build time against the request's
+/// thinking intent (`thinking.enabled`, `thinking.budget` or the mapped
+/// level/off value). `omit_when_off` drops the key when no effort is set.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ChatTemplateKwargValue {
+    Literal(serde_json::Value),
+    Var {
+        var: ChatTemplateKwargVar,
+        omit_when_off: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChatTemplateKwargVar {
+    ThinkingEnabled,
+    ThinkingEffort,
+    ThinkingBudget,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenAiCompletionsCompat {
-    pub system_role_override: Option<String>,
-    pub max_tokens_field: String,
+    /// Normalized store-field policy (`Omit`/`SendFalse`); `None` follows the
+    /// adapter's frozen provider inference. Replaces retired `supports_store`.
+    pub store: Option<ChatStoreField>,
+    /// Normalized instruction-role policy; `None` (Auto) follows inference.
+    /// Replaces retired `supports_developer_role` + `system_role_override`.
+    pub instruction_role: Option<ChatInstructionRole>,
+    /// Declared reasoning wire format; `None` follows inference.
+    pub thinking_format: Option<ChatThinkingFormat>,
+    /// Whether the endpoint accepts the standard effort field for the active
+    /// format; `None` follows inference. Its `false` never disables a format's
+    /// own native switch (zai/qwen keep their toggles).
+    pub supports_reasoning_effort: Option<bool>,
+    /// Whether `stream_options.include_usage` is sent; `None` follows
+    /// inference (enabled on every frozen baseline).
+    pub usage_in_stream: Option<bool>,
+    /// Explicit output-limit field name; `None` follows inference
+    /// (`max_completion_tokens` on standard endpoints, `max_tokens` on the
+    /// frozen legacy-compatible set).
+    pub max_tokens_field: Option<String>,
     pub tool_result_name_field: bool,
-    pub usage_in_stream: bool,
     pub strict_tool_schema: bool,
-    pub reasoning_effort: Option<String>,
     pub cache_key: Option<String>,
-    pub send_session_affinity_headers: bool,
+    pub send_session_affinity_headers: Option<bool>,
     pub require_assistant_after_tool_result: bool,
+    pub requires_thinking_as_text: bool,
+    pub requires_reasoning_content_on_assistant_messages: Option<bool>,
+    /// Explicit-only zai `tool_stream` flag; never inferred.
+    pub zai_tool_stream: bool,
+    /// Explicit-only vLLM priority number; never inferred.
+    pub vllm_priority: Option<i64>,
+    pub thinking_token_budget_field: Option<ChatThinkingTokenBudgetField>,
+    /// Alias for `thinking_token_budget_field = ThinkingTokenBudget` (vLLM).
+    pub supports_thinking_token_budget: bool,
+    pub chat_template_kwargs: std::collections::BTreeMap<String, ChatTemplateKwargValue>,
+    pub chat_template_args: std::collections::BTreeMap<String, ChatTemplateKwargValue>,
     pub chat_completions_path: String,
-    pub supports_store: bool,
-    pub supports_developer_role: bool,
-    pub supports_reasoning_effort: bool,
 }
 
 impl Default for OpenAiCompletionsCompat {
     fn default() -> Self {
         Self {
-            system_role_override: None,
-            max_tokens_field: "max_tokens".into(),
+            store: None,
+            instruction_role: None,
+            thinking_format: None,
+            supports_reasoning_effort: None,
+            usage_in_stream: None,
+            max_tokens_field: None,
             tool_result_name_field: false,
-            usage_in_stream: false,
             strict_tool_schema: false,
-            reasoning_effort: None,
             cache_key: None,
-            send_session_affinity_headers: false,
+            send_session_affinity_headers: None,
             require_assistant_after_tool_result: false,
+            requires_thinking_as_text: false,
+            requires_reasoning_content_on_assistant_messages: None,
+            zai_tool_stream: false,
+            vllm_priority: None,
+            thinking_token_budget_field: None,
+            supports_thinking_token_budget: false,
+            chat_template_kwargs: std::collections::BTreeMap::new(),
+            chat_template_args: std::collections::BTreeMap::new(),
             chat_completions_path: "/v1/chat/completions".into(),
-            supports_store: false,
-            supports_developer_role: false,
-            supports_reasoning_effort: false,
         }
     }
 }

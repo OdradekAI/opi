@@ -142,9 +142,9 @@ fn github_copilot_catalog_matches_pi_0806_fixture() {
                 );
             }
             (WireCompat::OpenAiCompletions(compat), WireApi::OpenAiCompletions) => {
-                assert!(!compat.supports_store);
-                assert!(!compat.supports_developer_role);
-                assert!(!compat.supports_reasoning_effort);
+                assert_eq!(compat.store, None);
+                assert_eq!(compat.instruction_role, None);
+                assert_eq!(compat.supports_reasoning_effort, None);
                 assert_eq!(compat.chat_completions_path, "/chat/completions");
             }
             (WireCompat::OpenAiResponses(compat), WireApi::OpenAiResponses) => {
@@ -523,6 +523,7 @@ fn call_assistant(id: &str, name: &str) -> Message {
         error_message: None,
         timestamp_ms: 0,
         diagnostics: Vec::new(),
+        duration_ms: None,
     })
 }
 

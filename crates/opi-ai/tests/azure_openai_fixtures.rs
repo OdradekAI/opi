@@ -521,7 +521,7 @@ async fn stream_drains_text_lifecycle_through_http() {
                 {"role": "system", "content": "You are helpful."},
                 {"role": "user", "content": "Hello"}
             ],
-            "max_tokens": 256
+            "max_completion_tokens": 256
         })))
         .respond_with(
             ResponseTemplate::new(200)
@@ -772,7 +772,7 @@ fn azure_inherits_shared_compat_flags_via_with_compat() {
     use opi_ai::openai_chat::CompatConfig;
 
     let provider = make_provider().with_compat(CompatConfig {
-        system_role_override: Some("developer".into()),
+        instruction_role: Some(opi_ai::model_info::ChatInstructionRole::Developer),
         strict_tool_schema: true,
         ..Default::default()
     });

@@ -77,6 +77,7 @@ fn assistant_msg(id: &str, parent: Option<&str>, text: &str) -> SessionEntry {
             error_message: None,
             timestamp_ms: 0,
             diagnostics: Vec::new(),
+            duration_ms: None,
         }),
     })
 }
@@ -110,6 +111,7 @@ fn assistant_with_thinking(
             error_message: None,
             timestamp_ms: 0,
             diagnostics: Vec::new(),
+            duration_ms: None,
         }),
     })
 }
@@ -145,6 +147,7 @@ fn assistant_with_tool_call(
             error_message: None,
             timestamp_ms: 0,
             diagnostics: Vec::new(),
+            duration_ms: None,
         }),
     })
 }

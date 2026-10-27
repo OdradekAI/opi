@@ -572,6 +572,7 @@ fn base_msg() -> AssistantMessage {
         error_message: None,
         timestamp_ms: 0,
         diagnostics: Vec::new(),
+        duration_ms: None,
     }
 }
 

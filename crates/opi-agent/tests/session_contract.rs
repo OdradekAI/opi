@@ -64,6 +64,7 @@ fn assistant_msg(id: &str, parent: Option<&str>, text: &str) -> SessionEntry {
             error_message: None,
             timestamp_ms: 0,
             diagnostics: Vec::new(),
+            duration_ms: None,
         }),
     })
 }

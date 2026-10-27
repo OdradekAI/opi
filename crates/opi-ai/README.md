@@ -358,26 +358,74 @@ wire/auth/capability difference requires a first-class adapter. This is the
 preferred path for provider breadth; adding a new first-class provider module
 is a non-default step reserved for those material differences.
 
-`CompatConfig` carries the per-profile compatibility flags:
+`CompatConfig` (task 20.36, AIR-022/V-11) applies the single normalization
+rule: every policy field is an explicit value layered over the adapter's
+frozen provider inference (`store`/`instruction_role`/`thinking_format` and
+field defaults are inferred per provider id or base-URL host; explicit
+config wins per field, then model-level overrides win over the profile):
 
 | Flag | Effect |
 |------|--------|
-| `system_role_override` | Render the system prompt as `developer` (or another role) instead of `system`. |
-| `max_tokens_field` | Request field name for the output cap (`max_tokens` vs `max_completion_tokens`). |
+| `store` | `Omit`/`SendFalse` store-field policy; the standard OpenAI baseline sends `store: false`, non-standard endpoints omit the field. |
+| `instruction_role` | `Auto`/`System`/`DeveloperForReasoning`/`Developer` system-message role policy; the baseline uses `developer` only for reasoning models on standard endpoints. |
+| `thinking_format` | One of the eleven declared reasoning wire formats (see below). |
+| `supports_reasoning_effort` | Whether the endpoint accepts the standard effort field; `false` never disables a format's own toggle. |
+| `usage_in_stream` | Request `stream_options.include_usage`; the inference baseline enables it, explicit `Some(false)` disables. |
+| `max_tokens_field` | Output-limit field name override (`max_completion_tokens` on standard endpoints, `max_tokens` on the frozen legacy-compatible set). |
 | `tool_result_name_field` | Echo the tool name on the tool-result message. |
-| `usage_in_stream` | Request `stream_options.include_usage` and preserve usage updates from any streaming chunk. |
 | `strict_tool_schema` | Emit strict JSON-schema tool definitions. |
-| `reasoning_effort` | Legacy compatibility/profile metadata; wire reasoning comes from `request.thinking` and the selected `ModelInfo::thinking_level_map`. |
 | `cache_key` | Send the provider's prompt-cache key (cache-affinity hint). |
-| `send_session_affinity_headers` | Map a request `session_id` to the compatible `session_id`, `x-client-request-id`, and `x-session-affinity` headers; disabled by default. |
-| `require_assistant_after_tool_result` | Metadata-only compatibility marker for legacy endpoints; opi does not synthesize or enforce the extra assistant turn in the shared adapter. |
-| `chat_completions_path` | Chat completions endpoint path relative to `base_url` (default `/v1/chat/completions`); set for providers whose base URL already includes an API prefix (e.g. BigModel `/api/paas/v4/...`). |
+| `send_session_affinity_headers` | Map a request `session_id` to the compatible session-affinity headers (inferred for OpenRouter). |
+| `require_assistant_after_tool_result` | Insert the fixed assistant bridge between a tool result and the next user message; assistant tool-call turns use `content: ""` instead of `null`. |
+| `requires_thinking_as_text` | Replay assistant thinking as plain text parts. |
+| `requires_reasoning_content_on_assistant_messages` | Mark replayed assistant turns with an empty `reasoning_content` (inferred for DeepSeek). |
+| `zai_tool_stream` / `vllm_priority` | Explicit-only `tool_stream` and `priority` extras; never inferred. |
+| `thinking_token_budget_field` / `supports_thinking_token_budget` | Top-level reasoning budget field (`thinking_token_budget` vLLM, `thinking_budget` Qwen/DashScope/SGLang, `thinking_budget_tokens` llama.cpp; the alias selects vLLM's). |
+| `chat_template_kwargs` / `chat_template_args` | `$var` template values (`thinking.enabled`, `thinking.effort`, `thinking.budget`; `omit_when_off` drops the key when no effort is set). |
+| `chat_completions_path` | Chat completions endpoint path relative to `base_url` (default `/v1/chat/completions`). |
 
-`ModelCompatOverride` layers model-level overrides for `system_role_override`
-and `max_tokens_field` on top of the profile defaults (model wins over
-provider). Static per-profile request headers (`extra_headers`, used for
-session affinity / routing) are a separate profile config field threaded
-through `OpenAiChatProvider` construction, not a `CompatConfig` flag.
+The retired keys `system_role_override`, `supports_store`,
+`supports_developer_role` and the static `reasoning_effort` string fail with
+explicit migration errors at every config position (catalog `x-opi.compat`,
+product TOML profile and model compat) — they are never silently ignored.
+Request thinking intent and the selected `ModelInfo::thinking_level_map` are
+the only sources of reasoning wire output.
+
+Tool results project per the pinned source: text (or the `(see attached
+image)` / `(no tool output)` placeholders) rides the `role: "tool"` message,
+and image parts ride one trailing user message labeled
+`Attached image(s) from tool result:` when the model accepts images; error
+results keep the deterministic `[tool_error]` prefix.
+
+### Declared thinking formats (on/off/null/omission)
+
+`openai` sends `reasoning_effort` (on with the mapped value, off with the
+model's declared off value); `openrouter` sends `reasoning: {effort}`; `deepseek`
+sends `thinking: {type: enabled|disabled}` (a model whose off is unmappable
+never sends the disable marker); `together` sends `reasoning: {enabled}`;
+`baseten` sends `chat_template_args` plus an off effort value; `zai` sends
+`thinking: {type: enabled|disabled}` with `clear_thinking`; `qwen` sends
+`enable_thinking`; `qwen-chat-template` sends fixed `chat_template_kwargs`;
+`chat-template` resolves configured `$var` values; `string-thinking` sends the
+`thinking` string; `ant-ling` sends `reasoning: {effort}` only when an effort
+is set.
+
+### Native and simple options (ONB-03)
+
+| Option | Accepted type / unit | Omission · default | Precedence · wire field · typed rejection |
+|--------|----------------------|--------------------|--------------------------------------------|
+| `tool_choice` (native) | `OpenAiToolChoice`: `None`/`Auto`/`Required`/named function | Omitted field absent | Native options own the field; wire `tool_choice` (string or `{type: function, function: {name}}`); the simple entry admits only neutral `Auto`/`None`. |
+| `reasoning_effort` (native) | `ThinkingLevel`: `minimal`/`low`/`medium`/`high`/`xhigh`/`max` | Omitted = no effort intent; off follows the declared format's off projection | Native effort replaces the neutral `Request::thinking`; wire field per `thinking_format`; an unsupported level fails typed `Config` preflight before auth. |
+| `thinking_budgets` (native) | tokens per level (`u64`) | Omitted levels use the source defaults 1024/2048/8192/16384 (`xhigh`/`max` map to `high`'s) | Sent only through the configured budget field, clamped so at least 1024 tokens remain under the response ceiling; zero-or-below budgets are omitted. |
+| Neutral effort (simple) | `Request::thinking` level | Disabled by default | The simple entry clamps an unsupported level to the nearest supported level (higher first, then lower); native entries retain exact levels. |
+| `store` | — | Inference baseline | See the compat table; explicit config wins. |
+
+`ModelCompatOverride` layers model-level `instruction_role`, `store`,
+`thinking_format` and `max_tokens_field` overrides over the profile defaults
+(model wins over provider). Static per-profile request headers
+(`extra_headers`, used for session affinity / routing) are a separate profile
+config field threaded through `OpenAiChatProvider` construction, not a
+`CompatConfig` flag.
 
 OpenAI Responses native semantics (`ResponsesConfig`): `store` and
 `strict_tools` are implemented. Static `reasoning_effort` remains legacy

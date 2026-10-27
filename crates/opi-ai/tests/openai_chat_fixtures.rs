@@ -885,55 +885,10 @@ async fn stream_from_sse_produces_events() {
 }
 
 // --- Compat Config Tests ---
-
-#[test]
-fn compat_config_role_mapping_developer() {
-    // OpenAI o-series models use "developer" instead of "system"
-    let config = CompatConfig {
-        system_role_override: Some("developer".into()),
-        ..Default::default()
-    };
-    assert_eq!(config.system_role_override.as_deref(), Some("developer"));
-}
-
-#[test]
-fn compat_config_max_tokens_field_name() {
-    // Some providers use "max_completion_tokens" instead of "max_tokens"
-    let config = CompatConfig {
-        max_tokens_field: "max_completion_tokens".into(),
-        ..Default::default()
-    };
-    assert_eq!(config.max_tokens_field, "max_completion_tokens");
-}
-
-#[test]
-fn compat_config_tool_result_name_field() {
-    // Some providers send tool_result as "name" instead of matching by id
-    let config = CompatConfig {
-        tool_result_name_field: true,
-        ..Default::default()
-    };
-    assert!(config.tool_result_name_field);
-}
-
-#[test]
-fn compat_config_usage_in_stream() {
-    // Some providers include usage in every chunk, not just the last
-    let config = CompatConfig {
-        usage_in_stream: true,
-        ..Default::default()
-    };
-    assert!(config.usage_in_stream);
-}
-
-#[test]
-fn compat_config_defaults() {
-    let config = CompatConfig::default();
-    assert!(config.system_role_override.is_none());
-    assert_eq!(config.max_tokens_field, "max_tokens");
-    assert!(!config.tool_result_name_field);
-    assert!(!config.usage_in_stream);
-}
+// Field-representation assertions were merged into the wire-effect tests
+// above and the task 20.36 normalization block (V-11 disposition); the
+// retired `system_role_override`/static `reasoning_effort` keys are exercised
+// as typed migration errors in the catalog/config parser suites.
 
 // --- Build Request Body Tests ---
 
@@ -974,22 +929,24 @@ fn make_test_request() -> Request {
 }
 
 #[test]
-fn build_request_body_uses_max_tokens_by_default() {
+fn build_request_body_standard_openai_uses_max_completion_tokens() {
+    // Pi 1.3.0 baseline: the standard OpenAI endpoint sends
+    // `max_completion_tokens`; `max_tokens` remains the explicit override for
+    // legacy-compatible endpoints (deepseek/zai/together/…).
     let provider = OpenAiChatProvider::new(None);
     let body = provider.build_request_body(&make_test_request()).unwrap();
-    assert!(body.get("max_tokens").is_some());
-    assert_eq!(body["max_tokens"], 4096);
+    assert!(body.get("max_tokens").is_none());
+    assert_eq!(body["max_completion_tokens"], 4096);
 }
 
 #[test]
 fn build_request_body_with_compat_max_completion_tokens() {
     let config = CompatConfig {
-        max_tokens_field: "max_completion_tokens".into(),
+        max_tokens_field: Some("max_completion_tokens".into()),
         ..Default::default()
     };
     let provider = OpenAiChatProvider::new_with_compat(None, config);
     let body = provider.build_request_body(&make_test_request()).unwrap();
-    assert!(body.get("max_completion_tokens").is_some());
     assert!(body.get("max_tokens").is_none());
     assert_eq!(body["max_completion_tokens"], 4096);
 }
@@ -1006,7 +963,7 @@ fn build_request_body_system_role_default() {
 #[test]
 fn build_request_body_developer_role_override() {
     let config = CompatConfig {
-        system_role_override: Some("developer".into()),
+        instruction_role: Some(ChatInstructionRole::Developer),
         ..Default::default()
     };
     let provider = OpenAiChatProvider::new_with_compat(None, config);
@@ -1016,12 +973,12 @@ fn build_request_body_developer_role_override() {
 }
 
 #[test]
-fn build_request_body_usage_in_stream_emits_stream_options() {
+fn build_request_body_usage_disabled_omits_stream_options() {
     let provider = OpenAiChatProvider::new_for_profile(
         "https://example.test".into(),
         "compat".into(),
         CompatConfig {
-            usage_in_stream: true,
+            usage_in_stream: Some(false),
             ..CompatConfig::default()
         },
         vec![],
@@ -1036,60 +993,707 @@ fn build_request_body_usage_in_stream_emits_stream_options() {
     let mut request = make_test_request();
     request.model = "compat:model".into();
     let body = provider.build_request_body(&request).unwrap();
-    assert_eq!(body["stream_options"]["include_usage"], true);
+    assert!(body.get("stream_options").is_none());
 }
 
-// --- Phase 12 task 12.3 — OpenAI-compatible profile compatibility flags ---
-//
-// DoD: config-driven profile metadata represents strict tool schema, reasoning
-// effort, cache control, session-affinity headers, assistant-after-tool-result,
-// and provider/model override precedence. These tests pin the representation
-// (CompatConfig fields) and the wire effects for the flags whose semantics the
-// modern OpenAI Chat Completions API defines.
+// ---------------------------------------------------------------------------
+// Task 20.36 (AIR-022 / V-11): single compat normalization — store, role and
+// field defaults from the adapter's frozen provider inference, with explicit
+// config overriding inference per field.
+// ---------------------------------------------------------------------------
+
+use opi_ai::model_info::{ChatInstructionRole, ChatStoreField};
+
+fn thinking_chat_model(id: &str, thinking: bool) -> ModelInfo {
+    let mut model = ModelInfo::new(
+        id,
+        id,
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(128_000, 16_384)
+            .with_streaming(true)
+            .with_thinking(thinking),
+    );
+    if thinking {
+        model = model.with_thinking_level_map(opi_ai::ThinkingLevelMap::reasoning_default());
+    }
+    model
+}
+
+fn profile_provider(
+    provider_id: &str,
+    compat: opi_ai::openai_chat::CompatConfig,
+    models: Vec<ModelInfo>,
+) -> OpenAiChatProvider {
+    OpenAiChatProvider::new_for_profile(
+        format!("https://{provider_id}.example.test"),
+        provider_id.into(),
+        compat,
+        vec![],
+        models,
+    )
+}
+
+fn request_for(provider: &str, model: &str) -> Request {
+    let mut request = make_test_request();
+    request.model = format!("{provider}:{model}");
+    request
+}
+
+fn thinking_request(provider: &str, model: &str, level: Option<opi_ai::ThinkingLevel>) -> Request {
+    let mut request = request_for(provider, model);
+    request.thinking = ThinkingConfig {
+        enabled: level.is_some(),
+        budget_tokens: None,
+        level: level.unwrap_or(opi_ai::ThinkingLevel::None),
+    };
+    request
+}
+
+#[test]
+fn chat_zai_format_projects_thinking_toggle_and_mapped_effort() {
+    // zai is inference-driven: provider id zai selects the zai format.
+    let provider = profile_provider(
+        "zai",
+        Default::default(),
+        vec![thinking_chat_model("glm-4.6", true)],
+    );
+
+    let body = provider
+        .build_request_body(&thinking_request(
+            "zai",
+            "glm-4.6",
+            Some(opi_ai::ThinkingLevel::High),
+        ))
+        .unwrap();
+    assert_eq!(
+        body["thinking"],
+        serde_json::json!({"type": "enabled", "clear_thinking": false})
+    );
+    // The zai baseline never sends the standard effort field.
+    assert!(body.get("reasoning_effort").is_none());
+
+    let body = provider
+        .build_request_body(&thinking_request("zai", "glm-4.6", None))
+        .unwrap();
+    assert_eq!(body["thinking"], serde_json::json!({"type": "disabled"}));
+}
+
+#[test]
+fn chat_qwen_format_projects_enable_thinking_toggle() {
+    use opi_ai::model_info::ChatThinkingFormat;
+    let compat = CompatConfig {
+        thinking_format: Some(ChatThinkingFormat::Qwen),
+        ..Default::default()
+    };
+    let provider = profile_provider(
+        "qwen-host",
+        compat,
+        vec![thinking_chat_model("qwen3", true)],
+    );
+
+    let body = provider
+        .build_request_body(&thinking_request(
+            "qwen-host",
+            "qwen3",
+            Some(opi_ai::ThinkingLevel::High),
+        ))
+        .unwrap();
+    assert_eq!(body["enable_thinking"], serde_json::json!(true));
+    // Standard endpoints accept the effort field alongside the toggle.
+    assert_eq!(body["reasoning_effort"], serde_json::json!("high"));
+
+    let body = provider
+        .build_request_body(&thinking_request("qwen-host", "qwen3", None))
+        .unwrap();
+    assert_eq!(body["enable_thinking"], serde_json::json!(false));
+    assert!(body.get("reasoning_effort").is_none());
+}
+
+#[test]
+fn chat_qwen_chat_template_format_projects_fixed_kwargs() {
+    use opi_ai::model_info::ChatThinkingFormat;
+    let compat = CompatConfig {
+        thinking_format: Some(ChatThinkingFormat::QwenChatTemplate),
+        ..Default::default()
+    };
+    let provider = profile_provider(
+        "qwen-ct",
+        compat,
+        vec![thinking_chat_model("qwen3-ct", true)],
+    );
+
+    let body = provider
+        .build_request_body(&thinking_request(
+            "qwen-ct",
+            "qwen3-ct",
+            Some(opi_ai::ThinkingLevel::High),
+        ))
+        .unwrap();
+    assert_eq!(
+        body["chat_template_kwargs"],
+        serde_json::json!({"enable_thinking": true, "preserve_thinking": true})
+    );
+
+    let body = provider
+        .build_request_body(&thinking_request("qwen-ct", "qwen3-ct", None))
+        .unwrap();
+    assert_eq!(
+        body["chat_template_kwargs"],
+        serde_json::json!({"enable_thinking": false, "preserve_thinking": true})
+    );
+}
+
+#[test]
+fn chat_template_format_resolves_dollar_var_kwargs() {
+    use opi_ai::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar, ChatThinkingFormat};
+    let mut kwargs = std::collections::BTreeMap::new();
+    kwargs.insert(
+        "enable_thinking".into(),
+        ChatTemplateKwargValue::Var {
+            var: ChatTemplateKwargVar::ThinkingEnabled,
+            omit_when_off: false,
+        },
+    );
+    kwargs.insert(
+        "effort".into(),
+        ChatTemplateKwargValue::Var {
+            var: ChatTemplateKwargVar::ThinkingEffort,
+            omit_when_off: true,
+        },
+    );
+    kwargs.insert(
+        "static".into(),
+        ChatTemplateKwargValue::Literal(serde_json::json!(42)),
+    );
+    let compat = CompatConfig {
+        thinking_format: Some(ChatThinkingFormat::ChatTemplate),
+        chat_template_kwargs: kwargs,
+        ..Default::default()
+    };
+    let provider = profile_provider("ct", compat, vec![thinking_chat_model("ct-model", true)]);
+
+    let body = provider
+        .build_request_body(&thinking_request(
+            "ct",
+            "ct-model",
+            Some(opi_ai::ThinkingLevel::Medium),
+        ))
+        .unwrap();
+    assert_eq!(
+        body["chat_template_kwargs"],
+        serde_json::json!({"enable_thinking": true, "effort": "medium", "static": 42})
+    );
+
+    // Off drops the omitWhenOff key and disables the toggle.
+    let body = provider
+        .build_request_body(&thinking_request("ct", "ct-model", None))
+        .unwrap();
+    assert_eq!(
+        body["chat_template_kwargs"],
+        serde_json::json!({"enable_thinking": false, "static": 42})
+    );
+}
+
+#[test]
+fn chat_baseten_format_projects_template_args_and_off_effort() {
+    use opi_ai::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar, ChatThinkingFormat};
+    let mut args = std::collections::BTreeMap::new();
+    args.insert(
+        "thinking".into(),
+        ChatTemplateKwargValue::Var {
+            var: ChatTemplateKwargVar::ThinkingEnabled,
+            omit_when_off: false,
+        },
+    );
+    let compat = CompatConfig {
+        thinking_format: Some(ChatThinkingFormat::Baseten),
+        chat_template_args: args,
+        ..Default::default()
+    };
+    let model = thinking_chat_model("b1", true).with_thinking_level_map(
+        opi_ai::ThinkingLevelMap::reasoning_default().with_mapping(
+            opi_ai::ThinkingLevel::None,
+            opi_ai::ThinkingLevelMapping::Mapped("off-value".into()),
+        ),
+    );
+    let provider = profile_provider("baseten", compat, vec![model]);
+
+    let body = provider
+        .build_request_body(&thinking_request(
+            "baseten",
+            "b1",
+            Some(opi_ai::ThinkingLevel::Low),
+        ))
+        .unwrap();
+    assert_eq!(
+        body["chat_template_args"],
+        serde_json::json!({"thinking": true})
+    );
+    assert_eq!(body["reasoning_effort"], serde_json::json!("low"));
+
+    let body = provider
+        .build_request_body(&thinking_request("baseten", "b1", None))
+        .unwrap();
+    assert_eq!(
+        body["chat_template_args"],
+        serde_json::json!({"thinking": false})
+    );
+    // Off sends the model's declared off value.
+    assert_eq!(body["reasoning_effort"], serde_json::json!("off-value"));
+}
+
+#[test]
+fn chat_deepseek_format_gates_disabled_on_off_mapping() {
+    // deepseek format via inference; the reasoning_content replay marker is
+    // covered separately.
+    let provider = profile_provider(
+        "deepseek",
+        Default::default(),
+        vec![thinking_chat_model("r1", true)],
+    );
+
+    let body = provider
+        .build_request_body(&thinking_request(
+            "deepseek",
+            "r1",
+            Some(opi_ai::ThinkingLevel::High),
+        ))
+        .unwrap();
+    assert_eq!(body["thinking"], serde_json::json!({"type": "enabled"}));
+    assert_eq!(body["reasoning_effort"], serde_json::json!("high"));
+
+    // reasoning_default maps off to identity (no explicit off value): the
+    // disabled marker is sent.
+    let body = provider
+        .build_request_body(&thinking_request("deepseek", "r1", None))
+        .unwrap();
+    assert_eq!(body["thinking"], serde_json::json!({"type": "disabled"}));
+
+    // A model whose map cannot represent off (Pi `off: null`) never receives
+    // the disable marker.
+    let null_off = thinking_chat_model("r1-null", true).with_thinking_level_map(
+        opi_ai::ThinkingLevelMap::reasoning_default().with_mapping(
+            opi_ai::ThinkingLevel::None,
+            opi_ai::ThinkingLevelMapping::Unsupported,
+        ),
+    );
+    let provider = profile_provider("deepseek", Default::default(), vec![null_off]);
+    let body = provider
+        .build_request_body(&thinking_request("deepseek", "r1-null", None))
+        .unwrap();
+    assert!(body.get("thinking").is_none(), "off-null never disables");
+}
+
+#[test]
+fn chat_openrouter_format_projects_nested_reasoning_effort() {
+    let provider = profile_provider(
+        "openrouter",
+        Default::default(),
+        vec![thinking_chat_model("some/model", true)],
+    );
+
+    let body = provider
+        .build_request_body(&thinking_request(
+            "openrouter",
+            "some/model",
+            Some(opi_ai::ThinkingLevel::High),
+        ))
+        .unwrap();
+    assert_eq!(body["reasoning"], serde_json::json!({"effort": "high"}));
+    assert!(body.get("reasoning_effort").is_none());
+
+    // Off with no declared off value falls back to the format default.
+    let body = provider
+        .build_request_body(&thinking_request("openrouter", "some/model", None))
+        .unwrap();
+    assert_eq!(body["reasoning"], serde_json::json!({"effort": "none"}));
+
+    // An explicit off value wins over the default.
+    let mapped = thinking_chat_model("mapped/model", true).with_thinking_level_map(
+        opi_ai::ThinkingLevelMap::reasoning_default().with_mapping(
+            opi_ai::ThinkingLevel::None,
+            opi_ai::ThinkingLevelMapping::Mapped("disable".into()),
+        ),
+    );
+    let provider = profile_provider("openrouter", Default::default(), vec![mapped]);
+    let body = provider
+        .build_request_body(&thinking_request("openrouter", "mapped/model", None))
+        .unwrap();
+    assert_eq!(body["reasoning"], serde_json::json!({"effort": "disable"}));
+}
+
+#[test]
+fn chat_ant_ling_format_only_sends_mapped_effort() {
+    let provider = profile_provider(
+        "ant-ling",
+        Default::default(),
+        vec![thinking_chat_model("ant-1", true)],
+    );
+
+    let body = provider
+        .build_request_body(&thinking_request(
+            "ant-ling",
+            "ant-1",
+            Some(opi_ai::ThinkingLevel::High),
+        ))
+        .unwrap();
+    assert_eq!(body["reasoning"], serde_json::json!({"effort": "high"}));
+
+    // Off sends nothing: the ant-ling branch is effort-gated.
+    let body = provider
+        .build_request_body(&thinking_request("ant-ling", "ant-1", None))
+        .unwrap();
+    assert!(body.get("reasoning").is_none());
+}
+
+#[test]
+fn chat_together_format_projects_reasoning_enabled() {
+    let provider = profile_provider(
+        "together",
+        Default::default(),
+        vec![thinking_chat_model("t-model", true)],
+    );
+
+    let body = provider
+        .build_request_body(&thinking_request(
+            "together",
+            "t-model",
+            Some(opi_ai::ThinkingLevel::High),
+        ))
+        .unwrap();
+    assert_eq!(body["reasoning"], serde_json::json!({"enabled": true}));
+    // The together baseline never sends the standard effort field.
+    assert!(body.get("reasoning_effort").is_none());
+
+    let body = provider
+        .build_request_body(&thinking_request("together", "t-model", None))
+        .unwrap();
+    assert_eq!(body["reasoning"], serde_json::json!({"enabled": false}));
+}
+
+#[test]
+fn chat_string_thinking_format_projects_thinking_string() {
+    use opi_ai::model_info::ChatThinkingFormat;
+    let compat = CompatConfig {
+        thinking_format: Some(ChatThinkingFormat::StringThinking),
+        ..Default::default()
+    };
+    let provider = profile_provider("st", compat, vec![thinking_chat_model("st-model", true)]);
+
+    let body = provider
+        .build_request_body(&thinking_request(
+            "st",
+            "st-model",
+            Some(opi_ai::ThinkingLevel::Low),
+        ))
+        .unwrap();
+    assert_eq!(body["thinking"], serde_json::json!("low"));
+
+    let body = provider
+        .build_request_body(&thinking_request("st", "st-model", None))
+        .unwrap();
+    assert_eq!(body["thinking"], serde_json::json!("none"));
+}
+
+#[test]
+fn chat_thinking_token_budget_field_is_explicit_and_answer_clamped() {
+    use opi_ai::model_info::{ChatThinkingFormat, ChatThinkingTokenBudgetField};
+    let compat = CompatConfig {
+        thinking_format: Some(ChatThinkingFormat::Qwen),
+        thinking_token_budget_field: Some(ChatThinkingTokenBudgetField::ThinkingBudget),
+        ..Default::default()
+    };
+    let provider = profile_provider("qwen-budget", compat, vec![thinking_chat_model("q3", true)]);
+
+    let mut request = thinking_request("qwen-budget", "q3", Some(opi_ai::ThinkingLevel::High));
+    request.max_tokens = Some(8192);
+    let body = provider.build_request_body(&request).unwrap();
+    // high defaults to 16384, clamped to 8192-1024.
+    assert_eq!(body["thinking_budget"], serde_json::json!(7168));
+
+    // Explicit per-call budget wins over the level default.
+    let mut request = thinking_request("qwen-budget", "q3", Some(opi_ai::ThinkingLevel::High));
+    request.max_tokens = Some(8192);
+    request.thinking.budget_tokens = Some(2000);
+    let body = provider.build_request_body(&request).unwrap();
+    assert_eq!(body["thinking_budget"], serde_json::json!(2000));
+
+    // No effort intent: no budget field even when configured.
+    let mut request = thinking_request("qwen-budget", "q3", None);
+    request.max_tokens = Some(8192);
+    let body = provider.build_request_body(&request).unwrap();
+    assert!(body.get("thinking_budget").is_none());
+}
+
+#[test]
+fn chat_thinking_token_budget_alias_selects_vllm_field() {
+    use opi_ai::model_info::ChatThinkingFormat;
+    let compat = CompatConfig {
+        thinking_format: Some(ChatThinkingFormat::ChatTemplate),
+        supports_thinking_token_budget: true,
+        ..Default::default()
+    };
+    let provider = profile_provider("vllm", compat, vec![thinking_chat_model("v1", true)]);
+    let mut request = thinking_request("vllm", "v1", Some(opi_ai::ThinkingLevel::Medium));
+    request.max_tokens = Some(8192);
+    let body = provider.build_request_body(&request).unwrap();
+    // medium defaults to 8192 and the shared 8192 ceiling leaves 1024 for the
+    // answer: the alias field carries the clamped 7168 budget.
+    assert_eq!(body["thinking_token_budget"], serde_json::json!(7168));
+}
+
+#[test]
+fn chat_zai_tool_stream_and_vllm_priority_are_explicit_only() {
+    use opi_ai::model_info::ChatThinkingFormat;
+    let mut request = make_tool_request_for("zai-ts");
+    request.thinking = ThinkingConfig::default();
+
+    // Off by default: no tool_stream, no priority.
+    let plain = profile_provider(
+        "zai-ts",
+        Default::default(),
+        vec![thinking_chat_model("glm", true)],
+    );
+    let body = plain.build_request_body(&request).unwrap();
+    assert!(body.get("tool_stream").is_none());
+    assert!(body.get("priority").is_none());
+
+    let compat = CompatConfig {
+        zai_tool_stream: true,
+        vllm_priority: Some(3),
+        thinking_format: Some(ChatThinkingFormat::Qwen),
+        ..Default::default()
+    };
+    let provider = profile_provider("zai-ts", compat, vec![thinking_chat_model("glm", true)]);
+    let body = provider.build_request_body(&request).unwrap();
+    assert_eq!(body["tool_stream"], serde_json::json!(true));
+    assert_eq!(body["priority"], serde_json::json!(3));
+}
+
+fn make_tool_request_for(provider: &str) -> Request {
+    let mut request = make_tool_request();
+    request.model = format!("{provider}:list_dir");
+    // The tool fixture's model id is not in the catalog; register one that is.
+    request.model = format!("{provider}:glm");
+    request
+}
+
+#[test]
+fn chat_baseline_inference_standard_openai_wire_defaults() {
+    // Frozen SE-01 inference for the standard OpenAI endpoint: `store:false`,
+    // developer instruction role only for reasoning models, the modern
+    // `max_completion_tokens` field and streaming usage accounting.
+    let provider = OpenAiChatProvider::new(None);
+
+    let mut reasoning = request_for("openai", "o3");
+    reasoning.thinking = ThinkingConfig {
+        enabled: true,
+        budget_tokens: None,
+        level: opi_ai::ThinkingLevel::High,
+    };
+    let body = provider.build_request_body(&reasoning).unwrap();
+    assert_eq!(
+        body["store"],
+        serde_json::json!(false),
+        "store:false on SendFalse"
+    );
+    assert_eq!(body["max_completion_tokens"], serde_json::json!(4096));
+    assert!(body.get("max_tokens").is_none());
+    assert_eq!(
+        body["stream_options"]["include_usage"],
+        serde_json::json!(true)
+    );
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[0]["role"], "developer",
+        "reasoning model uses developer"
+    );
+    assert_eq!(body["reasoning_effort"], serde_json::json!("high"));
+
+    let plain = provider
+        .build_request_body(&request_for("openai", "gpt-4o"))
+        .unwrap();
+    let messages = plain["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[0]["role"], "system",
+        "non-reasoning model keeps system"
+    );
+    assert_eq!(
+        plain["store"],
+        serde_json::json!(false),
+        "store is model-independent"
+    );
+}
+
+#[test]
+fn chat_baseline_inference_non_standard_endpoint_omits_store_and_effort() {
+    // zai is a frozen non-standard endpoint: no `store` field, no standard
+    // `reasoning_effort` field, the legacy `max_tokens` field name, system role.
+    let provider = profile_provider(
+        "zai",
+        Default::default(),
+        vec![thinking_chat_model("glm-4.6", true)],
+    );
+    let mut request = request_for("zai", "glm-4.6");
+    request.thinking = ThinkingConfig {
+        enabled: true,
+        budget_tokens: None,
+        level: opi_ai::ThinkingLevel::High,
+    };
+    let body = provider.build_request_body(&request).unwrap();
+    assert!(
+        body.get("store").is_none(),
+        "non-standard endpoint omits store"
+    );
+    assert!(
+        body.get("reasoning_effort").is_none(),
+        "zai baseline never sends the standard effort field"
+    );
+    assert_eq!(body["max_tokens"], serde_json::json!(4096));
+    assert!(body.get("max_completion_tokens").is_none());
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(messages[0]["role"], "system");
+}
+
+#[test]
+fn chat_explicit_store_and_role_overrides_beat_inference() {
+    let compat = opi_ai::openai_chat::CompatConfig {
+        store: Some(ChatStoreField::Omit),
+        instruction_role: Some(ChatInstructionRole::System),
+        ..Default::default()
+    };
+    let provider = profile_provider("openai", compat, vec![thinking_chat_model("o3", true)]);
+    let mut request = request_for("openai", "o3");
+    request.thinking = ThinkingConfig {
+        enabled: true,
+        budget_tokens: None,
+        level: opi_ai::ThinkingLevel::High,
+    };
+    let body = provider.build_request_body(&request).unwrap();
+    assert!(
+        body.get("store").is_none(),
+        "explicit Omit wins over SendFalse inference"
+    );
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[0]["role"], "system",
+        "explicit System wins for a reasoning model"
+    );
+
+    let developer_fixed = opi_ai::openai_chat::CompatConfig {
+        instruction_role: Some(ChatInstructionRole::Developer),
+        ..Default::default()
+    };
+    let provider = profile_provider(
+        "openai",
+        developer_fixed,
+        vec![thinking_chat_model("gpt-4o", false)],
+    );
+    let body = provider
+        .build_request_body(&request_for("openai", "gpt-4o"))
+        .unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[0]["role"], "developer",
+        "explicit Developer is unconditional"
+    );
+}
+
+#[test]
+fn chat_usage_in_stream_explicit_false_omits_stream_options() {
+    let compat = opi_ai::openai_chat::CompatConfig {
+        usage_in_stream: Some(false),
+        ..Default::default()
+    };
+    let provider = profile_provider("openai", compat, vec![thinking_chat_model("gpt-4o", false)]);
+    let body = provider
+        .build_request_body(&request_for("openai", "gpt-4o"))
+        .unwrap();
+    assert!(
+        body.get("stream_options").is_none(),
+        "explicit false disables usage accounting"
+    );
+}
+
+#[test]
+fn chat_max_tokens_field_explicit_override_beats_inference() {
+    let compat = opi_ai::openai_chat::CompatConfig {
+        max_tokens_field: Some("max_tokens".into()),
+        ..Default::default()
+    };
+    let provider = profile_provider("openai", compat, vec![thinking_chat_model("gpt-4o", false)]);
+    let body = provider
+        .build_request_body(&request_for("openai", "gpt-4o"))
+        .unwrap();
+    assert_eq!(body["max_tokens"], serde_json::json!(4096));
+    assert!(body.get("max_completion_tokens").is_none());
+}
+
+#[test]
+fn chat_model_level_override_beats_profile_and_inference() {
+    use std::collections::HashMap;
+
+    let compat = opi_ai::openai_chat::CompatConfig {
+        instruction_role: Some(ChatInstructionRole::System),
+        ..Default::default()
+    };
+    let mut overrides = HashMap::new();
+    overrides.insert(
+        "o3".into(),
+        opi_ai::openai_chat::ModelCompatOverride {
+            instruction_role: Some(ChatInstructionRole::Developer),
+            ..Default::default()
+        },
+    );
+    let provider = profile_provider("openai", compat, vec![thinking_chat_model("o3", true)])
+        .with_model_overrides(overrides);
+
+    let body = provider
+        .build_request_body(&request_for("openai", "o3"))
+        .unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[0]["role"], "developer",
+        "model override wins over profile"
+    );
+
+    let body = provider
+        .build_request_body(&request_for("openai", "gpt-4o"))
+        .unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[0]["role"], "system",
+        "profile default applies without override"
+    );
+}
 
 use opi_ai::message::{ImageSource, MediaType, OutputContent, ToolDef, ToolResultMessage};
 use opi_ai::provider::{ModelInfo, ProviderError, ProviderErrorCategory};
 use opi_ai::registry::ModelCapabilities;
-
 #[test]
-fn compat_config_represents_strict_tool_schema() {
+fn build_request_body_strict_tool_schema_emits_strict_flag() {
     let config = CompatConfig {
         strict_tool_schema: true,
         ..Default::default()
     };
-    assert!(config.strict_tool_schema);
+    let provider = OpenAiChatProvider::new_with_compat(None, config);
+    let body = provider.build_request_body(&make_tool_request()).unwrap();
+    let tools = body["tools"].as_array().expect("tools array present");
+    assert!(
+        tools[0]["function"]["strict"] == true,
+        "strict flag must be emitted when configured: {tools:?}"
+    );
 }
 
 #[test]
-fn compat_config_represents_reasoning_effort() {
-    let config = CompatConfig {
-        reasoning_effort: Some("high".into()),
-        ..Default::default()
-    };
-    assert_eq!(config.reasoning_effort.as_deref(), Some("high"));
-}
-
-#[test]
-fn compat_config_represents_cache_key() {
-    let config = CompatConfig {
-        cache_key: Some("sess-abc".into()),
-        ..Default::default()
-    };
-    assert_eq!(config.cache_key.as_deref(), Some("sess-abc"));
-}
-
-#[test]
-fn compat_config_represents_assistant_after_tool_result() {
-    // Metadata-only flag: modern OpenAI Chat Completions does not require a
-    // synthetic assistant turn after a tool result, so the shared adapter
-    // records the flag for compatibility metadata without altering wire
-    // ordering. Any compatible provider requiring legacy synthesis would need a
-    // reviewed first-class adapter (Phase 12 non-goal guard).
-    let config = CompatConfig {
-        require_assistant_after_tool_result: true,
-        ..Default::default()
-    };
-    assert!(config.require_assistant_after_tool_result);
+fn build_request_body_strict_tool_schema_off_by_default() {
+    let provider = OpenAiChatProvider::new(None);
+    let body = provider.build_request_body(&make_tool_request()).unwrap();
+    let tools = body["tools"].as_array().expect("tools array present");
+    assert!(
+        tools[0]["function"].get("strict").is_none(),
+        "strict must be absent by default: {tools:?}"
+    );
 }
 
 fn make_tool_request() -> Request {
@@ -1126,43 +1730,6 @@ fn make_tool_request() -> Request {
         telemetry_context: None,
         callbacks: Default::default(),
     }
-}
-
-#[test]
-fn build_request_body_strict_tool_schema_emits_strict_flag() {
-    let config = CompatConfig {
-        strict_tool_schema: true,
-        ..Default::default()
-    };
-    let provider = OpenAiChatProvider::new_with_compat(None, config);
-    let body = provider.build_request_body(&make_tool_request()).unwrap();
-    let tools = body["tools"].as_array().expect("tools array present");
-    assert!(
-        tools[0]["function"]["strict"] == true,
-        "strict flag must be emitted when configured: {tools:?}"
-    );
-}
-
-#[test]
-fn build_request_body_strict_tool_schema_off_by_default() {
-    let provider = OpenAiChatProvider::new(None);
-    let body = provider.build_request_body(&make_tool_request()).unwrap();
-    let tools = body["tools"].as_array().expect("tools array present");
-    assert!(
-        tools[0]["function"].get("strict").is_none(),
-        "strict must be absent by default: {tools:?}"
-    );
-}
-
-#[test]
-fn static_compat_reasoning_effort_does_not_drive_wire_output() {
-    let config = CompatConfig {
-        reasoning_effort: Some("high".into()),
-        ..Default::default()
-    };
-    let provider = OpenAiChatProvider::new_with_compat(None, config);
-    let body = provider.build_request_body(&make_test_request()).unwrap();
-    assert!(body.get("reasoning_effort").is_none());
 }
 
 #[test]
@@ -1204,10 +1771,7 @@ fn chat_reasoning_effort_uses_request_thinking_and_model_map() {
     let mapped_provider = OpenAiChatProvider::new_for_profile(
         "https://example.test".into(),
         "mapped".into(),
-        CompatConfig {
-            reasoning_effort: Some("static-must-not-win".into()),
-            ..Default::default()
-        },
+        CompatConfig::default(),
         vec![],
         vec![mapped_model],
     );
@@ -1285,6 +1849,429 @@ fn build_request_body_cache_key_absent_by_default() {
     assert!(body.get("prompt_cache_key").is_none());
 }
 
+// ---------------------------------------------------------------------------
+// Task 20.36 (AIR-022 / V-11): assistant bridge, tool-result image projection
+// and thinking/reasoning replay on the Chat wire.
+// ---------------------------------------------------------------------------
+
+fn tool_loop_context(
+    tool_content: Vec<OutputContent>,
+    is_error: bool,
+    follow_up_user: bool,
+) -> opi_ai::transcript::Context {
+    let mut messages = vec![
+        Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "run it".into(),
+            }],
+            timestamp_ms: 0,
+        }),
+        Message::Assistant(AssistantMessage {
+            content: vec![AssistantContent::ToolCall {
+                tool_call: ToolCall {
+                    id: "call_1".into(),
+                    name: "list_dir".into(),
+                    arguments: "{}".into(),
+                    arguments_error: None,
+                },
+            }],
+            api: opi_ai::ApiKind::OpenAi,
+            provider: "openai".into(),
+            model: "gpt-4o".into(),
+            response_model: None,
+            wire: Some(opi_ai::model_info::WireApi::OpenAiCompletions),
+            response_id: None,
+            usage: Default::default(),
+            stop_reason: opi_ai::stream::StopReason::ToolUse,
+            error_message: None,
+            timestamp_ms: 0,
+            diagnostics: Vec::new(),
+            duration_ms: None,
+        }),
+        Message::ToolResult(ToolResultMessage {
+            not_executed: None,
+            tool_call_id: "call_1".into(),
+            tool_name: "list_dir".into(),
+            content: tool_content,
+            details: None,
+            is_error,
+            truncated: false,
+            timestamp_ms: 0,
+        }),
+    ];
+    if follow_up_user {
+        messages.push(Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "continue".into(),
+            }],
+            timestamp_ms: 1,
+        }));
+    }
+    opi_ai::transcript::Context {
+        system_prompt: None,
+        messages,
+        tools: vec![],
+    }
+}
+
+fn tool_loop_request(
+    tool_content: Vec<OutputContent>,
+    is_error: bool,
+    follow_up_user: bool,
+) -> Request {
+    Request {
+        transport: Default::default(),
+        model: "openai:gpt-4o".into(),
+        context: opi_ai::transcript::normalize_context(tool_loop_context(
+            tool_content,
+            is_error,
+            follow_up_user,
+        ))
+        .expect("valid context declarations"),
+        max_tokens: Some(1024),
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: ThinkingConfig::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        telemetry_context: None,
+        callbacks: Default::default(),
+    }
+}
+
+fn image_tool_content() -> Vec<OutputContent> {
+    vec![
+        OutputContent::Text {
+            text: "chart data".into(),
+        },
+        OutputContent::Image {
+            source: ImageSource::Base64 {
+                data: "aW1n".into(),
+            },
+            media_type: MediaType::Png,
+        },
+    ]
+}
+
+#[test]
+fn chat_assistant_bridge_inserted_between_tool_result_and_user() {
+    let compat = CompatConfig {
+        require_assistant_after_tool_result: true,
+        ..Default::default()
+    };
+    let provider = OpenAiChatProvider::new_with_compat(None, compat);
+    let body = provider
+        .build_request_body(&tool_loop_request(
+            vec![OutputContent::Text {
+                text: "a.rs".into(),
+            }],
+            false,
+            true,
+        ))
+        .unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    let roles: Vec<&str> = messages
+        .iter()
+        .map(|m| m["role"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        roles,
+        vec!["user", "assistant", "tool", "assistant", "user"],
+        "fixed assistant bridge lands between the tool result and the next user"
+    );
+    let bridge = &messages[3];
+    assert_eq!(bridge["content"], "I have processed the tool results.");
+    // The tool-call assistant turn keeps content "" (not null) on bridge wires.
+    assert_eq!(messages[1]["content"], "");
+}
+
+#[test]
+fn chat_no_bridge_by_default_between_tool_result_and_user() {
+    let provider = OpenAiChatProvider::new(None);
+    let body = provider
+        .build_request_body(&tool_loop_request(
+            vec![OutputContent::Text {
+                text: "a.rs".into(),
+            }],
+            false,
+            true,
+        ))
+        .unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    let roles: Vec<&str> = messages
+        .iter()
+        .map(|m| m["role"].as_str().unwrap())
+        .collect();
+    assert_eq!(roles, vec!["user", "assistant", "tool", "user"]);
+    // No bridge flag: tool-call assistant turns keep content null.
+    assert_eq!(messages[1]["content"], serde_json::Value::Null);
+}
+
+#[test]
+fn chat_tool_result_images_project_to_trailing_user_message() {
+    let provider = OpenAiChatProvider::new(None);
+    let body = provider
+        .build_request_body(&tool_loop_request(image_tool_content(), false, false))
+        .unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    let roles: Vec<&str> = messages
+        .iter()
+        .map(|m| m["role"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        roles,
+        vec!["user", "assistant", "tool", "user"],
+        "image parts ride a trailing user message, not the tool message"
+    );
+    let tool_msg = &messages[2];
+    assert_eq!(
+        tool_msg["content"], "chart data",
+        "text stays on the tool turn"
+    );
+    assert!(
+        tool_msg.get("content").and_then(|c| c.as_array()).is_none(),
+        "no image parts inline on the tool message"
+    );
+    let image_user = &messages[3];
+    let parts = image_user["content"].as_array().unwrap();
+    assert_eq!(parts.len(), 2, "label text plus one image part");
+    assert_eq!(parts[0]["type"], "text");
+    assert_eq!(parts[0]["text"], "Attached image(s) from tool result:");
+    assert_eq!(parts[1]["type"], "image_url");
+    assert_eq!(parts[1]["image_url"]["url"], "data:image/png;base64,aW1n");
+}
+
+#[test]
+fn chat_tool_result_image_bridge_wire_orders_tool_bridge_then_image_user() {
+    let compat = CompatConfig {
+        require_assistant_after_tool_result: true,
+        ..Default::default()
+    };
+    let provider = OpenAiChatProvider::new_with_compat(None, compat);
+    let body = provider
+        .build_request_body(&tool_loop_request(image_tool_content(), false, false))
+        .unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    let roles: Vec<&str> = messages
+        .iter()
+        .map(|m| m["role"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        roles,
+        vec!["user", "assistant", "tool", "assistant", "user"]
+    );
+    assert_eq!(messages[3]["content"], "I have processed the tool results.");
+    assert_eq!(
+        messages[4]["content"][0]["text"],
+        "Attached image(s) from tool result:"
+    );
+}
+
+#[test]
+fn chat_tool_result_placeholders_follow_source_semantics() {
+    let provider = OpenAiChatProvider::new(None);
+
+    // Only images: text placeholder names the attachment, not a MIME stub.
+    let body = provider
+        .build_request_body(&tool_loop_request(
+            vec![OutputContent::Image {
+                source: ImageSource::Base64 {
+                    data: "aW1n".into(),
+                },
+                media_type: MediaType::Png,
+            }],
+            false,
+            false,
+        ))
+        .unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(messages[2]["content"], "(see attached image)");
+
+    // No content at all: explicit no-output placeholder.
+    let body = provider
+        .build_request_body(&tool_loop_request(vec![], false, false))
+        .unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(messages[2]["content"], "(no tool output)");
+
+    // Error results keep the deterministic failure marker before the text.
+    let body = provider
+        .build_request_body(&tool_loop_request(
+            vec![OutputContent::Text {
+                text: "boom".into(),
+            }],
+            true,
+            false,
+        ))
+        .unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(messages[2]["content"], "[tool_error] boom");
+}
+
+#[test]
+fn chat_assistant_thinking_replay_uses_signature_reasoning_field() {
+    let provider = OpenAiChatProvider::new(None);
+    let mut request = make_test_request();
+    request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages: vec![
+            Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "think".into(),
+                }],
+                timestamp_ms: 0,
+            }),
+            Message::Assistant(AssistantMessage {
+                content: vec![
+                    AssistantContent::Thinking {
+                        thinking: "step one".into(),
+                        signature: Some("reasoning_content".into()),
+                    },
+                    AssistantContent::Text {
+                        text: "answer".into(),
+                    },
+                ],
+                api: opi_ai::ApiKind::OpenAi,
+                provider: "openai".into(),
+                model: "gpt-4o".into(),
+                response_model: None,
+                wire: Some(opi_ai::model_info::WireApi::OpenAiCompletions),
+                response_id: None,
+                usage: Default::default(),
+                stop_reason: opi_ai::stream::StopReason::Stop,
+                error_message: None,
+                timestamp_ms: 0,
+                diagnostics: Vec::new(),
+                duration_ms: None,
+            }),
+            Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "again".into(),
+                }],
+                timestamp_ms: 1,
+            }),
+        ],
+        tools: vec![],
+    })
+    .expect("valid context declarations");
+    let body = provider.build_request_body(&request).unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    let replayed = &messages[1];
+    assert_eq!(replayed["role"], "assistant");
+    assert_eq!(
+        replayed["content"], "answer",
+        "answer text stays plain string"
+    );
+    assert_eq!(
+        replayed["reasoning_content"], "step one",
+        "signed thinking rides its declared reasoning field"
+    );
+}
+
+#[test]
+fn chat_empty_assistant_turns_are_skipped() {
+    let provider = OpenAiChatProvider::new(None);
+    let mut request = make_test_request();
+    request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages: vec![
+            Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "hi".into() }],
+                timestamp_ms: 0,
+            }),
+            Message::Assistant(AssistantMessage {
+                content: vec![],
+                api: opi_ai::ApiKind::OpenAi,
+                provider: "openai".into(),
+                model: "gpt-4o".into(),
+                response_model: None,
+                wire: Some(opi_ai::model_info::WireApi::OpenAiCompletions),
+                response_id: None,
+                usage: Default::default(),
+                stop_reason: opi_ai::stream::StopReason::Stop,
+                error_message: None,
+                timestamp_ms: 0,
+                diagnostics: Vec::new(),
+                duration_ms: None,
+            }),
+            Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "again".into(),
+                }],
+                timestamp_ms: 1,
+            }),
+        ],
+        tools: vec![],
+    })
+    .expect("valid context declarations");
+    let body = provider.build_request_body(&request).unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    let roles: Vec<&str> = messages
+        .iter()
+        .map(|m| m["role"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        roles,
+        vec!["user", "user"],
+        "content/tool-call-free turns drop"
+    );
+}
+
+#[test]
+fn chat_deepseek_baseline_adds_empty_reasoning_content_on_assistant_messages() {
+    let provider = profile_provider(
+        "deepseek",
+        Default::default(),
+        vec![thinking_chat_model("deepseek-reasoner", true)],
+    );
+    let mut request = request_for("deepseek", "deepseek-reasoner");
+    request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages: vec![
+            Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "hi".into() }],
+                timestamp_ms: 0,
+            }),
+            Message::Assistant(AssistantMessage {
+                content: vec![AssistantContent::Text {
+                    text: "answer".into(),
+                }],
+                api: opi_ai::ApiKind::OpenAi,
+                provider: "deepseek".into(),
+                model: "deepseek-reasoner".into(),
+                response_model: None,
+                wire: Some(opi_ai::model_info::WireApi::OpenAiCompletions),
+                response_id: None,
+                usage: Default::default(),
+                stop_reason: opi_ai::stream::StopReason::Stop,
+                error_message: None,
+                timestamp_ms: 0,
+                diagnostics: Vec::new(),
+                duration_ms: None,
+            }),
+            Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "again".into(),
+                }],
+                timestamp_ms: 1,
+            }),
+        ],
+        tools: vec![],
+    })
+    .expect("valid context declarations");
+    let body = provider.build_request_body(&request).unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(
+        messages[1]["reasoning_content"], "",
+        "deepseek baseline marks replayed assistant turns for reasoning replay"
+    );
+}
+
 fn make_tool_result_request() -> Request {
     Request {
         transport: Default::default(),
@@ -1318,6 +2305,7 @@ fn make_tool_result_request() -> Request {
                     error_message: None,
                     timestamp_ms: 0,
                     diagnostics: Vec::new(),
+                    duration_ms: None,
                 }),
                 Message::ToolResult(ToolResultMessage {
                     not_executed: None,
@@ -1452,14 +2440,16 @@ fn validate_rejects_image_on_text_only_openai_compatible_profile() {
 
 #[test]
 fn model_level_override_takes_precedence_over_provider_profile() {
-    // Phase 12 task 12.3: provider/model override precedence. The profile sets
-    // a provider-level default (system role, max_tokens). A model-level override
-    // wins for the model that declares it; other models inherit the profile
-    // default. Provider-level flags (strict_tool_schema) apply to all models.
+    // Phase 12 task 12.3 + task 20.36 normalization: provider/model override
+    // precedence. The profile sets a provider-level default (role, max tokens
+    // field). A model-level override wins for the model that declares it;
+    // other models inherit the profile default. Provider-level flags
+    // (strict_tool_schema) apply to all models.
+    use opi_ai::model_info::ChatInstructionRole;
     use opi_ai::openai_chat::ModelCompatOverride;
     let base = CompatConfig {
-        system_role_override: Some("system".into()),
-        max_tokens_field: "max_tokens".into(),
+        instruction_role: Some(ChatInstructionRole::System),
+        max_tokens_field: Some("max_tokens".into()),
         strict_tool_schema: true,
         ..Default::default()
     };
@@ -1467,8 +2457,9 @@ fn model_level_override_takes_precedence_over_provider_profile() {
     overrides.insert(
         "o3".into(),
         ModelCompatOverride {
-            system_role_override: Some("developer".into()),
+            instruction_role: Some(ChatInstructionRole::Developer),
             max_tokens_field: Some("max_completion_tokens".into()),
+            ..Default::default()
         },
     );
     let provider = OpenAiChatProvider::new_for_profile(
@@ -1609,7 +2600,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
                 {"role": "system", "content": "You are helpful."},
                 {"role": "user", "content": "Hello"}
             ],
-            "max_tokens": 1024
+            "max_completion_tokens": 1024
         })))
         .respond_with(
             ResponseTemplate::new(200)
@@ -2254,4 +3245,400 @@ mod constrained_guard_tests {
             "no strict flag is invented on this wire: {serialized}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.36 (AIR-049/057, ONB-03): public native/simple/complete/result and
+// direct adapter calls through the registered openai-completions adapter.
+// ---------------------------------------------------------------------------
+
+use opi_ai::models::{ChatModelRecord, Models, SimpleOptions, SimpleToolChoice};
+use opi_ai::openai_chat::{OpenAiCompletionsChatApi, OpenAiCompletionsOptions, OpenAiToolChoice};
+use std::sync::Arc as StdArc;
+
+fn chat_sse_ok() -> String {
+    concat!(
+        "data: {\"id\":\"chatcmpl-p\",\"object\":\"chat.completion.chunk\",\"model\":\"o3\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"chatcmpl-p\",\"object\":\"chat.completion.chunk\",\"model\":\"o3\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"chatcmpl-p\",\"object\":\"chat.completion.chunk\",\"model\":\"o3\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5}}\n\n",
+        "data: [DONE]\n\n",
+    )
+    .into()
+}
+
+fn chat_public_request(model: &str, thinking: Option<opi_ai::ThinkingLevel>) -> Request {
+    let mut request = make_test_request();
+    request.model = format!("openai:{model}");
+    if let Some(level) = thinking {
+        request.thinking = ThinkingConfig {
+            enabled: true,
+            budget_tokens: None,
+            level,
+        };
+    }
+    request
+}
+
+async fn registered_chat_models(
+    server_uri: String,
+    model: ModelInfo,
+) -> (
+    Models,
+    opi_ai::models::ChatApiHandle<OpenAiCompletionsOptions>,
+) {
+    let provider = StdArc::new(
+        OpenAiChatProvider::new_with_compat(Some(server_uri), Default::default())
+            .with_model_overrides(Default::default()),
+    );
+    let api = OpenAiCompletionsChatApi::new(provider, model).expect("valid chat record");
+    let mut models = Models::new();
+    let handle = models
+        .register_chat_api(
+            StdArc::new(api),
+            StdArc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::Bearer,
+                secrecy::SecretString::from("offline-chat-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .expect("register chat api");
+    (models, handle)
+}
+
+fn o3_record() -> ChatModelRecord {
+    let model = ModelInfo::new(
+        "o3",
+        "o3",
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(200_000, 100_000)
+            .with_images(true)
+            .with_streaming(true)
+            .with_thinking(true),
+    );
+    ChatModelRecord::new("openai", model)
+}
+
+#[tokio::test]
+async fn models_native_options_reach_the_chat_wire() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(chat_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let model = ModelInfo::new(
+        "o3",
+        "o3",
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(200_000, 100_000)
+            .with_streaming(true)
+            .with_thinking(true),
+    );
+    let (models, handle) = registered_chat_models(server.uri(), model).await;
+
+    let mut budgets = std::collections::BTreeMap::new();
+    budgets.insert(opi_ai::ThinkingLevel::High, 512u64);
+    let mut value = OpenAiCompletionsOptions::default();
+    value.tool_choice = Some(OpenAiToolChoice::Named("list_dir".into()));
+    value.reasoning_effort = Some(opi_ai::ThinkingLevel::High);
+    value.thinking_budgets = budgets;
+    let options = handle.options(value);
+
+    let request = chat_public_request("o3", Some(opi_ai::ThinkingLevel::Minimal));
+    // Native options own effort: the neutral field must not leak.
+    let message = models
+        .complete(o3_record(), request.clone(), options)
+        .await
+        .expect("native chat call completes");
+    assert_eq!(message.stop_reason, opi_ai::stream::StopReason::Stop);
+
+    let sent = &server.received_requests().await.unwrap()[0];
+    let body: serde_json::Value = serde_json::from_slice(&sent.body).unwrap();
+    assert_eq!(
+        body["tool_choice"],
+        serde_json::json!({"type": "function", "function": {"name": "list_dir"}})
+    );
+    assert_eq!(body["reasoning_effort"], serde_json::json!("high"));
+    assert_eq!(
+        body["store"],
+        serde_json::json!(false),
+        "public native path carries the standard OpenAI baseline"
+    );
+    assert_eq!(
+        body["stream_options"]["include_usage"],
+        serde_json::json!(true)
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn models_native_unsupported_effort_fails_typed_before_auth() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(chat_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let model = ModelInfo::new(
+        "o3",
+        "o3",
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(200_000, 100_000)
+            .with_streaming(true)
+            .with_thinking(true),
+    );
+    let (models, handle) = registered_chat_models(server.uri(), model).await;
+
+    let mut value = OpenAiCompletionsOptions::default();
+    value.reasoning_effort = Some(opi_ai::ThinkingLevel::XHigh);
+    let options = handle.options(value);
+    let failure = models
+        .complete(o3_record(), chat_public_request("o3", None), options)
+        .await
+        .expect_err("unsupported native effort fails typed preflight");
+    assert!(
+        matches!(failure.cause(), opi_ai::provider::ProviderError::Config(_)),
+        "typed preflight failure, got {:?}",
+        failure.cause()
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn models_simple_neutral_options_and_clamp_reach_the_chat_wire() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(chat_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let model = ModelInfo::new(
+        "o3",
+        "o3",
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(200_000, 100_000)
+            .with_streaming(true)
+            .with_thinking(true),
+    );
+    let (models, _handle) = registered_chat_models(server.uri(), model).await;
+
+    // Neutral tool choice plus neutral effort through the simple entry.
+    let simple = SimpleOptions {
+        tool_choice: Some(SimpleToolChoice::Auto),
+        ..Default::default()
+    };
+    let request = chat_public_request("o3", Some(opi_ai::ThinkingLevel::High));
+    models
+        .complete_simple(o3_record(), request, simple)
+        .await
+        .expect("simple chat call completes");
+
+    // XHigh is unsupported on the default map: the neutral entry clamps to
+    // the nearest supported level (High) instead of failing.
+    let request = chat_public_request("o3", Some(opi_ai::ThinkingLevel::XHigh));
+    models
+        .complete_simple(o3_record(), request, Default::default())
+        .await
+        .expect("clamped simple chat call completes");
+
+    let sent = server.received_requests().await.unwrap();
+    let first: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+    assert_eq!(first["tool_choice"], serde_json::json!("auto"));
+    assert_eq!(first["reasoning_effort"], serde_json::json!("high"));
+    let second: serde_json::Value = serde_json::from_slice(&sent[1].body).unwrap();
+    assert_eq!(
+        second["reasoning_effort"],
+        serde_json::json!("high"),
+        "neutral clamp downgrades XHigh to the nearest supported level"
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn models_direct_adapter_uses_injected_auth_and_returns_result() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(header("authorization", "Bearer injected-key"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(chat_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let model = ModelInfo::new(
+        "o3",
+        "o3",
+        opi_ai::WireApi::OpenAiCompletions,
+        ModelCapabilities::new(200_000, 100_000)
+            .with_streaming(true)
+            .with_thinking(true),
+    );
+    let (models, handle) = registered_chat_models(server.uri(), model).await;
+
+    let options = handle.options(OpenAiCompletionsOptions::default());
+    let mut injected = opi_ai::test_support::resolved_bearer_auth();
+    injected.secret = secrecy::SecretString::from("injected-key");
+    let message = models
+        .complete_direct(
+            o3_record(),
+            chat_public_request("o3", None),
+            options,
+            injected,
+        )
+        .await
+        .expect("direct adapter call completes");
+    assert_eq!(message.content.len(), 1);
+    server.verify().await;
+}
+
+#[test]
+fn chat_direct_adapter_rejects_wrong_wire_records() {
+    let responses_model = ModelInfo::new(
+        "gpt-5.4",
+        "GPT-5.4",
+        opi_ai::WireApi::OpenAiResponses,
+        ModelCapabilities::new(200_000, 100_000).with_streaming(true),
+    );
+    let provider = StdArc::new(OpenAiChatProvider::new(None));
+    match OpenAiCompletionsChatApi::new(provider, responses_model) {
+        Err(opi_ai::provider::ProviderError::Config(_)) => {}
+        other => panic!("wrong-wire rejection is typed, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.36 (AIR-061 / V-53): owned duration and chunk-boundary acceptance.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn chat_done_message_carries_measured_response_duration() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(chat_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiChatProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        chat_public_request("gpt-4o", None),
+        opi_ai::test_support::resolved_bearer_auth(),
+    );
+    let mut duration = None;
+    while let Some(item) = stream.next().await {
+        if let Ok(AssistantStreamEvent::Done { message, .. }) = item {
+            duration = message.duration_ms;
+        }
+    }
+    assert!(
+        duration.is_some(),
+        "successful terminal carries the measured response-stream duration"
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn chat_setup_failure_before_activation_has_no_duration() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(401))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiChatProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        chat_public_request("gpt-4o", None),
+        opi_ai::test_support::resolved_bearer_auth(),
+    );
+    let mut saw_done = false;
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(AssistantStreamEvent::Done { .. }) => saw_done = true,
+            Ok(_) => {}
+            Err(cause) => {
+                assert!(
+                    !cause.is_retryable(),
+                    "unauthorized is a terminal setup failure: {cause}"
+                );
+            }
+        }
+    }
+    assert!(!saw_done, "setup failure never reaches a terminal Done");
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn chat_sse_frames_split_across_tcp_chunks_reassemble() {
+    use tokio::io::AsyncWriteExt;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let body = chat_sse_ok();
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = String::new();
+        use tokio::io::AsyncReadExt;
+        let mut buf = vec![0u8; 4096];
+        // Read until the end of the request headers/body boundary heuristically:
+        // read once (headers + small body) then answer.
+        let n = socket.read(&mut buf).await.unwrap();
+        request.push_str(&String::from_utf8_lossy(&buf[..n]));
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+            body.len()
+        );
+        socket.write_all(response.as_bytes()).await.unwrap();
+        // Write the SSE body split at awkward byte boundaries.
+        for byte in body.bytes() {
+            socket.write_all(&[byte]).await.unwrap();
+            tokio::task::yield_now().await;
+        }
+        socket.shutdown().await.unwrap();
+    });
+
+    let provider = OpenAiChatProvider::new(Some(format!("http://{addr}")));
+    let mut stream = provider.stream_prepared(
+        chat_public_request("gpt-4o", None),
+        opi_ai::test_support::resolved_bearer_auth(),
+    );
+    let mut saw_done = false;
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(AssistantStreamEvent::Done { reason, .. }) => {
+                assert_eq!(reason, opi_ai::stream::StopReason::Stop);
+                saw_done = true;
+            }
+            Ok(_) => {}
+            Err(cause) => panic!("byte-split frames must reassemble: {cause}"),
+        }
+    }
+    assert!(saw_done, "split-chunk stream still reaches its terminal");
 }

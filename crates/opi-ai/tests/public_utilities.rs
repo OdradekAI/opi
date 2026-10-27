@@ -505,6 +505,7 @@ fn diagnostic_message(
         error_message: error_message.map(str::to_owned),
         timestamp_ms: 0,
         diagnostics: vec![],
+        duration_ms: None,
     }
 }
 

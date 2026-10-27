@@ -1349,6 +1349,7 @@ fn empty_assistant_message(model: &str) -> AssistantMessage {
         error_message: None,
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
+        duration_ms: None,
     }
 }
 

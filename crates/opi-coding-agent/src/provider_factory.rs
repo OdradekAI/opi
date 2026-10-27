@@ -1164,32 +1164,27 @@ fn openai_compatible_model_catalog(
             )
             .with_compat(opi_ai::WireCompat::OpenAiCompletions({
                 let mut compat = opi_ai::model_info::OpenAiCompletionsCompat {
-                    system_role_override: profile.system_role_override.clone(),
-                    max_tokens_field: profile
-                        .max_tokens_field
-                        .clone()
-                        .unwrap_or_else(|| "max_tokens".into()),
+                    instruction_role: profile.instruction_role.clone(),
+                    store: profile.store.clone(),
+                    max_tokens_field: profile.max_tokens_field.clone(),
                     tool_result_name_field: profile.tool_result_name_field,
                     usage_in_stream: profile.usage_in_stream,
                     strict_tool_schema: profile.strict_tool_schema,
-                    reasoning_effort: profile.reasoning_effort.clone(),
                     cache_key: profile.cache_key.clone(),
-                    send_session_affinity_headers: false,
+                    send_session_affinity_headers: None,
                     require_assistant_after_tool_result: profile
                         .require_assistant_after_tool_result,
                     chat_completions_path: profile
                         .chat_completions_path
                         .clone()
                         .unwrap_or_else(|| "/v1/chat/completions".into()),
-                    supports_store: false,
-                    supports_developer_role: false,
-                    supports_reasoning_effort: profile.reasoning_effort.is_some(),
+                    ..Default::default()
                 };
-                if let Some(value) = &model.system_role_override {
-                    compat.system_role_override = Some(value.clone());
+                if let Some(value) = &model.instruction_role {
+                    compat.instruction_role = Some(value.clone());
                 }
                 if let Some(value) = &model.max_tokens_field {
-                    compat.max_tokens_field = value.clone();
+                    compat.max_tokens_field = Some(value.clone());
                 }
                 compat
             }))

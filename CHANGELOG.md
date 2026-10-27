@@ -2,6 +2,34 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): the OpenAI Chat compat config applies the single
+  normalization rule (task 20.36, AIR-022/V-11).
+  `OpenAiCompletionsCompat` replaces `system_role_override`, `supports_store`,
+  `supports_developer_role` and the static `reasoning_effort` string with
+  `store: Option<ChatStoreField>` (`Omit`/`SendFalse`),
+  `instruction_role: Option<ChatInstructionRole>`
+  (`Auto`/`System`/`DeveloperForReasoning`/`Developer`),
+  `thinking_format: Option<ChatThinkingFormat>` (eleven declared formats) and
+  optional explicit `supports_reasoning_effort`/`usage_in_stream`/
+  `max_tokens_field`/`send_session_affinity_headers` values layered over a
+  frozen provider-inference baseline (standard OpenAI now sends `store: false`,
+  `stream_options.include_usage` and `max_completion_tokens`; legacy-compatible
+  endpoints keep `max_tokens`). The retired keys fail with explicit migration
+  errors at every config position (catalog `x-opi.compat`, product TOML
+  profile/model compat). New compat fields cover the bridge wire behavior
+  (`require_assistant_after_tool_result` now inserts the fixed assistant
+  bridge), thinking-as-text replay, DeepSeek `reasoning_content` marking,
+  zai `tool_stream`/vLLM `priority` extras, the three reasoning budget fields
+  and `chat_template_kwargs`/`args` `$var` values. `ModelCompatOverride`
+  layers `instruction_role`/`store`/`thinking_format`/`max_tokens_field`.
+- `opi-ai` (0.x): `AssistantMessage` gains optional `duration_ms:
+  Option<u64>` (AIR-061): monotonic adapter response-stream duration from
+  activation to terminal, serde-skipped when unset; every struct literal adds
+  `duration_ms: None`. `ThinkingLevelMap::nearest_supported` is public, and
+  `Models::stream_simple`/`complete_simple` clamp an unsupported neutral
+  thinking level to the nearest supported level (native entries retain exact
+  levels and fail typed preflight instead).
+
 - `opi-ai` (0.x): `Request` gains optional
   `telemetry_context: Option<TelemetryContext>`; request literals add `None`
   when no explicit parent is supplied. `SimpleOptions` gains
@@ -551,6 +579,20 @@
   unchanged.
 ### Added
 
+- `opi-ai`: complete openai-completions chat adapter (task 20.36, DEL-11).
+  New public `openai_chat::OpenAiCompletionsChatApi` registers the typed
+  direct/native adapter through `Models::register_chat_api` with
+  `OpenAiCompletionsOptions` (full OpenAI `tool_choice` shape including
+  `Required`/named forcing, native `reasoning_effort` levels and per-level
+  `thinking_budgets`); wrong-wire records and unsupported native effort levels
+  fail typed preflight before auth. The eleven declared thinking formats
+  project their on/off/null/omission wire shapes; tool-result images project
+  to a trailing user message; signed assistant thinking replays through its
+  declared reasoning field (`reasoning`/`reasoning_content`/`reasoning_text`)
+  or serialized `reasoning_details`; empty assistant turns are skipped; and
+  successful streams carry `duration_ms` from response activation to terminal
+  (setup failures stay untimed). The bilingual crate README records the
+  adopted native/simple option inventory (ONB-03).
 - `opi-ai`: instance resource generation, pool cleanup and awaited local
   release (task 20.17, DEL-07 slice). New public `codex_resources` module
   (P20-RESOURCES seam): a `SessionResourceOwner` cleanup surface exposed by

@@ -780,7 +780,7 @@ fn toml_parses_openai_compatible_profile_with_models_and_flags() {
 [providers.openai_compatible.localai]
 api_key_env = "LOCALAI_API_KEY"
 base_url = "https://localai.example.com"
-system_role_override = "developer"
+instruction_role = "developer"
 max_tokens_field = "max_completion_tokens"
 tool_result_name_field = true
 usage_in_stream = true
@@ -809,13 +809,16 @@ supports_thinking = true
     assert_eq!(profile.id, "localai");
     assert_eq!(profile.api_key_env, "LOCALAI_API_KEY");
     assert_eq!(profile.base_url, "https://localai.example.com");
-    assert_eq!(profile.system_role_override.as_deref(), Some("developer"));
+    assert_eq!(
+        profile.instruction_role,
+        Some(opi_ai::model_info::ChatInstructionRole::Developer)
+    );
     assert_eq!(
         profile.max_tokens_field.as_deref(),
         Some("max_completion_tokens")
     );
     assert!(profile.tool_result_name_field);
-    assert!(profile.usage_in_stream);
+    assert_eq!(profile.usage_in_stream, Some(true));
     assert_eq!(
         profile.proxy.as_ref().map(|proxy| proxy.url.as_str()),
         Some("http://proxy.example.com:8080")
@@ -1099,10 +1102,9 @@ model = "myprof:reasoning-model"
 [providers.openai_compatible.myprof]
 api_key_env = "{env_var}"
 base_url = "https://myprof.example.com"
-system_role_override = "system"
+instruction_role = "system"
 max_tokens_field = "max_tokens"
 strict_tool_schema = true
-reasoning_effort = "medium"
 cache_key = "profile-cache"
 require_assistant_after_tool_result = true
 
@@ -1114,7 +1116,7 @@ id = "reasoning-model"
 display_name = "Reasoning"
 context_window = 128000
 max_output_tokens = 4096
-system_role_override = "developer"
+instruction_role = "developer"
 max_tokens_field = "max_completion_tokens"
 
 [[providers.openai_compatible.myprof.models]]
@@ -1134,7 +1136,10 @@ max_output_tokens = 4096
         .get("myprof")
         .expect("profile should be parsed");
     assert!(profile.strict_tool_schema);
-    assert_eq!(profile.reasoning_effort.as_deref(), Some("medium"));
+    assert_eq!(
+        profile.instruction_role,
+        Some(opi_ai::model_info::ChatInstructionRole::System)
+    );
     assert_eq!(profile.cache_key.as_deref(), Some("profile-cache"));
     assert!(profile.require_assistant_after_tool_result);
     assert_eq!(
@@ -1146,7 +1151,10 @@ max_output_tokens = 4096
         .iter()
         .find(|m| m.id == "reasoning-model")
         .expect("reasoning model");
-    assert_eq!(reasoning.system_role_override.as_deref(), Some("developer"));
+    assert_eq!(
+        reasoning.instruction_role,
+        Some(opi_ai::model_info::ChatInstructionRole::Developer)
+    );
     assert_eq!(
         reasoning.max_tokens_field.as_deref(),
         Some("max_completion_tokens")
@@ -1156,7 +1164,7 @@ max_output_tokens = 4096
         .iter()
         .find(|m| m.id == "plain-model")
         .expect("plain model");
-    assert!(plain.system_role_override.is_none());
+    assert!(plain.instruction_role.is_none());
     assert!(plain.max_tokens_field.is_none());
 
     // The config-driven profile routes through the shared factory path.
@@ -2033,7 +2041,7 @@ model = "prof:m1"
 [providers.openai_compatible.prof]
 api_key_env = "{env_var}"
 base_url = "{base}"
-system_role_override = "system"
+instruction_role = "system"
 max_tokens_field = "max_tokens"
 
 [[providers.openai_compatible.prof.models]]
@@ -2041,7 +2049,7 @@ id = "m1"
 display_name = "M1"
 context_window = 128000
 max_output_tokens = 4096
-system_role_override = "developer"
+instruction_role = "developer"
 max_tokens_field = "max_completion_tokens"
 "#,
             base = server.uri()
@@ -2342,4 +2350,159 @@ fn provider_policy_is_centralized() {
         "provider construction policy is not centralized:\n{}",
         violations.join("\n")
     );
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.36 (AIR-022 / V-11): retired Chat compat keys error with migration
+// pointers at every product config position, before provider construction.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn openai_compatible_profile_retired_keys_fail_with_migration_errors() {
+    use opi_coding_agent::config::load_config_file;
+
+    for (key, value, pointer) in [
+        ("system_role_override", "\"developer\"", "instruction_role"),
+        ("reasoning_effort", "\"medium\"", "per-call thinking intent"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("retired.toml");
+        std::fs::write(
+            &path,
+            format!(
+                r#"
+[providers.openai_compatible.legacy]
+api_key_env = "LEGACY_KEY"
+base_url = "https://legacy.example.com"
+{key} = {value}
+
+[[providers.openai_compatible.legacy.models]]
+id = "m"
+context_window = 8000
+max_output_tokens = 1024
+"#
+            ),
+        )
+        .unwrap();
+        let error = load_config_file(&path)
+            .expect_err("retired profile keys fail at load with a migration pointer");
+        let message = error.to_string();
+        assert!(
+            message.contains(key) && message.contains(pointer),
+            "migration error must name the retired key and its replacement: {message}"
+        );
+    }
+}
+
+#[test]
+fn openai_compatible_model_retired_role_key_fails_with_migration_error() {
+    use opi_coding_agent::config::load_config_file;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("retired-model.toml");
+    std::fs::write(
+        &path,
+        r#"
+[providers.openai_compatible.legacy]
+api_key_env = "LEGACY_KEY"
+base_url = "https://legacy.example.com"
+
+[[providers.openai_compatible.legacy.models]]
+id = "m"
+context_window = 8000
+max_output_tokens = 1024
+system_role_override = "developer"
+"#,
+    )
+    .unwrap();
+    let error = load_config_file(&path)
+        .expect_err("model-level retired keys fail with a migration pointer");
+    let message = error.to_string();
+    assert!(
+        message.contains("system_role_override") && message.contains("instruction_role"),
+        "migration error names the replacement: {message}"
+    );
+}
+
+#[test]
+fn custom_chat_model_compat_retired_keys_fail_typed() {
+    use opi_coding_agent::config::load_config_file;
+
+    for (key, value) in [
+        ("system_role_override", "\"developer\""),
+        ("supports_store", "true"),
+        ("supports_developer_role", "true"),
+        ("reasoning_effort", "\"low\""),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("retired-compat.toml");
+        std::fs::write(
+            &path,
+            format!(
+                r#"
+[providers.custom.legacy]
+api_key_env = "LEGACY_KEY"
+
+[[providers.custom.legacy.models]]
+id = "m"
+api = "openai-completions"
+context_window = 8000
+max_output_tokens = 1024
+
+[providers.custom.legacy.models.compat]
+api = "openai-completions"
+{key} = {value}
+"#
+            ),
+        )
+        .unwrap();
+        let error = load_config_file(&path)
+            .expect_err("chat-wire compat retired keys fail at load, not serde-ignore");
+        let message = error.to_string();
+        assert!(
+            message.contains("retired key"),
+            "each retired compat key errors with a migration pointer: {message}"
+        );
+    }
+}
+
+#[test]
+fn custom_chat_model_compat_normalized_keys_parse() {
+    use opi_ai::model_info::{ChatInstructionRole, ChatStoreField, ChatThinkingFormat};
+    use opi_coding_agent::config::load_config_file;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("normalized-compat.toml");
+    std::fs::write(
+        &path,
+        r#"
+[providers.custom.norm]
+api_key_env = "NORM_KEY"
+base_url = "https://norm.example.com"
+
+[[providers.custom.norm.models]]
+id = "m"
+api = "openai-completions"
+context_window = 8000
+max_output_tokens = 1024
+
+[providers.custom.norm.models.compat]
+api = "openai-completions"
+store_field = "send_false"
+instruction_role = "developer_for_reasoning"
+thinking_format = "zai"
+supports_reasoning_effort = false
+"#,
+    )
+    .unwrap();
+    let config = load_config_file(&path).expect("normalized keys parse");
+    let model = &config.providers.custom["norm"].models[0];
+    assert!(matches!(
+        &model.compat,
+        opi_ai::WireCompat::OpenAiCompletions(compat)
+            if compat.store == Some(ChatStoreField::SendFalse)
+                && compat.instruction_role == Some(ChatInstructionRole::DeveloperForReasoning)
+                && compat.thinking_format == Some(ChatThinkingFormat::Zai)
+                && compat.supports_reasoning_effort == Some(false)
+    ));
 }

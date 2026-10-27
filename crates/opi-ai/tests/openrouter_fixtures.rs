@@ -354,7 +354,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
                 {"role": "system", "content": "You are helpful."},
                 {"role": "user", "content": "Hello"}
             ],
-            "max_tokens": 1024
+            "max_completion_tokens": 1024
         })))
         .respond_with(
             ResponseTemplate::new(200)
@@ -434,7 +434,7 @@ fn openrouter_profile_inherits_shared_compat_flags() {
         "https://openrouter.example.com".into(),
         "openrouter".into(),
         CompatConfig {
-            system_role_override: Some("developer".into()),
+            instruction_role: Some(opi_ai::model_info::ChatInstructionRole::Developer),
             strict_tool_schema: true,
             ..Default::default()
         },

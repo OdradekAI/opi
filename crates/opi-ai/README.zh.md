@@ -294,25 +294,69 @@ HTTP 响应的 `model` 保留请求模型，`response_model` 保存服务端报�
 （config-driven）。这是 provider breadth 的首选路径；新增 first-class provider 模块
 是保留给这些实质差异的非默认步骤。
 
-`CompatConfig` 携带按 profile 的兼容性标志：
+`CompatConfig`（任务 20.36，AIR-022/V-11）应用单一归一化规则：每个策略
+字段都是叠加在适配器冻结 provider 推断（按 provider id 或 base-URL host 推断
+`store`/`instruction_role`/`thinking_format` 与字段默认值）之上的显式值；
+显式配置逐字段胜出，模型级覆盖再胜过 profile：
 
 | 标志 | 作用 |
 |------|------|
-| `system_role_override` | 将 system prompt 渲染为 `developer`（或其他角色）而非 `system`。 |
-| `max_tokens_field` | 输出上限的请求字段名（`max_tokens` 还是 `max_completion_tokens`）。 |
+| `store` | `Omit`/`SendFalse` store 字段策略；标准 OpenAI 基线发送 `store: false`，非标准端点省略该字段。 |
+| `instruction_role` | `Auto`/`System`/`DeveloperForReasoning`/`Developer` system 消息角色策略；基线仅在标准端点对 reasoning 模型使用 `developer`。 |
+| `thinking_format` | 十一种已声明 reasoning wire 格式之一（见下）。 |
+| `supports_reasoning_effort` | 端点是否接受标准 effort 字段；`false` 不禁用格式自身的开关。 |
+| `usage_in_stream` | 请求 `stream_options.include_usage`；推断基线启用，显式 `Some(false)` 关闭。 |
+| `max_tokens_field` | 输出上限字段名覆盖（标准端点 `max_completion_tokens`，冻结的 legacy 兼容集 `max_tokens`）。 |
 | `tool_result_name_field` | 在工具结果消息上回显工具名。 |
-| `usage_in_stream` | 请求 `stream_options.include_usage`，并保留来自任意流式 chunk 的 usage 更新。 |
 | `strict_tool_schema` | 发出 strict JSON-schema 工具定义。 |
-| `reasoning_effort` | 仅保留为遗留兼容性/profile 元数据；wire reasoning 由 `request.thinking` 与所选 `ModelInfo::thinking_level_map` 决定。 |
 | `cache_key` | 发送 provider 的 prompt-cache key（cache-affinity 提示）。 |
-| `send_session_affinity_headers` | 把请求 `session_id` 映射为兼容的 `session_id`、`x-client-request-id` 与 `x-session-affinity` header；默认关闭。 |
-| `require_assistant_after_tool_result` | 面向遗留端点的纯兼容性元数据标记；opi 不会在共享适配器中合成或强制额外的 assistant 轮次。 |
-| `chat_completions_path` | 相对 `base_url` 的 chat completions 端点路径（默认 `/v1/chat/completions`）；当 provider 的 base URL 已包含 API 前缀时设置（如 BigModel `/api/paas/v4/...`）。 |
+| `send_session_affinity_headers` | 把请求 `session_id` 映射为兼容的会话亲和 header（OpenRouter 推断启用）。 |
+| `require_assistant_after_tool_result` | 在工具结果与下一条 user 消息之间插入固定 assistant 桥接；assistant 工具调用轮次用 `content: ""` 而非 `null`。 |
+| `requires_thinking_as_text` | 将 assistant thinking 以纯文本部分回放。 |
+| `requires_reasoning_content_on_assistant_messages` | 为回放的 assistant 轮次标记空 `reasoning_content`（DeepSeek 推断）。 |
+| `zai_tool_stream` / `vllm_priority` | 仅显式配置的 `tool_stream` 与 `priority` 附加项；从不推断。 |
+| `thinking_token_budget_field` / `supports_thinking_token_budget` | 顶层 reasoning 预算字段（vLLM `thinking_token_budget`、Qwen/DashScope/SGLang `thinking_budget`、llama.cpp `thinking_budget_tokens`；alias 选择 vLLM 字段）。 |
+| `chat_template_kwargs` / `chat_template_args` | `$var` 模板值（`thinking.enabled`、`thinking.effort`、`thinking.budget`；无 effort 时 `omit_when_off` 丢弃该键）。 |
+| `chat_completions_path` | 相对 `base_url` 的 chat completions 端点路径（默认 `/v1/chat/completions`）。 |
 
-`ModelCompatOverride` 在 profile 默认值之上叠加模型级的 `system_role_override` 和
-`max_tokens_field` 覆盖（model 优先于 provider）。静态的按 profile 请求 header
-（`extra_headers`，用于会话亲和 / 路由）是独立的 profile 配置字段，经
-`OpenAiChatProvider` 构造传入，不是 `CompatConfig` 标志。
+已退役键 `system_role_override`、`supports_store`、`supports_developer_role`
+与静态 `reasoning_effort` 字符串在每个配置位置（catalog `x-opi.compat`、产品
+TOML profile 与模型 compat）都会报出显式迁移错误——绝不静默忽略。请求
+thinking 意图与所选 `ModelInfo::thinking_level_map` 是 reasoning wire 输出的
+唯一来源。
+
+工具结果按锁定来源投影：文本（或 `(see attached image)` / `(no tool output)`
+占位符）承载于 `role: "tool"` 消息；当模型接受图片时，图像部分承载于一条尾随
+的 user 消息（标签 `Attached image(s) from tool result:`）；错误结果保留确定的
+`[tool_error]` 前缀。
+
+### 已声明 thinking 格式（on/off/null/省略）
+
+`openai` 发送 `reasoning_effort`（on 用映射值，off 用模型声明的 off 值）；
+`openrouter` 发送 `reasoning: {effort}`；`deepseek` 发送
+`thinking: {type: enabled|disabled}`（off 不可映射的模型从不发送关闭标记）；
+`together` 发送 `reasoning: {enabled}`；`baseten` 发送 `chat_template_args`
+外加 off effort 值；`zai` 发送带 `clear_thinking` 的
+`thinking: {type: enabled|disabled}`；`qwen` 发送 `enable_thinking`；
+`qwen-chat-template` 发送固定 `chat_template_kwargs`；`chat-template` 解析配置的
+`$var` 值；`string-thinking` 发送 `thinking` 字符串；`ant-ling` 仅在设置了
+effort 时发送 `reasoning: {effort}`。
+
+### Native 与 simple 选项（ONB-03）
+
+| 选项 | 接受类型 / 单位 | 省略 · 默认 | 优先级 · wire 字段 · 类型化拒绝 |
+|------|----------------|-------------|----------------------------------|
+| `tool_choice`（native） | `OpenAiToolChoice`：`None`/`Auto`/`Required`/具名函数 | 省略则字段缺席 | native 选项独占该字段；wire `tool_choice`（字符串或 `{type: function, function: {name}}`）；simple 入口仅接受中性 `Auto`/`None`。 |
+| `reasoning_effort`（native） | `ThinkingLevel`：`minimal`/`low`/`medium`/`high`/`xhigh`/`max` | 省略 = 无 effort 意图；off 按所声明格式的 off 投影 | native effort 取代中性 `Request::thinking`；wire 字段随 `thinking_format`；不支持的级别在 auth 前以类型化 `Config` 预检失败。 |
+| `thinking_budgets`（native） | 每级别 token 数（`u64`） | 省略的级别使用来源默认 1024/2048/8192/16384（`xhigh`/`max` 映射为 `high`） | 仅经配置的预算字段发送，并夹取以保证响应上限下至少剩余 1024 token；小于等于零的预算省略。 |
+| 中性 effort（simple） | `Request::thinking` 级别 | 默认禁用 | simple 入口把不支持的级别夹取到最近的受支持级别（先向上再向下）；native 入口保留精确级别。 |
+| `store` | — | 推断基线 | 见 compat 表；显式配置胜出。 |
+
+`ModelCompatOverride` 在 profile 默认值之上叠加模型级的 `instruction_role`、
+`store`、`thinking_format` 与 `max_tokens_field` 覆盖（model 优先于
+provider）。静态的按 profile 请求 header（`extra_headers`，用于会话亲和 /
+路由）是独立的 profile 配置字段，经 `OpenAiChatProvider` 构造传入，不是
+`CompatConfig` 标志。
 
 OpenAI Responses 原生语义（`ResponsesConfig`）：`store` 和 `strict_tools`
 已实现。静态 `reasoning_effort` 仅保留为遗留兼容性元数据；`request.thinking`

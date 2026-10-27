@@ -163,7 +163,7 @@ async fn native_chat_omits_absent_max_while_simple_resolves_the_default() {
     let sent = bodies(&server).await;
     assert!(sent[0].get("max_tokens").is_none());
     assert!(sent[0].get("max_completion_tokens").is_none());
-    assert_eq!(sent[1]["max_tokens"], 1_000);
+    assert_eq!(sent[1]["max_completion_tokens"], 1_000);
 }
 
 #[tokio::test]
@@ -175,7 +175,7 @@ async fn native_chat_explicit_limit_is_not_context_clamped() {
         .complete(record, input, api.options(()))
         .await
         .unwrap();
-    assert_eq!(bodies(&server).await[0]["max_tokens"], 20_000);
+    assert_eq!(bodies(&server).await[0]["max_completion_tokens"], 20_000);
 }
 
 #[tokio::test]
@@ -233,6 +233,7 @@ async fn simple_preparation_counts_canonical_system_changes_after_the_usage_anch
                 error_message: None,
                 timestamp_ms: 2,
                 diagnostics: vec![],
+                duration_ms: None,
             }),
             Message::System(SystemMessage {
                 content: "s".repeat(3_500),
@@ -248,7 +249,7 @@ async fn simple_preparation_counts_canonical_system_changes_after_the_usage_anch
         .await
         .unwrap();
     // Positive usage 670 plus the later 3500 UTF-16 units / 3.5 = 1000.
-    assert_eq!(bodies(&server).await[0]["max_tokens"], 4_234);
+    assert_eq!(bodies(&server).await[0]["max_completion_tokens"], 4_234);
 }
 
 struct SuccessThenFailureSource {

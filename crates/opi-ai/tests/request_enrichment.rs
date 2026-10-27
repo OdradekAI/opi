@@ -384,7 +384,7 @@ async fn session_affinity_wire_mappings() {
         chat_server.uri(),
         "compatible".into(),
         opi_ai::openai_chat::CompatConfig {
-            send_session_affinity_headers: true,
+            send_session_affinity_headers: Some(true),
             ..Default::default()
         },
         vec![],

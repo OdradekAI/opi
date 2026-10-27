@@ -557,7 +557,7 @@ async fn same_origin_redirect_keeps_authorization_with_exact_sends() {
             "same-origin redirect must preserve the protected authorization header"
         );
         assert_eq!(
-            request.content_length, 65,
+            request.content_length, 130,
             "307 preserves the POST method and body across the hop"
         );
     }

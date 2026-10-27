@@ -347,6 +347,7 @@ fn redact_assistant_message(
             .map(|error| redact_text(error, RedactionMode::Summary)),
         timestamp_ms: message.timestamp_ms,
         diagnostics: Vec::new(),
+        duration_ms: None,
     }
 }
 

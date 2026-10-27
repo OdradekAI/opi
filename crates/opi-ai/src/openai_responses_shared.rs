@@ -1254,6 +1254,7 @@ fn empty_assistant_message(
         error_message: None,
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
+        duration_ms: None,
     }
 }
 

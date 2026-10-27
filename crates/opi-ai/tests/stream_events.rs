@@ -28,6 +28,7 @@ fn sample_assistant_message() -> AssistantMessage {
         error_message: None,
         timestamp_ms: 1000,
         diagnostics: Vec::new(),
+        duration_ms: None,
     }
 }
 
@@ -682,6 +683,7 @@ mod diagnostics_serde_tests {
                 reason: "strict_tool_limits_exceeded".into(),
                 detail: None,
             }],
+            duration_ms: None,
         };
         let wire = serde_json::to_value(&message).unwrap();
         let back: AssistantMessage = serde_json::from_value(wire.clone()).unwrap();

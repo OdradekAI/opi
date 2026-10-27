@@ -800,6 +800,7 @@ fn empty_assistant_message(
         error_message: None,
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
+        duration_ms: None,
     }
 }
 
@@ -815,37 +816,241 @@ const OPENAI_CHAT_STREAM_ERROR: &str = "openai chat stream error";
 
 /// Configuration overrides for OpenAI-compatible provider profiles.
 ///
-/// Downstream providers (OpenRouter, Mistral) can customize:
-/// - `system_role_override`: use "developer" instead of "system" (o-series models)
-/// - `max_tokens_field`: field name for token limit ("max_tokens" vs "max_completion_tokens")
-/// - `tool_result_name_field`: whether tool results carry a "name" field
-/// - `usage_in_stream`: whether usage appears in every chunk vs only the last
-/// - `strict_tool_schema`: emit `"strict": true` on function tool definitions
-/// - `reasoning_effort`: legacy profile metadata; request/model thinking maps
-///   are authoritative for wire output
+/// Task 20.36 (AIR-022/V-11) applies the single normalization rule: every
+/// policy field is an explicit value layered over the adapter's frozen
+/// provider inference (`detect_chat_baseline`). Downstream profiles set:
+/// - `store`: `Omit`/`SendFalse` store-field policy
+/// - `instruction_role`: `Auto`/`System`/`DeveloperForReasoning`/`Developer`
+/// - `thinking_format` + `supports_reasoning_effort`: declared reasoning wire
+///   format and standard effort-field support
+/// - `max_tokens_field`: output-limit field name override
+/// - `tool_result_name_field`: tool results carry a `name` field
+/// - `usage_in_stream`: `stream_options.include_usage` policy
+/// - `strict_tool_schema`: emit `"strict": true` on function tools
 /// - `cache_key`: emit `prompt_cache_key` for OpenAI prompt-cache affinity
-/// - `send_session_affinity_headers`: emit compatible session-affinity headers
-/// - `require_assistant_after_tool_result`: compatibility-metadata flag (see below)
+/// - `send_session_affinity_headers`: session-affinity header policy
+/// - `require_assistant_after_tool_result`: legacy wire bridge projection
+/// - `requires_thinking_as_text`: replay thinking as plain text
+/// - `requires_reasoning_content_on_assistant_messages`: DeepSeek-style
+///   empty `reasoning_content` on assistant messages
+/// - `zai_tool_stream`/`vllm_priority`: explicit-only extras
+/// - `thinking_token_budget_field`/`supports_thinking_token_budget`: the
+///   reasoning token-budget request field
+/// - `chat_template_kwargs`/`chat_template_args`: `$var` template values
+/// - `chat_completions_path`: endpoint path override
 ///
-/// `require_assistant_after_tool_result` records that a profile targets an
-/// endpoint whose legacy wire contract expected a synthetic assistant turn after
-/// each tool result. Modern OpenAI Chat Completions does not require this, so the
-/// shared adapter records the flag for compatibility metadata without altering
-/// message ordering; an endpoint that materially requires the legacy synthesis
-/// needs a dedicated first-class adapter.
+/// The retired `system_role_override`, `supports_store`,
+/// `supports_developer_role` and static `reasoning_effort` keys fail with
+/// migration errors at every config position (catalog extension and product
+/// TOML); request thinking intent and the model thinking-level map are the
+/// only sources of reasoning wire output.
 pub use crate::model_info::OpenAiCompletionsCompat as CompatConfig;
 
 /// Per-model compatibility overrides.
 ///
 /// A model entry may override a subset of the provider-level [`CompatConfig`].
 /// At request-build time the provider resolves the effective config by layering
-/// a model's override on top of the provider-level default (model wins).
+/// the frozen adapter inference, then the provider-level defaults, then a
+/// model's override (model wins per field).
 #[derive(Debug, Clone, Default)]
 pub struct ModelCompatOverride {
-    /// Override the system-role mapping for this model only.
-    pub system_role_override: Option<String>,
+    /// Override the normalized instruction-role policy for this model only.
+    pub instruction_role: Option<crate::model_info::ChatInstructionRole>,
+    /// Override the normalized store-field policy for this model only.
+    pub store: Option<crate::model_info::ChatStoreField>,
+    /// Override the declared thinking wire format for this model only.
+    pub thinking_format: Option<crate::model_info::ChatThinkingFormat>,
     /// Override the max-tokens field name for this model only.
     pub max_tokens_field: Option<String>,
+}
+
+/// Apply every explicit (non-`None`) field of `explicit` over `base`.
+fn overlay_explicit(
+    base: &mut crate::model_info::OpenAiCompletionsCompat,
+    explicit: &crate::model_info::OpenAiCompletionsCompat,
+) {
+    if explicit.store.is_some() {
+        base.store = explicit.store.clone();
+    }
+    if explicit.instruction_role.is_some() {
+        base.instruction_role = explicit.instruction_role.clone();
+    }
+    if explicit.thinking_format.is_some() {
+        base.thinking_format = explicit.thinking_format.clone();
+    }
+    if explicit.supports_reasoning_effort.is_some() {
+        base.supports_reasoning_effort = explicit.supports_reasoning_effort;
+    }
+    if explicit.usage_in_stream.is_some() {
+        base.usage_in_stream = explicit.usage_in_stream;
+    }
+    if explicit.max_tokens_field.is_some() {
+        base.max_tokens_field = explicit.max_tokens_field.clone();
+    }
+    if explicit
+        .requires_reasoning_content_on_assistant_messages
+        .is_some()
+    {
+        base.requires_reasoning_content_on_assistant_messages =
+            explicit.requires_reasoning_content_on_assistant_messages;
+    }
+    if explicit.send_session_affinity_headers.is_some() {
+        base.send_session_affinity_headers = explicit.send_session_affinity_headers;
+    }
+    base.tool_result_name_field = explicit.tool_result_name_field;
+    base.strict_tool_schema = explicit.strict_tool_schema;
+    base.cache_key = explicit.cache_key.clone();
+    base.require_assistant_after_tool_result = explicit.require_assistant_after_tool_result;
+    base.requires_thinking_as_text = explicit.requires_thinking_as_text;
+    base.zai_tool_stream = explicit.zai_tool_stream;
+    base.vllm_priority = explicit.vllm_priority;
+    base.thinking_token_budget_field = explicit.thinking_token_budget_field.clone();
+    base.supports_thinking_token_budget = explicit.supports_thinking_token_budget;
+    if !explicit.chat_template_kwargs.is_empty() {
+        base.chat_template_kwargs = explicit.chat_template_kwargs.clone();
+    }
+    if !explicit.chat_template_args.is_empty() {
+        base.chat_template_args = explicit.chat_template_args.clone();
+    }
+    if !explicit.chat_completions_path.is_empty() {
+        base.chat_completions_path = explicit.chat_completions_path.clone();
+    }
+}
+
+/// The frozen SE-01 provider-inference discriminant set for the Chat wire.
+/// Detection is by exact provider id or parsed base-URL host equality; this
+/// replaces Pi's substring probe with known-host matching (recorded as an
+/// explicit correction, not a verbatim detector copy).
+struct ChatProviderClass {
+    non_standard: bool,
+    open_router: bool,
+    open_router_developer_model: bool,
+    legacy_max_tokens: bool,
+    deep_seek: bool,
+    thinking_format: crate::model_info::ChatThinkingFormat,
+    sends_effort_field: bool,
+}
+
+fn classify_chat_provider(provider_id: &str, base_url: &str, model_id: &str) -> ChatProviderClass {
+    let host = base_url
+        .split("://")
+        .nth(1)
+        .unwrap_or(base_url)
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let host_is = |known: &str| host == known || host.ends_with(&format!(".{known}"));
+
+    let zai = provider_id == "zai"
+        || provider_id == "zai-coding-cn"
+        || host_is("api.z.ai")
+        || host_is("open.bigmodel.cn");
+    let together =
+        provider_id == "together" || host_is("api.together.ai") || host_is("api.together.xyz");
+    let moonshot = provider_id == "moonshotai"
+        || provider_id == "moonshotai-cn"
+        || host_is("api.moonshot.ai")
+        || host_is("api.moonshot.cn");
+    let open_router = provider_id == "openrouter" || host_is("openrouter.ai");
+    let cloudflare_workers_ai =
+        provider_id == "cloudflare-workers-ai" || host_is("api.cloudflare.com");
+    let cloudflare_ai_gateway =
+        provider_id == "cloudflare-ai-gateway" || host_is("gateway.ai.cloudflare.com");
+    let nvidia = provider_id == "nvidia" || host_is("integrate.api.nvidia.com");
+    let ant_ling = provider_id == "ant-ling" || host_is("api.ant-ling.com");
+    let cerebras = provider_id == "cerebras" || host_is("cerebras.ai");
+    let deep_seek = provider_id == "deepseek" || host_is("deepseek.com");
+    let chutes = host_is("chutes.ai");
+    let opencode = provider_id == "opencode" || host_is("opencode.ai");
+    let grok = provider_id == "xai" || host_is("api.x.ai");
+
+    let non_standard = nvidia
+        || cerebras
+        || grok
+        || together
+        || chutes
+        || deep_seek
+        || zai
+        || moonshot
+        || opencode
+        || cloudflare_workers_ai
+        || cloudflare_ai_gateway
+        || ant_ling;
+    let open_router_developer_model =
+        open_router && (model_id.starts_with("anthropic/") || model_id.starts_with("openai/"));
+    let legacy_max_tokens = chutes
+        || deep_seek
+        || moonshot
+        || cloudflare_ai_gateway
+        || together
+        || nvidia
+        || ant_ling
+        || zai;
+    let thinking_format = if deep_seek {
+        crate::model_info::ChatThinkingFormat::DeepSeek
+    } else if zai {
+        crate::model_info::ChatThinkingFormat::Zai
+    } else if together {
+        crate::model_info::ChatThinkingFormat::Together
+    } else if ant_ling {
+        crate::model_info::ChatThinkingFormat::AntLing
+    } else if open_router {
+        crate::model_info::ChatThinkingFormat::OpenRouter
+    } else {
+        crate::model_info::ChatThinkingFormat::OpenAi
+    };
+    let sends_effort_field =
+        !(grok || zai || moonshot || together || cloudflare_ai_gateway || nvidia || ant_ling);
+
+    ChatProviderClass {
+        non_standard,
+        open_router,
+        open_router_developer_model,
+        legacy_max_tokens,
+        deep_seek,
+        thinking_format,
+        sends_effort_field,
+    }
+}
+
+/// Adapter baseline inference (frozen SE-01 table): the pi-baseline defaults a
+/// profile starts from before explicit provider/model values apply.
+fn detect_chat_baseline(
+    provider_id: &str,
+    base_url: &str,
+    model_id: &str,
+) -> crate::model_info::OpenAiCompletionsCompat {
+    use crate::model_info::{ChatInstructionRole, ChatStoreField};
+    let class = classify_chat_provider(provider_id, base_url, model_id);
+    crate::model_info::OpenAiCompletionsCompat {
+        store: Some(if class.non_standard {
+            ChatStoreField::Omit
+        } else {
+            ChatStoreField::SendFalse
+        }),
+        instruction_role: Some(
+            if class.open_router_developer_model || (!class.non_standard && !class.open_router) {
+                ChatInstructionRole::DeveloperForReasoning
+            } else {
+                ChatInstructionRole::System
+            },
+        ),
+        thinking_format: Some(class.thinking_format),
+        supports_reasoning_effort: Some(class.sends_effort_field),
+        usage_in_stream: Some(true),
+        max_tokens_field: Some(
+            if class.legacy_max_tokens {
+                "max_tokens"
+            } else {
+                "max_completion_tokens"
+            }
+            .into(),
+        ),
+        requires_reasoning_content_on_assistant_messages: Some(class.deep_seek),
+        send_session_affinity_headers: Some(class.open_router),
+        ..Default::default()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -853,12 +1058,16 @@ pub struct ModelCompatOverride {
 // ---------------------------------------------------------------------------
 
 /// Concrete OpenAI Chat Completions API provider.
+#[derive(Clone)]
 pub struct OpenAiChatProvider {
     base_url: String,
     models: Vec<ModelInfo>,
     compat: CompatConfig,
     model_overrides: HashMap<String, ModelCompatOverride>,
     provider_id: String,
+    /// Typed native options for one direct/native dispatch; `None` on shared
+    /// profile instances (task 20.36). Never cloned between logical calls.
+    native_options: Option<OpenAiCompletionsOptions>,
     headers: ProviderHeaders,
     route_headers: Vec<(String, String)>,
     catalog_compat: bool,
@@ -965,6 +1174,7 @@ impl OpenAiChatProvider {
             auth_invalid_policy: AuthInvalidPolicy::CredentialManaged,
             direct_prompt_cache_key,
             copilot_initiator: false,
+            native_options: None,
             client,
         }
     }
@@ -989,6 +1199,7 @@ impl OpenAiChatProvider {
             auth_invalid_policy: AuthInvalidPolicy::Static,
             direct_prompt_cache_key: false,
             copilot_initiator: false,
+            native_options: None,
             client: Arc::new(HttpClient::new()),
         }
     }
@@ -1013,6 +1224,7 @@ impl OpenAiChatProvider {
             auth_invalid_policy: AuthInvalidPolicy::Static,
             direct_prompt_cache_key: false,
             copilot_initiator: false,
+            native_options: None,
             client,
         }
     }
@@ -1045,26 +1257,47 @@ impl OpenAiChatProvider {
         self
     }
 
-    /// Resolve the effective [`CompatConfig`] for a request's model, layering
-    /// any model-level override on top of the provider-level default.
+    /// Resolve the effective [`CompatConfig`] for a request's model by the
+    /// single normalization rule: adapter inference baseline, provider profile
+    /// explicit values, then model-level overrides (per-field wins).
     fn resolve_compat(&self, model_id: &str) -> CompatConfig {
+        let model = self.models.iter().find(|model| model.id == model_id);
+        self.resolve_compat_for(model_id, model)
+    }
+
+    fn resolve_compat_for(
+        &self,
+        model_id: &str,
+        model: Option<&crate::provider::ModelInfo>,
+    ) -> CompatConfig {
+        let inference_base_url = model
+            .and_then(|model| model.base_url.as_deref())
+            .unwrap_or(self.base_url.as_str());
+        let mut resolved = detect_chat_baseline(&self.provider_id, inference_base_url, model_id);
+        // The provider profile's explicit values win per field.
         if self.catalog_compat
-            && let Some(ModelInfo {
+            && let Some(crate::provider::ModelInfo {
                 compat: crate::model_info::WireCompat::OpenAiCompletions(compat),
                 ..
-            }) = self.models.iter().find(|model| model.id == model_id)
+            }) = model
         {
-            return compat.clone();
+            overlay_explicit(&mut resolved, compat);
+        } else {
+            overlay_explicit(&mut resolved, &self.compat);
         }
-        let Some(ov) = self.model_overrides.get(model_id) else {
-            return self.compat.clone();
-        };
-        let mut resolved = self.compat.clone();
-        if let Some(role) = &ov.system_role_override {
-            resolved.system_role_override = Some(role.clone());
-        }
-        if let Some(field) = &ov.max_tokens_field {
-            resolved.max_tokens_field = field.clone();
+        if let Some(ov) = self.model_overrides.get(model_id) {
+            if let Some(role) = &ov.instruction_role {
+                resolved.instruction_role = Some(role.clone());
+            }
+            if let Some(store) = &ov.store {
+                resolved.store = Some(store.clone());
+            }
+            if let Some(format) = &ov.thinking_format {
+                resolved.thinking_format = Some(format.clone());
+            }
+            if let Some(field) = &ov.max_tokens_field {
+                resolved.max_tokens_field = Some(field.clone());
+            }
         }
         resolved
     }
@@ -1085,9 +1318,26 @@ impl OpenAiChatProvider {
             .map(|(_, id)| id)
             .unwrap_or(&request.model);
 
-        // Resolve the effective compat config for this model (model-level
-        // overrides win over the provider-level default).
-        let compat = self.resolve_compat(model_id);
+        // Resolve the effective compat config for this model (inference ->
+        // provider profile -> model override).
+        let model = self.models.iter().find(|model| model.id == model_id);
+        let compat = self.resolve_compat_for(model_id, model);
+        let model_reasoning = model
+            .map(|model| model.capabilities.supports_thinking)
+            .unwrap_or(false);
+        let instruction_role = match &compat.instruction_role {
+            Some(crate::model_info::ChatInstructionRole::System) => "system",
+            Some(crate::model_info::ChatInstructionRole::Developer) => "developer",
+            Some(crate::model_info::ChatInstructionRole::DeveloperForReasoning)
+            | Some(crate::model_info::ChatInstructionRole::Auto)
+            | None => {
+                if model_reasoning {
+                    "developer"
+                } else {
+                    "system"
+                }
+            }
+        };
 
         // Canonical transcript consumption (AIR-020); this wire currently
         // projects by collapse.
@@ -1129,16 +1379,31 @@ impl OpenAiChatProvider {
                 &replay.messages,
                 crate::replay::supports_images_in_catalog(&self.models, model_id),
                 &system_prompt,
+                instruction_role,
                 &compat,
+                model_reasoning,
             ),
         });
 
-        if compat.usage_in_stream {
+        if compat.usage_in_stream.unwrap_or(true) {
             body["stream_options"] = serde_json::json!({ "include_usage": true });
         }
 
+        // Store-field policy (AIR-022): SendFalse emits `store:false`, Omit
+        // leaves the field absent; both differ from an unset policy.
+        if matches!(
+            compat.store,
+            Some(crate::model_info::ChatStoreField::SendFalse)
+        ) {
+            body["store"] = serde_json::Value::Bool(false);
+        }
+
         if let Some(max_tokens) = request.max_tokens {
-            body[&compat.max_tokens_field] = serde_json::Value::Number(max_tokens.into());
+            let field = compat
+                .max_tokens_field
+                .as_deref()
+                .unwrap_or("max_completion_tokens");
+            body[field] = serde_json::Value::Number(max_tokens.into());
         }
         if let Some(temp) = request.temperature
             && let Some(n) = serde_json::Number::from_f64(temp)
@@ -1175,11 +1440,35 @@ impl OpenAiChatProvider {
                     .collect(),
             );
         }
-        if request.thinking.enabled
-            && let Some(model) = self.models.iter().find(|model| model.id == model_id)
-            && let Ok(Some(effort)) = model.thinking_level_map.resolve(request.thinking.level)
-        {
-            body["reasoning_effort"] = serde_json::Value::String(effort);
+        // Native options own effort and budgets; the simple entry clamps the
+        // neutral intent before this point; the plain Provider path carries
+        // the neutral intent unchanged.
+        let native = self.native_options.as_ref();
+        let (effort, budget_override) = match native {
+            Some(options) if !options.simple => (
+                options.reasoning_effort,
+                options
+                    .reasoning_effort
+                    .and_then(|level| options.thinking_budgets.get(&level).copied()),
+            ),
+            _ => (
+                (request.thinking.enabled
+                    && request.thinking.level != crate::model_info::ThinkingLevel::None)
+                    .then_some(request.thinking.level),
+                request.thinking.budget_tokens,
+            ),
+        };
+        apply_chat_thinking_projection(
+            &mut body,
+            &compat,
+            model,
+            effort,
+            budget_override,
+            request.max_tokens,
+            !current_tools.is_empty(),
+        );
+        if let Some(tool_choice) = native.and_then(|options| options.tool_choice.as_ref()) {
+            body["tool_choice"] = tool_choice.wire_value();
         }
         if request.cache_retention != CacheRetention::Disabled {
             if let Some(cache_key) = compat.cache_key.as_ref()
@@ -1250,6 +1539,29 @@ impl OpenAiChatProvider {
 
         let _cancel = cancel;
         Box::pin(stream::iter(stream_events))
+    }
+
+    /// Stamp the measured response duration onto a terminal Done message;
+    /// already-known values and non-Done items pass through unchanged.
+    fn stamp_chat_done_duration(
+        item: Result<AssistantStreamEvent, crate::provider::ProviderError>,
+        activated_at: Option<std::time::Instant>,
+    ) -> Result<AssistantStreamEvent, crate::provider::ProviderError> {
+        match (item, activated_at) {
+            (
+                Ok(AssistantStreamEvent::Done {
+                    reason,
+                    mut message,
+                }),
+                Some(activated_at),
+            ) => {
+                if message.duration_ms.is_none() {
+                    message.duration_ms = Some(activated_at.elapsed().as_millis() as u64);
+                }
+                Ok(AssistantStreamEvent::Done { reason, message })
+            }
+            (item, _) => item,
+        }
     }
 
     /// Real HTTP streaming: POST to OpenAI Chat Completions API.
@@ -1345,6 +1657,9 @@ impl OpenAiChatProvider {
         let mut byte_stream = response.bytes_stream();
         let mut buffer = String::new();
         let mut decoder = crate::text_decode::StreamTextDecoder::new();
+        // AIR-061: monotonic duration from response-stream activation (first
+        // body bytes) to terminal; setup time before activation stays untimed.
+        let mut response_activated_at: Option<std::time::Instant> = None;
         let mut mapper = OpenAiChatMapper::new(
             crate::ApiKind::OpenAi,
             &provider_id,
@@ -1380,6 +1695,9 @@ impl OpenAiChatProvider {
                         ProviderError::StreamError(ProviderErrorSummary::sanitized(e.to_string()))
                     }
                 })?;
+                if response_activated_at.is_none() {
+                    response_activated_at = Some(std::time::Instant::now());
+                }
                 buffer.push_str(&decoder.push(&chunk));
 
                 for (parsed, raw) in drain_sse_events(&mut buffer) {
@@ -1396,6 +1714,8 @@ impl OpenAiChatProvider {
                         ParsedEvent::Valid(events) => {
                             for event in events {
                                 for item in mapper.process(event) {
+                                    let item =
+                                        Self::stamp_chat_done_duration(item, response_activated_at);
                                     if !send_or_cancel(&cancel, tx, item).await? {
                                         return Ok(());
                                     }
@@ -1417,7 +1737,9 @@ impl OpenAiChatProvider {
             let eof_tail = decoder.finish();
             buffer.push_str(&eof_tail);
             if let Some(done) = mapper.flush_pending_done() {
-                let _ = send_or_cancel(&cancel, tx, Ok(done)).await;
+                if let Ok(done) = Self::stamp_chat_done_duration(Ok(done), response_activated_at) {
+                    let _ = send_or_cancel(&cancel, tx, Ok(done)).await;
+                }
             } else if !mapper.saw_done {
                 let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
                     "stream ended without a terminal event",
@@ -1468,27 +1790,330 @@ fn map_http_status(
     }
 }
 
+/// Pi-1.3.0 thinking-budget defaults per level; xhigh/max budget families
+/// downgrade to high (AIR-053).
+fn chat_thinking_budget_default(level: crate::model_info::ThinkingLevel) -> u64 {
+    use crate::model_info::ThinkingLevel::*;
+    match level {
+        Minimal => 1024,
+        Low => 2048,
+        Medium => 8192,
+        High | XHigh | Max => 16384,
+        None => 1024,
+    }
+}
+
+/// One declared thinking format's on/off/null/omission wire projection
+/// (AIR-022 / V-11). `effort` is the per-call intent (None when disabled or
+/// off); the model thinking-level map owns value mapping and off semantics:
+/// `resolve(None)` erroring plays Pi's `off: null` (the wire cannot disable),
+/// `Ok(None)` plays an unset off value and format defaults apply.
+#[allow(clippy::too_many_arguments)]
+fn apply_chat_thinking_projection(
+    body: &mut serde_json::Value,
+    compat: &CompatConfig,
+    model: Option<&crate::provider::ModelInfo>,
+    effort: Option<crate::model_info::ThinkingLevel>,
+    budget_override: Option<u64>,
+    max_tokens: Option<u64>,
+    has_tools: bool,
+) {
+    use crate::model_info::ChatThinkingFormat as Format;
+
+    let model_reasoning = model
+        .map(|model| model.capabilities.supports_thinking)
+        .unwrap_or(false);
+    let thinking_map = model.map(|model| &model.thinking_level_map);
+    let mapped = |level: crate::model_info::ThinkingLevel| -> Option<String> {
+        thinking_map
+            .and_then(|map| map.resolve(level).ok())
+            .flatten()
+    };
+    let effort = effort.filter(|level| *level != crate::model_info::ThinkingLevel::None);
+    let off_wire_value =
+        || match thinking_map.map(|map| map.resolve(crate::model_info::ThinkingLevel::None)) {
+            Some(Ok(value)) => Some(value),
+            // Off not mappable: Pi's `off: null`; the wire cannot disable.
+            Some(Err(_)) | None => None,
+        };
+    let supports_effort_field = compat.supports_reasoning_effort.unwrap_or(true);
+
+    let budget_field = compat.thinking_token_budget_field.clone().or({
+        if compat.supports_thinking_token_budget {
+            Some(crate::model_info::ChatThinkingTokenBudgetField::ThinkingTokenBudget)
+        } else {
+            None
+        }
+    });
+    // Budget only exists for an active effort on a reasoning model, clamped so
+    // at least MIN_ANSWER_TOKENS remain under the shared response ceiling.
+    let mut thinking_budget: Option<u64> = None;
+    if let (Some(level), true) = (effort, model_reasoning) {
+        let ceiling = max_tokens
+            .or(model.map(|model| model.capabilities.max_output_tokens))
+            .unwrap_or(0);
+        let budget = budget_override.unwrap_or_else(|| chat_thinking_budget_default(level));
+        let clamped = budget.min(ceiling.saturating_sub(1024));
+        if clamped > 0 {
+            thinking_budget = Some(clamped);
+        }
+    }
+
+    let format = compat.thinking_format.clone().unwrap_or_default();
+    match format {
+        Format::Zai if model_reasoning => {
+            body["thinking"] = if effort.is_some() {
+                serde_json::json!({"type": "enabled", "clear_thinking": false})
+            } else {
+                serde_json::json!({"type": "disabled"})
+            };
+            if let Some(level) = effort
+                && supports_effort_field
+                && let Some(value) = mapped(level)
+            {
+                body["reasoning_effort"] = serde_json::Value::String(value);
+            }
+        }
+        Format::Qwen if model_reasoning => {
+            body["enable_thinking"] = serde_json::Value::Bool(effort.is_some());
+            if let Some(level) = effort
+                && supports_effort_field
+                && let Some(value) = mapped(level)
+            {
+                body["reasoning_effort"] = serde_json::Value::String(value);
+            }
+        }
+        Format::QwenChatTemplate if model_reasoning => {
+            body["chat_template_kwargs"] = serde_json::json!({
+                "enable_thinking": effort.is_some(),
+                "preserve_thinking": true,
+            });
+        }
+        Format::ChatTemplate if model_reasoning => {
+            let values = resolve_chat_template_values(
+                &compat.chat_template_kwargs,
+                effort,
+                mapped,
+                thinking_budget,
+            );
+            if !values.is_empty() {
+                body["chat_template_kwargs"] = serde_json::Value::Object(values);
+            }
+        }
+        Format::Baseten if model_reasoning => {
+            let values = resolve_chat_template_values(
+                &compat.chat_template_args,
+                effort,
+                mapped,
+                thinking_budget,
+            );
+            if !values.is_empty() {
+                body["chat_template_args"] = serde_json::Value::Object(values);
+            }
+            if supports_effort_field {
+                let value = match effort {
+                    Some(level) => mapped(level),
+                    None => off_wire_value().flatten(),
+                };
+                if let Some(value) = value {
+                    body["reasoning_effort"] = serde_json::Value::String(value);
+                }
+            }
+        }
+        Format::DeepSeek if model_reasoning => {
+            if effort.is_some() {
+                body["thinking"] = serde_json::json!({"type": "enabled"});
+            } else if off_wire_value().is_some() {
+                // Pi gates on `map.off !== null`: any mappable off (explicit
+                // value or unset) still sends the disable marker.
+                body["thinking"] = serde_json::json!({"type": "disabled"});
+            }
+            if let Some(level) = effort
+                && supports_effort_field
+                && let Some(value) = mapped(level)
+            {
+                body["reasoning_effort"] = serde_json::Value::String(value);
+            }
+        }
+        Format::OpenRouter if model_reasoning => {
+            if let Some(level) = effort {
+                body["reasoning"] = serde_json::json!({
+                    "effort": mapped(level)
+                        .unwrap_or_else(|| level.wire_name().unwrap_or("off").to_owned()),
+                });
+            } else if let Some(off) = off_wire_value() {
+                body["reasoning"] = serde_json::json!({
+                    "effort": off.unwrap_or_else(|| "none".to_owned()),
+                });
+            }
+        }
+        Format::AntLing if model_reasoning => {
+            if let Some(level) = effort
+                && let Some(value) = mapped(level)
+            {
+                body["reasoning"] = serde_json::json!({ "effort": value });
+            }
+        }
+        Format::Together if model_reasoning => {
+            body["reasoning"] = serde_json::json!({"enabled": effort.is_some()});
+            if let Some(level) = effort
+                && supports_effort_field
+                && let Some(value) = mapped(level)
+            {
+                body["reasoning_effort"] = serde_json::Value::String(value);
+            }
+        }
+        Format::StringThinking if model_reasoning => {
+            if let Some(level) = effort {
+                let value =
+                    mapped(level).unwrap_or_else(|| level.wire_name().unwrap_or("off").to_owned());
+                body["thinking"] = serde_json::Value::String(value);
+            } else if let Some(off) = off_wire_value() {
+                body["thinking"] =
+                    serde_json::Value::String(off.unwrap_or_else(|| "none".to_owned()));
+            }
+        }
+        Format::OpenAi
+        | Format::Zai
+        | Format::Qwen
+        | Format::QwenChatTemplate
+        | Format::ChatTemplate
+        | Format::Baseten
+        | Format::DeepSeek
+        | Format::OpenRouter
+        | Format::AntLing
+        | Format::Together
+        | Format::StringThinking => {
+            // OpenAI-style `reasoning_effort`: on with a mapped value, off with
+            // a declared off value; unsupported levels never invent a field.
+            if model_reasoning && supports_effort_field {
+                let value = match effort {
+                    Some(level) => mapped(level),
+                    None => off_wire_value().flatten(),
+                };
+                if let Some(value) = value {
+                    body["reasoning_effort"] = serde_json::Value::String(value);
+                }
+            }
+        }
+    }
+
+    // Top-level budget cap, independent of the declared format.
+    if let Some(field) = budget_field
+        && let Some(budget) = thinking_budget
+    {
+        body[field.wire_name()] = serde_json::Value::Number(budget.into());
+    }
+    if compat.zai_tool_stream && has_tools {
+        body["tool_stream"] = serde_json::Value::Bool(true);
+    }
+    if let Some(priority) = compat.vllm_priority {
+        body["priority"] = serde_json::Value::Number(priority.into());
+    }
+}
+
+/// Resolve `chat_template_kwargs`/`args` values against the request intent;
+/// unset resolutions (for example a missing budget) drop the key entirely.
+fn resolve_chat_template_values(
+    values: &std::collections::BTreeMap<String, crate::model_info::ChatTemplateKwargValue>,
+    effort: Option<crate::model_info::ThinkingLevel>,
+    mapped: impl Fn(crate::model_info::ThinkingLevel) -> Option<String>,
+    thinking_budget: Option<u64>,
+) -> serde_json::Map<String, serde_json::Value> {
+    use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
+    let mut resolved = serde_json::Map::new();
+    for (key, value) in values {
+        let resolved_value = match value {
+            ChatTemplateKwargValue::Literal(literal) => Some(literal.clone()),
+            ChatTemplateKwargValue::Var { var, omit_when_off } => {
+                if effort.is_none() && *omit_when_off {
+                    continue;
+                }
+                match var {
+                    ChatTemplateKwargVar::ThinkingEnabled => {
+                        Some(serde_json::Value::Bool(effort.is_some()))
+                    }
+                    ChatTemplateKwargVar::ThinkingBudget => {
+                        thinking_budget.map(|budget| serde_json::Value::Number(budget.into()))
+                    }
+                    ChatTemplateKwargVar::ThinkingEffort => {
+                        let value = match effort {
+                            Some(level) => {
+                                mapped(level).or_else(|| level.wire_name().map(str::to_owned))
+                            }
+                            None => None,
+                        };
+                        value.map(serde_json::Value::String)
+                    }
+                }
+            }
+        };
+        if let Some(resolved_value) = resolved_value {
+            resolved.insert(key.clone(), resolved_value);
+        }
+    }
+    resolved
+}
+
 fn serialize_messages(
     messages: &[crate::message::Message],
     supports_images: bool,
     system_prompt: &str,
+    instruction_role: &str,
     compat: &CompatConfig,
+    model_reasoning: bool,
 ) -> serde_json::Value {
     let mut result = Vec::new();
 
+    let bridge_wire = compat.require_assistant_after_tool_result;
+    let thinking_as_text = compat.requires_thinking_as_text;
+    let reasoning_content_assistant = compat
+        .requires_reasoning_content_on_assistant_messages
+        .unwrap_or(false);
+
     // System message first
     if !system_prompt.is_empty() {
-        let sys = system_prompt;
-        let role = compat.system_role_override.as_deref().unwrap_or("system");
         result.push(serde_json::json!({
-            "role": role,
-            "content": sys,
+            "role": instruction_role,
+            "content": system_prompt,
         }));
     }
 
-    for msg in messages {
+    fn image_part_url(
+        source: &crate::message::ImageSource,
+        media_type: &crate::message::MediaType,
+    ) -> String {
+        match source {
+            crate::message::ImageSource::Url { url } => url.clone(),
+            crate::message::ImageSource::Base64 { data } => {
+                format!("data:{};base64,{}", media_type.as_str(), data)
+            }
+            crate::message::ImageSource::Bytes { data } => format!(
+                "data:{};base64,{}",
+                media_type.as_str(),
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, data),
+            ),
+        }
+    }
+
+    fn push_assistant_bridge(result: &mut Vec<serde_json::Value>) {
+        result.push(serde_json::json!({
+            "role": "assistant",
+            "content": "I have processed the tool results.",
+        }));
+    }
+
+    // `Some("toolResult")` after a tool-result run without images; the next
+    // user message on a bridge wire inserts the fixed assistant turn.
+    let mut last_role: Option<&str> = None;
+    let mut index = 0;
+    while index < messages.len() {
+        let msg = &messages[index];
         match msg {
             crate::message::Message::User(u) => {
+                if bridge_wire && last_role == Some("toolResult") {
+                    push_assistant_bridge(&mut result);
+                }
                 let content: Vec<serde_json::Value> = u
                     .content
                     .iter()
@@ -1497,25 +2122,9 @@ fn serialize_messages(
                             serde_json::json!({"type": "text", "text": text})
                         }
                         crate::message::InputContent::Image { source, media_type } => {
-                            let url = match source {
-                                crate::message::ImageSource::Url { url } => url.clone(),
-                                crate::message::ImageSource::Base64 { data } => {
-                                    format!("data:{};base64,{}", media_type.as_str(), data)
-                                }
-                                crate::message::ImageSource::Bytes { data } => {
-                                    format!(
-                                        "data:{};base64,{}",
-                                        media_type.as_str(),
-                                        base64::Engine::encode(
-                                            &base64::engine::general_purpose::STANDARD,
-                                            data,
-                                        )
-                                    )
-                                }
-                            };
                             serde_json::json!({
                                 "type": "image_url",
-                                "image_url": {"url": url}
+                                "image_url": {"url": image_part_url(source, media_type)}
                             })
                         }
                     })
@@ -1528,21 +2137,25 @@ fn serialize_messages(
                         "role": "user",
                         "content": text_val,
                     }));
-                    continue;
+                } else {
+                    result.push(serde_json::json!({
+                        "role": "user",
+                        "content": content,
+                    }));
                 }
-                result.push(serde_json::json!({
-                    "role": "user",
-                    "content": content,
-                }));
+                last_role = Some("user");
             }
             crate::message::Message::Assistant(a) => {
                 let mut tool_calls_json = Vec::new();
-                let mut text_parts = Vec::new();
+                let mut text_parts: Vec<&str> = Vec::new();
+                let mut thinking_blocks: Vec<(&str, Option<&str>)> = Vec::new();
 
                 for c in &a.content {
                     match c {
                         AssistantContent::Text { text } => {
-                            text_parts.push(text.clone());
+                            if !text.trim().is_empty() {
+                                text_parts.push(text);
+                            }
                         }
                         AssistantContent::ToolCall { tool_call } => {
                             // The wire's arguments field is a raw JSON string:
@@ -1558,124 +2171,191 @@ fn serialize_messages(
                                 }
                             }));
                         }
-                        AssistantContent::Thinking { .. }
-                        | AssistantContent::RedactedThinking { .. } => {}
+                        AssistantContent::Thinking {
+                            thinking,
+                            signature,
+                        } => {
+                            if !thinking.trim().is_empty() {
+                                thinking_blocks.push((thinking, signature.as_deref()));
+                            }
+                        }
+                        AssistantContent::RedactedThinking { .. } => {}
                     }
                 }
 
+                let assistant_text = text_parts.join("");
                 let mut assistant_msg = serde_json::json!({
                     "role": "assistant",
                 });
-                // Text produced in the same turn stays visible alongside
-                // its tool calls (AIR-012/RP-03 representable-order rule);
-                // a textless tool turn keeps `content: null`.
-                let joined = text_parts.join("");
+                // Bridge wires never send null assistant content.
+                assistant_msg["content"] = if bridge_wire {
+                    serde_json::Value::String(String::new())
+                } else {
+                    serde_json::Value::Null
+                };
+                let mut reasoning_field_sent = false;
+                if !thinking_blocks.is_empty() && thinking_as_text {
+                    // Convert thinking to plain text (no tags, so the model
+                    // does not mimic markup).
+                    let thinking_text = thinking_blocks
+                        .iter()
+                        .map(|(thinking, _)| *thinking)
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                    let mut parts = vec![serde_json::json!({
+                        "type": "text",
+                        "text": thinking_text,
+                    })];
+                    parts.extend(
+                        text_parts
+                            .iter()
+                            .map(|text| serde_json::json!({"type": "text", "text": text})),
+                    );
+                    assistant_msg["content"] = serde_json::Value::Array(parts);
+                } else if !assistant_text.is_empty() {
+                    // Plain string content is the Chat Completions standard;
+                    // block-array mirrors confuse some endpoints.
+                    assistant_msg["content"] = serde_json::Value::String(assistant_text.clone());
+                }
+
+                if !thinking_blocks.is_empty() {
+                    let joined = thinking_blocks
+                        .iter()
+                        .map(|(thinking, _)| *thinking)
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let signature = thinking_blocks.iter().find_map(|&(_, signature)| signature);
+                    if let Some(signature) = signature {
+                        if matches!(
+                            signature,
+                            "reasoning" | "reasoning_content" | "reasoning_text"
+                        ) {
+                            assistant_msg[signature] = serde_json::Value::String(joined);
+                            reasoning_field_sent = true;
+                        } else if let Ok(details) =
+                            serde_json::from_str::<serde_json::Value>(signature)
+                        {
+                            // Serialized reasoning-details replay metadata.
+                            assistant_msg["reasoning_details"] = details;
+                            reasoning_field_sent = true;
+                        }
+                    }
+                }
+
                 if !tool_calls_json.is_empty() {
                     assistant_msg["tool_calls"] = serde_json::Value::Array(tool_calls_json);
-                    assistant_msg["content"] = if joined.is_empty() {
-                        serde_json::Value::Null
-                    } else {
-                        serde_json::Value::String(joined)
-                    };
-                } else {
-                    assistant_msg["content"] = serde_json::Value::String(joined);
+                    // Text produced in the same turn stays visible alongside
+                    // its tool calls (AIR-012/RP-03 representable-order rule).
+                    if !assistant_text.is_empty() {
+                        assistant_msg["content"] =
+                            serde_json::Value::String(assistant_text.clone());
+                    }
+                }
+
+                if reasoning_content_assistant
+                    && model_reasoning
+                    && !reasoning_field_sent
+                    && assistant_msg.get("reasoning_content").is_none()
+                {
+                    assistant_msg["reasoning_content"] = serde_json::Value::String(String::new());
+                }
+
+                // Skip assistant turns with no content and no tool calls:
+                // aborted responses with nothing produced.
+                let has_content = match assistant_msg.get("content") {
+                    Some(serde_json::Value::String(text)) => !text.is_empty(),
+                    Some(serde_json::Value::Array(parts)) => !parts.is_empty(),
+                    _ => false,
+                };
+                if !has_content && assistant_msg.get("tool_calls").is_none() {
+                    index += 1;
+                    continue;
                 }
                 result.push(assistant_msg);
+                last_role = Some("assistant");
             }
             crate::message::Message::System(_) => {
                 // Unreachable after collapse + without_initial_system_message.
                 unreachable!("system messages are projected out of the body list")
             }
-            crate::message::Message::ToolResult(t) => {
-                let has_images = t
-                    .content
-                    .iter()
-                    .any(|c| matches!(c, OutputContent::Image { .. }));
-                if supports_images && has_images {
-                    // Real image parts preserve the tool association, the
-                    // in-result ordering and the failure flag (AIR-014);
-                    // this wire has no native error field, so the marker
-                    // rides the leading text part.
-                    let mut parts: Vec<serde_json::Value> = Vec::new();
-                    if t.is_error {
-                        parts.push(serde_json::json!({
-                            "type": "text",
-                            "text": TOOL_ERROR_MARKER,
-                        }));
-                    }
-                    for c in &t.content {
-                        match c {
-                            OutputContent::Text { text } => {
-                                parts.push(serde_json::json!({
-                                    "type": "text",
-                                    "text": text,
-                                }));
-                            }
-                            OutputContent::Image { source, media_type } => {
-                                let url = match source {
-                                    crate::message::ImageSource::Url { url } => url.clone(),
-                                    crate::message::ImageSource::Base64 { data } => {
-                                        format!("data:{};base64,{}", media_type.as_str(), data)
-                                    }
-                                    crate::message::ImageSource::Bytes { data } => {
-                                        format!(
-                                            "data:{};base64,{}",
-                                            media_type.as_str(),
-                                            base64::Engine::encode(
-                                                &base64::engine::general_purpose::STANDARD,
-                                                data,
-                                            )
-                                        )
-                                    }
-                                };
-                                parts.push(serde_json::json!({
-                                    "type": "image_url",
-                                    "image_url": {"url": url},
-                                }));
-                            }
-                        }
-                    }
+            crate::message::Message::ToolResult(_) => {
+                // Consecutive tool results serialize as one run: each keeps a
+                // text tool message; extracted images ride one trailing user
+                // message (AIR-022 tool-result image projection).
+                let mut image_blocks: Vec<serde_json::Value> = Vec::new();
+                while let Some(crate::message::Message::ToolResult(t)) = messages.get(index) {
+                    let text_result: String = t
+                        .content
+                        .iter()
+                        .filter_map(|c| match c {
+                            OutputContent::Text { text } => Some(text.clone()),
+                            OutputContent::Image { .. } => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let has_images = t
+                        .content
+                        .iter()
+                        .any(|c| matches!(c, OutputContent::Image { .. }));
+
+                    // Source placeholders keep distinct absence semantics;
+                    // this wire has no native error field, so the deterministic
+                    // failure marker rides the leading text (AIR-014).
+                    let tool_result_text = if !text_result.is_empty() {
+                        text_result
+                    } else if has_images {
+                        "(see attached image)".to_owned()
+                    } else {
+                        "(no tool output)".to_owned()
+                    };
+                    let tool_result_text = if t.is_error {
+                        format!("{TOOL_ERROR_MARKER}{tool_result_text}")
+                    } else {
+                        tool_result_text
+                    };
                     let mut tool_msg = serde_json::json!({
                         "role": "tool",
                         "tool_call_id": t.tool_call_id,
-                        "content": parts,
+                        "content": tool_result_text,
                     });
                     if compat.tool_result_name_field {
                         tool_msg["name"] = serde_json::Value::String(t.tool_name.clone());
                     }
                     result.push(tool_msg);
-                    continue;
-                }
-                let content_text: String = t
-                    .content
-                    .iter()
-                    .map(|c| match c {
-                        OutputContent::Text { text } => text.clone(),
-                        OutputContent::Image { media_type, .. } => {
-                            format!("[image: {}]", media_type.as_str())
+
+                    if supports_images {
+                        for c in &t.content {
+                            if let OutputContent::Image { source, media_type } = c {
+                                image_blocks.push(serde_json::json!({
+                                    "type": "image_url",
+                                    "image_url": {"url": image_part_url(source, media_type)},
+                                }));
+                            }
                         }
-                    })
-                    .collect();
-                // The Chat Completions API has no native error field on a
-                // role:"tool" message, so prefix the deterministic failure marker when
-                // the tool result is an error; leave the success body byte-identical.
-                // Azure/OpenRouter/Mistral inherit this via the shared adapter.
-                let content_text = if t.is_error {
-                    format!("{TOOL_ERROR_MARKER}{content_text}")
-                } else {
-                    content_text
-                };
-                let mut tool_msg = serde_json::json!({
-                    "role": "tool",
-                    "tool_call_id": t.tool_call_id,
-                    "content": content_text,
-                });
-                if compat.tool_result_name_field {
-                    tool_msg["name"] = serde_json::Value::String(t.tool_name.clone());
+                    }
+                    index += 1;
                 }
-                result.push(tool_msg);
+
+                if !image_blocks.is_empty() {
+                    if bridge_wire {
+                        push_assistant_bridge(&mut result);
+                    }
+                    let mut parts = vec![
+                        serde_json::json!({"type": "text", "text": "Attached image(s) from tool result:"}),
+                    ];
+                    parts.extend(image_blocks);
+                    result.push(serde_json::json!({
+                        "role": "user",
+                        "content": parts,
+                    }));
+                    last_role = Some("user");
+                } else {
+                    last_role = Some("toolResult");
+                }
+                continue;
             }
         }
+        index += 1;
     }
 
     serde_json::Value::Array(result)
@@ -1717,7 +2397,10 @@ impl Provider for OpenAiChatProvider {
         } else {
             Ok(Vec::new())
         };
-        if self.resolve_compat(model_id).send_session_affinity_headers
+        if self
+            .resolve_compat(model_id)
+            .send_session_affinity_headers
+            .unwrap_or(false)
             && request.cache_retention != CacheRetention::Disabled
             && let Some(session_id) = request.session_id.as_deref()
             && !session_id.is_empty()
@@ -1754,6 +2437,10 @@ impl Provider for OpenAiChatProvider {
             .unwrap_or(&request.model)
             .to_owned();
         let cancel = request.cancel.clone();
+        // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
+        // task runs under the captured parent/Dispatch when provided; omission
+        // observes nothing. Full cross-path proof closes in 20.55.
+        let telemetry = request.telemetry_context.clone();
         let http_client = self.client.client().clone();
 
         let snapshot = crate::stream::ProducerSnapshot::default();
@@ -1763,7 +2450,7 @@ impl Provider for OpenAiChatProvider {
         let producer_cancel = cancel.clone();
         let stream_cancel = cancel.clone();
 
-        tokio::spawn(async move {
+        let producer = async move {
             let work = async {
                 let extra_headers = match extra_headers {
                     Ok(headers) => headers,
@@ -1829,7 +2516,12 @@ impl Provider for OpenAiChatProvider {
                 _ = tx_closed.closed() => (),
                 _ = work => {},
             }
-        });
+        };
+        if let Some(context) = telemetry {
+            tokio::spawn(context.instrument(producer));
+        } else {
+            tokio::spawn(producer);
+        }
 
         Box::pin(CancelAwareReceiverStream::with_snapshot(
             rx,
@@ -1850,4 +2542,255 @@ impl Provider for OpenAiChatProvider {
         self.models = models;
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.36 (AIR-049/057, ONB-03): typed native options and the public
+// openai-completions direct adapter.
+// ---------------------------------------------------------------------------
+
+/// Full OpenAI tool-choice shape. The neutral simple entry maps only
+/// `Auto`/`None`; `Required` and named forcing stay native.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpenAiToolChoice {
+    None,
+    Auto,
+    Required,
+    Named(String),
+}
+
+impl OpenAiToolChoice {
+    fn wire_value(&self) -> serde_json::Value {
+        match self {
+            Self::None => serde_json::json!("none"),
+            Self::Auto => serde_json::json!("auto"),
+            Self::Required => serde_json::json!("required"),
+            Self::Named(name) => serde_json::json!({
+                "type": "function",
+                "function": {"name": name},
+            }),
+        }
+    }
+}
+
+/// Typed Chat-only parameters. Common temperature, transport, cache,
+/// cancellation and transcript inputs stay on [`Request`]. Construct with
+/// [`Self::default`] and set the admitted fields; a native default does not
+/// consume neutral `Request::thinking`, the simple entry supplies that
+/// mapping separately.
+#[derive(Debug, Clone, Default, PartialEq)]
+#[non_exhaustive]
+pub struct OpenAiCompletionsOptions {
+    /// Full OpenAI `tool_choice` shape.
+    pub tool_choice: Option<OpenAiToolChoice>,
+    /// Native reasoning effort (`minimal`..`max`). Unsupported levels fail
+    /// typed preflight; the neutral entry clamps instead.
+    pub reasoning_effort: Option<crate::model_info::ThinkingLevel>,
+    /// Token budgets per thinking level, merged over the source defaults.
+    pub thinking_budgets: std::collections::BTreeMap<crate::model_info::ThinkingLevel, u64>,
+    simple: bool,
+}
+
+impl OpenAiCompletionsOptions {
+    /// Neutral mapping for the simple entry: only `Auto`/`None` tool choice
+    /// and the request's neutral thinking intent are admitted.
+    fn from_simple(options: &crate::models::SimpleOptions) -> Self {
+        Self {
+            tool_choice: options.tool_choice.map(|choice| match choice {
+                crate::models::SimpleToolChoice::Auto => OpenAiToolChoice::Auto,
+                crate::models::SimpleToolChoice::None => OpenAiToolChoice::None,
+            }),
+            reasoning_effort: None,
+            thinking_budgets: Default::default(),
+            simple: true,
+        }
+    }
+
+    fn is_simple(&self) -> bool {
+        self.simple
+    }
+}
+
+/// The public openai-completions direct adapter registered through
+/// [`crate::Models::register_chat_api`]. Each dispatch clones its immutable
+/// provider configuration; native options never mutate a registered provider.
+pub struct OpenAiCompletionsChatApi {
+    api_id: crate::models::ApiId,
+    provider: Arc<OpenAiChatProvider>,
+    model: ModelInfo,
+}
+
+impl std::fmt::Debug for OpenAiCompletionsChatApi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenAiCompletionsChatApi")
+            .field("api_id", &self.api_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl OpenAiCompletionsChatApi {
+    /// Bind a complete Chat record. Wrong-wire or invalid records fail before
+    /// authentication or network activity.
+    pub fn new(
+        provider: Arc<OpenAiChatProvider>,
+        model: ModelInfo,
+    ) -> Result<Self, crate::provider::ProviderError> {
+        if model.wire_api != crate::model_info::WireApi::OpenAiCompletions
+            || model.id.trim().is_empty()
+            || model.validate().is_err()
+        {
+            return Err(crate::provider::ProviderError::Config(
+                crate::provider::ProviderErrorSummary::attested_static(
+                    "openai-completions native options require a valid complete Chat model record",
+                ),
+            ));
+        }
+        Ok(Self {
+            api_id: crate::models::ApiId::new("openai-completions"),
+            provider,
+            model,
+        })
+    }
+
+    fn configured(
+        &self,
+        model: ModelInfo,
+        options: OpenAiCompletionsOptions,
+    ) -> OpenAiChatProvider {
+        let mut provider = (*self.provider).clone();
+        provider.models = vec![model];
+        provider.native_options = Some(options);
+        provider
+    }
+}
+
+impl crate::models::ChatApi<OpenAiCompletionsOptions> for OpenAiCompletionsChatApi {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), crate::provider::ProviderError> {
+        validate_complete_chat_record(model)
+    }
+
+    fn api_id(&self) -> &crate::models::ApiId {
+        &self.api_id
+    }
+
+    fn provider_id(&self) -> &str {
+        &self.provider.provider_id
+    }
+
+    fn complete_record(&self) -> ModelInfo {
+        self.model.clone()
+    }
+
+    fn simple_options(&self) -> OpenAiCompletionsOptions {
+        OpenAiCompletionsOptions::from_simple(&crate::models::SimpleOptions::default())
+    }
+
+    fn simple_options_for(
+        &self,
+        options: &crate::models::SimpleOptions,
+    ) -> OpenAiCompletionsOptions {
+        OpenAiCompletionsOptions::from_simple(options)
+    }
+
+    fn session_resources(&self) -> Option<&dyn crate::codex_resources::SessionResourceOwner> {
+        None
+    }
+
+    fn validate_native_request(
+        &self,
+        model: &ModelInfo,
+        _request: &Request,
+        options: &OpenAiCompletionsOptions,
+    ) -> Result<(), crate::provider::ProviderError> {
+        validate_complete_chat_record(model)?;
+        if model.wire_api != crate::model_info::WireApi::OpenAiCompletions {
+            return Err(crate::provider::ProviderError::Config(
+                crate::provider::ProviderErrorSummary::attested_static(
+                    "openai-completions native options require a Chat model record",
+                ),
+            ));
+        }
+        // Native/exact effort fails typed preflight on unsupported levels
+        // (SP-03); the neutral entry clamps instead.
+        if let Some(level) = options.reasoning_effort
+            && model.thinking_level_map.resolve(level).is_err()
+        {
+            return Err(crate::provider::ProviderError::Config(
+                crate::provider::ProviderErrorSummary::sanitized(format!(
+                    "openai-completions native options reject unsupported thinking level {level:?}"
+                )),
+            ));
+        }
+        Ok(())
+    }
+
+    fn stream_prepared(
+        &self,
+        request: Request,
+        options: OpenAiCompletionsOptions,
+        auth: ResolvedAuth,
+    ) -> EventStream {
+        self.stream_model_resource_prepared(self.model.clone(), request, options, auth, None)
+    }
+
+    fn stream_resource_prepared(
+        &self,
+        request: Request,
+        options: OpenAiCompletionsOptions,
+        auth: ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.stream_model_resource_prepared(self.model.clone(), request, options, auth, resources)
+    }
+
+    fn stream_model_resource_prepared(
+        &self,
+        model: ModelInfo,
+        mut request: Request,
+        options: OpenAiCompletionsOptions,
+        auth: ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        if let Err(error) = self.validate_native_request(&model, &request, &options) {
+            return Box::pin(futures_util::stream::once(async move { Err(error) }));
+        }
+        if !options.is_simple() {
+            // Native effort is validated and projected independently of the
+            // neutral thinking fields, which are unused on this path. The
+            // neutral entry clamps at Models::stream_simple before dispatch.
+            request.thinking = Default::default();
+        }
+        let provider = self.configured(model, options);
+        if resources.is_none() {
+            return provider.stream_prepared(request, auth);
+        }
+        let attempt = request.callbacks.inherited_attempt().unwrap_or_else(|| {
+            crate::provider::AttemptContext {
+                invocation_id: uuid::Uuid::new_v4().to_string(),
+                attempt: 1,
+                max_attempts: 1,
+                payload_variant: crate::provider::PayloadVariant::Ordinary,
+            }
+        });
+        provider.stream_resource_attempt(request, auth, attempt, resources)
+    }
+}
+
+/// One complete, wire-valid Chat model record or a typed failure.
+fn validate_complete_chat_record(model: &ModelInfo) -> Result<(), crate::provider::ProviderError> {
+    if model.wire_api != crate::model_info::WireApi::OpenAiCompletions
+        || model.id.trim().is_empty()
+        || model.validate().is_err()
+    {
+        return Err(crate::provider::ProviderError::Config(
+            crate::provider::ProviderErrorSummary::attested_static(
+                "openai-completions adapters require a valid complete Chat model record",
+            ),
+        ));
+    }
+    Ok(())
 }

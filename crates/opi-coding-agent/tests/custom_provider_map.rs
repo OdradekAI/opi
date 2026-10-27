@@ -155,7 +155,6 @@ max_output_tokens = 8192
 api = "openai-completions"
 max_tokens_field = "max_completion_tokens"
 strict_tool_schema = true
-reasoning_effort = "low"
 supports_reasoning_effort = true
 
 [[providers.custom.acme.models]]
@@ -212,9 +211,9 @@ send_session_id_header = false
     assert!(matches!(
         provider.models[1].compat,
         WireCompat::OpenAiCompletions(ref compat)
-            if compat.max_tokens_field == "max_completion_tokens"
+            if compat.max_tokens_field.as_deref() == Some("max_completion_tokens")
                 && compat.strict_tool_schema
-                && compat.reasoning_effort.as_deref() == Some("low")
+                && compat.supports_reasoning_effort == Some(true)
     ));
     assert!(matches!(
         provider.models[2].compat,
