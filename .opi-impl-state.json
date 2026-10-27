@@ -11259,7 +11259,7 @@
       "definition_of_done": "Public native/simple/complete/result and direct adapter execute Chat store omission/false, developer-role/bridge and declared reasoning formats/off/gating plus tool-result images. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Chat store omission versus false, developer-role/bridge, output-limit field, reasoning/tool-choice and effective request overrides remain source-qualified.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -11351,6 +11351,36 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append: the neutral simple entry must clamp the requested thinking level to the nearest supported level before the shared compiler's per-wire thinking preflight (compile_prepared_request -> validate_request_for_model) rejects it; the clamp is the pinned Pi streamSimple semantic and belongs at Models::stream_simple, which lives in models.rs. No other models.rs behavior changes in this task.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md#2. 十个聊天协议; docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md#单一归一化规则"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append: AIR-061 duration_ms is carried on AssistantMessage (optional, serde-skipped), which lives in message.rs; the Chat adapter measures from response-stream activation to terminal. No other message.rs behavior changes in this task.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md#6. 模型 metadata、compat、预算与duration"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append: AIR-061 adds the optional AssistantMessage.duration_ms field (message.rs, appended earlier); every exhaustive AssistantMessage struct literal workspace-wide then needed the mechanical 'duration_ms: None' compile patch. These files carry only that one-line literal patch plus, inside openai_chat.rs, the actual duration measurement from response-stream activation to terminal. The append was recorded immediately after the scripted sweep rather than before it (ordering slip, honestly recorded); no unrelated behavior in these files changed in this task.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md#6. 模型 metadata、compat、预算与duration"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append: three OpenAI-compatible-family fixture suites construct the migrated CompatConfig (system_role_override -> instruction_role; max_tokens_field now an explicit override) and pin the obsolete max_tokens assumption for the standard Azure baseline; the single-normalization migration makes those one-line updates compile- and evidence-required. Only compat-field and wire-matcher lines changed in these files.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md#单一归一化规则"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append: the transport acceptance suite pins the exact Chat request body length (65 bytes) for its same-origin redirect check; the normalized standard-OpenAI baseline (store:false, stream_options.include_usage, max_completion_tokens) makes the pinned literal stale. Only the body-length literal changes; redirect semantics are untouched.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md#2. 十个聊天协议"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append: the Chat compat migration rewrites the catalog x-opi.compat chat arm (catalog/wire.rs), and the AssistantMessage.duration_ms sweep touched eight further literal-bearing suites. Both are compile/evidence-required consequences of the same two changes; recorded before Phase E staging (the sweep files were caught by the final staging inventory rather than at edit time — honest ordering note).",
+          "source": "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md#单一归一化规则"
         }
       ],
       "tier": "workspace",
@@ -11380,7 +11410,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai openai-completions public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-022",
@@ -11393,7 +11423,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai openai-completions public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S36",
@@ -11406,7 +11436,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai openai-completions public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.36",
@@ -11419,7 +11449,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai openai-completions public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -11427,10 +11457,24 @@
         "opi_ai openai-completions public direct adapter"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
-      "baseline_dirty_files": [],
+      "start_commit": "49ffefca5f3ef79a4ff3e0e46d7054f54da755c5",
+      "baseline_dirty_files": [
+        ".agents/skills/README.md",
+        ".agents/skills/README.zh.md",
+        ".agents/skills/_shared/references/remediation-disposition-contract.md",
+        ".agents/skills/_shared/scripts/remediation_source_proof.py",
+        ".agents/skills/_shared/scripts/test_opi_assurance_skills.py",
+        ".agents/skills/_shared/scripts/test_remediation_closure.py",
+        ".agents/skills/_shared/scripts/test_remediation_source_proof.py",
+        ".agents/skills/_shared/scripts/validate_assurance_artifact.py",
+        ".agents/skills/opi-remediate/SKILL.md",
+        ".agents/skills/opi-remediate/evals/evals.json",
+        ".agents/skills/opi-remediate/references/cross-reference-matrix.md",
+        ".agents/skills/opi-remediate/references/execution-protocol.md",
+        ".agents/skills/opi-remediate/references/remediation-plan-template.md"
+      ],
       "task_owned_paths": [
         "CHANGELOG.md",
         "crates/opi-ai/README.md",
@@ -11449,12 +11493,148 @@
         "crates/opi-coding-agent/src/provider_factory.rs",
         "crates/opi-coding-agent/tests/custom_provider_map.rs",
         "crates/opi-coding-agent/tests/github_copilot_provider.rs",
-        "crates/opi-coding-agent/tests/provider_factory.rs"
+        "crates/opi-coding-agent/tests/provider_factory.rs",
+        "crates/opi-ai/src/models.rs",
+        "crates/opi-ai/src/message.rs",
+        "crates/opi-agent/src/event.rs",
+        "crates/opi-agent/tests/agent_loop_semantics.rs",
+        "crates/opi-agent/tests/agent_wrapper.rs",
+        "crates/opi-agent/tests/hooks_queues.rs",
+        "crates/opi-agent/tests/thinking_session.rs",
+        "crates/opi-agent/tests/tool_validation.rs",
+        "crates/opi-ai/src/anthropic.rs",
+        "crates/opi-ai/src/bedrock/mod.rs",
+        "crates/opi-ai/src/gemini.rs",
+        "crates/opi-ai/src/replay.rs",
+        "crates/opi-ai/src/stream.rs",
+        "crates/opi-ai/src/test_support.rs",
+        "crates/opi-ai/tests/bedrock_fixtures.rs",
+        "crates/opi-ai/tests/context_budget.rs",
+        "crates/opi-ai/tests/node4_preparation.rs",
+        "crates/opi-ai/tests/openai_codex_responses.rs",
+        "crates/opi-ai/tests/openai_codex_responses/replay.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/provider_trait.rs",
+        "crates/opi-ai/tests/public_utilities.rs",
+        "crates/opi-ai/tests/stream_events.rs",
+        "crates/opi-ai/tests/tool_result_no_leak.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs",
+        "crates/opi-ai/tests/whole_call_retry.rs",
+        "crates/opi-coding-agent/tests/anthropic_cache_markers.rs",
+        "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+        "crates/opi-coding-agent/tests/session_export.rs",
+        "crates/opi-ai/tests/azure_openai_fixtures.rs",
+        "crates/opi-ai/tests/openrouter_fixtures.rs",
+        "crates/opi-ai/tests/mistral_fixtures.rs",
+        "crates/opi-ai/tests/http_acceptance.rs",
+        "crates/opi-ai/src/catalog/wire.rs",
+        "crates/opi-ai/tests/api_mapped_provider.rs",
+        "crates/opi-ai/tests/replay_contract.rs",
+        "crates/opi-agent/tests/compaction.rs",
+        "crates/opi-agent/tests/evidence_runtime.rs",
+        "crates/opi-agent/tests/session_branching.rs",
+        "crates/opi-agent/tests/session_context.rs",
+        "crates/opi-agent/tests/session_contract.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "436e68fff19e08fa76669598152410e836bfe21e",
+      "evidence": {
+        "Opi-Task": "20.36",
+        "Opi-DoD-SHA256": "17a16965779008d55d920587636328663412a75fe912c3da6846cbeea9b69f78",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "V-11, AIR-022, P20-S36, ONB-03-20.36"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-27T17:40:00+00:00",
+          "attempt": 0,
+          "summary": "baseline_dirty_files corrected from []: an earlier worktree-clean check ran in a time-limited call that timed out before completion; concurrent unrelated .agents/skills maintenance (opi-remediate skill files, 13 dirty/untracked paths) was observed after the B.3 write and recorded before Phase C implementation. None matches task_owned_paths and none will be staged."
+        },
+        {
+          "timestamp": "2026-10-27T19:05:00+00:00",
+          "attempt": 1,
+          "summary": "Complete openai-completions adapter delivered: normalized compat (store/instruction_role/thinking_format + frozen inference + retired-key migration errors at catalog and TOML positions), bridge + tool-result image projection, signed thinking replay, eleven format projections with budget/template extras, typed OpenAiCompletionsChatApi native/simple/direct paths with preflight rejection and neutral clamp, duration_ms, telemetry producer instrumentation, bilingual ONB-03 inventory. D.1 smoke full PASSED twice (final state). D.2 exec review via documented single-reviewer fallback (no Workflow runtime on host; wf_ref=null, matching prior tasks): one must-fix (Chat producer lacked the frozen TelemetryContext instrumentation the Codex precedent and the telemetry_participation note require) found on L-D1/L-D7, fixed, full gate rerun green. Two low flags: (1) no Chat-specific drop-path test added - drop semantics stay owned by the P20-FINAL closure tests; (2) duration test asserts presence, not magnitude. Environment notes: workspace builds needed CARGO_BUILD_JOBS=2 after rustc OOM (the apparent 'cache corruption' was OOM fallout; the per-worktree cargo cache dir was removed once as repair and rehydrated by rebuild) and Git coreutils on PATH for the opi-eval df observation; oauth 53692 port tests are TIME_WAIT-sensitive across back-to-back full runs. Unrelated skills-maintenance commit 2bb98c9 landed on main between start_commit 49ffefca and the task commit 436e68f; it touches no task-owned path (baseline .agents/skills files only) and the pre-commit HEAD-equality deviation is recorded here rather than silently passed.",
+          "gate_results": {
+            "d1": "smoke full PASSED (doc-check, fmt, clippy -D warnings all-targets, workspace tests + doc tests, rustdoc)",
+            "d2": "exec 7-lens single-reviewer fallback: 1 must-fix fixed (telemetry producer), 2 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "V-11",
+                "action": "add",
+                "test": "openai_chat_fixtures: chat_baseline_inference_standard_openai_wire_defaults, chat_baseline_inference_non_standard_endpoint_omits_store_and_effort, chat_explicit_store_and_role_overrides_beat_inference, chat_usage_in_stream_explicit_false_omits_stream_options, chat_max_tokens_field_explicit_override_beats_inference, chat_model_level_override_beats_profile_and_inference, chat_*_format_projects_* (11 formats), chat_thinking_token_budget_*",
+                "interface": "OpenAiChatProvider::build_request_body / CompatConfig",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "V-11",
+                "action": "update",
+                "test": "openai_chat_fixtures: build_request_body_standard_openai_uses_max_completion_tokens (was max_tokens default), stream_sends_text_request_body matcher, model_level_override, chat_reasoning_effort construction; azure/mistral/openrouter fixtures max field + role matchers; node4/http_acceptance body pins",
+                "interface": "Chat wire request body",
+                "replacement": "pi 1.3.0 detectCompat baseline (max_completion_tokens/store/stream_options)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "V-11",
+                "action": "delete",
+                "test": "openai_chat_fixtures: compat_config_role_mapping_developer, compat_config_max_tokens_field_name, compat_config_tool_result_name_field, compat_config_usage_in_stream, compat_config_defaults, compat_config_represents_{strict_tool_schema,reasoning_effort,cache_key,assistant_after_tool_result}, static_compat_reasoning_effort_does_not_drive_wire_output, duplicate strict pair",
+                "interface": "CompatConfig representation",
+                "replacement": "wire-effect tests + typed migration-error tests in provider_factory/custom_provider_map suites",
+                "slim_candidate": null
+              },
+              {
+                "subject": "AIR-022",
+                "action": "add",
+                "test": "provider_factory: openai_compatible_profile_retired_keys_fail_with_migration_errors, openai_compatible_model_retired_role_key_fails_with_migration_error, custom_chat_model_compat_retired_keys_fail_typed, custom_chat_model_compat_normalized_keys_parse",
+                "interface": "catalog/wire.rs compat parse + config.rs TOML positions",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S36",
+                "action": "add",
+                "test": "openai_chat_fixtures: chat_assistant_bridge_inserted_between_tool_result_and_user, chat_no_bridge_by_default_between_tool_result_and_user, chat_tool_result_images_project_to_trailing_user_message, chat_tool_result_image_bridge_wire_orders_tool_bridge_then_image_user, chat_tool_result_placeholders_follow_source_semantics, chat_assistant_thinking_replay_uses_signature_reasoning_field, chat_empty_assistant_turns_are_skipped, chat_deepseek_baseline_adds_empty_reasoning_content_on_assistant_messages, models_native_options_reach_the_chat_wire, models_native_unsupported_effort_fails_typed_before_auth, models_simple_neutral_options_and_clamp_reach_the_chat_wire, models_direct_adapter_uses_injected_auth_and_returns_result, chat_direct_adapter_rejects_wrong_wire_records, chat_done_message_carries_measured_response_duration, chat_setup_failure_before_activation_has_no_duration, chat_sse_frames_split_across_tcp_chunks_reassemble",
+                "interface": "Models native/simple/direct + OpenAiCompletionsChatApi",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "ONB-03-20.36",
+                "action": "add",
+                "test": "public native/simple request captures inside models_native_options_reach_the_chat_wire and models_simple_neutral_options_and_clamp_reach_the_chat_wire; README/README.zh options tables",
+                "interface": "Models public seam",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "AIR-061",
+                "action": "add",
+                "test": "duration assertions in chat_done_message_carries_measured_response_duration (presence-only; flagged low)",
+                "interface": "AssistantMessage.duration_ms",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.36",
+                "action": "retain",
+                "test": "openai_chat_fixtures/request_enrichment/tool_result_wire/replay_contract/stream_events/whole_call_retry and remaining suites (all green in smoke full)",
+                "interface": "existing public seams",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "AIR-061",
+                "action": "add",
+                "test": "mechanical duration_ms: None literals across 38 further suites (compile patch)",
+                "interface": "AssistantMessage",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.37",
@@ -22061,6 +22241,16 @@
       "rejected_count": 8,
       "ran_at": "2026-10-27T06:18:40.476289+00:00",
       "task_id": "20.17",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 1,
+      "flagged_count": 2,
+      "rejected_count": 0,
+      "ran_at": "2026-10-27T19:05:00+00:00",
+      "task_id": "20.36",
       "criterion_id": null
     }
   ]
