@@ -12142,7 +12142,7 @@
       "definition_of_done": "Public native/simple/complete/result and direct adapter execute inline-tools-2026-09-15 by-value redefinitions, strict variants, signed/redacted thinking and error-turn image relocation. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Anthropic native thinking omitted/disabled/enabled and explicit budgets are distinct; enabled without budget uses source native default 1024, separate from simple effort policy and adaptive/strict variants.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -12235,6 +12235,21 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append (C.1a): replay_contract.rs pins the pre-20.39 error-turn image relocation shape (placeholder string replacing the whole content, error images as a separate trailing user message). Task 20.39 aligns the wire to the pinned source (splitErrorToolResultImages keeps the source text with a placeholder per image run; convertMessages emits the relocated images after all tool results of the turn in the SAME user message, #10794), so the pinning assertions are updated with replacement proof.",
+          "source": ".repo/pi-1.3.0/packages/ai/src/api/anthropic-messages.ts (convertMessages); .repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts (splitErrorToolResultImages, ERROR_TOOL_IMAGE_PLACEHOLDER)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append (C.1a): provider_collection.rs phase17 test pins the numeric-Anthropic sub-1024 typed preflight that annex row 165 withdraws ('撤回numeric Claude剩0的新增typed preflight，Anthropic ||1024 … 各自保留'). Task 20.39 withdraws the preflight; the pinned assertions are replaced with the reviewed outcome (clamped zero budgets flow to the wire, where the ||1024 default applies; nonzero sub-1024 budgets pass through).",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md#2 row 165 (simple输出预算)"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C appends (C.1a): model_info.rs adds the two mid-convo compat flags to AnthropicMessagesCompat (the DoD's inline-tools gating, pi supportsMidConvoSystemMessages/ToolChanges, default false); catalog/wire.rs parses/encodes the two x-opi.compat keys; models.rs applies annex row 165 (withdrew the numeric-Anthropic sub-1024 typed preflight; legacy no-level budget fallback becomes the source native default 1024); opi-coding-agent config.rs + github_copilot.rs construct the compat struct (exhaustive literals add the defaulted fields); github_copilot_provider.rs and node4_preparation.rs are synchronized fixtures for the always-sent display field and the struct growth.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md#2 rows 37/50/165/176; .repo/pi-1.3.0/packages/ai/src/api/anthropic-messages.ts, transform-messages.ts, providers/compat-schema.ts"
         }
       ],
       "tier": "workspace",
@@ -12264,7 +12279,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai anthropic-messages public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.39",
@@ -12277,7 +12292,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai anthropic-messages public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -12285,9 +12300,9 @@
         "opi_ai anthropic-messages public direct adapter"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "306569adac88ca2e3e021a7a605f408a30852175",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -12299,12 +12314,68 @@
         "crates/opi-ai/src/providers/**",
         "crates/opi-ai/src/telemetry.rs",
         "crates/opi-ai/tests/anthropic_fixtures.rs",
-        "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs"
+        "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs",
+        "crates/opi-ai/tests/replay_contract.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/src/model_info.rs",
+        "crates/opi-ai/src/catalog/wire.rs",
+        "crates/opi-ai/src/models.rs",
+        "crates/opi-coding-agent/src/config.rs",
+        "crates/opi-coding-agent/src/github_copilot.rs",
+        "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+        "crates/opi-ai/tests/node4_preparation.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "9a737d7f60510395f981d3a726e30c1e3039c5cf",
+      "evidence": {
+        "Opi-Task": "20.39",
+        "Opi-DoD-SHA256": "a18d4b765dabf0d35c29a6b7cda82ec1e81988f9c54ad49c8b2360f6767beb25",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "P20-S39, ONB-03-20.39"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-28T06:20:00+00:00",
+          "attempt": 1,
+          "summary": "B.3 start: baseline worktree clean at 306569ad; six-answer trace + shared decisions printed; no parallelize units; forbidden-scope guards active."
+        },
+        {
+          "timestamp": "2026-10-28T09:05:00+00:00",
+          "attempt": 1,
+          "summary": "Anthropic-messages complete adapter delivered: public AnthropicMessagesChatApi registered through Models::register_chat_api (api id anthropic-messages) with typed AnthropicMessagesOptions (thinking tri-state with typed disabled block on reasoning models, budget ||1024 semantics — missing or zero sends 1024, display default summarized always sent when enabled, adaptive effort via output_config with typed preflight, interleaved beta default true and adaptive-ignored, tool_choice auto/any/none/named); inline-tools-2026-09-15 chronology through the two new compat flags (initial tools + deferred placeholder, by-value tool_addition with same-name redefinition, tool_removal references, system updates held before assistant boundaries); error-turn image relocation aligned to the pinned splitErrorToolResultImages shape (text preserved, placeholder text blocks, caption+images after all tool results in the same user message); annex row 165 applied in models.rs (preflight withdrawn, no-level fallback 1024); anthropic producer now runs under the frozen TelemetryContext. TDD red-first (21 new tests, compile-fail red confirmed) then green; mid-loop fixes: test model-id mismatch (compat fallback), transcript tool-association for the relocation fixture, MockProvider response budget. D.1 smoke full PASSED on the third run (runs 1-2 failed only on the known oauth 53692 TIME_WAIT flake and on a truncated provider_collection failure the gate surfaced — both verified/fixed; oauth standalone 193/193 and single-test green after port release). D.2 exec review via single-reviewer fallback (wf_ref=null): 0 must-fix; 3 low flags: (1) sections-carrying mid-convo system updates render content only (pi also renders sections; no test covers section-carrying inline-tools updates — later chronology task); (2) the error-with-images empty-text placeholder branch is convoluted but behaviorally correct; (3) the adaptive native-effort build failure repeats the adapter preflight text (defense-in-depth). Synchronized callers: github_copilot fixture + config doc comment, node4 fixture, replay_contract relocation shape, provider_collection withdrawn-preflight outcome.",
+          "gate_results": {
+            "d1": "smoke full PASSED (doc-check, fmt, clippy -D warnings all-targets, workspace tests + doc tests, rustdoc); two prior runs failed on the oauth 53692 TIME_WAIT environmental flake (standalone green after port release, per established policy) and on a provider_collection count assertion the gate surfaced (fixed)",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 3 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "P20-S39",
+                "action": "add",
+                "test": "anthropic_fixtures: native_enabled_without_budget_uses_source_default_1024_and_summarized, native_zero_budget_falls_back_to_1024_per_source_or_semantics, native_explicit_budget_and_detailed_display_reach_the_wire, native_disabled_projects_typed_disabled_on_reasoning_models, native_omitted_thinking_keeps_neutral_request_path, interleaved_beta_defaults_true_explicit_false_omits_adaptive_never, adaptive_native_effort_uses_output_config_and_display_without_budget, adaptive_native_without_effort_omits_output_config, native_tool_choice_variants_reach_the_wire, inline_tools_placeholder_anchors_initial_tools_and_declares_the_beta, inline_tools_by_value_additions_and_same_name_redefinitions, inline_tools_stay_off_without_the_compat_flags, error_tool_result_images_follow_all_results_in_one_user_message, consecutive_success_tool_results_group_into_one_user_message, native_options_from_simple_map_neutral_tool_choice_only, anthropic_direct_adapter_native_lifecycle_reaches_the_wire, anthropic_direct_adapter_rejects_wrong_wire_records, anthropic_setup_failure_before_activation_is_typed, anthropic_direct_adapter_replays_same_identity_signed_thinking, anthropic_telemetry_carrier_instruments_the_producer",
+                "interface": "AnthropicMessagesOptions / build_request_body dual tri-state / NativeToolChanges / AnthropicMessagesChatApi",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S39",
+                "action": "update",
+                "test": "anthropic_fixtures: build_request_body_uses_default_budget_when_none (10000 -> source native 1024), request_compatibility::anthropic_direct_catalog_preserves_fixed_thinking_and_temperature + anthropic_request_honors_adaptive_thinking_and_temperature_compat (display now always sent); opi-coding-agent github_copilot_provider: factory_built_copilot_anthropic_models_apply_catalog_compatibility (adaptive display); node4_preparation compat literal (struct growth); replay_contract error-image shape; provider_collection withdrawn-preflight outcome + adaptive index",
+                "interface": "thinking assembly / compat struct / relocation shape / annex row 165",
+                "replacement": "pi 1.3.0 anthropic-messages.ts (thinkingBudgetTokens || 1024, display default summarized) + transform-messages.ts (splitErrorToolResultImages) + sdk-contracts row 165 (preflight withdrawn)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.39",
+                "action": "retain",
+                "test": "remaining anthropic_fixtures suites (callbacks 20.51, strict variants 20.11, cancel/drop, parser) + anthropic_thinking_roundtrip 6/6 + full workspace suites (green in smoke full)",
+                "interface": "existing public seams",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.40",
@@ -22424,6 +22495,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-28T05:40:00+00:00",
       "task_id": "20.38",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 0,
+      "ran_at": "2026-10-28T09:05:00+00:00",
+      "task_id": "20.39",
       "criterion_id": null
     }
   ]
