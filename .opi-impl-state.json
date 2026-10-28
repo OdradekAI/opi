@@ -12386,7 +12386,7 @@
       "definition_of_done": "Public native/simple/complete/result and direct adapter execute thoughtSignature, Gemini3 unsigned tool handling, thinking level/budget and source unsupported callbacks/customfetch. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Google native thinking budget -1 is dynamic and 0 disabled; signed/tool content, level choices and supported/unsupported callbacks stay source-qualified.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -12478,6 +12478,11 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C appends (C.1a): message.rs adds the optional signature field to AssistantContent::Text and ToolCall (pi textSignature/thoughtSignature, serde default so history deserializes unchanged); every other appended path is a synchronized caller of that mechanical growth (exhaustive struct literals gain signature: None, patterns gain ..) or a synchronized wire-expectation update with pinned pi replacement proof: functionResponse output/error string keys replace content+bool error (google-shared convertMessages), parametersJsonSchema replaces the OpenAPI parameters projection, absent thoughtsTokenCount reports zero reasoning (thoughtsTokenCount || 0), the 2.5 catalog models gain the reasoning flag so neutral explicit-off sends the disabled config (pi streamSimple), and unknown finish reasons fail typed with the raw reason (Provider stopped with: <raw>). Vertex inherits via the shared compiler; vertex_fixtures/object_wire/provider_projection/tool_result_wire assert the inherited shapes.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md rows 39/52/242; .repo/pi-1.3.0/packages/ai/src/api/google-generative-ai.ts, google-shared.ts"
         }
       ],
       "tier": "workspace",
@@ -12507,7 +12512,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai google-generative-ai public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.40",
@@ -12520,7 +12525,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai google-generative-ai public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -12528,7 +12533,7 @@
         "opi_ai google-generative-ai public direct adapter"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
       "start_commit": null,
       "baseline_dirty_files": [],
@@ -12542,12 +12547,128 @@
         "crates/opi-ai/src/providers/**",
         "crates/opi-ai/src/telemetry.rs",
         "crates/opi-ai/tests/gemini_fixtures.rs",
-        "crates/opi-ai/tests/gemini_lifecycle.rs"
+        "crates/opi-ai/tests/gemini_lifecycle.rs",
+        "crates/opi-agent/src/compaction.rs",
+        "crates/opi-agent/src/event.rs",
+        "crates/opi-agent/src/session_branch.rs",
+        "crates/opi-agent/tests/agent_loop_mock.rs",
+        "crates/opi-agent/tests/agent_loop_semantics.rs",
+        "crates/opi-agent/tests/agent_wrapper.rs",
+        "crates/opi-agent/tests/compaction.rs",
+        "crates/opi-agent/tests/evidence_runtime.rs",
+        "crates/opi-agent/tests/hooks_queues.rs",
+        "crates/opi-agent/tests/preparation_transaction.rs",
+        "crates/opi-agent/tests/session_branching.rs",
+        "crates/opi-agent/tests/session_context.rs",
+        "crates/opi-agent/tests/session_contract.rs",
+        "crates/opi-agent/tests/thinking_integration.rs",
+        "crates/opi-agent/tests/tool_event_redaction.rs",
+        "crates/opi-agent/tests/tool_validation.rs",
+        "crates/opi-ai/src/anthropic.rs",
+        "crates/opi-ai/src/bedrock/mod.rs",
+        "crates/opi-ai/src/context.rs",
+        "crates/opi-ai/src/message.rs",
+        "crates/opi-ai/src/openai_chat.rs",
+        "crates/opi-ai/src/replay.rs",
+        "crates/opi-ai/src/test_support.rs",
+        "crates/opi-ai/tests/anthropic_fixtures.rs",
+        "crates/opi-ai/tests/azure_openai_fixtures.rs",
+        "crates/opi-ai/tests/bedrock_fixtures.rs",
+        "crates/opi-ai/tests/context_budget.rs",
+        "crates/opi-ai/tests/custom_provider_registration.rs",
+        "crates/opi-ai/tests/mistral_fixtures.rs",
+        "crates/opi-ai/tests/node4_preparation.rs",
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
+        "crates/opi-ai/tests/openai_codex_responses.rs",
+        "crates/opi-ai/tests/openai_codex_responses/replay.rs",
+        "crates/opi-ai/tests/openai_compat_lifecycle.rs",
+        "crates/opi-ai/tests/openai_responses_fixtures.rs",
+        "crates/opi-ai/tests/openai_responses_lifecycle.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/provider_lifecycle.rs",
+        "crates/opi-ai/tests/provider_trait.rs",
+        "crates/opi-ai/tests/public_utilities.rs",
+        "crates/opi-ai/tests/replay_contract.rs",
+        "crates/opi-ai/tests/replay_contract/object_wire.rs",
+        "crates/opi-ai/tests/retry_backoff.rs",
+        "crates/opi-ai/tests/stream_events.rs",
+        "crates/opi-ai/tests/test_support_tests.rs",
+        "crates/opi-ai/tests/tls_contract.rs",
+        "crates/opi-ai/tests/tool_result_no_leak.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs",
+        "crates/opi-ai/tests/transcript_contract/provider_projection.rs",
+        "crates/opi-ai/tests/vertex_fixtures.rs",
+        "crates/opi-ai/tests/whole_call_retry.rs",
+        "crates/opi-coding-agent/src/compaction.rs",
+        "crates/opi-coding-agent/src/harness.rs",
+        "crates/opi-coding-agent/src/interactive.rs",
+        "crates/opi-coding-agent/src/rpc.rs",
+        "crates/opi-coding-agent/src/runner.rs",
+        "crates/opi-coding-agent/src/session_cli.rs",
+        "crates/opi-coding-agent/src/session_coordinator.rs",
+        "crates/opi-coding-agent/tests/anthropic_cache_markers.rs",
+        "crates/opi-coding-agent/tests/evidence_artifacts.rs",
+        "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+        "crates/opi-coding-agent/tests/harness_resource_integration.rs",
+        "crates/opi-coding-agent/tests/json_mode.rs",
+        "crates/opi-coding-agent/tests/product_evidence.rs",
+        "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+        "crates/opi-coding-agent/tests/runtime_failure_recovery.rs",
+        "crates/opi-coding-agent/tests/session_export.rs",
+        "crates/opi-coding-agent/tests/session_runtime.rs",
+        "crates/opi-coding-agent/tests/sub_agent_example.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "e6d13e6a71ffd46a021a78671cc10a685a9aea2d",
+      "evidence": {
+        "Opi-Task": "20.40",
+        "Opi-DoD-SHA256": "863100c09cb939e818f5731c49262c059c9f181b0c88fe385ac5936540173d2c",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "P20-S40, ONB-03-20.40"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-28T10:20:00+00:00",
+          "attempt": 1,
+          "summary": "Attempt 1 begins at 61e38ccf5ba14510f835b62d0c19d4125440d74f (worktree clean, baseline dirty files: 0). B.2 authorized by user reply in-session. Scope: GoogleGenerativeAiChatApi four-entry adapter + GoogleGenerativeAiOptions native inventory (toolChoice auto/none/any; thinking enabled/level/budget with -1 dynamic and 0 disabled), thoughtSignature capture/replay on text/thinking/toolCall blocks, Gemini3 unsigned tool ids and requiresToolCallId normalization, parametersJsonSchema original-schema projection with Gemini3+ VALIDATED strict mode, functionResponse output/error keys with merged consecutive turns and both image shapes, usage thoughts accounting, responseId first-non-empty, no-finish typed error, Provider stopped with raw reason, telemetry carrier on the producer."
+        },
+        {
+          "timestamp": "2026-10-28T12:40:00+00:00",
+          "attempt": 1,
+          "summary": "google-generative-ai complete adapter delivered: public GoogleGenerativeAiChatApi (api id google-generative-ai) registered through Models::register_chat_api with typed GoogleGenerativeAiOptions (tool_choice auto/none/any projecting toolConfig mode with none/any > VALIDATED > auto precedence; thinking enabled/level/budget where -1 stays the dynamic default and 0 disables, a level wins over a budget, disabled sends budget 0 or the mapped off level on level-mode models, native omission sends no config); neutral entry keeps pi streamSimple policy (clamped level, level-mode models by the pinned regexes incl. gemini-4+/latest/gemma-4, budget tables 128/2048/8192/32768 pro, 128/2048/8192/24576 flash, 512/2048/8192/24576 flash-lite, -1 fallback, typed failure on unresolvable mappings); thought signatures capture per block (first non-empty retained) on text/thinking/toolCall and replay same-provider/same-model in valid base64 only, signature-only empty parts kept; Gemini 3 unsigned/duplicate ids regenerate as name_N and id-requiring models (gemini>=3, claude-*, gpt-oss-*) carry normalized ids on calls and responses; tools ride the original parametersJsonSchema with Gemini 3+ strict projection selecting VALIDATED (gemini-2 keeps typed Require failure and silent Prefer downgrade); function responses use output/error string keys, consecutive responses merge into one user turn, tool-result images nest in functionResponse.parts on Gemini 3+ or ride a separate 'Tool result image:' turn earlier; the stream captures the first non-empty responseId, thought parts stream as thinking blocks, usage maps input=prompt-cached, output=candidates+thoughts, reasoning=thoughts (absent reports zero), STOP+tools maps to toolUse, unknown finish reasons fail typed carrying the raw reason; the producer runs under the frozen TelemetryContext. Catalog: 2.5-flash/pro gain the reasoning flag; no speculative gemini-3 catalog entries (row 58). TDD red-first (26 new tests confirmed as compile-fail red) then green. D.1 smoke full PASSED on the eighth attempt: attempts 1-7 failed ONLY on the pre-existing oauth 53692 contention (documented environmental class since 20.36) - root cause newly pinned this session: the oauth_flows binary's own later tests leave a 53692 TIME_WAIT that persists 120-240s into any rerun, and oauth_auth (opi-coding-agent) concurrently occupies 53692 under full-workspace parallelism; both binaries green standalone (oauth_flows 193/193, oauth_auth 124/124) and the gate passed after a clean 280s wait with no diagnostic oauth runs in between; one intermediate diagnostic also surfaced the opi-eval df probe requiring the gate's Git-coreutils PATH (gate provides it). During implementation a scripted bulk edit crashed halfway and mangled several files; the damage was fully reverted (baseline was clean) and every ripple site re-applied compiler-driven, one verified edit at a time. D.2 exec review via single-reviewer fallback (wf_ref=null): 0 must-fix; 4 low flags: (1) cross-model thinking replay drops rather than converts to plain text - settled by the 20.7 replay contract, test documents it; (2) supports_multimodal_function_response is expressed through the same major>=3 predicate as strict sampling under its strict name - consider a named alias in 20.41; (3) the signature fields live on the shared message model though only the Google wire consumes them today (pi parity); (4) ToolCallDelta is not emitted, matching the existing opi adapter convention Start/End. Synchronized expectation updates with replacement proof: gemini_fixtures usage reasoning Some(0) + stream body usage; tool_result_wire gemini+vertex output/error keys; replay_contract/object_wire gemini response shape; transcript_contract/provider_projection parametersJsonSchema; vertex_fixtures inherited usage reasoning.",
+          "gate_results": {
+            "d1": "smoke full PASSED (doc-check, fmt, clippy -D warnings all-targets, workspace tests + doc tests, rustdoc); attempts 1-7 failed only on the pre-existing oauth 53692 contention (environmental: intra-binary TIME_WAIT persistence 120-240s + cross-binary oauth_flows/oauth_auth occupation under parallelism; both suites green standalone; passed after a clean 280s wait)",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 4 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "P20-S40",
+                "action": "add",
+                "test": "gemini_fixtures google_40 mod (26 tests): native level/budget/-1/0/disabled-per-mode/level-precedence/omission/native-over-request, tool choice modes + no-mode, original-schema parametersJsonSchema, gemini3 VALIDATED prefer, gemini2 prefer downgrade, output/error keys + merged consecutive results, gemini3 normalized ids + gemini2 name-only, gemini3 nested images + gemini2 separate turn, thought signature same-model-only/base64/empty-with-signature, neutral unresolvable typed failure, neutral level mode, neutral budget tables + explicit override, neutral disabled config, from_simple tool-choice-only, wrong-wire rejection, usage thoughts accounting + response_id, unsigned/duplicate id regeneration + toolUse, thought parts as thinking with signature retention, unknown finish typed with raw reason, native lifecycle through Models::complete, telemetry carrier",
+                "interface": "GoogleGenerativeAiOptions / build_request_body thinking+toolConfig / contents signature+id projection / GeminiMapper blocks / GoogleGenerativeAiChatApi",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S40",
+                "action": "update",
+                "test": "gemini_fixtures: gemini_cache_tokens (reasoning Some(0)), stream_sends_text_request_body (usage reasoning Some(0)); tool_result_wire: gemini_asserts + vertex_inherits_gemini_shape (output/error keys); replay_contract/object_wire (gemini response output key, no id on 2.5); transcript_contract/provider_projection (parametersJsonSchema); vertex_fixtures stream_drains (usage reasoning Some(0)); ~65 message-model ripple sites across opi-agent/opi-coding-agent/opi-ai tests and src literals (mechanical signature: None / .. additions)",
+                "interface": "Usage thoughts mapping / functionResponse keys / tools carrier / message model growth",
+                "replacement": "pi google-shared.ts convertMessages (output/error keys, parametersJsonSchema), google-generative-ai.ts usageMetadata mapping (thoughtsTokenCount || 0), model catalog reasoning flags",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.40",
+                "action": "retain",
+                "test": "remaining gemini_fixtures suites (41 pre-existing: auth/parser/callback/cancel/strict), gemini_lifecycle 6/6, oauth/callback/replay suites of opi-ai + opi-agent + opi-coding-agent green inside the passed gate",
+                "interface": "existing public seams",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.41",
@@ -22505,6 +22626,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-28T09:05:00+00:00",
       "task_id": "20.39",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 4,
+      "rejected_count": 0,
+      "ran_at": "2026-10-28T12:40:00+00:00",
+      "task_id": "20.40",
       "criterion_id": null
     }
   ]
