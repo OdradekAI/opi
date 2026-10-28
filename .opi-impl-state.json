@@ -11918,7 +11918,7 @@
       "definition_of_done": "Public native/simple/complete/result and direct adapter execute real deployment/resource/apiVersion mapping and explicit dual wires, no Responses service-tier multiplier. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Azure keeps both Chat and Responses with deployment/resource/API-version mapping and source-specific option omissions, without importing contradictory README prose.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -12012,6 +12012,11 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C appends (C.1a): model_info.rs gains WireApi::AzureOpenAiResponses and WireCompat::AzureOpenAiResponses(OpenAiResponsesCompat) (the dual-wire identity the DoD requires, exhaustive-match ripples); openai_responses.rs opens four pub(crate) seams (compile_request_body, stamp_done_duration, dispatch_configured, OpenAiResponsesOptions.simple) and two resolve match arms so the azure adapter reuses the exact 20.37 parameter assembly instead of duplicating ~120 pinned wire lines, with replay wire derived from the resolved record for same-identity replay; catalog/wire.rs parses/encodes the new wire's compat family; opi-coding-agent config.rs doc and provider_factory.rs fixture sync the api-version default change (v1 replaces 2024-06-01) per the synchronized-caller rule.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md#2 rows 35/48/112; .repo/pi-1.3.0/packages/ai/src/api/azure-openai-config.ts, azure-openai-responses.ts"
         }
       ],
       "tier": "workspace",
@@ -12040,7 +12045,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai azure-openai-responses + Azure Chat public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.38",
@@ -12053,7 +12058,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai azure-openai-responses + Azure Chat public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -12061,9 +12066,9 @@
         "opi_ai azure-openai-responses + Azure Chat public direct adapter"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "d8c052d7f60379ff22dd6ffa2529ea70e9ccd240",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -12074,12 +12079,59 @@
         "crates/opi-ai/src/openai_responses_shared.rs",
         "crates/opi-ai/src/providers/**",
         "crates/opi-ai/src/telemetry.rs",
-        "crates/opi-ai/tests/azure_openai_fixtures.rs"
+        "crates/opi-ai/tests/azure_openai_fixtures.rs",
+        "crates/opi-ai/src/model_info.rs",
+        "crates/opi-ai/src/openai_responses.rs",
+        "crates/opi-ai/src/catalog/wire.rs",
+        "crates/opi-coding-agent/src/config.rs",
+        "crates/opi-coding-agent/tests/provider_factory.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "d4071a10ff6c147e132f980aa38a6202642222a5",
+      "evidence": {
+        "Opi-Task": "20.38",
+        "Opi-DoD-SHA256": "4c51f4cbc81664bed3e228de476aabef4daa8d86645df039f548ae93b79c5fa3",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED on the first run",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "P20-S38, ONB-03-20.38"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-28T05:40:00+00:00",
+          "attempt": 1,
+          "summary": "Azure dual-wire adapter delivered: public resolve_azure_base_url/resolve_azure_api_version/resolve_deployment_name with pinned source precedence (explicit base > resource > model base URL, azure-host path normalization, api-version default v1 replacing 2024-06-01, deployment map modelId=deployment), record-wire provider dispatch (chat keeps the existing transport; responses reuses the exact 20.37 Responses compile under azure transport with deployment URL, api-key header, same-identity signed-reasoning replay, terminal duration, frozen telemetry producer on both branches), and the public AzureOpenAIResponsesChatApi with AzureOpenAIOptions (effort preflight/simple clamp, summary, tool choice, four azure mapping fields; service_tier deliberately absent). WireCompat::AzureOpenAiResponses(OpenAiResponsesCompat) added so records validate and catalog rows parse under their own wire identity. TDD red (16 tests, compile-fail red confirmed) then green; one mid-loop fix (plain-provider dispatch now selects the wire from the listed record via for_records, found through a 404 debug) and one fixture-shape fix (Responses tools are flat function items). D.1 smoke full PASSED on the first run. D.2 exec review via single-reviewer fallback (wf_ref=null): 0 must-fix; 3 low flags: (1) responses-wire receiver-drop without cancel not directly re-tested on azure (shared CancelAware infra covers it; chat-side tests cover drop); (2) OpenAiResponsesChatApi::configured and the new pub(crate) dispatch_configured share 3 overlapping lines (possible later delegation); (3) responses_path parsed for azure compat rows but transport-ignored (documented). Synchronized callers for the default change: provider_factory fixture + config doc comment; existing azure endpoint-error message updated to the source resolver wording.",
+          "gate_results": {
+            "d1": "smoke full PASSED first run (doc-check, fmt, clippy -D warnings all-targets, workspace tests + doc tests, rustdoc)",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 3 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "P20-S38",
+                "action": "add",
+                "test": "azure_openai_fixtures: azure_endpoint_resolution_prefers_explicit_then_resource_then_model_base, azure_endpoint_normalizes_azure_host_paths_to_resource_root, azure_api_version_defaults_to_v1_and_accepts_override, azure_deployment_resolution_explicit_map_then_model_id, azure_responses_url_construction, azure_responses_text_lifecycle_uses_deployment_url_and_api_key_auth, azure_responses_tool_call_lifecycle_reaches_the_wire, azure_responses_native_options_reach_the_wire_without_service_tier, azure_responses_simple_entry_maps_neutral_thinking_and_clamps, azure_responses_disabled_thinking_sends_off_projection, azure_responses_endpoint_overrides_in_native_options_reach_the_url, azure_responses_setup_failure_before_activation_is_typed, azure_responses_cancellation_during_body_is_typed_and_prompt, azure_responses_replays_signed_reasoning_for_same_identity_turns, azure_responses_foreign_identity_history_never_replays_reasoning, azure_responses_direct_adapter_rejects_wrong_wire_records, azure_responses_native_unsupported_effort_fails_typed_before_auth",
+                "interface": "resolve_* fns / AzureOpenAIProvider dual-wire dispatch / AzureOpenAIResponsesChatApi",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S38",
+                "action": "update",
+                "test": "azure_openai_fixtures: missing_endpoint_returns_error (message now names the source resolver base-URL wording); opi-coding-agent provider_factory: builtin_single_wire_models_route_by_declared_wire (api-version default v1)",
+                "interface": "endpoint resolution / default api version",
+                "replacement": "pi 1.3.0 azure-openai-config.ts (resolver message + DEFAULT_AZURE_API_VERSION v1)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.38",
+                "action": "retain",
+                "test": "remaining 22 azure chat tests + full openai_responses/openai_chat suites (green in smoke full)",
+                "interface": "existing public seams",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.39",
@@ -22362,6 +22414,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-27T22:30:00+00:00",
       "task_id": "20.37",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 0,
+      "ran_at": "2026-10-28T05:40:00+00:00",
+      "task_id": "20.38",
       "criterion_id": null
     }
   ]
