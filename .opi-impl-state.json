@@ -11645,7 +11645,7 @@
       "definition_of_done": "Public native/simple/complete/result and direct adapter execute native tool/grammar IDs, encrypted reasoning/replay, source service-tier and mid-conversation effort stamps. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Responses grammar/function tools, output limits, store, reasoning/service-tier/session/cache options retain their exact source semantics. Codex transport/native protocol remains at 20.16.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -11737,6 +11737,11 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append (C.1a): the AssistantMessage.provider_thinking_level field (mid-conversation effort stamps) is a compile-required sweep across every AssistantMessage literal (mirrors the 20.36 duration_ms sweep); OpenAiResponsesCompat gains supports_mid_convo_effort (model_info.rs + catalog/wire.rs parse/serialize); convert_messages gained a fourth parameter requiring mechanical None at both Codex call sites; the remaining entries are the sweep's mechanical provider_thinking_level: None literals. All are compile/evidence-required consequences of the 20.37 DoD clauses.",
+          "source": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md#2 (R row); .repo/pi-1.3.0/packages/ai/src/api/openai-responses.ts"
         }
       ],
       "tier": "workspace",
@@ -11766,7 +11771,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai openai-responses public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.37",
@@ -11779,7 +11784,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai openai-responses public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -11787,9 +11792,9 @@
         "opi_ai openai-responses public direct adapter"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "2c9644b37ecd69562962d02d8b95c9198954d845",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -11801,12 +11806,108 @@
         "crates/opi-ai/src/providers/**",
         "crates/opi-ai/src/telemetry.rs",
         "crates/opi-ai/tests/openai_responses_fixtures.rs",
-        "crates/opi-ai/tests/openai_responses_lifecycle.rs"
+        "crates/opi-ai/tests/openai_responses_lifecycle.rs",
+        "crates/opi-ai/src/message.rs",
+        "crates/opi-ai/src/model_info.rs",
+        "crates/opi-ai/src/catalog/wire.rs",
+        "crates/opi-ai/src/anthropic.rs",
+        "crates/opi-ai/src/gemini.rs",
+        "crates/opi-ai/src/bedrock/mod.rs",
+        "crates/opi-ai/src/replay.rs",
+        "crates/opi-ai/src/stream.rs",
+        "crates/opi-ai/src/test_support.rs",
+        "crates/opi-ai/src/openai_chat.rs",
+        "crates/opi-ai/src/openai_codex_responses.rs",
+        "crates/opi-ai/src/openai_codex_responses/ws_transport.rs",
+        "crates/opi-ai/tests/api_mapped_provider.rs",
+        "crates/opi-ai/tests/bedrock_fixtures.rs",
+        "crates/opi-ai/tests/context_budget.rs",
+        "crates/opi-ai/tests/node4_preparation.rs",
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
+        "crates/opi-ai/tests/openai_codex_responses/replay.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/provider_trait.rs",
+        "crates/opi-ai/tests/public_utilities.rs",
+        "crates/opi-ai/tests/replay_contract.rs",
+        "crates/opi-ai/tests/stream_events.rs",
+        "crates/opi-ai/tests/tool_result_no_leak.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs",
+        "crates/opi-ai/tests/whole_call_retry.rs",
+        "crates/opi-agent/src/event.rs",
+        "crates/opi-agent/tests/agent_loop_semantics.rs",
+        "crates/opi-agent/tests/agent_wrapper.rs",
+        "crates/opi-agent/tests/compaction.rs",
+        "crates/opi-agent/tests/evidence_runtime.rs",
+        "crates/opi-agent/tests/hooks_queues.rs",
+        "crates/opi-agent/tests/session_branching.rs",
+        "crates/opi-agent/tests/session_context.rs",
+        "crates/opi-agent/tests/session_contract.rs",
+        "crates/opi-agent/tests/thinking_session.rs",
+        "crates/opi-agent/tests/tool_validation.rs",
+        "crates/opi-coding-agent/tests/anthropic_cache_markers.rs",
+        "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+        "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+        "crates/opi-coding-agent/tests/session_export.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "12b7accee15ccb405dac0000e6d0a036a7874bcd",
+      "evidence": {
+        "Opi-Task": "20.37",
+        "Opi-DoD-SHA256": "bfcd169b6cc27b5e09e36947fe8f096843d378b6b3a8b5d812b3ad0f33202ce1",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "P20-S37, ONB-03-20.37"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-27T20:10:00+00:00",
+          "attempt": 1,
+          "summary": "B.2 authorized (user reply: 同意 covering execution, task commit with Opi-* footers, separate ledger checkpoint). Boot PASSED at 2c9644b; baseline dirty files: none (clean worktree)."
+        },
+        {
+          "timestamp": "2026-10-27T22:30:00+00:00",
+          "attempt": 1,
+          "summary": "Complete openai-responses adapter delivered: typed OpenAiResponsesOptions (effort/summary incl None-vs-null/service tier/tool choice) on the public OpenAiResponsesChatApi four Models entries with typed preflight; source store:false default; off-effort projection (off ?? none, copilot skip); encrypted reasoning include+signature persist+replay+terminal backfill+xai always; configuration_update effort stamps gated by catalog supportsMidConvoEffort with provider_thinking_level recording; prompt_cache_key + 24h retention for long cache retention; duration_ms on terminal Done; producer telemetry instrumentation (20.36 lesson applied proactively). D.1 smoke full PASSED after one retry: the known oauth 53692 port flake (TIME_WAIT pollution, same as 20.36) failed the first run and passed standalone plus on the rerun; environmental, not change-caused. D.2 exec review via documented single-reviewer fallback (no Workflow runtime on host; wf_ref=null): 0 must-fix; 3 low flags: (1) Incomplete stop-reason refinement (max_output_tokens vs other reasons) stays pre-existing pinned behavior, recommend a dedicated parser-parity pass; (2) duration test asserts presence only; (3) the reasoning signature is the documented replay-sufficient subset (id/summary/content/encrypted_content), not the full upstream item. Explicit prompt-cache mode (prompt_cache_options) and ChatGPT sign-in field omissions documented as unadopted (no opi catalog consumer / opi auth model differs).",
+          "gate_results": {
+            "d1": "smoke full PASSED (doc-check, fmt, clippy -D warnings all-targets, workspace tests + doc tests, rustdoc); one oauth 53692 TIME_WAIT flake on first run, passed standalone and on rerun",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 3 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "P20-S37",
+                "action": "add",
+                "test": "openai_responses_fixtures: responses_request_body_store_false_by_default, responses_disabled_and_off_thinking_send_none_effort_for_reasoning_models, responses_copilot_route_skips_off_effort, responses_xai_route_always_includes_encrypted_content, responses_off_effort_omits_summary_and_include, models_native_options_reach_the_responses_wire, models_native_unsupported_effort_fails_typed_before_auth, models_simple_neutral_effort_reaches_responses_wire, models_direct_adapter_uses_injected_auth_and_returns_result, models_direct_adapter_rejects_wrong_wire_records, responses_long_cache_retention_sends_prompt_cache_retention, responses_reasoning_summary_deltas_stream_thinking_blocks, responses_reasoning_signature_persists_encrypted_content, responses_completed_backfills_encrypted_signature_from_terminal_output, responses_encrypted_reasoning_replay_pushes_signed_items_back_into_input, responses_mid_convo_effort_stamps_configuration_updates, responses_done_message_carries_measured_response_duration, responses_setup_failure_before_activation_has_no_duration",
+                "interface": "OpenAiResponsesChatApi / OpenAiResponsesProvider::compile_request_body / ResponsesMapper",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-S37",
+                "action": "update",
+                "test": "openai_responses_fixtures: responses_reasoning_effort_uses_request_thinking_and_model_map (disabled/off sub-cases now expect {effort:none} per source), responses_request_body_store_absent_by_default replaced by store_false_by_default",
+                "interface": "Responses body projection",
+                "replacement": "pi 1.3.0 openai-responses.ts buildParams (store:false unconditional; off ?? none)",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.37",
+                "action": "retain",
+                "test": "openai_responses_lifecycle + remaining openai_responses_fixtures suites (cancel/drop/callback/payload-shape/dual-id/grammar tests all green in smoke full)",
+                "interface": "existing public seams",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.37",
+                "action": "add",
+                "test": "mechanical provider_thinking_level: None literals across 37 further files (compile patch)",
+                "interface": "AssistantMessage",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.38",
@@ -22251,6 +22352,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-27T19:05:00+00:00",
       "task_id": "20.36",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 0,
+      "ran_at": "2026-10-27T22:30:00+00:00",
+      "task_id": "20.37",
       "criterion_id": null
     }
   ]
