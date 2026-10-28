@@ -770,22 +770,25 @@ fn tool_result_images_preserve_association_order_and_failure_flag() {
         .build_request_body(&request("anthropic:claude-sonnet-4-5-20250514", messages))
         .unwrap();
     let messages = body["messages"].as_array().unwrap();
+    // Task 20.39 (pinned splitErrorToolResultImages + convertMessages): the
+    // placeholder replaces the image run as a text block, and the relocated
+    // caption + image follow all tool results in the SAME user message.
     let error_block = &messages[2]["content"][0];
     assert_eq!(error_block["type"], "tool_result");
     assert_eq!(error_block["is_error"], json!(true));
     assert_eq!(
         error_block["content"],
-        "[image attached after the tool results]"
+        json!([{"type": "text", "text": "(image attached after the tool results)"}])
     );
-    let follow_up = &messages[3]["content"];
-    assert_eq!(follow_up[0]["type"], "text");
+    let follow_up = &messages[2]["content"];
+    assert_eq!(follow_up[1]["type"], "text");
     assert!(
-        follow_up[0]["text"]
+        follow_up[1]["text"]
             .as_str()
             .unwrap()
             .contains("Images from the error result of tool call img_2")
     );
-    assert_eq!(follow_up[1]["type"], "image");
+    assert_eq!(follow_up[2]["type"], "image");
 
     // URL sources pass through, never downloaded.
     let messages = vec![user("see"), user_url_image()];

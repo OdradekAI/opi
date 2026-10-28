@@ -626,8 +626,9 @@ proposal 在字符串参数 wire（Chat、Responses）上原样发送原始文�
 参数 wire（Anthropic、Bedrock、Google）上替换为显式具名失败上下文——绝不
 `{}`、`null` 或伪造调用。wire ID 请求局部合法化（字符集／长度，稳定双射，
 call／result 同步；canonical 不变）。图像在能力路由上保留关联、顺序与失败
-标志（Anthropic 错误 result 的图像拆到回合结果之后）；`details` 绝不进
-wire，URL 源原样透传不下载。`ReplayProjection::Strict` 用类型化错误拒绝同
+标志（Anthropic 错误 result 的图像拆到该轮全部工具结果之后，并与其同处
+一条 user 消息——任务 20.39）；`details` 绝不进 wire，URL 源原样透传不
+下载。`ReplayProjection::Strict` 用类型化错误拒绝同
 批有损转换而不是记录事实。六个 provider adapter 在构造请求体开头消费该投
 影（`build_request_body` 现在返回 `Result`）；Responses 解析器打包
 `call_id|fc_item_id` 支持同身份双 ID 往返，序列化器还原两者，外来历史丢弃
@@ -1105,6 +1106,39 @@ initial/current 区分：content 追加以空行连接，section 替换保位，
   usage 保留。
 - helper 自身绝不切换 provider/model/auth（那是调用方工厂的事），也绝不接
   产品恢复；host 重试政策仍属 host。
+
+## Anthropic Messages native 选项与 inline-tools 时序（任务 20.39）
+
+公开 direct adapter `anthropic::AnthropicMessagesChatApi` 经
+`Models::register_chat_api` 注册（api id `anthropic-messages`），携带类型化
+`AnthropicMessagesOptions`——钉住的 pi 1.3.0 native 清单：
+
+| 选项 | wire 效果 |
+|---|---|
+| `thinking_enabled: Option<bool>` | 三态：省略沿用 neutral 请求意图；`Some(false)` 在 reasoning 模型上投影类型化 `{"type":"disabled"}` 块；`Some(true)` 启用 native thinking |
+| `thinking_budget_tokens` | 启用的数值 thinking 遵循源 `\|\| 1024` 语义：缺失**或为 0** 发送 native 默认 1024；非零预算原样透传 |
+| `thinking_display` | `summarized`（启用默认，adaptive 与数值皆然）或 `detailed`；启用时恒发送 |
+| `effort` | 仅 adaptive thinking：类型化预检拒绝不支持的级别，wire 收到 `output_config.effort`；数值 thinking 忽略 |
+| `interleaved_thinking` | 默认 `true`（启用的非 adaptive thinking 附带 beta `interleaved-thinking-2025-05-14`）；`Some(false)` 省略；adaptive 模型从不发送 |
+| `tool_choice` | `auto`／`any`／`none` 投影 `{"type": ...}`；`Named` 投影 `{"type":"tool","name":...}` |
+
+neutral／simple 条目只映射工具选择；neutral thinking 保留其级别预算策略
+（1024/2048/8192/16384），与 native 无预算默认 1024 保持区分。按 annex 行
+165 撤回 sub-1024 类型化预检：钳到 0 的预算流向 wire，由 `|| 1024` 兜底。
+
+inline-tools 时序（`inline-tools-2026-09-15`，compat
+`supports_mid_convo_system_messages`＋`supports_mid_convo_tool_changes`，默认
+均 false）：请求级工具表保持初始活动集（缓存断点在末项）加 deferred 占位符
+`__pi_deferred_placeholder__`（`defer_loading: true`）；后续 system 消息保持
+native，按值携带 `tool_addition` 定义——同名重定义是新增，绝不删除——以及
+真正下线名称的 `tool_removal` 引用。system 更新挂起到下一条 assistant 消息
+（或结尾）之前，保证 `tool_result` 仍紧随其 `tool_use`。
+
+错误回合图像迁移遵循钉住的 `splitErrorToolResultImages` 形状：错误
+`tool_result` 保留其文本并以 `(image attached after the tool results)` 占位
+文本块替换每个图像段；标签加延迟图像跟随该轮**全部**工具结果之后，同处一
+条 user 消息。anthropic producer 现运行于显式冻结的 `TelemetryContext`
+（P20-TELEMETRY）。
 
 ## 受限采样：strict wire 投影与有界降级变体（AIR-040/V-34，任务 20.11）
 

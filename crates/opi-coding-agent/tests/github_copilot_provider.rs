@@ -409,7 +409,12 @@ async fn factory_built_copilot_anthropic_models_apply_catalog_compatibility() {
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 1, "{model}");
         let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
-        assert_eq!(body["thinking"], serde_json::json!({ "type": "adaptive" }));
+        // Task 20.39 replacement proof: adaptive thinking carries the
+        // display default (summarized) per pi buildParams.
+        assert_eq!(
+            body["thinking"],
+            serde_json::json!({"type": "adaptive", "display": "summarized"})
+        );
         assert!(
             body.get("temperature").is_none(),
             "{model} must omit unsupported temperature"

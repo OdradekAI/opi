@@ -644,6 +644,8 @@ async fn forwarding_adapter_preserves_one_advanced_strict_and_retry_budget_owner
         supports_eager_tool_input_streaming: false,
         force_adaptive_thinking: false,
         supports_temperature: true,
+        supports_mid_convo_system_messages: false,
+        supports_mid_convo_tool_changes: false,
     }))
     .unwrap();
     let provider = opi_ai::anthropic::AnthropicProvider::for_route(

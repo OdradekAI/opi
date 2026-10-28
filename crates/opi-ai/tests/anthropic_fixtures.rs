@@ -1012,9 +1012,11 @@ fn build_request_body_uses_default_budget_when_none() {
     let thinking = body
         .get("thinking")
         .expect("thinking field should be present");
+    // Task 20.39: the source native default is 1024 (pinned
+    // `thinkingBudgetTokens || 1024`); the old 10000 default is replaced.
     assert_eq!(
-        thinking["budget_tokens"], 10000,
-        "default budget should be 10000"
+        thinking["budget_tokens"], 1024,
+        "default budget should be the source native default 1024"
     );
 }
 
@@ -1699,6 +1701,8 @@ mod request_compatibility {
             force_adaptive_thinking: true,
             supports_temperature: false,
             supports_strict_tools: false,
+            supports_mid_convo_system_messages: false,
+            supports_mid_convo_tool_changes: false,
         }))
         .unwrap();
         let provider = AnthropicProvider::for_route(
@@ -1720,7 +1724,12 @@ mod request_compatibility {
         let body = provider.build_request_body(&request).unwrap();
 
         assert!(body.get("temperature").is_none());
-        assert_eq!(body["thinking"], serde_json::json!({"type": "adaptive"}));
+        // Task 20.39 replacement proof: adaptive thinking carries the display
+        // default (summarized) per pi buildParams.
+        assert_eq!(
+            body["thinking"],
+            serde_json::json!({"type": "adaptive", "display": "summarized"})
+        );
     }
     #[test]
     fn anthropic_direct_catalog_preserves_fixed_thinking_and_temperature() {
@@ -1736,9 +1745,11 @@ mod request_compatibility {
         let body = provider.build_request_body(&request).unwrap();
 
         assert_eq!(body["temperature"], 0.4);
+        // Task 20.39 replacement proof: enabled thinking always carries the
+        // display field (default summarized) per pi buildParams.
         assert_eq!(
             body["thinking"],
-            serde_json::json!({"type": "enabled", "budget_tokens": 4096})
+            serde_json::json!({"type": "enabled", "budget_tokens": 4096, "display": "summarized"})
         );
     }
 }
@@ -2376,6 +2387,8 @@ mod anthropic_strict_wire_tests {
             force_adaptive_thinking: false,
             supports_temperature: true,
             supports_strict_tools: strict_tools,
+            supports_mid_convo_system_messages: false,
+            supports_mid_convo_tool_changes: false,
         }))
         .unwrap();
         AnthropicProvider::for_route(
@@ -2628,6 +2641,8 @@ mod anthropic_strict_variant_tests {
             force_adaptive_thinking: false,
             supports_temperature: true,
             supports_strict_tools: true,
+            supports_mid_convo_system_messages: false,
+            supports_mid_convo_tool_changes: false,
         }))
         .unwrap();
         let client = Arc::new(HttpClientBuilder::new().build().expect("client build"));
@@ -3166,4 +3181,1080 @@ mod anthropic_strict_variant_tests {
         assert!(call.strict_variant_admission().is_none());
         assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.39: complete anthropic-messages chat adapter — native options,
+// thinking states, inline-tools chronology, error-turn relocation, and the
+// public direct adapter. Sources: pi 1.3.0 anthropic-messages.ts,
+// transform-messages.ts, compat-schema.ts (annex rows 37/50/165/176/244).
+// ---------------------------------------------------------------------------
+
+use opi_ai::anthropic::{
+    AnthropicMessagesChatApi, AnthropicMessagesOptions, AnthropicThinkingDisplay,
+    AnthropicToolChoice,
+};
+use opi_ai::http::HttpClient;
+use opi_ai::message::ToolDef;
+use opi_ai::model_info::{
+    AnthropicMessagesCompat, ModelCapabilities, ModelInfo, WireApi, WireCompat,
+};
+use opi_ai::models::{Models, SimpleOptions};
+use opi_ai::telemetry::TelemetryContext;
+
+fn caps_39() -> ModelCapabilities {
+    ModelCapabilities::new(200_000, 64_000)
+        .with_images(true)
+        .with_streaming(true)
+        .with_thinking(true)
+}
+
+fn compat_39(
+    force_adaptive: bool,
+    mid_convo_system: bool,
+    mid_convo_tools: bool,
+) -> AnthropicMessagesCompat {
+    AnthropicMessagesCompat {
+        supports_eager_tool_input_streaming: false,
+        force_adaptive_thinking: force_adaptive,
+        supports_temperature: true,
+        supports_strict_tools: false,
+        supports_mid_convo_system_messages: mid_convo_system,
+        supports_mid_convo_tool_changes: mid_convo_tools,
+    }
+}
+
+fn model_39(id: &str, compat: AnthropicMessagesCompat) -> ModelInfo {
+    ModelInfo::new(id, id, WireApi::AnthropicMessages, caps_39())
+        .with_compat(WireCompat::AnthropicMessages(compat))
+        .expect("matching wire compat")
+}
+
+fn provider_39(model: &ModelInfo, options: AnthropicMessagesOptions) -> AnthropicProvider {
+    AnthropicProvider::for_route(
+        "anthropic".into(),
+        vec![model.clone()],
+        None,
+        Default::default(),
+        std::sync::Arc::new(HttpClient::new()),
+        false,
+    )
+    .with_native_options(options)
+}
+
+fn native_options_39() -> AnthropicMessagesOptions {
+    AnthropicMessagesOptions::default()
+}
+
+fn request_39(thinking: ThinkingConfig) -> Request {
+    request_39_for("anthropic:claude-sonnet-4-5", thinking)
+}
+
+fn request_39_for(model: &str, thinking: ThinkingConfig) -> Request {
+    Request {
+        transport: Default::default(),
+        model: model.into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        })
+        .expect("valid context declarations"),
+        max_tokens: Some(4096),
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking,
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        telemetry_context: None,
+        callbacks: Default::default(),
+    }
+}
+
+fn body_39(provider: &AnthropicProvider, request: &Request) -> serde_json::Value {
+    provider.build_request_body(request).expect("body compiles")
+}
+
+#[test]
+fn native_enabled_without_budget_uses_source_default_1024_and_summarized() {
+    let model = model_39("claude-sonnet-4-5", compat_39(false, false, false));
+    let mut options = native_options_39();
+    options.thinking_enabled = Some(true);
+    let provider = provider_39(&model, options);
+    let body = body_39(&provider, &request_39(ThinkingConfig::default()));
+
+    let thinking = &body["thinking"];
+    assert_eq!(thinking["type"], "enabled");
+    assert_eq!(thinking["budget_tokens"], 1024, "source native default");
+    assert_eq!(
+        thinking["display"], "summarized",
+        "enabled thinking defaults to the summarized display"
+    );
+}
+
+#[test]
+fn native_zero_budget_falls_back_to_1024_per_source_or_semantics() {
+    let model = model_39("claude-sonnet-4-5", compat_39(false, false, false));
+    let mut options = native_options_39();
+    options.thinking_enabled = Some(true);
+    options.thinking_budget_tokens = Some(0);
+    let provider = provider_39(&model, options);
+    let body = body_39(&provider, &request_39(ThinkingConfig::default()));
+
+    assert_eq!(body["thinking"]["budget_tokens"], 1024);
+}
+
+#[test]
+fn native_explicit_budget_and_detailed_display_reach_the_wire() {
+    let model = model_39("claude-sonnet-4-5", compat_39(false, false, false));
+    let mut options = native_options_39();
+    options.thinking_enabled = Some(true);
+    options.thinking_budget_tokens = Some(5000);
+    options.thinking_display = Some(AnthropicThinkingDisplay::Detailed);
+    let provider = provider_39(&model, options);
+    let body = body_39(&provider, &request_39(ThinkingConfig::default()));
+
+    assert_eq!(body["thinking"]["budget_tokens"], 5000);
+    assert_eq!(body["thinking"]["display"], "detailed");
+}
+
+#[test]
+fn native_disabled_projects_typed_disabled_on_reasoning_models() {
+    let model = model_39("claude-sonnet-4-5", compat_39(false, false, false));
+    let mut options = native_options_39();
+    options.thinking_enabled = Some(false);
+    let provider = provider_39(&model, options);
+    let body = body_39(&provider, &request_39(ThinkingConfig::default()));
+
+    assert_eq!(body["thinking"]["type"], "disabled");
+    assert!(
+        body.get("betas")
+            .is_none_or(|b| b
+                .as_array()
+                .is_none_or(|betas| !betas.iter().any(|beta| beta
+                    .as_str()
+                    .is_some_and(|beta| beta.starts_with("interleaved"))))),
+        "disabled thinking never requests the interleaved beta"
+    );
+}
+
+#[test]
+fn native_omitted_thinking_keeps_neutral_request_path() {
+    let model = model_39("claude-sonnet-4-5", compat_39(false, false, false));
+    let provider = provider_39(&model, native_options_39());
+    let request = request_39(ThinkingConfig {
+        enabled: true,
+        budget_tokens: Some(5000),
+        level: opi_ai::ThinkingLevel::High,
+    });
+    let body = body_39(&provider, &request);
+
+    // Omitted native tri-state: the neutral request drives the wire and the
+    // native default does not override an explicit neutral budget.
+    assert_eq!(body["thinking"]["budget_tokens"], 5000);
+    assert_eq!(body["thinking"]["display"], "summarized");
+}
+
+#[test]
+fn interleaved_beta_defaults_true_explicit_false_omits_adaptive_never() {
+    let numeric = model_39("claude-sonnet-4-5", compat_39(false, false, false));
+    let mut on = native_options_39();
+    on.thinking_enabled = Some(true);
+    let body = body_39(
+        &provider_39(&numeric, on),
+        &request_39(ThinkingConfig::default()),
+    );
+    let betas = body["betas"].as_array().expect("default interleaved beta");
+    assert!(
+        betas
+            .iter()
+            .any(|beta| beta == "interleaved-thinking-2025-05-14")
+    );
+
+    let mut off = native_options_39();
+    off.thinking_enabled = Some(true);
+    off.interleaved_thinking = Some(false);
+    let body = body_39(
+        &provider_39(&numeric, off),
+        &request_39(ThinkingConfig::default()),
+    );
+    assert!(
+        body.get("betas").is_none(),
+        "explicit interleaved=false must omit the beta"
+    );
+
+    let adaptive = model_39("claude-opus-4-7", compat_39(true, false, false));
+    let mut adaptive_on = native_options_39();
+    adaptive_on.thinking_enabled = Some(true);
+    let body = body_39(
+        &provider_39(&adaptive, adaptive_on),
+        &request_39_for("anthropic:claude-opus-4-7", ThinkingConfig::default()),
+    );
+    assert!(
+        body.get("betas").is_none(),
+        "adaptive thinking models ignore the interleaved beta"
+    );
+}
+
+#[test]
+fn adaptive_native_effort_uses_output_config_and_display_without_budget() {
+    let adaptive = model_39("claude-opus-4-7", compat_39(true, false, false));
+    let mut options = native_options_39();
+    options.thinking_enabled = Some(true);
+    options.effort = Some(opi_ai::ThinkingLevel::High);
+    let provider = provider_39(&adaptive, options);
+    let body = body_39(
+        &provider,
+        &request_39_for("anthropic:claude-opus-4-7", ThinkingConfig::default()),
+    );
+
+    assert_eq!(body["thinking"]["type"], "adaptive");
+    assert_eq!(body["thinking"]["display"], "summarized");
+    assert_eq!(body["output_config"]["effort"], "high");
+    assert!(
+        body["thinking"].get("budget_tokens").is_none(),
+        "adaptive thinking carries no budget"
+    );
+}
+
+#[test]
+fn adaptive_native_without_effort_omits_output_config() {
+    let adaptive = model_39("claude-opus-4-7", compat_39(true, false, false));
+    let mut options = native_options_39();
+    options.thinking_enabled = Some(true);
+    let provider = provider_39(&adaptive, options);
+    let body = body_39(
+        &provider,
+        &request_39_for("anthropic:claude-opus-4-7", ThinkingConfig::default()),
+    );
+
+    assert_eq!(body["thinking"]["type"], "adaptive");
+    assert!(body.get("output_config").is_none());
+}
+
+#[test]
+fn native_tool_choice_variants_reach_the_wire() {
+    let model = model_39("claude-sonnet-4-5", compat_39(false, false, false));
+    let request = request_39(ThinkingConfig::default());
+    for (choice, expected) in [
+        (
+            AnthropicToolChoice::Auto,
+            serde_json::json!({"type": "auto"}),
+        ),
+        (AnthropicToolChoice::Any, serde_json::json!({"type": "any"})),
+        (
+            AnthropicToolChoice::None_,
+            serde_json::json!({"type": "none"}),
+        ),
+        (
+            AnthropicToolChoice::Named("get_weather".into()),
+            serde_json::json!({"type": "tool", "name": "get_weather"}),
+        ),
+    ] {
+        let mut options = native_options_39();
+        options.tool_choice = Some(choice);
+        let provider = provider_39(&model, options);
+        let body = body_39(&provider, &request);
+        assert_eq!(body["tool_choice"], expected);
+    }
+}
+
+fn tool_def_39(name: &str) -> ToolDef {
+    ToolDef {
+        name: name.into(),
+        description: format!("tool {name}"),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {"x": {"type": "string"}},
+            "required": ["x"]
+        }),
+        constrained_sampling: None,
+    }
+}
+
+fn inline_tools_context_39() -> opi_ai::transcript::Context {
+    opi_ai::transcript::Context {
+        system_prompt: None,
+        messages: vec![
+            Message::System(opi_ai::transcript::SystemMessage {
+                content: "Base prompt.".into(),
+                sections: vec![],
+                tools_added: vec![tool_def_39("initial_tool")],
+                tools_removed: vec![],
+                timestamp_ms: 0,
+            }),
+            Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "Hello".into(),
+                }],
+                timestamp_ms: 1,
+            }),
+            Message::System(opi_ai::transcript::SystemMessage {
+                content: "Update.".into(),
+                sections: vec![],
+                tools_added: vec![
+                    tool_def_39("added_tool"),
+                    ToolDef {
+                        description: "redefined initial tool".into(),
+                        ..tool_def_39("initial_tool")
+                    },
+                ],
+                tools_removed: vec![opi_ai::transcript::ToolReference {
+                    name: "removed_tool".into(),
+                }],
+                timestamp_ms: 2,
+            }),
+        ],
+        tools: vec![],
+    }
+}
+
+#[test]
+fn inline_tools_placeholder_anchors_initial_tools_and_declares_the_beta() {
+    let model = model_39("claude-sonnet-4-5", compat_39(false, true, true));
+    let provider = provider_39(&model, native_options_39());
+    let mut request = request_39(ThinkingConfig::default());
+    request.context =
+        opi_ai::transcript::normalize_context(inline_tools_context_39()).expect("valid");
+    let body = body_39(&provider, &request);
+
+    let betas = body["betas"].as_array().expect("inline-tools beta");
+    assert!(betas.iter().any(|beta| beta == "inline-tools-2026-09-15"));
+
+    let tools = body["tools"].as_array().expect("tools list");
+    assert_eq!(tools.len(), 2, "initial tools plus the placeholder");
+    assert_eq!(tools[0]["name"], "initial_tool");
+    assert_eq!(tools[1]["name"], "__pi_deferred_placeholder__");
+    assert_eq!(tools[1]["defer_loading"], true);
+}
+
+#[test]
+fn inline_tools_by_value_additions_and_same_name_redefinitions() {
+    let model = model_39("claude-sonnet-4-5", compat_39(false, true, true));
+    let provider = provider_39(&model, native_options_39());
+    let mut request = request_39(ThinkingConfig::default());
+    request.context =
+        opi_ai::transcript::normalize_context(inline_tools_context_39()).expect("valid");
+    let body = body_39(&provider, &request);
+
+    // The update system message carries by-value tool_addition blocks (the
+    // redefinition of initial_tool arrives as a fresh definition, no removal)
+    // plus a tool_removal reference for the genuinely removed name.
+    let system = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| message["role"] == "system")
+        .expect("mid-convo system message stays native");
+    let blocks = system["content"].as_array().unwrap();
+    let additions: Vec<&serde_json::Value> = blocks
+        .iter()
+        .filter(|block| block["type"] == "tool_addition")
+        .collect();
+    assert_eq!(additions.len(), 2, "added_tool and the redefinition");
+    assert_eq!(additions[0]["tool"]["definition"]["name"], "added_tool");
+    assert_eq!(
+        additions[1]["tool"]["definition"]["name"], "initial_tool",
+        "same-name redefinition is a by-value addition"
+    );
+    assert_eq!(
+        additions[1]["tool"]["definition"]["description"],
+        "redefined initial tool"
+    );
+    let removals: Vec<&serde_json::Value> = blocks
+        .iter()
+        .filter(|block| block["type"] == "tool_removal")
+        .collect();
+    assert_eq!(removals.len(), 1, "redefined names are not removed");
+    assert_eq!(removals[0]["tool"]["type"], "tool_reference");
+    assert_eq!(removals[0]["tool"]["name"], "removed_tool");
+}
+
+#[test]
+fn inline_tools_stay_off_without_the_compat_flags() {
+    let model = model_39("claude-sonnet-4-5", compat_39(false, false, false));
+    let provider = provider_39(&model, native_options_39());
+    let mut request = request_39(ThinkingConfig::default());
+    request.context =
+        opi_ai::transcript::normalize_context(inline_tools_context_39()).expect("valid");
+    let body = body_39(&provider, &request);
+
+    assert!(
+        body.get("betas").is_none(),
+        "no inline-tools beta without the compat flags"
+    );
+    let tools = body["tools"].as_array().expect("collapsed current list");
+    assert_eq!(
+        tools.len(),
+        2,
+        "current tool set: added_tool + redefined initial"
+    );
+    assert!(
+        !tools
+            .iter()
+            .any(|tool| tool["name"] == "__pi_deferred_placeholder__")
+    );
+    assert!(
+        body["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|message| message["role"] != "system"),
+        "system changes collapse without native mid-convo support"
+    );
+}
+
+#[test]
+fn error_tool_result_images_follow_all_results_in_one_user_message() {
+    let model = model_39("claude-sonnet-4-5", compat_39(false, false, false));
+    let provider = AnthropicProvider::for_route(
+        "anthropic".into(),
+        vec![model],
+        None,
+        Default::default(),
+        std::sync::Arc::new(HttpClient::new()),
+        false,
+    );
+    let png = opi_ai::message::ImageSource::Base64 {
+        data: "aWNn".into(),
+    };
+    let messages = vec![
+        Message::User(UserMessage {
+            content: vec![InputContent::Text { text: "q".into() }],
+            timestamp_ms: 0,
+        }),
+        Message::Assistant(opi_ai::message::AssistantMessage {
+            content: vec![
+                opi_ai::message::AssistantContent::ToolCall {
+                    tool_call: opi_ai::message::ToolCall {
+                        id: "call_1".into(),
+                        name: "probe".into(),
+                        arguments: "{}".into(),
+                        arguments_error: None,
+                    },
+                },
+                opi_ai::message::AssistantContent::ToolCall {
+                    tool_call: opi_ai::message::ToolCall {
+                        id: "call_2".into(),
+                        name: "broken".into(),
+                        arguments: "{}".into(),
+                        arguments_error: None,
+                    },
+                },
+            ],
+            api: opi_ai::ApiKind::Anthropic,
+            provider: "anthropic".into(),
+            model: "claude-sonnet-4-5".into(),
+            response_model: None,
+            wire: Some(WireApi::AnthropicMessages),
+            response_id: None,
+            usage: Default::default(),
+            stop_reason: StopReason::ToolUse,
+            error_message: None,
+            timestamp_ms: 0,
+            diagnostics: vec![],
+            duration_ms: None,
+            provider_thinking_level: None,
+        }),
+        Message::ToolResult(opi_ai::message::ToolResultMessage {
+            tool_call_id: "call_1".into(),
+            tool_name: "probe".into(),
+            content: vec![opi_ai::message::OutputContent::Text { text: "ok".into() }],
+            details: None,
+            is_error: false,
+            not_executed: None,
+            truncated: false,
+            timestamp_ms: 1,
+        }),
+        Message::ToolResult(opi_ai::message::ToolResultMessage {
+            tool_call_id: "call_2".into(),
+            tool_name: "broken".into(),
+            content: vec![
+                opi_ai::message::OutputContent::Text {
+                    text: "boom ".into(),
+                },
+                opi_ai::message::OutputContent::Image {
+                    source: png,
+                    media_type: opi_ai::message::MediaType::Png,
+                },
+            ],
+            details: None,
+            is_error: true,
+            not_executed: None,
+            truncated: false,
+            timestamp_ms: 2,
+        }),
+    ];
+    let mut request = request_39(ThinkingConfig::default());
+    request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages,
+        tools: vec![],
+    })
+    .expect("valid");
+    let body = body_39(&provider, &request);
+
+    // One user message carries both tool results, then the relocated error
+    // images (caption first) in the same message (pinned #10794 shape).
+    let user_messages: Vec<&serde_json::Value> = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|message| message["role"] == "user")
+        .collect();
+    let tool_turn = user_messages
+        .iter()
+        .find(|message| {
+            message["content"]
+                .as_array()
+                .is_some_and(|blocks| blocks.iter().any(|block| block["type"] == "tool_result"))
+        })
+        .expect("tool turn");
+    let blocks = tool_turn["content"].as_array().unwrap();
+    assert_eq!(
+        blocks.len(),
+        4,
+        "two tool results, a caption, and the image in one user message"
+    );
+    assert_eq!(blocks[0]["tool_use_id"], "call_1");
+    assert_eq!(blocks[1]["tool_use_id"], "call_2");
+    assert_eq!(blocks[1]["is_error"], true);
+    assert_eq!(
+        blocks[1]["content"],
+        serde_json::json!([
+            {"type": "text", "text": "boom "},
+            {"type": "text", "text": "(image attached after the tool results)"}
+        ]),
+        "error text is preserved and images become a placeholder"
+    );
+    assert_eq!(blocks[2]["type"], "text");
+    assert_eq!(
+        blocks[2]["text"],
+        "Images from the error result of tool call call_2 (broken):"
+    );
+    assert_eq!(blocks[3]["type"], "image");
+}
+
+#[test]
+fn consecutive_success_tool_results_group_into_one_user_message() {
+    let model = model_39("claude-sonnet-4-5", compat_39(false, false, false));
+    let provider = AnthropicProvider::for_route(
+        "anthropic".into(),
+        vec![model],
+        None,
+        Default::default(),
+        std::sync::Arc::new(HttpClient::new()),
+        false,
+    );
+    let messages = vec![
+        Message::User(UserMessage {
+            content: vec![InputContent::Text { text: "q".into() }],
+            timestamp_ms: 0,
+        }),
+        Message::Assistant(opi_ai::message::AssistantMessage {
+            content: vec![
+                opi_ai::message::AssistantContent::ToolCall {
+                    tool_call: opi_ai::message::ToolCall {
+                        id: "call_1".into(),
+                        name: "probe".into(),
+                        arguments: "{}".into(),
+                        arguments_error: None,
+                    },
+                },
+                opi_ai::message::AssistantContent::ToolCall {
+                    tool_call: opi_ai::message::ToolCall {
+                        id: "call_2".into(),
+                        name: "probe".into(),
+                        arguments: "{}".into(),
+                        arguments_error: None,
+                    },
+                },
+            ],
+            api: opi_ai::ApiKind::Anthropic,
+            provider: "anthropic".into(),
+            model: "claude-sonnet-4-5".into(),
+            response_model: None,
+            wire: Some(WireApi::AnthropicMessages),
+            response_id: None,
+            usage: Default::default(),
+            stop_reason: StopReason::ToolUse,
+            error_message: None,
+            timestamp_ms: 0,
+            diagnostics: vec![],
+            duration_ms: None,
+            provider_thinking_level: None,
+        }),
+        Message::ToolResult(opi_ai::message::ToolResultMessage {
+            tool_call_id: "call_1".into(),
+            tool_name: "probe".into(),
+            content: vec![opi_ai::message::OutputContent::Text { text: "a".into() }],
+            details: None,
+            is_error: false,
+            not_executed: None,
+            truncated: false,
+            timestamp_ms: 1,
+        }),
+        Message::ToolResult(opi_ai::message::ToolResultMessage {
+            tool_call_id: "call_2".into(),
+            tool_name: "probe".into(),
+            content: vec![opi_ai::message::OutputContent::Text { text: "b".into() }],
+            details: None,
+            is_error: false,
+            not_executed: None,
+            truncated: false,
+            timestamp_ms: 2,
+        }),
+    ];
+    let mut request = request_39(ThinkingConfig::default());
+    request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages,
+        tools: vec![],
+    })
+    .expect("valid");
+    let body = body_39(&provider, &request);
+
+    let user_messages: Vec<&serde_json::Value> = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|message| message["role"] == "user")
+        .collect();
+    let tool_blocks: Vec<&serde_json::Value> = user_messages
+        .iter()
+        .flat_map(|message| message["content"].as_array().into_iter().flatten())
+        .filter(|block| block["type"] == "tool_result")
+        .collect();
+    assert_eq!(
+        user_messages
+            .iter()
+            .filter(|message| message["content"]
+                .as_array()
+                .is_some_and(|blocks| blocks.iter().any(|b| b["type"] == "tool_result")))
+            .count(),
+        1,
+        "consecutive tool results share one user message"
+    );
+    assert_eq!(tool_blocks.len(), 2);
+}
+
+#[tokio::test]
+async fn native_options_from_simple_map_neutral_tool_choice_only() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(body_partial_json(serde_json::json!({
+            "tool_choice": {"type": "none"},
+            "thinking": {
+                "type": "enabled",
+                "budget_tokens": 8192,
+                "display": "summarized"
+            }
+        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let model =
+        model_39("claude-sonnet-4-5", compat_39(false, false, false)).with_base_url(server.uri());
+    let provider = std::sync::Arc::new(AnthropicProvider::for_route(
+        "anthropic".into(),
+        vec![model.clone()],
+        None,
+        Default::default(),
+        std::sync::Arc::new(HttpClient::new()),
+        false,
+    ));
+    let api = AnthropicMessagesChatApi::new(provider, model.clone()).expect("valid record");
+    let mut models = Models::new();
+    models
+        .register_chat_api(
+            std::sync::Arc::new(api),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::ApiKey,
+                secrecy::SecretString::from("test-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .expect("register");
+
+    // The neutral entry maps only the tool choice; the neutral level-budget
+    // policy (8192 for medium) stays distinct from the native no-budget
+    // default 1024.
+    let mut request = request_39(ThinkingConfig {
+        enabled: true,
+        budget_tokens: None,
+        level: opi_ai::ThinkingLevel::Medium,
+    });
+    // No explicit output cap: the compiler uses the model cap, so the
+    // medium level budget (8192) survives the answer-room clamp.
+    request.max_tokens = None;
+    let message = models
+        .complete_simple(
+            opi_ai::models::ChatModelRecord::new("anthropic", model),
+            request,
+            SimpleOptions {
+                tool_choice: Some(opi_ai::models::SimpleToolChoice::None),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("simple entry completes");
+    assert_eq!(message.stop_reason, StopReason::Stop);
+}
+
+#[tokio::test]
+async fn anthropic_direct_adapter_native_lifecycle_reaches_the_wire() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("x-api-key", "test-key"))
+        .and(body_partial_json(serde_json::json!({
+            "thinking": {
+                "type": "enabled",
+                "budget_tokens": 1024,
+                "display": "summarized"
+            }
+        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let model =
+        model_39("claude-sonnet-4-5", compat_39(false, false, false)).with_base_url(server.uri());
+    let provider = std::sync::Arc::new(AnthropicProvider::for_route(
+        "anthropic".into(),
+        vec![model.clone()],
+        None,
+        Default::default(),
+        std::sync::Arc::new(HttpClient::new()),
+        false,
+    ));
+    let mut options = native_options_39();
+    options.thinking_enabled = Some(true);
+    let api = AnthropicMessagesChatApi::new(provider, model.clone()).expect("valid record");
+    let mut models = Models::new();
+    let handle = models
+        .register_chat_api(
+            std::sync::Arc::new(api),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::ApiKey,
+                secrecy::SecretString::from("test-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .expect("register");
+
+    let options = handle.options(options);
+    let message = models
+        .complete(
+            opi_ai::models::ChatModelRecord::new("anthropic", model),
+            request_39(ThinkingConfig::default()),
+            options,
+        )
+        .await
+        .expect("native lifecycle completes");
+    assert_eq!(message.stop_reason, StopReason::Stop);
+}
+
+#[test]
+fn anthropic_direct_adapter_rejects_wrong_wire_records() {
+    let wrong = ModelInfo::new(
+        "gpt-4o",
+        "GPT-4o",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(1000, 100),
+    );
+    let provider = std::sync::Arc::new(AnthropicProvider::new(None));
+    let error = AnthropicMessagesChatApi::new(provider, wrong).expect_err("wrong wire");
+    assert!(matches!(error, ProviderError::Config { .. }));
+}
+
+#[tokio::test]
+async fn anthropic_setup_failure_before_activation_is_typed() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(401).set_body_string(
+            r#"{"type":"error","error":{"type":"authentication_error","message":"bad key"}}"#,
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let model =
+        model_39("claude-sonnet-4-5", compat_39(false, false, false)).with_base_url(server.uri());
+    let provider = std::sync::Arc::new(AnthropicProvider::for_route(
+        "anthropic".into(),
+        vec![model.clone()],
+        None,
+        Default::default(),
+        std::sync::Arc::new(HttpClient::new()),
+        false,
+    ));
+    let api = AnthropicMessagesChatApi::new(provider, model.clone()).expect("valid record");
+    let mut models = Models::new();
+    let handle = models
+        .register_chat_api(
+            std::sync::Arc::new(api),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::ApiKey,
+                secrecy::SecretString::from("test-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .expect("register");
+
+    let error = models
+        .complete(
+            opi_ai::models::ChatModelRecord::new("anthropic", model),
+            request_39(ThinkingConfig::default()),
+            handle.options(native_options_39()),
+        )
+        .await
+        .expect_err("401 setup failure is typed");
+    assert!(
+        !format!("{error:?}").contains("bad key"),
+        "owned failure detail"
+    );
+}
+
+#[tokio::test]
+async fn anthropic_direct_adapter_replays_same_identity_signed_thinking() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(body_partial_json(serde_json::json!({
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "q"}]},
+                {"role": "assistant", "content": [
+                    {"type": "thinking", "thinking": "prior", "signature": "sig-1"}
+                ]},
+                {"role": "user", "content": [{"type": "text", "text": "next"}]}
+            ]
+        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let model =
+        model_39("claude-sonnet-4-5", compat_39(false, false, false)).with_base_url(server.uri());
+    let provider = std::sync::Arc::new(AnthropicProvider::for_route(
+        "anthropic".into(),
+        vec![model.clone()],
+        None,
+        Default::default(),
+        std::sync::Arc::new(HttpClient::new()),
+        false,
+    ));
+    let api = AnthropicMessagesChatApi::new(provider, model.clone()).expect("valid record");
+    let mut models = Models::new();
+    let handle = models
+        .register_chat_api(
+            std::sync::Arc::new(api),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::ApiKey,
+                secrecy::SecretString::from("test-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .expect("register");
+
+    let history = Message::Assistant(opi_ai::message::AssistantMessage {
+        content: vec![opi_ai::message::AssistantContent::Thinking {
+            thinking: "prior".into(),
+            signature: Some("sig-1".into()),
+        }],
+        api: opi_ai::ApiKind::Anthropic,
+        provider: "anthropic".into(),
+        model: "claude-sonnet-4-5".into(),
+        response_model: None,
+        wire: Some(WireApi::AnthropicMessages),
+        response_id: None,
+        usage: Default::default(),
+        stop_reason: StopReason::Stop,
+        error_message: None,
+        timestamp_ms: 0,
+        diagnostics: vec![],
+        duration_ms: None,
+        provider_thinking_level: None,
+    });
+    let mut request = request_39(ThinkingConfig::default());
+    request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages: vec![
+            Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "q".into() }],
+                timestamp_ms: 0,
+            }),
+            history,
+            Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "next".into(),
+                }],
+                timestamp_ms: 1,
+            }),
+        ],
+        tools: vec![],
+    })
+    .expect("valid");
+
+    let message = models
+        .complete(
+            opi_ai::models::ChatModelRecord::new("anthropic", model),
+            request,
+            handle.options(native_options_39()),
+        )
+        .await
+        .expect("replay call completes");
+    assert_eq!(message.stop_reason, StopReason::Stop);
+}
+
+#[tokio::test]
+async fn anthropic_telemetry_carrier_instruments_the_producer() {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use tracing_core::span::{Attributes, Id, Record};
+    use tracing_core::{Dispatch, Event, Metadata, Subscriber, dispatcher};
+
+    #[derive(Default)]
+    struct Recording {
+        next: u64,
+        spans: Vec<(&'static str, Option<u64>)>,
+        entered: HashMap<std::thread::ThreadId, Vec<Id>>,
+    }
+    struct Recorder(std::sync::Arc<Mutex<Recording>>);
+
+    impl Subscriber for Recorder {
+        fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, attributes: &Attributes<'_>) -> Id {
+            let mut state = self.0.lock().unwrap();
+            state.next += 1;
+            let id = Id::from_u64(state.next);
+            let parent = attributes.parent().cloned().or_else(|| {
+                attributes
+                    .is_contextual()
+                    .then(|| {
+                        state
+                            .entered
+                            .get(&std::thread::current().id())
+                            .and_then(|stack| stack.last())
+                            .cloned()
+                    })
+                    .flatten()
+            });
+            state
+                .spans
+                .push((attributes.metadata().name(), parent.map(|id| id.into_u64())));
+            id
+        }
+        fn record(&self, _: &Id, _: &Record<'_>) {}
+        fn record_follows_from(&self, _: &Id, _: &Id) {}
+        fn event(&self, _: &Event<'_>) {}
+        fn enter(&self, id: &Id) {
+            self.0
+                .lock()
+                .unwrap()
+                .entered
+                .entry(std::thread::current().id())
+                .or_default()
+                .push(id.clone());
+        }
+        fn exit(&self, id: &Id) {
+            self.0
+                .lock()
+                .unwrap()
+                .entered
+                .entry(std::thread::current().id())
+                .or_default()
+                .pop();
+            let _ = id;
+        }
+    }
+
+    let recorder = std::sync::Arc::new(Mutex::new(Recording::default()));
+    let source = Dispatch::new(Recorder(recorder.clone()));
+    let parent = dispatcher::with_default(&source, || tracing::info_span!("source_parent"));
+    let context = TelemetryContext::from_span(parent);
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let model =
+        model_39("claude-sonnet-4-5", compat_39(false, false, false)).with_base_url(server.uri());
+    let provider = AnthropicProvider::for_route(
+        "anthropic".into(),
+        vec![model],
+        None,
+        Default::default(),
+        std::sync::Arc::new(HttpClient::new()),
+        false,
+    );
+    let seen = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = seen.clone();
+    let mut request = request_39(ThinkingConfig::default());
+    request.telemetry_context = Some(context);
+    request.callbacks = RequestCallbacks::new().with_async_on_payload(move |_| {
+        let counter = counter.clone();
+        async move {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            tracing::info_span!("payload_probe").in_scope(|| ());
+            Ok(None)
+        }
+    });
+
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    while let Some(result) = stream.next().await {
+        result.expect("stream completes under the carrier");
+    }
+    assert_eq!(
+        seen.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "payload callback ran exactly once"
+    );
+
+    // The producer (and its payload callback) ran under the frozen source
+    // dispatch: the probe span is recorded on that carrier.
+    let state = recorder.lock().unwrap();
+    assert!(
+        state.spans.iter().any(|(name, _)| *name == "payload_probe"),
+        "producer telemetry flows to the frozen carrier: {:?}",
+        state.spans
+    );
 }

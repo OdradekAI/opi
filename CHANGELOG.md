@@ -2,6 +2,21 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): Anthropic Messages thinking wire changes (task 20.39,
+  P20-S39, annex row 165): enabled thinking now always carries `display`
+  (default `summarized`) on both adaptive and numeric paths; the no-budget
+  default replaces the old 10000 with the source native default 1024
+  (`thinkingBudgetTokens || 1024`: zero also sends 1024); the sub-1024
+  typed preflight is withdrawn (clamped zero budgets flow to the wire).
+- `opi-ai` (0.x): `AnthropicMessagesCompat` gains
+  `supports_mid_convo_system_messages` and `supports_mid_convo_tool_changes`
+  (both default false; catalog keys `supportsMidConvoSystemMessages` /
+  `supportsMidConvoToolChanges`): exhaustive struct literals add the fields.
+- `opi-ai` (0.x): Anthropic error tool-result images now share the turn's
+  single user message with all of its tool results (text preserved, a
+  `(image attached after the tool results)` placeholder text block replaces
+  each image run) instead of riding a separate trailing message.
+
 - `opi-ai` (0.x): the Azure OpenAI default api-version follows the pinned
   source `v1` (task 20.38, P20-S38), replacing `2024-06-01`; explicit
   `[providers.azure] api_version` config keeps winning. The missing-endpoint
@@ -603,6 +618,22 @@
   unchanged.
 ### Added
 
+- `opi-ai`: anthropic-messages complete chat adapter (task 20.39, DEL-11).
+  New public `anthropic::AnthropicMessagesChatApi` registers through
+  `Models::register_chat_api` with typed `AnthropicMessagesOptions` (native
+  `thinking_enabled` tri-state, `thinking_budget_tokens` with the source
+  `|| 1024` default, `thinking_display` defaulting summarized,
+  `effort` with typed preflight on adaptive thinking,
+  `interleaved_thinking` default true, and `tool_choice`
+  auto/any/none/named). The provider consumes the options on its dispatch
+  clone; the producer now runs under the explicit frozen `TelemetryContext`.
+  Inline-tools chronology (`inline-tools-2026-09-15`): with the new compat
+  flags the request tool list stays the initial active set plus the deferred
+  placeholder and later system messages carry by-value `tool_addition`
+  definitions (same-name redefinitions included) and `tool_removal`
+  references, held back before assistant boundaries so `tool_result` pairing
+  survives. Error-turn image relocation aligns to the pinned
+  `splitErrorToolResultImages` shape (see Breaking Changes).
 - `opi-ai`: azure-openai-responses dual-wire adapter (task 20.38, DEL-11).
   New public `azure_openai::AzureOpenAIResponsesChatApi` registers the
   typed direct/native adapter through `Models::register_chat_api` with

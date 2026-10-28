@@ -759,7 +759,8 @@ never `{}`, `null` or a fabricated call. Wire IDs are legalized
 request-locally (charset/length, stable bijective, synchronized across
 call/result; canonical untouched). Images keep association, order and
 failure flag on capable routes (Anthropic error-result images split after
-the turn's results); `details` never serialize and URL sources pass
+all of the turn's tool results inside one user message, task 20.39);
+`details` never serialize and URL sources pass
 through undownloaded. `ReplayProjection::Strict` rejects the same lossy
 transforms with a typed error instead of recording facts. All six provider
 adapters consume the projection at the head of request construction
@@ -1608,6 +1609,47 @@ Upgrade → codec path, continuation/pool behavior or complete cleanup acceptanc
 `anthropic`, `openai_chat`, `openai_responses`, `openai_codex_responses`,
 `openrouter`, `mistral`, `gemini`, `bedrock`, `azure_openai`, `vertex`,
 `config`, `time`, and `test_support`.
+
+
+## Anthropic Messages Native Options and Inline-Tools Chronology (task 20.39)
+
+The public direct adapter `anthropic::AnthropicMessagesChatApi` registers
+through `Models::register_chat_api` (api id `anthropic-messages`) with typed
+`AnthropicMessagesOptions` — the pinned pi 1.3.0 native inventory:
+
+| Option | Wire effect |
+|---|---|
+| `thinking_enabled: Option<bool>` | Tri-state: omitted keeps the neutral request intent; `Some(false)` projects the typed `{"type":"disabled"}` block on reasoning models; `Some(true)` enables native thinking |
+| `thinking_budget_tokens` | Source `\|\| 1024` semantics on enabled numeric thinking: missing **or zero** sends the native default 1024; nonzero budgets pass through |
+| `thinking_display` | `summarized` (the enabled default, both adaptive and numeric) or `detailed`; always sent when thinking is enabled |
+| `effort` | Adaptive thinking only: typed preflight rejects unsupported levels, the wire gets `output_config.effort`; numeric thinking ignores it |
+| `interleaved_thinking` | Defaults to `true` (beta `interleaved-thinking-2025-05-14` on enabled non-adaptive thinking); `Some(false)` omits it; adaptive models never send it |
+| `tool_choice` | `auto` / `any` / `none` project `{"type": ...}`; `Named` projects `{"type":"tool","name":...}` |
+
+The neutral/simple entry maps only the tool choice; neutral thinking keeps
+its level-budget policy (1024/2048/8192/16384 by level), which stays
+distinct from the native no-budget default. Per annex row 165 the sub-1024
+typed preflight is withdrawn: clamped zero budgets flow to the wire where
+`|| 1024` applies.
+
+Inline-tools chronology (`inline-tools-2026-09-15`, compat
+`supports_mid_convo_system_messages` + `supports_mid_convo_tool_changes`,
+both default false): the request-level tool list stays the initial active
+set (cache breakpoint on its last entry) plus the deferred placeholder
+`__pi_deferred_placeholder__` (`defer_loading: true`); later system
+messages stay native and carry by-value `tool_addition` definitions — a
+same-name redefinition is an addition, never a removal — plus
+`tool_removal` references for genuinely withdrawn names. System updates
+are held back until the next assistant message (or the end) so a
+`tool_result` still immediately follows its `tool_use`.
+
+Error-turn image relocation follows the pinned
+`splitErrorToolResultImages` shape: the error `tool_result` keeps its text
+with a `(image attached after the tool results)` placeholder text block in
+place of each image run, and the caption plus deferred images follow all of
+the turn's tool results **in the same user message**. The anthropic
+producer now runs under the explicit frozen `TelemetryContext`
+(P20-TELEMETRY).
 
 ## License
 

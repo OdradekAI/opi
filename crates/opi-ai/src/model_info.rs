@@ -322,6 +322,13 @@ pub struct AnthropicMessagesCompat {
     /// Whether the wire accepts strict tool schemas (task 20.11, V-34):
     /// `json_schema` require fails typed before dispatch when false.
     pub supports_strict_tools: bool,
+    /// Whether system messages stay native mid-conversation (task 20.39,
+    /// pi `supportsMidConvoSystemMessages`, default false).
+    pub supports_mid_convo_system_messages: bool,
+    /// Whether the model accepts `tool_addition`/`tool_removal` blocks
+    /// (task 20.39, pi `supportsMidConvoToolChanges`, default false);
+    /// requires `supports_mid_convo_system_messages`.
+    pub supports_mid_convo_tool_changes: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

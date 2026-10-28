@@ -141,6 +141,8 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
         WireCompat::AnthropicMessages(inner) => json!({
             "api": WireApi::AnthropicMessages.as_str(),
             "supportsEagerToolInputStreaming": inner.supports_eager_tool_input_streaming,
+            "supportsMidConvoSystemMessages": inner.supports_mid_convo_system_messages,
+            "supportsMidConvoToolChanges": inner.supports_mid_convo_tool_changes,
             "forceAdaptiveThinking": inner.force_adaptive_thinking,
             "supportsTemperature": inner.supports_temperature,
             "supportsStrictTools": inner.supports_strict_tools,
@@ -322,6 +324,20 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                     Some(value) => value
                         .as_bool()
                         .ok_or("x-opi.compat field 'supportsStrictTools' must be a boolean")?,
+                },
+                supports_mid_convo_system_messages: match value
+                    .get("supportsMidConvoSystemMessages")
+                {
+                    None => false,
+                    Some(value) => value.as_bool().ok_or(
+                        "x-opi.compat field 'supportsMidConvoSystemMessages' must be a boolean",
+                    )?,
+                },
+                supports_mid_convo_tool_changes: match value.get("supportsMidConvoToolChanges") {
+                    None => false,
+                    Some(value) => value.as_bool().ok_or(
+                        "x-opi.compat field 'supportsMidConvoToolChanges' must be a boolean",
+                    )?,
                 },
             },
         ))),

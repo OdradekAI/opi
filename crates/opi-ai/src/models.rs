@@ -2500,26 +2500,19 @@ fn compile_prepared_request(
                 crate::ThinkingLevel::High
                 | crate::ThinkingLevel::XHigh
                 | crate::ThinkingLevel::Max => 16_384,
-                // Preserve the adapter's fallback for legacy callers that
-                // enable thinking without selecting a level or budget.
-                crate::ThinkingLevel::None => 10_000,
+                // Legacy callers that enable thinking without selecting a
+                // level or budget take the source native default (task
+                // 20.39, pi `thinkingBudgetTokens || 1024`).
+                crate::ThinkingLevel::None => 1_024,
             });
         }
         if let (Some(budget), Some(limit)) = (request.thinking.budget_tokens, request.max_tokens) {
             request.thinking.budget_tokens = Some(budget.min(limit.saturating_sub(1_024)));
         }
-        if numeric_anthropic
-            && request
-                .thinking
-                .budget_tokens
-                .is_some_and(|budget| budget < 1_024)
-        {
-            return Err(ProviderError::UnsupportedCapability(
-                ProviderErrorSummary::sanitized(
-                    "response limit cannot fit the minimum Anthropic thinking budget and answer room",
-                ),
-            ));
-        }
+        // Task 20.39 (annex row 165): no typed preflight for sub-1024
+        // numeric budgets — the wire assembly applies the source
+        // `|| 1024` semantics (a zero budget sends 1024; nonzero budgets
+        // pass through).
     }
     crate::provider::validate_request_for_model(provider_id, Some(model), request)
 }

@@ -858,10 +858,86 @@ pub fn model_catalog() -> Vec<ModelInfo> {
                 force_adaptive_thinking: false,
                 supports_temperature: true,
                 supports_strict_tools: false,
+                supports_mid_convo_system_messages: false,
+                supports_mid_convo_tool_changes: false,
             }))
             .expect("built-in Anthropic compatibility uses the matching wire")
     })
     .collect()
+}
+
+/// Native thinking display (pi `thinkingDisplay`): the enabled default is
+/// `summarized` so newer models behave like Claude 4 (whose API default is
+/// also summarized).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnthropicThinkingDisplay {
+    Summarized,
+    Detailed,
+}
+
+impl AnthropicThinkingDisplay {
+    fn wire_str(self) -> &'static str {
+        match self {
+            Self::Summarized => "summarized",
+            Self::Detailed => "detailed",
+        }
+    }
+}
+
+/// Native `tool_choice` (pi `toolChoice`): the three bare modes plus the
+/// named forced tool, which has no neutral equivalent.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AnthropicToolChoice {
+    Auto,
+    Any,
+    None_,
+    Named(String),
+}
+
+/// Typed native options for one direct/native dispatch (task 20.39, pi
+/// `AnthropicOptions`). The tri-state `thinking_enabled` keeps omitted,
+/// disabled and enabled distinct: omitted falls through to the neutral
+/// request intent, `Some(false)` projects the typed `disabled` thinking
+/// block on reasoning models, `Some(true)` takes the native budget default.
+/// `thinking_budget_tokens` follows the source `|| 1024` semantics (a zero
+/// or missing budget on enabled thinking sends 1024).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AnthropicMessagesOptions {
+    pub thinking_enabled: Option<bool>,
+    pub thinking_budget_tokens: Option<u64>,
+    pub thinking_display: Option<AnthropicThinkingDisplay>,
+    /// Native effort (adaptive thinking only): typed preflight rejects
+    /// levels the model's thinking map does not resolve.
+    pub effort: Option<crate::model_info::ThinkingLevel>,
+    /// Interleaved-thinking beta header; defaults to `true`, adaptive
+    /// thinking models ignore it entirely.
+    pub interleaved_thinking: Option<bool>,
+    pub tool_choice: Option<AnthropicToolChoice>,
+    simple: bool,
+}
+
+impl AnthropicMessagesOptions {
+    /// The neutral simple entry (task 20.39): only the neutral tool choice
+    /// maps; thinking keeps the omitted tri-state so the neutral request
+    /// intent (and its level-budget policy) drives the wire.
+    pub fn from_simple(simple: &crate::models::SimpleOptions) -> Self {
+        Self {
+            thinking_enabled: None,
+            thinking_budget_tokens: None,
+            thinking_display: None,
+            effort: None,
+            interleaved_thinking: None,
+            tool_choice: simple.tool_choice.map(|choice| match choice {
+                crate::models::SimpleToolChoice::Auto => AnthropicToolChoice::Auto,
+                crate::models::SimpleToolChoice::None => AnthropicToolChoice::None_,
+            }),
+            simple: true,
+        }
+    }
+
+    pub fn is_simple(&self) -> bool {
+        self.simple
+    }
 }
 
 /// Concrete Anthropic Messages API provider.
@@ -875,6 +951,9 @@ pub struct AnthropicProvider {
     direct_oauth_beta: bool,
     copilot_headers: bool,
     client: Arc<HttpClient>,
+    /// Typed native options for one direct/native dispatch (task 20.39);
+    /// `None` keeps the plain provider path.
+    native_options: Option<AnthropicMessagesOptions>,
 }
 
 impl AnthropicProvider {
@@ -915,7 +994,16 @@ impl AnthropicProvider {
             direct_oauth_beta,
             copilot_headers: false,
             client,
+            native_options: None,
         }
+    }
+
+    /// Bind typed native options for one dispatch (task 20.39). The options
+    /// live on the cloned dispatch provider; a registered provider is never
+    /// mutated.
+    pub fn with_native_options(mut self, options: AnthropicMessagesOptions) -> Self {
+        self.native_options = Some(options);
+        self
     }
 
     /// Override how this route classifies provider 401/403 responses.
@@ -1092,6 +1180,8 @@ impl AnthropicProvider {
                 force_adaptive_thinking: false,
                 supports_temperature: true,
                 supports_strict_tools: false,
+                supports_mid_convo_system_messages: false,
+                supports_mid_convo_tool_changes: false,
             });
         let supports_cache = model_caps
             .map(|m| m.capabilities.supports_cache_control)
@@ -1110,19 +1200,29 @@ impl AnthropicProvider {
         };
 
         // Canonical transcript consumption (AIR-020): the prompt and tool
-        // declarations live in the transcript's system messages. This wire
-        // currently projects by collapse; the capability constant is the
-        // per-wire placement table later model-compat tasks own.
-        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
+        // declarations live in the transcript's system messages. Models
+        // with the mid-convo compat keep later system messages native
+        // (task 20.39); everything else projects by collapse.
         let transcript = crate::transcript::resolve_transcript(
             &request.context,
-            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
+            compat.supports_mid_convo_system_messages,
             crate::transcript::TranscriptProjection::NativeOrCollapse,
         )
         .expect("native-or-collapse projection never fails");
         let transcript = transcript.as_ref();
         let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
+        // Native tool changes (task 20.39, pi `nativeToolChanges`): the
+        // request-level tool list stays the initial active set plus the
+        // deferred placeholder; later tools arrive by value in
+        // `tool_addition` blocks (same-name redefinitions included) and
+        // withdrawals as `tool_removal` references.
+        let initial_tools = crate::transcript::get_initial_system_message(transcript.messages())
+            .map(|head| head.tools_added.clone())
+            .unwrap_or_default();
+        let native_tool_changes = compat.supports_mid_convo_system_messages
+            && compat.supports_mid_convo_tool_changes
+            && !initial_tools.is_empty();
 
         // Canonical replay projection (task 20.7): association is
         // validated and lossy transforms applied before the body is
@@ -1138,10 +1238,21 @@ impl AnthropicProvider {
             },
             crate::replay::ReplayProjection::NativeOrCollapse,
         )?;
+        let tool_projector = native_tool_changes.then_some(NativeToolChanges {
+            provider: self,
+            supports_strict: compat.supports_strict_tools,
+        });
+        let messages = serialize_messages(
+            &replay.messages,
+            emit_cache,
+            &cache_marker,
+            crate::replay::supports_images_in_catalog(&self.models, model_id),
+            tool_projector.as_ref(),
+        )?;
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
-            "messages": serialize_messages(&replay.messages, emit_cache, &cache_marker, crate::replay::supports_images_in_catalog(&self.models, model_id)),
+            "messages": messages,
         });
 
         // System prompt: when caching is active, wrap the bare string as a
@@ -1171,9 +1282,14 @@ impl AnthropicProvider {
         }
         let mut has_preferred_strict = false;
         let mut strict_tools = Vec::new();
-        if !current_tools.is_empty() {
+        let request_level_tools = if native_tool_changes {
+            initial_tools.clone()
+        } else {
+            current_tools.clone()
+        };
+        if !request_level_tools.is_empty() {
             let (mut tools, preferred_strict, dispatched_strict) = self.compile_wire_tools(
-                &current_tools,
+                &request_level_tools,
                 compat.supports_strict_tools,
                 disable_preferred_strict,
             )?;
@@ -1181,6 +1297,17 @@ impl AnthropicProvider {
             strict_tools = dispatched_strict;
             if emit_cache && let Some(last) = tools.last_mut() {
                 last["cache_control"] = cache_marker.clone();
+            }
+            if native_tool_changes {
+                // Deferred placeholder (pi DEFERRED_TOOL_PLACEHOLDER): the
+                // active list never changes after this point, so the cached
+                // prefix survives every tool change. Never activated.
+                tools.push(serde_json::json!({
+                    "name": "__pi_deferred_placeholder__",
+                    "description": "Reserved placeholder. Never available. Never call this.",
+                    "input_schema": {"type": "object", "properties": {}, "required": []},
+                    "defer_loading": true,
+                }));
             }
             body["tools"] = serde_json::Value::Array(tools);
         }
@@ -1193,14 +1320,100 @@ impl AnthropicProvider {
                     .collect(),
             );
         }
-        if request.thinking.enabled {
-            body["thinking"] = if compat.force_adaptive_thinking {
-                serde_json::json!({"type": "adaptive"})
+        // Thinking assembly (task 20.39): native tri-state first, then the
+        // neutral request intent. Enabled budgets follow the source
+        // `|| 1024` semantics; the enabled display defaults to summarized
+        // on both adaptive and numeric thinking.
+        let native = self.native_options.as_ref();
+        let native_enabled = native.and_then(|options| options.thinking_enabled);
+        let neutral_enabled = request.thinking.enabled || native_enabled == Some(true);
+        let model_thinking = model_caps
+            .map(|model| model.capabilities.supports_thinking)
+            .unwrap_or(false);
+        let thinking_disabled = native_enabled == Some(false)
+            && model_thinking
+            && model_caps.is_some_and(|model| {
+                model
+                    .thinking_level_map
+                    .resolve(crate::ThinkingLevel::None)
+                    .is_ok()
+            });
+        if thinking_disabled {
+            // Anthropic rejects `block_binding` and effort markers under
+            // disabled thinking; the typed block replaces omission.
+            body["thinking"] = serde_json::json!({"type": "disabled"});
+        } else if neutral_enabled {
+            let display = native
+                .and_then(|options| options.thinking_display)
+                .unwrap_or(AnthropicThinkingDisplay::Summarized);
+            if compat.force_adaptive_thinking {
+                body["thinking"] = serde_json::json!({
+                    "type": "adaptive",
+                    "display": display.wire_str(),
+                });
+                if let Some(level) = native.and_then(|options| options.effort) {
+                    let resolved = model_caps
+                        .map(|model| model.thinking_level_map.resolve(level))
+                        .transpose()
+                        .map_err(|_| {
+                            crate::provider::ProviderError::Config(
+                                crate::provider::ProviderErrorSummary::sanitized(format!(
+                                    "anthropic-messages native options reject unsupported thinking level {level:?}"
+                                )),
+                            )
+                        })?;
+                    if let Some(effort) = resolved.flatten() {
+                        body["output_config"] = serde_json::json!({"effort": effort});
+                    }
+                }
             } else {
-                serde_json::json!({
+                // `|| 1024`: a missing or zero budget on enabled thinking
+                // sends the source native default (pi `budget_tokens:
+                // thinkingBudgetTokens || 1024`).
+                let budget = native
+                    .and_then(|options| options.thinking_budget_tokens)
+                    .or(request.thinking.budget_tokens)
+                    .filter(|budget| *budget > 0)
+                    .unwrap_or(1024);
+                body["thinking"] = serde_json::json!({
                     "type": "enabled",
-                    "budget_tokens": request.thinking.budget_tokens.unwrap_or(10000),
-                })
+                    "budget_tokens": budget,
+                    "display": display.wire_str(),
+                });
+            }
+        }
+
+        // Betas (task 20.39): interleaved thinking only for enabled
+        // non-adaptive thinking that did not opt out; inline-tools only
+        // when native tool changes anchor the request tool list.
+        let mut betas: Vec<&str> = Vec::new();
+        if neutral_enabled
+            && !compat.force_adaptive_thinking
+            && native.and_then(|options| options.interleaved_thinking) != Some(false)
+            && !thinking_disabled
+        {
+            betas.push("interleaved-thinking-2025-05-14");
+        }
+        if native_tool_changes {
+            betas.push("inline-tools-2026-09-15");
+        }
+        if !betas.is_empty() {
+            body["betas"] = serde_json::Value::Array(
+                betas
+                    .into_iter()
+                    .map(|beta| serde_json::Value::String(beta.into()))
+                    .collect(),
+            );
+        }
+
+        if let Some(choice) = native.and_then(|options| options.tool_choice.as_ref()) {
+            body["tool_choice"] = match choice {
+                AnthropicToolChoice::Auto => serde_json::json!({"type": "auto"}),
+                AnthropicToolChoice::Any => serde_json::json!({"type": "any"}),
+                AnthropicToolChoice::None_ => serde_json::json!({"type": "none"}),
+                AnthropicToolChoice::Named(name) => {
+                    serde_json::json!({"type": "tool", "name": name})
+                }
             };
         }
         Ok((body, has_preferred_strict, strict_tools))
@@ -1326,8 +1539,12 @@ impl AnthropicProvider {
         let tx_closed = tx.clone();
         let producer_cancel = cancel.clone();
         let stream_cancel = cancel.clone();
+        // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
+        // task runs under the captured parent/Dispatch when provided;
+        // omission observes nothing.
+        let telemetry = request.telemetry_context.clone();
 
-        tokio::spawn(async move {
+        let producer = async move {
             let work = async {
                 let extra_headers = match extra_headers {
                     Ok(headers) => headers,
@@ -1404,7 +1621,12 @@ impl AnthropicProvider {
                 _ = tx_closed.closed() => (),
                 _ = work => {},
             }
-        });
+        };
+        if let Some(context) = telemetry {
+            tokio::spawn(context.instrument(producer));
+        } else {
+            tokio::spawn(producer);
+        }
 
         Box::pin(CancelAwareReceiverStream::with_snapshot(
             rx,
@@ -1718,7 +1940,8 @@ fn serialize_messages(
     emit_cache: bool,
     cache_marker: &serde_json::Value,
     supports_images: bool,
-) -> serde_json::Value {
+    tool_changes: Option<&NativeToolChanges<'_>>,
+) -> Result<serde_json::Value, crate::provider::ProviderError> {
     use crate::message::{AssistantContent, ImageSource, OutputContent};
 
     fn image_block(
@@ -1753,27 +1976,44 @@ fn serialize_messages(
     }
 
     let mut array: Vec<serde_json::Value> = Vec::new();
+    // Native tool changes (task 20.39, pi `nativeToolChanges`): later
+    // system messages stay native and carry by-value `tool_addition`
+    // blocks (same-name redefinitions included) plus `tool_removal`
+    // references. They are held back until the next assistant message (or
+    // the end) so a `tool_result` still immediately follows its `tool_use`.
+    let mut pending_system: Vec<serde_json::Value> = Vec::new();
+    let flush_pending_system =
+        |array: &mut Vec<serde_json::Value>, pending: &mut Vec<serde_json::Value>| {
+            array.append(pending);
+        };
     // Error-result images split out of their tool_result blocks, flushed
-    // after the turn's tool results (pinned splitErrorToolResultImages):
-    // each entry is a caption plus the deferred image blocks.
-    let mut deferred_error_images: Vec<(String, Vec<serde_json::Value>)> = Vec::new();
+    // after the turn's tool results (pinned splitErrorToolResultImages,
+    // #10794): each entry is a caption plus the deferred image blocks, and
+    // the source text is preserved with a placeholder in place of each
+    // image run.
+    let mut turn_tool_results: Vec<serde_json::Value> = Vec::new();
+    let mut turn_error_images: Vec<(String, Vec<serde_json::Value>)> = Vec::new();
 
-    fn flush_deferred_error_images(
+    fn flush_tool_turn(
         array: &mut Vec<serde_json::Value>,
-        deferred: &mut Vec<(String, Vec<serde_json::Value>)>,
+        turn_tool_results: &mut Vec<serde_json::Value>,
+        turn_error_images: &mut Vec<(String, Vec<serde_json::Value>)>,
     ) {
-        for (caption, images) in deferred.drain(..) {
-            let mut content: Vec<serde_json::Value> =
-                vec![serde_json::json!({"type": "text", "text": caption})];
-            content.extend(images);
-            array.push(serde_json::json!({"role": "user", "content": content}));
+        if turn_tool_results.is_empty() && turn_error_images.is_empty() {
+            return;
         }
+        let mut content = std::mem::take(turn_tool_results);
+        for (caption, images) in turn_error_images.drain(..) {
+            content.push(serde_json::json!({"type": "text", "text": caption}));
+            content.extend(images);
+        }
+        array.push(serde_json::json!({"role": "user", "content": content}));
     }
 
     for msg in messages {
         match msg {
             crate::message::Message::User(u) => {
-                flush_deferred_error_images(&mut array, &mut deferred_error_images);
+                flush_tool_turn(&mut array, &mut turn_tool_results, &mut turn_error_images);
                 let content: Vec<serde_json::Value> = u
                     .content
                     .iter()
@@ -1789,7 +2029,8 @@ fn serialize_messages(
                 array.push(serde_json::json!({"role": "user", "content": content}));
             }
             crate::message::Message::Assistant(a) => {
-                flush_deferred_error_images(&mut array, &mut deferred_error_images);
+                flush_tool_turn(&mut array, &mut turn_tool_results, &mut turn_error_images);
+                flush_pending_system(&mut array, &mut pending_system);
                 // The replay projection already applied the continuation
                 // identity rules (AIR-010/RP-02): every thinking block in
                 // this list is same-identity, blank unsigned thinking is
@@ -1803,18 +2044,13 @@ fn serialize_messages(
                             serde_json::json!({"type": "text", "text": text})
                         }
                         AssistantContent::ToolCall { tool_call } => {
-                            // Replay guarantees remaining calls finalized as
-                            // complete JSON objects (malformed and legacy
-                            // unmarked ones were projected away); parsing
-                            // cannot fabricate a substitute object.
-                            let input: serde_json::Value =
-                                serde_json::from_str(&tool_call.arguments)
-                                    .expect("replay projected only complete object arguments");
                             serde_json::json!({
                                 "type": "tool_use",
                                 "id": tool_call.id,
                                 "name": tool_call.name,
-                                "input": input,
+                                "input": serde_json::from_str::<serde_json::Value>(
+                                    &tool_call.arguments
+                                ).unwrap_or_else(|_| serde_json::json!({})),
                             })
                         }
                         AssistantContent::Thinking {
@@ -1835,11 +2071,18 @@ fn serialize_messages(
                     .collect();
                 array.push(serde_json::json!({"role": "assistant", "content": content}));
             }
-            crate::message::Message::System(_) => {
-                // Unreachable after collapse + without_initial_system_message:
-                // the projection removed every system message from the body
-                // list before this serializer runs.
-                unreachable!("system messages are projected out of the body list")
+            crate::message::Message::System(system) => {
+                // Task 20.39: native tool changes keep later system messages
+                // on the wire; the collapse projection removed them on every
+                // other route, so without the projector this stays
+                // unreachable.
+                let Some(projector) = tool_changes else {
+                    unreachable!("system messages are projected out of the body list")
+                };
+                pending_system.push(serde_json::json!({
+                    "role": "system",
+                    "content": projector.system_blocks(system)?,
+                }));
             }
             crate::message::Message::ToolResult(t) => {
                 // Success results keep their tool association, ordering and
@@ -1854,10 +2097,10 @@ fn serialize_messages(
                     .any(|c| matches!(c, OutputContent::Image { .. }));
                 let is_error_with_images = t.is_error && has_images && supports_images;
                 if !supports_images || !has_images || is_error_with_images {
-                    // Replay already replaced images with text
-                    // placeholders on non-image routes; any surviving image
-                    // (an error result about to be split) contributes no
-                    // inline text of its own.
+                    // Replay already replaced images with text placeholders
+                    // on non-image routes; an error result about to be split
+                    // keeps its text with a placeholder in place of each
+                    // image run.
                     let text = t
                         .content
                         .iter()
@@ -1874,10 +2117,24 @@ fn serialize_messages(
                     });
                     if is_error_with_images {
                         // Placeholder text notes the deferred images; the
-                        // split payload is appended after this turn's
-                        // results.
-                        block["content"] =
-                            serde_json::json!("[image attached after the tool results]");
+                        // split payload follows all of this turn's results
+                        // in the same user message.
+                        let mut content = vec![serde_json::json!({
+                            "type": "text",
+                            "text": text,
+                        })];
+                        if !text.is_empty() {
+                            content.push(serde_json::json!({
+                                "type": "text",
+                                "text": "(image attached after the tool results)",
+                            }));
+                        } else {
+                            content = vec![serde_json::json!({
+                                "type": "text",
+                                "text": "(image attached after the tool results)",
+                            })];
+                        }
+                        block["content"] = serde_json::Value::Array(content);
                         let images: Vec<serde_json::Value> = t
                             .content
                             .iter()
@@ -1888,7 +2145,7 @@ fn serialize_messages(
                                 _ => None,
                             })
                             .collect();
-                        deferred_error_images.push((
+                        turn_error_images.push((
                             format!(
                                 "Images from the error result of tool call {} ({}):",
                                 t.tool_call_id, t.tool_name
@@ -1903,10 +2160,7 @@ fn serialize_messages(
                         // results keep their established wire shape.
                         block["is_error"] = serde_json::Value::Bool(true);
                     }
-                    array.push(serde_json::json!({
-                        "role": "user",
-                        "content": [block],
-                    }));
+                    turn_tool_results.push(block);
                     continue;
                 }
                 let blocks: Vec<serde_json::Value> = t
@@ -1921,18 +2175,16 @@ fn serialize_messages(
                         }
                     })
                     .collect();
-                array.push(serde_json::json!({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": t.tool_call_id,
-                        "content": blocks,
-                    }],
+                turn_tool_results.push(serde_json::json!({
+                    "type": "tool_result",
+                    "tool_use_id": t.tool_call_id,
+                    "content": blocks,
                 }));
             }
         }
     }
-    flush_deferred_error_images(&mut array, &mut deferred_error_images);
+    flush_tool_turn(&mut array, &mut turn_tool_results, &mut turn_error_images);
+    flush_pending_system(&mut array, &mut pending_system);
 
     // Post-process: when caching is active, mark the last text block in the
     // last user message and the last text block in the last assistant message.
@@ -1948,7 +2200,58 @@ fn serialize_messages(
                 .is_none_or(|content| !content.is_empty())
     });
 
-    serde_json::Value::Array(array)
+    Ok(serde_json::Value::Array(array))
+}
+
+/// Native tool-change projection for one mid-conversation system message
+/// (task 20.39): by-value `tool_addition` definitions (same-name
+/// redefinitions are additions, never removals) and `tool_removal`
+/// references, after the message's text block.
+struct NativeToolChanges<'a> {
+    provider: &'a AnthropicProvider,
+    supports_strict: bool,
+}
+
+impl NativeToolChanges<'_> {
+    fn system_blocks(
+        &self,
+        system: &crate::transcript::SystemMessage,
+    ) -> Result<Vec<serde_json::Value>, crate::provider::ProviderError> {
+        let mut blocks = Vec::new();
+        if !system.content.is_empty() {
+            blocks.push(serde_json::json!({"type": "text", "text": system.content}));
+        }
+        let redefined: std::collections::HashSet<&str> = system
+            .tools_added
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect();
+        for removed in &system.tools_removed {
+            // A new definition under the same name replaces the old one, so
+            // no removal is needed (pi `tool_removal` redefinition rule).
+            if redefined.contains(removed.name.as_str()) {
+                continue;
+            }
+            blocks.push(serde_json::json!({
+                "type": "tool_removal",
+                "tool": {"type": "tool_reference", "name": removed.name},
+            }));
+        }
+        if !system.tools_added.is_empty() {
+            let (tools, _, _) = self.provider.compile_wire_tools(
+                &system.tools_added,
+                self.supports_strict,
+                false,
+            )?;
+            for definition in tools {
+                blocks.push(serde_json::json!({
+                    "type": "tool_addition",
+                    "tool": {"type": "tool_definition", "definition": definition},
+                }));
+            }
+        }
+        Ok(blocks)
+    }
 }
 
 fn mark_last_role_text(
@@ -2009,6 +2312,173 @@ impl Provider for AnthropicProvider {
     }
 }
 
+/// The public anthropic-messages direct adapter registered through
+/// [`crate::Models::register_chat_api`] (task 20.39). Each dispatch clones
+/// its immutable provider configuration; native options never mutate a
+/// registered provider.
+pub struct AnthropicMessagesChatApi {
+    api_id: crate::models::ApiId,
+    provider: Arc<AnthropicProvider>,
+    model: ModelInfo,
+}
+
+impl std::fmt::Debug for AnthropicMessagesChatApi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnthropicMessagesChatApi")
+            .field("api_id", &self.api_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl AnthropicMessagesChatApi {
+    /// Bind a complete Chat record. Wrong-wire or invalid records fail
+    /// before authentication or network activity.
+    pub fn new(
+        provider: Arc<AnthropicProvider>,
+        model: ModelInfo,
+    ) -> Result<Self, crate::provider::ProviderError> {
+        validate_complete_anthropic_record(&model)?;
+        Ok(Self {
+            api_id: crate::models::ApiId::new("anthropic-messages"),
+            provider,
+            model,
+        })
+    }
+
+    fn configured(&self, model: ModelInfo, options: AnthropicMessagesOptions) -> AnthropicProvider {
+        let mut provider = (*self.provider).clone();
+        provider.models = vec![model];
+        provider.native_options = Some(options);
+        provider
+    }
+}
+
+/// One complete, wire-valid Chat model record or a typed failure.
+fn validate_complete_anthropic_record(
+    model: &ModelInfo,
+) -> Result<(), crate::provider::ProviderError> {
+    if model.wire_api != crate::model_info::WireApi::AnthropicMessages
+        || model.id.trim().is_empty()
+        || model.validate().is_err()
+    {
+        return Err(crate::provider::ProviderError::Config(
+            crate::provider::ProviderErrorSummary::attested_static(
+                "anthropic-messages adapters require a valid complete Chat model record",
+            ),
+        ));
+    }
+    Ok(())
+}
+
+impl crate::models::ChatApi<AnthropicMessagesOptions> for AnthropicMessagesChatApi {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), crate::provider::ProviderError> {
+        validate_complete_anthropic_record(model)
+    }
+
+    fn api_id(&self) -> &crate::models::ApiId {
+        &self.api_id
+    }
+
+    fn provider_id(&self) -> &str {
+        &self.provider.provider_id
+    }
+
+    fn complete_record(&self) -> ModelInfo {
+        self.model.clone()
+    }
+
+    fn simple_options(&self) -> AnthropicMessagesOptions {
+        AnthropicMessagesOptions::from_simple(&crate::models::SimpleOptions::default())
+    }
+
+    fn simple_options_for(
+        &self,
+        options: &crate::models::SimpleOptions,
+    ) -> AnthropicMessagesOptions {
+        AnthropicMessagesOptions::from_simple(options)
+    }
+
+    fn session_resources(&self) -> Option<&dyn crate::codex_resources::SessionResourceOwner> {
+        None
+    }
+
+    fn validate_native_request(
+        &self,
+        model: &ModelInfo,
+        _request: &Request,
+        options: &AnthropicMessagesOptions,
+    ) -> Result<(), crate::provider::ProviderError> {
+        validate_complete_anthropic_record(model)?;
+        // Native effort fails typed preflight on unsupported levels; the
+        // neutral entry clamps instead.
+        if let Some(level) = options.effort
+            && model.thinking_level_map.resolve(level).is_err()
+        {
+            return Err(crate::provider::ProviderError::Config(
+                crate::provider::ProviderErrorSummary::sanitized(format!(
+                    "anthropic-messages native options reject unsupported thinking level {level:?}"
+                )),
+            ));
+        }
+        Ok(())
+    }
+
+    fn stream_prepared(
+        &self,
+        request: Request,
+        options: AnthropicMessagesOptions,
+        auth: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        self.stream_model_resource_prepared(self.model.clone(), request, options, auth, None)
+    }
+
+    fn stream_resource_prepared(
+        &self,
+        request: Request,
+        options: AnthropicMessagesOptions,
+        auth: crate::auth::ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.stream_model_resource_prepared(self.model.clone(), request, options, auth, resources)
+    }
+
+    fn stream_model_resource_prepared(
+        &self,
+        model: ModelInfo,
+        mut request: Request,
+        options: AnthropicMessagesOptions,
+        auth: crate::auth::ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        if let Err(error) = self.validate_native_request(&model, &request, &options) {
+            return Box::pin(futures_util::stream::once(async move { Err(error) }));
+        }
+        if !options.is_simple() {
+            // Native thinking owns the wire projection; the neutral fields
+            // are unused on this path (the simple entry clamps at
+            // `Models::stream_simple` before dispatch).
+            request.thinking = Default::default();
+        }
+        let provider = self.configured(model, options);
+        if resources.is_none() {
+            return provider.stream_prepared(request, auth);
+        }
+        let attempt = request.callbacks.inherited_attempt().unwrap_or_else(|| {
+            crate::provider::AttemptContext {
+                invocation_id: uuid::Uuid::new_v4().to_string(),
+                attempt: 1,
+                max_attempts: 1,
+                payload_variant: crate::provider::PayloadVariant::Ordinary,
+            }
+        });
+        provider.stream_resource_attempt(request, auth, attempt, resources)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2048,7 +2518,8 @@ mod tests {
             },
         }]);
 
-        let serialized = serialize_messages(&[msg], false, &serde_json::Value::Null, true);
+        let serialized =
+            serialize_messages(&[msg], false, &serde_json::Value::Null, true, None).unwrap();
         let input = &serialized[0]["content"][0]["input"];
         assert!(input.is_object(), "input must be JSON object, got: {input}");
         assert_eq!(input["path"], "/tmp/foo.txt");
@@ -2078,8 +2549,14 @@ mod tests {
             crate::replay::ReplayProjection::NativeOrCollapse,
         )
         .unwrap();
-        let serialized =
-            serialize_messages(&replay.messages, false, &serde_json::Value::Null, true);
+        let serialized = serialize_messages(
+            &replay.messages,
+            false,
+            &serde_json::Value::Null,
+            true,
+            None,
+        )
+        .unwrap();
         let body = serde_json::to_string(&serialized).unwrap();
         assert!(body.contains("Result unavailable"));
         assert!(body.contains("execution effect is unknown"));
@@ -2134,8 +2611,14 @@ mod tests {
                     crate::replay::ReplayProjection::NativeOrCollapse,
                 )
                 .unwrap();
-                let serialized =
-                    serialize_messages(&replay.messages, false, &serde_json::Value::Null, true);
+                let serialized = serialize_messages(
+                    &replay.messages,
+                    false,
+                    &serde_json::Value::Null,
+                    true,
+                    None,
+                )
+                .unwrap();
                 let body = serde_json::to_string(&serialized).unwrap();
                 if known_non_execution {
                     assert!(

@@ -1895,7 +1895,7 @@ mod phase17 {
                 ),
                 adaptive,
             ],
-            (0..3).map(|_| text_response("summary")).collect(),
+            (0..6).map(|_| text_response("summary")).collect(),
         );
         let calls = provider.call_log_handle();
         let resolutions = Arc::new(AtomicUsize::new(0));
@@ -1932,7 +1932,11 @@ mod phase17 {
             assert_eq!(calls[0].thinking.budget_tokens, Some(7_976));
             assert_eq!(calls[1].thinking.budget_tokens, Some(7_976));
         }
-        for limit in [1, 1_024, 2_000] {
+        // Task 20.39 replacement proof (annex row 165): the sub-1024 typed
+        // preflight is withdrawn — clamped zero budgets flow to the wire
+        // (where the Anthropic `|| 1024` default applies) and nonzero
+        // sub-1024 budgets pass through.
+        for (limit, clamped) in [(1, 0), (1_024, 0), (2_000, 976)] {
             let mut request = minimal_request("budget:anthropic");
             request.max_tokens = Some(limit);
             request.thinking = ThinkingConfig {
@@ -1940,16 +1944,20 @@ mod phase17 {
                 budget_tokens: Some(8_192),
                 level: opi_ai::ThinkingLevel::Medium,
             };
-            let result = collection.prepare_call("budget:anthropic", request).await;
-            assert!(matches!(
-                result,
-                Err(ModelsError::Provider(ProviderError::UnsupportedCapability(
-                    _
-                )))
-            ));
+            let prepared = collection
+                .prepare_call("budget:anthropic", request)
+                .await
+                .unwrap();
+            drain_to_completion(prepared.start_attempt().unwrap())
+                .await
+                .unwrap();
+            let calls = calls.lock().unwrap();
+            let recorded = calls.last().expect("recorded dispatch");
+            assert_eq!(recorded.thinking.budget_tokens, Some(clamped));
         }
-        assert_eq!(resolutions.load(Ordering::SeqCst), 2);
-        assert_eq!(calls.lock().unwrap().len(), 2);
+        // Task 20.39: the withdrawn-preflight cases now dispatch too.
+        assert_eq!(resolutions.load(Ordering::SeqCst), 5);
+        assert_eq!(calls.lock().unwrap().len(), 5);
         let mut request = minimal_request("budget:adaptive");
         request.max_tokens = Some(1_024);
         request.thinking = ThinkingConfig {
@@ -1965,7 +1973,7 @@ mod phase17 {
             .await
             .unwrap();
         assert_eq!(
-            calls.lock().unwrap()[2].thinking.budget_tokens,
+            calls.lock().unwrap().last().unwrap().thinking.budget_tokens,
             None,
             "adaptive thinking uses effort rather than a numeric minimum"
         );
