@@ -427,14 +427,24 @@ is set.
 config field threaded through `OpenAiChatProvider` construction, not a
 `CompatConfig` flag.
 
-OpenAI Responses native semantics (`ResponsesConfig`): `store` and
-`strict_tools` are implemented. Static `reasoning_effort` remains legacy
-compatibility metadata; `request.thinking` plus the selected
-`ModelInfo::thinking_level_map` is authoritative for Chat and Responses wire
-output.
-For native Responses requests, an omitted or zero `max_tokens` omits
-`max_output_tokens`; a positive value is sent with a minimum of 16. Simple
-calls resolve their shared budget before this wire mapping.
+OpenAI Responses native semantics (task 20.37, `OpenAiResponsesOptions`):
+
+| Option | Accepted type / unit | Omission · default · null · false/zero | Precedence · wire · typed rejection |
+|--------|----------------------|-----------------------------------------|--------------------------------------|
+| `reasoning_effort` (native) | `ThinkingLevel` (`minimal`..`max`) | Omitted = no native effort; wire `reasoning.effort` from the model's `thinking_level_map` | Native effort replaces the neutral `Request::thinking`; running an effort also requests `include: ["reasoning.encrypted_content"]`. An unsupported level fails typed `Config` preflight before auth; the simple entry clamps instead. |
+| Off / disabled (both entries) | — | Reasoning-capable models send `reasoning: {effort: "none"}` (the map's off projection; `github-copilot` routes skip it) | Off sends effort only — no summary, no `include`. |
+| `reasoning_summary` (native) | `ResponsesReasoningSummary`: `Auto`/`Detailed`/`Concise`/`Null` | Omitted **and** explicit `Null` both send the wire default `"auto"` (source `\|\|` semantics); a summary without an effort defaults the effort to `medium` | Wire `reasoning.summary`. |
+| `service_tier` (native) | `ResponsesServiceTier`: `auto`/`default`/`flex`/`priority`/`fast` | Omitted field absent | Wire `service_tier`, exact string. The observed response tier rides `Usage::service_tier`; tiered cost multipliers are not computed on this wire. |
+| `tool_choice` (native) | `ResponsesToolChoice`: `None`/`Auto`/`Required`/named function | Omitted field absent | Wire `tool_choice` (string or `{type: "function", name}`); the simple entry admits only neutral `Auto`/`None`. |
+| `store` | — | Always `false` unless a catalog/profile value pins another value (source sends `store:false` unconditionally) | Catalog compat > provider config > default `false`. |
+| `max_output_tokens` | `Request::max_tokens` (tokens) | Omitted or zero omits the field | A positive value is sent with a floor of 16; simple calls resolve their shared budget before this wire mapping. |
+| Encrypted reasoning / replay | persisted thinking `signature` | Unsigned thinking never fabricates an item | Running an effort requests `include: ["reasoning.encrypted_content"]`; reasoning items persist their serialized wire item as the signature and replay pushes it back into `input` (same-identity turns only); `xai` reasoning models always request encrypted content; terminal-output backfill patches signatures that per-item frames omitted. |
+| Mid-conversation effort | catalog compat `supportsMidConvoEffort` (default `false`) + `provider_thinking_level` on replayed turns | Off by default; turns without a recorded level get no stamp | One `configuration_update` item before each earlier same-model reply that recorded a level, one with the current effort at the end; the request `reasoning.effort` stays fixed at `medium`; the reply records its level for the next turn. |
+| Session cache | `Request::session_id` + `cache_retention` | `Disabled` suppresses; otherwise the clamped (64-char) `prompt_cache_key` | `cache_retention: Long` adds `prompt_cache_retention: "24h"`. Explicit prompt-cache mode (`prompt_cache_options`) is not adopted — no opi catalog consumer. |
+
+Static `reasoning_effort` remains legacy compatibility metadata;
+`request.thinking` plus the selected `ModelInfo::thinking_level_map` is
+authoritative for Chat and Responses wire output.
 `previous_response_id` is intentionally absent — Responses requests are built
 as Chat-Completions analogues, so server-side response chaining is not wired.
 

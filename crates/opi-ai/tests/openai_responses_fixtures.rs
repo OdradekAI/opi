@@ -268,6 +268,24 @@ fn responses_tool_request() -> Request {
     }
 }
 
+fn responses_tool_context() -> opi_ai::transcript::Context {
+    opi_ai::transcript::Context {
+        system_prompt: Some("You are helpful.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "list files".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![ToolDef {
+            name: "list_dir".into(),
+            description: "list a directory".into(),
+            input_schema: serde_json::json!({"type":"object","properties":{}}),
+            constrained_sampling: None,
+        }],
+    }
+}
+
 #[test]
 fn responses_config_represents_store_reasoning_strict() {
     let config = ResponsesConfig {
@@ -296,18 +314,6 @@ fn responses_request_body_store_emitted_when_configured() {
     assert_eq!(
         body["store"], false,
         "store must be emitted when configured"
-    );
-}
-
-#[test]
-fn responses_request_body_store_absent_by_default() {
-    let provider = responses_provider();
-    let body = provider
-        .build_request_body(&responses_tool_request())
-        .unwrap();
-    assert!(
-        body.get("store").is_none(),
-        "store must be absent by default"
     );
 }
 
@@ -389,23 +395,18 @@ fn responses_reasoning_effort_uses_request_thinking_and_model_map() {
 
     let mut disabled = remapped;
     disabled.thinking.enabled = false;
-    assert!(
-        mapped_provider
-            .build_request_body(&disabled)
-            .unwrap()
-            .get("reasoning")
-            .is_none()
+    assert_eq!(
+        mapped_provider.build_request_body(&disabled).unwrap()["reasoning"],
+        serde_json::json!({"effort": "none"}),
+        "reasoning models send the off mapping when no effort is requested (source: off ?? none)"
     );
 
     let mut off = disabled;
     off.thinking.enabled = true;
     off.thinking.level = ThinkingLevel::None;
-    assert!(
-        mapped_provider
-            .build_request_body(&off)
-            .unwrap()
-            .get("reasoning")
-            .is_none()
+    assert_eq!(
+        mapped_provider.build_request_body(&off).unwrap()["reasoning"],
+        serde_json::json!({"effort": "none"})
     );
 
     let unsupported_model = ModelInfo::new(
@@ -2033,4 +2034,728 @@ mod responses_constrained_tests {
                 .any(|result| matches!(result, Ok(AssistantStreamEvent::Done { .. })))
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.37 (P20-S37 / ONB-03-20.37): typed native options, encrypted
+// reasoning/replay, service tier, cache retention, mid-conversation effort
+// stamps, duration, and the public Models entries.
+// ---------------------------------------------------------------------------
+
+use opi_ai::models::{ChatModelRecord, Models};
+use opi_ai::openai_responses::{
+    OpenAiResponsesChatApi, OpenAiResponsesOptions, ResponsesReasoningSummary,
+    ResponsesServiceTier, ResponsesToolChoice,
+};
+use opi_ai::{ModelCapabilities, ModelInfo, ThinkingLevel, WireApi};
+
+fn o3_responses_model() -> ModelInfo {
+    ModelInfo::new(
+        "o3",
+        "o3",
+        WireApi::OpenAiResponses,
+        ModelCapabilities::new(200_000, 100_000)
+            .with_images(true)
+            .with_streaming(true)
+            .with_thinking(true),
+    )
+}
+
+fn responses_public_request(model: &str, thinking: Option<ThinkingLevel>) -> Request {
+    let mut request = responses_tool_request();
+    request.model = format!("openai-responses:{model}");
+    request.thinking = match thinking {
+        Some(level) => ThinkingConfig {
+            enabled: true,
+            budget_tokens: None,
+            level,
+        },
+        None => ThinkingConfig::default(),
+    };
+    request
+}
+
+async fn registered_responses_models(
+    server_uri: String,
+    model: ModelInfo,
+) -> (
+    Models,
+    opi_ai::models::ChatApiHandle<OpenAiResponsesOptions>,
+) {
+    let provider = std::sync::Arc::new(OpenAiResponsesProvider::new(Some(server_uri)));
+    let api = OpenAiResponsesChatApi::new(provider, model).expect("valid responses record");
+    let mut models = Models::new();
+    let handle = models
+        .register_chat_api(
+            std::sync::Arc::new(api),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::Bearer,
+                secrecy::SecretString::from("offline-responses-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .expect("register responses api");
+    (models, handle)
+}
+
+fn responses_record() -> ChatModelRecord {
+    ChatModelRecord::new("openai-responses", o3_responses_model())
+}
+
+fn responses_sse_ok() -> String {
+    concat!(
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"status\":\"in_progress\",\"model\":\"o3\",\"output\":[]}}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"model\":\"o3\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hi\"}]}],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n",
+    )
+    .to_owned()
+}
+
+#[tokio::test]
+async fn responses_request_body_store_false_by_default() {
+    let provider = responses_provider();
+    let body = provider
+        .build_request_body(&responses_tool_request())
+        .unwrap();
+    assert_eq!(
+        body["store"], false,
+        "source semantics: store:false is sent unconditionally by default"
+    );
+}
+
+#[test]
+fn responses_disabled_and_off_thinking_send_none_effort_for_reasoning_models() {
+    let provider = responses_provider();
+    let mut disabled = responses_tool_request();
+    disabled.model = "openai-responses:o3".into();
+    assert_eq!(
+        provider.build_request_body(&disabled).unwrap()["reasoning"],
+        serde_json::json!({"effort": "none"}),
+        "reasoning models send the off mapping (source: off ?? none)"
+    );
+
+    let mut off = disabled.clone();
+    off.thinking = ThinkingConfig {
+        enabled: true,
+        budget_tokens: None,
+        level: ThinkingLevel::None,
+    };
+    assert_eq!(
+        provider.build_request_body(&off).unwrap()["reasoning"],
+        serde_json::json!({"effort": "none"})
+    );
+}
+
+#[test]
+fn responses_copilot_route_skips_off_effort() {
+    use std::sync::Arc as StdArc;
+
+    use opi_ai::http::HttpClient;
+
+    let mut provider = OpenAiResponsesProvider::with_auth_extra(
+        None,
+        ResponsesConfig::default(),
+        "github-copilot".into(),
+        Vec::new(),
+        StdArc::new(HttpClient::new()),
+    );
+    provider
+        .replace_model_catalog(vec![o3_responses_model()])
+        .expect("replace catalog");
+    let mut request = responses_tool_request();
+    request.model = "github-copilot:o3".into();
+    assert!(
+        provider
+            .build_request_body(&request)
+            .unwrap()
+            .get("reasoning")
+            .is_none(),
+        "Sign-in-with-ChatGPT/copilot routes skip the off effort (source)"
+    );
+}
+
+#[test]
+fn responses_xai_route_always_includes_encrypted_content() {
+    use std::sync::Arc as StdArc;
+
+    use opi_ai::http::HttpClient;
+
+    let mut provider = OpenAiResponsesProvider::with_auth_extra(
+        None,
+        ResponsesConfig::default(),
+        "xai".into(),
+        Vec::new(),
+        StdArc::new(HttpClient::new()),
+    );
+    provider
+        .replace_model_catalog(vec![o3_responses_model()])
+        .expect("replace catalog");
+    let mut request = responses_tool_request();
+    request.model = "xai:o3".into();
+    let body = provider.build_request_body(&request).unwrap();
+    assert_eq!(
+        body["include"],
+        serde_json::json!(["reasoning.encrypted_content"]),
+        "xai reasoning models always request encrypted reasoning"
+    );
+}
+
+#[test]
+fn responses_off_effort_omits_summary_and_include() {
+    let provider = responses_provider();
+    let mut request = responses_tool_request();
+    request.model = "openai-responses:o3".into();
+    let body = provider.build_request_body(&request).unwrap();
+    assert!(
+        body["reasoning"].get("summary").is_none(),
+        "the off branch sends effort only (source)"
+    );
+    assert!(
+        body.get("include").is_none(),
+        "encrypted reasoning is requested only when an effort runs"
+    );
+}
+
+#[tokio::test]
+async fn models_native_options_reach_the_responses_wire() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(responses_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let (models, handle) = registered_responses_models(server.uri(), o3_responses_model()).await;
+    let mut value = OpenAiResponsesOptions::default();
+    value.tool_choice = Some(ResponsesToolChoice::Named("list_dir".into()));
+    value.reasoning_effort = Some(ThinkingLevel::High);
+    value.reasoning_summary = Some(ResponsesReasoningSummary::Detailed);
+    value.service_tier = Some(ResponsesServiceTier::Flex);
+    let options = handle.options(value);
+
+    let request = responses_public_request("o3", Some(ThinkingLevel::Minimal));
+    let message = models
+        .complete(responses_record(), request, options)
+        .await
+        .expect("native responses call completes");
+    assert_eq!(message.stop_reason, opi_ai::stream::StopReason::Stop);
+
+    let sent = &server.received_requests().await.unwrap()[0];
+    let body: serde_json::Value = serde_json::from_slice(&sent.body).unwrap();
+    assert_eq!(
+        body["tool_choice"],
+        serde_json::json!({"type": "function", "name": "list_dir"})
+    );
+    assert_eq!(
+        body["reasoning"],
+        serde_json::json!({"effort": "high", "summary": "detailed"})
+    );
+    assert_eq!(
+        body["include"],
+        serde_json::json!(["reasoning.encrypted_content"])
+    );
+    assert_eq!(body["service_tier"], serde_json::json!("flex"));
+    assert_eq!(body["store"], serde_json::json!(false));
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn models_native_unsupported_effort_fails_typed_before_auth() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(responses_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let (models, handle) = registered_responses_models(server.uri(), o3_responses_model()).await;
+    let mut value = OpenAiResponsesOptions::default();
+    value.reasoning_effort = Some(ThinkingLevel::XHigh);
+    let options = handle.options(value);
+    let failure = models
+        .complete(
+            responses_record(),
+            responses_public_request("o3", None),
+            options,
+        )
+        .await
+        .expect_err("unsupported native effort fails typed preflight");
+    assert!(
+        matches!(failure.cause(), opi_ai::provider::ProviderError::Config(_)),
+        "typed preflight failure, got {:?}",
+        failure.cause()
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn models_simple_neutral_effort_reaches_responses_wire() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(responses_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let mut models = Models::new();
+    let provider = std::sync::Arc::new(OpenAiResponsesProvider::new(Some(server.uri())));
+    let api = OpenAiResponsesChatApi::new(provider, o3_responses_model()).expect("record");
+    models
+        .register_chat_api(
+            std::sync::Arc::new(api),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::Bearer,
+                secrecy::SecretString::from("offline-responses-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .expect("register");
+
+    let request = responses_public_request("o3", Some(ThinkingLevel::XHigh));
+    let message = models
+        .complete_simple(responses_record(), request, Default::default())
+        .await
+        .expect("simple responses call completes");
+    assert_eq!(message.stop_reason, opi_ai::stream::StopReason::Stop);
+
+    let sent = &server.received_requests().await.unwrap()[0];
+    let body: serde_json::Value = serde_json::from_slice(&sent.body).unwrap();
+    assert_eq!(
+        body["reasoning"],
+        serde_json::json!({"effort": "high", "summary": "auto"}),
+        "neutral entry clamps to the nearest supported level and maps summary default auto"
+    );
+    assert_eq!(
+        body["include"],
+        serde_json::json!(["reasoning.encrypted_content"])
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn models_direct_adapter_uses_injected_auth_and_returns_result() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(header("authorization", "Bearer injected-key"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(responses_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let (models, handle) = registered_responses_models(server.uri(), o3_responses_model()).await;
+    let options = handle.options(OpenAiResponsesOptions::default());
+    let message = models
+        .complete_direct(
+            responses_record(),
+            responses_public_request("o3", None),
+            options,
+            opi_ai::auth::ResolvedAuth {
+                scheme: opi_ai::auth::AuthScheme::Bearer,
+                secret: secrecy::SecretString::from("injected-key"),
+                base_url: None,
+                account_id: None,
+                provenance: Default::default(),
+            },
+        )
+        .await
+        .expect("direct responses call completes");
+    assert_eq!(message.stop_reason, opi_ai::stream::StopReason::Stop);
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn models_direct_adapter_rejects_wrong_wire_records() {
+    let chat_model = ModelInfo::new(
+        "o3",
+        "o3",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(200_000, 100_000).with_streaming(true),
+    );
+    let provider = std::sync::Arc::new(OpenAiResponsesProvider::new(None));
+    let failure = OpenAiResponsesChatApi::new(provider, chat_model)
+        .expect_err("wrong-wire records fail before authentication");
+    assert!(
+        matches!(failure, opi_ai::provider::ProviderError::Config(_)),
+        "typed rejection, got {failure:?}"
+    );
+}
+
+#[tokio::test]
+async fn responses_long_cache_retention_sends_prompt_cache_retention() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(responses_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let (models, handle) = registered_responses_models(server.uri(), o3_responses_model()).await;
+    let mut request = responses_public_request("o3", None);
+    request.cache_retention = CacheRetention::Long;
+    request.session_id = Some("sess-123".into());
+    let options = handle.options(OpenAiResponsesOptions::default());
+    models
+        .complete(responses_record(), request, options)
+        .await
+        .expect("long retention call completes");
+
+    let sent = &server.received_requests().await.unwrap()[0];
+    let body: serde_json::Value = serde_json::from_slice(&sent.body).unwrap();
+    assert_eq!(body["prompt_cache_key"], serde_json::json!("sess-123"));
+    assert_eq!(
+        body["prompt_cache_retention"],
+        serde_json::json!("24h"),
+        "long retention maps to the source 24h retention window"
+    );
+    server.verify().await;
+}
+
+fn reasoning_sse() -> String {
+    concat!(
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_r\",\"status\":\"in_progress\",\"model\":\"o3\",\"output\":[]}}\n\n",
+        "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs_1\"}}\n\n",
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"output_index\":0,\"summary_index\":0,\"delta\":\"Think\"}\n\n",
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"output_index\":0,\"summary_index\":0,\"delta\":\"ing\"}\n\n",
+        "data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs_1\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"Thinking\"}]}}\n\n",
+        "data: {\"type\":\"response.output_item.added\",\"output_index\":1,\"item\":{\"type\":\"message\",\"status\":\"in_progress\",\"role\":\"assistant\",\"content\":[]}}\n\n",
+        "data: {\"type\":\"response.output_text.delta\",\"output_index\":1,\"content_index\":0,\"delta\":\"Answer\"}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_r\",\"status\":\"completed\",\"model\":\"o3\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"Answer\"}]}],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n",
+    )
+    .to_owned()
+}
+
+#[tokio::test]
+async fn responses_reasoning_summary_deltas_stream_thinking_blocks() {
+    let provider = responses_provider();
+    let events: Vec<AssistantStreamEvent> = provider
+        .stream_from_sse(&reasoning_sse(), CancellationToken::new())
+        .filter_map(|event| async move { event.ok() })
+        .collect()
+        .await;
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AssistantStreamEvent::ThinkingStart { .. }))
+    );
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, AssistantStreamEvent::ThinkingDelta { delta, .. } if delta == "Think")));
+    let done = events
+        .iter()
+        .find_map(|event| match event {
+            AssistantStreamEvent::Done { message, .. } => Some(message.clone()),
+            _ => None,
+        })
+        .expect("stream completes");
+    let thinking = message_thinking(&done).expect("thinking block persisted");
+    assert_eq!(thinking, "Thinking");
+}
+
+#[tokio::test]
+async fn responses_reasoning_signature_persists_encrypted_content() {
+    let sse = concat!(
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_e\",\"status\":\"in_progress\",\"model\":\"o3\",\"output\":[]}}\n\n",
+        "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs_9\"}}\n\n",
+        "data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs_9\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"Plan\"}],\"encrypted_content\":\"ENC\"}}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_e\",\"status\":\"completed\",\"model\":\"o3\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n",
+    );
+    let provider = responses_provider();
+    let events: Vec<AssistantStreamEvent> = provider
+        .stream_from_sse(sse, CancellationToken::new())
+        .filter_map(|event| async move { event.ok() })
+        .collect()
+        .await;
+    let done = events
+        .iter()
+        .find_map(|event| match event {
+            AssistantStreamEvent::Done { message, .. } => Some(message.clone()),
+            _ => None,
+        })
+        .expect("stream completes");
+    let signature = done
+        .content
+        .iter()
+        .find_map(|content| match content {
+            opi_ai::message::AssistantContent::Thinking { signature, .. } => signature.clone(),
+            _ => None,
+        })
+        .expect("reasoning item persisted a signature");
+    let item: serde_json::Value = serde_json::from_str(&signature).expect("signature is JSON");
+    assert_eq!(item["id"], serde_json::json!("rs_9"));
+    assert_eq!(item["encrypted_content"], serde_json::json!("ENC"));
+}
+
+#[tokio::test]
+async fn responses_completed_backfills_encrypted_signature_from_terminal_output() {
+    let sse = concat!(
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_b\",\"status\":\"in_progress\",\"model\":\"o3\",\"output\":[]}}\n\n",
+        "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs_b\"}}\n\n",
+        "data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"type\":\"reasoning\",\"id\":\"rs_b\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"Ponder\"}]}}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_b\",\"status\":\"completed\",\"model\":\"o3\",\"output\":[{\"type\":\"reasoning\",\"id\":\"rs_b\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"Ponder\"}],\"encrypted_content\":\"BACKFILL\"}],\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n",
+    );
+    let provider = responses_provider();
+    let events: Vec<AssistantStreamEvent> = provider
+        .stream_from_sse(sse, CancellationToken::new())
+        .filter_map(|event| async move { event.ok() })
+        .collect()
+        .await;
+    let done = events
+        .iter()
+        .find_map(|event| match event {
+            AssistantStreamEvent::Done { message, .. } => Some(message.clone()),
+            _ => None,
+        })
+        .expect("stream completes");
+    let signature = done
+        .content
+        .iter()
+        .find_map(|content| match content {
+            opi_ai::message::AssistantContent::Thinking { signature, .. } => signature.clone(),
+            _ => None,
+        })
+        .expect("reasoning signature persisted");
+    let item: serde_json::Value = serde_json::from_str(&signature).expect("signature is JSON");
+    assert_eq!(
+        item["encrypted_content"],
+        serde_json::json!("BACKFILL"),
+        "terminal response output backfills the omitted encrypted content"
+    );
+}
+
+fn message_thinking(message: &opi_ai::message::AssistantMessage) -> Option<String> {
+    message.content.iter().find_map(|content| match content {
+        opi_ai::message::AssistantContent::Thinking { thinking, .. } => Some(thinking.clone()),
+        _ => None,
+    })
+}
+
+#[test]
+fn responses_encrypted_reasoning_replay_pushes_signed_items_back_into_input() {
+    let provider = responses_provider();
+    let mut request = responses_tool_request();
+    request.model = "openai-responses:o3".into();
+    let mut context = responses_tool_context();
+    context.messages.insert(
+        0,
+        Message::Assistant(history_assistant_message(
+            vec![
+                opi_ai::message::AssistantContent::Thinking {
+                    thinking: "Plan".into(),
+                    signature: Some(
+                        r#"{"id":"rs_old","type":"reasoning","encrypted_content":"OLD"}"#.into(),
+                    ),
+                },
+                opi_ai::message::AssistantContent::Text {
+                    text: "Earlier answer".into(),
+                },
+            ],
+            None,
+        )),
+    );
+    request.context = opi_ai::transcript::normalize_context(context).expect("valid context");
+    let body = provider.build_request_body(&request).unwrap();
+    let input = &body["input"].as_array().unwrap();
+    let reasoning = input
+        .iter()
+        .find(|item| item.get("type").and_then(|t| t.as_str()) == Some("reasoning"))
+        .expect("signed reasoning item replays into the input list");
+    assert_eq!(reasoning["id"], serde_json::json!("rs_old"));
+    assert_eq!(reasoning["encrypted_content"], serde_json::json!("OLD"));
+}
+
+fn history_assistant_message(
+    content: Vec<opi_ai::message::AssistantContent>,
+    provider_thinking_level: Option<String>,
+) -> opi_ai::message::AssistantMessage {
+    opi_ai::message::AssistantMessage {
+        content,
+        api: opi_ai::ApiKind::OpenAi,
+        provider: "openai-responses".into(),
+        model: "o3".into(),
+        response_model: None,
+        wire: Some(WireApi::OpenAiResponses),
+        response_id: None,
+        usage: Default::default(),
+        stop_reason: opi_ai::stream::StopReason::Stop,
+        error_message: None,
+        timestamp_ms: 0,
+        diagnostics: Vec::new(),
+        duration_ms: None,
+        provider_thinking_level,
+    }
+}
+
+#[tokio::test]
+async fn responses_mid_convo_effort_stamps_configuration_updates() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(responses_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    use opi_ai::http::HttpClient;
+    use opi_ai::model_info::{OpenAiResponsesCompat, WireCompat};
+    let model = o3_responses_model()
+        .with_compat(WireCompat::OpenAiResponses(OpenAiResponsesCompat {
+            supports_mid_convo_effort: true,
+            ..Default::default()
+        }))
+        .expect("compat");
+    let provider = std::sync::Arc::new(OpenAiResponsesProvider::for_route(
+        Some(server.uri()),
+        "openai-responses".into(),
+        Default::default(),
+        vec![model.clone()],
+        std::sync::Arc::new(HttpClient::new()),
+    ));
+    let api = OpenAiResponsesChatApi::new(provider, model.clone()).expect("record");
+    let mut models = Models::new();
+    let handle = models
+        .register_chat_api(
+            std::sync::Arc::new(api),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::Bearer,
+                secrecy::SecretString::from("offline-responses-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .expect("register");
+
+    let mut request = responses_public_request("o3", None);
+    let mut context = responses_tool_context();
+    context.messages.insert(
+        0,
+        Message::Assistant(history_assistant_message(
+            vec![opi_ai::message::AssistantContent::Text {
+                text: "Earlier".into(),
+            }],
+            Some("low".into()),
+        )),
+    );
+    request.context = opi_ai::transcript::normalize_context(context).expect("valid context");
+    let mid_convo_record = ChatModelRecord::new("openai-responses", model.clone());
+    let mut value = OpenAiResponsesOptions::default();
+    value.reasoning_effort = Some(ThinkingLevel::High);
+    let options = handle.options(value);
+    let message = models
+        .complete(mid_convo_record, request, options)
+        .await
+        .expect("mid-convo effort call completes");
+
+    let sent = &server.received_requests().await.unwrap()[0];
+    let body: serde_json::Value = serde_json::from_slice(&sent.body).unwrap();
+    let input = body["input"].as_array().unwrap();
+    let updates: Vec<&serde_json::Value> = input
+        .iter()
+        .filter(|item| item.get("type").and_then(|t| t.as_str()) == Some("configuration_update"))
+        .collect();
+    assert_eq!(
+        updates.len(),
+        2,
+        "one stamp before the earlier same-model reply, one at the end: {input:?}"
+    );
+    assert_eq!(updates[0]["reasoning"]["effort"], serde_json::json!("low"));
+    assert_eq!(updates[1]["reasoning"]["effort"], serde_json::json!("high"));
+    assert_eq!(
+        body["reasoning"]["effort"],
+        serde_json::json!("medium"),
+        "the request effort stays fixed while configuration items carry the level"
+    );
+    assert_eq!(
+        message.provider_thinking_level.as_deref(),
+        Some("high"),
+        "the reply records its provider thinking level for the next stamp"
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn responses_done_message_carries_measured_response_duration() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(responses_sse_ok())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let (models, handle) = registered_responses_models(server.uri(), o3_responses_model()).await;
+    let options = handle.options(OpenAiResponsesOptions::default());
+    let message = models
+        .complete(
+            responses_record(),
+            responses_public_request("o3", None),
+            options,
+        )
+        .await
+        .expect("duration call completes");
+    assert!(
+        message.duration_ms.is_some(),
+        "terminal messages carry the measured response duration"
+    );
+}
+
+#[tokio::test]
+async fn responses_setup_failure_before_activation_has_no_duration() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(401))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+    let mut stream = provider.stream_prepared(
+        responses_public_request("o3", None),
+        opi_ai::test_support::resolved_bearer_auth(),
+    );
+    let mut saw_done = false;
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(AssistantStreamEvent::Done { .. }) => saw_done = true,
+            Ok(_) => {}
+            Err(cause) => {
+                assert!(
+                    !cause.is_retryable(),
+                    "unauthorized is a terminal setup failure: {cause}"
+                );
+            }
+        }
+    }
+    assert!(!saw_done, "setup failure never reaches a terminal Done");
+    server.verify().await;
 }

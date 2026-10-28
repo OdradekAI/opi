@@ -129,6 +129,25 @@ struct RawOutputItem {
     /// The raw input string of a `custom_tool_call` item (grammar tools).
     #[serde(default)]
     input: Option<String>,
+    /// Reasoning-item summary parts (task 20.37).
+    #[serde(default)]
+    summary: Option<Vec<RawSummaryPart>>,
+    /// Reasoning-item raw content parts (task 20.37).
+    #[serde(default)]
+    content: Option<Vec<RawContentPart>>,
+    /// Encrypted reasoning carried for stateless replay (task 20.37).
+    #[serde(default)]
+    encrypted_content: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawSummaryPart {
+    text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawContentPart {
+    text: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -176,6 +195,21 @@ pub(crate) enum ResponsesEvent {
         output_index: usize,
         delta: String,
     },
+    /// Reasoning summary text grew by `delta` (task 20.37).
+    ReasoningSummaryTextDelta {
+        output_index: usize,
+        delta: String,
+    },
+    /// Raw reasoning content text grew by `delta` (task 20.37).
+    ReasoningTextDelta {
+        output_index: usize,
+        delta: String,
+    },
+    /// One reasoning summary part finished; parts join with a blank line
+    /// (task 20.37).
+    ReasoningSummaryPartDone {
+        output_index: usize,
+    },
     /// The final raw input of a grammar custom-tool call.
     CustomToolCallInputDone {
         output_index: usize,
@@ -214,9 +248,50 @@ pub(crate) struct RawOutputItemOwned {
     name: Option<String>,
     arguments: Option<String>,
     input: Option<String>,
+    /// Serialized reasoning item for signature replay: the id plus every
+    /// captured reasoning field that was present on the wire (task 20.37).
+    reasoning_signature: Option<String>,
+    /// Raw encrypted reasoning payload (task 20.37): terminal-output
+    /// backfill matches it onto reasoning blocks missing the field.
+    encrypted_content: Option<String>,
+}
+
+/// Serialize the persisted reasoning item for signature replay (task
+/// 20.37). The Rust signature is the deliberate subset a stateless replay
+/// needs (id, summary, content, encrypted payload); unknown upstream
+/// fields are not fabricated.
+fn reasoning_signature(item: &RawOutputItem) -> Option<String> {
+    if item.r#type.as_deref() != Some("reasoning") {
+        return None;
+    }
+    let mut value = serde_json::json!({"type": "reasoning"});
+    if let Some(id) = &item.id {
+        value["id"] = serde_json::json!(id);
+    }
+    if let Some(encrypted) = &item.encrypted_content {
+        value["encrypted_content"] = serde_json::json!(encrypted);
+    }
+    if let Some(summary) = &item.summary {
+        value["summary"] = serde_json::Value::Array(
+            summary
+                .iter()
+                .map(|part| serde_json::json!({"type": "summary_text", "text": part.text}))
+                .collect(),
+        );
+    }
+    if let Some(content) = &item.content {
+        value["content"] = serde_json::Value::Array(
+            content
+                .iter()
+                .map(|part| serde_json::json!({"type": "reasoning_text", "text": part.text}))
+                .collect(),
+        );
+    }
+    Some(value.to_string())
 }
 
 fn owned_item(item: RawOutputItem) -> RawOutputItemOwned {
+    let reasoning_signature = reasoning_signature(&item);
     RawOutputItemOwned {
         item_type: item.r#type.unwrap_or_default(),
         id: item.id,
@@ -224,6 +299,8 @@ fn owned_item(item: RawOutputItem) -> RawOutputItemOwned {
         name: item.name,
         arguments: item.arguments,
         input: item.input,
+        reasoning_signature,
+        encrypted_content: item.encrypted_content,
     }
 }
 
@@ -306,6 +383,21 @@ impl ResponsesEvent {
                     delta: data.delta.unwrap_or_default(),
                 })
             }
+            "response.reasoning_summary_text.delta" => {
+                ParsedEvent::Valid(Self::ReasoningSummaryTextDelta {
+                    output_index: data.output_index.unwrap_or(0),
+                    delta: data.delta.unwrap_or_default(),
+                })
+            }
+            "response.reasoning_text.delta" => ParsedEvent::Valid(Self::ReasoningTextDelta {
+                output_index: data.output_index.unwrap_or(0),
+                delta: data.delta.unwrap_or_default(),
+            }),
+            "response.reasoning_summary_part.done" => {
+                ParsedEvent::Valid(Self::ReasoningSummaryPartDone {
+                    output_index: data.output_index.unwrap_or(0),
+                })
+            }
             "response.custom_tool_call_input.delta" => {
                 ParsedEvent::Valid(Self::CustomToolCallInputDelta {
                     output_index: data.output_index.unwrap_or(0),
@@ -327,6 +419,8 @@ impl ResponsesEvent {
                     name: None,
                     arguments: None,
                     input: None,
+                    reasoning_signature: None,
+                    encrypted_content: None,
                 }),
             }),
             "response.completed" => {
@@ -456,6 +550,13 @@ struct ToolCallState {
     /// Grammar custom-call state (task 20.11): the wrapping buffer for the
     /// raw wire input under its JSON property.
     custom_input: Option<CustomInputState>,
+}
+
+/// One streaming reasoning item (task 20.37): a thinking block whose
+/// signature finalizes at output_item.done.
+struct ReasoningSlot {
+    output_index: usize,
+    content_index: usize,
 }
 
 struct CustomInputState {
@@ -603,6 +704,9 @@ pub(crate) struct ResponsesMapper {
     text_started: bool,
     text_content_index: Option<usize>,
     tool_calls: Vec<ToolCallState>,
+    /// Live reasoning items (task 20.37), keyed by their wire id for
+    /// terminal-output backfill.
+    reasoning_slots: Vec<ReasoningSlot>,
     /// Grammar tools of this call (task 20.11): tool name -> input
     /// property.
     grammar_input_properties: std::collections::HashMap<String, String>,
@@ -640,6 +744,14 @@ impl ResponsesMapper {
             .collect();
     }
 
+    /// Record the wire-native effort this reply runs under (task 20.37):
+    /// stamped only when the wire replays thinking levels as
+    /// configuration_update items.
+    pub(crate) fn set_provider_thinking_level(&mut self, level: Option<String>) {
+        self.partial.provider_thinking_level = level;
+        self.snapshot.record(&self.partial);
+    }
+
     /// Seed message-level constrained-sampling diagnostics (task 20.11):
     /// recorded grammar-target fallback losses ride the message.
     pub(crate) fn seed_diagnostics(
@@ -674,6 +786,7 @@ impl ResponsesMapper {
             text_started: false,
             text_content_index: None,
             tool_calls: Vec::new(),
+            reasoning_slots: Vec::new(),
             grammar_input_properties: std::collections::HashMap::new(),
             strict_tools: std::collections::HashMap::new(),
         }
@@ -701,6 +814,27 @@ impl ResponsesMapper {
                 })]
             }
             ResponsesEvent::OutputItemAdded { output_index, item } => {
+                if item.item_type == "reasoning" {
+                    // Reasoning item (task 20.37): a thinking block whose
+                    // signature (the serialized wire item) is finalized at
+                    // output_item.done.
+                    let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> =
+                        self.end_text().into_iter().map(Ok).collect();
+                    let content_index = self.partial.content.len();
+                    self.partial.content.push(AssistantContent::Thinking {
+                        thinking: String::new(),
+                        signature: None,
+                    });
+                    self.reasoning_slots.push(ReasoningSlot {
+                        output_index,
+                        content_index,
+                    });
+                    events.push(Ok(AssistantStreamEvent::ThinkingStart {
+                        content_index,
+                        partial: self.partial.clone(),
+                    }));
+                    return events;
+                }
                 if item.item_type == "custom_tool_call" {
                     // Grammar custom call (task 20.11): a tool-call slot whose
                     // raw wire input wraps into incremental JSON under the
@@ -845,6 +979,22 @@ impl ResponsesMapper {
                     partial: self.partial.clone(),
                 })]
             }
+            ResponsesEvent::ReasoningSummaryTextDelta {
+                output_index,
+                delta,
+            }
+            | ResponsesEvent::ReasoningTextDelta {
+                output_index,
+                delta,
+            } => {
+                if delta.is_empty() {
+                    return Vec::new();
+                }
+                self.push_thinking_delta(output_index, &delta)
+            }
+            ResponsesEvent::ReasoningSummaryPartDone { output_index } => {
+                self.push_thinking_delta(output_index, "\n\n")
+            }
             ResponsesEvent::CustomToolCallInputDelta {
                 output_index,
                 delta,
@@ -890,6 +1040,13 @@ impl ResponsesMapper {
                 Err(error) => vec![Err(self.failure(error))],
             },
             ResponsesEvent::OutputItemDone { output_index, item } => {
+                if item.item_type == "reasoning" {
+                    return self
+                        .finish_reasoning(output_index, &item)
+                        .into_iter()
+                        .map(Ok)
+                        .collect();
+                }
                 if item.item_type == "custom_tool_call" {
                     if self
                         .tool_calls
@@ -952,8 +1109,12 @@ impl ResponsesMapper {
                     .collect()
             }
             ResponsesEvent::Incomplete { usage } => {
-                let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> =
-                    self.end_text().into_iter().map(Ok).collect();
+                let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> = self
+                    .end_text()
+                    .into_iter()
+                    .chain(self.end_thinking_all())
+                    .map(Ok)
+                    .collect();
                 if let Some(usage) = usage {
                     self.partial.usage = usage;
                 }
@@ -973,6 +1134,9 @@ impl ResponsesMapper {
             } => {
                 let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> =
                     self.end_text().into_iter().map(Ok).collect();
+                // Terminal-output backfill (task 20.37) before Done: patch
+                // reasoning signatures the per-item frames omitted.
+                self.backfill_reasoning_signatures(&output);
                 for (output_index, item) in output.iter().enumerate() {
                     if item.item_type == "custom_tool_call" {
                         events.extend(self.process_inner(ResponsesEvent::OutputItemDone {
@@ -1050,6 +1214,126 @@ impl ResponsesMapper {
                 partial: self.partial.clone(),
             }],
             _ => Vec::new(),
+        }
+    }
+
+    /// Append one reasoning increment to the matching live thinking block
+    /// (task 20.37) and publish the delta.
+    fn push_thinking_delta(
+        &mut self,
+        output_index: usize,
+        delta: &str,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        let Some(slot) = self
+            .reasoning_slots
+            .iter()
+            .find(|slot| slot.output_index == output_index)
+        else {
+            return Vec::new();
+        };
+        let content_index = slot.content_index;
+        if let Some(AssistantContent::Thinking { thinking, .. }) =
+            self.partial.content.get_mut(content_index)
+        {
+            thinking.push_str(delta);
+        }
+        vec![Ok(AssistantStreamEvent::ThinkingDelta {
+            content_index,
+            delta: delta.to_owned(),
+            partial: self.partial.clone(),
+        })]
+    }
+
+    /// Finalize one reasoning item (task 20.37): the block's text prefers
+    /// the item's summary/content over the streamed deltas, and the block
+    /// persists the serialized wire item as its replay signature.
+    fn finish_reasoning(
+        &mut self,
+        output_index: usize,
+        item: &RawOutputItemOwned,
+    ) -> Vec<AssistantStreamEvent> {
+        let Some(position) = self
+            .reasoning_slots
+            .iter()
+            .position(|slot| slot.output_index == output_index)
+        else {
+            return Vec::new();
+        };
+        let slot = self.reasoning_slots.remove(position);
+        let signature = item.reasoning_signature.clone();
+        let finalized_text = reasoning_item_text(signature.as_deref());
+        let Some(AssistantContent::Thinking {
+            thinking,
+            signature: target,
+        }) = self.partial.content.get_mut(slot.content_index)
+        else {
+            return Vec::new();
+        };
+        // Source order: the item's summary, then its raw content, then the
+        // streamed deltas already accumulated.
+        if !finalized_text.is_empty() {
+            *thinking = finalized_text;
+        }
+        *target = signature;
+        let content = thinking.clone();
+        vec![AssistantStreamEvent::ThinkingEnd {
+            content_index: slot.content_index,
+            content,
+            partial: self.partial.clone(),
+        }]
+    }
+
+    /// Close the live thinking slot without a terminal item (EOF safety):
+    /// publishes the accumulated text without a signature.
+    fn end_thinking_all(&mut self) -> Vec<AssistantStreamEvent> {
+        let mut events = Vec::new();
+        while !self.reasoning_slots.is_empty() {
+            let slot = self.reasoning_slots.remove(0);
+            let content = match self.partial.content.get(slot.content_index) {
+                Some(AssistantContent::Thinking { thinking, .. }) => thinking.clone(),
+                _ => continue,
+            };
+            events.push(AssistantStreamEvent::ThinkingEnd {
+                content_index: slot.content_index,
+                content,
+                partial: self.partial.clone(),
+            });
+        }
+        events
+    }
+
+    /// Backfill reasoning signatures from the terminal response output
+    /// (task 20.37): some servers (Azure) omit `encrypted_content` from
+    /// output_item.done and provide it only on response.completed; patch
+    /// matching finalized blocks (signatures embed the item id) so
+    /// store:false replay stays stateless.
+    fn backfill_reasoning_signatures(&mut self, output: &[RawOutputItemOwned]) {
+        for item in output {
+            if item.item_type != "reasoning" {
+                continue;
+            }
+            let (Some(item_id), Some(encrypted)) =
+                (item.id.as_deref(), item.encrypted_content.as_deref())
+            else {
+                continue;
+            };
+            for content in &mut self.partial.content {
+                let AssistantContent::Thinking { signature, .. } = content else {
+                    continue;
+                };
+                let Some(sig) = signature.clone() else {
+                    continue;
+                };
+                let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&sig) else {
+                    continue;
+                };
+                if value.get("id").and_then(serde_json::Value::as_str) == Some(item_id)
+                    && value.get("encrypted_content").is_none()
+                {
+                    value["encrypted_content"] = serde_json::json!(encrypted);
+                    *signature = Some(value.to_string());
+                }
+            }
         }
     }
 
@@ -1255,7 +1539,37 @@ fn empty_assistant_message(
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
         duration_ms: None,
+        provider_thinking_level: None,
     }
+}
+
+/// Prefer the reasoning item's summary text, then its raw content text,
+/// from a persisted reasoning signature; empty when neither is present.
+fn reasoning_item_text(signature: Option<&str>) -> String {
+    let Some(signature) = signature else {
+        return String::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(signature) else {
+        return String::new();
+    };
+    let join_parts = |key: &str| -> String {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_array)
+            .map(|parts| {
+                parts
+                    .iter()
+                    .filter_map(|part| part.get("text").and_then(serde_json::Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            })
+            .unwrap_or_default()
+    };
+    let summary = join_parts("summary");
+    if !summary.is_empty() {
+        return summary;
+    }
+    join_parts("content")
 }
 
 /// Split a packed dual Responses tool-call id (`call_id|fc_item_id`) into
@@ -1268,12 +1582,25 @@ fn split_packed_call_id(id: &str) -> (&str, Option<&str>) {
 }
 
 /// Convert the replay-projected messages to standard Responses input items.
+///
+/// `configuration_update_effort` (task 20.37): when set, one
+/// `configuration_update` item carrying the reply's recorded effort is
+/// inserted before each earlier same-identity assistant turn that recorded
+/// a level, and a final item with this effort closes the list; earlier
+/// input bytes never change between turns.
 pub(crate) fn convert_messages(
     messages: &[crate::message::Message],
     route: &crate::replay::ReplayRoute,
     grammar_input_properties: &std::collections::HashMap<String, String>,
+    configuration_update_effort: Option<&str>,
 ) -> Vec<serde_json::Value> {
     let mut input = Vec::new();
+    let configuration_item = |effort: &str| {
+        serde_json::json!({
+            "type": "configuration_update",
+            "reasoning": {"effort": effort},
+        })
+    };
     for message in messages {
         match message {
             crate::message::Message::User(user) => {
@@ -1318,6 +1645,14 @@ pub(crate) fn convert_messages(
                 // 20.34 encrypted-reasoning parity, not as fabricated
                 // visible items.
                 let same = crate::replay::same_identity(assistant, route);
+                // Mid-conversation effort stamp (task 20.37): re-emit the
+                // level this earlier turn ran under, before its items.
+                if configuration_update_effort.is_some()
+                    && same
+                    && let Some(recorded) = assistant.provider_thinking_level.as_deref()
+                {
+                    input.push(configuration_item(recorded));
+                }
                 for content in &assistant.content {
                     match content {
                         AssistantContent::Text { text: part } => {
@@ -1372,8 +1707,21 @@ pub(crate) fn convert_messages(
                             }
                             input.push(call);
                         }
-                        AssistantContent::Thinking { .. }
-                        | AssistantContent::RedactedThinking { .. } => {}
+                        AssistantContent::Thinking { signature, .. } => {
+                            // Encrypted reasoning replay (task 20.37): the
+                            // persisted signature is the wire reasoning
+                            // item; push it back verbatim so store:false
+                            // multi-turn stays stateless. Unsigned thinking
+                            // never fabricates an item.
+                            if let Some(signature) = signature
+                                && let Ok(item) =
+                                    serde_json::from_str::<serde_json::Value>(signature)
+                                && item.get("type").and_then(|t| t.as_str()) == Some("reasoning")
+                            {
+                                input.push(item);
+                            }
+                        }
+                        AssistantContent::RedactedThinking { .. } => {}
                     }
                 }
             }
@@ -1410,6 +1758,9 @@ pub(crate) fn convert_messages(
                 }));
             }
         }
+    }
+    if let Some(effort) = configuration_update_effort {
+        input.push(configuration_item(effort));
     }
     input
 }

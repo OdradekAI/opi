@@ -486,6 +486,7 @@ async fn dispatch_complete_returns_terminal_error_event() {
         timestamp_ms: 0,
         diagnostics: Vec::new(),
         duration_ms: None,
+        provider_thinking_level: None,
     };
     let mut collection = Models::new();
     collection

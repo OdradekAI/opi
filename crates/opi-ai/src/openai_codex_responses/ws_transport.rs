@@ -444,6 +444,7 @@ fn assistant_response_items(
         &replay.messages,
         route,
         grammar_input_properties,
+        None,
     )
     .into_iter()
     .filter(|item| {

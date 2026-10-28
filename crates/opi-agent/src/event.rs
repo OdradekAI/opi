@@ -348,6 +348,7 @@ fn redact_assistant_message(
         timestamp_ms: message.timestamp_ms,
         diagnostics: Vec::new(),
         duration_ms: None,
+        provider_thinking_level: None,
     }
 }
 

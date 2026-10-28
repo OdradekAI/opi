@@ -51,6 +51,7 @@ fn assistant(content: Vec<AssistantContent>, stop_reason: StopReason) -> Message
         timestamp_ms: 0,
         diagnostics: Vec::new(),
         duration_ms: None,
+        provider_thinking_level: None,
     })
 }
 
@@ -852,6 +853,7 @@ fn assistant_with_openai_identity(content: Vec<AssistantContent>) -> Message {
         timestamp_ms: 0,
         diagnostics: Vec::new(),
         duration_ms: None,
+        provider_thinking_level: None,
     })
 }
 

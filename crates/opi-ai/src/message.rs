@@ -59,6 +59,12 @@ pub struct AssistantMessage {
     /// forwarding and serialization retain known values without recomputation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+    /// Wire-native effort this reply ran under (task 20.37, P20-S37):
+    /// stamped only when the wire replays the thinking level as mid-
+    /// conversation effort items; replay re-emits it before this turn's
+    /// items. `None` on wires without that mechanism.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_thinking_level: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

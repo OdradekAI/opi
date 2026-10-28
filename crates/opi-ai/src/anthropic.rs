@@ -792,6 +792,7 @@ fn empty_assistant_message(provider_id: &str) -> AssistantMessage {
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
         duration_ms: None,
+        provider_thinking_level: None,
     }
 }
 
@@ -2032,6 +2033,7 @@ mod tests {
             timestamp_ms: 0,
             diagnostics: Vec::new(),
             duration_ms: None,
+            provider_thinking_level: None,
         })
     }
 
@@ -2196,6 +2198,7 @@ mod tests {
                         timestamp_ms: 0,
                         diagnostics: Vec::new(),
                         duration_ms: None,
+                        provider_thinking_level: None,
                     }),
                 ],
                 tools: vec![crate::message::ToolDef {

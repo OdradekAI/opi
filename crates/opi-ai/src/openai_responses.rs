@@ -45,6 +45,9 @@ pub struct ResponsesConfig {
     /// Emit the `session_id` header when the selected affinity policy is active.
     /// Direct-route prompt cache keys and request IDs are independent of this.
     pub send_session_id_header: bool,
+    /// Replay the thinking level as mid-conversation `configuration_update`
+    /// items (task 20.37, P20-S37). Source default false.
+    pub supports_mid_convo_effort: bool,
 }
 
 impl Default for ResponsesConfig {
@@ -55,6 +58,7 @@ impl Default for ResponsesConfig {
             strict_tools: false,
             supports_grammar_tools: false,
             send_session_id_header: true,
+            supports_mid_convo_effort: false,
         }
     }
 }
@@ -72,6 +76,7 @@ pub enum ResponsesAffinityPolicy {
 
 /// Standard OpenAI Responses provider, also used as a route by mapped
 /// providers whose model metadata declares the standard Responses wire.
+#[derive(Clone)]
 pub struct OpenAiResponsesProvider {
     base_url: String,
     models: Vec<ModelInfo>,
@@ -84,6 +89,9 @@ pub struct OpenAiResponsesProvider {
     affinity_policy: ResponsesAffinityPolicy,
     copilot_headers: bool,
     client: Arc<HttpClient>,
+    /// Typed native options set per dispatch by the public adapter (task
+    /// 20.37); `None` on the plain provider path.
+    native_options: Option<OpenAiResponsesOptions>,
 }
 
 /// Built-in OpenAI Responses model metadata.
@@ -181,6 +189,7 @@ impl OpenAiResponsesProvider {
             affinity_policy: ResponsesAffinityPolicy::CustomDisabled,
             copilot_headers: false,
             client,
+            native_options: None,
         }
     }
 
@@ -204,6 +213,7 @@ impl OpenAiResponsesProvider {
             affinity_policy: ResponsesAffinityPolicy::CustomOptIn,
             copilot_headers: false,
             client,
+            native_options: None,
         }
     }
 
@@ -238,6 +248,7 @@ impl OpenAiResponsesProvider {
                 reasoning_effort: compat.reasoning_effort.clone(),
                 strict_tools: compat.strict_tools,
                 send_session_id_header: compat.send_session_id_header,
+                supports_mid_convo_effort: compat.supports_mid_convo_effort,
             };
         }
         self.config.clone()
@@ -265,12 +276,13 @@ impl OpenAiResponsesProvider {
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
-        self.compile_request_body(request).map(|(body, _)| body)
+        self.compile_request_body(request).map(|(body, _, _)| body)
     }
 
     /// Compile the body plus the per-call constrained-sampling facts (task
-    /// 20.11): the grammar custom-tool map, strict-dispatched declarations,
-    /// and recorded fallback losses the stream mapper consumes.
+    /// 20.11) and the wire-native effort stamp (task 20.37) the stream
+    /// mapper records on the reply.
+    #[allow(clippy::type_complexity)]
     fn compile_request_body(
         &self,
         request: &Request,
@@ -278,6 +290,7 @@ impl OpenAiResponsesProvider {
         (
             serde_json::Value,
             Option<crate::openai_responses_shared::ResponsesWireTools>,
+            Option<String>,
         ),
         crate::provider::ProviderError,
     > {
@@ -330,6 +343,67 @@ impl OpenAiResponsesProvider {
             &replay_route,
             crate::replay::ReplayProjection::NativeOrCollapse,
         )?;
+        // Task 20.37: native options own effort/summary/service tier/tool
+        // choice on the public adapter path; the plain path keeps the
+        // neutral thinking intent. Mid-conversation effort stamps ride the
+        // replayed input list when the compat flag is on.
+        let native = self.native_options.as_ref();
+        let requested_level = match native {
+            Some(options) if !options.simple => options.reasoning_effort,
+            _ => (request.thinking.enabled
+                && request.thinking.level != crate::model_info::ThinkingLevel::None)
+                .then_some(request.thinking.level),
+        };
+        let summary_spec = native
+            .filter(|options| !options.simple)
+            .and_then(|options| options.reasoning_summary.as_ref());
+        // Summary without effort defaults the effort to medium (source
+        // `options?.reasoningEffort ?? (summary ? "medium" : undefined)`).
+        let requested_level = requested_level.or_else(|| {
+            matches!(
+                summary_spec,
+                Some(
+                    ResponsesReasoningSummary::Auto
+                        | ResponsesReasoningSummary::Detailed
+                        | ResponsesReasoningSummary::Concise
+                )
+            )
+            .then_some(crate::model_info::ThinkingLevel::Medium)
+        });
+        let model_record = self.models.iter().find(|model| model.id == model_id);
+        let model_reasons = model_record
+            .map(|model| model.capabilities.supports_thinking)
+            .unwrap_or(false);
+        let resolve = |level: crate::model_info::ThinkingLevel| {
+            model_record.map(|model| model.thinking_level_map.resolve(level))
+        };
+        let mut wire_effort: Option<String> = None;
+        let mut off_branch = false;
+        if model_reasons {
+            match requested_level {
+                Some(level) => {
+                    if let Some(Ok(Some(effort))) = resolve(level) {
+                        wire_effort = Some(effort);
+                    }
+                }
+                None if self.provider_id != "github-copilot" => {
+                    // Off branch (source `off ?? "none"`): reasoning models
+                    // explicitly select the off mapping; copilot-style
+                    // routes skip it.
+                    if let Some(Ok(off)) = resolve(crate::model_info::ThinkingLevel::None) {
+                        off_branch = true;
+                        wire_effort = Some(off.unwrap_or_else(|| "none".into()));
+                    }
+                }
+                None => {}
+            }
+        }
+        // Mid-conversation stamps (task 20.37): the request effort stays
+        // fixed while configuration items carry the level.
+        let stamping = config.supports_mid_convo_effort
+            && requested_level.is_some_and(|level| level != crate::model_info::ThinkingLevel::None)
+            && wire_effort.is_some();
+        let stamp_effort = stamping.then(|| wire_effort.clone().unwrap_or_default());
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
@@ -337,6 +411,7 @@ impl OpenAiResponsesProvider {
                 &replay.messages,
                 &replay_route,
                 &grammar_map,
+                stamp_effort.as_deref(),
             ),
         });
         if !system_prompt.is_empty() {
@@ -353,14 +428,67 @@ impl OpenAiResponsesProvider {
         if let Some(wire) = &wire_facts {
             body["tools"] = serde_json::Value::Array(wire.tools.clone());
         }
-        if let Some(store) = config.store {
-            body["store"] = serde_json::Value::Bool(store);
-        }
-        if request.thinking.enabled
-            && let Some(model) = self.models.iter().find(|model| model.id == model_id)
-            && let Ok(Some(effort)) = model.thinking_level_map.resolve(request.thinking.level)
+        // Source semantics: store:false is sent unconditionally unless a
+        // catalog/profile override pins another value.
+        body["store"] = serde_json::Value::Bool(config.store.unwrap_or(false));
+        if let Some(service_tier) = native
+            .filter(|options| !options.simple)
+            .and_then(|options| options.service_tier.as_ref())
         {
-            body["reasoning"] = serde_json::json!({"effort": effort});
+            body["service_tier"] = serde_json::Value::String(service_tier.wire_name().into());
+        }
+        if let Some(tool_choice) = native
+            .filter(|options| !options.simple)
+            .and_then(|options| options.tool_choice.as_ref())
+        {
+            body["tool_choice"] = tool_choice.wire_value();
+        }
+        // Session affinity body fields (task 20.37, source semantics): the
+        // clamped prompt cache key plus the 24h retention window for long
+        // retention. Explicit prompt-cache mode stays unadopted (no opi
+        // catalog consumer).
+        let session_affinity = request.cache_retention != CacheRetention::Disabled
+            && request
+                .session_id
+                .as_deref()
+                .is_some_and(|id| !id.is_empty())
+            && match self.affinity_policy {
+                ResponsesAffinityPolicy::Direct => true,
+                ResponsesAffinityPolicy::CustomDisabled => false,
+                ResponsesAffinityPolicy::CustomOptIn => config.send_session_id_header,
+            };
+        if session_affinity && let Some(session_id) = request.session_id.as_deref() {
+            body["prompt_cache_key"] =
+                serde_json::Value::String(session_id.chars().take(64).collect());
+            if request.cache_retention == CacheRetention::Long {
+                body["prompt_cache_retention"] = serde_json::Value::String("24h".into());
+            }
+        }
+        if let Some(effort) = &wire_effort {
+            // Fixed request effort while configuration items carry the
+            // level (source CONFIGURATION_UPDATE_REQUEST_EFFORT).
+            let request_effort = if stamping { "medium" } else { effort.as_str() };
+            let reasoning = if off_branch {
+                // The off branch sends effort only (source).
+                serde_json::json!({"effort": request_effort})
+            } else {
+                let summary = match summary_spec {
+                    Some(ResponsesReasoningSummary::Detailed) => "detailed",
+                    Some(ResponsesReasoningSummary::Concise) => "concise",
+                    // Absent and explicit null both land on the wire default
+                    // `auto` (source `options?.reasoningSummary || "auto"`).
+                    _ => "auto",
+                };
+                serde_json::json!({"effort": request_effort, "summary": summary})
+            };
+            body["reasoning"] = reasoning;
+            if !off_branch {
+                body["include"] = serde_json::json!(["reasoning.encrypted_content"]);
+            } else if self.provider_id == "xai" {
+                // xai reasoning models always request encrypted reasoning
+                // (source), including on the off branch.
+                body["include"] = serde_json::json!(["reasoning.encrypted_content"]);
+            }
         }
         // Last so model and request sampling parameters override named
         // request fields (model base < effective level < request, per key).
@@ -380,7 +508,7 @@ impl OpenAiResponsesProvider {
                 body[key.as_str()] = value;
             }
         }
-        Ok((body, wire_facts))
+        Ok((body, wire_facts, stamp_effort))
     }
 
     /// Map a complete in-memory SSE body without HTTP.
@@ -416,6 +544,29 @@ impl OpenAiResponsesProvider {
         Box::pin(stream::iter(events))
     }
 
+    /// Stamp the measured response duration onto a terminal Done message
+    /// (AIR-061); already-known values and non-Done items pass unchanged.
+    fn stamp_done_duration(
+        item: Result<AssistantStreamEvent, crate::provider::ProviderError>,
+        activated_at: Option<std::time::Instant>,
+    ) -> Result<AssistantStreamEvent, crate::provider::ProviderError> {
+        match (item, activated_at) {
+            (
+                Ok(AssistantStreamEvent::Done {
+                    reason,
+                    mut message,
+                }),
+                Some(activated_at),
+            ) => {
+                if message.duration_ms.is_none() {
+                    message.duration_ms = Some(activated_at.elapsed().as_millis() as u64);
+                }
+                Ok(AssistantStreamEvent::Done { reason, message })
+            }
+            (item, _) => item,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         client: reqwest::Client,
@@ -428,6 +579,7 @@ impl OpenAiResponsesProvider {
         provider_id: String,
         requested_model: String,
         wire_facts: Option<crate::openai_responses_shared::ResponsesWireTools>,
+        effort_stamp: Option<String>,
         body: serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
@@ -513,6 +665,7 @@ impl OpenAiResponsesProvider {
         let mut bytes = response.bytes_stream();
         let mut buffer = String::new();
         let mut decoder = crate::text_decode::StreamTextDecoder::new();
+        let mut response_activated_at: Option<std::time::Instant> = None;
         let mut mapper = ResponsesMapper::new(
             &provider_id,
             crate::model_info::WireApi::OpenAiResponses,
@@ -524,6 +677,9 @@ impl OpenAiResponsesProvider {
             mapper.set_strict_tools(wire.strict_tools);
             mapper.seed_diagnostics(wire.diagnostics);
         }
+        // Wire-native effort stamp (task 20.37): recorded on the reply for
+        // configuration_update replay.
+        mapper.set_provider_thinking_level(effort_stamp);
         mapper.set_snapshot(snapshot);
         callbacks
             .notify_response_async(status.as_u16(), &observed_headers)
@@ -550,6 +706,9 @@ impl OpenAiResponsesProvider {
                     }
                 })?;
                 buffer.push_str(&decoder.push(&chunk));
+                if response_activated_at.is_none() {
+                    response_activated_at = Some(std::time::Instant::now());
+                }
                 for frame in drain_sse_frames(&mut buffer) {
                     // Raw observer (task 20.51): the frame's parsed wire JSON,
                     // strictly before normalization; failure preserves partial.
@@ -562,6 +721,7 @@ impl OpenAiResponsesProvider {
                     match ResponsesEvent::try_from_frame(&frame) {
                         ParsedEvent::Valid(event) => {
                             for item in mapper.process(event) {
+                                let item = Self::stamp_done_duration(item, response_activated_at);
                                 if !send_or_cancel(&cancel, &tx, item).await? {
                                     return Ok(());
                                 }
@@ -693,16 +853,16 @@ impl Provider for OpenAiResponsesProvider {
             .map(|(_, id)| id)
             .unwrap_or(&request.model)
             .to_owned();
-        let (mut body, wire_facts) = match self.compile_request_body(&request) {
+        let (body, wire_facts, effort_stamp) = match self.compile_request_body(&request) {
             Ok(compiled) => compiled,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
-        if affinity_enabled && let Some(session_id) = session_id.as_deref() {
-            body["prompt_cache_key"] =
-                serde_json::Value::String(session_id.chars().take(64).collect());
-        }
         let callbacks = request.callbacks.clone();
         let cancel = request.cancel.clone();
+        // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
+        // task runs under the captured parent/Dispatch when provided; omission
+        // observes nothing. Full cross-path proof closes in 20.55.
+        let telemetry = request.telemetry_context.clone();
         let timeout = request.timeout;
         let client = self.client.client().clone();
         let snapshot = crate::stream::ProducerSnapshot::default();
@@ -712,7 +872,7 @@ impl Provider for OpenAiResponsesProvider {
         let producer_cancel = cancel.clone();
         let stream_cancel = cancel.clone();
 
-        tokio::spawn(async move {
+        let producer = async move {
             let work = async {
                 let extra_headers = match extra_headers {
                     Ok(headers) => headers,
@@ -761,6 +921,7 @@ impl Provider for OpenAiResponsesProvider {
                     provider_id,
                     requested_model,
                     wire_facts,
+                    effort_stamp,
                     body,
                     cancel,
                     timeout,
@@ -782,7 +943,12 @@ impl Provider for OpenAiResponsesProvider {
                 _ = tx_closed.closed() => (),
                 _ = work => {},
             }
-        });
+        };
+        if let Some(context) = telemetry {
+            tokio::spawn(context.instrument(producer));
+        } else {
+            tokio::spawn(producer);
+        }
         Box::pin(CancelAwareReceiverStream::with_snapshot(
             rx,
             stream_cancel,
@@ -793,5 +959,280 @@ impl Provider for OpenAiResponsesProvider {
     fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
         self.models = models;
         Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.37 (P20-S37/ONB-03): typed native options and the public
+// openai-responses direct adapter.
+// ---------------------------------------------------------------------------
+
+/// Full Responses `tool_choice` shape. The neutral simple entry maps only
+/// `Auto`/`None`; `Required` and named forcing stay native.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResponsesToolChoice {
+    None,
+    Auto,
+    Required,
+    Named(String),
+}
+
+impl ResponsesToolChoice {
+    fn wire_value(&self) -> serde_json::Value {
+        match self {
+            Self::None => serde_json::json!("none"),
+            Self::Auto => serde_json::json!("auto"),
+            Self::Required => serde_json::json!("required"),
+            Self::Named(name) => serde_json::json!({
+                "type": "function",
+                "name": name,
+            }),
+        }
+    }
+}
+
+/// Typed Responses reasoning-summary value. `Null` keeps the typed surface's
+/// explicit-JSON-null distinct from omission; both land on the wire default
+/// `auto` (source `options?.reasoningSummary || "auto"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResponsesReasoningSummary {
+    Auto,
+    Detailed,
+    Concise,
+    Null,
+}
+
+/// Request-side service tier (Responses native; the wire string passes
+/// through exactly).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResponsesServiceTier {
+    Auto,
+    Default,
+    Flex,
+    Priority,
+    Fast,
+}
+
+impl ResponsesServiceTier {
+    /// Wire string for the `service_tier` request field.
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Default => "default",
+            Self::Flex => "flex",
+            Self::Priority => "priority",
+            Self::Fast => "fast",
+        }
+    }
+}
+
+/// Typed Responses-native parameters. Common temperature, transport, cache,
+/// cancellation and transcript inputs stay on [`Request`]. Construct with
+/// [`Self::default`] and set the admitted fields; a native default does not
+/// consume neutral `Request::thinking`, the simple entry supplies that
+/// mapping separately.
+#[derive(Debug, Clone, Default, PartialEq)]
+#[non_exhaustive]
+pub struct OpenAiResponsesOptions {
+    /// Full Responses `tool_choice` shape.
+    pub tool_choice: Option<ResponsesToolChoice>,
+    /// Native reasoning effort (`minimal`..`max`). Unsupported levels fail
+    /// typed preflight; the neutral entry clamps instead.
+    pub reasoning_effort: Option<crate::model_info::ThinkingLevel>,
+    /// Reasoning summary selection; omission and explicit null both map to
+    /// the wire default `auto`.
+    pub reasoning_summary: Option<ResponsesReasoningSummary>,
+    /// Requested service tier (source semantics; pricing multipliers are
+    /// not computed on this wire).
+    pub service_tier: Option<ResponsesServiceTier>,
+    simple: bool,
+}
+
+impl OpenAiResponsesOptions {
+    /// Neutral mapping for the simple entry: only `Auto`/`None` tool choice
+    /// and the request's neutral thinking intent are admitted.
+    fn from_simple(options: &crate::models::SimpleOptions) -> Self {
+        Self {
+            tool_choice: options.tool_choice.map(|choice| match choice {
+                crate::models::SimpleToolChoice::Auto => ResponsesToolChoice::Auto,
+                crate::models::SimpleToolChoice::None => ResponsesToolChoice::None,
+            }),
+            reasoning_effort: None,
+            reasoning_summary: None,
+            service_tier: None,
+            simple: true,
+        }
+    }
+
+    fn is_simple(&self) -> bool {
+        self.simple
+    }
+}
+
+/// The public openai-responses direct adapter registered through
+/// [`crate::Models::register_chat_api`]. Each dispatch clones its immutable
+/// provider configuration; native options never mutate a registered
+/// provider.
+pub struct OpenAiResponsesChatApi {
+    api_id: crate::models::ApiId,
+    provider: Arc<OpenAiResponsesProvider>,
+    model: ModelInfo,
+}
+
+impl std::fmt::Debug for OpenAiResponsesChatApi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenAiResponsesChatApi")
+            .field("api_id", &self.api_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl OpenAiResponsesChatApi {
+    /// Bind a complete Responses record. Wrong-wire or invalid records fail
+    /// before authentication or network activity.
+    pub fn new(
+        provider: Arc<OpenAiResponsesProvider>,
+        model: ModelInfo,
+    ) -> Result<Self, crate::provider::ProviderError> {
+        validate_complete_responses_record(&model)?;
+        Ok(Self {
+            api_id: crate::models::ApiId::new("openai-responses"),
+            provider,
+            model,
+        })
+    }
+
+    fn configured(
+        &self,
+        model: ModelInfo,
+        options: OpenAiResponsesOptions,
+    ) -> OpenAiResponsesProvider {
+        let mut provider = (*self.provider).clone();
+        provider.models = vec![model];
+        provider.native_options = Some(options);
+        provider
+    }
+}
+
+/// One complete, wire-valid Responses model record or a typed failure.
+fn validate_complete_responses_record(
+    model: &ModelInfo,
+) -> Result<(), crate::provider::ProviderError> {
+    if model.wire_api != crate::model_info::WireApi::OpenAiResponses
+        || model.id.trim().is_empty()
+        || model.validate().is_err()
+    {
+        return Err(crate::provider::ProviderError::Config(
+            crate::provider::ProviderErrorSummary::attested_static(
+                "openai-responses adapters require a valid complete Responses model record",
+            ),
+        ));
+    }
+    Ok(())
+}
+
+impl crate::models::ChatApi<OpenAiResponsesOptions> for OpenAiResponsesChatApi {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), crate::provider::ProviderError> {
+        validate_complete_responses_record(model)
+    }
+
+    fn api_id(&self) -> &crate::models::ApiId {
+        &self.api_id
+    }
+
+    fn provider_id(&self) -> &str {
+        &self.provider.provider_id
+    }
+
+    fn complete_record(&self) -> ModelInfo {
+        self.model.clone()
+    }
+
+    fn simple_options(&self) -> OpenAiResponsesOptions {
+        OpenAiResponsesOptions::from_simple(&crate::models::SimpleOptions::default())
+    }
+
+    fn simple_options_for(&self, options: &crate::models::SimpleOptions) -> OpenAiResponsesOptions {
+        OpenAiResponsesOptions::from_simple(options)
+    }
+
+    fn session_resources(&self) -> Option<&dyn crate::codex_resources::SessionResourceOwner> {
+        None
+    }
+
+    fn validate_native_request(
+        &self,
+        model: &ModelInfo,
+        _request: &Request,
+        options: &OpenAiResponsesOptions,
+    ) -> Result<(), crate::provider::ProviderError> {
+        validate_complete_responses_record(model)?;
+        // Native/exact effort fails typed preflight on unsupported levels
+        // (SP-03); the neutral entry clamps instead.
+        if let Some(level) = options.reasoning_effort
+            && model.thinking_level_map.resolve(level).is_err()
+        {
+            return Err(crate::provider::ProviderError::Config(
+                crate::provider::ProviderErrorSummary::sanitized(format!(
+                    "openai-responses native options reject unsupported thinking level {level:?}"
+                )),
+            ));
+        }
+        Ok(())
+    }
+
+    fn stream_prepared(
+        &self,
+        request: Request,
+        options: OpenAiResponsesOptions,
+        auth: ResolvedAuth,
+    ) -> EventStream {
+        self.stream_model_resource_prepared(self.model.clone(), request, options, auth, None)
+    }
+
+    fn stream_resource_prepared(
+        &self,
+        request: Request,
+        options: OpenAiResponsesOptions,
+        auth: ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.stream_model_resource_prepared(self.model.clone(), request, options, auth, resources)
+    }
+
+    fn stream_model_resource_prepared(
+        &self,
+        model: ModelInfo,
+        mut request: Request,
+        options: OpenAiResponsesOptions,
+        auth: ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        if let Err(error) = self.validate_native_request(&model, &request, &options) {
+            return Box::pin(futures_util::stream::once(async move { Err(error) }));
+        }
+        if !options.is_simple() {
+            // Native effort is validated and projected independently of the
+            // neutral thinking fields, which are unused on this path. The
+            // neutral entry clamps at Models::stream_simple before dispatch.
+            request.thinking = Default::default();
+        }
+        let provider = self.configured(model, options);
+        if resources.is_none() {
+            return provider.stream_prepared(request, auth);
+        }
+        let attempt = request.callbacks.inherited_attempt().unwrap_or_else(|| {
+            crate::provider::AttemptContext {
+                invocation_id: uuid::Uuid::new_v4().to_string(),
+                attempt: 1,
+                max_attempts: 1,
+                payload_variant: crate::provider::PayloadVariant::Ordinary,
+            }
+        });
+        provider.stream_resource_attempt(request, auth, attempt, resources)
     }
 }

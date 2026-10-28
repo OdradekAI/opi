@@ -358,11 +358,23 @@ provider）。静态的按 profile 请求 header（`extra_headers`，用于会�
 路由）是独立的 profile 配置字段，经 `OpenAiChatProvider` 构造传入，不是
 `CompatConfig` 标志。
 
-OpenAI Responses 原生语义（`ResponsesConfig`）：`store` 和 `strict_tools`
-已实现。静态 `reasoning_effort` 仅保留为遗留兼容性元数据；`request.thinking`
+OpenAI Responses 原生语义（任务 20.37，`OpenAiResponsesOptions`）：
+
+| 选项 | 接受的类型/单位 | 省略 · 默认 · null · false/零 | 优先级 · wire · 类型化拒绝 |
+|------|----------------|-------------------------------|----------------------------|
+| `reasoning_effort`（native） | `ThinkingLevel`（`minimal`..`max`） | 省略 = 无 native effort；wire `reasoning.effort` 取自模型 `thinking_level_map` | native effort 取代中性 `Request::thinking`；运行 effort 同时请求 `include: ["reasoning.encrypted_content"]`。不支持的级别在 auth 前以类型化 `Config` 预检失败；simple 条目改为就近收敛。 |
+| off / 关闭（两个条目） | — | 支持推理的模型发送 `reasoning: {effort: "none"}`（映射的 off 投影；`github-copilot` 路由跳过） | off 只发送 effort——无 summary、无 `include`。 |
+| `reasoning_summary`（native） | `ResponsesReasoningSummary`：`Auto`/`Detailed`/`Concise`/`Null` | 省略**与**显式 `Null` 都发送 wire 默认 `"auto"`（源 `\|\|` 语义）；仅有 summary 而无 effort 时 effort 默认 `medium` | wire `reasoning.summary`。 |
+| `service_tier`（native） | `ResponsesServiceTier`：`auto`/`default`/`flex`/`priority`/`fast` | 省略则字段缺失 | wire `service_tier`，字符串原样。响应观察到的 tier 进入 `Usage::service_tier`；本 wire 不计算分层成本倍率。 |
+| `tool_choice`（native） | `ResponsesToolChoice`：`None`/`Auto`/`Required`/具名函数 | 省略则字段缺失 | wire `tool_choice`（字符串或 `{type: "function", name}`）；simple 条目只接受中性 `Auto`/`None`。 |
+| `store` | — | 除非 catalog/profile 显式钉住其他值，恒为 `false`（源无条件发送 `store:false`） | catalog compat > provider config > 默认 `false`。 |
+| `max_output_tokens` | `Request::max_tokens`（token） | 省略或零则字段缺失 | 正值以最小 16 发送；simple 调用在此 wire 映射前先解析共享预算。 |
+| 加密推理 / 回放 | 持久化 thinking `signature` | 未签名 thinking 绝不捏造 item | 运行 effort 时请求 `include: ["reasoning.encrypted_content"]`；reasoning item 以序列化 wire item 作为签名持久化，回放时（仅同身份回合）原样推回 `input`；`xai` 推理模型恒请求加密内容；终态输出回填补齐逐帧缺失的签名。 |
+| 会话中 effort 戳 | catalog compat `supportsMidConvoEffort`（默认 `false`）+ 回放回合的 `provider_thinking_level` | 默认关闭；未记录级别的回合无戳 | 每个记录了级别的早期同模型回复前插入一个 `configuration_update`，末尾一个携带当前 effort；请求 `reasoning.effort` 恒为 `medium`；回复记录自身级别供下一回合使用。 |
+| 会话缓存 | `Request::session_id` + `cache_retention` | `Disabled` 全部抑制；否则发送截断（64 字符）的 `prompt_cache_key` | `cache_retention: Long` 追加 `prompt_cache_retention: "24h"`。显式 prompt-cache 模式（`prompt_cache_options`）未采纳——无 opi catalog 消费者。 |
+
+静态 `reasoning_effort` 仅保留为遗留兼容性元数据；`request.thinking`
 与所选 `ModelInfo::thinking_level_map` 是 Chat 和 Responses wire 输出的权威来源。
-native Responses 请求省略 `max_tokens` 或设为零时不发送 `max_output_tokens`；正值以
-最小 16 发送。simple 调用在此 wire 映射前先解析共享预算。
 `previous_response_id` 刻意缺省——Responses 请求按
 Chat-Completions 类比构造，因此服务端响应链未被接入。
 

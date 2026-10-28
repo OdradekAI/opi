@@ -51,6 +51,7 @@ fn request_with_truncated_tool_result() -> Request {
                     timestamp_ms: 0,
                     diagnostics: Vec::new(),
                     duration_ms: None,
+                    provider_thinking_level: None,
                 }),
                 Message::ToolResult(ToolResultMessage {
                     not_executed: None,

@@ -87,6 +87,7 @@ fn request_with_tool_result(is_error: bool, payload: &str) -> Request {
                     timestamp_ms: 0,
                     diagnostics: Vec::new(),
                     duration_ms: None,
+                    provider_thinking_level: None,
                 }),
                 Message::ToolResult(ToolResultMessage {
                     not_executed: None,

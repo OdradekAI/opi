@@ -538,6 +538,11 @@ pub struct OpenAiResponsesCompat {
     pub strict_tools: bool,
     pub responses_path: String,
     pub send_session_id_header: bool,
+    /// Replay the thinking level as mid-conversation `configuration_update`
+    /// items (task 20.37, P20-S37): one stamp before each earlier same-model
+    /// reply that recorded a level, one at the end; the request
+    /// `reasoning.effort` stays fixed. Source default false.
+    pub supports_mid_convo_effort: bool,
 }
 
 impl Default for OpenAiResponsesCompat {
@@ -548,6 +553,7 @@ impl Default for OpenAiResponsesCompat {
             strict_tools: false,
             responses_path: "/v1/responses".into(),
             send_session_id_header: false,
+            supports_mid_convo_effort: false,
         }
     }
 }

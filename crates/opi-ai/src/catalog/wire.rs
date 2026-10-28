@@ -192,6 +192,7 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
             "strictTools": inner.strict_tools,
             "responsesPath": inner.responses_path,
             "sendSessionIdHeader": inner.send_session_id_header,
+            "supportsMidConvoEffort": inner.supports_mid_convo_effort,
         }),
         WireCompat::OpenAiCodexResponses(inner) => json!({
             "api": WireApi::OpenAiCodexResponses.as_str(),
@@ -376,6 +377,7 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                 .unwrap_or("/v1/responses")
                 .to_owned(),
             send_session_id_header: flag("sendSessionIdHeader")?,
+            supports_mid_convo_effort: flag("supportsMidConvoEffort")?,
         }))),
         WireApi::OpenAiCodexResponses => Ok(Some(WireCompat::OpenAiCodexResponses(
             OpenAiCodexResponsesCompat {

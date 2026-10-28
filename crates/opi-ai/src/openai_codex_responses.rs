@@ -150,7 +150,7 @@ impl OpenAiCodexResponsesProvider {
             .as_ref()
             .map(|wire| wire.grammar_input_properties.clone())
             .unwrap_or_default();
-        let input = convert_messages(&replay.messages, &replay_route, &grammar_map);
+        let input = convert_messages(&replay.messages, &replay_route, &grammar_map, None);
         let session_id = if request.cache_retention != CacheRetention::Disabled {
             request.session_id.as_deref().filter(|id| !id.is_empty())
         } else {

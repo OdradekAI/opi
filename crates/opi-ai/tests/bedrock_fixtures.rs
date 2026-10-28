@@ -746,6 +746,7 @@ fn assistant_call(id: &str, name: &str) -> Message {
         timestamp_ms: 0,
         diagnostics: Vec::new(),
         duration_ms: None,
+        provider_thinking_level: None,
     })
 }
 

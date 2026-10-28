@@ -2,6 +2,19 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): the standard OpenAI Responses wire now follows the
+  pinned source defaults (task 20.37, P20-S37/ONB-03): `store: false` is
+  sent unconditionally unless a catalog/profile value pins another value
+  (replacing the old absent-by-default behavior), reasoning-capable
+  models send `reasoning: {"effort": "none"}` on the off path
+  (`github-copilot` routes skip it), and `OpenAiResponsesCompat` gains
+  `supports_mid_convo_effort` (default `false`).
+- `opi-ai` (0.x): `AssistantMessage` gains optional
+  `provider_thinking_level: Option<String>` (task 20.37, P20-S37):
+  stamped only on wires that replay the thinking level as
+  mid-conversation `configuration_update` items; serde-skipped when unset,
+  every struct literal adds `provider_thinking_level: None`.
+
 - `opi-ai` (0.x): the OpenAI Chat compat config applies the single
   normalization rule (task 20.36, AIR-022/V-11).
   `OpenAiCompletionsCompat` replaces `system_role_override`, `supports_store`,
@@ -579,6 +592,27 @@
   unchanged.
 ### Added
 
+- `opi-ai`: complete openai-responses chat adapter (task 20.37, DEL-11).
+  New public `openai_responses::OpenAiResponsesChatApi` registers the
+  typed direct/native adapter through `Models::register_chat_api` with
+  `OpenAiResponsesOptions`: native `reasoning_effort` levels (typed
+  rejection before auth; the simple entry clamps),
+  `ResponsesReasoningSummary` (`Auto`/`Detailed`/`Concise`/`Null`;
+  omission and explicit null both wire the default `auto`, a summary
+  without effort defaults the effort to `medium`), `ResponsesServiceTier`
+  (`auto`/`default`/`flex`/`priority`/`fast`) and full `ResponsesToolChoice`
+  (`Required`/named stay native). Running an effort requests
+  `include: ["reasoning.encrypted_content"]` (`xai` reasoning models
+  always do); reasoning items persist their serialized wire item as the
+  thinking signature and replay pushes it back into `input`; terminal
+  output backfills signatures the per-item frames omitted. Catalog compat
+  `supportsMidConvoEffort` replays recorded levels as `configuration_update`
+  items (stamps before earlier same-model replies plus one at the end,
+  request effort fixed at `medium`, replies record
+  `provider_thinking_level`). Long cache retention sends
+  `prompt_cache_retention: "24h"` beside the clamped `prompt_cache_key`;
+  terminal `Done` messages carry the measured `duration_ms`; the producer
+  runs under the explicit frozen `TelemetryContext`.
 - `opi-ai`: complete openai-completions chat adapter (task 20.36, DEL-11).
   New public `openai_chat::OpenAiCompletionsChatApi` registers the typed
   direct/native adapter through `Models::register_chat_api` with

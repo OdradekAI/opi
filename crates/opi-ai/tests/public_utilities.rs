@@ -506,6 +506,7 @@ fn diagnostic_message(
         timestamp_ms: 0,
         diagnostics: vec![],
         duration_ms: None,
+        provider_thinking_level: None,
     }
 }
 

@@ -817,6 +817,7 @@ mod tests {
             wire: Some(WireApi::AnthropicMessages),
             diagnostics: Vec::new(),
             duration_ms: None,
+            provider_thinking_level: None,
         }
     }
 

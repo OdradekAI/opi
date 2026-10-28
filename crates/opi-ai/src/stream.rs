@@ -613,6 +613,7 @@ fn setup_failure_message(cause: &ProviderError) -> crate::message::AssistantMess
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
         duration_ms: None,
+        provider_thinking_level: None,
     }
 }
 

@@ -38,6 +38,7 @@ fn message(stop: StopReason, error: Option<&str>) -> AssistantMessage {
         timestamp_ms: 1_000,
         diagnostics: Vec::new(),
         duration_ms: None,
+        provider_thinking_level: None,
     }
 }
 
