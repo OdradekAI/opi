@@ -2,6 +2,17 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): the Azure OpenAI default api-version follows the pinned
+  source `v1` (task 20.38, P20-S38), replacing `2024-06-01`; explicit
+  `[providers.azure] api_version` config keeps winning. The missing-endpoint
+  error message now names the resolver's base-URL wording.
+- `opi-ai` (0.x): `WireApi` gains `AzureOpenAiResponses`
+  (`azure-openai-responses`) and `WireCompat` gains
+  `AzureOpenAiResponses(OpenAiResponsesCompat)` carrying the same responses
+  compat flag surface under the azure wire identity (catalog `x-opi.compat`
+  rows for the new wire parse the responses family with a `/responses`
+  path default); exhaustive matches on either enum add the new arm.
+
 - `opi-ai` (0.x): the standard OpenAI Responses wire now follows the
   pinned source defaults (task 20.37, P20-S37/ONB-03): `store: false` is
   sent unconditionally unless a catalog/profile value pins another value
@@ -592,6 +603,23 @@
   unchanged.
 ### Added
 
+- `opi-ai`: azure-openai-responses dual-wire adapter (task 20.38, DEL-11).
+  New public `azure_openai::AzureOpenAIResponsesChatApi` registers the
+  typed direct/native adapter through `Models::register_chat_api` with
+  `AzureOpenAIOptions` (native `reasoning_effort`/`reasoning_summary`/
+  `tool_choice` plus `azure_deployment_name`/`azure_resource_name`/
+  `azure_base_url`/`azure_api_version`; `service_tier` deliberately absent —
+  source omission). Public resolution functions
+  `resolve_azure_base_url`/`resolve_azure_api_version`/
+  `resolve_deployment_name` implement the pinned source precedence
+  (explicit → resource → model base URL, typed failure when unset, Azure
+  host path normalization, api-version default `v1`, deployment map
+  `modelId=deployment`). The provider dispatches by record wire: responses
+  records reuse the exact 20.37 Responses parameter assembly under Azure
+  transport (deployment URL, `api-key` header, same-identity signed
+  reasoning replay, terminal duration), chat records keep the existing
+  chat transport, and both producers run under the explicit frozen
+  `TelemetryContext`.
 - `opi-ai`: complete openai-responses chat adapter (task 20.37, DEL-11).
   New public `openai_responses::OpenAiResponsesChatApi` registers the
   typed direct/native adapter through `Models::register_chat_api` with

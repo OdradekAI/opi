@@ -1673,9 +1673,11 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
                 assert_eq!(request.url.query(), Some("alt=sse"), "{}", case.provider_id);
             }
             Route::Azure => {
+                // Task 20.38: the default api-version follows the pinned
+                // source resolver (v1), replacing the old 2024-06-01.
                 assert_eq!(
                     request.url.query(),
-                    Some("api-version=2024-06-01"),
+                    Some("api-version=v1"),
                     "azure API version route"
                 );
             }

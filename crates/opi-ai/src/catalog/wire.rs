@@ -194,6 +194,15 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
             "sendSessionIdHeader": inner.send_session_id_header,
             "supportsMidConvoEffort": inner.supports_mid_convo_effort,
         }),
+        WireCompat::AzureOpenAiResponses(inner) => json!({
+            "api": WireApi::AzureOpenAiResponses.as_str(),
+            "store": inner.store,
+            "reasoningEffort": inner.reasoning_effort,
+            "strictTools": inner.strict_tools,
+            "responsesPath": inner.responses_path,
+            "sendSessionIdHeader": inner.send_session_id_header,
+            "supportsMidConvoEffort": inner.supports_mid_convo_effort,
+        }),
         WireCompat::OpenAiCodexResponses(inner) => json!({
             "api": WireApi::OpenAiCodexResponses.as_str(),
             "responsesPath": inner.responses_path,
@@ -267,6 +276,32 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
     let Some(api) = value.get("api").and_then(Value::as_str) else {
         return Ok(None);
     };
+    // Task 20.38: both responses wires share the responses compat flag
+    // surface; only the default path differs.
+    fn parse_responses_compat(
+        value: &Value,
+        default_path: &str,
+    ) -> Result<OpenAiResponsesCompat, String> {
+        let flag = |key: &str| -> Result<bool, String> {
+            value
+                .get(key)
+                .and_then(Value::as_bool)
+                .ok_or_else(|| format!("x-opi.compat field '{key}' must be a boolean"))
+        };
+        Ok(OpenAiResponsesCompat {
+            store: value.get("store").and_then(Value::as_bool),
+            reasoning_effort: opt_string(value, "reasoningEffort")?,
+            strict_tools: flag("strictTools")?,
+            responses_path: value
+                .get("responsesPath")
+                .and_then(Value::as_str)
+                .unwrap_or(default_path)
+                .to_owned(),
+            send_session_id_header: flag("sendSessionIdHeader")?,
+            supports_mid_convo_effort: flag("supportsMidConvoEffort")?,
+        })
+    }
+
     let wire: WireApi = api
         .parse()
         .map_err(|_| format!("x-opi.compat carries unknown api '{api}'"))?;
@@ -367,18 +402,13 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                 },
             )))
         }
-        WireApi::OpenAiResponses => Ok(Some(WireCompat::OpenAiResponses(OpenAiResponsesCompat {
-            store: value.get("store").and_then(Value::as_bool),
-            reasoning_effort: opt_string(value, "reasoningEffort")?,
-            strict_tools: flag("strictTools")?,
-            responses_path: value
-                .get("responsesPath")
-                .and_then(Value::as_str)
-                .unwrap_or("/v1/responses")
-                .to_owned(),
-            send_session_id_header: flag("sendSessionIdHeader")?,
-            supports_mid_convo_effort: flag("supportsMidConvoEffort")?,
-        }))),
+        WireApi::OpenAiResponses => Ok(Some(WireCompat::OpenAiResponses(parse_responses_compat(
+            value,
+            "/v1/responses",
+        )?))),
+        WireApi::AzureOpenAiResponses => Ok(Some(WireCompat::AzureOpenAiResponses(
+            parse_responses_compat(value, "/responses")?,
+        ))),
         WireApi::OpenAiCodexResponses => Ok(Some(WireCompat::OpenAiCodexResponses(
             OpenAiCodexResponsesCompat {
                 responses_path: value

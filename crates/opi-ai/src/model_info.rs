@@ -103,10 +103,12 @@ pub enum WireApi {
     BedrockConverseStream,
     #[serde(rename = "azure-openai-completions")]
     AzureOpenAiCompletions,
+    #[serde(rename = "azure-openai-responses")]
+    AzureOpenAiResponses,
 }
 
 impl WireApi {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::AnthropicMessages,
         Self::OpenAiCompletions,
         Self::OpenAiResponses,
@@ -115,6 +117,7 @@ impl WireApi {
         Self::GoogleVertex,
         Self::BedrockConverseStream,
         Self::AzureOpenAiCompletions,
+        Self::AzureOpenAiResponses,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -127,6 +130,7 @@ impl WireApi {
             Self::GoogleVertex => "google-vertex",
             Self::BedrockConverseStream => "bedrock-converse-stream",
             Self::AzureOpenAiCompletions => "azure-openai-completions",
+            Self::AzureOpenAiResponses => "azure-openai-responses",
         }
     }
 }
@@ -584,6 +588,9 @@ pub enum WireCompat {
     GoogleVertex,
     BedrockConverseStream,
     AzureOpenAiCompletions,
+    /// Azure Responses rows (task 20.38): the same responses compat flag
+    /// surface under the azure wire identity.
+    AzureOpenAiResponses(OpenAiResponsesCompat),
 }
 
 impl WireCompat {
@@ -597,6 +604,7 @@ impl WireCompat {
             Self::GoogleVertex => WireApi::GoogleVertex,
             Self::BedrockConverseStream => WireApi::BedrockConverseStream,
             Self::AzureOpenAiCompletions => WireApi::AzureOpenAiCompletions,
+            Self::AzureOpenAiResponses(_) => WireApi::AzureOpenAiResponses,
         }
     }
 
@@ -610,6 +618,9 @@ impl WireCompat {
             WireApi::GoogleVertex => Self::GoogleVertex,
             WireApi::BedrockConverseStream => Self::BedrockConverseStream,
             WireApi::AzureOpenAiCompletions => Self::AzureOpenAiCompletions,
+            // Task 20.38: azure responses records carry the same responses
+            // flag surface under their own wire identity.
+            WireApi::AzureOpenAiResponses => Self::AzureOpenAiResponses(Default::default()),
         }
     }
 }

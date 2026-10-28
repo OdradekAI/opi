@@ -46,7 +46,7 @@ ADC 来源与全部九种 OAuth 流由 SDK 拥有。coding agent 拥有 keychain
 | `mistral` | `mistral` | OpenAI-compatible Mistral profile |
 | `gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
 | `bedrock` | `bedrock` | AWS Bedrock Converse streaming，支持 SigV4 或 Bearer 认证 |
-| `azure_openai` | `azure` | Azure OpenAI deployment 专用 Chat Completions |
+| `azure_openai` | `azure` | Azure OpenAI deployment 专用 Chat **与** Responses 双 wire（任务 20.38） |
 | `vertex` | `vertex` | Google Vertex AI Gemini streaming |
 
 内置模型列表刻意保持有限，主要用于能力校验和模型列表输出。站点专用模型、
@@ -377,6 +377,30 @@ OpenAI Responses 原生语义（任务 20.37，`OpenAiResponsesOptions`）：
 与所选 `ModelInfo::thinking_level_map` 是 Chat 和 Responses wire 输出的权威来源。
 `previous_response_id` 刻意缺省——Responses 请求按
 Chat-Completions 类比构造，因此服务端响应链未被接入。
+
+### Azure OpenAI 双 wire（任务 20.38）
+
+Azure 同时保留两条 wire，并按钉住的源 `azure-openai-config.ts` 显式映射
+deployment/resource/api-version：
+
+| 映射 | 优先级 | wire 效果 |
+|---|---|---|
+| Base URL | 显式 `azure_base_url` → 资源名（`https://{resource}.openai.azure.com`）→ 模型 `baseUrl` → 类型化 `Config` 失败 | 携带 `/openai[/v1][/responses]` 路径的 Azure 主机规范化为资源根；非 Azure 主机保留路径 |
+| API 版本 | 显式 `azure_api_version` → 默认 `v1` | 每个请求携带 `?api-version=…`（取代旧默认 `2024-06-01`） |
+| Deployment | 显式 `azure_deployment_name` → provider `modelId=deployment` 映射 → 模型 id | 同时进入 URL 路径 `/openai/deployments/{d}/…` **和** 请求体 `model`；catalog id 不变 |
+
+Responses wire（`WireApi::AzureOpenAiResponses`、`azure-openai-responses`
+记录、经 `Models::register_chat_api` 注册的公开 `AzureOpenAIResponsesChatApi`）
+复用完整的 Responses 参数装配——`store: false`、off-effort
+`{"effort":"none"}`、summary 默认 `auto`、加密推理 include/签名/回放、
+16-token 输出下限——运行在 Azure 传输（`api-key` 头、deployment URL、
+azure 状态映射、终态 duration、冻结 telemetry producer）之上。
+`AzureOpenAIOptions` 携带 native 清单：`reasoning_effort`（类型化预检；
+simple 条目就近收敛）、`reasoning_summary`、`tool_choice` 与四个 Azure
+映射字段。Azure 刻意不含 `service_tier`（源缺省；本 wire 无 Responses
+服务层级倍率）。Azure 不接会话中 effort 戳（源 azure `buildParams` 从不
+传递）。Chat wire 保持既有行为（记录默认走 OpenAI-completions 投影），
+两条 wire 都只接受 `api-key` 头认证。
 
 ## 缓存、Response ID 与会话亲和
 

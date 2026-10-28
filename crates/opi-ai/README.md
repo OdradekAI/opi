@@ -52,7 +52,7 @@ the keychain backend, terminal presenter and host registration policy.
 | `mistral` | `mistral` | OpenAI-compatible Mistral profile |
 | `gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
 | `bedrock` | `bedrock` | AWS Bedrock Converse streaming with SigV4 or Bearer authentication |
-| `azure_openai` | `azure` | Azure OpenAI deployment-specific Chat Completions |
+| `azure_openai` | `azure` | Azure OpenAI deployment-specific Chat **and** Responses wires (task 20.38) |
 | `vertex` | `vertex` | Google Vertex AI Gemini streaming |
 
 Built-in model lists are finite and intended for capability checks and model
@@ -447,6 +447,33 @@ Static `reasoning_effort` remains legacy compatibility metadata;
 authoritative for Chat and Responses wire output.
 `previous_response_id` is intentionally absent — Responses requests are built
 as Chat-Completions analogues, so server-side response chaining is not wired.
+
+### Azure OpenAI dual wires (task 20.38)
+
+Azure keeps both wires with explicit deployment/resource/api-version
+mapping (pinned source `azure-openai-config.ts`):
+
+| Mapping | Precedence | Wire effect |
+|---|---|---|
+| Base URL | explicit `azure_base_url` → resource name (`https://{resource}.openai.azure.com`) → model `baseUrl` → typed `Config` failure | Azure hosts carrying `/openai[/v1][/responses]` paths normalize to the resource root; non-Azure hosts keep their path |
+| API version | explicit `azure_api_version` → default `v1` | Query `?api-version=…` on every request (replaces the old `2024-06-01` default) |
+| Deployment | explicit `azure_deployment_name` → provider `modelId=deployment` map → model id | Rides the URL path `/openai/deployments/{d}/…` **and** the request body `model`; the catalog id never changes |
+
+The Responses wire (`WireApi::AzureOpenAiResponses`, `azure-openai-responses`
+records, public `AzureOpenAIResponsesChatApi` registered through
+`Models::register_chat_api`) reuses the exact Responses parameter assembly —
+`store: false`, off-effort `{"effort":"none"}`, summary default `auto`,
+encrypted-reasoning include/signature/replay, the 16-token output floor —
+under Azure transport (`api-key` header, deployment URL, azure status
+mapping, terminal duration, frozen telemetry producer). `AzureOpenAIOptions`
+carries the native inventory: `reasoning_effort` (typed preflight; the simple
+entry clamps), `reasoning_summary`, `tool_choice` and the four Azure mapping
+fields. `service_tier` is deliberately absent on Azure (source omission; no
+Responses service-tier multiplier). Mid-conversation effort stamps are not
+wired for Azure (the source's azure `buildParams` never passes them). The
+chat wire keeps its existing behavior (records default through the
+OpenAI-completions projection) and both wires authenticate with the
+`api-key` header only.
 
 ## Cache, Response IDs, and Session Affinity
 

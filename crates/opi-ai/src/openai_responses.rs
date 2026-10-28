@@ -193,6 +193,20 @@ impl OpenAiResponsesProvider {
         }
     }
 
+    /// Clone with the typed dispatch state for one call (task 20.38): the
+    /// azure dual-wire adapter compiles through this exact configuration
+    /// (record + native options) without mutating a registered provider.
+    pub(crate) fn dispatch_configured(
+        &self,
+        model: ModelInfo,
+        options: OpenAiResponsesOptions,
+    ) -> Self {
+        let mut provider = self.clone();
+        provider.models = vec![model];
+        provider.native_options = Some(options);
+        provider
+    }
+
     /// Build a standard Responses route for a mapped provider.
     pub fn for_route(
         default_base_url: Option<String>,
@@ -235,10 +249,22 @@ impl OpenAiResponsesProvider {
         self
     }
 
+    /// The resolved record's exact wire (task 20.38): replay identity follows
+    /// the record (azure responses records replay under their own wire).
+    fn resolve_wire(&self, model_id: &str) -> crate::model_info::WireApi {
+        self.models
+            .iter()
+            .find(|model| model.id == model_id)
+            .map(|model| model.wire_api)
+            .unwrap_or(crate::model_info::WireApi::OpenAiResponses)
+    }
+
     fn resolve_config(&self, model_id: &str) -> ResponsesConfig {
         if self.catalog_compat
             && let Some(ModelInfo {
-                compat: crate::model_info::WireCompat::OpenAiResponses(compat),
+                compat:
+                    crate::model_info::WireCompat::OpenAiResponses(compat)
+                    | crate::model_info::WireCompat::AzureOpenAiResponses(compat),
                 ..
             }) = self.models.iter().find(|model| model.id == model_id)
         {
@@ -257,7 +283,9 @@ impl OpenAiResponsesProvider {
     fn resolve_route_path(&self, model_id: &str) -> String {
         if self.catalog_compat
             && let Some(ModelInfo {
-                compat: crate::model_info::WireCompat::OpenAiResponses(compat),
+                compat:
+                    crate::model_info::WireCompat::OpenAiResponses(compat)
+                    | crate::model_info::WireCompat::AzureOpenAiResponses(compat),
                 ..
             }) = self.models.iter().find(|model| model.id == model_id)
         {
@@ -283,7 +311,11 @@ impl OpenAiResponsesProvider {
     /// 20.11) and the wire-native effort stamp (task 20.37) the stream
     /// mapper records on the reply.
     #[allow(clippy::type_complexity)]
-    fn compile_request_body(
+    /// Compile the standard Responses body. `pub(crate)` (task 20.38): the
+    /// azure-openai-responses adapter reuses this exact pinned parameter
+    /// assembly (store/off/summary/include/replay semantics) instead of
+    /// duplicating it.
+    pub(crate) fn compile_request_body(
         &self,
         request: &Request,
     ) -> Result<
@@ -333,7 +365,7 @@ impl OpenAiResponsesProvider {
 
         // Canonical replay projection (task 20.7) before body building.
         let replay_route = crate::replay::ReplayRoute {
-            wire: crate::model_info::WireApi::OpenAiResponses,
+            wire: self.resolve_wire(model_id),
             provider: self.provider_id.clone(),
             model: model_id.to_owned(),
             supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
@@ -546,7 +578,7 @@ impl OpenAiResponsesProvider {
 
     /// Stamp the measured response duration onto a terminal Done message
     /// (AIR-061); already-known values and non-Done items pass unchanged.
-    fn stamp_done_duration(
+    pub(crate) fn stamp_done_duration(
         item: Result<AssistantStreamEvent, crate::provider::ProviderError>,
         activated_at: Option<std::time::Instant>,
     ) -> Result<AssistantStreamEvent, crate::provider::ProviderError> {
@@ -1045,7 +1077,9 @@ pub struct OpenAiResponsesOptions {
     /// Requested service tier (source semantics; pricing multipliers are
     /// not computed on this wire).
     pub service_tier: Option<ResponsesServiceTier>,
-    simple: bool,
+    /// Dispatch provenance (task 20.38): `pub(crate)` so the azure
+    /// dual-wire adapter can construct the mapped native options.
+    pub(crate) simple: bool,
 }
 
 impl OpenAiResponsesOptions {
@@ -1102,7 +1136,7 @@ impl OpenAiResponsesChatApi {
         })
     }
 
-    fn configured(
+    pub(crate) fn configured(
         &self,
         model: ModelInfo,
         options: OpenAiResponsesOptions,

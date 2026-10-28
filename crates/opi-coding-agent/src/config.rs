@@ -378,7 +378,8 @@ pub struct AzureProviderConfig {
     pub api_key_env: String,
     /// Azure OpenAI endpoint (e.g. `https://myresource.openai.azure.com`).
     pub endpoint: Option<String>,
-    /// Azure API version (default: 2024-06-01).
+    /// Azure API version; unset resolves to the pinned source default
+    /// `v1` (task 20.38).
     pub api_version: Option<String>,
     /// Deployment names to advertise in --list-models.
     pub deployments: Vec<String>,
