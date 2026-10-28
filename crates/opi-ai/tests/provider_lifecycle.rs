@@ -163,7 +163,7 @@ async fn stream_text_response_produces_correct_events() {
             .content
             .iter()
             .filter_map(|c| match c {
-                opi_ai::message::AssistantContent::Text { text } => Some(text.as_str()),
+                opi_ai::message::AssistantContent::Text { text, .. } => Some(text.as_str()),
                 _ => None,
             })
             .collect();
@@ -561,7 +561,7 @@ async fn anthropic_every_byte_splits_with_crlf_keepalive_and_multibyte_frame_ide
             .content
             .iter()
             .find_map(|content| match content {
-                opi_ai::message::AssistantContent::Text { text } => Some(text.clone()),
+                opi_ai::message::AssistantContent::Text { text, .. } => Some(text.clone()),
                 _ => None,
             })
             .expect("text block present");
@@ -616,7 +616,7 @@ async fn anthropic_large_lawful_event_beyond_withdrawn_caps_is_accepted() {
         .content
         .iter()
         .find_map(|content| match content {
-            opi_ai::message::AssistantContent::Text { text } => Some(text.len()),
+            opi_ai::message::AssistantContent::Text { text, .. } => Some(text.len()),
             _ => None,
         })
         .expect("text block present");
@@ -675,7 +675,7 @@ async fn anthropic_invalid_utf8_bytes_are_replaced_not_fatal() {
                 .content
                 .iter()
                 .find_map(|content| match content {
-                    opi_ai::message::AssistantContent::Text { text } => Some(text.clone()),
+                    opi_ai::message::AssistantContent::Text { text, .. } => Some(text.clone()),
                     _ => None,
                 })
                 .expect("text block present");

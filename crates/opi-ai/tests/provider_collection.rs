@@ -58,7 +58,7 @@ fn assistant_text(message: &AssistantMessage) -> String {
         .content
         .iter()
         .filter_map(|content| match content {
-            AssistantContent::Text { text } => Some(text.as_str()),
+            AssistantContent::Text { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect()
@@ -473,6 +473,7 @@ async fn dispatch_complete_returns_terminal_error_event() {
     let message = AssistantMessage {
         content: vec![AssistantContent::Text {
             text: "terminal failure".into(),
+            signature: None,
         }],
         api: opi_ai::ApiKind::OpenAi,
         provider: "mock".into(),

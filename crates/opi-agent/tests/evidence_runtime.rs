@@ -577,12 +577,14 @@ fn two_tool_response() -> Vec<AssistantStreamEvent> {
             name: "first".into(),
             arguments: "{}".into(),
             arguments_error: None,
+            signature: None,
         },
         ToolCall {
             id: "c2".into(),
             name: "second".into(),
             arguments: "{}".into(),
             arguments_error: None,
+            signature: None,
         },
     ];
     message.content = calls
@@ -1216,7 +1218,7 @@ async fn emission_failure_advances_health_copied_into_authorization() {
     assert!(
         messages.iter().any(|m| matches!(m,
             AgentMessage::Llm(Message::Assistant(a))
-                if a.content.iter().any(|c| matches!(c, AssistantContent::Text { text } if text == "done")))),
+                if a.content.iter().any(|c| matches!(c, AssistantContent::Text { text, .. } if text == "done")))),
         "the second provider attempt also proceeded with health already incomplete"
     );
     let generation = run.evidence_health().generation();
@@ -2423,6 +2425,7 @@ async fn in_band_stream_error_terminal_fails_the_run_without_retry() {
     };
     partial.content.push(AssistantContent::Text {
         text: "partial before failure".to_owned(),
+        signature: None,
     });
     let start_partial = AssistantMessage {
         content: vec![],
@@ -2488,7 +2491,7 @@ async fn in_band_stream_error_terminal_fails_the_run_without_retry() {
     assert_eq!(assistants[0].error_message.as_deref(), Some("overloaded"));
     assert!(matches!(
         assistants[0].content.first(),
-        Some(AssistantContent::Text { text }) if text == "partial before failure"
+        Some(AssistantContent::Text { text, .. }) if text == "partial before failure"
     ));
 
     let error = run.into_execution_result().unwrap_err();

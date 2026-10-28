@@ -1490,7 +1490,7 @@ async fn public_tls_partial_cancellation_preserves_known_usage_and_eof() {
         (7, 3)
     );
     assert!(
-        matches!(&failure.message().content[0], opi_ai::message::AssistantContent::Text { text } if text == "retained")
+        matches!(&failure.message().content[0], opi_ai::message::AssistantContent::Text { text, .. } if text == "retained")
     );
     assert!(stream.next().await.is_none());
     assert!(stream.next().await.is_none());

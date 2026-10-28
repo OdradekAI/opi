@@ -164,7 +164,7 @@ pub fn assistant_content_text(content: &[AssistantContent]) -> String {
     content
         .iter()
         .filter_map(|block| match block {
-            AssistantContent::Text { text } => Some(text.as_str()),
+            AssistantContent::Text { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -202,7 +202,14 @@ pub enum InputContent {
 #[serde(tag = "type")]
 pub enum AssistantContent {
     #[serde(rename = "text")]
-    Text { text: String },
+    Text {
+        text: String,
+        /// Opaque provider thought signature riding the text block
+        /// (task 20.40, Gemini thought signatures): replay echoes it on the
+        /// same wire part for same-provider/same-model history only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
+    },
     #[serde(rename = "thinking")]
     Thinking {
         thinking: String,
@@ -246,6 +253,11 @@ pub struct ToolCall {
     /// field. Historical records without the field deserialize as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arguments_error: Option<String>,
+    /// Opaque provider thought signature for this call (task 20.40, Gemini
+    /// thought signatures): replay echoes it on the functionCall part for
+    /// same-provider/same-model history only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
 }
 
 impl ToolCall {
@@ -894,6 +906,7 @@ mod tool_argument_tests {
             name: "read".into(),
             arguments: r#"{"path": "trunc"#.into(),
             arguments_error: Some("final tool arguments were not a complete JSON object".into()),
+            signature: None,
         };
         let value = serde_json::to_value(&call).unwrap();
         assert_eq!(
@@ -908,6 +921,7 @@ mod tool_argument_tests {
             name: "read".into(),
             arguments: "{}".into(),
             arguments_error: None,
+            signature: None,
         };
         let value = serde_json::to_value(&clean).unwrap();
         assert!(value.get("arguments_error").is_none());

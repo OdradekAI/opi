@@ -1283,7 +1283,7 @@ async fn coding_harness_composes_generic_opi_agent_seams() {
             .iter()
             .any(|m| matches!(m, opi_agent::message::AgentMessage::Llm(Message::Assistant(a))
                 if a.content.iter().any(|block| matches!(block,
-                    opi_ai::message::AssistantContent::Text { text } if text.contains("composed-turn"))))),
+                    opi_ai::message::AssistantContent::Text { text, .. } if text.contains("composed-turn"))))),
         "assistant turn must come back through the generic AgentMessage seam"
     );
 

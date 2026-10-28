@@ -369,7 +369,7 @@ async fn mistral_multiple_text_deltas() {
                     .content
                     .iter()
                     .filter_map(|c| match c {
-                        opi_ai::message::AssistantContent::Text { text } => Some(text.as_str()),
+                        opi_ai::message::AssistantContent::Text { text, .. } => Some(text.as_str()),
                         _ => None,
                     })
                     .collect();

@@ -17,7 +17,9 @@
 //!   `function_call_output.output` string. `status` is NOT client-settable on
 //!   input items (server-managed on output items only), so a content marker is
 //!   mandatory.
-//! - Gemini (incl. Vertex via the shared adapter): an `error: true` key INSIDE
+//! - Gemini (incl. Vertex via the shared adapter): the `output`/`error`
+//!   response keys with the text value (task 20.40, previously `content`
+//!   with a boolean error)
 //!   the `functionResponse.response` Struct. The Gemini REST API documents this
 //!   as the failure key; a top-level `functionResponse.error` is unsupported.
 //!
@@ -73,6 +75,7 @@ fn request_with_tool_result(is_error: bool, payload: &str) -> Request {
                             name: "tool".into(),
                             arguments: "{}".into(),
                             arguments_error: None,
+                            signature: None,
                         },
                     }],
                     api: opi_ai::ApiKind::Anthropic,
@@ -257,21 +260,25 @@ fn gemini_asserts(is_error: bool, payload: &str) {
         .build_request_body(&request_with_tool_result(is_error, payload))
         .unwrap();
     let response = &last_msg(&body, "contents")["parts"][0]["functionResponse"]["response"];
-    assert_eq!(
-        response["content"].as_str(),
-        Some(payload),
-        "gemini response.content is the joined payload (no text marker for this provider)"
-    );
+    // Task 20.40: success responses use the `output` key, failures the
+    // `error` key with the text value (pi google-shared convertMessages);
+    // neither carries a text failure marker.
     if is_error {
         assert_eq!(
-            response["error"].as_bool(),
-            Some(true),
-            "gemini MUST set response.error:true INSIDE the response Struct on failure: {response}"
+            response["error"].as_str(),
+            Some(payload),
+            "gemini failure response carries the payload under error: {response}"
         );
+        assert!(response.get("output").is_none());
     } else {
+        assert_eq!(
+            response["output"].as_str(),
+            Some(payload),
+            "gemini success response carries the payload under output: {response}"
+        );
         assert!(
             response.get("error").is_none(),
-            "gemini is_error:false body must be byte-identical to pre-fix (no error key): {response}"
+            "gemini is_error:false body carries no error key: {response}"
         );
     }
 }
@@ -307,21 +314,19 @@ fn vertex_inherits_gemini_shape(is_error: bool, payload: &str) {
         .build_request_body(&request_with_tool_result(is_error, payload))
         .unwrap();
     let response = &last_msg(&body, "contents")["parts"][0]["functionResponse"]["response"];
-    assert_eq!(
-        response["content"].as_str(),
-        Some(payload),
-        "Vertex must inherit the Gemini response.content payload: {response}"
-    );
+    // Task 20.40: Vertex inherits the Gemini `output`/`error` string keys
+    // via the shared compiler.
     if is_error {
         assert_eq!(
-            response["error"].as_bool(),
-            Some(true),
-            "Vertex must inherit response.error:true on failure via the shared adapter: {response}"
+            response["error"].as_str(),
+            Some(payload),
+            "Vertex must inherit the Gemini error payload on failure: {response}"
         );
     } else {
-        assert!(
-            response.get("error").is_none(),
-            "Vertex is_error:false body must be byte-identical to pre-fix (no error key): {response}"
+        assert_eq!(
+            response["output"].as_str(),
+            Some(payload),
+            "Vertex must inherit the Gemini output payload on success: {response}"
         );
     }
 }

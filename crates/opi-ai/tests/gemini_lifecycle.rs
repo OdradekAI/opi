@@ -117,7 +117,7 @@ async fn stream_success() {
             .content
             .iter()
             .filter_map(|c| match c {
-                opi_ai::message::AssistantContent::Text { text } => Some(text.as_str()),
+                opi_ai::message::AssistantContent::Text { text, .. } => Some(text.as_str()),
                 _ => None,
             })
             .collect();
@@ -344,7 +344,7 @@ async fn gemini_multibyte_text_survives_byte_chunked_stream_with_replacement() {
         .content
         .iter()
         .find_map(|content| match content {
-            opi_ai::message::AssistantContent::Text { text } => Some(text.clone()),
+            opi_ai::message::AssistantContent::Text { text, .. } => Some(text.clone()),
             _ => None,
         })
         .expect("text block present");

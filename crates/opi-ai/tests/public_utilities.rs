@@ -64,6 +64,7 @@ fn assistant_content_text_never_exposes_thinking_or_tool_calls() {
         },
         AssistantContent::Text {
             text: "visible".to_string(),
+            signature: None,
         },
         AssistantContent::RedactedThinking {
             data: "opaque".to_string(),
@@ -74,10 +75,12 @@ fn assistant_content_text_never_exposes_thinking_or_tool_calls() {
                 name: "probe".to_string(),
                 arguments: "{\"secret\": true}".to_string(),
                 arguments_error: None,
+                signature: None,
             },
         },
         AssistantContent::Text {
             text: "tail".to_string(),
+            signature: None,
         },
     ];
     let rendered = assistant_content_text(&blocks);

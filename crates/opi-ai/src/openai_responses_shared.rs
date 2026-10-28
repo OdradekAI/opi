@@ -855,6 +855,7 @@ impl ResponsesMapper {
                             name: name.clone(),
                             arguments: String::new(),
                             arguments_error: None,
+                            signature: None,
                         },
                     });
                     self.tool_calls.push(ToolCallState {
@@ -898,6 +899,7 @@ impl ResponsesMapper {
                         name: name.clone(),
                         arguments: arguments.clone(),
                         arguments_error: None,
+                        signature: None,
                     },
                 });
                 self.tool_calls.push(ToolCallState {
@@ -932,6 +934,7 @@ impl ResponsesMapper {
                     let index = self.partial.content.len();
                     self.partial.content.push(AssistantContent::Text {
                         text: String::new(),
+                        signature: None,
                     });
                     self.text_content_index = Some(index);
                     events.push(Ok(AssistantStreamEvent::TextStart {
@@ -940,7 +943,7 @@ impl ResponsesMapper {
                     }));
                     index
                 };
-                if let Some(AssistantContent::Text { text }) =
+                if let Some(AssistantContent::Text { text, .. }) =
                     self.partial.content.get_mut(content_index)
                 {
                     text.push_str(&delta);
@@ -1208,7 +1211,7 @@ impl ResponsesMapper {
             .take()
             .unwrap_or_else(|| self.partial.content.len().saturating_sub(1));
         match self.partial.content.get(content_index) {
-            Some(AssistantContent::Text { text }) => vec![AssistantStreamEvent::TextEnd {
+            Some(AssistantContent::Text { text, .. }) => vec![AssistantStreamEvent::TextEnd {
                 content_index,
                 content: text.clone(),
                 partial: self.partial.clone(),
@@ -1360,6 +1363,7 @@ impl ResponsesMapper {
                 name,
                 arguments: arguments.clone(),
                 arguments_error: None,
+                signature: None,
             };
             if let Some(AssistantContent::ToolCall { tool_call: partial }) =
                 self.partial.content.get_mut(content_index)
@@ -1402,6 +1406,7 @@ impl ResponsesMapper {
             name: state.name.clone(),
             arguments: arguments.clone(),
             arguments_error,
+            signature: None,
         };
         if let Some(AssistantContent::ToolCall { tool_call: partial }) =
             self.partial.content.get_mut(content_index)
@@ -1655,7 +1660,7 @@ pub(crate) fn convert_messages(
                 }
                 for content in &assistant.content {
                     match content {
-                        AssistantContent::Text { text: part } => {
+                        AssistantContent::Text { text: part, .. } => {
                             input.push(serde_json::json!({
                                 "type":"message",
                                 "role":"assistant",

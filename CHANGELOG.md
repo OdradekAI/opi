@@ -2,6 +2,19 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): `AssistantContent::Text` and `ToolCall` gain an optional
+  `signature` field (task 20.40, Gemini thought signatures; serde default,
+  absent in serialized history): exhaustive struct literals add the field.
+- `opi-ai` (0.x): Gemini wire changes (task 20.40, P20-S40): the builtin
+  catalog marks `gemini-2.5-flash`/`gemini-2.5-pro` as reasoning models, so
+  a neutral explicit-off request now sends `thinkingConfig: {thinkingBudget:
+  0}`; Google usage reports a numeric reasoning value (`thoughtsTokenCount
+  || 0`) instead of unknown; unmapped finish reasons fail typed carrying
+  the raw reason instead of mapping to `stop`; tool declarations ride
+  `parametersJsonSchema` instead of `parameters`; success/failure function
+  responses use the `output`/`error` string keys instead of `content` with
+  a boolean error; Gemini-3+ ids ride function calls/responses.
+
 - `opi-ai` (0.x): Anthropic Messages thinking wire changes (task 20.39,
   P20-S39, annex row 165): enabled thinking now always carries `display`
   (default `summarized`) on both adaptive and numeric paths; the no-budget
@@ -618,6 +631,22 @@
   unchanged.
 ### Added
 
+- `opi-ai`: google-generative-ai complete chat adapter (task 20.40,
+  DEL-11). New public `gemini::GoogleGenerativeAiChatApi` registers through
+  `Models::register_chat_api` with typed `GoogleGenerativeAiOptions`
+  (native `tool_choice` auto/none/any and the `thinking` shape where
+  `budget_tokens` keeps the source semantics — `-1` dynamic, `0` disabled —
+  and a level wins over a budget). Thought signatures capture and replay on
+  text, thinking and tool-call blocks (base64, same-provider/same-model,
+  signature-only empty parts kept); Gemini 3 unsigned/duplicate tool call
+  ids regenerate locally; Gemini 3+ strict tools select VALIDATED function
+  calling over the original `parametersJsonSchema`; tool-result images nest
+  inside `functionResponse.parts` on Gemini 3+ and ride a separate labeled
+  turn earlier; consecutive function responses merge into one user turn;
+  the stream captures the first non-empty `responseId`, maps thought parts
+  to thinking blocks and unmapped finish reasons to typed failures with the
+  raw reason; the producer runs under the explicit frozen
+  `TelemetryContext`.
 - `opi-ai`: anthropic-messages complete chat adapter (task 20.39, DEL-11).
   New public `anthropic::AnthropicMessagesChatApi` registers through
   `Models::register_chat_api` with typed `AnthropicMessagesOptions` (native

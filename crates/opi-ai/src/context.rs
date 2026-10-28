@@ -82,7 +82,7 @@ pub fn estimate_message_tokens(message: &Message) -> u64 {
                 .content
                 .iter()
                 .map(|content| match content {
-                    AssistantContent::Text { text } => text.encode_utf16().count() as u64,
+                    AssistantContent::Text { text, .. } => text.encode_utf16().count() as u64,
                     AssistantContent::Thinking { thinking, .. } => {
                         thinking.encode_utf16().count() as u64
                     }

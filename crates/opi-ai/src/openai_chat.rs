@@ -554,13 +554,14 @@ impl OpenAiChatMapper {
                     self.text_started = true;
                     self.partial.content.push(AssistantContent::Text {
                         text: String::new(),
+                        signature: None,
                     });
                     events.push(Ok(AssistantStreamEvent::TextStart {
                         content_index: 0,
                         partial: self.partial.clone(),
                     }));
                 }
-                if let Some(AssistantContent::Text { text }) = self.partial.content.last_mut() {
+                if let Some(AssistantContent::Text { text, .. }) = self.partial.content.last_mut() {
                     text.push_str(&content);
                 }
                 events.push(Ok(AssistantStreamEvent::TextDelta {
@@ -584,7 +585,7 @@ impl OpenAiChatMapper {
                 self.ensure_start(&mut events);
                 if self.text_started {
                     self.text_started = false;
-                    if let Some(AssistantContent::Text { text }) = self.partial.content.last() {
+                    if let Some(AssistantContent::Text { text, .. }) = self.partial.content.last() {
                         let content = text.clone();
                         events.push(Ok(AssistantStreamEvent::TextEnd {
                             content_index: 0,
@@ -615,6 +616,7 @@ impl OpenAiChatMapper {
                         name,
                         arguments: String::new(),
                         arguments_error: None,
+                        signature: None,
                     },
                 });
 
@@ -680,7 +682,7 @@ impl OpenAiChatMapper {
                 // Close any open text block
                 if !is_metadata_only && self.pending_stop_reason.is_none() && self.text_started {
                     self.text_started = false;
-                    if let Some(AssistantContent::Text { text }) = self.partial.content.last() {
+                    if let Some(AssistantContent::Text { text, .. }) = self.partial.content.last() {
                         let content = text.clone();
                         events.push(Ok(AssistantStreamEvent::TextEnd {
                             content_index: 0,
@@ -729,6 +731,7 @@ impl OpenAiChatMapper {
                             name: tc_state.name.clone(),
                             arguments,
                             arguments_error,
+                            signature: None,
                         };
                         events.push(Ok(AssistantStreamEvent::ToolCallEnd {
                             content_index: tool_content_index,
@@ -2153,7 +2156,7 @@ fn serialize_messages(
 
                 for c in &a.content {
                     match c {
-                        AssistantContent::Text { text } => {
+                        AssistantContent::Text { text, .. } => {
                             if !text.trim().is_empty() {
                                 text_parts.push(text);
                             }

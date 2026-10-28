@@ -16,6 +16,7 @@ fn assistant(timestamp_ms: i64) -> Message {
     Message::Assistant(AssistantMessage {
         content: vec![AssistantContent::Text {
             text: "done".into(),
+            signature: None,
         }],
         api: opi_ai::ApiKind::OpenAi,
         provider: "test".into(),
@@ -199,7 +200,10 @@ fn message_granularity_rounding_aggregates_before_ceil() {
 
     let three_blocks = Message::Assistant(AssistantMessage {
         content: vec![
-            AssistantContent::Text { text: "a".into() },
+            AssistantContent::Text {
+                text: "a".into(),
+                signature: None,
+            },
             AssistantContent::Thinking {
                 thinking: "a".into(),
                 signature: None,
@@ -210,6 +214,7 @@ fn message_granularity_rounding_aggregates_before_ceil() {
                     name: "n".into(),
                     arguments: "".into(),
                     arguments_error: None,
+                    signature: None,
                 },
             },
         ],

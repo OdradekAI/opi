@@ -526,7 +526,8 @@ async fn dedicated_codex_data_only_frames_stream_to_completion() {
     assert_eq!(
         message.content,
         [AssistantContent::Text {
-            text: "Hello".into()
+            text: "Hello".into(),
+            signature: None,
         }]
     );
     assert_eq!(message.usage, Usage::reported(13, 9, 4, 0, None, Some(3)));
@@ -577,7 +578,10 @@ async fn dedicated_codex_incomplete_terminal_is_length_not_error() {
     assert_eq!(message.wire, Some(WireApi::OpenAiCodexResponses));
     assert_eq!(
         message.content,
-        [AssistantContent::Text { text: "Hel".into() }]
+        [AssistantContent::Text {
+            text: "Hel".into(),
+            signature: None,
+        }]
     );
     assert_eq!(message.usage, Usage::reported(17, 7, 5, 0, None, Some(2)));
     assert_eq!(serde_json::to_vec(&request.context).unwrap(), canonical);

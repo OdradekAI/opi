@@ -330,9 +330,10 @@ fn base_assistant() -> AssistantMessage {
 
 fn text_response(text: &str) -> Vec<AssistantStreamEvent> {
     let mut partial = base_assistant();
-    partial
-        .content
-        .push(AssistantContent::Text { text: text.into() });
+    partial.content.push(AssistantContent::Text {
+        text: text.into(),
+        signature: None,
+    });
     vec![
         AssistantStreamEvent::Start {
             partial: base_assistant(),
@@ -355,6 +356,7 @@ fn tool_call_response(call_id: &str, tool_name: &str, args: &str) -> Vec<Assista
         name: tool_name.into(),
         arguments: args.into(),
         arguments_error: None,
+        signature: None,
     };
     let mut partial = base_assistant();
     partial.content.push(AssistantContent::ToolCall {

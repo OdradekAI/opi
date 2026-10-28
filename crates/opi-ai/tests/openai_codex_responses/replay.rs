@@ -13,6 +13,7 @@ fn assistant() -> AssistantMessage {
                 name: "read".into(),
                 arguments: r#"{"path":"a.rs"}"#.into(),
                 arguments_error: None,
+                signature: None,
             },
         }],
         api: opi_ai::ApiKind::OpenAi,

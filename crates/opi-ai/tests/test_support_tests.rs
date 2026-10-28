@@ -513,9 +513,11 @@ fn blocks_response_text_prefix_snapshots() {
         vec![
             AssistantContent::Text {
                 text: "first".into(),
+                signature: None,
             },
             AssistantContent::Text {
                 text: "second".into(),
+                signature: None,
             },
         ],
         StopReason::Stop,
@@ -528,6 +530,7 @@ fn blocks_response_text_tool_text_prefix_snapshots() {
         vec![
             AssistantContent::Text {
                 text: "before".into(),
+                signature: None,
             },
             AssistantContent::ToolCall {
                 tool_call: ToolCall {
@@ -535,10 +538,12 @@ fn blocks_response_text_tool_text_prefix_snapshots() {
                     name: "lookup".into(),
                     arguments: "{}".into(),
                     arguments_error: None,
+                    signature: None,
                 },
             },
             AssistantContent::Text {
                 text: "after".into(),
+                signature: None,
             },
         ],
         StopReason::ToolUse,
@@ -572,7 +577,7 @@ fn assert_blocks_response_prefix_snapshots(
                     delta,
                     partial,
                 },
-                AssistantContent::Text { text },
+                AssistantContent::Text { text, .. },
             ) => {
                 assert_eq!(delta, text);
                 (*content_index, partial)
@@ -606,6 +611,7 @@ fn blocks_response_orders_blocks_and_uses_tool_use_stop() {
     let blocks = vec![
         AssistantContent::Text {
             text: "Let me check.".into(),
+            signature: None,
         },
         AssistantContent::ToolCall {
             tool_call: ToolCall {
@@ -613,6 +619,7 @@ fn blocks_response_orders_blocks_and_uses_tool_use_stop() {
                 name: "lookup".into(),
                 arguments: "{}".into(),
                 arguments_error: None,
+                signature: None,
             },
         },
         AssistantContent::ToolCall {
@@ -621,6 +628,7 @@ fn blocks_response_orders_blocks_and_uses_tool_use_stop() {
                 name: "store".into(),
                 arguments: "[]".into(),
                 arguments_error: None,
+                signature: None,
             },
         },
     ];
@@ -665,7 +673,10 @@ fn blocks_response_orders_blocks_and_uses_tool_use_stop() {
 
 #[test]
 fn blocks_response_text_only_matches_text_response_shape() {
-    let blocks = blocks_response(vec![AssistantContent::Text { text: "hi".into() }]);
+    let blocks = blocks_response(vec![AssistantContent::Text {
+        text: "hi".into(),
+        signature: None,
+    }]);
     let plain = test_support::text_response("hi");
     assert_eq!(blocks.len(), plain.len());
     let delta = match &blocks[1] {
@@ -688,6 +699,7 @@ async fn mixed_script_queue_consumes_in_order() {
         let mut partial = test_support::base_assistant();
         partial.content.push(AssistantContent::Text {
             text: "half".into(),
+            signature: None,
         });
         vec![AssistantStreamEvent::Start {
             partial: test_support::base_assistant(),

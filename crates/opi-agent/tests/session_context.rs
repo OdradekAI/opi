@@ -50,7 +50,10 @@ fn assistant_msg(id: &str, parent: Option<&str>, text: &str) -> SessionEntry {
         parent_id: parent.map(str::to_owned),
         timestamp: "2026-07-01T00:00:01Z".into(),
         message: Message::Assistant(AssistantMessage {
-            content: vec![AssistantContent::Text { text: text.into() }],
+            content: vec![AssistantContent::Text {
+                text: text.into(),
+                signature: None,
+            }],
             api: opi_ai::ApiKind::Anthropic,
             provider: "anthropic".into(),
             model: "claude-sonnet-4".into(),
@@ -157,7 +160,7 @@ fn llm_text(msg: &AgentMessage) -> Option<&str> {
             _ => None,
         }),
         AgentMessage::Llm(Message::Assistant(a)) => a.content.iter().find_map(|c| match c {
-            AssistantContent::Text { text } => Some(text.as_str()),
+            AssistantContent::Text { text, .. } => Some(text.as_str()),
             _ => None,
         }),
         _ => None,

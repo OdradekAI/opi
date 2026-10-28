@@ -199,6 +199,7 @@ fn compactable_resume_info(
     let mut assistant = opi_ai::test_support::base_assistant();
     assistant.content = vec![opi_ai::message::AssistantContent::Text {
         text: format!("{kept_assistant}{}", "r".repeat(80_000)),
+        signature: None,
     }];
     for (id, parent, message) in [
         (

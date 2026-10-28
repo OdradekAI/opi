@@ -21,6 +21,7 @@ fn message(stop: StopReason, error: Option<&str>) -> AssistantMessage {
     AssistantMessage {
         content: vec![AssistantContent::Text {
             text: "partial".into(),
+            signature: None,
         }],
         api: ApiKind::Anthropic,
         provider: "anthropic".into(),
@@ -479,7 +480,8 @@ async fn cancelled_backoff_normalizes_to_aborted_preserving_partial_and_usage() 
     assert_eq!(
         result.content,
         vec![AssistantContent::Text {
-            text: "partial".into()
+            text: "partial".into(),
+            signature: None,
         }],
         "partial output is preserved"
     );

@@ -291,7 +291,10 @@ pub fn text_response(text: &str) -> Vec<AssistantStreamEvent> {
     let mut partial = base_assistant();
     partial
         .content
-        .push(crate::message::AssistantContent::Text { text: text.into() });
+        .push(crate::message::AssistantContent::Text {
+            text: text.into(),
+            signature: None,
+        });
     vec![
         AssistantStreamEvent::Start {
             partial: base_assistant(),
@@ -319,6 +322,7 @@ pub fn tool_call_response(
         name: tool_name.into(),
         arguments: arguments.into(),
         arguments_error: None,
+        signature: None,
     };
     let mut partial = base_assistant();
     partial
@@ -368,7 +372,7 @@ pub fn blocks_response(blocks: Vec<crate::message::AssistantContent>) -> Vec<Ass
     for (content_index, block) in blocks.iter().enumerate() {
         partial.content.push(block.clone());
         match block {
-            crate::message::AssistantContent::Text { text } => {
+            crate::message::AssistantContent::Text { text, .. } => {
                 events.push(AssistantStreamEvent::TextDelta {
                     content_index,
                     delta: text.clone(),

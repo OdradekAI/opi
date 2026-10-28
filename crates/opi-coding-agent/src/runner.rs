@@ -1116,6 +1116,7 @@ mod compact_tests {
                             arguments: serde_json::json!({"note": "argument ".repeat(i)})
                                 .to_string(),
                             arguments_error: None,
+                            signature: None,
                         },
                     },
                 ];

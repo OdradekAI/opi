@@ -37,6 +37,7 @@ fn request_with_truncated_tool_result() -> Request {
                             name: "tool".into(),
                             arguments: "{}".into(),
                             arguments_error: None,
+                            signature: None,
                         },
                     }],
                     api: opi_ai::ApiKind::Anthropic,

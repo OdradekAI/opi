@@ -590,7 +590,7 @@ fn render_markdown(
                 out.push_str("## Assistant\n\n");
                 for block in &a.content {
                     match block {
-                        AssistantContent::Text { text } => {
+                        AssistantContent::Text { text, .. } => {
                             out.push_str(&redact_export_text(text, options.redact));
                             out.push('\n');
                         }
@@ -701,7 +701,7 @@ fn render_json(
                 let mut content = Vec::new();
                 for block in &a.content {
                     match block {
-                        AssistantContent::Text { text } => {
+                        AssistantContent::Text { text, .. } => {
                             content.push(serde_json::json!({
                                 "type": "text",
                                 "text": redact_export_text(text, options.redact),

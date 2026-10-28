@@ -1651,6 +1651,55 @@ the turn's tool results **in the same user message**. The anthropic
 producer now runs under the explicit frozen `TelemetryContext`
 (P20-TELEMETRY).
 
+
+## Google Generative AI Native Options and Gemini 3 Wire Rules (task 20.40)
+
+The public direct adapter `gemini::GoogleGenerativeAiChatApi` registers
+through `Models::register_chat_api` (api id `google-generative-ai`) with
+typed `GoogleGenerativeAiOptions` — the pinned pi 1.3.0 native inventory:
+
+| Option | Wire effect |
+|---|---|
+| `tool_choice: auto/none/any` | Projects `toolConfig.functionCallingConfig.mode` (the Google wire has no named-tool mode); with tools present, `none`/`any` win over strict mode, `auto` yields to `VALIDATED` when a tool went strict |
+| `thinking.enabled: false` | Disabled config: budget-mode models send `thinkingBudget: 0`; level-mode models use the mapped off level when the thinking map provides one, else `0` |
+| `thinking.enabled: true` + `level` | `includeThoughts: true` + `thinkingLevel` (MINIMAL/LOW/MEDIUM/HIGH); a level wins over a simultaneous budget |
+| `thinking.enabled: true` + `budget_tokens` | `includeThoughts: true` + `thinkingBudget` with the source values untouched — `-1` is the dynamic default and `0` disables; neither is reinterpreted locally |
+| (omitted `thinking`) | Native omission sends no `thinkingConfig` at all |
+
+The neutral/simple entry maps only the tool choice; the neutral request
+intent keeps the pi `streamSimple` policy: clamped level, level-mode models
+(`gemini-3(.x)-pro/flash`, `gemini-4+`, the two `*-latest` aliases, Gemma 4)
+project `thinkingLevel`, budget-mode models use the 2.5 family tables
+(pro 128/2048/8192/32768, flash 128/2048/8192/24576, flash-lite
+512/2048/8192/24576; an explicit budget wins; other budget-mode models fall
+back to the dynamic `-1`) and an unresolvable level mapping fails typed
+before dispatch. Neutral explicit off sends the disabled config on
+reasoning models (the builtin catalog marks the 2.5 models reasoning).
+
+Tool declarations ride the original JSON Schema through
+`parametersJsonSchema` (never the legacy OpenAPI `parameters` projection);
+Gemini 3+ models project prefer/require strict via the shared constrained
+sampling engine and select `VALIDATED` function calling, while Gemini 2
+keeps the typed Require failure and silent Prefer downgrade. Gemini 3+ (and
+claude/gpt-oss behind Google APIs) tool calls and responses carry normalized
+ids (`[a-zA-Z0-9_-]`, 64 chars) on the wire; Gemini 2 keeps name-only
+function calls/responses.
+
+Thought signatures (base64, same-provider/same-model only) replay on text,
+thinking and functionCall parts; a signature-only empty part survives.
+Success tool results use the `output` response key, failures the `error`
+key with the text value, consecutive function responses share one user
+turn, and tool-result images nest inside `functionResponse.parts` on
+Gemini 3+ while earlier models get a separate `Tool result image:` user
+turn. Streaming captures the first non-empty `responseId`, thought parts
+(`thought: true`) stream as thinking blocks with per-block signature
+retention, unsigned or duplicate tool call ids regenerate locally as
+`name_N`, usage counts `input = prompt - cached`, `output = candidates +
+thoughts` with `reasoning = thoughts` (absent thoughts report zero), and
+unmapped finish reasons fail typed carrying the raw reason
+(`Provider stopped with: <raw>`). The Google producer runs under the
+explicit frozen `TelemetryContext` (P20-TELEMETRY).
+
 ## License
 
 MIT. See the packaged [LICENSE](LICENSE) and compression [NOTICE](NOTICE).

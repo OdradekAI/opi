@@ -65,7 +65,10 @@ fn assistant_msg(id: &str, parent: Option<&str>, text: &str) -> SessionEntry {
         parent_id: parent.map(str::to_owned),
         timestamp: TS.into(),
         message: Message::Assistant(AssistantMessage {
-            content: vec![AssistantContent::Text { text: text.into() }],
+            content: vec![AssistantContent::Text {
+                text: text.into(),
+                signature: None,
+            }],
             api: opi_ai::ApiKind::Anthropic,
             provider: "anthropic".into(),
             model: "claude-sonnet-4".into(),
@@ -99,7 +102,10 @@ fn assistant_with_thinking(
                     thinking: thinking.into(),
                     signature: None,
                 },
-                AssistantContent::Text { text: text.into() },
+                AssistantContent::Text {
+                    text: text.into(),
+                    signature: None,
+                },
             ],
             api: opi_ai::ApiKind::Anthropic,
             provider: "anthropic".into(),
@@ -136,6 +142,7 @@ fn assistant_with_tool_call(
                     name: tool.into(),
                     arguments: args.into(),
                     arguments_error: None,
+                    signature: None,
                 },
             }],
             api: opi_ai::ApiKind::Anthropic,

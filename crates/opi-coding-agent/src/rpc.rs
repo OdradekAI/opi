@@ -1427,6 +1427,7 @@ mod tests {
                                 0,
                                 opi_ai::message::AssistantContent::Text {
                                     text: "r".repeat(80_000),
+                                    signature: None,
                                 },
                             );
                         }

@@ -1703,6 +1703,7 @@ fn thinking_tool_text_stream(
         name: "read".into(),
         arguments: String::new(),
         arguments_error: None,
+        signature: None,
     };
     partial.content.push(AssistantContent::ToolCall {
         tool_call: tool_call.clone(),
@@ -1733,10 +1734,12 @@ fn thinking_tool_text_stream(
     // Later text updates carry the completed thinking and tool-argument snapshots.
     partial.content.push(AssistantContent::Text {
         text: String::new(),
+        signature: None,
     });
     for i in 1..=count {
         partial.content[4] = AssistantContent::Text {
             text: "text chunk ".repeat(i),
+            signature: None,
         };
         events.push(AssistantStreamEvent::TextDelta {
             content_index: 4,
@@ -2126,6 +2129,7 @@ async fn phase17_real_compaction_and_persist_events_are_redacted_on_ndjson() {
             let mut assistant = test_support::base_assistant();
             assistant.content = vec![opi_ai::message::AssistantContent::Text {
                 text: "r".repeat(80_000),
+                signature: None,
             }];
             for (id, parent, message) in [
                 (

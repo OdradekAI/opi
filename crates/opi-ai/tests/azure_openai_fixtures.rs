@@ -1525,6 +1525,7 @@ async fn azure_responses_replays_signed_reasoning_for_same_identity_turns() {
                     },
                     opi_ai::message::AssistantContent::Text {
                         text: "Earlier".into(),
+                        signature: None,
                     },
                 ],
                 Some(WireApi::AzureOpenAiResponses),
@@ -1586,6 +1587,7 @@ async fn azure_responses_foreign_identity_history_never_replays_reasoning() {
                     },
                     opi_ai::message::AssistantContent::Text {
                         text: "Earlier".into(),
+                        signature: None,
                     },
                 ],
                 Some(WireApi::OpenAiResponses),

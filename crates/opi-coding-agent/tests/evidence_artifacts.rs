@@ -162,7 +162,7 @@ async fn evidence_bundle_preserves_capture_and_artifact_integrity() {
         .filter_map(|m| match m {
             opi_agent::message::AgentMessage::Llm(opi_ai::message::Message::Assistant(a)) => {
                 Some(a.content.iter().filter_map(|c| match c {
-                    opi_ai::message::AssistantContent::Text { text } => Some(text.as_str()),
+                    opi_ai::message::AssistantContent::Text { text, .. } => Some(text.as_str()),
                     _ => None,
                 }))
             }

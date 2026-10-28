@@ -56,6 +56,10 @@ struct GenerateContentResponse {
     error: Option<GeminiError>,
     #[serde(rename = "usageMetadata")]
     usage_metadata: Option<UsageMetadata>,
+    /// Output-only response identity; the first non-empty value from the
+    /// stream is retained (task 20.40, pi `responseId ||= chunk.responseId`).
+    #[serde(default, rename = "responseId")]
+    response_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,6 +83,12 @@ struct Content {
 enum Part {
     Text {
         text: String,
+        /// `thought: true` marks thought summaries (task 20.40); the
+        /// signature alone never marks a part as thinking.
+        #[serde(default)]
+        thought: Option<bool>,
+        #[serde(default, rename = "thoughtSignature")]
+        thought_signature: Option<String>,
     },
     FunctionCall {
         #[serde(rename = "functionCall")]
@@ -91,6 +101,13 @@ struct FunctionCallPart {
     name: String,
     #[serde(default)]
     args: serde_json::Value,
+    /// Gemini 3+ models (and claude/gpt-oss behind Google APIs) may attach
+    /// explicit tool call ids; missing or duplicate ids are regenerated
+    /// locally (task 20.40, pi unsigned tool call handling).
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default, rename = "thoughtSignature")]
+    thought_signature: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,6 +121,10 @@ struct UsageMetadata {
     total_token_count: Option<u32>,
     #[serde(rename = "cachedContentTokenCount")]
     cached_content_token_count: Option<u32>,
+    /// Reasoning tokens: contained by `candidatesTokenCount + thoughtsTokenCount`
+    /// on the output side (pi usage mapping, task 20.40).
+    #[serde(default, rename = "thoughtsTokenCount")]
+    thoughts_token_count: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -127,12 +148,21 @@ pub(crate) enum ParsedEvent {
 
 #[derive(Debug, Clone)]
 pub(crate) enum GeminiEvent {
+    /// First non-empty response identity (recorded once per stream).
+    ResponseId { id: String },
     TextDelta {
         text: String,
+        signature: Option<String>,
+    },
+    ThinkingDelta {
+        text: String,
+        signature: Option<String>,
     },
     FunctionCall {
+        id: Option<String>,
         name: String,
         args: serde_json::Value,
+        signature: Option<String>,
     },
     Finish {
         reason: String,
@@ -164,15 +194,25 @@ impl ParsedEvent {
 
         let mut events = Vec::new();
 
-        // Check for usage/finish in this chunk
+        // First non-empty response identity wins (pi `responseId ||=`).
+        if let Some(id) = resp.response_id
+            && !id.is_empty()
+        {
+            events.push(ParsedEvent::Valid(GeminiEvent::ResponseId { id }));
+        }
+
+        // Usage follows the pi mapping: input = prompt - cached,
+        // output = candidates + thoughts, reasoning = thoughts.
         let usage = resp.usage_metadata.map(|u| {
+            let cached = u.cached_content_token_count.unwrap_or(0);
+            let thoughts = u.thoughts_token_count.unwrap_or(0);
             Usage::reported(
-                u.prompt_token_count.unwrap_or(0),
-                u.candidates_token_count.unwrap_or(0),
-                u.cached_content_token_count.unwrap_or(0),
+                u.prompt_token_count.unwrap_or(0).saturating_sub(cached),
+                u.candidates_token_count.unwrap_or(0) + thoughts,
+                cached,
                 0,
                 None, // cache_write_1h_tokens
-                None, // reasoning_tokens
+                Some(thoughts as u64),
             )
         });
 
@@ -184,46 +224,43 @@ impl ParsedEvent {
             if let Some(content) = &candidate.content
                 && let Some(parts) = &content.parts
             {
-                // Collect function calls
-                let mut has_function_calls = false;
+                // Parts keep wire order: text, thought summaries and
+                // function calls interleave as the model produced them.
                 for part in parts {
-                    if let Part::FunctionCall { function_call } = part {
-                        has_function_calls = true;
-                        events.push(ParsedEvent::Valid(GeminiEvent::FunctionCall {
-                            name: function_call.name.clone(),
-                            args: function_call.args.clone(),
-                        }));
+                    match part {
+                        Part::Text {
+                            text,
+                            thought,
+                            thought_signature,
+                        } => {
+                            // Empty strings carry no content; pi skips them
+                            // unless a signature rides the part.
+                            if text.is_empty() && thought_signature.is_none() {
+                                continue;
+                            }
+                            if *thought == Some(true) {
+                                events.push(ParsedEvent::Valid(GeminiEvent::ThinkingDelta {
+                                    text: text.clone(),
+                                    signature: thought_signature.clone(),
+                                }));
+                            } else {
+                                events.push(ParsedEvent::Valid(GeminiEvent::TextDelta {
+                                    text: text.clone(),
+                                    signature: thought_signature.clone(),
+                                }));
+                            }
+                        }
+                        Part::FunctionCall { function_call } => {
+                            events.push(ParsedEvent::Valid(GeminiEvent::FunctionCall {
+                                id: function_call.id.clone(),
+                                name: function_call.name.clone(),
+                                args: function_call.args.clone(),
+                                signature: function_call.thought_signature.clone(),
+                            }));
+                        }
                     }
                 }
 
-                if has_function_calls {
-                    // Emit Finish after all function calls if we have usage/finish reason
-                    if finish_reason.is_some() || usage.is_some() {
-                        events.push(ParsedEvent::Valid(GeminiEvent::Finish {
-                            reason: finish_reason.unwrap_or_else(|| "STOP".into()),
-                            usage,
-                        }));
-                    }
-                    return events;
-                }
-
-                // Check for text content
-                let texts: Vec<&str> = parts
-                    .iter()
-                    .filter_map(|p| match p {
-                        Part::Text { text } if !text.is_empty() => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .collect();
-
-                if !texts.is_empty() {
-                    let combined: String = texts.into_iter().collect();
-                    events.push(ParsedEvent::Valid(GeminiEvent::TextDelta {
-                        text: combined,
-                    }));
-                }
-
-                // Finish event
                 if let Some(ref reason) = finish_reason {
                     events.push(ParsedEvent::Valid(GeminiEvent::Finish {
                         reason: reason.clone(),
@@ -251,21 +288,24 @@ impl ParsedEvent {
 // Stateful event mapper: GeminiEvent -> AssistantStreamEvent
 // ---------------------------------------------------------------------------
 
-struct ToolCallState {
-    #[allow(dead_code)]
-    id: String,
-    #[allow(dead_code)]
-    name: String,
-    #[allow(dead_code)]
-    arguments: String,
+/// The block currently accumulating on the wire (pi alternates text and
+/// thinking blocks; signatures are retained per block).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CurrentBlock {
+    Text,
+    Thinking,
 }
 
 pub(crate) struct GeminiMapper {
     snapshot: crate::stream::ProducerSnapshot,
     partial: AssistantMessage,
     saw_done: bool,
-    text_started: bool,
-    tool_calls: Vec<ToolCallState>,
+    current_block: Option<CurrentBlock>,
+    /// Locally generated ids for unsigned or duplicate tool calls; ids are
+    /// unique per stream and derive from the tool name (pi
+    /// `name_${counter}` shape without wall-clock dependence).
+    id_counter: u64,
+    used_ids: std::collections::HashSet<String>,
 }
 
 impl GeminiMapper {
@@ -293,8 +333,67 @@ impl GeminiMapper {
             snapshot: crate::stream::ProducerSnapshot::default(),
             partial: empty_assistant_message(provider, wire, model),
             saw_done: false,
-            text_started: false,
-            tool_calls: Vec::new(),
+            current_block: None,
+            id_counter: 0,
+            used_ids: std::collections::HashSet::new(),
+        }
+    }
+
+    /// Start event on first content (exactly once per stream).
+    fn start_if_empty(&mut self, events: &mut Vec<Result<AssistantStreamEvent, ProviderError>>) {
+        if self.partial.content.is_empty() {
+            events.push(Ok(AssistantStreamEvent::Start {
+                partial: self.partial.clone(),
+            }));
+        }
+    }
+
+    /// Close the open text/thinking block, if any.
+    fn close_block(&mut self, events: &mut Vec<Result<AssistantStreamEvent, ProviderError>>) {
+        if let Some(kind) = self.current_block.take() {
+            let index = self.partial.content.len().saturating_sub(1);
+            match kind {
+                CurrentBlock::Text => {
+                    if let Some(AssistantContent::Text { text, .. }) = self.partial.content.last() {
+                        events.push(Ok(AssistantStreamEvent::TextEnd {
+                            content_index: index,
+                            content: text.clone(),
+                            partial: self.partial.clone(),
+                        }));
+                    }
+                }
+                CurrentBlock::Thinking => {
+                    if let Some(AssistantContent::Thinking { thinking, .. }) =
+                        self.partial.content.last()
+                    {
+                        events.push(Ok(AssistantStreamEvent::ThinkingEnd {
+                            content_index: index,
+                            content: thinking.clone(),
+                            partial: self.partial.clone(),
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    /// A tool call id that is unique on this stream: the provided id when
+    /// present and unused, otherwise a name-derived generated id.
+    fn resolve_tool_call_id(&mut self, provided: Option<String>, name: &str) -> String {
+        if let Some(id) = provided
+            && !id.is_empty()
+            && !self.used_ids.contains(&id)
+        {
+            self.used_ids.insert(id.clone());
+            return id;
+        }
+        loop {
+            self.id_counter += 1;
+            let candidate = format!("{name}_{}", self.id_counter);
+            if !self.used_ids.contains(&candidate) {
+                self.used_ids.insert(candidate.clone());
+                return candidate;
+            }
         }
     }
 
@@ -306,56 +405,91 @@ impl GeminiMapper {
             return Vec::new();
         }
         match event {
-            GeminiEvent::TextDelta { text } => {
+            GeminiEvent::ResponseId { id } => {
+                if self.partial.response_id.is_none() {
+                    self.partial.response_id = Some(id);
+                }
+                Vec::new()
+            }
+            GeminiEvent::TextDelta { text, signature } => {
                 let mut events = Vec::new();
-                if !self.text_started {
-                    self.text_started = true;
+                self.start_if_empty(&mut events);
+                if self.current_block != Some(CurrentBlock::Text) {
+                    self.close_block(&mut events);
                     self.partial.content.push(AssistantContent::Text {
                         text: String::new(),
+                        signature: None,
                     });
-                    events.push(Ok(AssistantStreamEvent::Start {
-                        partial: self.partial.clone(),
-                    }));
                     events.push(Ok(AssistantStreamEvent::TextStart {
-                        content_index: 0,
+                        content_index: self.partial.content.len() - 1,
                         partial: self.partial.clone(),
                     }));
+                    self.current_block = Some(CurrentBlock::Text);
                 }
-                if let Some(AssistantContent::Text { text: accumulated }) =
-                    self.partial.content.last_mut()
+                let index = self.partial.content.len() - 1;
+                if let Some(AssistantContent::Text {
+                    text: accumulated,
+                    signature: held,
+                }) = self.partial.content.last_mut()
                 {
                     accumulated.push_str(&text);
+                    // Signatures may ride only the first delta of a block;
+                    // keep the last non-empty one (pi retainThoughtSignature).
+                    if signature.as_deref().is_some_and(|s| !s.is_empty()) {
+                        *held = signature.clone();
+                    }
                 }
                 events.push(Ok(AssistantStreamEvent::TextDelta {
-                    content_index: 0,
+                    content_index: index,
                     delta: text,
                     partial: self.partial.clone(),
                 }));
                 events
             }
-            GeminiEvent::FunctionCall { name, args } => {
+            GeminiEvent::ThinkingDelta { text, signature } => {
                 let mut events = Vec::new();
-
-                // End any open text block
-                if self.text_started {
-                    self.text_started = false;
-                    if let Some(AssistantContent::Text { text }) = self.partial.content.last() {
-                        events.push(Ok(AssistantStreamEvent::TextEnd {
-                            content_index: 0,
-                            content: text.clone(),
-                            partial: self.partial.clone(),
-                        }));
-                    }
-                }
-
-                // If this is the first content, emit Start
-                if self.partial.content.is_empty() {
-                    events.push(Ok(AssistantStreamEvent::Start {
+                self.start_if_empty(&mut events);
+                if self.current_block != Some(CurrentBlock::Thinking) {
+                    self.close_block(&mut events);
+                    self.partial.content.push(AssistantContent::Thinking {
+                        thinking: String::new(),
+                        signature: None,
+                    });
+                    events.push(Ok(AssistantStreamEvent::ThinkingStart {
+                        content_index: self.partial.content.len() - 1,
                         partial: self.partial.clone(),
                     }));
+                    self.current_block = Some(CurrentBlock::Thinking);
                 }
+                let index = self.partial.content.len() - 1;
+                if let Some(AssistantContent::Thinking {
+                    thinking: accumulated,
+                    signature: held,
+                }) = self.partial.content.last_mut()
+                {
+                    accumulated.push_str(&text);
+                    if signature.as_deref().is_some_and(|s| !s.is_empty()) {
+                        *held = signature.clone();
+                    }
+                }
+                events.push(Ok(AssistantStreamEvent::ThinkingDelta {
+                    content_index: index,
+                    delta: text,
+                    partial: self.partial.clone(),
+                }));
+                events
+            }
+            GeminiEvent::FunctionCall {
+                id,
+                name,
+                args,
+                signature,
+            } => {
+                let mut events = Vec::new();
+                self.close_block(&mut events);
+                self.start_if_empty(&mut events);
 
-                let id = format!("fc_{}", self.tool_calls.len());
+                let id = self.resolve_tool_call_id(id, &name);
                 let args_str = serde_json::to_string(&args).unwrap_or_default();
                 let content_index = self.partial.content.len();
 
@@ -365,13 +499,8 @@ impl GeminiMapper {
                         name: name.clone(),
                         arguments: args_str.clone(),
                         arguments_error: None,
+                        signature: signature.clone(),
                     },
-                });
-
-                self.tool_calls.push(ToolCallState {
-                    id: id.clone(),
-                    name: name.clone(),
-                    arguments: args_str.clone(),
                 });
 
                 events.push(Ok(AssistantStreamEvent::ToolCallStart {
@@ -385,6 +514,7 @@ impl GeminiMapper {
                         name,
                         arguments: args_str,
                         arguments_error: None,
+                        signature,
                     },
                     partial: self.partial.clone(),
                 }));
@@ -392,25 +522,8 @@ impl GeminiMapper {
             }
             GeminiEvent::Finish { reason, usage } => {
                 let mut events = Vec::new();
-
-                // End any open text block
-                if self.text_started {
-                    self.text_started = false;
-                    if let Some(AssistantContent::Text { text }) = self.partial.content.last() {
-                        events.push(Ok(AssistantStreamEvent::TextEnd {
-                            content_index: 0,
-                            content: text.clone(),
-                            partial: self.partial.clone(),
-                        }));
-                    }
-                }
-
-                // If no content at all, emit Start
-                if !self.saw_done && self.partial.content.is_empty() {
-                    events.push(Ok(AssistantStreamEvent::Start {
-                        partial: self.partial.clone(),
-                    }));
-                }
+                self.close_block(&mut events);
+                self.start_if_empty(&mut events);
 
                 if let Some(u) = usage {
                     self.partial.usage = u;
@@ -431,7 +544,20 @@ impl GeminiMapper {
                         }
                     }
                     "MAX_TOKENS" => StopReason::Length,
-                    _ => StopReason::Stop,
+                    _ => {
+                        // Unmapped finish reasons are provider stops: the
+                        // raw reason rides the typed failure text (pi
+                        // `Provider stopped with: <raw>`).
+                        self.saw_done = true;
+                        let message = if reason.is_empty() {
+                            "Provider stopped with an unknown finish reason".to_owned()
+                        } else {
+                            format!("Provider stopped with: {reason}")
+                        };
+                        return vec![Err(self.failure(ProviderError::StreamError(
+                            ProviderErrorSummary::sanitized(message),
+                        )))];
+                    }
                 };
                 self.saw_done = true;
 
@@ -477,13 +603,281 @@ fn empty_assistant_message(
 }
 
 // ---------------------------------------------------------------------------
+// Google model capability helpers (task 20.40, pi google-shared.ts)
+// ---------------------------------------------------------------------------
+
+/// Major Gemini version of a model id (`gemini-3-pro`/`gemini-live-4` -> 3/4).
+fn google_major_version(model_id: &str) -> Option<u32> {
+    let id = model_id.to_ascii_lowercase();
+    let rest = id
+        .strip_prefix("gemini-live-")
+        .or_else(|| id.strip_prefix("gemini-"))?;
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
+}
+
+/// Models behind Google APIs that require explicit tool call ids in
+/// function calls/responses (pi `requiresToolCallId`).
+fn requires_tool_call_id(model_id: &str) -> bool {
+    let id = model_id.to_ascii_lowercase();
+    id.starts_with("claude-")
+        || id.starts_with("gpt-oss-")
+        || google_major_version(model_id).is_some_and(|major| major >= 3)
+}
+
+/// Normalize a tool call id for the Google wire: `[a-zA-Z0-9_-]` only,
+/// at most 64 chars (pi `normalizeToolCallId`).
+fn normalize_tool_call_id(id: &str) -> String {
+    id.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(64)
+        .collect()
+}
+
+/// Whether a model uses the discrete `thinkingLevel` control instead of
+/// `thinkingBudget` (pi `usesGoogleThinkingLevel`): Gemini 3 pro/flash with
+/// optional minor version, Gemini 4 and later, the two `*-latest` aliases
+/// and both Gemma 4 naming forms.
+fn uses_google_thinking_level(model_id: &str) -> bool {
+    let id = model_id.to_ascii_lowercase();
+    if id == "gemini-flash-latest" || id == "gemini-flash-lite-latest" {
+        return true;
+    }
+    if id.starts_with("gemma-4") || id.starts_with("gemma4") {
+        return true;
+    }
+    let Some(rest) = id.strip_prefix("gemini-") else {
+        return false;
+    };
+    // gemini-3, gemini-3.1 (pro/flash), gemini-4 .. gemini-99
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let Some(major) = digits.parse::<u32>().ok() else {
+        return false;
+    };
+    if major >= 4 {
+        return true;
+    }
+    if major == 3 {
+        // Skip an optional minor version segment before the pro/flash tag.
+        let after = &rest[digits.len()..];
+        let after = after
+            .strip_prefix('.')
+            .map(|tail| {
+                let skip: usize = tail.chars().take_while(char::is_ascii_digit).count();
+                &tail[skip..]
+            })
+            .unwrap_or(after);
+        return after.starts_with("-pro") || after.starts_with("-flash");
+    }
+    false
+}
+
+/// Gemini 3+ enforces required function parameters in validated
+/// tool-calling modes (pi `supportsGoogleStrictToolSampling`).
+fn supports_google_strict_tool_sampling(model_id: &str) -> bool {
+    google_major_version(model_id).is_some_and(|major| major >= 3)
+}
+
+/// Neutral level budget tables (pi `getGoogleBudget`): custom budgets win,
+/// then the model-family table, then the dynamic `-1`.
+fn google_budget_for(model_id: &str, pi_level: &str) -> i64 {
+    let id = model_id.to_ascii_lowercase();
+    if id.contains("2.5-pro") {
+        return match pi_level {
+            "minimal" => 128,
+            "low" => 2048,
+            "medium" => 8192,
+            _ => 32768,
+        };
+    }
+    if id.contains("2.5-flash-lite") {
+        return match pi_level {
+            "minimal" => 512,
+            "low" => 2048,
+            "medium" => 8192,
+            _ => 24576,
+        };
+    }
+    if id.contains("2.5-flash") {
+        return match pi_level {
+            "minimal" => 128,
+            "low" => 2048,
+            "medium" => 8192,
+            _ => 24576,
+        };
+    }
+    -1
+}
+
+/// Resolve a neutral thinking level through the model's map to the four
+/// pi levels (pi `resolveGoogleThinkingLevel`; typed failure on an
+/// unsupported or non-pi mapping).
+fn resolve_google_pi_level(
+    model: &ModelInfo,
+    level: crate::model_info::ThinkingLevel,
+) -> Result<String, crate::provider::ProviderError> {
+    let mapped = model
+        .thinking_level_map
+        .resolve(level)
+        .map_err(|error| {
+            crate::provider::ProviderError::Config(
+                crate::provider::ProviderErrorSummary::sanitized(format!(
+                    "unsupported Google thinking level mapping for gemini/{}: {}",
+                    model.id, error.level
+                )),
+            )
+        })?
+        .unwrap_or_else(|| format!("{level:?}").to_ascii_lowercase());
+    if GoogleApiThinkingLevel::from_pi_level(&mapped.to_ascii_lowercase()).is_some() {
+        Ok(mapped.to_ascii_lowercase())
+    } else {
+        Err(crate::provider::ProviderError::Config(
+            crate::provider::ProviderErrorSummary::sanitized(format!(
+                "unsupported Google thinking level mapping for gemini/{}: {level:?} -> {mapped}",
+                model.id
+            )),
+        ))
+    }
+}
+
+/// Thought signatures must be base64 (TYPE_BYTES); only same-provider and
+/// same-model signatures are usable (pi `resolveThoughtSignature`).
+fn valid_thought_signature(signature: Option<&str>) -> bool {
+    let Some(signature) = signature else {
+        return false;
+    };
+    if signature.is_empty() || signature.len() % 4 != 0 {
+        return false;
+    }
+    signature
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=')
+}
+
+// ---------------------------------------------------------------------------
 // GeminiProvider
 // ---------------------------------------------------------------------------
 
+/// Native tool-choice projection (task 20.40, pi `GoogleOptions.toolChoice`):
+/// the Google wire has no named-tool mode.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GoogleToolChoice {
+    Auto,
+    None_,
+    Any,
+}
+
+impl GoogleToolChoice {
+    fn wire_mode(&self) -> &'static str {
+        match self {
+            Self::Auto => "AUTO",
+            Self::None_ => "NONE",
+            Self::Any => "ANY",
+        }
+    }
+}
+
+/// Gemini 3 discrete thinking levels (pi `GoogleApiThinkingLevel`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GoogleApiThinkingLevel {
+    Minimal,
+    Low,
+    Medium,
+    High,
+}
+
+impl GoogleApiThinkingLevel {
+    fn wire_name(&self) -> &'static str {
+        match self {
+            Self::Minimal => "MINIMAL",
+            Self::Low => "LOW",
+            Self::Medium => "MEDIUM",
+            Self::High => "HIGH",
+        }
+    }
+
+    fn from_pi_level(value: &str) -> Option<Self> {
+        match value {
+            "minimal" => Some(Self::Minimal),
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            _ => None,
+        }
+    }
+}
+
+/// Native thinking intent (task 20.40, pi `GoogleOptions.thinking`):
+/// `budget_tokens` keeps the source semantics untouched — `-1` is the
+/// dynamic default and `0` disables; neither is reinterpreted locally.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GoogleThinkingConfig {
+    pub enabled: bool,
+    pub budget_tokens: Option<i64>,
+    pub level: Option<GoogleApiThinkingLevel>,
+}
+
+/// Typed native options for one direct/native dispatch (task 20.40, pi
+/// `GoogleOptions`). The neutral/simple entry maps only the tool choice;
+/// thinking keeps the neutral request intent (level policy + model tables).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GoogleGenerativeAiOptions {
+    pub tool_choice: Option<GoogleToolChoice>,
+    pub thinking: Option<GoogleThinkingConfig>,
+    simple: bool,
+}
+
+impl GoogleGenerativeAiOptions {
+    /// The neutral simple entry (task 20.40): only the neutral tool choice
+    /// maps (auto/none/any); the neutral request intent drives thinking.
+    pub fn from_simple(simple: &crate::models::SimpleOptions) -> Self {
+        Self::native(
+            None,
+            simple.tool_choice.map(|choice| match choice {
+                crate::models::SimpleToolChoice::Auto => GoogleToolChoice::Auto,
+                crate::models::SimpleToolChoice::None => GoogleToolChoice::None_,
+            }),
+        )
+        .marked_simple()
+    }
+
+    pub fn is_simple(&self) -> bool {
+        self.simple
+    }
+
+    /// Construct a native (non-simple) options value: `thinking: None`
+    /// keeps the neutral request intent on the wire.
+    pub fn native(
+        thinking: Option<GoogleThinkingConfig>,
+        tool_choice: Option<GoogleToolChoice>,
+    ) -> Self {
+        Self {
+            thinking,
+            tool_choice,
+            simple: false,
+        }
+    }
+
+    fn marked_simple(mut self) -> Self {
+        self.simple = true;
+        self
+    }
+}
+
+#[derive(Clone)]
 pub struct GeminiProvider {
     base_url: String,
     models: Vec<ModelInfo>,
     client: Arc<HttpClient>,
+    /// Typed native options for one direct/native dispatch (task 20.40);
+    /// `None` keeps the plain provider path.
+    native_options: Option<GoogleGenerativeAiOptions>,
 }
 
 /// Built-in Gemini model metadata without credentials or HTTP construction.
@@ -495,7 +889,8 @@ pub fn model_catalog() -> Vec<ModelInfo> {
             WireApi::GoogleGenerativeAi,
             ModelCapabilities::new(1_000_000, 65536)
                 .with_images(true)
-                .with_streaming(true),
+                .with_streaming(true)
+                .with_thinking(true),
         ),
         ModelInfo::new(
             "gemini-2.5-pro",
@@ -503,7 +898,8 @@ pub fn model_catalog() -> Vec<ModelInfo> {
             WireApi::GoogleGenerativeAi,
             ModelCapabilities::new(1_000_000, 65536)
                 .with_images(true)
-                .with_streaming(true),
+                .with_streaming(true)
+                .with_thinking(true),
         ),
         ModelInfo::new(
             "gemini-2.0-flash",
@@ -530,7 +926,28 @@ impl GeminiProvider {
             base_url,
             models,
             client,
+            native_options: None,
         }
+    }
+
+    /// Override the catalog records (task 20.40): direct adapters and tests
+    /// bind complete custom records; the builtin catalog stays untouched.
+    pub fn with_models(mut self, models: Vec<ModelInfo>) -> Self {
+        self.models = models;
+        self
+    }
+
+    /// Override the API base URL (task 20.40).
+    pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    /// Bind typed native options for the dispatches of this provider clone
+    /// (task 20.40); the plain constructor keeps `None`.
+    pub fn with_native_options(mut self, options: GoogleGenerativeAiOptions) -> Self {
+        self.native_options = Some(options);
+        self
     }
 
     /// Access the shared HTTP client.
@@ -640,12 +1057,55 @@ impl GeminiProvider {
                     }));
                 }
                 crate::message::Message::Assistant(a) => {
+                    // Signatures replay only for same-provider/same-model
+                    // history and only in valid base64 (task 20.40).
+                    let same_model = a.provider == "gemini" && a.model == model_id;
+                    let usable = |signature: &Option<String>| {
+                        (same_model && valid_thought_signature(signature.as_deref())).then(|| {
+                            serde_json::Value::String(signature.clone().unwrap_or_default())
+                        })
+                    };
+                    let include_id = requires_tool_call_id(model_id);
                     let parts: Vec<serde_json::Value> = a
                         .content
                         .iter()
                         .filter_map(|c| match c {
-                            AssistantContent::Text { text } => {
-                                Some(serde_json::json!({"text": text}))
+                            AssistantContent::Text { text, signature } => {
+                                // Empty text survives only when it carries a
+                                // usable signature (pi keeps signature-only
+                                // parts; dropping them breaks the chain).
+                                if text.trim().is_empty() && usable(signature).is_none() {
+                                    return None;
+                                }
+                                let mut part = serde_json::json!({"text": text});
+                                if let Some(value) = usable(signature) {
+                                    part["thoughtSignature"] = value;
+                                }
+                                Some(part)
+                            }
+                            AssistantContent::Thinking {
+                                thinking,
+                                signature,
+                            } => {
+                                if same_model {
+                                    if thinking.trim().is_empty() && usable(signature).is_none() {
+                                        return None;
+                                    }
+                                    let mut part =
+                                        serde_json::json!({"thought": true, "text": thinking});
+                                    if let Some(value) = usable(signature) {
+                                        part["thoughtSignature"] = value;
+                                    }
+                                    Some(part)
+                                } else {
+                                    // Cross-model thinking replays as plain
+                                    // text without tags; unusable signatures
+                                    // drop entirely.
+                                    if thinking.trim().is_empty() {
+                                        return None;
+                                    }
+                                    Some(serde_json::json!({"text": thinking}))
+                                }
                             }
                             AssistantContent::ToolCall { tool_call } => {
                                 // Convert to functionCall response part.
@@ -657,15 +1117,21 @@ impl GeminiProvider {
                                 let args: serde_json::Value =
                                     serde_json::from_str(&tool_call.arguments)
                                         .expect("replay projected only complete object arguments");
-                                Some(serde_json::json!({
-                                    "functionCall": {
-                                        "name": tool_call.name,
-                                        "args": args,
-                                    }
-                                }))
+                                let mut function_call = serde_json::json!({
+                                    "name": tool_call.name,
+                                    "args": args,
+                                });
+                                if include_id {
+                                    function_call["id"] =
+                                        serde_json::json!(normalize_tool_call_id(&tool_call.id));
+                                }
+                                let mut part = serde_json::json!({"functionCall": function_call});
+                                if let Some(value) = usable(&tool_call.signature) {
+                                    part["thoughtSignature"] = value;
+                                }
+                                Some(part)
                             }
-                            AssistantContent::Thinking { .. }
-                            | AssistantContent::RedactedThinking { .. } => None,
+                            AssistantContent::RedactedThinking { .. } => None,
                         })
                         .collect();
                     if !parts.is_empty() {
@@ -676,37 +1142,120 @@ impl GeminiProvider {
                     }
                 }
                 crate::message::Message::ToolResult(t) => {
-                    let response_text: String = t
+                    // Pi convertMessages: success responses use the
+                    // `output` key with the text value, failures the
+                    // `error` key; images nest inside functionResponse
+                    // parts on Gemini 3+, and ride a separate labeled user
+                    // turn below Gemini 3 (task 20.40).
+                    let texts: Vec<&str> = t
                         .content
                         .iter()
-                        .map(|c| match c {
-                            OutputContent::Text { text } => text.clone(),
-                            OutputContent::Image { media_type, .. } => {
-                                format!("[image: {}]", media_type.as_str())
-                            }
+                        .filter_map(|c| match c {
+                            OutputContent::Text { text } => Some(text.as_str()),
+                            OutputContent::Image { .. } => None,
                         })
                         .collect();
-                    let mut response = serde_json::json!({
-                        "content": response_text,
-                    });
-                    // The Gemini REST API documents an `error` key inside
-                    // functionResponse.response as the failure signal ("if the
-                    // function call failed to execute, the response can have an
-                    // 'error' key"). Emit it only on failure so the success body
-                    // stays byte-identical. Vertex inherits this via the shared adapter.
-                    if t.is_error {
-                        response["error"] = serde_json::Value::Bool(true);
-                    }
-                    contents.push(serde_json::json!({
-                        "role": "user",
-                        "parts": [{
-                            "functionResponse": {
-                                "name": t.tool_name,
-                                "id": t.tool_call_id,
-                                "response": response,
+                    let images: Vec<(&crate::message::ImageSource, &crate::message::MediaType)> = t
+                        .content
+                        .iter()
+                        .filter_map(|c| match c {
+                            OutputContent::Image { source, media_type } => {
+                                Some((source, media_type))
                             }
-                        }],
-                    }));
+                            OutputContent::Text { .. } => None,
+                        })
+                        .collect();
+                    let has_images = !images.is_empty();
+                    let value = if !texts.is_empty() {
+                        texts.join("\n")
+                    } else if has_images {
+                        "(see attached image)".to_owned()
+                    } else {
+                        String::new()
+                    };
+                    let mut function_response = serde_json::json!({
+                        "name": t.tool_name,
+                        "response": if t.is_error {
+                            serde_json::json!({"error": value})
+                        } else {
+                            serde_json::json!({"output": value})
+                        },
+                    });
+                    if requires_tool_call_id(model_id) {
+                        function_response["id"] =
+                            serde_json::json!(normalize_tool_call_id(&t.tool_call_id));
+                    }
+                    // Google REST image parts are camelCase on these new
+                    // task-20.40 paths (pi SDK serialization).
+                    let inline_images: Vec<serde_json::Value> = images
+                        .iter()
+                        .map(|(source, media_type)| match source {
+                            crate::message::ImageSource::Url { url } => serde_json::json!({
+                                "fileData": {"fileUri": url, "mimeType": media_type.as_str()}
+                            }),
+                            crate::message::ImageSource::Base64 { data } => serde_json::json!({
+                                "inlineData": {"mimeType": media_type.as_str(), "data": data}
+                            }),
+                            crate::message::ImageSource::Bytes { data } => serde_json::json!({
+                                "inlineData": {
+                                    "mimeType": media_type.as_str(),
+                                    "data": base64::Engine::encode(
+                                        &base64::engine::general_purpose::STANDARD,
+                                        data,
+                                    ),
+                                }
+                            }),
+                        })
+                        .collect();
+                    if has_images && supports_google_strict_tool_sampling(model_id) {
+                        // Multimodal function responses: Gemini 3+ nests the
+                        // image parts inside the functionResponse itself.
+                        function_response["parts"] =
+                            serde_json::Value::Array(inline_images.clone());
+                    }
+                    let part = serde_json::json!({"functionResponse": function_response});
+
+                    // Consecutive function responses share one user turn
+                    // (pi merges them into the last response turn).
+                    let merged = contents.last_mut().is_some_and(|last| {
+                        last.get("role") == Some(&serde_json::json!("user"))
+                            && last["parts"].as_array().is_some_and(|parts| {
+                                parts.iter().any(|p| p.get("functionResponse").is_some())
+                            })
+                    }) && {
+                        if let Some(parts) = contents
+                            .last_mut()
+                            .and_then(|last| last["parts"].as_array_mut())
+                        {
+                            parts.push(part.clone());
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                    if !merged {
+                        contents.push(serde_json::json!({
+                            "role": "user",
+                            "parts": [part],
+                        }));
+                    }
+
+                    // Below Gemini 3 the images cannot ride the response:
+                    // they follow as a separate labeled user turn.
+                    if has_images && !supports_google_strict_tool_sampling(model_id) {
+                        contents.push(serde_json::json!({
+                            "role": "user",
+                            "parts": [
+                                {"text": "Tool result image:"},
+                            ],
+                        }));
+                        if let Some(parts) = contents
+                            .last_mut()
+                            .and_then(|last| last["parts"].as_array_mut())
+                        {
+                            parts.extend(inline_images);
+                        }
+                    }
                 }
             }
         }
@@ -736,17 +1285,162 @@ impl GeminiProvider {
             body["generationConfig"] = gen_config;
         }
 
-        // Tools
+        // Tools (task 20.40): declarations ride the original JSON Schema via
+        // `parametersJsonSchema`; strict-capable models (Gemini 3+) project
+        // prefer/require strict and select VALIDATED function calling.
         if !current_tools.is_empty() {
+            use crate::constrained_sampling::{
+                NoRejectedKeywords, make_strict_json_schema, resolve_json_schema_strict_sampling,
+            };
+            let supports_strict = supports_google_strict_tool_sampling(model_id);
+            let mut any_strict = false;
+            let declarations: Vec<serde_json::Value> = current_tools
+                .iter()
+                .map(|tool| {
+                    let strict = resolve_json_schema_strict_sampling(
+                        tool,
+                        supports_strict,
+                        &NoRejectedKeywords,
+                    )
+                    .map_err(|error| {
+                        crate::provider::ProviderError::Config(
+                            crate::provider::ProviderErrorSummary::sanitized(error.detail()),
+                        )
+                    })?;
+                    let schema = if strict == Some(true) {
+                        any_strict = true;
+                        make_strict_json_schema(&tool.input_schema, &NoRejectedKeywords)
+                            .expect("resolve succeeded so the conversion succeeds")
+                    } else {
+                        tool.input_schema.clone()
+                    };
+                    Ok(serde_json::json!({
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parametersJsonSchema": schema,
+                    }))
+                })
+                .collect::<Result<Vec<_>, crate::provider::ProviderError>>()?;
             body["tools"] = serde_json::Value::Array(vec![serde_json::json!({
-                "functionDeclarations": current_tools.iter().map(|t| {
-                    serde_json::json!({
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.input_schema,
-                    })
-                }).collect::<Vec<_>>()
+                "functionDeclarations": declarations
             })]);
+
+            // Pi `resolveGoogleFunctionCallingMode`: explicit none/any win,
+            // then VALIDATED when any tool went strict, then an explicit
+            // auto; absent intent emits no toolConfig.
+            let mode = self
+                .native_options
+                .as_ref()
+                .and_then(|options| options.tool_choice.as_ref())
+                .map(|choice| choice.wire_mode());
+            let mode = match mode {
+                Some(mode @ ("NONE" | "ANY")) => Some(mode),
+                _ if any_strict => Some("VALIDATED"),
+                other => other,
+            };
+            if let Some(mode) = mode {
+                body["toolConfig"] = serde_json::json!({
+                    "functionCallingConfig": {"mode": mode}
+                });
+            }
+        }
+
+        // Thinking config (task 20.40): native options own the wire when
+        // bound; the neutral request intent drives the plain path.
+        let model_info = self.models.iter().find(|m| m.id == model_id);
+        let reasoning = model_info
+            .map(|m| m.capabilities.supports_thinking)
+            .unwrap_or(false);
+        // Native binding owns the thinking intent entirely: a bound native
+        // options value without `thinking` omits the config (pi native
+        // `buildParams` only reacts when `options.thinking` exists).
+        let native_bound = self
+            .native_options
+            .as_ref()
+            .is_some_and(|options| !options.is_simple());
+        let native_thinking = if native_bound {
+            self.native_options
+                .as_ref()
+                .and_then(|options| options.thinking.as_ref())
+        } else {
+            None
+        };
+        let thinking_config: Option<serde_json::Value> = if !reasoning {
+            None
+        } else if let Some(thinking) = native_thinking {
+            if thinking.enabled {
+                let mut config = serde_json::json!({"includeThoughts": true});
+                if let Some(level) = thinking.level.as_ref() {
+                    config["thinkingLevel"] = serde_json::json!(level.wire_name());
+                } else if let Some(budget) = thinking.budget_tokens {
+                    config["thinkingBudget"] = serde_json::json!(budget);
+                }
+                Some(config)
+            } else if uses_google_thinking_level(model_id) {
+                // Level-mode models disable via the mapped off level when
+                // the map provides one, else budget zero (pi
+                // getDisabledGoogleThinkingConfig).
+                let off_level = model_info.and_then(|model| {
+                    model
+                        .thinking_level_map
+                        .resolve(crate::model_info::ThinkingLevel::None)
+                        .ok()
+                        .flatten()
+                });
+                match off_level
+                    .as_deref()
+                    .and_then(GoogleApiThinkingLevel::from_pi_level)
+                {
+                    Some(level) => Some(serde_json::json!({"thinkingLevel": level.wire_name()})),
+                    None => Some(serde_json::json!({"thinkingBudget": 0})),
+                }
+            } else {
+                Some(serde_json::json!({"thinkingBudget": 0}))
+            }
+        } else if native_bound {
+            // Native binding without a thinking intent: no config.
+            None
+        } else if request.thinking.enabled {
+            let model = model_info.expect("reasoning models resolve a record");
+            let pi_level = resolve_google_pi_level(model, request.thinking.level)?;
+            let mut config = serde_json::json!({"includeThoughts": true});
+            if uses_google_thinking_level(model_id) {
+                let level = GoogleApiThinkingLevel::from_pi_level(&pi_level)
+                    .expect("resolve validated one of the four pi levels");
+                config["thinkingLevel"] = serde_json::json!(level.wire_name());
+            } else {
+                let budget = request
+                    .thinking
+                    .budget_tokens
+                    .map(|budget| budget as i64)
+                    .unwrap_or_else(|| google_budget_for(model_id, &pi_level));
+                config["thinkingBudget"] = serde_json::json!(budget);
+            }
+            Some(config)
+        } else {
+            // Neutral explicit off (pi streamSimple always sends the
+            // disabled config on reasoning models).
+            if uses_google_thinking_level(model_id) {
+                let off_level = model_info.and_then(|model| {
+                    model
+                        .thinking_level_map
+                        .resolve(crate::model_info::ThinkingLevel::None)
+                        .ok()
+                        .flatten()
+                });
+                match off_level
+                    .as_deref()
+                    .and_then(GoogleApiThinkingLevel::from_pi_level)
+                {
+                    Some(level) => Some(serde_json::json!({"thinkingLevel": level.wire_name()})),
+                    None => Some(serde_json::json!({"thinkingBudget": 0})),
+                }
+            } else {
+                Some(serde_json::json!({"thinkingBudget": 0}))
+            }
+        };
+        if let Some(config) = thinking_config {
+            body["thinkingConfig"] = config;
         }
 
         Ok(body)
@@ -1026,9 +1720,13 @@ impl Provider for GeminiProvider {
         let producer_snapshot = snapshot.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let producer_cancel = cancel.clone();
+        // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
+        // task runs under the captured parent/Dispatch when provided;
+        // omission observes nothing.
+        let telemetry = request.telemetry_context.clone();
 
         let tx_closed = tx.clone();
-        tokio::spawn(async move {
+        let producer = async move {
             let run = async {
                 let result = async {
                     let body = callbacks
@@ -1063,7 +1761,12 @@ impl Provider for GeminiProvider {
                 _ = tx_closed.closed() => (),
                 _ = run => (),
             }
-        });
+        };
+        if let Some(context) = telemetry {
+            tokio::spawn(context.instrument(producer));
+        } else {
+            tokio::spawn(producer);
+        }
 
         Box::pin(CancelAwareReceiverStream::with_snapshot(
             rx, cancel, snapshot,
@@ -1076,5 +1779,159 @@ impl Provider for GeminiProvider {
 
     fn models(&self) -> &[ModelInfo] {
         &self.models
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public direct adapter (task 20.40)
+// ---------------------------------------------------------------------------
+
+/// The `google-generative-ai` direct Chat adapter (task 20.40, DEL-11).
+///
+/// Binds one complete Chat model record and serves the typed native
+/// [`GoogleGenerativeAiOptions`] inventory through the four `Models`
+/// entries (`register_chat_api` / native complete-stream / neutral simple
+/// complete-stream).
+pub struct GoogleGenerativeAiChatApi {
+    api_id: crate::models::ApiId,
+    provider: Arc<GeminiProvider>,
+    model: ModelInfo,
+}
+
+impl std::fmt::Debug for GoogleGenerativeAiChatApi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GoogleGenerativeAiChatApi")
+            .field("api_id", &self.api_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl GoogleGenerativeAiChatApi {
+    /// Bind a complete Chat record. Wrong-wire or invalid records fail
+    /// before authentication or network activity.
+    pub fn new(
+        provider: Arc<GeminiProvider>,
+        model: ModelInfo,
+    ) -> Result<Self, crate::provider::ProviderError> {
+        validate_complete_google_record(&model)?;
+        Ok(Self {
+            api_id: crate::models::ApiId::new("google-generative-ai"),
+            provider,
+            model,
+        })
+    }
+
+    fn configured(&self, model: ModelInfo, options: GoogleGenerativeAiOptions) -> GeminiProvider {
+        let mut provider = (*self.provider).clone();
+        provider.models = vec![model];
+        provider.native_options = Some(options);
+        provider
+    }
+}
+
+/// One complete, wire-valid Chat model record or a typed failure.
+fn validate_complete_google_record(
+    model: &ModelInfo,
+) -> Result<(), crate::provider::ProviderError> {
+    if model.wire_api != crate::model_info::WireApi::GoogleGenerativeAi
+        || model.id.trim().is_empty()
+        || model.validate().is_err()
+    {
+        return Err(crate::provider::ProviderError::Config(
+            crate::provider::ProviderErrorSummary::attested_static(
+                "google-generative-ai adapters require a valid complete Chat model record",
+            ),
+        ));
+    }
+    Ok(())
+}
+
+impl crate::models::ChatApi<GoogleGenerativeAiOptions> for GoogleGenerativeAiChatApi {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), crate::provider::ProviderError> {
+        validate_complete_google_record(model)
+    }
+
+    fn api_id(&self) -> &crate::models::ApiId {
+        &self.api_id
+    }
+
+    fn provider_id(&self) -> &str {
+        "gemini"
+    }
+
+    fn complete_record(&self) -> ModelInfo {
+        self.model.clone()
+    }
+
+    fn simple_options(&self) -> GoogleGenerativeAiOptions {
+        GoogleGenerativeAiOptions::from_simple(&crate::models::SimpleOptions::default())
+    }
+
+    fn simple_options_for(
+        &self,
+        options: &crate::models::SimpleOptions,
+    ) -> GoogleGenerativeAiOptions {
+        GoogleGenerativeAiOptions::from_simple(options)
+    }
+
+    fn session_resources(&self) -> Option<&dyn crate::codex_resources::SessionResourceOwner> {
+        None
+    }
+
+    fn validate_native_request(
+        &self,
+        model: &ModelInfo,
+        request: &Request,
+        _options: &GoogleGenerativeAiOptions,
+    ) -> Result<(), crate::provider::ProviderError> {
+        validate_complete_google_record(model)?;
+        crate::provider::validate_request_for_model(self.provider_id(), Some(model), request)
+    }
+
+    fn stream_prepared(
+        &self,
+        request: Request,
+        options: GoogleGenerativeAiOptions,
+        auth: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        self.stream_model_resource_prepared(self.model.clone(), request, options, auth, None)
+    }
+
+    fn stream_resource_prepared(
+        &self,
+        request: Request,
+        options: GoogleGenerativeAiOptions,
+        auth: crate::auth::ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.stream_model_resource_prepared(self.model.clone(), request, options, auth, resources)
+    }
+
+    fn stream_model_resource_prepared(
+        &self,
+        model: ModelInfo,
+        mut request: Request,
+        options: GoogleGenerativeAiOptions,
+        auth: crate::auth::ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        if let Err(error) = self.validate_native_request(&model, &request, &options) {
+            return Box::pin(futures_util::stream::once(async move { Err(error) }));
+        }
+        if !options.is_simple() {
+            // Native thinking owns the wire projection; the neutral fields
+            // are unused on this path (the simple entry clamps at
+            // `Models::stream_simple` before dispatch).
+            request.thinking = Default::default();
+        }
+        let provider = self.configured(model, options);
+        // The Google wire holds no pooled session resources today; a
+        // resource lease still dispatches through the ordinary producer.
+        let _ = resources;
+        provider.stream_prepared(request, auth)
     }
 }

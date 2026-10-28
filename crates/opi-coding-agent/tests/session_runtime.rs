@@ -677,6 +677,7 @@ fn historical_tool_pair(
             name: "write".into(),
             arguments,
             arguments_error: None,
+            signature: None,
         },
     });
     [
@@ -1042,6 +1043,7 @@ async fn session_restore_recompiles_unicode_declaration_for_authorized_next_call
             name: declaration.name.clone(),
             arguments: historical_raw.clone(),
             arguments_error: None,
+            signature: None,
         },
     });
     let messages = vec![
@@ -1250,6 +1252,7 @@ fn session_coordinator_redacts_assistant_tool_call_arguments() {
             arguments:
                 r#"{"command":"echo OPI_SESSION_TOOL_ARGS_SECRET_CANARY","cwd":"C:\\Users\\private"}"#
                     .into(),
+                    signature: None,
                     arguments_error: None,},
     });
 
@@ -1710,7 +1713,10 @@ fn compaction_shrinks_buffer_and_returns_summary_plus_kept() {
     };
     let assistant = |t: &str| {
         let mut a = test_support::base_assistant();
-        a.content.push(AssistantContent::Text { text: t.into() });
+        a.content.push(AssistantContent::Text {
+            text: t.into(),
+            signature: None,
+        });
         AgentMessage::Llm(Message::Assistant(a))
     };
 
@@ -1859,6 +1865,7 @@ async fn harness_unprefixed_embedded_pricing_survives_switch_resume_and_fork() {
     let mut assistant = test_support::base_assistant();
     assistant.content.push(AssistantContent::Text {
         text: "priced".into(),
+        signature: None,
     });
     assistant.usage = Usage::reported(1_000_000, 1_000_000, 0, 0, None, None);
     let response = vec![
@@ -2469,6 +2476,7 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
         name: "noop".into(),
         arguments: "{}".into(),
         arguments_error: None,
+        signature: None,
     };
     let mut tool_partial = test_support::base_assistant();
     tool_partial.content.push(AssistantContent::ToolCall {
@@ -2494,6 +2502,7 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
     let mut final_partial = test_support::base_assistant();
     final_partial.content.push(AssistantContent::Text {
         text: "done".into(),
+        signature: None,
     });
     final_partial.usage = Usage::reported(200, 50, 0, 0, None, None);
     let final_response = vec![
@@ -3129,9 +3138,10 @@ fn open_existing_replays_usage_from_assistant_messages() {
 
     // Write two assistant messages with usage.
     let mut asst1 = test_support::base_assistant();
-    asst1
-        .content
-        .push(AssistantContent::Text { text: "hi".into() });
+    asst1.content.push(AssistantContent::Text {
+        text: "hi".into(),
+        signature: None,
+    });
     asst1.usage = Usage::reported(100, 50, 10, 5, None, None);
     writer
         .append(&SessionEntry::Message(MessageEntry {
@@ -3145,6 +3155,7 @@ fn open_existing_replays_usage_from_assistant_messages() {
     let mut asst2 = test_support::base_assistant();
     asst2.content.push(AssistantContent::Text {
         text: "world".into(),
+        signature: None,
     });
     asst2.usage = Usage::reported(200, 80, 20, 10, None, None);
     writer
@@ -3232,6 +3243,7 @@ fn phase14_usage_subsets_survive_session_resume() {
     let mut assistant = test_support::base_assistant();
     assistant.content.push(AssistantContent::Text {
         text: "persisted".into(),
+        signature: None,
     });
     assistant.usage = usage.clone();
     let messages = vec![
@@ -3410,6 +3422,7 @@ fn open_existing_treats_legacy_nonzero_usage_as_reported_for_cost_summary() {
     let mut assistant = test_support::base_assistant();
     assistant.content.push(AssistantContent::Text {
         text: "legacy".into(),
+        signature: None,
     });
     assistant.usage = Usage::reported(1_000_000, 500_000, 0, 0, None, None);
     let assistant_entry = SessionEntry::Message(MessageEntry {
@@ -3595,6 +3608,7 @@ impl Provider for CompleteThenHangProvider {
             let mut partial = test_support::base_assistant();
             partial.content.push(AssistantContent::Text {
                 text: "partial".into(),
+                signature: None,
             });
             Box::pin(
                 stream::iter([
@@ -3714,7 +3728,7 @@ async fn phase8_cancel_persists_only_finalized_state() {
             }
             Message::Assistant(a) => {
                 for c in &a.content {
-                    if let AssistantContent::Text { text } = c {
+                    if let AssistantContent::Text { text, .. } = c {
                         leaked_texts.push(text.clone());
                     }
                 }
@@ -4022,7 +4036,7 @@ async fn phase13_labels_and_session_name_do_not_enter_provider_context() {
                 }
                 Message::Assistant(a) => {
                     for c in &a.content {
-                        if let AssistantContent::Text { text } = c {
+                        if let AssistantContent::Text { text, .. } = c {
                             assert!(
                                 !text.contains("SECRET_LABEL_CANARY"),
                                 "label leaked via assistant content: {text}"
@@ -4755,7 +4769,7 @@ async fn phase17_compaction_replaces_provider_visible_context() {
                 }
                 Message::Assistant(a) => {
                     for c in &a.content {
-                        if let AssistantContent::Text { text } = c {
+                        if let AssistantContent::Text { text, .. } = c {
                             out.push_str(text);
                         }
                     }
@@ -4813,7 +4827,7 @@ async fn phase17_compaction_replaces_provider_visible_context() {
                 |c| matches!(c, opi_ai::message::InputContent::Text { text } if text.starts_with("superseded-marker-one please")),
             ),
             opi_ai::message::Message::Assistant(a) => a.content.iter().any(
-                |c| matches!(c, opi_ai::message::AssistantContent::Text { text } if text.starts_with("superseded-marker-one please")),
+                |c| matches!(c, opi_ai::message::AssistantContent::Text { text, .. } if text.starts_with("superseded-marker-one please")),
             ),
             _ => false,
         });

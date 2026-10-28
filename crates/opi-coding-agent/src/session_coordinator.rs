@@ -1381,6 +1381,7 @@ mod tests {
                 name: "write".into(),
                 arguments: "{".into(),
                 arguments_error: None,
+                signature: None,
             },
         });
         let context = vec![

@@ -182,7 +182,8 @@ const GEMINI: WireView = WireView {
     prompt: "/systemInstruction/parts/0/text",
     tools: "/tools/0/functionDeclarations",
     declaration: "",
-    schema: "/parameters",
+    // Task 20.40: the original JSON Schema rides parametersJsonSchema.
+    schema: "/parametersJsonSchema",
     strict: None,
 };
 

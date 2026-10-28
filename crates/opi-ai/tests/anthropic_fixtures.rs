@@ -200,7 +200,7 @@ fn text_fixture_done_event_has_full_content() {
             .content
             .iter()
             .filter_map(|c| match c {
-                AssistantContent::Text { text } => Some(text.as_str()),
+                AssistantContent::Text { text, .. } => Some(text.as_str()),
                 _ => None,
             })
             .collect();
@@ -902,7 +902,7 @@ fn thinking_fixture_done_has_both_thinking_and_text() {
         }
 
         // Second content block is text
-        if let AssistantContent::Text { text } = &message.content[1] {
+        if let AssistantContent::Text { text, .. } = &message.content[1] {
             assert_eq!(text, "The answer is 42.");
         } else {
             panic!("expected Text content at index 1");
@@ -3641,6 +3641,7 @@ fn error_tool_result_images_follow_all_results_in_one_user_message() {
                         name: "probe".into(),
                         arguments: "{}".into(),
                         arguments_error: None,
+                        signature: None,
                     },
                 },
                 opi_ai::message::AssistantContent::ToolCall {
@@ -3649,6 +3650,7 @@ fn error_tool_result_images_follow_all_results_in_one_user_message() {
                         name: "broken".into(),
                         arguments: "{}".into(),
                         arguments_error: None,
+                        signature: None,
                     },
                 },
             ],
@@ -3769,6 +3771,7 @@ fn consecutive_success_tool_results_group_into_one_user_message() {
                         name: "probe".into(),
                         arguments: "{}".into(),
                         arguments_error: None,
+                        signature: None,
                     },
                 },
                 opi_ai::message::AssistantContent::ToolCall {
@@ -3777,6 +3780,7 @@ fn consecutive_success_tool_results_group_into_one_user_message() {
                         name: "probe".into(),
                         arguments: "{}".into(),
                         arguments_error: None,
+                        signature: None,
                     },
                 },
             ],

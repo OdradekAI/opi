@@ -235,7 +235,7 @@ fn extract_text(msg: &AgentMessage) -> String {
             .content
             .iter()
             .filter_map(|c| match c {
-                opi_ai::message::AssistantContent::Text { text } => Some(text.clone()),
+                opi_ai::message::AssistantContent::Text { text, .. } => Some(text.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>()

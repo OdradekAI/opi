@@ -19,6 +19,7 @@ fn sample_assistant_message() -> AssistantMessage {
     AssistantMessage {
         content: vec![AssistantContent::Text {
             text: "hello".into(),
+            signature: None,
         }],
         api: opi_ai::ApiKind::Anthropic,
         provider: "anthropic".into(),

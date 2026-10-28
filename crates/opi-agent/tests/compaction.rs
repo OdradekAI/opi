@@ -33,7 +33,10 @@ fn assistant_text(id: &str, text: &str) -> Entry {
     Entry {
         id: id.into(),
         message: AgentMessage::Llm(Message::Assistant(AssistantMessage {
-            content: vec![AssistantContent::Text { text: text.into() }],
+            content: vec![AssistantContent::Text {
+                text: text.into(),
+                signature: None,
+            }],
             api: opi_ai::ApiKind::Anthropic,
             provider: "mock".into(),
             model: "mock-model".into(),

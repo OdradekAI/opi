@@ -579,9 +579,10 @@ fn base_msg() -> AssistantMessage {
 
 fn text_response(text: &str) -> Vec<AssistantStreamEvent> {
     let mut partial = base_msg();
-    partial
-        .content
-        .push(AssistantContent::Text { text: text.into() });
+    partial.content.push(AssistantContent::Text {
+        text: text.into(),
+        signature: None,
+    });
     vec![
         AssistantStreamEvent::Start {
             partial: base_msg(),
@@ -604,6 +605,7 @@ fn tool_call_response(call_id: &str, name: &str, args: &str) -> Vec<AssistantStr
         name: name.to_string(),
         arguments: args.to_string(),
         arguments_error: None,
+        signature: None,
     };
     let mut partial = base_msg();
     partial.content.push(AssistantContent::ToolCall {
@@ -1532,6 +1534,7 @@ fn length_response(arguments: &[&str]) -> Vec<AssistantStreamEvent> {
                 name: "length_probe".into(),
                 arguments: (*arguments).into(),
                 arguments_error: None,
+                signature: None,
             },
         })
         .collect();
@@ -1584,6 +1587,7 @@ async fn check_arguments_error_rejection(mode: ExecutionMode) {
             name: "length_probe".into(),
             arguments: raw.into(),
             arguments_error: Some(marker.into()),
+            signature: None,
         },
     });
     let provider = ScriptedProvider::new(vec![

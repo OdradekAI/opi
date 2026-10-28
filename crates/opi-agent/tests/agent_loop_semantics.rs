@@ -377,9 +377,10 @@ fn base_msg() -> AssistantMessage {
 
 fn text_response(text: &str) -> Vec<AssistantStreamEvent> {
     let mut partial = base_msg();
-    partial
-        .content
-        .push(AssistantContent::Text { text: text.into() });
+    partial.content.push(AssistantContent::Text {
+        text: text.into(),
+        signature: None,
+    });
     vec![
         AssistantStreamEvent::Start {
             partial: base_msg(),
@@ -404,6 +405,7 @@ fn multi_tool_call_response(calls: Vec<(&str, &str, &str)>) -> Vec<AssistantStre
             name: name.to_string(),
             arguments: args.to_string(),
             arguments_error: None,
+            signature: None,
         };
         partial
             .content
@@ -420,6 +422,7 @@ fn multi_tool_call_response(calls: Vec<(&str, &str, &str)>) -> Vec<AssistantStre
             name: name.to_string(),
             arguments: args.to_string(),
             arguments_error: None,
+            signature: None,
         };
         events.push(AssistantStreamEvent::ToolCallEnd {
             content_index: 0,
@@ -1767,6 +1770,7 @@ impl Provider for HangingStreamProvider {
         let mut partial = base_msg();
         partial.content.push(AssistantContent::Text {
             text: "partial".into(),
+            signature: None,
         });
         let events: Vec<Result<AssistantStreamEvent, ProviderError>> = vec![
             Ok(AssistantStreamEvent::Start {

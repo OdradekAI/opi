@@ -732,6 +732,7 @@ fn assistant_call(id: &str, name: &str) -> Message {
                 name: name.into(),
                 arguments: "{}".into(),
                 arguments_error: None,
+                signature: None,
             },
         }],
         api: opi_ai::ApiKind::Anthropic,

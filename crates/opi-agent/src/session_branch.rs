@@ -315,7 +315,7 @@ fn extract_message_summary(message: &opi_ai::message::Message) -> Option<String>
             _ => None,
         }),
         Message::Assistant(a) => a.content.iter().find_map(|c| match c {
-            AssistantContent::Text { text } => {
+            AssistantContent::Text { text, .. } => {
                 let summary = if text.len() > 80 {
                     format!("{}...", &text[..text.floor_char_boundary(80)])
                 } else {

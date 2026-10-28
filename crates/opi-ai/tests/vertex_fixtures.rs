@@ -493,9 +493,12 @@ async fn stream_drains_text_lifecycle_through_http() {
             // Gemini `STOP` finish reason must map to the shared StopReason::Stop.
             assert_eq!(*reason, opi_ai::stream::StopReason::Stop);
             assert_eq!(message.provider, "vertex");
+            // Task 20.40: absent thoughtsTokenCount reports zero
+            // reasoning (pi `thoughtsTokenCount || 0`), inherited via the
+            // shared Gemini stream compiler.
             assert_eq!(
                 message.usage,
-                opi_ai::stream::Usage::reported(42, 13, 0, 0, None, None)
+                opi_ai::stream::Usage::reported(42, 13, 0, 0, None, Some(0))
             );
         }
         other => panic!("expected Done, got {other:?}"),

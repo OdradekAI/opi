@@ -243,7 +243,7 @@ fn text_fixture_done_event_has_full_content() {
             .content
             .iter()
             .filter_map(|c| match c {
-                AssistantContent::Text { text } => Some(text.as_str()),
+                AssistantContent::Text { text, .. } => Some(text.as_str()),
                 _ => None,
             })
             .collect();
@@ -1873,6 +1873,7 @@ fn tool_loop_context(
                     name: "list_dir".into(),
                     arguments: "{}".into(),
                     arguments_error: None,
+                    signature: None,
                 },
             }],
             api: opi_ai::ApiKind::OpenAi,
@@ -2135,6 +2136,7 @@ fn chat_assistant_thinking_replay_uses_signature_reasoning_field() {
                     },
                     AssistantContent::Text {
                         text: "answer".into(),
+                        signature: None,
                     },
                 ],
                 api: opi_ai::ApiKind::OpenAi,
@@ -2243,6 +2245,7 @@ fn chat_deepseek_baseline_adds_empty_reasoning_content_on_assistant_messages() {
             Message::Assistant(AssistantMessage {
                 content: vec![AssistantContent::Text {
                     text: "answer".into(),
+                    signature: None,
                 }],
                 api: opi_ai::ApiKind::OpenAi,
                 provider: "deepseek".into(),
@@ -2296,6 +2299,7 @@ fn make_tool_result_request() -> Request {
                             name: "list_dir".into(),
                             arguments: "{}".into(),
                             arguments_error: None,
+                            signature: None,
                         },
                     }],
                     api: opi_ai::ApiKind::OpenAi,

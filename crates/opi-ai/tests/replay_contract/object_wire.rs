@@ -58,6 +58,7 @@ fn invalid_proposal(arguments: &str, marked: bool) -> AssistantContent {
             name: "invalid_read".into(),
             arguments: arguments.into(),
             arguments_error: marked.then(|| "private-parse-diagnostic-canary".into()),
+            signature: None,
         },
     }
 }
@@ -127,8 +128,12 @@ fn object_wire_consumers_sanitize_invalid_proposals_and_preserve_valid_pairs() {
                         "functionCall",
                         "functionResponse",
                         json!({"name": "read", "args": {"path": "a.rs"}}),
-                        json!({"id": "valid", "name": "read", "response": {
-                            "content": "real recorded result",
+                        // Task 20.40: success responses use the `output`
+                        // key with the text value; the `id` rides the
+                        // functionResponse only on id-requiring models
+                        // (gemini-2.5-flash here keeps name-only).
+                        json!({"name": "read", "response": {
+                            "output": "real recorded result",
                         }}),
                     ),
                     ObjectWire::Bedrock => (

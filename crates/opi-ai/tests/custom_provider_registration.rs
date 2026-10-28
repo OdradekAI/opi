@@ -523,7 +523,7 @@ fn assistant_text(message: &opi_ai::message::AssistantMessage) -> String {
         .content
         .iter()
         .filter_map(|content| match content {
-            AssistantContent::Text { text } => Some(text.clone()),
+            AssistantContent::Text { text, .. } => Some(text.clone()),
             _ => None,
         })
         .collect()

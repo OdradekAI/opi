@@ -221,6 +221,7 @@ async fn simple_preparation_counts_canonical_system_changes_after_the_usage_anch
             Message::Assistant(AssistantMessage {
                 content: vec![AssistantContent::Text {
                     text: "done".into(),
+                    signature: None,
                 }],
                 api: opi_ai::ApiKind::OpenAi,
                 provider: "openai".into(),

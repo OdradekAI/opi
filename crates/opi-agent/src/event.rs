@@ -356,8 +356,11 @@ fn redact_assistant_content(
     content: &opi_ai::message::AssistantContent,
 ) -> opi_ai::message::AssistantContent {
     match content {
-        opi_ai::message::AssistantContent::Text { text } => {
-            opi_ai::message::AssistantContent::Text { text: text.clone() }
+        opi_ai::message::AssistantContent::Text { text, .. } => {
+            opi_ai::message::AssistantContent::Text {
+                text: text.clone(),
+                signature: None,
+            }
         }
         // Provider continuation metadata is part of the assistant conversation
         // content and must remain byte-for-byte intact alongside its thinking.
@@ -378,6 +381,7 @@ fn redact_tool_call(tool_call: &opi_ai::message::ToolCall) -> opi_ai::message::T
         name: tool_call.name.clone(),
         arguments: redact_tool_arguments(&tool_call.arguments),
         arguments_error: tool_call.arguments_error.clone(),
+        signature: None,
     }
 }
 

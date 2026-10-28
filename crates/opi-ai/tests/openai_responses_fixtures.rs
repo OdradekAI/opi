@@ -912,7 +912,7 @@ async fn responses_multiple_text_deltas() {
                     .content
                     .iter()
                     .filter_map(|c| match c {
-                        opi_ai::message::AssistantContent::Text { text } => Some(text.as_str()),
+                        opi_ai::message::AssistantContent::Text { text, .. } => Some(text.as_str()),
                         _ => None,
                     })
                     .collect();
@@ -2570,6 +2570,7 @@ fn responses_encrypted_reasoning_replay_pushes_signed_items_back_into_input() {
                 },
                 opi_ai::message::AssistantContent::Text {
                     text: "Earlier answer".into(),
+                    signature: None,
                 },
             ],
             None,
@@ -2657,6 +2658,7 @@ async fn responses_mid_convo_effort_stamps_configuration_updates() {
         Message::Assistant(history_assistant_message(
             vec![opi_ai::message::AssistantContent::Text {
                 text: "Earlier".into(),
+                signature: None,
             }],
             Some("low".into()),
         )),

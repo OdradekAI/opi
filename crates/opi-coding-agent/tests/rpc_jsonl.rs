@@ -1370,6 +1370,7 @@ async fn phase13_rpc_session_metadata_shape() {
             message: Message::Assistant(AssistantMessage {
                 content: vec![AssistantContent::Text {
                     text: "trunk reply".into(),
+                    signature: None,
                 }],
                 api: opi_ai::ApiKind::Anthropic,
                 provider: "anthropic".into(),
@@ -1393,6 +1394,7 @@ async fn phase13_rpc_session_metadata_shape() {
             message: Message::Assistant(AssistantMessage {
                 content: vec![AssistantContent::Text {
                     text: KEY_CANARY.into(),
+                    signature: None,
                 }],
                 api: opi_ai::ApiKind::Anthropic,
                 provider: "anthropic".into(),
@@ -1986,6 +1988,7 @@ impl Provider for ControlledEmitCleanupProvider {
                             .content
                             .push(opi_ai::message::AssistantContent::Text {
                                 text: "after drop".into(),
+                                signature: None,
                             });
                         Some((
                             Ok(AssistantStreamEvent::TextDelta {
@@ -2075,6 +2078,7 @@ impl Provider for HeldRequestProvider {
                                 let mut message = base_assistant();
                                 message.content.push(opi_ai::message::AssistantContent::Text {
                                     text: "released".into(),
+                                    signature: None,
                                 });
                                 Some((Ok(AssistantStreamEvent::Done {
                                     reason: StopReason::Stop,
@@ -2279,6 +2283,7 @@ impl Provider for ControlledProvider {
                                 let mut partial = base_assistant();
                                 partial.content.push(opi_ai::message::AssistantContent::Text {
                                     text: "partial".into(),
+                                    signature: None,
                                 });
                                 Some((Ok(AssistantStreamEvent::TextDelta {
                                     content_index: 0,
@@ -2295,6 +2300,7 @@ impl Provider for ControlledProvider {
                                 let mut message = base_assistant();
                                 message.content.push(opi_ai::message::AssistantContent::Text {
                                     text: "partial".into(),
+                                    signature: None,
                                 });
                                 Some((Ok(AssistantStreamEvent::Done {
                                     reason: StopReason::Stop,
@@ -2387,6 +2393,7 @@ impl Provider for SecondTurnGatedDeltaProvider {
                                 .content
                                 .push(opi_ai::message::AssistantContent::Text {
                                     text: "partial".into(),
+                                    signature: None,
                                 });
                             Some((
                                 Ok(AssistantStreamEvent::TextDelta {
@@ -2408,6 +2415,7 @@ impl Provider for SecondTurnGatedDeltaProvider {
                             .content
                             .push(opi_ai::message::AssistantContent::Text {
                                 text: "partial".into(),
+                                signature: None,
                             });
                         Some((
                             Ok(AssistantStreamEvent::Done {

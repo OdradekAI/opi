@@ -5349,6 +5349,7 @@ mod request_compaction_tests {
                     0,
                     opi_ai::message::AssistantContent::Text {
                         text: format!("RETAIN_RECENT {}", "r".repeat(80_000)),
+                        signature: None,
                     },
                 );
             }
@@ -6247,6 +6248,7 @@ mod permission_boundary_tests {
             AgentMessage::Llm(Message::Assistant(message))
                 if message.content == vec![opi_ai::message::AssistantContent::Text {
                     text: "prepared response".into(),
+                    signature: None,
                 }]
         ));
         assert_eq!(state.inference.max_tokens, Some(17));

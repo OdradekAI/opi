@@ -142,7 +142,7 @@ impl SubAgentExtension {
                         .content
                         .iter()
                         .filter_map(|c| match c {
-                            AssistantContent::Text { text } => Some(text.clone()),
+                            AssistantContent::Text { text, .. } => Some(text.clone()),
                             _ => None,
                         })
                         .collect();

@@ -1182,6 +1182,7 @@ impl BedrockMapper {
                         });
                         self.partial.content.push(AssistantContent::Text {
                             text: String::new(),
+                            signature: None,
                         });
                         vec![Ok(AssistantStreamEvent::TextStart {
                             content_index,
@@ -1200,6 +1201,7 @@ impl BedrockMapper {
                                 name,
                                 arguments: String::new(),
                                 arguments_error: None,
+                                signature: None,
                             },
                         });
                         vec![Ok(AssistantStreamEvent::ToolCallStart {
@@ -1216,7 +1218,7 @@ impl BedrockMapper {
                         if let Some(BlockState::Text { text: acc }) = self.blocks.last_mut() {
                             acc.push_str(&text);
                         }
-                        if let Some(AssistantContent::Text { text: acc }) =
+                        if let Some(AssistantContent::Text { text: acc, .. }) =
                             self.partial.content.last_mut()
                         {
                             acc.push_str(&text);
@@ -1273,6 +1275,7 @@ impl BedrockMapper {
                             name: name.clone(),
                             arguments: arguments.clone(),
                             arguments_error,
+                            signature: None,
                         };
                         if let Some(AssistantContent::ToolCall { tool_call: tc }) =
                             self.partial.content.last_mut()
@@ -1400,7 +1403,7 @@ fn serialize_converse_messages(messages: &[crate::message::Message]) -> serde_js
                         .content
                         .iter()
                         .filter_map(|c| Some(match c {
-                            AssistantContent::Text { text } => {
+                            AssistantContent::Text { text, .. } => {
                                 serde_json::json!({"text": text})
                             }
                             AssistantContent::ToolCall { tool_call } => {

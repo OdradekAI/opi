@@ -966,7 +966,7 @@ pub async fn run_interactive_tui(
                 s.total_tokens += a.usage.bucket_total_tokens();
                 for content in &a.content {
                     match content {
-                        AssistantContent::Text { text } if !s.streaming_started => {
+                        AssistantContent::Text { text, .. } if !s.streaming_started => {
                             s.messages
                                 .push(TuiMessage::new(TuiRole::Assistant, text.clone()));
                         }

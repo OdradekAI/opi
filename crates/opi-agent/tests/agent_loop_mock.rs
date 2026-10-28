@@ -419,7 +419,7 @@ async fn text_content_preserved_in_assistant_message() {
 
     // Verify text content is preserved
     let has_text = assistant.content.iter().any(
-        |c| matches!(c, opi_ai::message::AssistantContent::Text { text } if text.contains("Hello")),
+        |c| matches!(c, opi_ai::message::AssistantContent::Text { text, .. } if text.contains("Hello")),
     );
     assert!(
         has_text,

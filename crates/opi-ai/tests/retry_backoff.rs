@@ -585,7 +585,7 @@ mod acquisition {
             .content
             .iter()
             .filter_map(|content| match content {
-                opi_ai::message::AssistantContent::Text { text } => Some(text.clone()),
+                opi_ai::message::AssistantContent::Text { text, .. } => Some(text.clone()),
                 _ => None,
             })
             .collect()

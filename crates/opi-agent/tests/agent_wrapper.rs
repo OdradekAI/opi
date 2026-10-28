@@ -187,9 +187,10 @@ fn base_assistant() -> AssistantMessage {
 
 fn text_response(text: &str) -> Vec<AssistantStreamEvent> {
     let mut partial = base_assistant();
-    partial
-        .content
-        .push(AssistantContent::Text { text: text.into() });
+    partial.content.push(AssistantContent::Text {
+        text: text.into(),
+        signature: None,
+    });
     vec![
         AssistantStreamEvent::Start {
             partial: base_assistant(),

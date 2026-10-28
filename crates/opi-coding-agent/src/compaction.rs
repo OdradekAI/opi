@@ -401,7 +401,7 @@ fn summary_text(response: &opi_ai::message::AssistantMessage) -> Result<String, 
         .content
         .iter()
         .filter_map(|content| match content {
-            AssistantContent::Text { text } => Some(text.as_str()),
+            AssistantContent::Text { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -434,7 +434,7 @@ fn serialize_for_summary(messages: &[AgentMessage]) -> String {
             Message::Assistant(message) => {
                 for content in message.content {
                     match content {
-                        AssistantContent::Text { text } => {
+                        AssistantContent::Text { text, .. } => {
                             lines.push(format!("[Assistant]: {text}"))
                         }
                         AssistantContent::Thinking { thinking, .. } => {
@@ -726,6 +726,7 @@ mod tests {
         response.content = vec![
             AssistantContent::Text {
                 text: "not a completed summary".into(),
+                signature: None,
             },
             AssistantContent::ToolCall {
                 tool_call: opi_ai::message::ToolCall {
@@ -733,6 +734,7 @@ mod tests {
                     name: "read".into(),
                     arguments: "{}".into(),
                     arguments_error: None,
+                    signature: None,
                 },
             },
         ];

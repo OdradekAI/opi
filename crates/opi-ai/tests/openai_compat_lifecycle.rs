@@ -119,7 +119,7 @@ mod openai_chat_profile {
                 .content
                 .iter()
                 .filter_map(|c| match c {
-                    opi_ai::message::AssistantContent::Text { text } => Some(text.as_str()),
+                    opi_ai::message::AssistantContent::Text { text, .. } => Some(text.as_str()),
                     _ => None,
                 })
                 .collect();
@@ -436,7 +436,7 @@ mod mistral_profile {
                 .content
                 .iter()
                 .filter_map(|c| match c {
-                    opi_ai::message::AssistantContent::Text { text } => Some(text.as_str()),
+                    opi_ai::message::AssistantContent::Text { text, .. } => Some(text.as_str()),
                     _ => None,
                 })
                 .collect();
@@ -688,7 +688,7 @@ mod openrouter_profile {
                 .content
                 .iter()
                 .filter_map(|c| match c {
-                    opi_ai::message::AssistantContent::Text { text } => Some(text.as_str()),
+                    opi_ai::message::AssistantContent::Text { text, .. } => Some(text.as_str()),
                     _ => None,
                 })
                 .collect();

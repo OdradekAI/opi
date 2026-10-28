@@ -1140,6 +1140,47 @@ native，按值携带 `tool_addition` 定义——同名重定义是新增，绝
 条 user 消息。anthropic producer 现运行于显式冻结的 `TelemetryContext`
 （P20-TELEMETRY）。
 
+## Google Generative AI native 选项与 Gemini 3 wire 规则（任务 20.40）
+
+公开 direct adapter `gemini::GoogleGenerativeAiChatApi` 经
+`Models::register_chat_api` 注册（api id `google-generative-ai`），携带类型化
+`GoogleGenerativeAiOptions`——钉住的 pi 1.3.0 native 清单：
+
+| 选项 | wire 效果 |
+|---|---|
+| `tool_choice: auto/none/any` | 投影 `toolConfig.functionCallingConfig.mode`（Google wire 无 named 工具模式）；有工具时 `none`/`any` 优先于 strict 模式，`auto` 让位于 `VALIDATED`（当有工具走了 strict） |
+| `thinking.enabled: false` | 禁用配置：budget 模式模型发 `thinkingBudget: 0`；level 模式模型在 thinking map 提供关闭映射时用该 level，否则 `0` |
+| `thinking.enabled: true` + `level` | `includeThoughts: true` + `thinkingLevel`（MINIMAL/LOW/MEDIUM/HIGH）；level 优先于同时给出的 budget |
+| `thinking.enabled: true` + `budget_tokens` | `includeThoughts: true` + `thinkingBudget`，源值原样透传——`-1` 是动态默认、`0` 为禁用，绝不在本地重新解释 |
+| （省略 `thinking`） | native 省略完全不发送 `thinkingConfig` |
+
+neutral／simple 条目只映射工具选择；neutral 请求意图保持 pi `streamSimple`
+策略：钳位级别，level 模式模型（`gemini-3(.x)-pro/flash`、`gemini-4+`、两个
+`*-latest` 别名、Gemma 4）投影 `thinkingLevel`，budget 模式模型用 2.5 家族
+表（pro 128/2048/8192/32768，flash 128/2048/8192/24576，flash-lite
+512/2048/8192/24576；显式预算优先；其余 budget 模式模型回退动态 `-1`），
+不可解析的级别映射在派发前类型化失败。neutral 显式关闭在 reasoning 模型上
+发送禁用配置（内置 catalog 已将 2.5 系列标记为 reasoning）。
+
+工具声明经 `parametersJsonSchema` 携带原 JSON Schema（绝不走遗留 OpenAPI
+`parameters` 投影）；Gemini 3+ 模型经共享受限采样引擎投影 prefer/require
+strict 并选择 `VALIDATED` 函数调用，Gemini 2 保持 Require 类型化失败与
+Prefer 静默降级。Gemini 3+（以及 Google API 后面的 claude/gpt-oss）工具调用
+与响应在 wire 上携带规范化 id（`[a-zA-Z0-9_-]`，64 字符）；Gemini 2 保持仅
+名称的 function 调用／响应。
+
+thought 签名（base64，仅 same-provider/same-model）回放在 text、thinking 与
+functionCall part 上；仅带签名的空 part 得以保留。成功工具结果用 `output`
+响应键，失败用带文本值的 `error` 键，连续 function 响应共用一条 user 消息，
+工具结果图像在 Gemini 3+ 嵌入 `functionResponse.parts`，更早模型获得独立的
+`Tool result image:` user 轮。流式侧捕获首个非空 `responseId`，thought part
+（`thought: true`）作为 thinking 块流式输出并按块保留签名，未签名或重复的
+工具调用 id 本地再生为 `name_N`，usage 计 `input = prompt - cached`、
+`output = candidates + thoughts` 且 `reasoning = thoughts`（缺失的 thoughts
+记为零），未映射的 finish 原因携带原始原因类型化失败
+（`Provider stopped with: <raw>`）。Google producer 运行于显式冻结的
+`TelemetryContext`（P20-TELEMETRY）。
+
 ## 受限采样：strict wire 投影与有界降级变体（AIR-040/V-34，任务 20.11）
 
 `ToolDef.constrained_sampling` 携带逐工具意图——`json_schema` 的

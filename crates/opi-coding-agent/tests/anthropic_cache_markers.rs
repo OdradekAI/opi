@@ -69,6 +69,7 @@ fn assistant(texts: &[&str]) -> Message {
             .iter()
             .map(|text| AssistantContent::Text {
                 text: (*text).to_owned(),
+                signature: None,
             })
             .collect(),
         api: ApiKind::Anthropic,

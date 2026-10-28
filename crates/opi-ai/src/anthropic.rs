@@ -532,6 +532,7 @@ impl AnthropicMapper {
                         });
                         self.partial.content.push(AssistantContent::Text {
                             text: String::new(),
+                            signature: None,
                         });
                         vec![Ok(AssistantStreamEvent::TextStart {
                             content_index,
@@ -550,6 +551,7 @@ impl AnthropicMapper {
                                 name,
                                 arguments: String::new(),
                                 arguments_error: None,
+                                signature: None,
                             },
                         });
                         vec![Ok(AssistantStreamEvent::ToolCallStart {
@@ -597,7 +599,7 @@ impl AnthropicMapper {
                         if let Some(BlockState::Text { text: acc }) = self.blocks.get_mut(index) {
                             acc.push_str(&text);
                         }
-                        if let Some(AssistantContent::Text { text: acc }) =
+                        if let Some(AssistantContent::Text { text: acc, .. }) =
                             self.partial.content.get_mut(index)
                         {
                             acc.push_str(&text);
@@ -696,6 +698,7 @@ impl AnthropicMapper {
                             name: name.clone(),
                             arguments: arguments.clone(),
                             arguments_error,
+                            signature: None,
                         };
                         // Update the partial message's tool call with final arguments
                         if let Some(AssistantContent::ToolCall { tool_call: tc }) =
@@ -2040,7 +2043,7 @@ fn serialize_messages(
                     .content
                     .iter()
                     .map(|c| match c {
-                        AssistantContent::Text { text } => {
+                        AssistantContent::Text { text, .. } => {
                             serde_json::json!({"type": "text", "text": text})
                         }
                         AssistantContent::ToolCall { tool_call } => {
@@ -2515,6 +2518,7 @@ mod tests {
                 name: "read".into(),
                 arguments: r#"{"path":"/tmp/foo.txt"}"#.into(),
                 arguments_error: None,
+                signature: None,
             },
         }]);
 
@@ -2535,6 +2539,7 @@ mod tests {
                 name: "bash".into(),
                 arguments: "not valid json".into(),
                 arguments_error: None,
+                signature: None,
             },
         }]);
 
@@ -2579,6 +2584,7 @@ mod tests {
                     name: "test".into(),
                     arguments: args.into(),
                     arguments_error: None,
+                    signature: None,
                 },
             }]);
 
@@ -2668,6 +2674,7 @@ mod tests {
                     Message::Assistant(AssistantMessage {
                         content: vec![AssistantContent::Text {
                             text: "Hi there!".into(),
+                            signature: None,
                         }],
                         api: crate::ApiKind::Anthropic,
                         provider: "anthropic".into(),
@@ -2841,6 +2848,7 @@ mod tests {
                     name: "inspect".into(),
                     arguments: "{}".into(),
                     arguments_error: None,
+                    signature: None,
                 },
             }]),
             Message::ToolResult(ToolResultMessage {
@@ -2860,6 +2868,7 @@ mod tests {
             }),
             test_assistant_msg(vec![AssistantContent::Text {
                 text: "cache this assistant text".into(),
+                signature: None,
             }]),
             test_assistant_msg(vec![AssistantContent::ToolCall {
                 tool_call: ToolCall {
@@ -2867,6 +2876,7 @@ mod tests {
                     name: "read".into(),
                     arguments: "{}".into(),
                     arguments_error: None,
+                    signature: None,
                 },
             }]),
             test_assistant_msg(vec![AssistantContent::Thinking {

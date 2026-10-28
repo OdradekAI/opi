@@ -62,6 +62,7 @@ fn call(id: &str, name: &str) -> AssistantContent {
             name: name.into(),
             arguments: "{\"path\":\"a.rs\"}".into(),
             arguments_error: None,
+            signature: None,
         },
     }
 }
@@ -292,6 +293,7 @@ fn failed_turns_omit_with_linked_results_and_length_keeps_pairs() {
             assistant(
                 vec![AssistantContent::Text {
                     text: "recovered".into(),
+                    signature: None,
                 }],
                 StopReason::Stop,
             ),
@@ -363,6 +365,7 @@ fn failed_turn_missing_results_keep_unknown_effect_across_batch_boundaries() {
                 "assistant" => messages.push(assistant(
                     vec![AssistantContent::Text {
                         text: "recovered".into(),
+                        signature: None,
                     }],
                     StopReason::Stop,
                 )),
@@ -479,6 +482,7 @@ fn cross_identity_drops_all_thinking_and_same_identity_preserves_opaque() {
         },
         AssistantContent::Text {
             text: "answer".into(),
+            signature: None,
         },
     ];
     let mut foreign = assistant(thinking.clone(), StopReason::Stop);
@@ -522,6 +526,7 @@ fn cross_identity_drops_all_thinking_and_same_identity_preserves_opaque() {
             },
             AssistantContent::Text {
                 text: "answer".into(),
+                signature: None,
             },
         ],
         StopReason::Stop,
@@ -622,6 +627,7 @@ fn malformed_proposals_split_by_wire_argument_shape() {
             name: "read".into(),
             arguments: "{\"broken".into(),
             arguments_error: Some("not a complete JSON object".into()),
+            signature: None,
         },
     };
     let history = |mut a: Message, result_text: &str| {
@@ -823,6 +829,7 @@ fn chat_keeps_turn_text_alongside_tool_calls() {
         assistant_with_openai_identity(vec![
             AssistantContent::Text {
                 text: "I will read the file.".into(),
+                signature: None,
             },
             call("c_1", "read"),
         ]),
@@ -924,6 +931,7 @@ fn malformed_object_wire_does_not_infer_non_execution_from_error_text() {
             name: "read".into(),
             arguments: "[1]".into(),
             arguments_error: Some("sensitive parse diagnostic".into()),
+            signature: None,
         },
     };
     let mut recorded = result("malformed", "read", "was not executed");
@@ -1047,6 +1055,7 @@ fn malformed_non_execution_context_is_one_sanitized_user_block_after_serde() {
             name: "read\"\n".into(),
             arguments: arguments.into(),
             arguments_error: Some("private-error-canary".into()),
+            signature: None,
         },
     };
     let req = request(

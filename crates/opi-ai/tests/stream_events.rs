@@ -16,6 +16,7 @@ fn sample_assistant_message() -> AssistantMessage {
     AssistantMessage {
         content: vec![AssistantContent::Text {
             text: "hello".into(),
+            signature: None,
         }],
         api: ApiKind::Anthropic,
         provider: "anthropic".into(),
@@ -213,6 +214,7 @@ fn tool_call_end_event_carries_arguments_error_through_json() {
         name: "read".into(),
         arguments: r#"{"path": "trunc"#.into(),
         arguments_error: Some("final tool arguments were not a complete JSON object".into()),
+        signature: None,
     };
     let event = AssistantStreamEvent::ToolCallEnd {
         content_index: 0,
@@ -262,6 +264,7 @@ fn tool_call_in_stream_event() {
         name: "read_file".into(),
         arguments: "{\"path\":\"/tmp/x\"}".into(),
         arguments_error: None,
+        signature: None,
     };
     let event = AssistantStreamEvent::ToolCallEnd {
         content_index: 0,
@@ -299,7 +302,7 @@ fn assistant_text_of(message: &AssistantMessage) -> String {
         .content
         .iter()
         .filter_map(|content| match content {
-            AssistantContent::Text { text } => Some(text.as_str()),
+            AssistantContent::Text { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect()
@@ -320,7 +323,10 @@ fn text_events(
     for _ in 0..count {
         text.push('x');
         let mut partial = sample_assistant_message();
-        partial.content = vec![AssistantContent::Text { text: text.clone() }];
+        partial.content = vec![AssistantContent::Text {
+            text: text.clone(),
+            signature: None,
+        }];
         events.push(Ok(AssistantStreamEvent::TextDelta {
             content_index: 0,
             delta: "x".into(),
@@ -335,7 +341,10 @@ fn text_events(
 
 fn done_terminal(text: &str, reason: StopReason) -> AssistantStreamEvent {
     let mut message = sample_assistant_message();
-    message.content = vec![AssistantContent::Text { text: text.into() }];
+    message.content = vec![AssistantContent::Text {
+        text: text.into(),
+        signature: None,
+    }];
     message.stop_reason = reason;
     AssistantStreamEvent::Done { reason, message }
 }
@@ -525,6 +534,7 @@ async fn chat_stream_converts_legacy_error_event_to_call_failure() {
     let mut message = sample_assistant_message();
     message.content = vec![AssistantContent::Text {
         text: "partial".into(),
+        signature: None,
     }];
     message.error_message = Some("boom".into());
     let mut stream = chat_stream(vec![
@@ -668,7 +678,10 @@ mod diagnostics_serde_tests {
 
         // A downgrade diagnostic round-trips its kind and reason.
         let message = AssistantMessage {
-            content: vec![AssistantContent::Text { text: "hi".into() }],
+            content: vec![AssistantContent::Text {
+                text: "hi".into(),
+                signature: None,
+            }],
             api: ApiKind::Anthropic,
             provider: "anthropic".into(),
             model: "m".into(),

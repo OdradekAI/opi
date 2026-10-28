@@ -828,6 +828,7 @@ mod tests {
                 name: name.into(),
                 arguments: "{}".into(),
                 arguments_error: None,
+                signature: None,
             },
         }
     }
@@ -1070,6 +1071,7 @@ mod tests {
                 },
                 AssistantContent::Text {
                     text: "answer".into(),
+                    signature: None,
                 },
             ],
             StopReason::Stop,
@@ -1161,6 +1163,7 @@ mod tests {
                 Message::Assistant(assistant(
                     vec![AssistantContent::Text {
                         text: "recovered".into(),
+                        signature: None,
                     }],
                     StopReason::Stop,
                 )),
@@ -1219,6 +1222,7 @@ mod tests {
                 name: "a".into(),
                 arguments: "{\"broken".into(),
                 arguments_error: Some("not a complete JSON object".into()),
+                signature: None,
             },
         };
         // String-argument wires replay the raw text faithfully.
