@@ -12679,7 +12679,7 @@
       "definition_of_done": "Public native/simple/complete/result and direct adapter execute API-key Express versus ADC project/location endpoints and Google content/retry rules, independent provider identity. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Vertex preserves Google native -1/0/positive budgets and levels plus real Express/ADC Authorization, target and quota provenance; token acquisition alone does not close generation.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -12773,6 +12773,11 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append (C.1a): gemini.rs owns the shared Google body engine, so the per-wire neutral budget seam lives there - GeminiProvider gains a private wire field (with_wire pub(crate); vertex constructors pin WireApi::GoogleVertex) and google_budget_for branches on it (the dedicated flash-lite table is generative-ai only; pi vertex getGoogleBudget has no flash-lite entry and its substring match routes 2.5-flash-lite through the flash table, minimal 128 vs 512). marked_simple widens to pub(crate) so the vertex options projection preserves the simple marker. No behavioral change for the generative-ai wire: all 20.40 gemini_fixtures expectations are retained unchanged and green inside the passed gate.",
+          "source": ".repo/pi-1.3.0/packages/ai/src/api/google-vertex.ts (getGoogleBudget), google-generative-ai.ts (getGoogleBudget)"
         }
       ],
       "tier": "workspace",
@@ -12801,7 +12806,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai google-vertex public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.41",
@@ -12814,7 +12819,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai google-vertex public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -12822,9 +12827,9 @@
         "opi_ai google-vertex public direct adapter"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "e53e370561571c0dc271fab7b0b4c4796e4060dc",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -12835,12 +12840,53 @@
         "crates/opi-ai/src/providers/**",
         "crates/opi-ai/src/telemetry.rs",
         "crates/opi-ai/src/vertex.rs",
-        "crates/opi-ai/tests/vertex_fixtures.rs"
+        "crates/opi-ai/tests/vertex_fixtures.rs",
+        "crates/opi-ai/src/gemini.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "742a144d843039a3a293f9b734e256b95d0250a6",
+      "evidence": {
+        "Opi-Task": "20.41",
+        "Opi-DoD-SHA256": "e5a7a97afd82cb231e674e5ad401bd28c1f4866b0ff70f29a64307719fec2e49",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "P20-S41, ONB-03-20.41"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-28T18:48:56+00:00",
+          "attempt": 1,
+          "summary": "Phase B.2 authorized (user reply: 同意). Scope fixed at B.1: public GoogleVertexChatApi (api id google-vertex) through Models::register_chat_api with typed GoogleVertexOptions (tool_choice auto/none/any; thinking enabled/level/budget_tokens with -1 dynamic and 0 disable passthrough; plus Vertex-own project/location), Express (API key -> x-goog-api-key collection URL) vs ADC Bearer (regional projects/{p}/locations/{l} URL + quota-project header) routing, typed failures for missing project/location on the ADC route, endpoint override never dropping project/location, per-wire neutral budget table (pi vertex getGoogleBudget has no flash-lite entry; generative-ai keeps it - gemini.rs appended late per C.1a), shared 20.40 content engine inherited (parametersJsonSchema, Gemini3+ VALIDATED strict, thought signatures, id regeneration, output/error keys, image shapes, usage thoughts accounting, Provider stopped with: <raw>). Not doing: Vertex-Claude OpenAPI parameters path (separate host contract, unowned), new catalog entries (row 58), new retry/config caps. Baseline dirty files: 0.",
+          "gate_results": {}
+        },
+        {
+          "timestamp": "2026-10-28T19:30:08+00:00",
+          "attempt": 1,
+          "summary": "google-vertex complete adapter delivered: public GoogleVertexChatApi (api id google-vertex, provider id vertex) through Models::register_chat_api with typed GoogleVertexOptions - tool_choice auto/none/any (tools-gated toolConfig, pi resolveGoogleFunctionCallingMode precedence) and the thinking tri-shape shared with 20.40 (level wins over budget, -1 dynamic and 0 disable untouched, disabled via off level or budget 0, native omission sends no config), plus Vertex-own project/location that re-route the ADC URL and stay inert under Express. A Bearer dispatch without project or location fails typed before any network work. Routing stays auth-owned and identity-independent (API key -> x-goog-api-key collection endpoint; Bearer -> projects/{p}/locations/{l} URL + x-goog-user-project quota header from ADC provenance); custom base URLs never drop the project/location prefix. The neutral budget policy is now wire-aware: vertex has no dedicated flash-lite table and pi's substring match routes 2.5-flash-lite through the flash table (minimal 128; generative-ai keeps 512) - pinned by a cross-wire test. VertexProvider is Clone with with_models/with_native_options; its producer runs under the explicit frozen TelemetryContext (payload-probe test). Content/streaming/usage/strict/signature rules inherit the shared 20.40 engine; all 48 pre-existing vertex tests retained unchanged (zero expectation updates this task). TDD red-first (12 new tests confirmed missing-symbol red) then green (60/60). D.1 smoke full PASSED on attempt 3: attempt 1 failed cargo fmt --check (one line-wrap in the new google() projection - my earlier fmt invocation ran in a cargo-less shell and silently no-oped, now fixed and re-verified clean), attempt 2 failed only on the documented pre-existing oauth 53692 contention (callback_state_mismatch refused a fallback-port callback under full-workspace parallelism - environmental class since 20.36, cross-binary oauth_flows/oauth_auth occupation), passed after the 120s TIME_WAIT clear with no oauth diagnostics in between. D.2 exec review via single-reviewer fallback (wf_ref=null): 0 must-fix; 4 low flags: (1) pi's simple entry never carries project/location while opi's with_native_options would apply an explicit override on a simple-bound value - unreachable via from_simple which always leaves them None; (2) the missing-project guard fires per-dispatch at stream time, matching pi's stream-entry throw rather than constructor validation; (3) stream_from_sse (test helper) bypasses the telemetry producer, consistent with gemini; (4) with_models mirrors the inner model list into VertexProvider.models - two copies kept coherent by the setter.",
+          "gate_results": {
+            "d1": "smoke full PASSED (doc-check, fmt, clippy -D warnings all-targets, workspace tests + doc tests, rustdoc); attempt 1 failed fmt --check (line-wrap, fixed), attempt 2 failed only on the pre-existing oauth 53692 contention (environmental, documented class)",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 4 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "P20-S41",
+                "action": "add",
+                "test": "vertex_fixtures google_41 mod (12 tests): from_simple tool-choice-only mapping, native thinking shapes (level-over-budget, -1/0 passthrough), native omission sends no thinkingConfig, tool-choice wire modes with the tools-gated no-toolConfig pin, vertex budget table divergence (flash-lite rides flash table 128 vs generative-ai 512 cross-wire), ADC missing project/location typed failures, native project/location URL override through Models::complete, Express ignores project/location options, endpoint override keeps the project/location prefix, wrong-wire record rejection, native lifecycle through Models::complete on the ADC route (token+generation chain), telemetry carrier payload-probe on the vertex producer",
+                "interface": "GoogleVertexOptions / GoogleVertexChatApi / VertexProvider::with_native_options / with_models / ADC guard / per-wire google_budget_for / producer TelemetryContext",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.41",
+                "action": "retain",
+                "test": "all 48 pre-existing vertex_fixtures suites (URL/auth/status/parser/callback/cancel/strict/ADC/Express) plus every other workspace suite green inside the passed gate; zero existing expectations changed this task",
+                "interface": "existing public seams",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.42",
@@ -22636,6 +22682,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-28T12:40:00+00:00",
       "task_id": "20.40",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 4,
+      "rejected_count": 0,
+      "ran_at": "2026-10-28T19:30:08+00:00",
+      "task_id": "20.41",
       "criterion_id": null
     }
   ]
