@@ -631,6 +631,18 @@
   unchanged.
 ### Added
 
+- `opi-ai`: google-vertex complete chat adapter (task 20.41, DEL-11). New
+  public `vertex::GoogleVertexChatApi` registers through
+  `Models::register_chat_api` (api id `google-vertex`) with typed
+  `GoogleVertexOptions`: the Google tool-choice/thinking shapes plus
+  Vertex-own `project`/`location` that re-route the ADC URL (inert under the
+  Express API-key route). A Bearer dispatch without project or location now
+  fails typed before any network work. The shared Google body engine is
+  wire-aware for the neutral budget policy: the vertex table has no dedicated
+  flash-lite entry, so `2.5-flash-lite` rides the flash table (minimal 128,
+  not the generative-ai 512). `VertexProvider` is `Clone` and gains
+  `with_models`/`with_native_options`; its producer runs under the explicit
+  frozen `TelemetryContext`.
 - `opi-ai`: google-generative-ai complete chat adapter (task 20.40,
   DEL-11). New public `gemini::GoogleGenerativeAiChatApi` registers through
   `Models::register_chat_api` with typed `GoogleGenerativeAiOptions`

@@ -1181,6 +1181,33 @@ functionCall part 上；仅带签名的空 part 得以保留。成功工具结�
 （`Provider stopped with: <raw>`）。Google producer 运行于显式冻结的
 `TelemetryContext`（P20-TELEMETRY）。
 
+## Google Vertex 直接适配器与 native 选项（任务 20.41）
+
+公共直接适配器 `vertex::GoogleVertexChatApi` 经 `Models::register_chat_api`
+注册（api id `google-vertex`，provider id `vertex`），携带类型化的
+`GoogleVertexOptions`。tool-choice 与 thinking 意图复用任务 20.40 记录的
+Google 形态（无 named 工具模式；`budget_tokens` 原样保留 `-1` 动态与 `0`
+禁用；native 省略完全不发 `thinkingConfig`），另有两项 Vertex 专属扩展：
+
+| 选项 | wire 效果 |
+|---|---|
+| `project` / `location` | 重路由 ADC URL（`.../v1/projects/{p}/locations/{l}/publishers/google/models/{model}:streamGenerateContent`）；Express API-key 路由不带二者，此选项在其下为惰性 |
+| （Bearer 鉴权缺 project 或 location） | 任何网络工作之前类型化 setup 失败——绝不静默产出退化 URL |
+
+路由由鉴权持有且独立于 Gemini key 身份：API key 选择 Express 模式
+（无项目前缀的 `aiplatform.googleapis.com` collection 端点 +
+`x-goog-api-key`）；Bearer token 走 ADC project/location URL，凭证来源
+持有 quota project 时附加 `x-goog-user-project`。自定义 base URL 绝不丢
+project/location 资源前缀（前缀总是重建），`location = "global"` 钉住共享
+域名。内容引擎、流式解析、usage 计量（`output = candidates + thoughts`、
+`reasoning = thoughts`）、strict 工具处理与 thought 签名规则继承自共享
+Google 引擎（任务 20.40）。
+
+每 wire 一处 neutral 策略差异：vertex 预算表没有专用 flash-lite 条目，pi
+的子串匹配把 `2.5-flash-lite` 路由进 flash 表（minimal 128；
+generative-ai wire 的专用表映射 minimal 512）。vertex producer 运行于显式
+冻结的 `TelemetryContext`。
+
 ## 受限采样：strict wire 投影与有界降级变体（AIR-040/V-34，任务 20.11）
 
 `ToolDef.constrained_sampling` 携带逐工具意图——`json_schema` 的

@@ -15,7 +15,8 @@ use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
 use crate::gemini::{
-    GeminiMapper, GeminiProvider, ParsedEvent, drain_sse_payloads, parse_sse_data,
+    GeminiMapper, GeminiProvider, GoogleGenerativeAiOptions, GoogleThinkingConfig,
+    GoogleToolChoice, ParsedEvent, drain_sse_payloads, parse_sse_data,
 };
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
@@ -30,6 +31,7 @@ use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_can
 ///
 /// Wraps a [`GeminiProvider`] for request body serialization and SSE parsing,
 /// but overrides the HTTP transport layer (URL and auth header).
+#[derive(Clone)]
 pub struct VertexProvider {
     project: String,
     location: String,
@@ -58,7 +60,7 @@ impl VertexProvider {
     /// location).
     pub fn new(project: String, location: String, base_url: Option<String>) -> Self {
         let base_url = base_url.unwrap_or_else(|| default_vertex_base_url(&location));
-        let inner = GeminiProvider::new(None);
+        let inner = GeminiProvider::new(None).with_wire(WireApi::GoogleVertex);
         let models = model_catalog();
         Self {
             project,
@@ -76,7 +78,7 @@ impl VertexProvider {
     /// with the `x-goog-api-key` header.
     pub fn express(base_url: Option<String>) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://aiplatform.googleapis.com".to_owned());
-        let inner = GeminiProvider::new(None);
+        let inner = GeminiProvider::new(None).with_wire(WireApi::GoogleVertex);
         let models = model_catalog();
         Self {
             project: String::new(),
@@ -102,7 +104,7 @@ impl VertexProvider {
         base_url: Option<String>,
     ) -> Self {
         let base_url = base_url.unwrap_or_else(|| default_vertex_base_url(&location));
-        let inner = GeminiProvider::new(None);
+        let inner = GeminiProvider::new(None).with_wire(WireApi::GoogleVertex);
         let model_list = models
             .iter()
             .map(|id| {
@@ -130,6 +132,29 @@ impl VertexProvider {
     /// Replace the HTTP client (for shared connection pooling).
     pub fn with_client(self, client: Arc<HttpClient>) -> Self {
         Self { client, ..self }
+    }
+
+    /// Override the model records (task 20.41): direct adapters and tests
+    /// bind complete custom records; the builtin catalog stays untouched.
+    pub fn with_models(mut self, models: Vec<ModelInfo>) -> Self {
+        self.inner = self.inner.with_models(models);
+        self.models = self.inner.models().to_vec();
+        self
+    }
+
+    /// Bind typed native options for one dispatch (task 20.41): the tool and
+    /// thinking intents project onto the shared Google body engine and an
+    /// explicit `project`/`location` re-routes the ADC URL (inert under the
+    /// Express API-key route, which carries neither).
+    pub fn with_native_options(mut self, options: GoogleVertexOptions) -> Self {
+        if let Some(project) = options.project.as_ref() {
+            self.project = project.clone();
+        }
+        if let Some(location) = options.location.as_ref() {
+            self.location = location.clone();
+        }
+        self.inner = self.inner.with_native_options(options.google());
+        self
     }
 
     /// Build the Vertex AI streaming URL for a given model.
@@ -231,6 +256,29 @@ impl Provider for VertexProvider {
                 ))]));
             }
         };
+        // ADC routing owns the project/location resource prefix: a Bearer
+        // dispatch without either is a typed setup failure, never a silently
+        // degraded URL (pi resolveProject/resolveLocation throw).
+        if !self.express
+            && matches!(auth_mode, VertexAuthMode::Bearer { .. })
+            && self.project.trim().is_empty()
+        {
+            return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                ProviderErrorSummary::attested_static(
+                    "Vertex AI requires a project ID for ADC routing; pass one in the native options or configure the provider",
+                ),
+            ))]));
+        }
+        if !self.express
+            && matches!(auth_mode, VertexAuthMode::Bearer { .. })
+            && self.location.trim().is_empty()
+        {
+            return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                ProviderErrorSummary::attested_static(
+                    "Vertex AI requires a location for ADC routing; pass one in the native options or configure the provider",
+                ),
+            ))]));
+        }
         let model_id = request
             .model
             .split_once(':')
@@ -265,9 +313,13 @@ impl Provider for VertexProvider {
         let producer_snapshot = snapshot.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let producer_cancel = cancel.clone();
+        // Explicit frozen telemetry context (task 20.41, 20.54/AIR-055): the
+        // producer task runs under the captured parent/Dispatch when
+        // provided; omission observes nothing.
+        let telemetry = request.telemetry_context.clone();
 
         let tx_closed = tx.clone();
-        tokio::spawn(async move {
+        let producer = async move {
             let run = async {
                 let result = async {
                     let body = callbacks
@@ -302,7 +354,12 @@ impl Provider for VertexProvider {
                 _ = tx_closed.closed() => (),
                 _ = run => (),
             }
-        });
+        };
+        if let Some(context) = telemetry {
+            tokio::spawn(context.instrument(producer));
+        } else {
+            tokio::spawn(producer);
+        }
 
         Box::pin(CancelAwareReceiverStream::with_snapshot(
             rx, cancel, snapshot,
@@ -566,4 +623,237 @@ pub fn model_catalog() -> Vec<ModelInfo> {
                 .with_streaming(true),
         ),
     ]
+}
+
+// ---------------------------------------------------------------------------
+// Public direct adapter (task 20.41)
+// ---------------------------------------------------------------------------
+
+/// Typed native options for one `google-vertex` dispatch (task 20.41, pi
+/// `GoogleVertexOptions`).
+///
+/// The tool-choice and thinking intents share the Google shapes (no named
+/// tool mode; `budget_tokens` keeps the source semantics — `-1` is the
+/// dynamic default, `0` disables). `project` and `location` are Vertex-own:
+/// they re-route the ADC URL and are inert under the Express API-key route.
+/// The neutral/simple entry maps only the tool choice; thinking keeps the
+/// neutral request intent (level policy + the vertex budget table).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GoogleVertexOptions {
+    pub tool_choice: Option<GoogleToolChoice>,
+    pub thinking: Option<GoogleThinkingConfig>,
+    pub project: Option<String>,
+    pub location: Option<String>,
+    simple: bool,
+}
+
+impl GoogleVertexOptions {
+    /// The neutral simple entry (task 20.41): only the neutral tool choice
+    /// maps (auto/none); the neutral request intent drives thinking, and the
+    /// routing identity stays provider-configured.
+    pub fn from_simple(simple: &crate::models::SimpleOptions) -> Self {
+        Self::native(
+            None,
+            simple.tool_choice.map(|choice| match choice {
+                crate::models::SimpleToolChoice::Auto => GoogleToolChoice::Auto,
+                crate::models::SimpleToolChoice::None => GoogleToolChoice::None_,
+            }),
+            None,
+            None,
+        )
+        .marked_simple()
+    }
+
+    pub fn is_simple(&self) -> bool {
+        self.simple
+    }
+
+    /// Construct a native (non-simple) options value: `thinking: None` keeps
+    /// the neutral request intent on the wire; `project`/`location: None`
+    /// keep the provider-configured route.
+    pub fn native(
+        thinking: Option<GoogleThinkingConfig>,
+        tool_choice: Option<GoogleToolChoice>,
+        project: Option<String>,
+        location: Option<String>,
+    ) -> Self {
+        Self {
+            thinking,
+            tool_choice,
+            project,
+            location,
+            simple: false,
+        }
+    }
+
+    fn marked_simple(mut self) -> Self {
+        self.simple = true;
+        self
+    }
+
+    /// Project onto the shared body-engine options; the simple marker rides
+    /// along so the engine keeps the neutral thinking intent.
+    fn google(&self) -> GoogleGenerativeAiOptions {
+        let mut options =
+            GoogleGenerativeAiOptions::native(self.thinking.clone(), self.tool_choice.clone());
+        if self.simple {
+            options = options.marked_simple();
+        }
+        options
+    }
+}
+
+/// The `google-vertex` direct Chat adapter (task 20.41, DEL-11).
+///
+/// Binds one complete Chat model record and serves the typed native
+/// [`GoogleVertexOptions`] inventory through the four `Models` entries
+/// (`register_chat_api` / native complete-stream / neutral simple
+/// complete-stream), routing Express (API key) or ADC (Bearer plus
+/// project/location) through the shared Vertex transport.
+pub struct GoogleVertexChatApi {
+    api_id: crate::models::ApiId,
+    provider: Arc<VertexProvider>,
+    model: ModelInfo,
+}
+
+impl std::fmt::Debug for GoogleVertexChatApi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GoogleVertexChatApi")
+            .field("api_id", &self.api_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl GoogleVertexChatApi {
+    /// Bind a complete Chat record. Wrong-wire or invalid records fail
+    /// before authentication or network activity.
+    pub fn new(
+        provider: Arc<VertexProvider>,
+        model: ModelInfo,
+    ) -> Result<Self, crate::provider::ProviderError> {
+        validate_complete_vertex_record(&model)?;
+        Ok(Self {
+            api_id: crate::models::ApiId::new("google-vertex"),
+            provider,
+            model,
+        })
+    }
+
+    fn configured(&self, model: ModelInfo, options: GoogleVertexOptions) -> VertexProvider {
+        let mut provider = (*self.provider).clone();
+        provider.inner = provider.inner.with_models(vec![model]);
+        provider.models = provider.inner.models().to_vec();
+        if let Some(project) = options.project.clone() {
+            provider.project = project;
+        }
+        if let Some(location) = options.location.clone() {
+            provider.location = location;
+        }
+        provider.inner = provider.inner.with_native_options(options.google());
+        provider
+    }
+}
+
+/// One complete, wire-valid Chat model record or a typed failure.
+fn validate_complete_vertex_record(
+    model: &ModelInfo,
+) -> Result<(), crate::provider::ProviderError> {
+    if model.wire_api != crate::model_info::WireApi::GoogleVertex
+        || model.id.trim().is_empty()
+        || model.validate().is_err()
+    {
+        return Err(crate::provider::ProviderError::Config(
+            crate::provider::ProviderErrorSummary::attested_static(
+                "google-vertex adapters require a valid complete Chat model record",
+            ),
+        ));
+    }
+    Ok(())
+}
+
+impl crate::models::ChatApi<GoogleVertexOptions> for GoogleVertexChatApi {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), crate::provider::ProviderError> {
+        validate_complete_vertex_record(model)
+    }
+
+    fn api_id(&self) -> &crate::models::ApiId {
+        &self.api_id
+    }
+
+    fn provider_id(&self) -> &str {
+        "vertex"
+    }
+
+    fn complete_record(&self) -> ModelInfo {
+        self.model.clone()
+    }
+
+    fn simple_options(&self) -> GoogleVertexOptions {
+        GoogleVertexOptions::from_simple(&crate::models::SimpleOptions::default())
+    }
+
+    fn simple_options_for(&self, options: &crate::models::SimpleOptions) -> GoogleVertexOptions {
+        GoogleVertexOptions::from_simple(options)
+    }
+
+    fn session_resources(&self) -> Option<&dyn crate::codex_resources::SessionResourceOwner> {
+        None
+    }
+
+    fn validate_native_request(
+        &self,
+        model: &ModelInfo,
+        request: &Request,
+        _options: &GoogleVertexOptions,
+    ) -> Result<(), crate::provider::ProviderError> {
+        validate_complete_vertex_record(model)?;
+        crate::provider::validate_request_for_model(self.provider_id(), Some(model), request)
+    }
+
+    fn stream_prepared(
+        &self,
+        request: Request,
+        options: GoogleVertexOptions,
+        auth: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        self.stream_model_resource_prepared(self.model.clone(), request, options, auth, None)
+    }
+
+    fn stream_resource_prepared(
+        &self,
+        request: Request,
+        options: GoogleVertexOptions,
+        auth: crate::auth::ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.stream_model_resource_prepared(self.model.clone(), request, options, auth, resources)
+    }
+
+    fn stream_model_resource_prepared(
+        &self,
+        model: ModelInfo,
+        mut request: Request,
+        options: GoogleVertexOptions,
+        auth: crate::auth::ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        if let Err(error) = self.validate_native_request(&model, &request, &options) {
+            return Box::pin(futures_util::stream::once(async move { Err(error) }));
+        }
+        if !options.is_simple() {
+            // Native thinking owns the wire projection; the neutral fields
+            // are unused on this path (the simple entry clamps at
+            // `Models::stream_simple` before dispatch).
+            request.thinking = Default::default();
+        }
+        let provider = self.configured(model, options);
+        // The Google wire holds no pooled session resources today; a
+        // resource lease still dispatches through the ordinary producer.
+        let _ = resources;
+        provider.stream_prepared(request, auth)
+    }
 }

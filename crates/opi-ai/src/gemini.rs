@@ -685,8 +685,11 @@ fn supports_google_strict_tool_sampling(model_id: &str) -> bool {
 }
 
 /// Neutral level budget tables (pi `getGoogleBudget`): custom budgets win,
-/// then the model-family table, then the dynamic `-1`.
-fn google_budget_for(model_id: &str, pi_level: &str) -> i64 {
+/// then the model-family table, then the dynamic `-1`. The dedicated
+/// flash-lite table is generative-ai only — pi's vertex `getGoogleBudget`
+/// checks just 2.5-pro/2.5-flash, and its substring match routes
+/// `2.5-flash-lite` ids through the flash table (e.g. minimal 128, not 512).
+fn google_budget_for(model_id: &str, pi_level: &str, wire: WireApi) -> i64 {
     let id = model_id.to_ascii_lowercase();
     if id.contains("2.5-pro") {
         return match pi_level {
@@ -696,7 +699,7 @@ fn google_budget_for(model_id: &str, pi_level: &str) -> i64 {
             _ => 32768,
         };
     }
-    if id.contains("2.5-flash-lite") {
+    if wire == WireApi::GoogleGenerativeAi && id.contains("2.5-flash-lite") {
         return match pi_level {
             "minimal" => 512,
             "low" => 2048,
@@ -864,7 +867,7 @@ impl GoogleGenerativeAiOptions {
         }
     }
 
-    fn marked_simple(mut self) -> Self {
+    pub(crate) fn marked_simple(mut self) -> Self {
         self.simple = true;
         self
     }
@@ -878,6 +881,9 @@ pub struct GeminiProvider {
     /// Typed native options for one direct/native dispatch (task 20.40);
     /// `None` keeps the plain provider path.
     native_options: Option<GoogleGenerativeAiOptions>,
+    /// Owning Google wire (task 20.41): the vertex adapter shares this body
+    /// engine but pins per-wire differences (the neutral budget table).
+    wire: WireApi,
 }
 
 /// Built-in Gemini model metadata without credentials or HTTP construction.
@@ -927,7 +933,16 @@ impl GeminiProvider {
             models,
             client,
             native_options: None,
+            wire: WireApi::GoogleGenerativeAi,
         }
+    }
+
+    /// Pin the owning Google wire (task 20.41): the vertex transport reuses
+    /// this body engine under `WireApi::GoogleVertex` for the per-wire
+    /// neutral-policy branches (budget table).
+    pub(crate) fn with_wire(mut self, wire: WireApi) -> Self {
+        self.wire = wire;
+        self
     }
 
     /// Override the catalog records (task 20.40): direct adapters and tests
@@ -1413,7 +1428,7 @@ impl GeminiProvider {
                     .thinking
                     .budget_tokens
                     .map(|budget| budget as i64)
-                    .unwrap_or_else(|| google_budget_for(model_id, &pi_level));
+                    .unwrap_or_else(|| google_budget_for(model_id, &pi_level, self.wire));
                 config["thinkingBudget"] = serde_json::json!(budget);
             }
             Some(config)

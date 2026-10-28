@@ -1700,6 +1700,37 @@ unmapped finish reasons fail typed carrying the raw reason
 (`Provider stopped with: <raw>`). The Google producer runs under the
 explicit frozen `TelemetryContext` (P20-TELEMETRY).
 
+## Google Vertex Direct Adapter and Native Options (task 20.41)
+
+The public direct adapter `vertex::GoogleVertexChatApi` registers through
+`Models::register_chat_api` (api id `google-vertex`, provider id `vertex`)
+with typed `GoogleVertexOptions`. The tool-choice and thinking intents share
+the Google shapes documented for task 20.40 (no named-tool mode;
+`budget_tokens` keeps `-1` dynamic and `0` disable untouched; native
+omission sends no `thinkingConfig`), with two Vertex-own extensions:
+
+| Option | Wire effect |
+|---|---|
+| `project` / `location` | Re-route the ADC URL (`.../v1/projects/{p}/locations/{l}/publishers/google/models/{model}:streamGenerateContent`); inert under the Express API-key route, which carries neither |
+| (Bearer auth without project or location) | Typed setup failure before any network work — never a silently degraded URL |
+
+Routing is auth-owned and independent of the Gemini key identity: an API key
+selects Express mode (`x-goog-api-key` on the project-less
+`aiplatform.googleapis.com` collection endpoint), a Bearer token rides the
+ADC project/location URL plus the ADC file's `x-goog-user-project` quota
+header when the credential source owns one. A custom base URL never drops
+the project/location resource prefix (the prefix is always rebuilt), and
+`location = "global"` pins the shared domain. The content engine, streaming
+parse, usage accounting (`output = candidates + thoughts`,
+`reasoning = thoughts`), strict tool handling and thought-signature rules
+are inherited from the shared Google engine (task 20.40).
+
+One neutral policy differs per wire: the vertex budget table has no
+dedicated flash-lite entry, and pi's substring match routes
+`2.5-flash-lite` through the flash table (minimal 128; the generative-ai
+wire's dedicated table maps minimal 512). The vertex producer runs under
+the explicit frozen `TelemetryContext`.
+
 ## License
 
 MIT. See the packaged [LICENSE](LICENSE) and compression [NOTICE](NOTICE).
