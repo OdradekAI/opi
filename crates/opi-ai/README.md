@@ -1746,6 +1746,48 @@ pre-catalog window; pi's generated `data/radius.json` baseline is absent
 from the pinned source and a configured gateway's dynamic catalog replaces
 the baseline at registration time.
 
+## Cloudflare Workers AI System One Adapter and Multi-Model Registration (task 20.47)
+
+The second real classifier protocol drives the same shared conformance: the
+`api::cloudflare::CloudflareWorkersAiSystemOneApi` (api id
+`cloudflare-workers-ai-system-one`, provider id `cloudflare-workers-ai`)
+serves System One models through Cloudflare's REST endpoint with its own
+protocol shapes and **one shared transport core parameterized out of
+`api::system_one`** (the pi `SystemOneTransport` shape: URL, request
+envelope and response unwrap differ; guards, payload freeze, the retry
+policy, per-attempt body-inclusive timeouts, billed-usage retention and
+tiered catalog pricing are identical). One `POST <base>/run` carries the
+`{model, input: {state, questions}}` envelope — the full model id rides
+`model`, public `bool` questions still ride `noul`. The account-scoped
+endpoint carries a `{CLOUDFLARE_ACCOUNT_ID}` placeholder that materializes
+from the resolved auth's account identity; when absent the placeholder
+stays literal (the pi `resolveCloudflareModel` fallback) and the request
+never reaches a real endpoint. Responses ride Cloudflare's API envelope in
+two shapes: third-party run records wrap the output as
+`{success, result: {state, result: {answers, usage}}}` with `state`
+required to be `"Completed"` (otherwise `"Cloudflare Workers AI run did
+not complete (state: {state})"`), while Cloudflare-hosted models return
+`{result: {answers, usage}}` directly; an exact `success: false` aggregates
+the envelope's `errors[].message` strings into `"Cloudflare Workers AI
+error: m1; m2"` with `"Cloudflare Workers AI request failed"` as the
+fallback. `temperature` stays a typed option the wire never carries; image
+input rejects before any request; HTTP failures format
+`"Cloudflare Workers AI error ({status}): {body}"`.
+
+One provider serves many classifier models, so registrations now hold a
+record **set**: `Models::register_classifier_api` seeds it with the
+adapter's complete record, the new `Models::register_classifier_model_record`
+appends (or replaces, keyed by provider/model id), and
+`Models::classifier_model` scans the set; a record whose API has no
+registration is a typed `ModelsError::ClassifierApiNotRegistered`
+rejection. The curated baseline ships the three pinned identities —
+`typesafe/jev` (the 64000-token context window carries over from the same
+underlying model's TypeSafe fixture), `@cf/cloudflare/clef` ($0.24/M input)
+and `@cf/cloudflare/clef-flash` ($0.09/M input); output pricing and the
+hosted models' context windows have no pinned evidence (pi's generated
+`data/cloudflare-workers-ai.json` is absent from the pinned source) and
+stay at the generator's `0` fallback. Registrars replace the set wholesale.
+
 ## Classifier Operation and TypeSafe System One Direct Adapter (task 20.46)
 
 The fixed-`O` classifier operation ships beside the chat and image seams:

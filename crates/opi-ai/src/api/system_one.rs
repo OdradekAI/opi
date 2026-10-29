@@ -16,6 +16,12 @@
 //! through the record's catalog tiers. Image input is rejected before any
 //! request, and `temperature` is a typed option System One cannot apply: it
 //! never reaches the wire.
+//!
+//! The module also owns the shared System One transport core (pi
+//! `SystemOneTransport`): every service that serves System One models —
+//! the direct TypeSafe endpoint and the Cloudflare Workers AI REST
+//! endpoint — differs only in URL, request envelope and response unwrap,
+//! and drives the same attempt loop, guard set and output parser.
 
 use std::time::Duration;
 
@@ -114,13 +120,24 @@ impl ClassifierApi<TypesafeSystemOneOptions> for TypesafeSystemOneApi {
         call: ClassifierCall,
     ) -> crate::api::ClassifierFuture<'a> {
         Box::pin(async move {
-            classify_system_one(
+            let transport = SystemOneTransport {
+                api_id: TYPESAFE_SYSTEM_ONE_API_ID,
+                label: LABEL,
+                url: format!("{}/systemone", record.base_url.trim_end_matches('/')),
+                payload: |body| body,
+                output: typesafe_output,
+            };
+            classify_over_system_one(
                 self.http.client().clone(),
                 record,
                 context,
-                options,
+                SystemOneCoreOptions {
+                    max_retries: options.max_retries,
+                    max_retry_delay_ms: options.max_retry_delay_ms,
+                },
                 auth,
                 call,
+                transport,
             )
             .await
         })
@@ -220,18 +237,49 @@ impl AttemptFailure {
     }
 }
 
+/// Differences between services that serve System One models (the pi
+/// `SystemOneTransport` shape): one shared conformance drives every System
+/// One endpoint family.
+pub(crate) struct SystemOneTransport {
+    /// Exact classifier API identity this transport serves (the guard).
+    pub api_id: &'static str,
+    /// Service label used in error messages.
+    pub label: &'static str,
+    /// Absolute request URL.
+    pub url: String,
+    /// Wraps the System One wire request `{model, state, questions}` in the
+    /// service's request envelope.
+    pub payload: fn(serde_json::Value) -> serde_json::Value,
+    /// Extracts the System One output `{answers, usage}` record from the
+    /// service's response envelope; `Err` is the display message.
+    pub output: fn(&serde_json::Value, &str) -> Result<serde_json::Value, String>,
+}
+
+/// Retry knobs every System One options struct contributes to the core.
+pub(crate) struct SystemOneCoreOptions {
+    /// Extra retry attempts after the first failure.
+    pub max_retries: u32,
+    /// Cap for server-requested retry delays; `None` uses the 60 s source
+    /// default, `Some(0)` disables the cap.
+    pub max_retry_delay_ms: Option<u64>,
+}
+
+/// The shared System One attempt loop: guards, payload freeze, retries,
+/// per-attempt timeouts and the shared output parser.
 #[allow(clippy::too_many_arguments)]
-async fn classify_system_one(
+pub(crate) async fn classify_over_system_one(
     client: reqwest::Client,
     record: ClassifierModelRecord,
     context: ClassifierContext,
-    options: TypesafeSystemOneOptions,
+    options: SystemOneCoreOptions,
     auth: ResolvedAuth,
     call: ClassifierCall,
+    transport: SystemOneTransport,
 ) -> ClassifierResult {
+    let label = transport.label;
     // Pre-dispatch rejections: the transport guard, Bearer-only wire,
     // unsupported callback families, and image input.
-    if record.api.as_str() != TYPESAFE_SYSTEM_ONE_API_ID {
+    if record.api.as_str() != transport.api_id {
         let message = format!("Unsupported classifier API: {}", record.api.as_str());
         return ClassifierResult::failure(
             &record,
@@ -241,19 +289,19 @@ async fn classify_system_one(
         );
     }
     if auth.scheme != AuthScheme::Bearer {
-        let message = format!("{LABEL} requires Bearer auth scheme");
+        let message = format!("{label} requires Bearer auth scheme");
         return ClassifierResult::failure(
             &record,
             ClassifierStopReason::Error,
             ProviderError::Config(ProviderErrorSummary::sanitized(format!(
-                "{LABEL} requires Bearer auth scheme, got {:?}",
+                "{label} requires Bearer auth scheme, got {:?}",
                 auth.scheme
             ))),
             message,
         );
     }
     if call.callbacks.has_on_raw() || call.callbacks.has_header_transform() {
-        let message = format!("{LABEL} supports payload and response observers only");
+        let message = format!("{label} supports payload and response observers only");
         return ClassifierResult::failure(
             &record,
             ClassifierStopReason::Error,
@@ -264,7 +312,7 @@ async fn classify_system_one(
     if let Some(images) = context.images.as_ref()
         && !images.is_empty()
     {
-        let message = format!("{LABEL} does not support image input");
+        let message = format!("{label} does not support image input");
         return ClassifierResult::failure(
             &record,
             ClassifierStopReason::Error,
@@ -273,7 +321,7 @@ async fn classify_system_one(
         );
     }
 
-    let mut body = build_request_body(&record, &context);
+    let mut body = (transport.payload)(build_request_body(&record, &context));
     // The payload observer runs once per logical call; an ordinary retry
     // reuses the frozen body byte-for-byte (the shared callback seam).
     match call
@@ -285,7 +333,7 @@ async fn classify_system_one(
         Err(error) => return failure_from_error(&record, &call, error),
     }
 
-    let url = format!("{}/systemone", record.base_url.trim_end_matches('/'));
+    let url = transport.url;
 
     let attempt = async {
         let mut retries_remaining = options.max_retries;
@@ -351,12 +399,12 @@ async fn classify_system_one(
                         .as_deref()
                         .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
                         .unwrap_or_default();
-                    let message = format_http_error(status, &body_text);
+                    let message = format_http_error(label, status, &body_text);
                     return Err(AttemptFailure {
                         status: Some(status.as_u16()),
                         x_should_retry,
                         server_retry_delay_ms: server_retry_delay_ms(&headers),
-                        error: map_status_error(status, &headers, &body_text),
+                        error: map_status_error(label, status, &headers, &body_text),
                         message,
                     });
                 }
@@ -427,7 +475,13 @@ async fn classify_system_one(
             };
             match attempt_result {
                 Ok(Ok(body_text)) => {
-                    return parse_system_one_response(&record, &context, &body_text);
+                    return parse_system_one_response(
+                        label,
+                        transport.output,
+                        &record,
+                        &context,
+                        &body_text,
+                    );
                 }
                 Ok(Err(failure)) => {
                     if retries_remaining == 0 || !failure.is_retryable() {
@@ -543,18 +597,19 @@ fn failure_from_error(
 
 /// pi `formatProviderError` with the label prefix: `"<label> error
 /// (<status>): <body|message>"`, the body truncated to the source cap.
-fn format_http_error(status: reqwest::StatusCode, body: &str) -> String {
+fn format_http_error(label: &str, status: reqwest::StatusCode, body: &str) -> String {
     let suffix = crate::http::safe_excerpt(body);
-    format!("{LABEL} error ({}): {suffix}", status.as_u16())
+    format!("{label} error ({}): {suffix}", status.as_u16())
 }
 
 fn map_status_error(
+    label: &str,
     status: reqwest::StatusCode,
     headers: &reqwest::header::HeaderMap,
     body: &str,
 ) -> ProviderError {
     let code = status.as_u16();
-    let summary = ProviderErrorSummary::sanitized(format_http_error(status, body));
+    let summary = ProviderErrorSummary::sanitized(format_http_error(label, status, body));
     match code {
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),
@@ -627,10 +682,22 @@ fn token_count(value: Option<&serde_json::Value>) -> u32 {
         .unwrap_or(0)
 }
 
-/// Parse the System One response: usage is set before answers (a request
-/// with malformed answers was still billed), and every known question must
-/// have a type-matching answer.
+/// The direct TypeSafe endpoint returns the System One output unwrapped:
+/// any JSON object is the output record itself.
+fn typesafe_output(body: &serde_json::Value, label: &str) -> Result<serde_json::Value, String> {
+    if body.is_object() {
+        Ok(body.clone())
+    } else {
+        Err(format!("{label} returned an unexpected response"))
+    }
+}
+
+/// Parse the System One response: the transport unwraps its envelope,
+/// usage is set before answers (a request with malformed answers was still
+/// billed), and every known question must have a type-matching answer.
 fn parse_system_one_response(
+    label: &str,
+    output: fn(&serde_json::Value, &str) -> Result<serde_json::Value, String>,
     record: &ClassifierModelRecord,
     context: &ClassifierContext,
     body_text: &str,
@@ -638,7 +705,18 @@ fn parse_system_one_response(
     let parsed: serde_json::Value = match serde_json::from_str(body_text) {
         Ok(value) => value,
         Err(error) => {
-            let message = format!("{LABEL} returned an unexpected response: {error}");
+            let message = format!("{label} returned an unexpected response: {error}");
+            return ClassifierResult::failure(
+                record,
+                ClassifierStopReason::Error,
+                ProviderError::StreamError(ProviderErrorSummary::sanitized(message.clone())),
+                message,
+            );
+        }
+    };
+    let parsed = match output(&parsed, label) {
+        Ok(output) => output,
+        Err(message) => {
             return ClassifierResult::failure(
                 record,
                 ClassifierStopReason::Error,
@@ -683,9 +761,9 @@ fn parse_system_one_response(
         Some(answers) => answers,
         None => {
             result.stop_reason = ClassifierStopReason::Error;
-            result.error_message = Some(format!("{LABEL} returned an unexpected response"));
+            result.error_message = Some(format!("{label} returned an unexpected response"));
             result.error = Some(ProviderError::StreamError(ProviderErrorSummary::sanitized(
-                format!("{LABEL} returned an unexpected response"),
+                format!("{label} returned an unexpected response"),
             )));
             return result;
         }
@@ -693,8 +771,8 @@ fn parse_system_one_response(
 
     for (id, question) in &context.questions {
         let parse = match answers.get(id) {
-            Some(answer) => parse_answer(record, answer, question, id),
-            None => Err(format!("{LABEL} did not return an answer for {id}")),
+            Some(answer) => parse_answer(label, answer, question, id),
+            None => Err(format!("{label} did not return an answer for {id}")),
         };
         match parse {
             Ok(answer) => {
@@ -717,39 +795,42 @@ fn parse_system_one_response(
 }
 
 /// pi `requiredNumber`: a finite number or an error naming the field.
-fn required_number(value: Option<&serde_json::Value>, field: &str) -> Result<f64, String> {
+fn required_number(
+    label: &str,
+    value: Option<&serde_json::Value>,
+    field: &str,
+) -> Result<f64, String> {
     value
         .and_then(serde_json::Value::as_f64)
         .filter(|number| number.is_finite())
-        .ok_or_else(|| format!("{LABEL} returned an invalid {field}"))
+        .ok_or_else(|| format!("{label} returned an invalid {field}"))
 }
 
 /// Parse one typed answer against its question, validating only what the
 /// source requires (shape, wire type, string choice, finite numbers).
 fn parse_answer(
-    record: &ClassifierModelRecord,
+    label: &str,
     answer: &serde_json::Value,
     question: &crate::classifier::ClassifierQuestion,
     id: &str,
 ) -> Result<ClassifierAnswer, String> {
-    let _ = record;
     if !answer.is_object() {
-        return Err(format!("{LABEL} did not return an answer for {id}"));
+        return Err(format!("{label} did not return an answer for {id}"));
     }
     let wire_type = answer.get("type").and_then(serde_json::Value::as_str);
     match question {
         crate::classifier::ClassifierQuestion::Choice { .. } => {
             if wire_type != Some("choice") {
-                return Err(format!("{LABEL} did not return a choice answer for {id}"));
+                return Err(format!("{label} did not return a choice answer for {id}"));
             }
             let choice = answer
                 .get("choice")
                 .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| format!("{LABEL} did not return a choice answer for {id}"))?
+                .ok_or_else(|| format!("{label} did not return a choice answer for {id}"))?
                 .to_owned();
             let probabilities_raw = answer.get("probabilities");
             if !probabilities_raw.is_some_and(|probabilities| probabilities.is_object()) {
-                return Err(format!("{LABEL} returned invalid probabilities for {id}"));
+                return Err(format!("{label} returned invalid probabilities for {id}"));
             }
             let mut probabilities = std::collections::BTreeMap::new();
             for (key, probability) in probabilities_raw
@@ -757,12 +838,18 @@ fn parse_answer(
                 .as_object()
                 .expect("checked object")
             {
-                let value =
-                    required_number(Some(probability), &format!("probability for {id}.{key}"))?;
+                let value = required_number(
+                    label,
+                    Some(probability),
+                    &format!("probability for {id}.{key}"),
+                )?;
                 probabilities.insert(key.clone(), value);
             }
-            let confidence =
-                required_number(answer.get("confidence"), &format!("confidence for {id}"))?;
+            let confidence = required_number(
+                label,
+                answer.get("confidence"),
+                &format!("confidence for {id}"),
+            )?;
             Ok(ClassifierAnswer::Choice {
                 choice,
                 probabilities,
@@ -771,19 +858,22 @@ fn parse_answer(
         }
         crate::classifier::ClassifierQuestion::Score { .. } => {
             if wire_type != Some("score") {
-                return Err(format!("{LABEL} did not return a score answer for {id}"));
+                return Err(format!("{label} did not return a score answer for {id}"));
             }
-            let score = required_number(answer.get("score"), &format!("score for {id}"))?;
-            let confidence =
-                required_number(answer.get("confidence"), &format!("confidence for {id}"))?;
+            let score = required_number(label, answer.get("score"), &format!("score for {id}"))?;
+            let confidence = required_number(
+                label,
+                answer.get("confidence"),
+                &format!("confidence for {id}"),
+            )?;
             Ok(ClassifierAnswer::Score { score, confidence })
         }
         crate::classifier::ClassifierQuestion::Bool { .. } => {
             if wire_type != Some("noul") {
-                return Err(format!("{LABEL} did not return a bool answer for {id}"));
+                return Err(format!("{label} did not return a bool answer for {id}"));
             }
             let probability =
-                required_number(answer.get("noul"), &format!("probability for {id}"))?;
+                required_number(label, answer.get("noul"), &format!("probability for {id}"))?;
             Ok(ClassifierAnswer::Bool { probability })
         }
     }

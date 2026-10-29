@@ -1219,6 +1219,41 @@ opi 策划的基线目录（一条）覆盖目录到来之前的窗口；pi 生�
 `data/radius.json` 基线未随钉住源提供，配置网关的动态目录在注册时整
 体替换基线。
 
+## Cloudflare Workers AI System One 适配器与多模型注册（任务 20.47）
+
+第二个真实分类器协议驱动同一条共用 conformance：
+`api::cloudflare::CloudflareWorkersAiSystemOneApi`（api id
+`cloudflare-workers-ai-system-one`，provider id `cloudflare-workers-ai`）
+以自有协议形状经 Cloudflare REST 端点服务 System One 模型，**传输内核自
+`api::system_one` 参数化共享**（pi `SystemOneTransport` 形状：URL、请求
+信封与响应解包不同；守卫、payload 冻结、重试策略、逐 attempt
+body-inclusive 超时、计费保留与 tiered 目录计价完全一致）。单次
+`POST <base>/run` 携带 `{model, input: {state, questions}}` 信封——完整
+模型 id 在 `model`，公开 `bool` 问题仍以 `noul` 上线。账户级端点携带
+`{CLOUDFLARE_ACCOUNT_ID}` 占位符，由解析出的鉴权账户身份物化；缺省时占
+位符原样保留（pi `resolveCloudflareModel` 回退），请求不会到达真实端点。
+响应为 Cloudflare API 信封两种形状：第三方 run 记录以
+`{success, result: {state, result: {answers, usage}}}` 包裹输出且
+`state` 必须为 `"Completed"`（否则
+`"Cloudflare Workers AI run did not complete (state: {state})"`）；
+Cloudflare 自托管模型直接返回 `{result: {answers, usage}}`；精确的
+`success: false` 将信封 `errors[].message` 字符串聚合为
+`"Cloudflare Workers AI error: m1; m2"`，无可用消息回退
+`"Cloudflare Workers AI request failed"`。`temperature` 仍是永不上线的
+类型化选项；图像输入在任何请求之前拒绝；HTTP 失败格式化为
+`"Cloudflare Workers AI error ({status}): {body}"`。
+
+一个 provider 服务多个分类器模型，因此注册现在持有一个记录**集合**：
+`Models::register_classifier_api` 以适配器完整记录播种，新增的
+`Models::register_classifier_model_record` 追加（或按 provider/model id
+替换），`Models::classifier_model` 扫描集合；API 无注册的记录是类型化
+`ModelsError::ClassifierApiNotRegistered` 拒绝。curated 基线交付三条钉住
+身份——`typesafe/jev`（64000 token 上下文窗口自同底座模型的 TypeSafe
+fixture 跨宿主沿用）、`@cf/cloudflare/clef`（$0.24/M 输入）与
+`@cf/cloudflare/clef-flash`（$0.09/M 输入）；输出价与自托管模型的上下文
+窗口无钉住证据（pi 生成的 `data/cloudflare-workers-ai.json` 未随钉住源
+提供），保持生成器的 `0` 回退。注册方整体替换集合。
+
 ## 分类器操作与 TypeSafe System One 直接适配器（任务 20.46）
 
 fixed-`O` 分类器操作与 chat／image seam 并列：object-safe 的

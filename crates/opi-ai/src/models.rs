@@ -257,6 +257,13 @@ pub enum ModelsError {
         /// Bare model id of the requested model.
         id: String,
     },
+    /// A record append targeted an API identity with no classifier
+    /// registration.
+    #[error("no classifier API registered for '{api}'")]
+    ClassifierApiNotRegistered {
+        /// API identity the record carried.
+        api: String,
+    },
     /// The request identifies a different provider/model than the resolved
     /// route, so dispatch would make the frozen route facts untruthful.
     #[error(
@@ -780,13 +787,41 @@ impl Models {
                 options_type: std::any::TypeId::of::<O>(),
                 dispatch: Arc::new(TypedClassifierApi { api }),
                 resolver,
-                record,
+                records: vec![record],
             },
         );
         Ok(ClassifierApiHandle {
             api_id,
             _options: PhantomData,
         })
+    }
+
+    /// Append (or replace, keyed by provider/model id) one additional
+    /// classifier record to the registration matching `record.api`.
+    ///
+    /// One provider serves many classifier models under one API (pi's
+    /// Cloudflare Workers AI family); registration replaces the model set
+    /// wholesale, and a record whose API has no registration is a typed
+    /// [`ModelsError::ClassifierApiNotRegistered`] rejection.
+    pub fn register_classifier_model_record(
+        &mut self,
+        record: crate::classifier::ClassifierModelRecord,
+    ) -> Result<(), ModelsError> {
+        let Some(registration) = self.classifier_apis.get_mut(&record.api) else {
+            return Err(ModelsError::ClassifierApiNotRegistered {
+                api: record.api.as_str().to_owned(),
+            });
+        };
+        let key = (record.provider_id.clone(), record.id.clone());
+        match registration
+            .records
+            .iter()
+            .position(|existing| (existing.provider_id.clone(), existing.id.clone()) == key)
+        {
+            Some(index) => registration.records[index] = record,
+            None => registration.records.push(record),
+        }
+        Ok(())
     }
 
     /// Operation-qualified classifier selection: resolve the registered
@@ -801,8 +836,10 @@ impl Models {
         id: &str,
     ) -> Result<crate::classifier::ClassifierModelRecord, ModelsError> {
         for registration in self.classifier_apis.values() {
-            if registration.record.provider_id == provider && registration.record.id == id {
-                return Ok(registration.record.clone());
+            for record in &registration.records {
+                if record.provider_id == provider && record.id == id {
+                    return Ok(record.clone());
+                }
             }
         }
         Err(ModelsError::NotAClassifierModel {
@@ -3365,13 +3402,15 @@ impl<O: Send + 'static> std::fmt::Debug for ClassifierNativeOptions<O> {
     }
 }
 
-/// Type-erased storage for one registered classifier adapter.
+/// Type-erased storage for one registered classifier adapter and its model
+/// records (the adapter's complete record seeds the set; providers serving
+/// multiple models under one API append the rest).
 struct ClassifierApiRegistration {
     provider_id: String,
     options_type: TypeId,
     dispatch: Arc<dyn ClassifierApiDispatch>,
     resolver: Arc<dyn AuthResolver>,
-    record: crate::classifier::ClassifierModelRecord,
+    records: Vec<crate::classifier::ClassifierModelRecord>,
 }
 
 /// Object-safe dispatch over one fixed classifier options type.

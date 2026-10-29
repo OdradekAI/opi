@@ -111,5 +111,6 @@ pub trait ClassifierApi<O: Send + 'static>: Send + Sync {
     ) -> ClassifierFuture<'a>;
 }
 
+pub mod cloudflare;
 pub mod openrouter_images;
 pub mod system_one;

@@ -651,6 +651,23 @@
   unchanged.
 ### Added
 
+- `opi-ai`: Cloudflare Workers AI System One classifier adapter (task
+  20.47, DEL-11). The second real classifier protocol drives the same
+  shared conformance through a transport core parameterized out of
+  `api::system_one` (URL, request envelope and response unwrap differ;
+  guards, payload freeze, retry policy, per-attempt timeouts,
+  billed-usage retention and tiered pricing are identical). One POST
+  `<base>/run` with the `{model, input}` envelope, the
+  `{CLOUDFLARE_ACCOUNT_ID}` endpoint placeholder materialized from the
+  resolved account identity (kept literal when absent), Cloudflare's dual
+  response envelopes (third-party run records gated on
+  `state: "Completed"`, Cloudflare-hosted direct output, `success: false`
+  error aggregation), curated `typesafe/jev`/`@cf/cloudflare/clef`/
+  `@cf/cloudflare/clef-flash` baseline records, and multi-model
+  registration: `Models::register_classifier_model_record` appends to (or
+  replaces in) the registration's record set with a typed
+  `ModelsError::ClassifierApiNotRegistered` rejection for unregistered
+  APIs, and `Models::classifier_model` scans the set.
 - `opi-ai`: typed classifier operation and TypeSafe System One direct
   adapter (task 20.46, DEL-11). New public `classifier` contracts
   (`ClassifierContext` with ordered typed questions, `ClassifierAnswer`
