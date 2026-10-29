@@ -315,6 +315,14 @@ pub struct UnsupportedThinkingLevel {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+pub struct BedrockConverseStreamCompat {
+    /// Whether the wire accepts strict tool schemas (task 20.42, V-34,
+    /// pi `supportsStrictMode`): `json_schema` require fails typed before
+    /// dispatch when false, and strict tool specs carry `"strict": true`.
+    pub supports_strict_tools: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct AnthropicMessagesCompat {
     pub supports_eager_tool_input_streaming: bool,
     pub force_adaptive_thinking: bool,
@@ -593,7 +601,7 @@ pub enum WireCompat {
     OpenAiCodexResponses(OpenAiCodexResponsesCompat),
     GoogleGenerativeAi,
     GoogleVertex,
-    BedrockConverseStream,
+    BedrockConverseStream(BedrockConverseStreamCompat),
     AzureOpenAiCompletions,
     /// Azure Responses rows (task 20.38): the same responses compat flag
     /// surface under the azure wire identity.
@@ -609,7 +617,7 @@ impl WireCompat {
             Self::OpenAiCodexResponses(_) => WireApi::OpenAiCodexResponses,
             Self::GoogleGenerativeAi => WireApi::GoogleGenerativeAi,
             Self::GoogleVertex => WireApi::GoogleVertex,
-            Self::BedrockConverseStream => WireApi::BedrockConverseStream,
+            Self::BedrockConverseStream(_) => WireApi::BedrockConverseStream,
             Self::AzureOpenAiCompletions => WireApi::AzureOpenAiCompletions,
             Self::AzureOpenAiResponses(_) => WireApi::AzureOpenAiResponses,
         }
@@ -623,7 +631,7 @@ impl WireCompat {
             WireApi::OpenAiCodexResponses => Self::OpenAiCodexResponses(Default::default()),
             WireApi::GoogleGenerativeAi => Self::GoogleGenerativeAi,
             WireApi::GoogleVertex => Self::GoogleVertex,
-            WireApi::BedrockConverseStream => Self::BedrockConverseStream,
+            WireApi::BedrockConverseStream => Self::BedrockConverseStream(Default::default()),
             WireApi::AzureOpenAiCompletions => Self::AzureOpenAiCompletions,
             // Task 20.38: azure responses records carry the same responses
             // flag surface under their own wire identity.

@@ -1700,6 +1700,50 @@ unmapped finish reasons fail typed carrying the raw reason
 (`Provider stopped with: <raw>`). The Google producer runs under the
 explicit frozen `TelemetryContext` (P20-TELEMETRY).
 
+## Bedrock Converse Stream Direct Adapter and Native Options (task 20.42)
+
+The public direct adapter `bedrock::BedrockConverseStreamChatApi` registers
+through `Models::register_chat_api` (api id `bedrock-converse-stream`,
+provider id `bedrock`) with typed `BedrockOptions`. The AWS transport layer
+— the SigV4 credential chain, bearer tokens, region/profile precedence,
+Smithy retry, the eventstream+CRC parser and the explicit proxy-placeholder
+signing mode — is inherited unchanged from the earlier delivery; the
+adapter adds the pi content engine on top.
+
+| Option | Wire effect |
+|---|---|
+| `tool_choice: auto/any/none/named` | `toolConfig.toolChoice` (`{"auto":{}}`, `{"any":{}}`, `{"tool":{"name":...}}`); `none` drops the whole `toolConfig`, so the tools ride no other member |
+| `reasoning: <level>` | Claude budget models: `additionalModelRequestFields.thinking = {type: enabled, budget_tokens}` from the custom `thinking_budgets` override or the default table (1024/2048/8192/16384; `xhigh`/`max` clamp to `high`); adaptive models (Opus 4.6+/4.7/4.8/5, Sonnet 4.6/5, Haiku 5, Fable 5): `thinking = {type: adaptive, display, block_binding}` + `output_config.effort` (native `xhigh` on capable models, the thinking map's explicit mappings override) |
+| `interleaved_thinking: bool` (default true) | The `interleaved-thinking-2025-05-14` beta on budget-based Claude models |
+| `thinking_display: summarized/omitted` | `thinking.display` (default `summarized`); **GovCloud** targets (a `us-gov-*` dispatch region or a `us-gov.`/`arn:aws-us-gov:` model id) omit `display` and the binding-controls beta until the GovCloud Converse schema catches up |
+| `request_metadata` | Rides verbatim as `requestMetadata`; the AWS limits live in pi comments only and the SDK owns validation (no local preflight) |
+| (non-Claude) | gpt-oss models take a flat `reasoning_effort` (low/medium/high); GPT models take nested `reasoning.effort`; other families send no additional fields |
+
+`region`/`profile`/`bearerToken` are resolver-owned inputs (the task 20.20
+AWS chain: explicit/scoped/env keys, profiles, web identity, ECS/ECS
+relative URIs, IMDS, SSO), not options on this struct.
+
+Strict tools follow `BedrockConverseStreamCompat.supports_strict_tools`
+(`WireCompat::BedrockConverseStream` became a tuple variant): a strict tool
+spec carries the converted schema plus `"strict": true`; `require` still
+fails typed before dispatch when the flag is false. Cache points ride the
+system prompt and the last user message (including tool turns) on the
+supported Claude families — default retention keeps pi's `short` default,
+`Long` adds the one-hour `ttl`, `Disabled` drops every point. Message
+conversion sends `<empty>` where Bedrock requires non-blank content, drops
+blank text, replays thinking as `reasoningContent.reasoningText` (signed
+Claude blocks; unsigned Claude falls back to plain text; non-Claude never
+carries the signature member), replays redacted reasoning as opaque
+`redactedContent` bytes (a non-base64 payload drops the block), merges
+consecutive tool results into one user message, and moves Claude error-tool
+images after the turn's results with a caption. Streaming maps
+`reasoningContent` deltas to thinking blocks (signature accumulation,
+redacted payload buffering), maps `model_context_window_exceeded` to
+`length`, fails unmapped stop reasons typed carrying the raw reason
+(`Provider stopped with: <raw>`), and sums one-hour `cacheDetails` into
+`cache_write_1h_tokens`. The producer runs under the explicit frozen
+`TelemetryContext`.
+
 ## Google Vertex Direct Adapter and Native Options (task 20.41)
 
 The public direct adapter `vertex::GoogleVertexChatApi` registers through

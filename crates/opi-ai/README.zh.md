@@ -1181,6 +1181,45 @@ functionCall part 上；仅带签名的空 part 得以保留。成功工具结�
 （`Provider stopped with: <raw>`）。Google producer 运行于显式冻结的
 `TelemetryContext`（P20-TELEMETRY）。
 
+## Bedrock Converse Stream 直接适配器与 native 选项（任务 20.42）
+
+公共直接适配器 `bedrock::BedrockConverseStreamChatApi` 经
+`Models::register_chat_api` 注册（api id `bedrock-converse-stream`，
+provider id `bedrock`），携带类型化的 `BedrockOptions`。AWS 传输层——SigV4
+凭证链、bearer token、region/profile 优先级、Smithy retry、eventstream+CRC
+解析器与显式 proxy-placeholder 签名模式——继承自既有交付，不变；适配器在其
+上补齐 pi 内容引擎。
+
+| 选项 | wire 效果 |
+|---|---|
+| `tool_choice: auto/any/none/named` | `toolConfig.toolChoice`（`{"auto":{}}`、`{"any":{}}`、`{"tool":{"name":...}}`）；`none` 整个省略 `toolConfig`，工具不随其他成员发送 |
+| `reasoning: <级别>` | Claude 预算模型：`additionalModelRequestFields.thinking = {type: enabled, budget_tokens}`，取自定义 `thinking_budgets` 覆盖或默认表（1024/2048/8192/16384；`xhigh`/`max` 钳到 `high`）；adaptive 模型（Opus 4.6+/4.7/4.8/5、Sonnet 4.6/5、Haiku 5、Fable 5）：`thinking = {type: adaptive, display, block_binding}` + `output_config.effort`（能力模型原生 `xhigh`，thinking map 的显式映射优先） |
+| `interleaved_thinking: bool`（默认 true） | 预算制 Claude 模型附 `interleaved-thinking-2025-05-14` beta |
+| `thinking_display: summarized/omitted` | `thinking.display`（默认 `summarized`）；**GovCloud** 目标（`us-gov-*` 派发 region 或 `us-gov.`/`arn:aws-us-gov:` 模型 id）省略 `display` 与 binding-controls beta，直至 GovCloud Converse schema 追平 |
+| `request_metadata` | 逐字转发为 `requestMetadata`；AWS 限制仅存在于 pi 注释，校验归 SDK（无本地 preflight） |
+| （非 Claude） | gpt-oss 模型取平面 `reasoning_effort`（low/medium/high）；GPT 模型取嵌套 `reasoning.effort`；其他家族不发送额外字段 |
+
+`region`/`profile`/`bearerToken` 是 resolver 持有的输入（20.20 AWS 链：显
+式/scoped/env 密钥、profile、web identity、ECS 相对 URI、IMDS、SSO），不在
+本结构体上重复。
+
+strict 工具跟随 `BedrockConverseStreamCompat.supports_strict_tools`
+（`WireCompat::BedrockConverseStream` 变为元组变体）：strict toolSpec 携带
+转换后的 schema 与 `"strict": true`；flag 为 false 时 `require` 依旧在派发
+前类型化失败。Cache points 附着于 system 提示与最后一条 user 消息（含工具
+回合）——默认保留策略保持 pi 的 `short` 默认，`Long` 加一小时 `ttl`，
+`Disabled` 全部丢弃。消息转换在 Bedrock 要求非空内容处发送 `<empty>`、丢
+弃空白文本、thinking 以 `reasoningContent.reasoningText` 回放（带签名的
+Claude 块；无签名 Claude 回退纯文本；非 Claude 永不携带 signature 成员）、
+redacted reasoning 以不透明 `redactedContent` 字节回放（非 base64 载荷丢弃
+该块）、连续 tool result 合并为一条 user 消息、Claude 错误工具图像移至本
+回合全部结果之后并带说明文字。流式侧把 `reasoningContent` delta 映射为
+thinking 块（signature 累积、redacted 载荷缓冲），把
+`model_context_window_exceeded` 映射为 `length`，未映射 stop 原因类型化失
+败并携带原始原因（`Provider stopped with: <raw>`），一小时的
+`cacheDetails` 求和进 `cache_write_1h_tokens`。producer 运行于显式冻结的
+`TelemetryContext`。
+
 ## Google Vertex 直接适配器与 native 选项（任务 20.41）
 
 公共直接适配器 `vertex::GoogleVertexChatApi` 经 `Models::register_chat_api`

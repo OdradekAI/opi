@@ -212,9 +212,10 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
         }),
         WireCompat::GoogleGenerativeAi => json!({ "api": WireApi::GoogleGenerativeAi.as_str() }),
         WireCompat::GoogleVertex => json!({ "api": WireApi::GoogleVertex.as_str() }),
-        WireCompat::BedrockConverseStream => {
-            json!({ "api": WireApi::BedrockConverseStream.as_str() })
-        }
+        WireCompat::BedrockConverseStream(inner) => json!({
+            "api": WireApi::BedrockConverseStream.as_str(),
+            "supportsStrictTools": inner.supports_strict_tools,
+        }),
         WireCompat::AzureOpenAiCompletions => {
             json!({ "api": WireApi::AzureOpenAiCompletions.as_str() })
         }
@@ -437,7 +438,16 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
         ))),
         WireApi::GoogleGenerativeAi => Ok(Some(WireCompat::GoogleGenerativeAi)),
         WireApi::GoogleVertex => Ok(Some(WireCompat::GoogleVertex)),
-        WireApi::BedrockConverseStream => Ok(Some(WireCompat::BedrockConverseStream)),
+        WireApi::BedrockConverseStream => Ok(Some(WireCompat::BedrockConverseStream(
+            crate::model_info::BedrockConverseStreamCompat {
+                supports_strict_tools: match value.get("supportsStrictTools") {
+                    None => false,
+                    Some(value) => value
+                        .as_bool()
+                        .ok_or("x-opi.compat field 'supportsStrictTools' must be a boolean")?,
+                },
+            },
+        ))),
         WireApi::AzureOpenAiCompletions => Ok(Some(WireCompat::AzureOpenAiCompletions)),
     }
 }

@@ -781,11 +781,15 @@ fn tool_result_image_placeholder_preserves_media_type() {
     .expect("valid context declarations");
 
     let body = provider.build_converse_body(&request).unwrap();
-    let text = body["messages"][1]["content"][0]["toolResult"]["content"][0]["text"]
-        .as_str()
-        .unwrap();
-
-    assert_eq!(text, "[image: image/jpeg]");
+    // Task 20.42: success tool-result images ride real inline image blocks
+    // (pi `convertToolResultContent`); the phase-12 text placeholder is
+    // superseded by the replacement proof in the 20.42 adapter tests.
+    let image = &body["messages"][1]["content"][0]["toolResult"]["content"][0]["image"];
+    assert_eq!(image["format"], serde_json::json!("jpeg"));
+    assert_eq!(
+        image["source"]["bytes"],
+        serde_json::json!("/9j/") // base64 of [0xff, 0xd8, 0xff]
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -952,111 +956,6 @@ fn bedrock_models_advertise_supports_thinking() {
         !thinking.is_empty(),
         "bedrock should advertise supports_thinking on at least one model"
     );
-}
-
-#[tokio::test]
-async fn bedrock_reasoning_content_blocks_not_parsed_as_thinking() {
-    // A Bedrock converse-stream reasoning block, shaped per the AWS Converse
-    // Stream schema (contentBlockStart.start.reasoningContent +
-    // contentBlockDelta.delta.reasoningContent.text), followed by a normal
-    // text block so we can prove the parser still runs on ordinary content.
-    let events_data = build_bedrock_stream(&[
-        ("messageStart", r#"{"role":"assistant"}"#),
-        (
-            "contentBlockStart",
-            r#"{"start":{"reasoningContent":{}},"contentBlockIndex":0}"#,
-        ),
-        (
-            "contentBlockDelta",
-            r#"{"delta":{"reasoningContent":{"text":"reasoning step one"}},"contentBlockIndex":0}"#,
-        ),
-        (
-            "contentBlockDelta",
-            r#"{"delta":{"reasoningContent":{"text":"reasoning step two"}},"contentBlockIndex":0}"#,
-        ),
-        ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
-        (
-            "contentBlockStart",
-            r#"{"start":{"text":{}},"contentBlockIndex":1}"#,
-        ),
-        (
-            "contentBlockDelta",
-            r#"{"delta":{"text":"final answer"},"contentBlockIndex":1}"#,
-        ),
-        ("contentBlockStop", r#"{"contentBlockIndex":1}"#),
-        ("messageStop", r#"{"stopReason":"end_turn"}"#),
-        (
-            "metadata",
-            r#"{"usage":{"inputTokens":10,"outputTokens":5}}"#,
-        ),
-    ]);
-
-    let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
-    let request = text_stream_request();
-    let events = collect_events(provider.stream_from_fixture(&events_data, request.cancel)).await;
-
-    // The parser must have run: Start and a terminal Done are present.
-    assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, AssistantStreamEvent::Start { .. })),
-        "parser must emit Start"
-    );
-    let done = events.last().expect("stream must produce a terminal event");
-    assert!(
-        matches!(done, AssistantStreamEvent::Done { .. }),
-        "stream must end with Done"
-    );
-
-    // Negative assertion: NO thinking lifecycle events are emitted for the
-    // reasoningContent block. This is the named protocol-limitation guard.
-    let any_thinking = events.iter().any(|e| {
-        matches!(
-            e,
-            AssistantStreamEvent::ThinkingStart { .. }
-                | AssistantStreamEvent::ThinkingDelta { .. }
-                | AssistantStreamEvent::ThinkingEnd { .. }
-        )
-    });
-    assert!(
-        !any_thinking,
-        "bedrock parser must not emit Thinking* events; reasoningContent is not recognized"
-    );
-
-    // The reasoning text must be silently dropped (not surfaced as text):
-    // `delta.reasoningContent.text` does not match the parser's `delta.text`
-    // arm, so the deltas fall through to empty Text deltas.
-    let rendered: String = events
-        .iter()
-        .filter_map(|e| match e {
-            AssistantStreamEvent::TextDelta { delta, .. } => Some(delta.as_str()),
-            _ => None,
-        })
-        .collect();
-    assert!(
-        !rendered.contains("reasoning step one") && !rendered.contains("reasoning step two"),
-        "reasoningContent text must not leak into Text deltas: {rendered:?}"
-    );
-
-    // The parser still handles ordinary text blocks correctly, proving the
-    // limitation is reasoning-specific rather than a general parse failure.
-    assert!(
-        rendered.contains("final answer"),
-        "normal text block must still stream: {rendered:?}"
-    );
-
-    // The Done message carries no Thinking content block — the reasoning block
-    // was mis-routed to an empty Text block, not to a Thinking block.
-    if let AssistantStreamEvent::Done { message, .. } = done {
-        assert!(
-            message
-                .content
-                .iter()
-                .all(|c| !matches!(c, opi_ai::message::AssistantContent::Thinking { .. })),
-            "Done message must contain no Thinking content block: {:?}",
-            message.content
-        );
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -7977,6 +7876,1158 @@ mod constrained_guard_tests {
         assert!(
             !serialized.contains("\"strict\""),
             "no strict flag is invented on this wire: {serialized}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 20.42: bedrock-converse-stream complete chat adapter (pi 1.3.0)
+// ---------------------------------------------------------------------------
+
+mod bedrock_42 {
+    use super::*;
+    use opi_ai::bedrock::{BedrockConverseStreamChatApi, BedrockOptions, BedrockProvider};
+    use opi_ai::message::{OutputContent, ToolNotExecutedReason};
+    use opi_ai::model_info::{
+        ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, WireApi,
+    };
+    use opi_ai::provider::{CacheRetention, Provider, ProviderError};
+    use opi_ai::stream::AssistantStreamEvent;
+    use opi_ai::{ChatModelRecord, Models};
+    use std::collections::BTreeMap;
+
+    const SONNET4: &str = "anthropic.claude-sonnet-4-20250514-v2";
+
+    fn model_42(id: &str, name: &str) -> ModelInfo {
+        ModelInfo::new(
+            id,
+            name,
+            WireApi::BedrockConverseStream,
+            ModelCapabilities::new(200_000, 8_192)
+                .with_images(true)
+                .with_streaming(true)
+                .with_thinking(true),
+        )
+    }
+
+    fn req_42(system: Option<&str>, user_text: &str) -> Request {
+        let mut request = text_stream_request();
+        request.model = SONNET4.into();
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: system.map(str::to_owned),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: user_text.to_owned(),
+                }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        })
+        .expect("valid context declarations");
+        request
+    }
+
+    struct StaticAwsResolver42 {
+        credentials: AwsCredentials,
+    }
+
+    impl AuthResolver for StaticAwsResolver42 {
+        fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+            let auth = ResolvedAuth::aws_sigv4(
+                self.credentials.clone(),
+                AuthProvenance {
+                    source: AuthProvenanceSource::AwsSigV4 {
+                        source: AwsCredentialSource::ExplicitConfig,
+                    },
+                    fallback: AuthFallback::NotAttempted,
+                },
+            );
+            Box::pin(async move { Ok(auth) })
+        }
+    }
+
+    fn native() -> BedrockOptions {
+        BedrockOptions::default()
+    }
+
+    fn body_42(provider: &BedrockProvider, request: &Request) -> serde_json::Value {
+        provider
+            .build_converse_body(request)
+            .expect("bedrock body compiles")
+    }
+
+    fn reasoning_body_42(
+        id: &str,
+        reasoning: Option<ThinkingLevel>,
+        budgets: BTreeMap<ThinkingLevel, u64>,
+    ) -> serde_json::Value {
+        let mut options = native();
+        options.reasoning = reasoning;
+        options.thinking_budgets = budgets;
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+            .with_models(vec![model_42(id, "")])
+            .with_native_options(options);
+        let mut request = req_42(None, "go");
+        request.model = id.to_owned();
+        body_42(&provider, &request)
+    }
+
+    #[test]
+    fn native_tool_choice_projects_converse_modes() {
+        for (choice, wire) in [
+            (opi_ai::bedrock::BedrockToolChoice::Auto, r#"{"auto":{}}"#),
+            (opi_ai::bedrock::BedrockToolChoice::Any, r#"{"any":{}}"#),
+            (
+                opi_ai::bedrock::BedrockToolChoice::Named("read".into()),
+                r#"{"tool":{"name":"read"}}"#,
+            ),
+        ] {
+            let mut options = native();
+            options.tool_choice = Some(choice);
+            let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+                .with_native_options(options);
+            let body = body_42(&provider, &tool_call_request());
+            assert_eq!(
+                serde_json::to_string(&body["toolConfig"]["toolChoice"]).unwrap(),
+                wire
+            );
+            // Tools ride the config alongside the choice.
+            assert!(
+                body["toolConfig"]["tools"][0]["toolSpec"]["name"]
+                    .as_str()
+                    .is_some_and(|name| name == "read")
+            );
+        }
+
+        // Pi drops the whole toolConfig for `none` (tools are not sent).
+        let mut options = native();
+        options.tool_choice = Some(opi_ai::bedrock::BedrockToolChoice::None_);
+        let provider =
+            BedrockProvider::new(None, Arc::new(HttpClient::new())).with_native_options(options);
+        let body = body_42(&provider, &tool_call_request());
+        assert!(body.get("toolConfig").is_none());
+    }
+
+    #[test]
+    fn native_numeric_reasoning_uses_budget_table_and_interleaved_beta() {
+        // Default table: high -> 16384 with the interleaved beta and the
+        // summarized display default.
+        let body = reasoning_body_42(
+            "anthropic.claude-sonnet-4-20250514-v2",
+            Some(ThinkingLevel::High),
+            BTreeMap::new(),
+        );
+        assert_eq!(
+            body["additionalModelRequestFields"],
+            serde_json::json!({
+                "thinking": {"type": "enabled", "budget_tokens": 16384, "display": "summarized"},
+                "anthropic_beta": ["interleaved-thinking-2025-05-14"],
+            })
+        );
+
+        // Custom budgets override the level budget; xhigh clamps to high on
+        // budget-based models.
+        let mut budgets = BTreeMap::new();
+        budgets.insert(ThinkingLevel::High, 9_000);
+        let body = reasoning_body_42(
+            "anthropic.claude-sonnet-4-20250514-v2",
+            Some(ThinkingLevel::XHigh),
+            budgets,
+        );
+        assert_eq!(
+            body["additionalModelRequestFields"]["thinking"]["budget_tokens"],
+            serde_json::json!(9_000)
+        );
+    }
+
+    #[test]
+    fn native_display_and_interleaved_options_shape_fields() {
+        let mut options = native();
+        options.reasoning = Some(ThinkingLevel::High);
+        options.thinking_display = Some(opi_ai::bedrock::BedrockThinkingDisplay::Omitted);
+        options.interleaved_thinking = Some(false);
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+            .with_models(vec![model_42(SONNET4, "Claude (Bedrock)")])
+            .with_native_options(options);
+        let body = body_42(&provider, &req_42(None, "go"));
+        assert_eq!(
+            body["additionalModelRequestFields"]["thinking"]["display"],
+            serde_json::json!("omitted")
+        );
+        // Interleaved opt-out removes the beta entirely.
+        assert!(
+            body["additionalModelRequestFields"]
+                .get("anthropic_beta")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn govcloud_ids_omit_display_and_block_binding() {
+        // GovCloud model ids skip display and block binding (pi pins both
+        // until the GovCloud Converse schema catches up).
+        let body = reasoning_body_42(
+            "us-gov.anthropic.claude-sonnet-4-x",
+            Some(ThinkingLevel::High),
+            BTreeMap::new(),
+        );
+        assert_eq!(
+            body["additionalModelRequestFields"]["thinking"],
+            serde_json::json!({"type": "enabled", "budget_tokens": 16384})
+        );
+        // The interleaved beta still rides numeric GovCloud requests (pi
+        // applies only the display/binding omissions there).
+        assert_eq!(
+            body["additionalModelRequestFields"]["anthropic_beta"],
+            serde_json::json!(["interleaved-thinking-2025-05-14"])
+        );
+    }
+
+    #[test]
+    fn adaptive_models_take_adaptive_fields_and_native_xhigh() {
+        let body = reasoning_body_42(
+            "anthropic.claude-opus-4-7-20260101-v1",
+            Some(ThinkingLevel::High),
+            BTreeMap::new(),
+        );
+        assert_eq!(
+            body["additionalModelRequestFields"],
+            serde_json::json!({
+                "thinking": {
+                    "type": "adaptive",
+                    "display": "summarized",
+                    "block_binding": {"prefix_mismatch_behavior": "drop_block"},
+                },
+                "output_config": {"effort": "high"},
+                "anthropic_beta": ["thinking-binding-controls-2026-08-01"],
+            })
+        );
+
+        // Native xhigh passes through on xhigh-capable models; thinking
+        // budgets are ignored on the adaptive path.
+        let mut budgets = BTreeMap::new();
+        budgets.insert(ThinkingLevel::High, 9_000);
+        let body = reasoning_body_42(
+            "anthropic.claude-opus-4-7-20260101-v1",
+            Some(ThinkingLevel::XHigh),
+            budgets,
+        );
+        assert_eq!(
+            body["additionalModelRequestFields"]["output_config"]["effort"],
+            serde_json::json!("xhigh")
+        );
+
+        // A thinking-level map overrides the level->effort mapping.
+        let mut model = model_42("anthropic.claude-opus-4-7-20260101-v1", "Opus");
+        model.thinking_level_map = ThinkingLevelMap::reasoning_default().with_mapping(
+            ThinkingLevel::High,
+            opi_ai::model_info::ThinkingLevelMapping::Mapped("max".to_owned()),
+        );
+        let mut options = native();
+        options.reasoning = Some(ThinkingLevel::High);
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+            .with_models(vec![model])
+            .with_native_options(options);
+        let mut request = req_42(None, "go");
+        request.model = "anthropic.claude-opus-4-7-20260101-v1".into();
+        let body = body_42(&provider, &request);
+        assert_eq!(
+            body["additionalModelRequestFields"]["output_config"]["effort"],
+            serde_json::json!("max")
+        );
+    }
+
+    #[test]
+    fn gpt_oss_and_gpt_map_efforts() {
+        // gpt-oss takes a flat reasoning_effort and clamps to high.
+        let body = reasoning_body_42(
+            "openai.gpt-oss-120b-1",
+            Some(ThinkingLevel::Max),
+            BTreeMap::new(),
+        );
+        assert_eq!(
+            body["additionalModelRequestFields"],
+            serde_json::json!({"reasoning_effort": "high"})
+        );
+
+        // GPT models take a nested reasoning.effort; minimal maps to low.
+        let body = reasoning_body_42(
+            "openai.gpt-5.1",
+            Some(ThinkingLevel::Minimal),
+            BTreeMap::new(),
+        );
+        assert_eq!(
+            body["additionalModelRequestFields"],
+            serde_json::json!({"reasoning": {"effort": "low"}})
+        );
+    }
+
+    #[test]
+    fn native_omission_sends_no_reasoning_fields() {
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+            .with_models(vec![model_42(SONNET4, "Claude (Bedrock)")])
+            .with_native_options(native());
+        let body = body_42(&provider, &req_42(None, "go"));
+        assert!(body.get("additionalModelRequestFields").is_none());
+    }
+
+    #[test]
+    fn request_metadata_rides_verbatim() {
+        let mut options = native();
+        options.request_metadata = BTreeMap::from([
+            ("team".to_owned(), "core".to_owned()),
+            // Pi documents limits in comments only; the consumption path
+            // forwards whatever arrives without local preflight.
+            ("k".repeat(100).to_owned(), "v".to_owned()),
+        ]);
+        let provider =
+            BedrockProvider::new(None, Arc::new(HttpClient::new())).with_native_options(options);
+        let body = body_42(&provider, &req_42(None, "go"));
+        assert_eq!(body["requestMetadata"]["team"], serde_json::json!("core"));
+        assert_eq!(
+            body["requestMetadata"][&"k".repeat(100)],
+            serde_json::json!("v")
+        );
+    }
+
+    #[test]
+    fn cache_points_system_and_last_user() {
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+            .with_models(vec![model_42(SONNET4, "Claude (Bedrock)")]);
+        let mut request = req_42(Some("You are helpful."), "go");
+        request.cache_retention = CacheRetention::None;
+        let body = body_42(&provider, &request);
+        // Default retention keeps the pi "short" default: system text plus a
+        // default cache point, and the last user message carries one.
+        assert_eq!(
+            body["system"],
+            serde_json::json!([
+                {"text": "You are helpful."},
+                {"cachePoint": {"type": "default"}},
+            ])
+        );
+        let messages = body["messages"].as_array().expect("messages");
+        let last = messages.last().expect("last message");
+        assert_eq!(
+            last["content"].as_array().expect("content")[1],
+            serde_json::json!({"cachePoint": {"type": "default"}})
+        );
+
+        // Long retention adds the one-hour TTL.
+        let mut request = req_42(Some("You are helpful."), "go");
+        request.cache_retention = CacheRetention::Long;
+        let body = body_42(&provider, &request);
+        assert_eq!(
+            body["system"][1],
+            serde_json::json!({"cachePoint": {"type": "default", "ttl": "1h"}})
+        );
+
+        // Disabled drops every cache point.
+        let mut request = req_42(Some("You are helpful."), "go");
+        request.cache_retention = CacheRetention::Disabled;
+        let body = body_42(&provider, &request);
+        assert!(
+            body["system"]
+                .as_array()
+                .is_none_or(|blocks| blocks.len() == 1)
+        );
+
+        // Non-Claude models get no cache points at all.
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+            .with_models(vec![model_42("amazon.nova-lite-v1", "Nova Lite")]);
+        let mut request = req_42(Some("You are helpful."), "go");
+        request.cache_retention = CacheRetention::None;
+        let body = body_42(&provider, &request);
+        assert!(
+            body["system"]
+                .as_array()
+                .is_none_or(|blocks| blocks.len() == 1)
+        );
+    }
+
+    #[test]
+    fn empty_text_placeholder_and_blank_drop() {
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+            .with_models(vec![model_42(SONNET4, "Claude (Bedrock)")]);
+        let mut request = req_42(None, "   ");
+        request.cache_retention = CacheRetention::Disabled;
+        // Blank user text falls to the <empty> placeholder.
+        let body = body_42(&provider, &request);
+        assert_eq!(
+            body["messages"][0]["content"],
+            serde_json::json!([{"text": "<empty>"}])
+        );
+
+        // Blank assistant text is dropped, not placeholdered.
+        let mut context_messages = vec![Message::User(UserMessage {
+            content: vec![InputContent::Text { text: "q".into() }],
+            timestamp_ms: 0,
+        })];
+        context_messages.push(Message::Assistant(AssistantMessage {
+            content: vec![
+                AssistantContent::Text {
+                    text: "  ".into(),
+                    signature: None,
+                },
+                AssistantContent::Text {
+                    text: "real".into(),
+                    signature: None,
+                },
+            ],
+            ..assistant_42()
+        }));
+        let mut request = req_42(None, "q");
+        request.cache_retention = CacheRetention::Disabled;
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: context_messages,
+            tools: vec![],
+        })
+        .expect("valid context declarations");
+        let body = body_42(&provider, &request);
+        assert_eq!(
+            body["messages"][1]["content"],
+            serde_json::json!([{"text": "real"}])
+        );
+    }
+
+    fn assistant_42() -> AssistantMessage {
+        AssistantMessage {
+            content: vec![],
+            api: opi_ai::ApiKind::Anthropic,
+            provider: "bedrock".into(),
+            model: SONNET4.into(),
+            response_model: None,
+            wire: Some(WireApi::BedrockConverseStream),
+            response_id: None,
+            usage: Default::default(),
+            stop_reason: opi_ai::stream::StopReason::Stop,
+            error_message: None,
+            timestamp_ms: 0,
+            diagnostics: vec![],
+            duration_ms: None,
+            provider_thinking_level: None,
+        }
+    }
+
+    #[test]
+    fn thinking_replay_projects_converse_shapes() {
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+            .with_models(vec![model_42(SONNET4, "Claude (Bedrock)")]);
+        let mut assistant = assistant_42();
+        assistant.provider = "bedrock".into();
+        assistant.content = vec![
+            AssistantContent::Thinking {
+                thinking: "step".into(),
+                signature: Some("sig-1".into()),
+            },
+            AssistantContent::Thinking {
+                thinking: "unsigned".into(),
+                signature: None,
+            },
+            AssistantContent::RedactedThinking {
+                data: "b3BhcXVl".into(),
+            },
+            AssistantContent::RedactedThinking {
+                data: "!!not-base64!!".into(),
+            },
+        ];
+        let messages = vec![
+            Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "q".into() }],
+                timestamp_ms: 0,
+            }),
+            Message::Assistant(assistant),
+        ];
+        let mut request = req_42(None, "q");
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages,
+            tools: vec![],
+        })
+        .expect("valid context declarations");
+        let body = body_42(&provider, &request);
+        assert_eq!(
+            body["messages"][1]["content"],
+            serde_json::json!([
+                {"reasoningContent": {"reasoningText": {"text": "step", "signature": "sig-1"}}},
+                // Claude without a signature replays plain text.
+                {"text": "unsigned"},
+                // Redacted payload replays as opaque bytes; a malformed
+                // payload drops the block instead of failing the request.
+                {"reasoningContent": {"redactedContent": "b3BhcXVl"}},
+            ])
+        );
+
+        // Non-Claude models never receive the signature member.
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+            .with_models(vec![model_42("amazon.nova-lite-v1", "Nova Lite")]);
+        let mut assistant = assistant_42();
+        // (routed below)
+        assistant.provider = "bedrock".into();
+        assistant.model = "amazon.nova-lite-v1".into();
+        assistant.content = vec![AssistantContent::Thinking {
+            thinking: "step".into(),
+            signature: Some("sig-1".into()),
+        }];
+        let messages = vec![
+            Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "q".into() }],
+                timestamp_ms: 0,
+            }),
+            Message::Assistant(assistant),
+        ];
+        let mut request = req_42(None, "q");
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages,
+            tools: vec![],
+        })
+        .expect("valid context declarations");
+        request.model = "amazon.nova-lite-v1".into();
+        let body = body_42(&provider, &request);
+        assert_eq!(
+            body["messages"][1]["content"],
+            serde_json::json!([
+                {"reasoningContent": {"reasoningText": {"text": "step"}}}
+            ])
+        );
+    }
+
+    #[test]
+    fn error_tool_result_images_split_after_turn_results() {
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+            .with_models(vec![model_42(SONNET4, "Claude (Bedrock)")]);
+        let pixel =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, vec![1, 2, 3, 4]);
+        let tool_turn = vec![
+            Message::ToolResult(ToolResultMessage {
+                tool_call_id: "tool-1".into(),
+                tool_name: "read".into(),
+                content: vec![
+                    OutputContent::Text {
+                        text: "boom".into(),
+                    },
+                    OutputContent::Image {
+                        source: ImageSource::Base64 {
+                            data: pixel.clone(),
+                        },
+                        media_type: MediaType::Png,
+                    },
+                ],
+                details: None,
+                is_error: true,
+                not_executed: None::<ToolNotExecutedReason>,
+                timestamp_ms: 0,
+                truncated: false,
+            }),
+            Message::ToolResult(ToolResultMessage {
+                tool_call_id: "tool-2".into(),
+                tool_name: "grep".into(),
+                content: vec![OutputContent::Text { text: "ok".into() }],
+                details: None,
+                is_error: false,
+                not_executed: None::<ToolNotExecutedReason>,
+                timestamp_ms: 0,
+                truncated: false,
+            }),
+        ];
+        let mut messages = vec![Message::User(UserMessage {
+            content: vec![InputContent::Text { text: "q".into() }],
+            timestamp_ms: 0,
+        })];
+        let mut assistant = assistant_42();
+        assistant.content = vec![
+            AssistantContent::ToolCall {
+                tool_call: ToolCall {
+                    id: "tool-1".into(),
+                    name: "read".into(),
+                    arguments: "{}".into(),
+                    arguments_error: None,
+                    signature: None,
+                },
+            },
+            AssistantContent::ToolCall {
+                tool_call: ToolCall {
+                    id: "tool-2".into(),
+                    name: "grep".into(),
+                    arguments: "{}".into(),
+                    arguments_error: None,
+                    signature: None,
+                },
+            },
+        ];
+        messages.push(Message::Assistant(assistant));
+        messages.extend(tool_turn);
+        let mut request = req_42(None, "q");
+        request.cache_retention = CacheRetention::Disabled;
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages,
+            tools: vec![],
+        })
+        .expect("valid context declarations");
+        let body = body_42(&provider, &request);
+        let messages = body["messages"].as_array().expect("messages");
+        // The turn's tool results share one user message; the error images
+        // follow all of them as a caption plus image blocks.
+        let turn = messages.last().expect("tool turn");
+        let content = turn["content"].as_array().expect("turn content");
+        assert_eq!(content.len(), 4);
+        assert_eq!(
+            content[0]["toolResult"]["toolUseId"],
+            serde_json::json!("tool-1")
+        );
+        assert_eq!(
+            content[0]["toolResult"]["content"],
+            serde_json::json!([
+                {"text": "boom"},
+                {"text": "(image attached after the tool results)"},
+            ])
+        );
+        assert_eq!(
+            content[1]["toolResult"]["status"],
+            serde_json::json!("success")
+        );
+        assert_eq!(
+            content[2],
+            serde_json::json!({"text": "Images from the error result of tool call tool-1 (read):"})
+        );
+        assert_eq!(
+            content[3],
+            serde_json::json!({"image": {"format": "png", "source": {"bytes": pixel}}})
+        );
+    }
+
+    #[test]
+    fn consecutive_tool_results_share_one_user_message() {
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
+            .with_models(vec![model_42(SONNET4, "Claude (Bedrock)")]);
+        let mut messages = vec![Message::User(UserMessage {
+            content: vec![InputContent::Text { text: "q".into() }],
+            timestamp_ms: 0,
+        })];
+        let mut assistant = assistant_42();
+        assistant.content = vec![
+            AssistantContent::ToolCall {
+                tool_call: ToolCall {
+                    id: "t1".into(),
+                    name: "a".into(),
+                    arguments: "{}".into(),
+                    arguments_error: None,
+                    signature: None,
+                },
+            },
+            AssistantContent::ToolCall {
+                tool_call: ToolCall {
+                    id: "t2".into(),
+                    name: "b".into(),
+                    arguments: "{}".into(),
+                    arguments_error: None,
+                    signature: None,
+                },
+            },
+        ];
+        messages.push(Message::Assistant(assistant));
+        for (id, name) in [("t1", "a"), ("t2", "b")] {
+            messages.push(Message::ToolResult(ToolResultMessage {
+                tool_call_id: id.into(),
+                tool_name: name.into(),
+                content: vec![OutputContent::Text { text: "r".into() }],
+                details: None,
+                is_error: false,
+                not_executed: None::<ToolNotExecutedReason>,
+                timestamp_ms: 0,
+                truncated: false,
+            }));
+        }
+        let mut request = req_42(None, "q");
+        request.cache_retention = CacheRetention::Disabled;
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages,
+            tools: vec![],
+        })
+        .expect("valid context declarations");
+        let body = body_42(&provider, &request);
+        let messages = body["messages"].as_array().expect("messages");
+        let turn = messages.last().expect("tool turn");
+        assert_eq!(turn["content"].as_array().expect("content").len(), 2);
+    }
+
+    async fn collect_last_42(
+        events: &[(&str, &str)],
+    ) -> Result<AssistantStreamEvent, ProviderError> {
+        let data = build_bedrock_stream(events);
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
+        let request = text_stream_request();
+        let mut stream = provider.stream_from_fixture(&data, request.cancel);
+        let mut last = None;
+        while let Some(item) = stream.next().await {
+            last = Some(item);
+            if matches!(last, Some(Ok(AssistantStreamEvent::Done { .. })))
+                || matches!(last, Some(Err(_)))
+            {
+                break;
+            }
+        }
+        last.expect("terminal event")
+    }
+
+    #[tokio::test]
+    async fn model_context_window_exceeded_maps_to_length() {
+        let last = collect_last_42(&[
+            ("messageStart", r#"{"role":"assistant"}"#),
+            (
+                "contentBlockStart",
+                r#"{"start":{"text":{}},"contentBlockIndex":0}"#,
+            ),
+            (
+                "contentBlockDelta",
+                r#"{"delta":{"text":"hi"},"contentBlockIndex":0}"#,
+            ),
+            ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+            (
+                "messageStop",
+                r#"{"stopReason":"model_context_window_exceeded"}"#,
+            ),
+        ])
+        .await
+        .expect("length stop completes");
+        match last {
+            AssistantStreamEvent::Done { message, .. } => {
+                assert_eq!(message.stop_reason, opi_ai::stream::StopReason::Length);
+            }
+            other => panic!("unexpected terminal event: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn unmapped_stop_reason_fails_typed_with_raw_reason() {
+        let last = collect_last_42(&[
+            ("messageStart", r#"{"role":"assistant"}"#),
+            (
+                "contentBlockStart",
+                r#"{"start":{"text":{}},"contentBlockIndex":0}"#,
+            ),
+            (
+                "contentBlockDelta",
+                r#"{"delta":{"text":"hi"},"contentBlockIndex":0}"#,
+            ),
+            ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+            ("messageStop", r#"{"stopReason":"content_filtered"}"#),
+        ])
+        .await
+        .expect_err("unmapped stop reason fails typed");
+        let detail = format!("{error}", error = last);
+        assert!(
+            detail.contains("content_filtered"),
+            "raw reason must ride the typed failure: {detail}"
+        );
+        assert!(detail.contains("Provider stopped with"), "{detail}");
+    }
+
+    #[tokio::test]
+    async fn reasoning_content_deltas_stream_as_thinking_blocks() {
+        let events_data = build_bedrock_stream(&[
+            ("messageStart", r#"{"role":"assistant"}"#),
+            (
+                "contentBlockStart",
+                r#"{"start":{"reasoningContent":{}},"contentBlockIndex":0}"#,
+            ),
+            (
+                "contentBlockDelta",
+                r#"{"delta":{"reasoningContent":{"text":"step one"}},"contentBlockIndex":0}"#,
+            ),
+            (
+                "contentBlockDelta",
+                r#"{"delta":{"reasoningContent":{"text":" step two"}},"contentBlockIndex":0}"#,
+            ),
+            (
+                "contentBlockDelta",
+                r#"{"delta":{"reasoningContent":{"signature":"c2ln"}},"contentBlockIndex":0}"#,
+            ),
+            ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+            (
+                "contentBlockStart",
+                r#"{"start":{"text":{}},"contentBlockIndex":1}"#,
+            ),
+            (
+                "contentBlockDelta",
+                r#"{"delta":{"text":"answer"},"contentBlockIndex":1}"#,
+            ),
+            ("contentBlockStop", r#"{"contentBlockIndex":1}"#),
+            ("messageStop", r#"{"stopReason":"end_turn"}"#),
+            (
+                "metadata",
+                r#"{"usage":{"inputTokens":3,"outputTokens":4}}"#,
+            ),
+        ]);
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
+        let request = text_stream_request();
+        let events =
+            collect_events(provider.stream_from_fixture(&events_data, request.cancel)).await;
+
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, AssistantStreamEvent::ThinkingStart { .. }))
+        );
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AssistantStreamEvent::ThinkingDelta { delta, .. } if delta == "step one")));
+        let done = events.last().expect("terminal event");
+        let AssistantStreamEvent::Done { message, .. } = done else {
+            panic!("stream must end with Done: {done:?}")
+        };
+        assert!(matches!(
+            message.content.first(),
+            Some(AssistantContent::Thinking { thinking, signature })
+                if thinking == "step one step two" && signature.as_deref() == Some("c2ln")
+        ));
+    }
+
+    #[tokio::test]
+    async fn redacted_content_accumulates_into_redacted_thinking() {
+        // Two one-byte chunks ("QQ==" -> 0x41, "Qg==" -> 0x42) concatenate
+        // to the two-byte payload "AB" whose base64 is "QUI=".
+        let events_data = build_bedrock_stream(&[
+            ("messageStart", r#"{"role":"assistant"}"#),
+            (
+                "contentBlockStart",
+                r#"{"start":{"reasoningContent":{}},"contentBlockIndex":0}"#,
+            ),
+            (
+                "contentBlockDelta",
+                r#"{"delta":{"reasoningContent":{"redactedContent":"QQ=="}},"contentBlockIndex":0}"#,
+            ),
+            (
+                "contentBlockDelta",
+                r#"{"delta":{"reasoningContent":{"redactedContent":"Qg=="}},"contentBlockIndex":0}"#,
+            ),
+            ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+            ("messageStop", r#"{"stopReason":"end_turn"}"#),
+            (
+                "metadata",
+                r#"{"usage":{"inputTokens":1,"outputTokens":1}}"#,
+            ),
+        ]);
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
+        let request = text_stream_request();
+        let events =
+            collect_events(provider.stream_from_fixture(&events_data, request.cancel)).await;
+        let done = events.last().expect("terminal event");
+        let AssistantStreamEvent::Done { message, .. } = done else {
+            panic!("stream must end with Done: {done:?}")
+        };
+        assert!(matches!(
+            message.content.first(),
+            Some(AssistantContent::RedactedThinking { data }) if data == "QUI="
+        ));
+    }
+
+    #[tokio::test]
+    async fn usage_cache_write_1h_sums_one_hour_details() {
+        let events_data = build_bedrock_stream(&[
+            ("messageStart", r#"{"role":"assistant"}"#),
+            (
+                "contentBlockStart",
+                r#"{"start":{"text":{}},"contentBlockIndex":0}"#,
+            ),
+            (
+                "contentBlockDelta",
+                r#"{"delta":{"text":"hi"},"contentBlockIndex":0}"#,
+            ),
+            ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+            ("messageStop", r#"{"stopReason":"end_turn"}"#),
+            (
+                "metadata",
+                r#"{"usage":{"inputTokens":10,"outputTokens":5,"cacheWriteInputTokens":9,"cacheDetails":[{"ttl":"1h","inputTokens":6},{"ttl":"5m","inputTokens":2},{"ttl":"1h","inputTokens":1}]}}"#,
+            ),
+        ]);
+        let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
+        let request = text_stream_request();
+        let events =
+            collect_events(provider.stream_from_fixture(&events_data, request.cancel)).await;
+        let done = events.last().expect("terminal event");
+        let AssistantStreamEvent::Done { message, .. } = done else {
+            panic!("stream must end with Done: {done:?}")
+        };
+        assert_eq!(message.usage.cache_write_tokens, 9);
+        assert_eq!(message.usage.cache_write_1h_tokens, Some(7));
+    }
+
+    #[test]
+    fn strict_tool_flag_projects_converted_schema() {
+        use opi_ai::constrained_sampling::{ConstrainedSampling, StrictPreference};
+        let mut model = model_42(SONNET4, "Claude (Bedrock)");
+        model.compat = opi_ai::model_info::WireCompat::BedrockConverseStream(
+            opi_ai::model_info::BedrockConverseStreamCompat {
+                supports_strict_tools: true,
+            },
+        );
+        let provider =
+            BedrockProvider::new(None, Arc::new(HttpClient::new())).with_models(vec![model]);
+        let mut request = tool_call_request();
+        request.model = SONNET4.into();
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "go".into() }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![ToolDef {
+                name: "read".into(),
+                description: "Read a file".into(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"]
+                }),
+                constrained_sampling: Some(ConstrainedSampling::JsonSchema {
+                    strict: StrictPreference::Require,
+                }),
+            }],
+        })
+        .expect("valid context declarations");
+        let body = body_42(&provider, &request);
+        let spec = &body["toolConfig"]["tools"][0]["toolSpec"];
+        assert_eq!(spec["strict"], serde_json::json!(true));
+        // The strict projection makes every property required.
+        assert_eq!(
+            spec["inputSchema"]["json"]["properties"]["path"],
+            serde_json::json!({"type": "string"})
+        );
+        assert_eq!(
+            spec["inputSchema"]["json"]["required"],
+            serde_json::json!(["path"])
+        );
+    }
+
+    #[tokio::test]
+    async fn native_lifecycle_through_models_complete() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(
+                "/model/anthropic.claude-sonnet-4-test42/converse-stream",
+            ))
+            .and(body_partial_json(serde_json::json!({
+                "additionalModelRequestFields": {
+                    "thinking": {"type": "enabled", "budget_tokens": 16384, "display": "summarized"},
+                    "anthropic_beta": ["interleaved-thinking-2025-05-14"],
+                }
+            })))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_bytes(bedrock_text_lifecycle_bytes()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let model = model_42("anthropic.claude-sonnet-4-test42", "Claude (Bedrock)");
+        let provider = Arc::new(
+            BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()))
+                .with_models(vec![model.clone()]),
+        );
+        let api = BedrockConverseStreamChatApi::new(provider, model.clone())
+            .expect("valid bedrock record");
+        let mut models = Models::new();
+        let mut options = native();
+        options.reasoning = Some(ThinkingLevel::High);
+        options.tool_choice = Some(opi_ai::bedrock::BedrockToolChoice::Any);
+        let handle = models
+            .register_chat_api(
+                Arc::new(api),
+                Arc::new(StaticAwsResolver42 {
+                    credentials: test_credentials(),
+                }),
+                opi_ai::AuthProvenanceSource::AwsSigV4 {
+                    source: AwsCredentialSource::ExplicitConfig,
+                },
+            )
+            .expect("register");
+
+        let message = models
+            .complete(
+                ChatModelRecord::new("bedrock", model),
+                req_42(None, "Hello"),
+                handle.options(options),
+            )
+            .await
+            .expect("native lifecycle completes");
+        assert_eq!(message.stop_reason, opi_ai::stream::StopReason::Stop);
+    }
+
+    #[tokio::test]
+    async fn govcloud_region_omits_display_on_stream() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(
+                "/model/anthropic.claude-sonnet-4-gov42/converse-stream",
+            ))
+            .and(body_partial_json(serde_json::json!({
+                "additionalModelRequestFields": {
+                    "thinking": {"type": "enabled", "budget_tokens": 16384}
+                }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(bedrock_text_lifecycle_bytes()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mut credentials = test_credentials();
+        credentials.region = "us-gov-west-1".into();
+        let model = model_42("anthropic.claude-sonnet-4-gov42", "Claude (Bedrock)");
+        let provider = Arc::new(
+            BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()))
+                .with_models(vec![model.clone()]),
+        );
+        let api = BedrockConverseStreamChatApi::new(provider, model.clone())
+            .expect("valid bedrock record");
+        let mut models = Models::new();
+        let mut options = native();
+        options.reasoning = Some(ThinkingLevel::High);
+        let handle = models
+            .register_chat_api(
+                Arc::new(api),
+                Arc::new(StaticAwsResolver42 { credentials }),
+                opi_ai::AuthProvenanceSource::AwsSigV4 {
+                    source: AwsCredentialSource::ExplicitConfig,
+                },
+            )
+            .expect("register");
+        let message = models
+            .complete(
+                ChatModelRecord::new("bedrock", model),
+                req_42(None, "Hello"),
+                handle.options(options),
+            )
+            .await
+            .expect("govcloud lifecycle completes");
+        assert_eq!(message.stop_reason, opi_ai::stream::StopReason::Stop);
+    }
+
+    #[test]
+    fn wrong_wire_record_rejected() {
+        let anthropic_model = ModelInfo::new(
+            "claude-sonnet-4",
+            "Claude",
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(200_000, 8_192).with_thinking(true),
+        );
+        let error = BedrockConverseStreamChatApi::new(
+            Arc::new(BedrockProvider::new(None, Arc::new(HttpClient::new()))),
+            anthropic_model,
+        )
+        .expect_err("wrong wire must fail typed");
+        assert!(matches!(error, ProviderError::Config(_)));
+    }
+
+    #[test]
+    fn from_simple_maps_only_tool_choice() {
+        let simple = opi_ai::models::SimpleOptions {
+            tool_choice: Some(opi_ai::models::SimpleToolChoice::None),
+            ..Default::default()
+        };
+        let options = BedrockOptions::from_simple(&simple);
+        assert!(options.is_simple());
+        assert!(matches!(
+            options.tool_choice,
+            Some(opi_ai::bedrock::BedrockToolChoice::None_)
+        ));
+        assert_eq!(options.reasoning, None);
+        assert!(options.thinking_budgets.is_empty());
+        assert!(options.request_metadata.is_empty());
+    }
+
+    #[tokio::test]
+    async fn telemetry_carrier_instruments_bedrock_producer() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tracing_core::span::{Attributes, Id, Record};
+        use tracing_core::{Dispatch, Event, Metadata, Subscriber, dispatcher};
+
+        #[derive(Default)]
+        struct Recording {
+            next: u64,
+            spans: Vec<(&'static str, Option<u64>)>,
+        }
+        struct Recorder(std::sync::Arc<std::sync::Mutex<Recording>>);
+
+        impl Subscriber for Recorder {
+            fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+                true
+            }
+            fn new_span(&self, attributes: &Attributes<'_>) -> Id {
+                let mut state = self.0.lock().unwrap();
+                state.next += 1;
+                let id = Id::from_u64(state.next);
+                let parent = attributes
+                    .parent()
+                    .cloned()
+                    .or_else(|| attributes.is_contextual().then(|| Id::from_u64(1)))
+                    .map(|id| id.into_u64());
+                state.spans.push((attributes.metadata().name(), parent));
+                id
+            }
+            fn record(&self, _id: &Id, _values: &Record<'_>) {}
+            fn record_follows_from(&self, _sub: &Id, _follows_from: &Id) {}
+            fn event(&self, _event: &Event<'_>) {}
+            fn enter(&self, _id: &Id) {}
+            fn exit(&self, _id: &Id) {}
+            fn try_close(&self, _id: Id) -> bool {
+                false
+            }
+        }
+
+        let recorder = std::sync::Arc::new(std::sync::Mutex::new(Recording::default()));
+        let source = Dispatch::new(Recorder(recorder.clone()));
+        let parent = dispatcher::with_default(&source, || tracing::info_span!("source_parent_42"));
+        let context = opi_ai::telemetry::TelemetryContext::from_span(parent);
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(
+                "/model/anthropic.claude-sonnet-4-tel42/converse-stream",
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(bedrock_text_lifecycle_bytes()))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let seen = Arc::new(AtomicUsize::new(0));
+        let counter = seen.clone();
+        let mut request = req_42(None, "Hello");
+        request.model = "bedrock:anthropic.claude-sonnet-4-tel42".into();
+        request.telemetry_context = Some(context);
+        request.callbacks =
+            opi_ai::callbacks::RequestCallbacks::new().with_async_on_payload(move |_| {
+                let counter = counter.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    tracing::info_span!("payload_probe_42").in_scope(|| ());
+                    Ok(None)
+                }
+            });
+
+        let provider = BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()));
+        let stream = provider.stream_prepared(request, test_auth());
+        let mut stream = Box::pin(stream);
+        let mut done = false;
+        while let Some(item) = stream.next().await {
+            if let AssistantStreamEvent::Done { .. } = item.expect("stream item") {
+                done = true;
+                break;
+            }
+        }
+        assert!(done, "stream reaches Done");
+        assert_eq!(seen.load(Ordering::SeqCst), 1);
+        let state = recorder.lock().unwrap();
+        assert!(
+            state
+                .spans
+                .iter()
+                .any(|(name, _)| *name == "payload_probe_42"),
+            "bedrock producer telemetry flows to the frozen carrier: {:?}",
+            state.spans
         );
     }
 }

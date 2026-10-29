@@ -2492,7 +2492,12 @@ fn compile_prepared_request(
             &model.compat,
             crate::WireCompat::AnthropicMessages(compat) if !compat.force_adaptive_thinking
         );
-        if numeric_anthropic && request.thinking.budget_tokens.is_none() {
+        // Task 20.42: budget-based Claude models on the bedrock wire share
+        // the numeric neutral policy (pi streamSimple's adjust/clamp path);
+        // adaptive models keep the level flowing to `output_config.effort`.
+        let numeric_bedrock = model.wire_api == crate::WireApi::BedrockConverseStream
+            && !crate::bedrock::supports_adaptive_thinking(&model.id, &model.display_name);
+        if (numeric_anthropic || numeric_bedrock) && request.thinking.budget_tokens.is_none() {
             request.thinking.budget_tokens = Some(match request.thinking.level {
                 crate::ThinkingLevel::Minimal => 1_024,
                 crate::ThinkingLevel::Low => 2_048,

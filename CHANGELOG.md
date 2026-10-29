@@ -2,6 +2,20 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): Bedrock Converse wire changes (task 20.42, DEL-11): the
+  success tool-result images now ride real inline Converse image blocks
+  instead of the `[image: ...]` text placeholder; `reasoningContent`
+  blocks stream as thinking content (signature accumulation, redacted
+  payloads as `RedactedThinking`) instead of being ignored; unmapped stop
+  reasons fail typed carrying the raw value instead of silently mapping to
+  an error stop; `model_context_window_exceeded` maps to `length`; usage
+  accepts pi's `cacheWriteInputTokens` key (the established
+  `cacheCreationInputTokens` stays accepted) and reports one-hour
+  `cacheDetails` as `cache_write_1h_tokens`.
+- `opi-ai` (0.x): `WireCompat::BedrockConverseStream` becomes a tuple
+  variant carrying `BedrockConverseStreamCompat { supports_strict_tools }`
+  (default false; `require` constrained tools keep failing typed before
+  dispatch on this wire until a record opts in).
 - `opi-ai` (0.x): `AssistantContent::Text` and `ToolCall` gain an optional
   `signature` field (task 20.40, Gemini thought signatures; serde default,
   absent in serialized history): exhaustive struct literals add the field.
@@ -631,6 +645,23 @@
   unchanged.
 ### Added
 
+- `opi-ai`: bedrock-converse-stream complete chat adapter (task 20.42,
+  DEL-11). New public `bedrock::BedrockConverseStreamChatApi` registers
+  through `Models::register_chat_api` (api id `bedrock-converse-stream`)
+  with typed `BedrockOptions`: tool choice including the named-tool mode
+  (`none` drops the whole toolConfig), the level-based reasoning entry with
+  custom thinking budgets (adaptive vs budget-based Claude shapes, GovCloud
+  display/binding omissions, gpt-oss/gpt effort fields), interleaved
+  thinking and display controls, and the verbatim `requestMetadata`
+  passthrough. The neutral entry shares the numeric budget policy with the
+  anthropic wire (default table plus answer-room clamp). Cache points ride
+  supported Claude models (system + last user message, one-hour TTL on
+  `Long` retention); `<empty>` placeholders keep required content arrays
+  non-blank; thinking replays as `reasoningContent` with signature/redacted
+  semantics; consecutive tool results merge into one user message and
+  Claude error-tool images follow the turn's results. `BedrockProvider` is
+  `Clone` and gains `with_models`/`with_native_options`; its producer runs
+  under the explicit frozen `TelemetryContext`.
 - `opi-ai`: google-vertex complete chat adapter (task 20.41, DEL-11). New
   public `vertex::GoogleVertexChatApi` registers through
   `Models::register_chat_api` (api id `google-vertex`) with typed
