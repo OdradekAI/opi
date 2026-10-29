@@ -12897,7 +12897,7 @@
       "definition_of_done": "Public native/simple/complete/result and direct adapter execute AWS eventstream CRC/tools/images/signatures/redacted bytes, source auth/retries and actual H2/H1 paths. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Bedrock inference/additional request fields, auth/signature identity and exact retry modes retain their source timing/accounting; auth-only proof does not close generation.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -12991,6 +12991,11 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C appends (C.1a): model_info.rs grows BedrockConverseStreamCompat{supports_strict_tools} and WireCompat::BedrockConverseStream becomes a tuple variant (azure 20.38 precedent; require stays fail-closed by default) with catalog/wire.rs serialization round-tripping the flag. models.rs extends the shared neutral numeric thinking budget arm (compile_prepared_request) to budget-based Claude models on the bedrock wire - the pi streamSimple adjust/clamp policy is the same table plus answer-room clamp the anthropic wire already owns. gemini.rs/anthropic.rs/vertex.rs/telemetry.rs are untouched this task; they ride the owned list from sibling DEL-11 tasks.",
+          "source": ".repo/pi-1.3.0/packages/ai/src/api/bedrock-converse-stream.ts (supportsStrictMode via model.compat, streamSimple, DEFAULT_THINKING_BUDGETS), sdk-contracts annex rows 38/51"
         }
       ],
       "tier": "workspace",
@@ -13019,7 +13024,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai bedrock-converse-stream public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.42",
@@ -13032,7 +13037,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai bedrock-converse-stream public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -13040,9 +13045,9 @@
         "opi_ai bedrock-converse-stream public direct adapter"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "5f118c0183af1d87769c899d434b12c973b4eeaa",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -13066,12 +13071,69 @@
         "crates/opi-ai/src/telemetry.rs",
         "crates/opi-ai/src/test_support.rs",
         "crates/opi-ai/src/vertex.rs",
-        "crates/opi-ai/tests/bedrock_fixtures.rs"
+        "crates/opi-ai/tests/bedrock_fixtures.rs",
+        "crates/opi-ai/src/catalog/wire.rs",
+        "crates/opi-ai/src/model_info.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "83a3a2cee86138d4e0974eda8e0671a93afbb2d6",
+      "evidence": {
+        "Opi-Task": "20.42",
+        "Opi-DoD-SHA256": "6450146e0e2a52b5675b1ac897a4b4b28e530f3ab9ff195f9105ee84a79ba925",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "P20-S42, ONB-03-20.42"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-29T02:51:56+00:00",
+          "attempt": 1,
+          "summary": "B.2 authorized: deliver the pi bedrock-converse-stream direct adapter (BedrockConverseStreamChatApi four entries) with BedrockOptions (tool_choice incl named + none-omits-toolConfig, level-based reasoning + custom thinking_budgets, interleaved_thinking default true, thinking_display, request_metadata verbatim passthrough), BedrockConverseStreamCompat{supports_strict_tools} (WireCompat tuple variant, azure 20.38 precedent, require stays fail-closed by default), the additionalModelRequestFields engine (Claude adaptive vs numeric budgets, GovCloud omissions, gpt-oss/gpt- arms), neutral numeric budget arm extension in compile_prepared_request, cache points (system + last user, pi substring predicate, retention mapping), message conversion upgrades (EMPTY placeholder, blank drop, signatured/redacted thinking replay, Claude error-image split), mapper reasoningContent handling + model_context_window_exceeded + raw-stop typed failure + cacheWrite1h usage, and producer telemetry freeze. Transport/auth/retry layer inherited unchanged. C: TDD red first in bedrock_fixtures."
+        },
+        {
+          "timestamp": "2026-10-29T04:42:49+00:00",
+          "attempt": 1,
+          "summary": "bedrock-converse-stream complete adapter delivered: public BedrockConverseStreamChatApi (api id bedrock-converse-stream, provider id bedrock) through Models::register_chat_api with typed BedrockOptions - tool_choice auto/any/named (none drops the whole toolConfig, tools-gated), level-based reasoning with custom thinking_budgets (budget table 1024/2048/8192/16384, xhigh/max clamp to high), interleaved_thinking default true, thinking_display summarized default with GovCloud omissions (us-gov-* dispatch region from prepared SigV4 credentials or us-gov./arn:aws-us-gov: id prefixes), and verbatim request_metadata. The additionalModelRequestFields engine covers adaptive Claude (block_binding + binding beta + output_config.effort, native xhigh on capable models, explicit thinking-map mappings override identity defaults), budget-based Claude (interleaved beta), gpt-oss flat reasoning_effort and nested gpt- reasoning.effort. Neutral entry extends compile_prepared_request's numeric budget arm to non-adaptive bedrock Claude. Cache points ride supported Claude models (pi substring predicate, system + last user message incl. tool turns, Long adds 1h ttl). Message conversion: <empty> placeholders, blank-text drop, thinking replay as reasoningText (signed Claude / plain-text fallback unsigned / no signature member on non-Claude), RedactedThinking as redactedContent bytes (non-base64 drops), consecutive tool results merge into one user message, Claude error-tool images split after the turn's results with the pi caption/placeholder. Mapper: reasoningContent deltas stream as thinking blocks with signature accumulation and redacted byte buffering, model_context_window_exceeded maps to length, unmapped stop reasons fail typed carrying the raw value, usage accepts pi's cacheWriteInputTokens alongside the established cacheCreationInputTokens key and sums 1h cacheDetails into cache_write_1h_tokens. Producer runs under the frozen TelemetryContext. SUPPORTED_FAMILIES admits 'openai' for the Bedrock-hosted gpt-oss/gpt ids (pi engine arms; no catalog entries added). Model-id extraction now strips only the explicit bedrock: route prefix so catalog ids with version colons resolve. TDD red-first (20 new tests, missing-symbol red) then green 166/166 (one superseded test deleted with replacement proof: reasoning-not-parsed; one updated with replacement proof: success tool-result images now ride real inline image blocks per pi convertToolResultContent/AIR-014). D.1 smoke full PASSED after the documented pre-existing oauth 53692 contention (3 gate attempts failed on it; root cause re-confirmed: opi-coding-agent oauth_auth.rs deliberately binds 53692 via occupy_anthropic_preferred_port under full-workspace parallelism, forcing oauth_flows' login_binds_preferred_port_53692 onto an ephemeral port; oauth_flows green standalone 193/193; passed after a strict >240s clean window with zero intervening test runs). D.2 exec review via single-reviewer fallback (wf_ref=null): 0 must-fix; 5 low flags: (1) no surrogate sanitization on the bedrock wire (no existing opi precedent; pi sanitizeSurrogates noted as divergence); (2) the compiler defaults maxTokens for non-Claude bedrock models where pi sends none (opi Request contract; documented, unchanged); (3) identity thinking-map mappings are filtered from effort resolution so opi's synthetic default map cannot override pi's fixed effort tables - local to the bedrock helpers, anthropic 20.39 behavior untouched; (4) cacheWriteInputTokens accepted alongside the established key (both documented AWS names); (5) tool_result_content routes non-split images through the deferred list before appending (readability only).",
+          "gate_results": {
+            "d1": "smoke full PASSED (doc-check, fmt, clippy -D warnings all-targets, workspace tests + doc tests, rustdoc); attempts 1-3 failed only on the pre-existing oauth 53692 cross-binary contention (environmental class documented since 20.36; oauth_flows standalone 193/193)",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 5 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "P20-S42",
+                "action": "add",
+                "test": "bedrock_fixtures bedrock_42 mod (20 tests): tool-choice modes incl. none-omits-toolConfig, numeric budget table + custom override + xhigh clamp, display/interleaved shaping, GovCloud id and dispatch-region omissions, adaptive fields + native xhigh + map override, gpt-oss/gpt effort arms, native omission, requestMetadata verbatim, cache points (default/Long ttl/Disabled/non-Claude), <empty> placeholder + blank drop, thinking replay shapes (signed/unsigned/non-Claude/redacted/bad-base64), error-image split caption+placeholder, consecutive tool-result merging, model_context_window_exceeded length, unmapped stop typed with raw reason, reasoning delta streaming with signature, redacted byte accumulation, usage cache_write_1h, strict toolSpec flag gating, native lifecycle through Models::complete on SigV4, GovCloud-region lifecycle through Models::complete, wrong-wire rejection, from_simple neutrality, telemetry carrier payload-probe on the bedrock producer",
+                "interface": "BedrockOptions / BedrockConverseStreamChatApi / BedrockProvider::with_native_options/with_models / WireCompat::BedrockConverseStream(BedrockConverseStreamCompat) / additionalModelRequestFields engine / cache points / Converse message serializer / reasoningContent mapper / producer TelemetryContext",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.42",
+                "action": "update",
+                "test": "tool_result_image_placeholder_preserves_media_type: success tool-result images now assert real inline Converse image blocks (format jpeg + base64 bytes) - replacement proof pi convertToolResultContent keeps images in toolResult content and AIR-014 image-capable routes keep real blocks; the phase-12 [image: mime] text placeholder is superseded",
+                "interface": "serialize_converse_messages toolResult content",
+                "replacement": "pi .repo/pi-1.3.0/packages/ai/src/api/bedrock-converse-stream.ts convertToolResultContent",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.42",
+                "action": "delete",
+                "test": "bedrock_reasoning_content_blocks_not_parsed_as_thinking (104 lines): pinned the pre-20.42 parser ignoring reasoningContent blocks",
+                "interface": "BedrockMapper",
+                "replacement": "bedrock_42::reasoning_content_deltas_stream_as_thinking_blocks + redacted_content_accumulates_into_redacted_thinking pin the real parsing per the pi handler",
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.42",
+                "action": "retain",
+                "test": "all other bedrock_fixtures suites (SigV4 chain, region/profile precedence, retry, eventstream CRC, placeholder mode, bearer route, status mapping, cancel/drop, strict guard) plus every other workspace suite green inside the passed gate",
+                "interface": "existing public seams",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.43",
@@ -22692,6 +22754,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-28T19:30:08+00:00",
       "task_id": "20.41",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 5,
+      "rejected_count": 0,
+      "ran_at": "2026-10-29T04:42:49+00:00",
+      "task_id": "20.42",
       "criterion_id": null
     }
   ]
