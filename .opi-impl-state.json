@@ -13811,7 +13811,7 @@
       "definition_of_done": "Public classify reaches real typesafe-system-one adapter with typed choice/ordered score/noul bool, per-protocol label/level and image rules. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Typesafe classifier parameters and typed outcomes preserve their source types, finite constraints and retry rules without invented probability normalization.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -13895,6 +13895,11 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append (C.1a): tool_result_wire.rs's Phase-11 module baseline gains 'classifier' deliberately (the guard text instructs exactly this); the baseline stays in lib.rs file order.",
+          "source": "crates/opi-ai/tests/tool_result_wire.rs"
         }
       ],
       "tier": "workspace",
@@ -13924,7 +13929,7 @@
             "opi_ai::Models::classify (target)",
             "opi_ai typesafe-system-one direct adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.46",
@@ -13937,7 +13942,7 @@
             "opi_ai::Models::classify (target)",
             "opi_ai typesafe-system-one direct adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -13945,9 +13950,9 @@
         "opi_ai typesafe-system-one direct adapter (target)"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "81accccdd13e462bde1bd6f58865b8b94c5b7e7e",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -13961,12 +13966,47 @@
         "crates/opi-ai/src/telemetry.rs",
         "crates/opi-ai/src/test_support.rs",
         "crates/opi-ai/tests/classifier_contract.rs",
-        "crates/opi-ai/tests/test_support_tests.rs"
+        "crates/opi-ai/tests/test_support_tests.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "af59c5f4f838dfb34ea88489e6b09cb10a99324b",
+      "evidence": {
+        "Opi-Task": "20.46",
+        "Opi-DoD-SHA256": "6103bacc2ba3405a7074220d17fa6a63900d4e996d6a51fd0e690daa2c71620f",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED on first attempt",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "P20-S46, ONB-03-20.46"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-29T16:53:37+00:00",
+          "attempt": 1,
+          "summary": "Typed classifier operation delivered beside the chat/image seams: the object-safe fixed-O api::ClassifierApi trait (one shared conformance for every real classifier protocol), public classifier contracts (ClassifierContext with JSON state/ordered typed questions/optional images, ClassifierAnswer variants, ClassifierResult where provider failures never reject and a billed request keeps its usage after answer-parse failure, operation-qualified ClassifierModelRecord with tiered ModelPricing), and the Models seam: register_classifier_api, classifier_model (chat models and unknown ids reject typed BEFORE any auth resolution - counting resolver proves zero), classify / classify_native with ClassifierApiHandle::options surviving compatible re-registration. The real api::system_one::TypesafeSystemOneApi (typesafe-system-one, provider typesafe) reproduces the pinned module: one POST {model, state, questions} to <base>/systemone, Bearer-only, public bool<->wire noul mapping on both sides, choice/score verbatim, image input rejected before any request regardless of record modalities, api-mismatch guard. Answer parsing validates only source-required shape/type/string/finite constraints (no probability-range/sum/argmax/label-membership rule; probabilities preserved verbatim); every known question needs a type-matching answer, unknown ids ignored. Usage {input_tokens, output_tokens} keeps source tolerances (non-number/non-positive -> 0, both absent -> no usage) and prices chat-style through record tiers. Transport: no default timeout, caller timeout body-inclusive and FRESH per retry attempt ('Request timed out after {ms}ms', retryable no-status), default TWO extra retries with the SDK policy (x-should-retry, 408/409/429/5xx/no-status, retry-after-ms/retry-after with 60s cap and source above-cap message), frozen payload across retries, cancel -> Aborted, HTTP failures 'System One API error ({status}): {body}'; temperature is a typed option System One cannot apply (never on the wire, pinned); payload/response observers supported, raw/header-transform families rejected typed pre-dispatch; frozen TelemetryContext wraps the request path (P20-TELEMETRY consumer; full proof at 20.55). Curated baseline typesafe/jev-latest (64000 ctx, text input, zero pricing until registered; pi generated data absent) replaced wholesale by registrars. TDD red-first (missing-symbol) then green: classifier_contract 23/23. D.1 smoke full PASSED on the FIRST attempt (no 53692 encounter this round); fmt/clippy -D warnings clean; full crate green; doc-check PASS. D.2 exec single-reviewer fallback (wf_ref=null): 0 must-fix; 5 low flags: (1) telemetry noop smoke - full cross-path proof stays with 20.55; (2) mid-flight response-observer failure rides the 20.45-proven code shape but has no direct classifier test; (3) x-should-retry override / retry-after HTTP-date / max_retry_delay_ms cap covered via the shared policy shape from 20.45's images suite, not re-tested here; (4) curated single-entry catalog carries 0.0 pricing (source data absent, documented, registrar replaces wholesale); (5) parse_answer keeps an unused record parameter for signature symmetry (cosmetic). No ModelsError::NotAClassifierModel is non-breaking: the enum is #[non_exhaustive] (CHANGELOG Added only).",
+          "gate_results": {
+            "d1": "smoke full PASSED on first attempt (doc-check, fmt, clippy -D warnings all-targets, workspace tests + doc tests, rustdoc); no environmental encounters",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 5 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "P20-S46 / ONB-03-20.46",
+                "action": "add",
+                "test": "classifier_contract (23 tests): full wire body with noul mapping and temperature absence, all three answer types parsed with verbatim probabilities, odd question ids (__proto__), tiered catalog cost, malformed/absent usage tolerances, missing answer error retaining billed usage, non-finite/mistyped answer rejection, image rejection before any request, missing-key typed rejection with zero hits, unsupported callback family typed rejection, default two-extra-retries (3 hits), zero-retry typed RateLimited with source error prefix, HTTP 500 body formatting, per-attempt body-inclusive timeout freshness (3-hit stall pattern), exact timeout message, no-default-timeout + cancel->Aborted, operation-qualified selection (unknown/chat ids typed, zero auth resolutions, registered resolves), no-registration failure, handle options across re-registration + tag mismatch, payload/response callback order with wire capture, telemetry noop pass-through, extra headers + trailing-slash base, adapter-level api-mismatch guard and non-Bearer rejection, curated baseline record fields",
+                "interface": "api::ClassifierApi<O> / TypesafeSystemOneApi + TypesafeSystemOneOptions / classifier::{ClassifierContext, ClassifierQuestion, ClassifierAnswer, ClassifierResult, ClassifierStopReason, ClassifierModelRecord, ClassifierCall, ClassifierImage, ClassifierInputModality} / Models::{register_classifier_api, classifier_model, classify, classify_native} / ClassifierApiHandle / ClassifierNativeOptions",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.46",
+                "action": "update",
+                "test": "tool_result_wire Phase-11 module baseline gains 'classifier' in file order (deliberate later-phase addition per guard text)",
+                "interface": "public module set baseline",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.47",
@@ -22924,6 +22964,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-29T13:52:59+00:00",
       "task_id": "20.45",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 5,
+      "rejected_count": 0,
+      "ran_at": "2026-10-29T16:53:37+00:00",
+      "task_id": "20.46",
       "criterion_id": null
     }
   ]
