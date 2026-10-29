@@ -239,6 +239,15 @@ pub enum ModelsError {
         /// Provider id whose route is not dispatchable.
         provider: String,
     },
+    /// Operation-qualified image selection failed: the model is not a
+    /// registered image model (a chat model or an unknown id).
+    #[error("model '{provider}/{id}' is not an image model")]
+    NotAnImageModel {
+        /// Provider id of the requested model.
+        provider: String,
+        /// Bare model id of the requested model.
+        id: String,
+    },
     /// The request identifies a different provider/model than the resolved
     /// route, so dispatch would make the frozen route facts untruthful.
     #[error(
@@ -462,6 +471,10 @@ pub struct Models {
     /// are captured (cloned `Arc`s) at call creation, so later registration
     /// changes never mutate an existing call.
     chat_apis: BTreeMap<ApiId, ChatApiRegistration>,
+    /// Typed custom image API registrations keyed by exact [`ApiId`] (task
+    /// 20.45). The image operation dispatches on the record's API identity;
+    /// image records never enter the chat catalog.
+    image_apis: BTreeMap<ApiId, ImageApiRegistration>,
     /// Injectable ambient-source access consulted on demand by the auth
     /// management operations. Defaults to the lazy
     /// [`AmbientAuthContext`](crate::auth::AmbientAuthContext); construction
@@ -504,6 +517,7 @@ impl Models {
             oauth_flows: HashMap::new(),
             oauth_routes: std::collections::HashSet::new(),
             chat_apis: BTreeMap::new(),
+            image_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
             models_store: None,
@@ -548,6 +562,7 @@ impl Models {
             oauth_flows: HashMap::new(),
             oauth_routes: std::collections::HashSet::new(),
             chat_apis: BTreeMap::new(),
+            image_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
             models_store: None,
@@ -679,6 +694,159 @@ impl Models {
             api_id,
             _options: PhantomData,
         })
+    }
+
+    /// Register one typed image adapter (task 20.45): the fixed-`O`
+    /// [`crate::api::ImageApi`] implementation, its provider auth resolver and provenance
+    /// source. The registration owns the adapter's complete
+    /// [`crate::images::ImageModelRecord`] for operation-qualified selection; image records
+    /// never enter the chat catalog, and an upsert with the same exact
+    /// [`ApiId`] replaces the previous registration wholesale.
+    pub fn register_image_api<O: Send + 'static>(
+        &mut self,
+        api: std::sync::Arc<dyn crate::api::ImageApi<O>>,
+        resolver: std::sync::Arc<dyn AuthResolver>,
+        source: AuthProvenanceSource,
+    ) -> Result<ImageApiHandle<O>, RegistrationError> {
+        let api_id = api.api_id().clone();
+        if api_id.as_str().trim().is_empty() {
+            return Err(RegistrationError::EmptyApiId);
+        }
+        let provider_id = api.provider_id().to_owned();
+        if provider_id.trim().is_empty() {
+            return Err(RegistrationError::EmptyProviderId);
+        }
+        let record = api.complete_record().clone();
+        self.sources.insert(provider_id.clone(), source);
+        self.image_apis.insert(
+            api_id.clone(),
+            ImageApiRegistration {
+                provider_id,
+                options_type: std::any::TypeId::of::<O>(),
+                dispatch: Arc::new(TypedImageApi { api }),
+                resolver,
+                record,
+            },
+        );
+        Ok(ImageApiHandle {
+            api_id,
+            _options: PhantomData,
+        })
+    }
+
+    /// Operation-qualified image selection: resolve the registered image
+    /// record for (`provider`, bare `id`).
+    ///
+    /// Chat models and unknown ids fail typed here — before any auth
+    /// resolution — so an image generation can never be routed through a
+    /// chat/classifier model.
+    pub fn image_model(
+        &self,
+        provider: &str,
+        id: &str,
+    ) -> Result<crate::images::ImageModelRecord, ModelsError> {
+        for registration in self.image_apis.values() {
+            if registration.record.provider_id == provider && registration.record.id == id {
+                return Ok(registration.record.clone());
+            }
+        }
+        Err(ModelsError::NotAnImageModel {
+            provider: provider.to_owned(),
+            id: id.to_owned(),
+        })
+    }
+
+    /// Generate images through the registered adapter for the record's exact
+    /// API identity using the adapter's default options (the ordinary image
+    /// driver).
+    ///
+    /// Never rejects: selection, auth and provider failures stay inside the
+    /// returned [`crate::images::ImagesResult`] with `stop_reason = Error`/`Aborted` and the
+    /// typed cause.
+    pub async fn generate_images(
+        &self,
+        record: crate::images::ImageModelRecord,
+        context: crate::images::ImagesContext,
+        call: crate::images::ImagesCall,
+    ) -> crate::images::ImagesResult {
+        let Some(registration) = self.image_apis.get(&record.api) else {
+            return no_image_api_result(&record);
+        };
+        let options = registration.dispatch.default_options_erased();
+        self.dispatch_image(registration, record, context, options, call)
+            .await
+    }
+
+    /// Generate images with typed native options created by an
+    /// [`ImageApiHandle`]. The options must carry the same exact [`ApiId`]
+    /// and options type as the registration; a mismatch is a typed
+    /// pre-dispatch failure result.
+    pub async fn generate_images_native<O: Send + 'static>(
+        &self,
+        record: crate::images::ImageModelRecord,
+        context: crate::images::ImagesContext,
+        call: crate::images::ImagesCall,
+        options: ImageNativeOptions<O>,
+    ) -> crate::images::ImagesResult {
+        let Some(registration) = self.image_apis.get(&record.api) else {
+            return no_image_api_result(&record);
+        };
+        if options.type_id != std::any::TypeId::of::<O>()
+            || options.api_id != record.api
+            || options.type_id != registration.options_type
+        {
+            return crate::images::ImagesResult::failure(
+                &record,
+                crate::images::ImagesStopReason::Error,
+                crate::provider::ProviderError::Config(
+                    crate::provider::ProviderErrorSummary::sanitized(format!(
+                        "image options tagged for API '{}' do not match the registration for '{}'",
+                        options.api_id.as_str(),
+                        record.api.as_str()
+                    )),
+                ),
+                format!(
+                    "image options tagged for API '{}' do not match the registration for '{}'",
+                    options.api_id.as_str(),
+                    record.api.as_str()
+                ),
+            );
+        }
+        self.dispatch_image(registration, record, context, Box::new(options.value), call)
+            .await
+    }
+
+    async fn dispatch_image(
+        &self,
+        registration: &ImageApiRegistration,
+        record: crate::images::ImageModelRecord,
+        context: crate::images::ImagesContext,
+        options: Box<dyn std::any::Any + Send>,
+        call: crate::images::ImagesCall,
+    ) -> crate::images::ImagesResult {
+        let auth = match registration.resolver.resolve().await {
+            Ok(auth) => auth,
+            Err(error) => {
+                let message = if matches!(
+                    error,
+                    crate::provider::ProviderError::CredentialNeeded { .. }
+                ) {
+                    format!("No API key for provider: {}", registration.provider_id)
+                } else {
+                    error.to_string()
+                };
+                return crate::images::ImagesResult::failure(
+                    &record,
+                    crate::images::ImagesStopReason::Error,
+                    error,
+                    message,
+                );
+            }
+        };
+        registration
+            .dispatch
+            .generate_erased(record, context, options, auth, call)
+            .await
     }
 
     /// Sync lookup of one owned catalog record (`provider`, bare model id).
@@ -2850,6 +3018,130 @@ impl<O: Send + 'static> std::fmt::Debug for NativeOptions<O> {
             .field("api_id", &self.api_id)
             .finish()
     }
+}
+
+/// Handle to one registered [`crate::api::ImageApi`]; the only way to create
+/// its typed [`ImageNativeOptions`].
+///
+/// The handle carries no instance capability: its options stay valid for any
+/// [`Models`] with a compatible registration (same exact [`ApiId`], same
+/// options type), and a compatible registration upsert never invalidates
+/// them.
+pub struct ImageApiHandle<O: Send + 'static> {
+    api_id: ApiId,
+    _options: PhantomData<fn() -> O>,
+}
+
+impl<O: Send + 'static> ImageApiHandle<O> {
+    /// The exact API identity of the registration that produced this handle.
+    pub fn api_id(&self) -> &ApiId {
+        &self.api_id
+    }
+
+    /// Wrap one options value, tagging it with the registration's API/type
+    /// identity.
+    pub fn options(&self, value: O) -> ImageNativeOptions<O> {
+        ImageNativeOptions {
+            api_id: self.api_id.clone(),
+            type_id: TypeId::of::<O>(),
+            value,
+        }
+    }
+}
+
+/// Typed native image options created by an [`ImageApiHandle`].
+pub struct ImageNativeOptions<O: Send + 'static> {
+    api_id: ApiId,
+    type_id: TypeId,
+    value: O,
+}
+
+impl<O: Send + 'static + Clone> Clone for ImageNativeOptions<O> {
+    fn clone(&self) -> Self {
+        Self {
+            api_id: self.api_id.clone(),
+            type_id: self.type_id,
+            value: self.value.clone(),
+        }
+    }
+}
+
+impl<O: Send + 'static> std::fmt::Debug for ImageNativeOptions<O> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImageNativeOptions")
+            .field("api_id", &self.api_id)
+            .finish()
+    }
+}
+
+/// Type-erased storage for one registered image adapter.
+struct ImageApiRegistration {
+    provider_id: String,
+    options_type: TypeId,
+    dispatch: Arc<dyn ImageApiDispatch>,
+    resolver: Arc<dyn AuthResolver>,
+    record: crate::images::ImageModelRecord,
+}
+
+/// Object-safe dispatch over one fixed image options type.
+trait ImageApiDispatch: Send + Sync {
+    fn default_options_erased(&self) -> Box<dyn std::any::Any + Send>;
+    fn generate_erased<'a>(
+        &'a self,
+        record: crate::images::ImageModelRecord,
+        context: crate::images::ImagesContext,
+        options: Box<dyn std::any::Any + Send>,
+        auth: crate::auth::ResolvedAuth,
+        call: crate::images::ImagesCall,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = crate::images::ImagesResult> + Send + 'a>>;
+}
+
+/// Typed wrapper storing one fixed-`O` image adapter.
+struct TypedImageApi<O: Send + 'static> {
+    api: Arc<dyn crate::api::ImageApi<O>>,
+}
+
+impl<O: Send + 'static> ImageApiDispatch for TypedImageApi<O> {
+    fn default_options_erased(&self) -> Box<dyn std::any::Any + Send> {
+        Box::new(self.api.default_options())
+    }
+
+    fn generate_erased<'a>(
+        &'a self,
+        record: crate::images::ImageModelRecord,
+        context: crate::images::ImagesContext,
+        options: Box<dyn std::any::Any + Send>,
+        auth: crate::auth::ResolvedAuth,
+        call: crate::images::ImagesCall,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = crate::images::ImagesResult> + Send + 'a>>
+    {
+        let Ok(options) = options.downcast::<O>() else {
+            unreachable!("dispatch only receives its registration's options type");
+        };
+        Box::pin(async move {
+            self.api
+                .generate_images_prepared(record, context, *options, auth, call)
+                .await
+        })
+    }
+}
+
+/// The no-registration failure result, matching pi's dispatch message.
+fn no_image_api_result(record: &crate::images::ImageModelRecord) -> crate::images::ImagesResult {
+    crate::images::ImagesResult::failure(
+        record,
+        crate::images::ImagesStopReason::Error,
+        crate::provider::ProviderError::Config(crate::provider::ProviderErrorSummary::sanitized(
+            format!(
+                "No API provider registered for api: {}",
+                record.api.as_str()
+            ),
+        )),
+        format!(
+            "No API provider registered for api: {}",
+            record.api.as_str()
+        ),
+    )
 }
 
 /// Type-erased storage for one registered adapter.

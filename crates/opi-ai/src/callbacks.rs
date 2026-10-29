@@ -189,6 +189,18 @@ impl RequestCallbacks {
     pub(crate) fn inherited_attempt(&self) -> Option<crate::provider::AttemptContext> {
         self.attempt.clone()
     }
+    /// Whether a parsed raw-event observer is attached. Adapters that have no
+    /// parsed wire events (for example the nonstream image operation) use this
+    /// to reject the family typed before dispatch.
+    pub fn has_on_raw(&self) -> bool {
+        self.inner.on_raw.is_some()
+    }
+    /// Whether an assembled-header transform is attached. Adapters without a
+    /// provider-managed header assembly step use this to reject the family
+    /// typed before dispatch.
+    pub fn has_header_transform(&self) -> bool {
+        self.inner.header_transform.is_some()
+    }
     /// An empty callback definition set.
     pub fn new() -> Self {
         Self::default()

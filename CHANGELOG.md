@@ -651,6 +651,24 @@
   unchanged.
 ### Added
 
+- `opi-ai`: typed image operation and OpenRouter image direct adapter
+  (task 20.45, DEL-11). New public `images` contracts (`ImagesContext`/
+  `ImagesOutput`, `ImagesResult` where provider failures ride
+  `stop_reason = Error`/`Aborted` with the typed cause, base-rate
+  `ImageCostRates`/`ImagesCost`, operation-qualified `ImageModelRecord`),
+  the object-safe fixed-`O` `api::ImageApi` trait, `Models::
+  register_image_api`/`image_model` (chat models reject typed before any
+  auth resolution)/`generate_images`/`generate_images_native` with
+  `ImageApiHandle::options`, and `api::openrouter_images::
+  OpenRouterImagesApi` (api id `openrouter-images`): nonstream Chat-wire
+  POST with record-derived `modalities`, first-choice ordered text-then-
+  data-URL parsing that skips non-matching entries, text-only/empty/
+  zero-choice successes, usage cache split, base-rate-only pricing, the
+  600000 ms body-inclusive per-attempt timeout (positive-only override),
+  zero-extra-retry default with the SDK retry policy (server-delay cap,
+  frozen payloads across retries), cancellation to `Aborted`, and
+  payload/response callback support with typed rejection of the
+  raw-event/header-transform families.
 - `opi-ai`: pi-messages complete chat adapter (task 20.44, DEL-11). New
   public `pi_messages::PiMessagesChatApi` registers through
   `Models::register_chat_api` (api id `pi-messages`, provider id

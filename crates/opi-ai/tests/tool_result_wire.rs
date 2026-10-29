@@ -468,6 +468,9 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
     // Context estimation is shared by request budgeting and product compaction.
     let baseline_modules = vec![
         "anthropic",
+        // DEL-11 (task 20.45): the fixed-O image operation API family and
+        // the image contracts module are deliberate additions.
+        "api",
         "api_mapped",
         "auth",
         "azure_openai",
@@ -493,6 +496,8 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "http",
         // Task 20.53.4: provider identity helpers are a deliberate addition.
         "identity",
+        // DEL-11 (task 20.45): image-generation context/result/record types.
+        "images",
         "message",
         "mistral",
         "model",

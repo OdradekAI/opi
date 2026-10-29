@@ -5,6 +5,7 @@
 //! OpenAI-compatible profiles for OpenRouter and Mistral.
 
 pub mod anthropic;
+pub mod api;
 pub mod api_mapped;
 pub mod auth;
 pub mod azure_openai;
@@ -27,6 +28,7 @@ mod crypto;
 pub mod gemini;
 pub mod http;
 pub mod identity;
+pub mod images;
 pub mod message;
 pub mod mistral;
 pub mod model;

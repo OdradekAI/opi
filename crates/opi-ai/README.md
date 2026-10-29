@@ -1746,6 +1746,61 @@ pre-catalog window; pi's generated `data/radius.json` baseline is absent
 from the pinned source and a configured gateway's dynamic catalog replaces
 the baseline at registration time.
 
+## Image Operation and OpenRouter Image Direct Adapter (task 20.45)
+
+The fixed-`O` image operation ships in `api`/`images`: the object-safe
+`api::ImageApi<O>` trait mirrors `ChatApi` (exact `ApiId`, provider
+identity, complete record, typed options, prepared dispatch), public
+`images` types carry the ordered `ImagesContext`/`ImagesOutput`, the
+`ImagesResult` (provider failures never reject — they ride
+`stop_reason = Error`/`Aborted` with the typed `ProviderError` and a display
+message), and the operation-qualified `ImageModelRecord`. `Models::
+register_image_api` registers an adapter with its resolver and provenance
+source, `Models::image_model` performs operation-qualified selection (a chat
+model or unknown id fails typed *before* any auth resolution), and
+`Models::generate_images`/`generate_images_native` are the ordinary and
+typed-native drivers; an `ImageApiHandle::options` value stays valid across
+compatible re-registrations.
+
+The one real adapter, `api::openrouter_images::OpenRouterImagesApi`
+(api id `openrouter-images`, provider id `openrouter`, `O =
+OpenRouterImagesOptions` with the retry policy), reproduces the pinned pi
+module: one nonstream Chat-wire POST `{model, messages, stream: false,
+modalities}` to `<base>/chat/completions` (trailing slashes stripped;
+`modalities` is `["image", "text"]` when the record declares text output,
+else `["image"]`), Bearer-only auth, text inputs serialized as text parts
+and image inputs as `data:<mime>;base64,<data>` URLs — no four-MIME/count/
+bytes/signature gates, no URL fetch, file write, pixel decode or streaming
+variant. Parsing keeps the **first choice only, text before images**:
+non-empty string content becomes the leading text output, then each
+`message.images` entry whose URL matches `data:<mime>;base64,<data>` becomes
+an image output preserving the encoded original; non-data URLs, malformed
+entries and later choices are skipped, and text-only, empty-image and
+zero-choice responses stay successes. Usage keeps the provider split
+(`cache_read = reported_cached - cache_write` when writes exist, `input`
+excludes both cache buckets) and pricing uses the record's **base rates
+only** (the image path's base-cost exception — tiers never apply; the
+curated baseline entry's unknown pricing stays the generator's `0`
+fallback, and pi's generated `data/openrouter.json` is absent from the
+pinned source, so a registrar replaces the record wholesale).
+
+Transport follows the source: a **600000 ms default per-attempt timeout
+covering the whole body read and parse** (distinct from Mistral's
+headers-only 60 s deadline), an explicit timeout must be positive
+(`Some(zero)` is a typed pre-dispatch rejection), **zero extra retries by
+default** with the SDK retry policy (`x-should-retry` override,
+408/409/429/5xx/no-status retryable, `retry-after-ms`/`retry-after`
+honoured with the 60 s server-delay cap — above-cap requests fail
+immediately with the source message), retries reuse the frozen payload,
+cancellation maps to `Aborted`, and HTTP failures format
+`"<status>: <error.message | body>"` with 401/403 → `AuthFailed`, 429 →
+`RateLimited`, 408/504 → `Timeout`. Callbacks: the payload observer
+(replace-or-keep, once per logical call, frozen across retries) and the
+response observer (status + headers before body processing) are supported;
+raw-event and header-transform families are rejected typed before dispatch
+(ONB-04). The frozen `TelemetryContext` (P20-TELEMETRY) passes through to
+the request path without automatic spans.
+
 ## Mistral Conversations Direct Adapter and Native Options (task 20.43)
 
 The public direct adapter `mistral::MistralConversationsChatApi` registers

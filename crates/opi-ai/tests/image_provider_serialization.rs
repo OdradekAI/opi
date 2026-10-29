@@ -456,3 +456,206 @@ async fn mistral_image_in_request_body() {
     assert_eq!(content[0]["type"], "text");
     assert_eq!(content[1]["type"], "image_url");
 }
+
+// ---------------------------------------------------------------------------
+// Task 20.45: OpenRouter image adapter wire serialization (direct adapter
+// level, no Models). Pins the nonstream Chat-wire body: modalities from the
+// record's output, context projection with data-URL images, and the
+// Bearer-only pre-dispatch scheme rejection.
+// ---------------------------------------------------------------------------
+
+use std::time::Duration;
+
+use opi_ai::api::ImageApi;
+use opi_ai::api::openrouter_images::{OpenRouterImagesApi, OpenRouterImagesOptions};
+use opi_ai::auth::{AuthScheme, ResolvedAuth};
+use opi_ai::http::HttpClient;
+use opi_ai::images::{
+    ImageCostRates, ImageModelRecord, ImageOutputModality, ImagesCall, ImagesContext, ImagesInput,
+    ImagesStopReason,
+};
+use opi_ai::models::ApiId;
+use secrecy::SecretString;
+
+fn adapter_record(base_url: String, output: Vec<ImageOutputModality>) -> ImageModelRecord {
+    ImageModelRecord {
+        provider_id: "openrouter".into(),
+        id: "google/gemini-2.5-flash-image".into(),
+        name: "Gemini 2.5 Flash Image (via OpenRouter)".into(),
+        api: ApiId::new("openrouter-images"),
+        base_url,
+        output,
+        cost: ImageCostRates {
+            input: 3.0,
+            output: 15.0,
+            cache_read: 0.3,
+            cache_write: 3.75,
+        },
+    }
+}
+
+fn adapter_bearer_auth() -> ResolvedAuth {
+    ResolvedAuth {
+        scheme: AuthScheme::Bearer,
+        secret: SecretString::from("test-key"),
+        base_url: None,
+        account_id: None,
+        provenance: Default::default(),
+    }
+}
+
+fn adapter_call() -> ImagesCall {
+    ImagesCall {
+        timeout: Some(Duration::from_secs(30)),
+        ..Default::default()
+    }
+}
+
+async fn adapter_generate(
+    base_url: String,
+    output: Vec<ImageOutputModality>,
+    context: ImagesContext,
+    auth: ResolvedAuth,
+) -> opi_ai::images::ImagesResult {
+    let api = OpenRouterImagesApi::new(
+        HttpClient::new(),
+        adapter_record(base_url.clone(), output.clone()),
+    );
+    api.generate_images_prepared(
+        adapter_record(base_url, output),
+        context,
+        OpenRouterImagesOptions::default(),
+        auth,
+        adapter_call(),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn openrouter_images_serializes_context_and_image_only_modalities() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "gen-ser",
+            "choices": []
+        })))
+        .mount(&server)
+        .await;
+
+    let context = ImagesContext {
+        input: vec![
+            ImagesInput::Text {
+                text: "edit this 🐈 photo".into(),
+            },
+            ImagesInput::Image {
+                mime_type: "image/png".into(),
+                data: "iVBORw0KGgo=".into(),
+            },
+        ],
+    };
+    let result = adapter_generate(
+        server.uri(),
+        vec![ImageOutputModality::Image],
+        context,
+        adapter_bearer_auth(),
+    )
+    .await;
+
+    assert_eq!(result.stop_reason, ImagesStopReason::Stop);
+    let sent = server.received_requests().await.unwrap();
+    assert_eq!(sent.len(), 1);
+    let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "model": "google/gemini-2.5-flash-image",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        { "type": "text", "text": "edit this 🐈 photo" },
+                        {
+                            "type": "image_url",
+                            "image_url": { "url": "data:image/png;base64,iVBORw0KGgo=" }
+                        }
+                    ]
+                }
+            ],
+            "stream": false,
+            "modalities": ["image"]
+        })
+    );
+}
+
+#[tokio::test]
+async fn openrouter_images_text_output_modalities() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "gen-mod",
+            "choices": []
+        })))
+        .mount(&server)
+        .await;
+
+    let result = adapter_generate(
+        server.uri(),
+        vec![ImageOutputModality::Image, ImageOutputModality::Text],
+        ImagesContext {
+            input: vec![ImagesInput::Text { text: "hi".into() }],
+        },
+        adapter_bearer_auth(),
+    )
+    .await;
+
+    assert_eq!(result.stop_reason, ImagesStopReason::Stop);
+    let sent = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+    assert_eq!(body["modalities"], serde_json::json!(["image", "text"]));
+}
+
+#[tokio::test]
+async fn openrouter_images_rejects_non_bearer_scheme_before_dispatch() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+
+    let auth = ResolvedAuth {
+        scheme: AuthScheme::ApiKey,
+        secret: SecretString::from("test-key"),
+        base_url: None,
+        account_id: None,
+        provenance: Default::default(),
+    };
+    let result = adapter_generate(
+        server.uri(),
+        vec![ImageOutputModality::Image],
+        ImagesContext {
+            input: vec![ImagesInput::Text { text: "hi".into() }],
+        },
+        auth,
+    )
+    .await;
+
+    assert_eq!(result.stop_reason, ImagesStopReason::Error);
+    assert!(matches!(
+        result.error.as_ref().expect("typed error"),
+        opi_ai::provider::ProviderError::Config(_)
+    ));
+    assert!(
+        result
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .to_lowercase()
+            .contains("bearer"),
+        "message: {:?}",
+        result.error_message
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

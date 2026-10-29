@@ -1219,6 +1219,51 @@ opi 策划的基线目录（一条）覆盖目录到来之前的窗口；pi 生�
 `data/radius.json` 基线未随钉住源提供，配置网关的动态目录在注册时整
 体替换基线。
 
+## 图像操作与 OpenRouter 图像直接适配器（任务 20.45）
+
+fixed-`O` 图像操作落在 `api`/`images`：object-safe 的
+`api::ImageApi<O>` trait 镜像 `ChatApi`（精确 `ApiId`、provider 身份、
+完整记录、类型化选项、prepared 派发），公开的 `images` 类型承载有序的
+`ImagesContext`/`ImagesOutput`、`ImagesResult`（provider 失败永不以
+`Err` 返回——一律走 `stop_reason = Error`/`Aborted`，携带类型化
+`ProviderError` 与展示消息）以及 operation-qualified 的
+`ImageModelRecord`。`Models::register_image_api` 以解析器与来源注册适配
+器；`Models::image_model` 执行按操作限定的选择（chat 模型或未知 id 在
+**任何鉴权解析之前**类型化失败）；`Models::generate_images` /
+`generate_images_native` 是普通与类型化 native 两个入口；
+`ImageApiHandle::options` 生成的值在兼容的重新注册间保持有效。
+
+唯一的真实适配器 `api::openrouter_images::OpenRouterImagesApi`
+（api id `openrouter-images`，provider id `openrouter`，`O =
+OpenRouterImagesOptions`，承载重试策略）复刻钉住的 pi 模块：向
+`<base>/chat/completions`（尾斜杠剥除）单次非流式 Chat-wire POST
+`{model, messages, stream: false, modalities}`（记录声明文本输出时为
+`["image", "text"]`，否则 `["image"]`），仅 Bearer 鉴权；文本输入序列化
+为 text 部分，图像输入为 `data:<mime>;base64,<data>` URL——无四 MIME/
+数量/字节/签名门槛，无 URL 抓取、写盘、像素解码或流式变体。解析保持
+**仅首 choice、文本先于图像**：非空字符串 content 成为首个文本输出，
+随后 `message.images` 中匹配 `data:<mime>;base64,<data>` 的条目成为图
+像输出并保留 encoded 原值；非 data URL、畸形条目与后续 choice 跳过，
+纯文本/空图像/零 choice 响应仍是成功。Usage 保留 provider 拆分
+（有写入时 `cache_read = reported_cached - cache_write`，`input` 扣除两
+个缓存桶），计价仅用记录的**基础价四率**（图像路径的 base-cost 例外
+——tiers 永不生效；curated 基线条目的未知价格保持生成器的 `0` 回退，
+pi 生成的 `data/openrouter.json` 未随钉住源提供，注册方整体替换记
+录）。
+
+传输遵循源：**默认 600000 ms 的逐 attempt 超时覆盖整个 body 读取与解
+析**（区别于 Mistral 仅 headers 的 60 秒截止），显式超时必须为正
+（`Some(zero)` 是派发前类型化拒绝），**默认 0 额外重试**并采用 SDK 重
+试策略（`x-should-retry` 覆盖；408/409/429/5xx/无状态可重试；
+`retry-after-ms`/`retry-after` 生效且有 60 秒服务端延迟上限——超上限请
+求立即失败并保留源消息格式），重试复用冻结 payload，取消映射为
+`Aborted`，HTTP 失败格式化为 `"<status>: <error.message | body>"`，
+401/403 → `AuthFailed`、429 → `RateLimited`、408/504 → `Timeout`。回
+调：payload 观察器（替换或保留、每次逻辑调用一次、跨重试冻结）与
+response 观察器（status + headers，先于 body 处理）受支持；raw-event
+与 header-transform 族在派发前类型化拒绝（ONB-04）。冻结的
+`TelemetryContext`（P20-TELEMETRY）透传到请求路径，无自动 span。
+
 ## Mistral Conversations 直接适配器与 native 选项（任务 20.43）
 
 公共直接适配器 `mistral::MistralConversationsChatApi` 经
