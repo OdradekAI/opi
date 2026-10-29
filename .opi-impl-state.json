@@ -14017,7 +14017,7 @@
       "definition_of_done": "Public classify reaches real cloudflare-workers-ai-system-one adapter with Cloudflare envelope/account/auth, image support and finite required values. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Cloudflare classifier parameters, account/envelope/image fields and typed outcomes preserve their own protocol.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -14095,6 +14095,11 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C append (C.1a): the shared System One transport core (pi SystemOneTransport shape) was parameterized out of system_one.rs so the cloudflare adapter drives the same conformance; 20.46's public surface and its 23 tests stay green unchanged.",
+          "source": "crates/opi-ai/src/api/system_one.rs"
         }
       ],
       "tier": "workspace",
@@ -14123,7 +14128,7 @@
             "opi_ai::Models::classify (target)",
             "opi_ai cloudflare-workers-ai-system-one direct adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.47",
@@ -14136,7 +14141,7 @@
             "opi_ai::Models::classify (target)",
             "opi_ai cloudflare-workers-ai-system-one direct adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -14144,9 +14149,9 @@
         "opi_ai cloudflare-workers-ai-system-one direct adapter (target)"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "924cf6dc749c17f6e9d790a5d29ca7ab684dc95c",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -14158,12 +14163,53 @@
         "crates/opi-ai/src/lib.rs",
         "crates/opi-ai/src/models.rs",
         "crates/opi-ai/src/telemetry.rs",
-        "crates/opi-ai/tests/classifier_contract.rs"
+        "crates/opi-ai/tests/classifier_contract.rs",
+        "crates/opi-ai/src/api/system_one.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "14f61b9d1bb54c863037281f5b02f40615f53b5b",
+      "evidence": {
+        "Opi-Task": "20.47",
+        "Opi-DoD-SHA256": "7a306ed7f7865b9b7913d65aa0463fa66e311cc11188cb85b92e4957aa6eb0a6",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED on attempt 3 (attempts 1-2 environmental 53692)",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "P20-S47, ONB-03-20.47"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-29T17:38:08+00:00",
+          "attempt": 1,
+          "summary": "B.2 contract authorized. Drift NONE; smoke boot PASSED; baseline dirty 0. Implementation contract: api/cloudflare.rs adapter (input envelope, dual response envelopes, account placeholder substitution), shared SystemOne transport core parameterized out of system_one.rs, multi-record classifier registration seam (register_classifier_model_record), curated jev/clef/clef-flash records from the pinned test (generated catalog JSON absent from the pinned source).",
+          "gate_results": {}
+        },
+        {
+          "timestamp": "2026-10-29T18:42:29+00:00",
+          "attempt": 1,
+          "summary": "Second real classifier protocol on the shared conformance: api::cloudflare::CloudflareWorkersAiSystemOneApi (cloudflare-workers-ai-system-one, provider cloudflare-workers-ai) drives the System One transport core parameterized out of system_one.rs (label/URL/payload envelope/output unwrap differ; guards, payload freeze, retry policy, per-attempt body-inclusive timeouts, billed-usage retention and tiered pricing identical - 20.46's public surface and its 23 tests unchanged). One POST <base>/run with {model, input:{state, questions}} (full model id on the wire, bool<->noul both sides); the {CLOUDFLARE_ACCOUNT_ID} placeholder materializes from auth.account_id and stays literal when absent (pi resolveCloudflareModel fallback - pinned with the placeholder in the host so the URL is unsendable). Dual response envelopes pinned: third-party run records gated on state Completed ('run did not complete (state: Queued)'), Cloudflare-hosted direct {result:{answers, usage}}, exact success:false aggregating errors[].message into 'Cloudflare Workers AI error: m1; m2' with 'request failed' fallback; non-record bodies -> 'returned an unexpected response'. Multi-model registration: register_classifier_model_record appends/replaces by (provider, id) in the registration's record set, classifier_model scans the set, unregistered API -> new non-breaking ModelsError::ClassifierApiNotRegistered (enum is non_exhaustive). Curated records (generated data absent): typesafe/jev (64000 ctx cross-host inference from the TypeSafe fixture), @cf/cloudflare/clef (0.24/M input), @cf/cloudflare/clef-flash (0.09/M); output pricing and hosted context windows stay 0 with no evidence. TDD red-first (missing api::cloudflare + register_classifier_model_record + ClassifierApiNotRegistered) then green: classifier_contract 33/33 (23 retained + 10 new). D.1 smoke full PASSED on attempt 3: attempts 1-2 were the documented 53692 environmental class (standalone-green mid-window; counter swept past 53692 leaving a TIME_WAIT that cleared after a strict clean window - login_binds_preferred_port_53692_with_callback_path then passed in-run). fmt/clippy -D warnings clean; full crate green apart from that same environmental test; doc-check PASS. D.2 exec single-reviewer fallback (wf_ref=null): 0 must-fix; 5 low flags: (1) cloudflare default-2 retries observed via default_options + the shared loop pinned by 20.46, not a failing-then-succeeding mount; (2) cloudflare-labeled cancel/timeout messages ride the shared core (label-only difference) without separate tests per ONB-03 distinct-case rule; (3) curated jev 64000 is a documented cross-host inference, clef/clef-flash context windows 0 (no pinned evidence); (4) wiremock newest-mount-first priority forced test restructuring (test-side only); (5) register_classifier_model_record replace-by-key semantics documented in rustdoc (one model per id).",
+          "gate_results": {
+            "d1": "smoke full PASSED on attempt 3 (attempts 1-2 environmental 53692: standalone-green + counter-past-port TIME_WAIT analysis, strict clean windows respected)",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 5 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "P20-S47 / ONB-03-20.47",
+                "action": "add",
+                "test": "classifier_contract cloudflare section (10 tests): full wire body at /accounts/account-id/ai/run (input envelope, full model id, noul mapping, temperature absent, Bearer) via account substitution, direct-envelope parse with native options wire capture, Queued state / success:false aggregation / request-failed fallback, non-record body + non-record inner result + billed-usage retention through the run envelope, clef catalog pricing (222 x 0.24/1e6), curated multi-model registration resolution + replace-by-key + ClassifierApiNotRegistered, image pre-request rejection, missing-key typed rejection (0 requests), placeholder-retention unsendable URL, adapter-level api-mismatch and non-Bearer guards",
+                "interface": "api::cloudflare::{CLOUDFLARE_WORKERS_AI_SYSTEM_ONE_API_ID, CLOUDFLARE_WORKERS_AI_REST_BASE_URL, CloudflareSystemOneOptions, CloudflareWorkersAiSystemOneApi, default_cloudflare_classifier_records} / Models::{register_classifier_model_record, classifier_model} / ModelsError::ClassifierApiNotRegistered / shared SystemOneTransport core",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.47",
+                "action": "retain",
+                "test": "the 23 existing typesafe tests stay green unchanged over the parameterized core (regression proof of the shared-conformance refactor)",
+                "interface": "api::system_one (public surface unchanged)",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.48",
@@ -22974,6 +23020,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-29T16:53:37+00:00",
       "task_id": "20.46",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 5,
+      "rejected_count": 0,
+      "ran_at": "2026-10-29T18:42:29+00:00",
+      "task_id": "20.47",
       "criterion_id": null
     }
   ]
