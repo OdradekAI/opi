@@ -38,6 +38,7 @@ pub mod openai_codex_responses;
 pub mod openai_responses;
 mod openai_responses_shared;
 pub mod openrouter;
+pub mod pi_messages;
 pub mod provider;
 pub mod provider_env;
 pub mod provider_headers;

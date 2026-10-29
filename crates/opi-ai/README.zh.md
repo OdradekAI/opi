@@ -1181,6 +1181,44 @@ functionCall part 上；仅带签名的空 part 得以保留。成功工具结�
 （`Provider stopped with: <raw>`）。Google producer 运行于显式冻结的
 `TelemetryContext`（P20-TELEMETRY）。
 
+## pi-messages 直接适配器（Radius 网关，任务 20.44）
+
+公共直接适配器 `pi_messages::PiMessagesChatApi` 经 `Models::
+register_chat_api` 注册（api id `pi-messages`，provider id `radius`），
+携带类型化的 `PiMessagesOptions`。wire 是 pi 自身的消息协议：向
+`<base>/messages`（去尾斜杠；`debug` 时附 `?debug=1`）单次 POST
+`{ model, context, options }`，响应为序列化 assistant 消息事件的 SSE
+流加一个 `done`/`error` 终结事件。它不是 Chat 序列化器：`context` 字
+段是规范 chronology 投影成的 pi camelCase wire JSON（system 段落与工
+具声明由 `normalize_context` 折入、assistant 文本/思考签名、redacted
+thinking、参数为解析对象的工具调用、`toolResult` 消息），且会话中
+system 消息原生保留——后端原生理解 pi 的 chronology。
+
+`options` 对象是精确的六字段白名单——`temperature`、`maxTokens`、
+`reasoning`、`cacheRetention`、`sessionId`、`toolChoice`——省略保持省
+略：不补 `auto`、不注默认 maxTokens、不做 context 钳位。`reasoning`
+逐字携带请求的 `ThinkingLevel`（`None` 映射为 wire 串 `"off"`）；
+`toolChoice` 支持 `auto`/`none`/`required`/具名函数；`cacheRetention`
+与请求值一一映射（`Disabled` 映 `none`），仅遗留的
+`PI_CACHE_RETENTION=long` 环境项在未设时生效。simple 入口（pi
+`streamSimple` 透传）不钳位地转发请求的思考级别——模型记录的级别
+映射从不改写它——且只映射中性的工具选择。
+
+流式事件 typed 且 fail-closed 校验：内容索引允许稀疏（未 start 的洞
+保持为空）、无 start 的 delta、未知事件类型、坏帧或带非成功原因的
+`done` 都以 `Invalid pi-messages streaming event: …` 失败；`data:
+[DONE]` 被忽略；CRLF 输入与无空行结尾的尾帧均可解析。终结 `done` 事
+件携带完整 usage 族（cache-write-1h、reasoning、total）、`responseId`、
+`providerThinkingLevel` 与服务端重写的 `pi_messages_rewrite` 诊断；终
+结 `error` 事件带 `errorMessage` 类型化失败（`aborted` 映射
+`Cancelled`）；无终结事件的流失败。HTTP 错误格式
+`"{status} {statusText}: {error.message ?? body} ({code})"`（优先 JSON
+error 体，原始体兜底）；429 保持可重试身份。回调按钉住顺序触发——
+payload、response（先于成功检查）、随后每个原始解析事件先于规范化。
+opi 策划的基线目录（一条）覆盖目录到来之前的窗口；pi 生成的
+`data/radius.json` 基线未随钉住源提供，配置网关的动态目录在注册时整
+体替换基线。
+
 ## Mistral Conversations 直接适配器与 native 选项（任务 20.43）
 
 公共直接适配器 `mistral::MistralConversationsChatApi` 经

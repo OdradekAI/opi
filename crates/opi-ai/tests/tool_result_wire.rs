@@ -505,6 +505,8 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "openai_codex_responses",
         "openai_responses",
         "openrouter",
+        // DEL-11 (task 20.44): the pi-messages direct adapter.
+        "pi_messages",
         "provider",
         // Task 20.53.6: provider environment helpers are a deliberate addition.
         "provider_env",

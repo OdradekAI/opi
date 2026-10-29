@@ -101,6 +101,7 @@ pub enum WireApi {
     GoogleVertex,
     #[serde(rename = "bedrock-converse-stream")]
     BedrockConverseStream,
+    PiMessages,
     #[serde(rename = "azure-openai-completions")]
     AzureOpenAiCompletions,
     #[serde(rename = "azure-openai-responses")]
@@ -132,6 +133,7 @@ impl WireApi {
             Self::GoogleGenerativeAi => "google-generative-ai",
             Self::GoogleVertex => "google-vertex",
             Self::BedrockConverseStream => "bedrock-converse-stream",
+            Self::PiMessages => "pi-messages",
             Self::AzureOpenAiCompletions => "azure-openai-completions",
             Self::AzureOpenAiResponses => "azure-openai-responses",
             Self::MistralConversations => "mistral-conversations",
@@ -623,6 +625,9 @@ pub enum WireCompat {
     /// Mistral Conversations rows (task 20.43): the wire carries no
     /// mistral-specific compat flags today.
     MistralConversations,
+    /// pi-messages rows (task 20.44): pi's own message protocol (Radius
+    /// gateway); no adapter-specific compat flags.
+    PiMessages,
 }
 
 impl WireCompat {
@@ -636,6 +641,7 @@ impl WireCompat {
             Self::GoogleVertex => WireApi::GoogleVertex,
             Self::BedrockConverseStream(_) => WireApi::BedrockConverseStream,
             Self::MistralConversations => WireApi::MistralConversations,
+            Self::PiMessages => WireApi::PiMessages,
             Self::AzureOpenAiCompletions => WireApi::AzureOpenAiCompletions,
             Self::AzureOpenAiResponses(_) => WireApi::AzureOpenAiResponses,
         }
@@ -655,6 +661,7 @@ impl WireCompat {
             // flag surface under their own wire identity.
             WireApi::AzureOpenAiResponses => Self::AzureOpenAiResponses(Default::default()),
             WireApi::MistralConversations => Self::MistralConversations,
+            WireApi::PiMessages => Self::PiMessages,
         }
     }
 }

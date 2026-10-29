@@ -1700,6 +1700,52 @@ unmapped finish reasons fail typed carrying the raw reason
 (`Provider stopped with: <raw>`). The Google producer runs under the
 explicit frozen `TelemetryContext` (P20-TELEMETRY).
 
+## pi-messages Direct Adapter (Radius Gateway, task 20.44)
+
+The public direct adapter `pi_messages::PiMessagesChatApi` registers through
+`Models::register_chat_api` (api id `pi-messages`, provider id `radius`)
+with typed `PiMessagesOptions`. The wire is pi's own message protocol: one
+POST of `{ model, context, options }` to `<base>/messages` (trailing
+slashes stripped, `?debug=1` when `debug` is set) answered by an SSE stream
+of serialized assistant-message events plus a terminal `done`/`error`
+event. It is not a Chat serializer: the `context` field is the canonical
+chronology projected into pi's camelCase wire JSON (system sections and
+tool declarations folded by `normalize_context`, assistant text/thinking
+signatures, redacted thinking, tool calls with parsed argument objects,
+`toolResult` messages), and mid-conversation system messages stay in place
+because the backend natively understands pi's chronology.
+
+The `options` object is an exact six-field whitelist — `temperature`,
+`maxTokens`, `reasoning`, `cacheRetention`, `sessionId`, `toolChoice` — and
+omissions stay omissions: no `auto` fill-in, no default maxTokens, no
+context clamp. `reasoning` carries the requested `ThinkingLevel` verbatim
+(`None` maps to the wire string `"off"`); `toolChoice` supports
+`auto`/`none`/`required`/named-function; `cacheRetention` maps the request
+value one-to-one (`Disabled` to `none`) with only the legacy
+`PI_CACHE_RETENTION=long` ambient opt-in when unset. The simple entry
+(pi `streamSimple` passthrough) forwards the request's thinking level
+unclamped — the model record's level map never rewrites it — and maps only
+the neutral tool choice.
+
+Streaming validates events typed and fail-closed: content indices may be
+sparse (unstarted holes stay empty), a delta without its start, an unknown
+event type, a malformed frame or a `done` with a non-success reason all
+fail with `Invalid pi-messages streaming event: …`; `data: [DONE]` is
+ignored; CRLF input and a trailing frame without a blank line both parse.
+Terminal `done` events carry the full usage family (cache-write-1h,
+reasoning, total), `responseId`, `providerThinkingLevel` and the
+`pi_messages_rewrite` diagnostic for server-side rewrites; terminal
+`error` events fail typed with `errorMessage` (`aborted` maps to
+`Cancelled`); a stream that ends without a terminal event fails. HTTP
+errors format `"{status} {statusText}: {error.message ?? body} ({code})"`
+with the JSON error body preferred and the raw body as fallback; 429 keeps
+its retryable identity. Callbacks fire in the pinned order — payload,
+response (before the success check), then each raw parsed event before
+normalization. The opi-curated baseline catalog (one entry) covers the
+pre-catalog window; pi's generated `data/radius.json` baseline is absent
+from the pinned source and a configured gateway's dynamic catalog replaces
+the baseline at registration time.
+
 ## Mistral Conversations Direct Adapter and Native Options (task 20.43)
 
 The public direct adapter `mistral::MistralConversationsChatApi` registers

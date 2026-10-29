@@ -2,6 +2,9 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): `WireApi::PiMessages` and `WireCompat::PiMessages` are
+  new variants (task 20.44, DEL-11); exhaustive matches over either enum
+  gain an arm.
 - `opi-ai` (0.x): `WireApi::MistralConversations` and
   `WireCompat::MistralConversations` are new variants (task 20.43, DEL-11);
   exhaustive matches over either enum gain an arm.
@@ -648,6 +651,26 @@
   unchanged.
 ### Added
 
+- `opi-ai`: pi-messages complete chat adapter (task 20.44, DEL-11). New
+  public `pi_messages::PiMessagesChatApi` registers through
+  `Models::register_chat_api` (api id `pi-messages`, provider id
+  `radius`) with typed `PiMessagesOptions` (reasoning with the `"off"`
+  wire value, tool choice auto/none/required/named, `debug`). The wire is
+  pi's own message protocol — one POST of `{model, context, options}` to
+  `<base>/messages` with an exact six-field options whitelist where
+  omissions stay omissions — and the context is the canonical chronology
+  projected into pi's camelCase wire JSON (signatures, redacted thinking,
+  parsed tool arguments, mid-conversation system messages preserved). The
+  simple entry forwards the requested thinking level unclamped
+  (`resolve_wire_cache_retention` maps cache retention one-to-one with the
+  legacy `PI_CACHE_RETENTION=long` ambient opt-in). Streaming validates
+  typed and fail-closed (sparse indices, unknown events, missing terminal
+  all fail; `[DONE]` ignored; CRLF and trailing frames parse), maps the
+  full usage family with `responseId`/`providerThinkingLevel` and the
+  `pi_messages_rewrite` diagnostic, and fails terminal `error` events
+  typed (`aborted` to `Cancelled`). HTTP errors format
+  `"{status} {statusText}: {error.message ?? body} ({code})"`; callbacks
+  fire payload → response → raw parsed events.
 - `opi-ai`: mistral-conversations complete chat adapter (task 20.43,
   DEL-11). New public `mistral::MistralConversationsChatApi` registers
   through `Models::register_chat_api` (api id `mistral-conversations`,
