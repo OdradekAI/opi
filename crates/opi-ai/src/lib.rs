@@ -13,6 +13,7 @@ pub mod bedrock;
 pub mod callbacks;
 pub mod cancel;
 pub mod catalog;
+pub mod classifier;
 pub mod codex_resources;
 pub mod config;
 pub mod constrained_sampling;

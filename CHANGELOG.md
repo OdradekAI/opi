@@ -651,6 +651,25 @@
   unchanged.
 ### Added
 
+- `opi-ai`: typed classifier operation and TypeSafe System One direct
+  adapter (task 20.46, DEL-11). New public `classifier` contracts
+  (`ClassifierContext` with ordered typed questions, `ClassifierAnswer`
+  variants, `ClassifierResult` where provider failures ride `stop_reason =
+  Error`/`Aborted` with the typed cause and a billed request keeps its
+  usage, operation-qualified `ClassifierModelRecord` with tiered catalog
+  pricing), the object-safe fixed-`O` `api::ClassifierApi` trait, and
+  `Models::register_classifier_api`/`classifier_model` (chat models and
+  unknown ids reject typed before any auth resolution)/`classify`/
+  `classify_native` with `ClassifierApiHandle::options`. The real
+  `api::system_one::TypesafeSystemOneApi` (api id `typesafe-system-one`):
+  POST `{model, state, questions}` to `<base>/systemone` with the public
+  `bool`↔wire `noul` mapping on both sides, per-question parsing that
+  validates only source-required shape/type/string/finite constraints,
+  image input rejected before any request, no default timeout with a fresh
+  body-inclusive per-attempt timeout, two extra retries by default with the
+  SDK retry policy, chat-style tiered usage pricing, and payload/response
+  callback support with typed rejection of the raw-event/header-transform
+  families.
 - `opi-ai`: typed image operation and OpenRouter image direct adapter
   (task 20.45, DEL-11). New public `images` contracts (`ImagesContext`/
   `ImagesOutput`, `ImagesResult` where provider failures ride

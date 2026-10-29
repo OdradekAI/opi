@@ -1219,6 +1219,51 @@ opi 策划的基线目录（一条）覆盖目录到来之前的窗口；pi 生�
 `data/radius.json` 基线未随钉住源提供，配置网关的动态目录在注册时整
 体替换基线。
 
+## 分类器操作与 TypeSafe System One 直接适配器（任务 20.46）
+
+fixed-`O` 分类器操作与 chat／image seam 并列：object-safe 的
+`api::ClassifierApi<O>` trait 镜像 `ImageApi`（精确 `ApiId`、provider
+身份、完整记录、类型化选项、prepared 派发）——**一条共用 conformance 经
+此 seam 覆盖全部真实分类器协议**；公开的 `classifier` 契约承载类型化
+`ClassifierContext`（JSON state 对象、有序 questions、可选 images）、
+`ClassifierAnswer` 变体、`ClassifierResult`（provider 失败永不以 `Err` 返
+回——一律走 `stop_reason = Error`/`Aborted`，携带类型化 `ProviderError`
+与展示消息；已计费请求在后续答案解析失败时保留其 usage）以及
+operation-qualified 的 `ClassifierModelRecord`，其目录定价为 **含 tiers 的
+`ModelPricing`**。`Models::register_classifier_api` 以解析器与来源注册适
+配器；`Models::classifier_model` 执行按操作限定的选择（chat 模型与未知
+id 在**任何鉴权解析之前**类型化失败）；`Models::classify` /
+`classify_native` 是普通与类型化 native 两个入口；
+`ClassifierApiHandle::options` 生成的值在兼容的重新注册间保持有效。
+
+唯一的真实适配器 `api::system_one::TypesafeSystemOneApi`（api id
+`typesafe-system-one`，provider id `typesafe`）复刻钉住的 pi 模块：向
+`<base>/systemone`（尾斜杠剥除）单次 POST `{model, state, questions}`，
+仅 Bearer 鉴权；公开的 **`bool` 问题与答案双向映射为 wire 层的
+`noul`**（choice/score 保持原形）；图像输入在任何请求之前拒绝
+（`"System One API does not support image input"`，与记录模态无关）；
+带 api 不匹配守卫。答案解析仅校验源所要求的部分——record 形状、wire
+类型一致、字符串 `choice`、有限数——**没有**通用的概率范围/求和/
+argmax/标签成员规则；每个已知问题都必须有类型匹配的答案，未知答案
+id 被忽略。usage `{input_tokens, output_tokens}` 保留源容忍度（非数或
+非正 token 计为 0；两字段皆缺则结果不带 usage），并按记录目录 **chat 式
+tiered 计价**（区别于图像路径的基础价例外）。
+
+传输遵循源：**无默认超时**（调用方超时 body-inclusive 且**每次重试
+attempt 新鲜**，超时报 `"Request timed out after {ms}ms"` 并像任何无状
+态失败一样可重试），**默认 2 额外重试**并采用 SDK 重试策略
+（`x-should-retry` 覆盖；408/409/429/5xx/无状态可重试；
+`retry-after-ms`/`retry-after` 生效且有 60 秒服务端延迟上限——超上限请
+求立即失败并保留源消息格式），重试复用冻结 payload，取消映射为
+`Aborted`，HTTP 失败格式化为 `"System One API error ({status}): {body}"`。
+`temperature` 是 System One 无法应用的类型化选项：永不上线。payload 观
+察器（替换或保留、每次逻辑调用一次、跨重试冻结）与 response 观察器
+（status + headers，先于 body 处理）受支持；raw-event 与 header-transform
+族在派发前类型化拒绝。冻结的 `TelemetryContext` 透传到请求路径。
+curated 基线记录（`typesafe/jev-latest`，64000 token 上下文，文本输入，
+注册前零价）在注册时整体替换；pi 生成的 `data/typesafe.json` 未随钉住
+源提供。
+
 ## 图像操作与 OpenRouter 图像直接适配器（任务 20.45）
 
 fixed-`O` 图像操作落在 `api`/`images`：object-safe 的

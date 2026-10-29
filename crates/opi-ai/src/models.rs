@@ -248,6 +248,15 @@ pub enum ModelsError {
         /// Bare model id of the requested model.
         id: String,
     },
+    /// Operation-qualified classifier selection failed: the model is not a
+    /// registered classifier model (a chat model or an unknown id).
+    #[error("model '{provider}/{id}' is not a classifier model")]
+    NotAClassifierModel {
+        /// Provider id of the requested model.
+        provider: String,
+        /// Bare model id of the requested model.
+        id: String,
+    },
     /// The request identifies a different provider/model than the resolved
     /// route, so dispatch would make the frozen route facts untruthful.
     #[error(
@@ -475,6 +484,10 @@ pub struct Models {
     /// 20.45). The image operation dispatches on the record's API identity;
     /// image records never enter the chat catalog.
     image_apis: BTreeMap<ApiId, ImageApiRegistration>,
+    /// Typed custom classifier API registrations keyed by exact [`ApiId`]
+    /// (task 20.46). The classifier operation dispatches on the record's
+    /// API identity; classifier records never enter the chat catalog.
+    classifier_apis: BTreeMap<ApiId, ClassifierApiRegistration>,
     /// Injectable ambient-source access consulted on demand by the auth
     /// management operations. Defaults to the lazy
     /// [`AmbientAuthContext`](crate::auth::AmbientAuthContext); construction
@@ -518,6 +531,7 @@ impl Models {
             oauth_routes: std::collections::HashSet::new(),
             chat_apis: BTreeMap::new(),
             image_apis: BTreeMap::new(),
+            classifier_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
             models_store: None,
@@ -563,6 +577,7 @@ impl Models {
             oauth_routes: std::collections::HashSet::new(),
             chat_apis: BTreeMap::new(),
             image_apis: BTreeMap::new(),
+            classifier_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
             models_store: None,
@@ -732,6 +747,158 @@ impl Models {
             api_id,
             _options: PhantomData,
         })
+    }
+
+    /// Register one typed classifier adapter (task 20.46): the fixed-`O`
+    /// [`crate::api::ClassifierApi`] implementation, its provider auth
+    /// resolver and provenance source. The registration owns the adapter's
+    /// complete [`crate::classifier::ClassifierModelRecord`] for
+    /// operation-qualified selection; classifier records never enter the
+    /// chat catalog, and an upsert with the same exact [`ApiId`] replaces
+    /// the previous registration wholesale. One shared conformance spans
+    /// every real classifier protocol through this seam.
+    pub fn register_classifier_api<O: Send + 'static>(
+        &mut self,
+        api: std::sync::Arc<dyn crate::api::ClassifierApi<O>>,
+        resolver: std::sync::Arc<dyn AuthResolver>,
+        source: AuthProvenanceSource,
+    ) -> Result<ClassifierApiHandle<O>, RegistrationError> {
+        let api_id = api.api_id().clone();
+        if api_id.as_str().trim().is_empty() {
+            return Err(RegistrationError::EmptyApiId);
+        }
+        let provider_id = api.provider_id().to_owned();
+        if provider_id.trim().is_empty() {
+            return Err(RegistrationError::EmptyProviderId);
+        }
+        let record = api.complete_record().clone();
+        self.sources.insert(provider_id.clone(), source);
+        self.classifier_apis.insert(
+            api_id.clone(),
+            ClassifierApiRegistration {
+                provider_id,
+                options_type: std::any::TypeId::of::<O>(),
+                dispatch: Arc::new(TypedClassifierApi { api }),
+                resolver,
+                record,
+            },
+        );
+        Ok(ClassifierApiHandle {
+            api_id,
+            _options: PhantomData,
+        })
+    }
+
+    /// Operation-qualified classifier selection: resolve the registered
+    /// classifier record for (`provider`, bare `id`).
+    ///
+    /// Chat models and unknown ids fail typed here — before any auth
+    /// resolution — so a classification can never be routed through a
+    /// chat/image model.
+    pub fn classifier_model(
+        &self,
+        provider: &str,
+        id: &str,
+    ) -> Result<crate::classifier::ClassifierModelRecord, ModelsError> {
+        for registration in self.classifier_apis.values() {
+            if registration.record.provider_id == provider && registration.record.id == id {
+                return Ok(registration.record.clone());
+            }
+        }
+        Err(ModelsError::NotAClassifierModel {
+            provider: provider.to_owned(),
+            id: id.to_owned(),
+        })
+    }
+
+    /// Classify through the registered adapter for the record's exact API
+    /// identity using the adapter's default options (the ordinary classify
+    /// driver).
+    ///
+    /// Never rejects: selection, auth and provider failures stay inside the
+    /// returned [`crate::classifier::ClassifierResult`] with `stop_reason =
+    /// Error`/`Aborted` and the typed cause.
+    pub async fn classify(
+        &self,
+        record: crate::classifier::ClassifierModelRecord,
+        context: crate::classifier::ClassifierContext,
+        call: crate::classifier::ClassifierCall,
+    ) -> crate::classifier::ClassifierResult {
+        let Some(registration) = self.classifier_apis.get(&record.api) else {
+            return no_classifier_api_result(&record);
+        };
+        let options = registration.dispatch.default_options_erased();
+        self.dispatch_classifier(registration, record, context, options, call)
+            .await
+    }
+
+    /// Classify with typed native options created by a
+    /// [`ClassifierApiHandle`]. The options must carry the same exact
+    /// [`ApiId`] and options type as the registration; a mismatch is a typed
+    /// pre-dispatch failure result.
+    pub async fn classify_native<O: Send + 'static>(
+        &self,
+        record: crate::classifier::ClassifierModelRecord,
+        context: crate::classifier::ClassifierContext,
+        call: crate::classifier::ClassifierCall,
+        options: ClassifierNativeOptions<O>,
+    ) -> crate::classifier::ClassifierResult {
+        let Some(registration) = self.classifier_apis.get(&record.api) else {
+            return no_classifier_api_result(&record);
+        };
+        if options.type_id != std::any::TypeId::of::<O>()
+            || options.api_id != record.api
+            || options.type_id != registration.options_type
+        {
+            let message = format!(
+                "classifier options tagged for API '{}' do not match the registration for '{}'",
+                options.api_id.as_str(),
+                record.api.as_str()
+            );
+            return crate::classifier::ClassifierResult::failure(
+                &record,
+                crate::classifier::ClassifierStopReason::Error,
+                crate::provider::ProviderError::Config(
+                    crate::provider::ProviderErrorSummary::sanitized(message.clone()),
+                ),
+                message,
+            );
+        }
+        self.dispatch_classifier(registration, record, context, Box::new(options.value), call)
+            .await
+    }
+
+    async fn dispatch_classifier(
+        &self,
+        registration: &ClassifierApiRegistration,
+        record: crate::classifier::ClassifierModelRecord,
+        context: crate::classifier::ClassifierContext,
+        options: Box<dyn std::any::Any + Send>,
+        call: crate::classifier::ClassifierCall,
+    ) -> crate::classifier::ClassifierResult {
+        let auth = match registration.resolver.resolve().await {
+            Ok(auth) => auth,
+            Err(error) => {
+                let message = if matches!(
+                    error,
+                    crate::provider::ProviderError::CredentialNeeded { .. }
+                ) {
+                    format!("No API key for provider: {}", registration.provider_id)
+                } else {
+                    error.to_string()
+                };
+                return crate::classifier::ClassifierResult::failure(
+                    &record,
+                    crate::classifier::ClassifierStopReason::Error,
+                    error,
+                    message,
+                );
+            }
+        };
+        registration
+            .dispatch
+            .classify_erased(record, context, options, auth, call)
+            .await
     }
 
     /// Operation-qualified image selection: resolve the registered image
@@ -3139,6 +3306,135 @@ fn no_image_api_result(record: &crate::images::ImageModelRecord) -> crate::image
         )),
         format!(
             "No API provider registered for api: {}",
+            record.api.as_str()
+        ),
+    )
+}
+
+/// Handle to one registered [`crate::api::ClassifierApi`]; the only way to
+/// create its typed [`ClassifierNativeOptions`].
+///
+/// The handle carries no instance capability: its options stay valid for any
+/// [`Models`] with a compatible registration (same exact [`ApiId`], same
+/// options type), and a compatible registration upsert never invalidates
+/// them.
+pub struct ClassifierApiHandle<O: Send + 'static> {
+    api_id: ApiId,
+    _options: PhantomData<fn() -> O>,
+}
+
+impl<O: Send + 'static> ClassifierApiHandle<O> {
+    /// The exact API identity of the registration that produced this handle.
+    pub fn api_id(&self) -> &ApiId {
+        &self.api_id
+    }
+
+    /// Wrap one options value, tagging it with the registration's API/type
+    /// identity.
+    pub fn options(&self, value: O) -> ClassifierNativeOptions<O> {
+        ClassifierNativeOptions {
+            api_id: self.api_id.clone(),
+            type_id: TypeId::of::<O>(),
+            value,
+        }
+    }
+}
+
+/// Typed native classifier options created by a [`ClassifierApiHandle`].
+pub struct ClassifierNativeOptions<O: Send + 'static> {
+    api_id: ApiId,
+    type_id: TypeId,
+    value: O,
+}
+
+impl<O: Send + 'static + Clone> Clone for ClassifierNativeOptions<O> {
+    fn clone(&self) -> Self {
+        Self {
+            api_id: self.api_id.clone(),
+            type_id: self.type_id,
+            value: self.value.clone(),
+        }
+    }
+}
+
+impl<O: Send + 'static> std::fmt::Debug for ClassifierNativeOptions<O> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClassifierNativeOptions")
+            .field("api_id", &self.api_id)
+            .finish()
+    }
+}
+
+/// Type-erased storage for one registered classifier adapter.
+struct ClassifierApiRegistration {
+    provider_id: String,
+    options_type: TypeId,
+    dispatch: Arc<dyn ClassifierApiDispatch>,
+    resolver: Arc<dyn AuthResolver>,
+    record: crate::classifier::ClassifierModelRecord,
+}
+
+/// Object-safe dispatch over one fixed classifier options type.
+trait ClassifierApiDispatch: Send + Sync {
+    fn default_options_erased(&self) -> Box<dyn std::any::Any + Send>;
+    fn classify_erased<'a>(
+        &'a self,
+        record: crate::classifier::ClassifierModelRecord,
+        context: crate::classifier::ClassifierContext,
+        options: Box<dyn std::any::Any + Send>,
+        auth: crate::auth::ResolvedAuth,
+        call: crate::classifier::ClassifierCall,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = crate::classifier::ClassifierResult> + Send + 'a>,
+    >;
+}
+
+/// Typed wrapper storing one fixed-`O` classifier adapter.
+struct TypedClassifierApi<O: Send + 'static> {
+    api: Arc<dyn crate::api::ClassifierApi<O>>,
+}
+
+impl<O: Send + 'static> ClassifierApiDispatch for TypedClassifierApi<O> {
+    fn default_options_erased(&self) -> Box<dyn std::any::Any + Send> {
+        Box::new(self.api.default_options())
+    }
+
+    fn classify_erased<'a>(
+        &'a self,
+        record: crate::classifier::ClassifierModelRecord,
+        context: crate::classifier::ClassifierContext,
+        options: Box<dyn std::any::Any + Send>,
+        auth: crate::auth::ResolvedAuth,
+        call: crate::classifier::ClassifierCall,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = crate::classifier::ClassifierResult> + Send + 'a>,
+    > {
+        let Ok(options) = options.downcast::<O>() else {
+            unreachable!("dispatch only receives its registration's options type");
+        };
+        Box::pin(async move {
+            self.api
+                .classify_prepared(record, context, *options, auth, call)
+                .await
+        })
+    }
+}
+
+/// The no-registration failure result.
+fn no_classifier_api_result(
+    record: &crate::classifier::ClassifierModelRecord,
+) -> crate::classifier::ClassifierResult {
+    crate::classifier::ClassifierResult::failure(
+        record,
+        crate::classifier::ClassifierStopReason::Error,
+        crate::provider::ProviderError::Config(crate::provider::ProviderErrorSummary::sanitized(
+            format!(
+                "no classifier implementation for api: {}",
+                record.api.as_str()
+            ),
+        )),
+        format!(
+            "no classifier implementation for api: {}",
             record.api.as_str()
         ),
     )

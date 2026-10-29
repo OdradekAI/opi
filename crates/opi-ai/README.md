@@ -1746,6 +1746,61 @@ pre-catalog window; pi's generated `data/radius.json` baseline is absent
 from the pinned source and a configured gateway's dynamic catalog replaces
 the baseline at registration time.
 
+## Classifier Operation and TypeSafe System One Direct Adapter (task 20.46)
+
+The fixed-`O` classifier operation ships beside the chat and image seams:
+the object-safe `api::ClassifierApi<O>` trait mirrors `ImageApi` (exact
+`ApiId`, provider identity, complete record, typed options, prepared
+dispatch) — **one shared conformance spans every real classifier protocol**
+through this seam — and the public `classifier` contracts carry the typed
+`ClassifierContext` (JSON state object, ordered questions, optional images),
+`ClassifierAnswer` variants, the `ClassifierResult` (provider failures never
+reject — they ride `stop_reason = Error`/`Aborted` with the typed
+`ProviderError` and a display message; a billed request keeps its reported
+usage when later answer parsing fails), and the operation-qualified
+`ClassifierModelRecord` with **catalog `ModelPricing` including tiers**.
+`Models::register_classifier_api` registers an adapter with its resolver and
+provenance source, `Models::classifier_model` performs operation-qualified
+selection (chat models and unknown ids fail typed *before* any auth
+resolution), and `Models::classify`/`classify_native` are the ordinary and
+typed-native drivers; a `ClassifierApiHandle::options` value stays valid
+across compatible re-registrations.
+
+The one real adapter, `api::system_one::TypesafeSystemOneApi` (api id
+`typesafe-system-one`, provider id `typesafe`), reproduces the pinned pi
+module: one POST `{model, state, questions}` to `<base>/systemone`
+(trailing slashes stripped), Bearer-only auth, public **`bool` questions and
+answers mapped to the wire-level `noul` type** on both sides (choice/score
+keep their shape), image input rejected before any request (`"System One API
+does not support image input"`, regardless of the record's modalities), and
+an api-mismatch guard. Answer parsing validates only what the source
+requires — record shape, wire-type agreement, a string `choice`, finite
+numbers — with **no** universal probability-range/sum/argmax/label-membership
+rule; every known question must have a type-matching answer, unknown answer
+ids are ignored. Usage `{input_tokens, output_tokens}` keeps the source
+tolerances (a non-number or non-positive token counts as zero; both fields
+absent leaves the result without usage) and prices **chat-style through the
+record's catalog tiers** (unlike the image path's base-rate exception).
+
+Transport follows the source: **no default timeout** (a caller timeout is
+body-inclusive and **fresh for every retry attempt**, reported as
+`"Request timed out after {ms}ms"` and retryable like any no-status
+failure), **two extra retries by default** with the SDK retry policy
+(`x-should-retry` override, 408/409/429/5xx/no-status retryable,
+`retry-after-ms`/`retry-after` honoured with the 60 s server-delay cap;
+above-cap requests fail immediately with the source message), retries reuse
+the frozen payload, cancellation maps to `Aborted`, and HTTP failures
+format `"System One API error ({status}): {body}"`. `temperature` is a
+typed option System One cannot apply: it never reaches the wire. The
+payload observer (replace-or-keep, once per logical call, frozen across
+retries) and the response observer (status + headers before body
+processing) are supported; raw-event and header-transform families reject
+typed before dispatch. The frozen `TelemetryContext` passes through to the
+request path. The curated baseline record (`typesafe/jev-latest`, 64000-token
+context, text input, zero pricing until registered) replaces wholesale at
+registration; pi's generated `data/typesafe.json` is absent from the pinned
+source.
+
 ## Image Operation and OpenRouter Image Direct Adapter (task 20.45)
 
 The fixed-`O` image operation ships in `api`/`images`: the object-safe
