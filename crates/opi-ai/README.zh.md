@@ -1181,6 +1181,51 @@ functionCall part 上；仅带签名的空 part 得以保留。成功工具结�
 （`Provider stopped with: <raw>`）。Google producer 运行于显式冻结的
 `TelemetryContext`（P20-TELEMETRY）。
 
+## Mistral Conversations 直接适配器与 native 选项（任务 20.43）
+
+公共直接适配器 `mistral::MistralConversationsChatApi` 经
+`Models::register_chat_api` 注册（api id `mistral-conversations`，
+provider id `mistral`），携带类型化的 `MistralOptions`。API 名称保留，实际
+POST `{base}/v1/chat/completions`；既有 OpenAI 兼容 profile
+（`mistral::mistral_provider`）不动，仍是合法 profile。
+
+| 选项 | wire 效果 |
+|---|---|
+| `tool_choice: auto/none/any/required/named` | `tool_choice`（named 为 `{"type":"function","function":{"name":...}}`）；省略时成员不出现 |
+| `reasoning_effort: none/low/medium/high/max` | 逐字转发 `reasoning_effort` |
+| `prompt_mode: reasoning` | `prompt_mode: "reasoning"` |
+
+中性入口仅映射 tool choice，reasoning 分支由模型记录决定：thinking level
+map 带显式映射的模型发送 `reasoning_effort`（钳位后取最近支持级别；关闭
+thinking 时投影 `none` 级映射；缺省回退 `high`），无映射的 reasoning 模型
+发送 `prompt_mode: "reasoning"`，非 reasoning 模型两者皆省略。采样只投影
+`temperature` 与 `max_tokens`——stop、`top_p` 与 penalty 家族不进此 wire
+（pi 载荷构造器不设其他成员）。工具默认投影 `strict: true` 并携带转换后
+schema。
+
+Prompt 缓存随会话：有 session id 且 retention 非 `Disabled` 时，body 携带
+`prompt_cache_key`、headers 携带 `x-affinity`（显式 `x-affinity` 头优先，
+仅抑制自动头）。响应时限（默认 60s，可用请求 timeout 覆盖）**只覆盖等
+response headers 的时间**——body 停顿交给 HTTP 客户端空闲处理，长流不会被
+固定 deadline 切断。
+
+回放把工具调用 id 规范为 9 个字母数字（strip、恰好 9 位直用、否则
+SHA-256 派生、冲突重试），assistant 调用与配对 tool result 同时应用。消
+息转换将会话中 system 消息折叠为合并后的首提示、丢弃空白文本、assistant
+thinking 以 `thinking` 块回放并带 `prefix: false`、纯单文本 user 轮保持纯
+字符串、图像模型发送 `image_url` data URI（否则 `(image omitted: model
+does not support images)`）、tool result 以 `[tool error]` 前缀与
+`(see attached image)`/`(no tool output)` 占位族渲染。流式侧保留首个非空
+chunk `id` 作 response id、拆分缓存 prompt tokens（`input = prompt -
+cached`、`cache_read = cached`、`cache_write = 0`、total 回退求和）、跳过
+空 content delta（GLM 式拆块问题）、按 index 累积工具调用（wire 发
+`"null"` 占位时派生 id）、映射 `stop`/`length`/`model_length`/
+`tool_calls`，未映射 stop 与流内 `error` stop 类型化失败并携带原始原因
+（可重试服务端形态为 `Provider stopped with: error (server error)`），
+无 finish reason 的流以类型化失败收尾。HTTP 失败格式
+`Mistral API error (status): body`（4000 字符截断先于 crate 级 sanitized
+摘要上限）；429 保持可重试限流身份。
+
 ## Bedrock Converse Stream 直接适配器与 native 选项（任务 20.42）
 
 公共直接适配器 `bedrock::BedrockConverseStreamChatApi` 经

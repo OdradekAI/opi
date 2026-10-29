@@ -1700,6 +1700,60 @@ unmapped finish reasons fail typed carrying the raw reason
 (`Provider stopped with: <raw>`). The Google producer runs under the
 explicit frozen `TelemetryContext` (P20-TELEMETRY).
 
+## Mistral Conversations Direct Adapter and Native Options (task 20.43)
+
+The public direct adapter `mistral::MistralConversationsChatApi` registers
+through `Models::register_chat_api` (api id `mistral-conversations`,
+provider id `mistral`) with typed `MistralOptions`. The API keeps its name
+but posts `{base}/v1/chat/completions`; the pre-existing OpenAI-compatible
+profile (`mistral::mistral_provider`) stays untouched as a legal profile.
+
+| Option | Wire effect |
+|---|---|
+| `tool_choice: auto/none/any/required/named` | `tool_choice` (`{"type":"function","function":{"name":...}}` for named); omitted options leave the member off the wire |
+| `reasoning_effort: none/low/medium/high/max` | `reasoning_effort` verbatim |
+| `prompt_mode: reasoning` | `prompt_mode: "reasoning"` |
+
+The neutral entry maps tool choice only, then the model record resolves the
+reasoning branch: a model whose thinking level map carries explicit entries
+sends `reasoning_effort` (the nearest supported level after clamping; the
+`none`-level entry projects when thinking is disabled; missing entries fall
+back to `high`), a mapless reasoning model sends `prompt_mode: "reasoning"`,
+and non-reasoning models send neither. Sampling projects `temperature` and
+`max_tokens` only — stop sequences, `top_p` and the penalty family stay off
+this wire (pi's payload builder sets nothing else). Tools project
+`strict: true` by default with the converted schema.
+
+Prompt caching rides the session: with a session id and a non-`Disabled`
+retention, the body carries `prompt_cache_key` and the headers carry
+`x-affinity` (an explicit `x-affinity` header wins and only suppresses the
+auto header). The response deadline (default 60s, overridable via the
+request timeout) covers **only the wait for response headers** — body
+stalls stay with the HTTP client's idle handling, so long streams are never
+cut by a fixed deadline.
+
+Replay normalizes tool-call ids to nine alphanumeric characters (strip,
+exact-length passthrough, SHA-256-derived otherwise, collision retries) on
+both the assistant call and the paired tool result. Message conversion
+collapses mid-conversation system messages to the merged leading prompt,
+drops blank text, replays assistant thinking as `thinking` chunks with
+`prefix: false`, keeps single text-only user turns as plain strings, sends
+`image_url` data URIs on image models (`(image omitted: model does not
+support images)` otherwise), and renders tool results with the
+`[tool error]` prefix and the `(see attached image)`/`(no tool output)`
+placeholder family. Streaming keeps the first non-empty chunk `id` as the
+response id, splits cached prompt tokens (`input = prompt - cached`,
+`cache_read = cached`, `cache_write = 0`, total falls back to the sum),
+skips empty content deltas (GLM-style block splitting), accumulates tool
+calls by index with derived ids when the wire sends the `"null"`
+placeholder, maps `stop`/`length`/`model_length`/`tool_calls` stops, fails
+unmapped stops and the in-stream `error` stop typed carrying the raw reason
+(`Provider stopped with: error (server error)` for the retryable server
+form), and fails a stream that ends without a finish reason. HTTP failures
+format `Mistral API error (status): body` (4000-char truncation before the
+crate-wide sanitized-summary cap); 429 keeps its retryable rate-limit
+identity.
+
 ## Bedrock Converse Stream Direct Adapter and Native Options (task 20.42)
 
 The public direct adapter `bedrock::BedrockConverseStreamChatApi` registers

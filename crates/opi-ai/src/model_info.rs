@@ -105,10 +105,12 @@ pub enum WireApi {
     AzureOpenAiCompletions,
     #[serde(rename = "azure-openai-responses")]
     AzureOpenAiResponses,
+    #[serde(rename = "mistral-conversations")]
+    MistralConversations,
 }
 
 impl WireApi {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::AnthropicMessages,
         Self::OpenAiCompletions,
         Self::OpenAiResponses,
@@ -118,6 +120,7 @@ impl WireApi {
         Self::BedrockConverseStream,
         Self::AzureOpenAiCompletions,
         Self::AzureOpenAiResponses,
+        Self::MistralConversations,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -131,6 +134,7 @@ impl WireApi {
             Self::BedrockConverseStream => "bedrock-converse-stream",
             Self::AzureOpenAiCompletions => "azure-openai-completions",
             Self::AzureOpenAiResponses => "azure-openai-responses",
+            Self::MistralConversations => "mistral-conversations",
         }
     }
 }
@@ -282,6 +286,16 @@ impl ThinkingLevelMap {
                 level: format!("{level:?}").to_ascii_lowercase(),
             }),
         }
+    }
+
+    /// Whether any level carries an explicit (source-provided) mapping, as
+    /// opposed to the synthetic identity default. Adapters whose wire keeps
+    /// distinct branches for mapped versus mapless reasoning models branch
+    /// on this (task 20.43).
+    pub fn has_explicit_mappings(&self) -> bool {
+        self.mappings
+            .values()
+            .any(|mapping| matches!(mapping, ThinkingLevelMapping::Mapped(_)))
     }
 
     /// Clamp one requested level to the nearest supported level: exact match
@@ -606,6 +620,9 @@ pub enum WireCompat {
     /// Azure Responses rows (task 20.38): the same responses compat flag
     /// surface under the azure wire identity.
     AzureOpenAiResponses(OpenAiResponsesCompat),
+    /// Mistral Conversations rows (task 20.43): the wire carries no
+    /// mistral-specific compat flags today.
+    MistralConversations,
 }
 
 impl WireCompat {
@@ -618,6 +635,7 @@ impl WireCompat {
             Self::GoogleGenerativeAi => WireApi::GoogleGenerativeAi,
             Self::GoogleVertex => WireApi::GoogleVertex,
             Self::BedrockConverseStream(_) => WireApi::BedrockConverseStream,
+            Self::MistralConversations => WireApi::MistralConversations,
             Self::AzureOpenAiCompletions => WireApi::AzureOpenAiCompletions,
             Self::AzureOpenAiResponses(_) => WireApi::AzureOpenAiResponses,
         }
@@ -636,6 +654,7 @@ impl WireCompat {
             // Task 20.38: azure responses records carry the same responses
             // flag surface under their own wire identity.
             WireApi::AzureOpenAiResponses => Self::AzureOpenAiResponses(Default::default()),
+            WireApi::MistralConversations => Self::MistralConversations,
         }
     }
 }

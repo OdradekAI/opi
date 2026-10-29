@@ -219,6 +219,9 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
         WireCompat::AzureOpenAiCompletions => {
             json!({ "api": WireApi::AzureOpenAiCompletions.as_str() })
         }
+        WireCompat::MistralConversations => {
+            json!({ "api": WireApi::MistralConversations.as_str() })
+        }
     }
 }
 
@@ -449,6 +452,7 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
             },
         ))),
         WireApi::AzureOpenAiCompletions => Ok(Some(WireCompat::AzureOpenAiCompletions)),
+        WireApi::MistralConversations => Ok(Some(WireCompat::MistralConversations)),
     }
 }
 

@@ -2,6 +2,9 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): `WireApi::MistralConversations` and
+  `WireCompat::MistralConversations` are new variants (task 20.43, DEL-11);
+  exhaustive matches over either enum gain an arm.
 - `opi-ai` (0.x): Bedrock Converse wire changes (task 20.42, DEL-11): the
   success tool-result images now ride real inline Converse image blocks
   instead of the `[image: ...]` text placeholder; `reasoningContent`
@@ -645,6 +648,28 @@
   unchanged.
 ### Added
 
+- `opi-ai`: mistral-conversations complete chat adapter (task 20.43,
+  DEL-11). New public `mistral::MistralConversationsChatApi` registers
+  through `Models::register_chat_api` (api id `mistral-conversations`,
+  actual POST `{base}/v1/chat/completions`) with typed `MistralOptions`
+  (full tool-choice enum including `any`/`required`/named,
+  `reasoning_effort` none..max, `prompt_mode`). The neutral entry maps tool
+  choice and resolves the reasoning branch from the model record (explicit
+  level maps send `reasoning_effort` after clamping with the off entry and
+  the `high` fallback; mapless reasoning models send
+  `prompt_mode: "reasoning"`). Prompt caching rides the session
+  (`prompt_cache_key` + `x-affinity`, explicit header wins, `Disabled`
+  suppresses). The response deadline covers only the header wait (default
+  60s). Tool-call ids normalize to nine alphanumeric characters on replay;
+  streaming keeps the first non-empty chunk id, skips empty content deltas,
+  accumulates tool calls by index with derived ids, splits cached prompt
+  tokens, maps the Mistral stop names (`model_length` included), fails
+  unmapped and in-stream `error` stops typed, and fails a stream without a
+  finish reason. HTTP errors format `Mistral API error (status): body`
+  (4000-char truncation); 429 keeps its retryable identity.
+  `ThinkingLevelMap::has_explicit_mappings` joins the public surface for
+  the mapless-versus-mapped branch. The OpenAI-compatible Mistral profile
+  is unchanged.
 - `opi-ai`: bedrock-converse-stream complete chat adapter (task 20.42,
   DEL-11). New public `bedrock::BedrockConverseStreamChatApi` registers
   through `Models::register_chat_api` (api id `bedrock-converse-stream`)
