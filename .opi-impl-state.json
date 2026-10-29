@@ -13144,7 +13144,7 @@
       "definition_of_done": "Public native/simple/complete/result and direct adapter execute actual chat/completions endpoint despite API name, exact headers/body/stream timing and failure. Verify full native option/default inventory from SDK annex§2, successful streaming/tool/usage and setup/HTTP/parser/callback/cancel/drop failures, original-schema validation and canonical replay. Real adapter plus controlled transport proves lawful send/callback counts, owned failure/opaque data/duration and no new acceptance caps. Existing valid wire/safety cases stay, obsolete assumptions change only after replacement proof. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Mistral uses its own exact request fields, endpoint, source timeout scope and typed results rather than inherited Chat defaults.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -13236,6 +13236,11 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C appends (C.1a): model_info.rs grows WireApi::MistralConversations + WireCompat::MistralConversations (unit variant - the mistral wire carries no adapter-specific compat flags today) and ThinkingLevelMap::has_explicit_mappings, the explicit-vs-synthetic-map query the mistral simple mapping branches on (the same distinction bedrock 20.42 resolved with a local identity filter). catalog/wire.rs round-trips the new wire identity through the distribution schema. No other crate file changed.",
+          "source": ".repo/pi-1.3.0/packages/ai/src/api/mistral-conversations.ts (streamSimple effortMap branches), sdk-contracts annex rows 33/53/81"
         }
       ],
       "tier": "workspace",
@@ -13264,7 +13269,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai mistral-conversations public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.43",
@@ -13277,7 +13282,7 @@
             "opi_ai::Models native/simple four entries (target)",
             "opi_ai mistral-conversations public direct adapter"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -13285,9 +13290,9 @@
         "opi_ai mistral-conversations public direct adapter"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "42ad51a2a482a4bf59ee7af41d854d4e2b27ee3f",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -13298,12 +13303,53 @@
         "crates/opi-ai/src/openai_responses_shared.rs",
         "crates/opi-ai/src/providers/**",
         "crates/opi-ai/src/telemetry.rs",
-        "crates/opi-ai/tests/mistral_fixtures.rs"
+        "crates/opi-ai/tests/mistral_fixtures.rs",
+        "crates/opi-ai/src/catalog/wire.rs",
+        "crates/opi-ai/src/model_info.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "6f072c48050c9225d79e397f2010274c7e4c117e",
+      "evidence": {
+        "Opi-Task": "20.43",
+        "Opi-DoD-SHA256": "5dd73ab9a73a547e744157b80217d4420b17b14a6735466f2ea7ad8118061db",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "P20-S43, ONB-03-20.43"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-29T05:06:31+00:00",
+          "attempt": 1,
+          "summary": "B.2 contract authorized (user: 同意). B.3 transition to in_progress at start_commit 42ad51a. Baseline dirty: clean worktree. Scope: native mistral-conversations wire (actual POST {base}/v1/chat/completions), public MistralConversationsChatApi + typed MistralOptions (tool_choice full enum / reasoning_effort none..max / prompt_mode), snake_case wire remap family, x-affinity + prompt_cache_key prompt-caching gate, headers-only 60s default timeout, 9-char alnum tool-call id normalizer, SSE consumption (responseId, usage cached-token family with input/cacheRead split, stop map incl. model_length + retryable in-stream error, empty-delta skip, text/thinking block machine, index-keyed tool accumulation, missing-finish-reason failure), Mistral API error formatting with 4000-char truncation. Existing OpenAI-compat profile tests retained untouched."
+        },
+        {
+          "timestamp": "2026-10-29T06:35:24+00:00",
+          "attempt": 1,
+          "summary": "mistral-conversations complete adapter delivered: public MistralConversationsChatApi (api id mistral-conversations, provider id mistral) through Models::register_chat_api with typed MistralOptions - tool_choice full enum (auto/none/any/required/named; omitted options stay off the wire), reasoning_effort none..max, prompt_mode reasoning. The simple entry maps tool choice and resolves the reasoning branch from the model record: explicit thinking-level maps send reasoning_effort (nearest supported after clamp, the none-level entry when thinking is disabled, 'high' fallback), mapless reasoning models send prompt_mode=reasoning, non-reasoning models send neither; the branch uses the new public ThinkingLevelMap::has_explicit_mappings so opi's synthetic identity default cannot masquerade as a source map. Sampling projects temperature and max_tokens only (stop/top_p/penalties stay off this wire per pi's payload builder); tools project strict:true by default with the converted schema. Prompt caching: prompt_cache_key + x-affinity gated on session id and non-Disabled retention, explicit x-affinity header wins and only suppresses the auto header. Response deadline covers only the header wait (default 60s, request.timeout override) - the stalled-body test proves the boundary. Replay normalizes tool-call ids to nine alphanumeric characters (strip, exact-length passthrough, SHA-256 derivation - pi's internal short hash is not wire-observable; collision retries) on assistant calls and paired tool results; message conversion collapses mid-convo system to the merged leading prompt, drops blank text, replays thinking chunks with prefix:false, keeps single text-only user turns as plain strings, sends image_url data URIs on image models with the omission placeholder otherwise, and renders tool results with the [tool error] prefix and (see attached image)/(no tool output) placeholders. Streaming: first non-empty chunk id as response_id, cached-token split (input=prompt-cached, cache_read=cached, cache_write=0, total fallback sum across the six-key detail family), empty content deltas skipped (GLM split guard), index-keyed tool accumulation with derived ids for the \"null\" placeholder and AIR-048 finalization, stop map stop/length/model_length/tool_calls, in-stream error and unmapped stops fail typed carrying the raw reason, missing finish reason fails typed, HTTP errors format 'Mistral API error (status): body' with the 4000-char truncation before the crate-wide sanitized-summary cap (429 keeps its retryable RateLimited identity). TDD red-first (24 new tests in mistral_43; missing-symbol red) then green 45/45 with all 21 pre-existing profile tests retained untouched. D.1 smoke full PASSED after the documented pre-existing oauth 53692 contention (attempts 1-2 failed: rustdoc redundant-link caused by the new Provider import making the historical explicit doc-link target resolvable - fixed; then the 53692 class with oauth_flows green standalone 193/193; passed after a strict 300s clean window). D.2 exec review via single-reviewer fallback (wf_ref=null): 0 must-fix; 5 low flags: (1) opi sends no User-Agent where pi sends its UA (crate-wide header policy, consistent with every sibling adapter); (2) no surrogate sanitization on this wire (no opi precedent); (3) has_explicit_mappings is a single-consumer public query today - kept because the explicit-vs-synthetic distinction is a domain concept of the map type itself, revisit if a second consumer diverges; (4) the 4000-char mistral truncation marker is subsumed by the 256-char sanitized-summary cap for observable diagnostics (documented in the test); (5) single-text user turns ride the plain-string shape while multi-content turns ride the chunk array (pi string-content parity, projection choice documented in README).",
+          "gate_results": {
+            "d1": "smoke full PASSED (doc-check, fmt, clippy -D warnings all-targets, workspace tests + doc tests, rustdoc); attempts 1-2 failed on the rustdoc redundant-link (fixed) and the pre-existing oauth 53692 cross-binary contention (environmental class documented since 20.36; oauth_flows standalone 193/193)",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 5 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "P20-S43",
+                "action": "add",
+                "test": "mistral_fixtures mistral_43 mod (24 tests): tool-choice wire modes incl. omission, native reasoning_effort/prompt_mode, simple effort-map mapping with clamp and off entry, mapless prompt_mode branch, non-reasoning omission, temperature/max_tokens-only sampling projection, tools strict default true with converted schema, prompt_cache_key+x-affinity gate incl. explicit-header precedence and Disabled suppression, SSE headers and trailing-slash base URL, chunked thinking/text streaming with response_id, empty-delta skip, index-keyed tool accumulation with derived 9-char id, cached usage split with total fallback, stop map incl. model_length, in-stream error and unmapped typed failures, missing-finish-reason failure, invalid-event failure, HTTP error formatting with 429 retryable identity and sanitized truncation bounds, header-wait timeout boundary, stalled-body-not-under-header-deadline, message conversion shapes (system collapse, image data URIs, prefix:false thinking replay, normalized ids mirrored into tool_call_id, tool result text builders incl. [tool error] (no tool output)), non-image placeholder, mid-convo system collapse, wrong-wire rejection, native lifecycle through Models::complete with Bearer resolver and body pin, producer telemetry carrier payload-probe",
+                "interface": "MistralOptions / MistralConversationsChatApi / MistralConversationsProvider (stream_prepared/stream_simple, with_models/with_native_options) / WireApi::MistralConversations + WireCompat::MistralConversations / ThinkingLevelMap::has_explicit_mappings / SSE frame parser + MistralSseMapper / headers-only deadline / 9-char id normalizer",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.43",
+                "action": "retain",
+                "test": "all 21 pre-existing OpenAI-compat profile tests (registry routing, streaming, cancel, compat flags, HTTP body/auth) retained unchanged - the profile stays a legal route (acceptance-matrix row 407)",
+                "interface": "mistral::mistral_provider profile",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.44",
@@ -22764,6 +22810,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-29T04:42:49+00:00",
       "task_id": "20.42",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 5,
+      "rejected_count": 0,
+      "ran_at": "2026-10-29T06:35:24+00:00",
+      "task_id": "20.43",
       "criterion_id": null
     }
   ]
