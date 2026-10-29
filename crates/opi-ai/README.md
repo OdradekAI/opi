@@ -1746,6 +1746,43 @@ pre-catalog window; pi's generated `data/radius.json` baseline is absent
 from the pinned source and a configured gateway's dynamic catalog replaces
 the baseline at registration time.
 
+## llama.cpp Classification by Label-Token Readout (task 20.48)
+
+The third real classifier protocol needs no dedicated classification
+service at all: `api::llama::LlamaCppClassifyApi` (api id
+`llama-cpp-classify`, provider id `llama.cpp`) classifies with an ordinary
+chat model served by llama.cpp's `llama-server`. The model never generates
+an answer — each question becomes one chat prompt that lists the possible
+answers under single-token labels (letters `A`–`Z`/`a`–`z`/digits for up to
+62 choice options, digits `0`–`9` for up to 10 score levels, `Yes`/`No`
+for bool), and the answer is read from the **pre-sampling next-token
+log-probabilities** of those label tokens: a softmax over the label
+log-probabilities (divided by the typed `temperature`, default 1, which
+never reaches the wire — the completion always carries `temperature: 0`).
+Three endpoints drive one question: `/tokenize` resolves each label's
+token id (newline-prefixed first, the label alone as fallback; a label the
+vocabulary splits is a typed error, as are shared tokens), `/apply-template`
+renders the model's own chat template with thinking disabled (an open
+`<think>` block is closed at once), and `/completion` reads the top
+`n_probs` tokens, escalating the readout depth from `max(256, 16 per
+label)` through 4096 to 32768 when a label is missing — a label never
+ranked is an error, never an invented zero. Answers keep the shared
+semantics: bool probability, score expected value with TypeSafe's
+confidence `(n·peak−1)/(n−1)` clamped to `[0,1]`, choice argmax with the
+verbatim per-option distribution. The server root strips one
+OpenAI-compatible `/v1` suffix from the base URL; every request carries
+the model id; the optional Bearer key attaches only when a secret
+resolved. llama-server reports no token usage, so results carry none.
+Option counts, the positive-finite temperature, image input and the
+callback families all reject typed **before the first request**, and the
+retry/timeout policy matches the shared classifier transport (two extra
+retries per endpoint by default, fresh per-attempt body-inclusive
+timeouts, Retry-After-aware delays) — implemented against the shared
+policy helpers with its own loop, because a three-endpoint readout with a
+per-endpoint observer surface is a different transport shape from the
+single-request System One core. Resolved label tokens are cached per
+server root, model and label for the adapter's lifetime.
+
 ## Cloudflare Workers AI System One Adapter and Multi-Model Registration (task 20.47)
 
 The second real classifier protocol drives the same shared conformance: the

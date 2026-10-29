@@ -217,16 +217,16 @@ fn build_request_body(
 }
 
 /// One terminal failure of the attempt loop with its retry classification.
-struct AttemptFailure {
-    status: Option<u16>,
-    x_should_retry: Option<bool>,
-    server_retry_delay_ms: Option<f64>,
-    error: ProviderError,
-    message: String,
+pub(super) struct AttemptFailure {
+    pub status: Option<u16>,
+    pub x_should_retry: Option<bool>,
+    pub server_retry_delay_ms: Option<f64>,
+    pub error: ProviderError,
+    pub message: String,
 }
 
 impl AttemptFailure {
-    fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         if let Some(should_retry) = self.x_should_retry {
             return should_retry;
         }
@@ -553,7 +553,7 @@ pub(crate) async fn classify_over_system_one(
     }
 }
 
-fn cap_ms(max_retry_delay_ms: Option<u64>) -> u64 {
+pub(super) fn cap_ms(max_retry_delay_ms: Option<u64>) -> u64 {
     max_retry_delay_ms.unwrap_or(MAX_RETRY_DELAY_MS)
 }
 
@@ -597,12 +597,12 @@ fn failure_from_error(
 
 /// pi `formatProviderError` with the label prefix: `"<label> error
 /// (<status>): <body|message>"`, the body truncated to the source cap.
-fn format_http_error(label: &str, status: reqwest::StatusCode, body: &str) -> String {
+pub(super) fn format_http_error(label: &str, status: reqwest::StatusCode, body: &str) -> String {
     let suffix = crate::http::safe_excerpt(body);
     format!("{label} error ({}): {suffix}", status.as_u16())
 }
 
-fn map_status_error(
+pub(super) fn map_status_error(
     label: &str,
     status: reqwest::StatusCode,
     headers: &reqwest::header::HeaderMap,
@@ -627,7 +627,7 @@ fn map_status_error(
 
 /// Server-requested retry delay in milliseconds, or `Err(delay)` when the
 /// request exceeds the configured cap (pi `validateServerRetryDelayMs`).
-fn server_retry_delay_ms(headers: &reqwest::header::HeaderMap) -> Option<f64> {
+pub(super) fn server_retry_delay_ms(headers: &reqwest::header::HeaderMap) -> Option<f64> {
     if let Some(value) = headers.get("retry-after-ms").and_then(|v| v.to_str().ok())
         && let Ok(parsed) = value.trim().parse::<f64>()
         && parsed.is_finite()
@@ -648,7 +648,7 @@ fn server_retry_delay_ms(headers: &reqwest::header::HeaderMap) -> Option<f64> {
     None
 }
 
-fn retry_delay_ms(
+pub(super) fn retry_delay_ms(
     failure: &AttemptFailure,
     attempt_index: u32,
     max_retry_delay_ms: Option<u64>,

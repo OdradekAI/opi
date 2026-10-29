@@ -651,6 +651,26 @@
   unchanged.
 ### Added
 
+- `opi-ai`: llama.cpp classification by label-token readout (task 20.48,
+  DEL-11). `api::llama::LlamaCppClassifyApi` (api id `llama-cpp-classify`,
+  provider `llama.cpp`) classifies with an ordinary chat model served by
+  llama.cpp's `llama-server`: each question renders under single-token
+  answer labels and the answer is the softmax over the labels'
+  pre-sampling next-token log-probabilities (typed temperature divides
+  the logprobs post-wire; the completion always carries `temperature:
+  0`). `/tokenize` resolves label tokens (newline-prefixed first, alone
+  as fallback; split labels and shared tokens are typed errors, cached
+  per server root and model), `/apply-template` renders with thinking
+  disabled (an open `<think>` block closes at once), `/completion` reads
+  the top `n_probs` escalating 256→4096→32768 when a label is missing
+  (never ranked is an error, not an invented zero). Answers keep the
+  shared semantics (bool probability, score expected value with TypeSafe
+  confidence, choice argmax with verbatim distribution); the `/v1`
+  OpenAI-compatible suffix strips from the base URL; option counts,
+  non-positive temperature, image input and unsupported callback
+  families reject typed before the first request; the shared
+  retry/timeout policy applies per endpoint; no usage (llama-server
+  reports none).
 - `opi-ai`: Cloudflare Workers AI System One classifier adapter (task
   20.47, DEL-11). The second real classifier protocol drives the same
   shared conformance through a transport core parameterized out of

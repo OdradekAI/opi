@@ -1219,6 +1219,32 @@ opi 策划的基线目录（一条）覆盖目录到来之前的窗口；pi 生�
 `data/radius.json` 基线未随钉住源提供，配置网关的动态目录在注册时整
 体替换基线。
 
+## llama.cpp 标签 token 读出分类（任务 20.48）
+
+第三个真实分类器协议完全不需要专用分类服务：
+`api::llama::LlamaCppClassifyApi`（api id `llama-cpp-classify`，provider id
+`llama.cpp`）以 llama.cpp `llama-server` 服务的普通聊天模型做分类。模型
+从不生成答案——每个问题渲染为一条聊天提示词，把候选答案列在单 token
+标签下（choice 至多 62 项用字母与数字，score 至多 10 级用数字，bool 用
+`Yes`/`No`），答案从这些标签 token 的**预采样下一 token 对数概率**读出：
+对标签 logprob 做 softmax（除以类型化 `temperature`，默认 1；该值永不上
+线——completion 恒携带 `temperature: 0`）。一个问题走三个端点：
+`/tokenize` 解析各标签 token id（先换行前缀法，回退标签单独分词；词汇表
+拆分的标签与共享 token 均为类型化错误）；`/apply-template` 以模型自身
+聊天模板渲染并禁用思考（开放的 `<think>` 块立即闭合）；`/completion`
+读取 top `n_probs`，缺标签时把读出深度从 `max(256, 每标签 16)` 逐级升至
+4096、32768——始终未上榜的标签是错误，绝不发明零概率。答案保持共享语
+义：bool 概率、score 期望值配 TypeSafe 置信度 `(n·peak−1)/(n−1)` 截断到
+`[0,1]`、choice argmax 配逐选项原样分布。服务器根 URL 会剥掉一个
+OpenAI 兼容的 `/v1` 后缀；每个请求携带模型 id；可选 Bearer 密钥仅在解析
+出秘密时附上。llama-server 不报告 token 用量，结果亦不携带。选项数、正
+有限温度、图像输入与回调族都在**首个请求之前**类型化拒绝；重试/超时策
+略与共享分类器传输一致（默认每端点 2 次额外重试、逐 attempt
+body-inclusive 超时、Retry-After 感知延迟）——基于共享策略助手实现自有
+循环，因为带逐端点观察面的三端点读出与单请求的 System One 内核是不同
+的传输形状。已解析的标签 token 按（服务器根、模型、标签）在适配器生命
+期内缓存。
+
 ## Cloudflare Workers AI System One 适配器与多模型注册（任务 20.47）
 
 第二个真实分类器协议驱动同一条共用 conformance：
