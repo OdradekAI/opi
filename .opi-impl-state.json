@@ -13568,7 +13568,7 @@
       "definition_of_done": "Implement fixed-O ImageApi and operation-qualified image selection, one real OpenRouter image adapter, same source auth/callback/lifecycle/typed accounting. Shared conformance covers both real reference consumers common SDK workflow through public generate_images, without porting their codemode/durable hosts. Preserve first-choice text/dataURL order, encoded original/decode status, text-only/empty success and skipped nonmatching entries, source600000ms body-inclusive timeout and base-price exception. Wrong operation/modality rejects before auth where known, no URL fetch/file write/image streaming/second protocol is invented. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Typed OpenRouter image options, timeout, base-cost exception and ordered image/text result keep their own source contract without Chat serialization or an invented streaming API.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -13659,6 +13659,11 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-03 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-03"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Phase C appends (C.1a): callbacks.rs gains the public has_on_raw()/has_header_transform() queries (task 20.51's family; the image adapter rejects the raw-event and header-transform families typed before dispatch per ONB-04 and needs an introspection point - the Debug impl already exposes the same facts). tool_result_wire.rs's Phase-11 module baseline gains 'api' and 'images' deliberately (the guard text instructs exactly this); its baseline is file-order, matching lib.rs.",
+          "source": "crates/opi-ai/src/callbacks.rs; crates/opi-ai/tests/tool_result_wire.rs"
         }
       ],
       "tier": "workspace",
@@ -13689,7 +13694,7 @@
             "opi_ai::Models::generate_images (target)",
             "opi_ai OpenRouter image direct adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-027",
@@ -13702,7 +13707,7 @@
             "opi_ai::Models::generate_images (target)",
             "opi_ai OpenRouter image direct adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S45",
@@ -13715,7 +13720,7 @@
             "opi_ai::Models::generate_images (target)",
             "opi_ai OpenRouter image direct adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.45",
@@ -13728,7 +13733,7 @@
             "opi_ai::Models::generate_images (target)",
             "opi_ai OpenRouter image direct adapter (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -13736,9 +13741,9 @@
         "opi_ai OpenRouter image direct adapter (target)"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "8fe399d6bd5542d659e4a1aab69ab7ae06852357",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -13754,12 +13759,48 @@
         "crates/opi-ai/src/test_support.rs",
         "crates/opi-ai/tests/image_provider_serialization.rs",
         "crates/opi-ai/tests/openrouter_fixtures.rs",
-        "crates/opi-ai/tests/test_support_tests.rs"
+        "crates/opi-ai/tests/test_support_tests.rs",
+        "crates/opi-ai/src/callbacks.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "857d970b7a88dd13e4202582f02c706b24689a8f",
+      "evidence": {
+        "Opi-Task": "20.45",
+        "Opi-DoD-SHA256": "6a87c121fba3efd82c769b38f4e2ccbee10554fa1eb139cae4b7556ffdc303b6",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "P20-S45, V-23, AIR-027, ONB-03-20.45"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-29T13:52:59+00:00",
+          "attempt": 1,
+          "summary": "Typed image operation delivered: public images contracts (ordered ImagesContext/ImagesOutput, ImagesResult where provider failures never reject - stop_reason Error/Aborted with the typed ProviderError and a display message, base-rate ImageCostRates/ImagesCost, operation-qualified ImageModelRecord), the object-safe fixed-O api::ImageApi trait, Models::register_image_api / image_model (chat models and unknown ids reject typed BEFORE any auth resolution - a counting resolver proves zero resolutions) / generate_images / generate_images_native with ImageApiHandle::options surviving compatible re-registration, and the real api::openrouter_images::OpenRouterImagesApi (api id openrouter-images, provider openrouter, typed OpenRouterImagesOptions carrying only the retry policy). The adapter reproduces the pinned pi module: one nonstream Chat-wire POST {model, messages, stream:false, modalities} (record output includes text -> [image,text] else [image]; trailing-slash-stripped base), Bearer-only auth with typed pre-dispatch rejection of other schemes, text inputs as text parts and image inputs as data:<mime>;base64,<data> URLs with no four-MIME/count/bytes/signature gates and no URL fetch/file write/pixel decode/streaming. Parsing keeps the FIRST choice only with text before images: non-empty string content becomes the leading text output, then message.images entries matching data:<mime>;base64,<data> become image outputs preserving the encoded original; non-data URLs, malformed entries and later choices are skipped and text-only/empty/zero-choice responses stay successes. Usage keeps the provider split (cache_read = reported_cached - cache_write when writes exist; input excludes both cache buckets; total = four-bucket sum) and pricing uses the record's BASE rates only (base-cost exception; the curated baseline entry keeps the generator's 0 fallback and pi's generated data/openrouter.json is absent from the pinned source - a registrar replaces the record wholesale). Transport: 600000ms default per-attempt timeout covering the whole body read+parse (proved with a hanging-body server and a small explicit timeout; distinct from Mistral's headers-only deadline), Some(zero) timeout is a typed positive-only rejection, zero extra retries by default with the SDK policy (x-should-retry override, 408/409/429/5xx/no-status retryable, retry-after-ms/retry-after honoured, 60s server-delay cap with the exact source failure message, exponential 0.5*2^i capped 8s with [0.75,1) jitter), retries reuse the frozen payload byte-for-byte, cancellation maps to Aborted, HTTP failures format '{status}: {error.message | body}' with 401/403->AuthFailed, 429->RateLimited (Retry-After parsed), 408/504->Timeout. Callbacks: payload observer (replace-or-keep once per logical call, frozen across retries, validated) + response observer (status+headers before body processing) supported; raw-event and header-transform families reject typed UnsupportedCapability before dispatch (ONB-04); frozen TelemetryContext passes through by wrapping the attempt (P20-TELEMETRY consumer; no automatic spans). TDD red-first (missing-symbol red) then green: image_provider_serialization 15/15, openrouter_fixtures 31/31, test_support_tests 22/22. D.1 smoke full PASSED on attempt 9: attempts 1+8 were change-caused and fixed in-commit (tool_result_wire module-baseline order - the guard baseline is FILE order, not alphabetical; 3 unqualified rustdoc intra-doc links in models.rs), attempts 2-7 were the documented pre-existing environmental classes (53692 ephemeral contention x5 - oauth_flows login_binds and oauth_auth pkce, standalone green each time; one adc_impersonation timing flake, standalone green) plus two ephemeral-counter nudge experiments that did not change the odds and were abandoned. D.2 exec review via single-reviewer fallback (wf_ref=null): 0 must-fix; 5 low flags: (1) the telemetry pass-through test is a noop smoke - full cross-path/poll/drop proof stays with 20.55; (2) x-should-retry=false override and the retry-after HTTP-date branch ride policy code covered only indirectly; (3) the curated single-entry catalog carries 0.0 base rates (source data absent, documented, registrar replaces wholesale); (4) ImageModelRecord has no OAuth-availability dimension - auth arrives via the resolver either way; (5) the new lib.rs module lines sit after 'anthropic' (guard baseline is file order; cosmetic deviation from alphabetical style).",
+          "gate_results": {
+            "d1": "smoke full PASSED (doc-check, fmt, clippy -D warnings all-targets, workspace tests + doc tests, rustdoc); 9 attempts: 2 change-caused fixes (module-baseline file order, rustdoc links), 7 environmental (53692 class x5 + adc timing flake x1 + nudge experiment x1), all environmental classes standalone-green",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 5 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "P20-S45 / V-23 / AIR-027 / ONB-03-20.45",
+                "action": "add",
+                "test": "openrouter_fixtures images suite (16 tests): first-choice ordered text-then-data-URL parsing with skipped non-matching entries and ignored later choices, text-only/empty/zero-choice successes, usage cache split + base-rate cost + response id, zero-default-retry 429 with typed RateLimited and single hit, explicit retry with frozen payload + server delay, above-cap server delay failure message, body-inclusive timeout (hanging body, 300ms deadline, elapsed check), zero-timeout typed pre-dispatch rejection, cancellation to Aborted (concurrent cancel), missing-key typed rejection before dispatch ('No API key for provider: openrouter', zero hits), operation-qualified selection (chat model typed NotAnImageModel, unknown id, curated record resolves, counting resolver proves zero auth resolutions at selection), registration lifecycle with native options handle tagged openrouter-images and api-id/provider assertions, payload+response callback order with modalities observation and header capture, raw-event family typed UnsupportedCapability with zero hits, telemetry noop pass-through, trailing-slash base URL + extra headers; image_provider_serialization adapter suite (3 tests): exact full-body JSON with image-only modalities and data-URL projection (non-BMP text intact), text-output modalities [image,text], ApiKey-scheme typed pre-dispatch rejection with zero hits",
+                "interface": "api::ImageApi<O> / OpenRouterImagesApi + OpenRouterImagesOptions / images::{ImagesContext, ImagesOutput, ImagesResult, ImagesStopReason, ImageModelRecord, ImagesCall, ImageCostRates, ImagesCost, ImageOutputModality} / Models::{register_image_api, image_model, generate_images, generate_images_native} / ImageApiHandle / ImageNativeOptions / RequestCallbacks::{has_on_raw, has_header_transform}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.45",
+                "action": "update",
+                "test": "tool_result_wire Phase-11 module baseline gains 'api' and 'images' in file order (deliberate later-phase addition per guard text)",
+                "interface": "public module set baseline",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.46",
@@ -22873,6 +22914,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-29T10:15:31+00:00",
       "task_id": "20.44",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 5,
+      "rejected_count": 0,
+      "ran_at": "2026-10-29T13:52:59+00:00",
+      "task_id": "20.45",
       "criterion_id": null
     }
   ]
