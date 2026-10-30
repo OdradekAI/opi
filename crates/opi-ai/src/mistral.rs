@@ -69,8 +69,8 @@ pub fn model_catalog() -> Vec<ModelInfo> {
 // effort and prompt mode), prompt-cache affinity, the headers-only response
 // deadline, the 9-character tool-call id normalizer and the SSE consumption
 // contract (chunked text/thinking content, index-keyed tool accumulation,
-// cached-prompt usage split, the stop-reason map with the retryable
-// in-stream error). The OpenAI-compatible profile above stays untouched.
+// cached-prompt usage split and the stop-reason map). In-stream failures
+// retain the acquired response and do not restart acquisition.
 // ---------------------------------------------------------------------------
 
 use crate::provider::{EventStream, Provider, ProviderError, Request};
@@ -276,6 +276,11 @@ impl std::fmt::Debug for MistralConversationsProvider {
 }
 
 impl MistralConversationsProvider {
+    pub(crate) fn with_client(mut self, client: std::sync::Arc<crate::http::HttpClient>) -> Self {
+        self.client = client;
+        self
+    }
+
     pub fn new(base_url: Option<String>) -> Self {
         Self {
             base_url: base_url.unwrap_or_else(|| BASE_URL.into()),
@@ -737,6 +742,33 @@ fn map_mistral_status(
 }
 
 impl crate::provider::Provider for MistralConversationsProvider {
+    fn validate_simple_options(
+        &self,
+        model: &crate::provider::ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        MistralConversationsChatApi::new(self.clone(), model.clone()).map(|_| ())
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: crate::provider::ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        let mut provider = self.clone();
+        if let Some(base_url) = model.base_url.clone() {
+            provider.base_url = base_url;
+        }
+        provider
+            .with_models(vec![model])
+            .with_native_options(MistralOptions::from_simple(&options))
+            .stream_resource_attempt(request, auth, attempt, resources)
+    }
+
     fn id(&self) -> &str {
         "mistral"
     }
@@ -755,7 +787,9 @@ impl crate::provider::Provider for MistralConversationsProvider {
             crate::auth::AuthScheme::Bearer => {
                 format!("Bearer {}", auth.secret.expose_secret())
             }
-            crate::auth::AuthScheme::ApiKey | crate::auth::AuthScheme::AwsSigV4(_) => {
+            crate::auth::AuthScheme::ApiKey
+            | crate::auth::AuthScheme::AwsSigV4(_)
+            | crate::auth::AuthScheme::AnthropicFederation => {
                 return Box::pin(futures_util::stream::iter(vec![Err(
                     ProviderError::Config(crate::provider::ProviderErrorSummary::attested_static(
                         "Mistral accepts only Bearer authentication",
@@ -774,28 +808,39 @@ impl crate::provider::Provider for MistralConversationsProvider {
             Ok(body) => body,
             Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
         };
-        let url = crate::endpoint::join_endpoint(&self.base_url, "v1/chat/completions");
+        let url = crate::endpoint::join_endpoint(
+            model.base_url.as_deref().unwrap_or(&self.base_url),
+            "v1/chat/completions",
+        );
         let caching = use_prompt_caching(&request);
-        let has_explicit_affinity = request
-            .extra_headers
+        let has_explicit_affinity = model
+            .headers
             .iter()
-            .any(|(name, _)| name.eq_ignore_ascii_case("x-affinity"));
-        let mut req = self
-            .client
-            .client()
-            .post(&url)
-            .header("authorization", bearer)
-            .header("accept", "text/event-stream")
-            .header("content-type", "application/json");
-        for (name, value) in &request.extra_headers {
-            req = req.header(name.as_str(), value.as_str());
-        }
+            .any(|(name, _)| name.eq_ignore_ascii_case("x-affinity"))
+            || request
+                .extra_headers
+                .iter()
+                .any(|(name, _)| name.eq_ignore_ascii_case("x-affinity"));
+        let req = self.client.client().post(&url);
+        let mut route_headers = vec![
+            ("authorization".to_owned(), bearer),
+            ("accept".to_owned(), "text/event-stream".to_owned()),
+            ("content-type".to_owned(), "application/json".to_owned()),
+        ];
         if caching
             && !has_explicit_affinity
             && let Some(session) = &request.session_id
         {
-            req = req.header("x-affinity", session.as_str());
+            route_headers.push(("x-affinity".to_owned(), session.clone()));
         }
+        let headers = match crate::provider_headers::ProviderHeaders::default().merge_model_request(
+            &model.headers,
+            &route_headers,
+            &request.extra_headers,
+        ) {
+            Ok(headers) => headers,
+            Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
+        };
 
         let requested_model = model.id.clone();
         let callbacks = request.callbacks.clone();
@@ -811,6 +856,11 @@ impl crate::provider::Provider for MistralConversationsProvider {
         let producer = async move {
             let run = async {
                 let result = async {
+                    let headers = callbacks.apply_header_transform_async(&headers).await?;
+                    let mut req = req;
+                    for (name, value) in headers {
+                        req = req.header(name, value);
+                    }
                     let body = callbacks
                         .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
                         .await?;
@@ -821,10 +871,11 @@ impl crate::provider::Provider for MistralConversationsProvider {
                         &requested_model,
                         producer_cancel.clone(),
                         callbacks,
-                        producer_snapshot,
+                        producer_snapshot.clone(),
                         &tx,
                     )
                     .await
+                    .map_err(|error| producer_snapshot.failure(error))
                 }
                 .await;
                 match result {
@@ -894,6 +945,9 @@ async fn stream_mistral_http(
         })
         .collect();
     let status = response.status();
+    if status.is_success() {
+        snapshot.received_response();
+    }
     // The response observer fires before the success check and before any
     // body processing (annex row 33, pi onResponse ordering).
     callbacks
@@ -904,9 +958,8 @@ async fn stream_mistral_http(
         let body_text = response.text().await.unwrap_or_default();
         return Err(map_mistral_status(status, &headers, &body_text));
     }
-    snapshot.received_response();
-
     let mut mapper = MistralSseMapper::new(requested_model);
+    snapshot.record(&mapper.message);
     let mut byte_stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut decoder = crate::text_decode::StreamTextDecoder::new();
@@ -940,14 +993,23 @@ async fn stream_mistral_http(
             match parse_mistral_event(&raw) {
                 MistralParsedEvent::Done => {
                     let events = mapper.finish();
+                    snapshot.record(&mapper.message);
                     for event in events {
-                        crate::stream::send_or_cancel(&cancel, tx, event).await?;
+                        crate::stream::send_or_cancel(
+                            &cancel,
+                            tx,
+                            event.map_err(|error| snapshot.failure(error)),
+                        )
+                        .await?;
                     }
                     return Ok(());
                 }
                 MistralParsedEvent::Empty => {}
                 MistralParsedEvent::Chunk(value) => {
-                    for event in mapper.consume(&value) {
+                    callbacks.notify_raw_async(&value).await?;
+                    let events = mapper.consume(&value);
+                    snapshot.record(&mapper.message);
+                    for event in events {
                         crate::stream::send_or_cancel(&cancel, tx, event).await?;
                     }
                 }
@@ -961,12 +1023,16 @@ async fn stream_mistral_http(
     }
     // EOF without [DONE]: flush whatever remains, then hold the terminal
     // contract (a missing finish reason fails typed).
+    buffer.push_str(&decoder.finish());
     for raw in extract_sse_frames(&mut buffer) {
         match parse_mistral_event(&raw) {
             MistralParsedEvent::Done => break,
             MistralParsedEvent::Empty => {}
             MistralParsedEvent::Chunk(value) => {
-                for event in mapper.consume(&value) {
+                callbacks.notify_raw_async(&value).await?;
+                let events = mapper.consume(&value);
+                snapshot.record(&mapper.message);
+                for event in events {
                     crate::stream::send_or_cancel(&cancel, tx, event).await?;
                 }
             }
@@ -978,8 +1044,10 @@ async fn stream_mistral_http(
         }
     }
     let events = mapper.finish();
+    snapshot.record(&mapper.message);
     for event in events {
-        crate::stream::send_or_cancel(&cancel, tx, event).await?;
+        crate::stream::send_or_cancel(&cancel, tx, event.map_err(|error| snapshot.failure(error)))
+            .await?;
     }
     Ok(())
 }
@@ -1124,9 +1192,8 @@ impl MistralSseMapper {
                 "length" | "model_length" => self.stop_reason = Some(StopReason::Length),
                 "tool_calls" => self.stop_reason = Some(StopReason::ToolUse),
                 "error" => {
-                    // Mistral reports transient server failures this way; the
-                    // typed message keeps the stream retryable for the outer
-                    // acquisition owner.
+                    // Preserve the provider's in-stream failure while the
+                    // producer snapshot keeps successful acquisition sealed.
                     self.stop_reason = Some(StopReason::Error);
                     self.stop_error =
                         Some("Provider stopped with: error (server error)".to_owned());
@@ -1193,44 +1260,53 @@ impl MistralSseMapper {
                     None => format!("id:{id}"),
                 };
                 let function = tool_call.get("function").cloned().unwrap_or_default();
-                let entry = self
+                let position = self
                     .tool_blocks
-                    .iter_mut()
-                    .find(|(existing, _, _)| *existing == key);
-                match entry {
-                    Some((_, content_index, args)) => {
-                        args.push_str(&arguments_text(&function));
-                        let _ = content_index;
-                    }
+                    .iter()
+                    .position(|(existing, _, _)| *existing == key);
+                let position = match position {
+                    Some(position) => position,
                     None => {
                         let name = function
                             .get("name")
-                            .and_then(|n| n.as_str())
+                            .and_then(|name| name.as_str())
                             .unwrap_or_default()
                             .to_owned();
                         self.message
                             .content
                             .push(crate::message::AssistantContent::ToolCall {
                                 tool_call: crate::message::ToolCall {
-                                    id: id.clone(),
+                                    id,
                                     name,
-                                    arguments: String::new(),
+                                    arguments: "{}".to_owned(),
                                     arguments_error: None,
                                     signature: None,
                                 },
                             });
                         let content_index = self.message.content.len() - 1;
-                        self.tool_blocks.push((
-                            key.clone(),
-                            content_index,
-                            arguments_text(&function),
-                        ));
+                        self.tool_blocks.push((key, content_index, String::new()));
                         events.push(Ok(AssistantStreamEvent::ToolCallStart {
                             content_index,
                             partial: self.message.clone(),
                         }));
+                        self.tool_blocks.len() - 1
                     }
+                };
+                let delta = arguments_text(&function);
+                let (_, content_index, arguments) = &mut self.tool_blocks[position];
+                arguments.push_str(&delta);
+                let content_index = *content_index;
+                if let Some(crate::message::AssistantContent::ToolCall { tool_call }) =
+                    self.message.content.get_mut(content_index)
+                {
+                    tool_call.arguments =
+                        crate::message::parse_streaming_json(arguments).to_string();
                 }
+                events.push(Ok(AssistantStreamEvent::ToolCallDelta {
+                    content_index,
+                    delta,
+                    partial: self.message.clone(),
+                }));
             }
         }
         events
@@ -1281,6 +1357,15 @@ impl MistralSseMapper {
                 buffer.push_str(text);
                 let index = *index;
                 let is_text = matches!(kind, MistralBlockKind::Text);
+                match self.message.content.get_mut(index) {
+                    Some(crate::message::AssistantContent::Text { text, .. }) => {
+                        *text = buffer.clone()
+                    }
+                    Some(crate::message::AssistantContent::Thinking { thinking, .. }) => {
+                        *thinking = buffer.clone()
+                    }
+                    _ => unreachable!("current block matches its canonical content"),
+                }
                 let partial = self.message.clone();
                 events.push(Ok(if is_text {
                     AssistantStreamEvent::TextDelta {
@@ -1325,6 +1410,15 @@ impl MistralSseMapper {
                 partial,
             }
         }));
+        match self.message.content.get_mut(index) {
+            Some(crate::message::AssistantContent::Text { text: content, .. }) => {
+                *content = text.to_owned()
+            }
+            Some(crate::message::AssistantContent::Thinking { thinking, .. }) => {
+                *thinking = text.to_owned()
+            }
+            _ => unreachable!("new block matches its canonical content"),
+        }
         let partial = self.message.clone();
         events.push(Ok(if is_text {
             AssistantStreamEvent::TextDelta {
@@ -1422,30 +1516,25 @@ impl MistralSseMapper {
 /// pi `getMistralCachedPromptTokens`: the cached-token detail key family
 /// across snake/camel spellings, clamped into the prompt budget.
 fn mistral_cached_tokens(usage: &serde_json::Value, prompt_tokens: u64) -> u64 {
-    let read = |keys: [&str; 2]| {
-        usage
-            .get(keys[0])
-            .or_else(|| usage.get(keys[1]))
-            .and_then(|detail| detail.get(keys[0]).or_else(|| detail.get(keys[1])))
-            .and_then(|value| value.as_u64())
-            .unwrap_or(0)
-    };
-    let raw = read(["cached_tokens", "cachedTokens"])
-        .max(read(["num_cached_tokens", "numCachedTokens"]))
-        .max({
-            usage
-                .get("prompt_tokens_details")
-                .or_else(|| usage.get("promptTokensDetails"))
-                .or_else(|| usage.get("prompt_token_details"))
-                .or_else(|| usage.get("promptTokenDetails"))
-                .and_then(|detail| {
-                    detail
-                        .get("cached_tokens")
-                        .or_else(|| detail.get("cachedTokens"))
-                })
-                .and_then(|value| value.as_u64())
-                .unwrap_or(0)
-        });
+    // Pi uses the first non-null field, including an explicit zero. A
+    // later alias must not override an earlier value by taking the maximum.
+    let paths: &[&[&str]] = &[
+        &["promptTokensDetails", "cachedTokens"],
+        &["prompt_tokens_details", "cached_tokens"],
+        &["promptTokenDetails", "cachedTokens"],
+        &["prompt_token_details", "cached_tokens"],
+        &["numCachedTokens"],
+        &["num_cached_tokens"],
+    ];
+    let raw = paths
+        .iter()
+        .find_map(|path| {
+            path.iter()
+                .try_fold(usage, |value, key| value.get(*key))
+                .filter(|value| !value.is_null())
+        })
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
     raw.min(prompt_tokens)
 }
 
@@ -1499,6 +1588,14 @@ impl MistralConversationsChatApi {
 }
 
 impl crate::models::ChatApi<MistralOptions> for MistralConversationsChatApi {
+    fn validate_simple_options(
+        &self,
+        model: &crate::provider::ModelInfo,
+        options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        crate::provider::Provider::validate_simple_options(&self.provider, model, options)
+    }
+
     fn api_id(&self) -> &crate::models::ApiId {
         &self.api_id
     }

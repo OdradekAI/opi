@@ -30,7 +30,7 @@ fn make_request(cancel: CancellationToken) -> Request {
             tools: vec![],
         })
         .expect("valid context declarations"),
-        max_tokens: None,
+        max_tokens: Some(1024),
         temperature: None,
         sampling_params: Default::default(),
         thinking: Default::default(),
@@ -425,6 +425,7 @@ async fn stream_sends_correct_headers_and_body() {
     // The mock matches x-api-key "test-key-123", so build a ResolvedAuth whose
     // secret is exactly that (resolved_auth()'s placeholder is "test-key").
     let auth = opi_ai::auth::ResolvedAuth {
+        env: Default::default(),
         scheme: opi_ai::auth::AuthScheme::ApiKey,
         secret: secrecy::SecretString::from("test-key-123"),
         base_url: None,

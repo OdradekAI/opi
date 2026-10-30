@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use futures_util::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
+use super::ModelsStoreEntry;
 use crate::http::HttpClient;
-use crate::model_info::ModelInfo;
 use crate::provider::{ProviderError, ProviderErrorSummary};
 
 use super::wire;
@@ -46,7 +46,7 @@ pub trait DynamicCatalogSource: Send + Sync {
     fn fetch(
         &self,
         token: CancellationToken,
-    ) -> BoxFuture<'static, Result<HashMap<String, Vec<ModelInfo>>, ProviderError>>;
+    ) -> BoxFuture<'static, Result<HashMap<String, ModelsStoreEntry>, ProviderError>>;
 }
 
 /// Fetches one distribution-schema-v1 `providers` document from a fixed URL.
@@ -79,7 +79,7 @@ impl HttpCatalogSource {
     /// path uses the same decoder.
     pub fn decode_document(
         document: &serde_json::Value,
-    ) -> Result<HashMap<String, Vec<ModelInfo>>, CatalogDocumentError> {
+    ) -> Result<HashMap<String, ModelsStoreEntry>, CatalogDocumentError> {
         let invalid = |message: String| CatalogDocumentError::Invalid { message };
         let providers = document
             .get("providers")
@@ -87,31 +87,8 @@ impl HttpCatalogSource {
             .ok_or_else(|| invalid("document requires a providers object".to_owned()))?;
         let mut catalogs = HashMap::with_capacity(providers.len());
         for (provider_id, provider) in providers {
-            let models = provider
-                .get("models")
-                .and_then(serde_json::Value::as_array)
-                .ok_or_else(|| {
-                    invalid(format!("provider '{provider_id}' requires a models array"))
-                })?;
-            let mut decoded = Vec::with_capacity(models.len());
-            for model in models {
-                decoded.push(
-                    wire::decode_model_entry(model).map_err(|message| {
-                        invalid(format!("provider '{provider_id}': {message}"))
-                    })?,
-                );
-            }
-            if decoded
-                .iter()
-                .map(|model| model.id.as_str())
-                .collect::<std::collections::HashSet<_>>()
-                .len()
-                != decoded.len()
-            {
-                return Err(invalid(format!(
-                    "provider '{provider_id}' has duplicate model ids"
-                )));
-            }
+            let decoded = wire::decode_provider_entry(provider_id, provider)
+                .map_err(|message| invalid(format!("provider '{provider_id}': {message}")))?;
             catalogs.insert(provider_id.clone(), decoded);
         }
         Ok(catalogs)
@@ -126,7 +103,7 @@ impl DynamicCatalogSource for HttpCatalogSource {
     fn fetch(
         &self,
         token: CancellationToken,
-    ) -> BoxFuture<'static, Result<HashMap<String, Vec<ModelInfo>>, ProviderError>> {
+    ) -> BoxFuture<'static, Result<HashMap<String, ModelsStoreEntry>, ProviderError>> {
         let url = self.url.clone();
         let client = self.client.client().clone();
         Box::pin(async move {

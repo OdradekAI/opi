@@ -3214,6 +3214,7 @@ impl CodingHarness {
                 reasoning_tokens,
                 total_tokens: None,
                 service_tier: None,
+                effective_service_tier: None,
                 reported: false,
             }
         }

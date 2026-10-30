@@ -146,6 +146,11 @@ impl std::fmt::Debug for PiMessagesProvider {
 }
 
 impl PiMessagesProvider {
+    pub(crate) fn with_client(mut self, client: Arc<crate::http::HttpClient>) -> Self {
+        self.client = client;
+        self
+    }
+
     pub fn new(base_url: Option<String>) -> Self {
         Self {
             base_url: base_url.unwrap_or_else(|| BASE_URL.into()),
@@ -235,7 +240,7 @@ impl PiMessagesProvider {
 
         Ok(serde_json::json!({
             "model": model.id,
-            "context": context,
+            "context": { "messages": context },
             "options": wire_options,
         }))
     }
@@ -542,6 +547,33 @@ fn model_catalog() -> &'static [crate::provider::ModelInfo] {
 }
 
 impl Provider for PiMessagesProvider {
+    fn validate_simple_options(
+        &self,
+        model: &crate::provider::ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        PiMessagesChatApi::new(self.clone(), model.clone()).map(|_| ())
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: crate::provider::ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        let mut provider = self.clone();
+        if let Some(base_url) = model.base_url.clone() {
+            provider.base_url = base_url;
+        }
+        provider
+            .with_models(vec![model])
+            .with_native_options(PiMessagesOptions::from_simple(&options))
+            .stream_resource_attempt(request, auth, attempt, resources)
+    }
+
     fn id(&self) -> &str {
         "radius"
     }
@@ -560,7 +592,9 @@ impl Provider for PiMessagesProvider {
             crate::auth::AuthScheme::Bearer => {
                 format!("Bearer {}", auth.secret.expose_secret())
             }
-            crate::auth::AuthScheme::ApiKey | crate::auth::AuthScheme::AwsSigV4(_) => {
+            crate::auth::AuthScheme::ApiKey
+            | crate::auth::AuthScheme::AwsSigV4(_)
+            | crate::auth::AuthScheme::AnthropicFederation => {
                 return Box::pin(futures_util::stream::iter(vec![Err(
                     ProviderError::Config(ProviderErrorSummary::attested_static(
                         "pi-messages accepts only Bearer authentication",
@@ -580,20 +614,30 @@ impl Provider for PiMessagesProvider {
             Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
         };
 
-        let base = self.base_url.trim_end_matches('/');
+        let base = model
+            .base_url
+            .as_deref()
+            .unwrap_or(&self.base_url)
+            .trim_end_matches('/');
         let path = if self.uses_debug() {
             format!("{base}/messages?debug=1")
         } else {
             format!("{base}/messages")
         };
-        let mut req = self
-            .client
-            .client()
-            .post(&path)
-            .header("authorization", bearer)
-            .header("accept", "text/event-stream")
-            .header("content-type", "application/json");
-        for (name, value) in &request.extra_headers {
+        let headers = match crate::provider_headers::ProviderHeaders::default().merge_model_request(
+            &model.headers,
+            &[
+                ("authorization".into(), bearer),
+                ("accept".into(), "text/event-stream".into()),
+                ("content-type".into(), "application/json".into()),
+            ],
+            &request.extra_headers,
+        ) {
+            Ok(headers) => headers,
+            Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
+        };
+        let mut req = self.client.client().post(&path);
+        for (name, value) in &headers {
             req = req.header(name.as_str(), value.as_str());
         }
 
@@ -619,10 +663,11 @@ impl Provider for PiMessagesProvider {
                         &requested_model,
                         producer_cancel.clone(),
                         callbacks,
-                        producer_snapshot,
+                        producer_snapshot.clone(),
                         &tx,
                     )
                     .await
+                    .map_err(|error| producer_snapshot.failure(error))
                 }
                 .await;
                 match result {
@@ -694,8 +739,10 @@ async fn stream_pi_messages_http(
     snapshot.received_response();
 
     let mut mapper = PiMessagesSseMapper::new(requested_model);
+    snapshot.record(&mapper.partial());
     let mut byte_stream = response.bytes_stream();
     let mut buffer = String::new();
+    let mut decoder = crate::text_decode::StreamTextDecoder::new();
     let mut received_bytes = false;
     loop {
         let chunk = tokio::select! {
@@ -708,7 +755,7 @@ async fn stream_pi_messages_http(
             ProviderError::Network(ProviderErrorSummary::sanitized(error.to_string()))
         })?;
         received_bytes = !chunk.is_empty() || received_bytes;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        buffer.push_str(&decoder.push(&chunk));
         // pi's reader normalizes CRLF before splitting frames; a trailing
         // lone CR waits for its LF in the next chunk.
         buffer = buffer.replace("\r\n", "\n");
@@ -721,24 +768,34 @@ async fn stream_pi_messages_http(
                 // Raw observer: each parsed provider event, before
                 // normalization, read-only (annex raw-observer row).
                 callbacks.notify_raw_async(&event).await?;
-                for outgoing in mapper.convert(event)? {
+                let outgoing = mapper.convert(event);
+                snapshot.record(&mapper.partial());
+                for outgoing in outgoing? {
                     crate::stream::send_or_cancel(&cancel, tx, Ok(outgoing)).await?;
                 }
                 if let Some(error) = mapper.terminal_error.take() {
-                    crate::stream::send_or_cancel(&cancel, tx, Err(error)).await?;
+                    crate::stream::send_or_cancel(&cancel, tx, Err(snapshot.failure(error)))
+                        .await?;
+                }
+                if mapper.finished {
+                    return Ok(());
                 }
             }
         }
     }
+    buffer.push_str(&decoder.finish());
+    buffer = buffer.replace("\r\n", "\n");
     if !buffer.trim().is_empty() {
         let event = parse_pi_messages_frame(&buffer)?;
         if let Some(event) = event {
             callbacks.notify_raw_async(&event).await?;
-            for outgoing in mapper.convert(event)? {
+            let outgoing = mapper.convert(event);
+            snapshot.record(&mapper.partial());
+            for outgoing in outgoing? {
                 crate::stream::send_or_cancel(&cancel, tx, Ok(outgoing)).await?;
             }
             if let Some(error) = mapper.terminal_error.take() {
-                crate::stream::send_or_cancel(&cancel, tx, Err(error)).await?;
+                crate::stream::send_or_cancel(&cancel, tx, Err(snapshot.failure(error))).await?;
             }
         }
     }
@@ -1093,19 +1150,9 @@ impl PiMessagesSseMapper {
                     arguments_error: None,
                     signature,
                 };
-                let finalized = self
-                    .tool_json
-                    .remove(&index)
-                    .map(|raw| {
-                        let (arguments, arguments_error) =
-                            crate::message::finalize_tool_arguments(raw);
-                        ToolCall {
-                            arguments,
-                            arguments_error,
-                            ..finalized.clone()
-                        }
-                    })
-                    .unwrap_or(finalized);
+                // The end event is authoritative, even when no deltas were
+                // sent or its arguments differ from the streamed preview.
+                self.tool_json.remove(&index);
                 self.blocks.insert(
                     index,
                     AssistantContent::ToolCall {
@@ -1246,6 +1293,7 @@ fn parse_usage(event: &serde_json::Value) -> Result<Usage, ProviderError> {
         reasoning_tokens: optional("reasoning")?,
         total_tokens: optional("totalTokens")?,
         service_tier: None,
+        effective_service_tier: None,
         reported: true,
     })
 }
@@ -1298,6 +1346,14 @@ impl PiMessagesChatApi {
 }
 
 impl crate::models::ChatApi<PiMessagesOptions> for PiMessagesChatApi {
+    fn validate_simple_options(
+        &self,
+        model: &crate::provider::ModelInfo,
+        options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        Provider::validate_simple_options(&self.provider, model, options)
+    }
+
     fn api_id(&self) -> &crate::models::ApiId {
         &self.api_id
     }
@@ -1331,7 +1387,11 @@ impl crate::models::ChatApi<PiMessagesOptions> for PiMessagesChatApi {
                 ),
             ));
         }
-        crate::provider::validate_request_for_model(self.provider_id(), Some(model), request)
+        crate::provider::validate_request_structure_for_model(
+            self.provider_id(),
+            Some(model),
+            request,
+        )
     }
 
     fn stream_prepared(

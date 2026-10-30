@@ -1500,7 +1500,7 @@ base_url = "https://legacy.example.test"
         config
             .provider_migration_notes
             .iter()
-            .any(|note| note.contains("ignored") && note.contains("canonical block wins"))
+            .any(|note| note.contains("retained") && note.contains("resolve the conflict"))
     );
 }
 
@@ -1526,4 +1526,39 @@ model = "gemini:gemini-2.5-flash"
     let (spec, legacy) = opi_coding_agent::config::canonicalize_model_spec("anthropic:z");
     assert_eq!(spec, "anthropic:z");
     assert_eq!(legacy, None);
+}
+
+#[test]
+fn migration_conflict_preserves_legacy_default_and_source_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_temp_config(
+        dir.path(),
+        r#"
+[defaults]
+model = "gemini:model"
+[providers.google]
+base_url = "https://canonical.example.test"
+api_key_env = "CANONICAL_FIXTURE_KEY"
+[providers.gemini]
+base_url = "https://legacy.example.test"
+api_key_env = "LEGACY_FIXTURE_KEY"
+"#,
+    );
+    let mut config = load_config_file(&path).unwrap();
+    assert_eq!(
+        config.defaults.model, "gemini:model",
+        "an unresolved conflict cannot switch endpoints"
+    );
+    assert_eq!(
+        config.providers.legacy.gemini.base_url.as_deref(),
+        Some("https://legacy.example.test")
+    );
+    assert_eq!(
+        config.providers.legacy.gemini.api_key_env,
+        "LEGACY_FIXTURE_KEY"
+    );
+    let again = config.migrate_legacy_provider_references();
+    assert_eq!(again.conflicts, [("gemini", "google")]);
+    assert!(again.model_specs.is_empty());
+    assert_eq!(config.defaults.model, "gemini:model");
 }

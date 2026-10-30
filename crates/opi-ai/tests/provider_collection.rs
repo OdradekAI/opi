@@ -7,6 +7,9 @@
 //! Provider trait, redacted missing/invalid auth diagnostics, and a registry
 //! regression asserting all built-in providers still resolve.
 
+#[path = "support/catalog_store.rs"]
+mod catalog_fixture;
+
 use opi_ai::auth::{
     AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth, StaticAuthResolver,
 };
@@ -758,7 +761,7 @@ fn credential_source_display_label_and_presence() {
 
 #[test]
 fn credential_api_key_redacts_in_debug() {
-    let cred = Credential::ApiKey(secret(STORE_API_KEY));
+    let cred = Credential::ApiKey(secret(STORE_API_KEY).into());
     let debug = format!("{cred:?}");
     assert!(
         !debug.contains(STORE_API_KEY),
@@ -1002,7 +1005,7 @@ async fn credential_store_is_object_safe_and_round_trips() {
     assert_eq!(store.probe("anthropic").await, CredentialSource::Absent);
     assert!(store.read("anthropic").await.unwrap().is_none());
 
-    let api_key = Credential::ApiKey(secret(STORE_API_KEY));
+    let api_key = Credential::ApiKey(secret(STORE_API_KEY).into());
     store.write("anthropic", &api_key).await.unwrap();
 
     // Present probe carries only the non-secret label.
@@ -1619,6 +1622,7 @@ mod phase17 {
             Box::pin(async move {
                 count.fetch_add(1, Ordering::SeqCst);
                 Ok(ResolvedAuth {
+                    env: Default::default(),
                     scheme: AuthScheme::ApiKey,
                     secret,
                     base_url: None,
@@ -1679,6 +1683,7 @@ mod phase17 {
                     name: "ALPHA_API_KEY".to_owned(),
                 };
                 Ok(ResolvedAuth {
+                    env: Default::default(),
                     scheme: AuthScheme::ApiKey,
                     secret: SecretString::from("secret"),
                     base_url: None,
@@ -3412,7 +3417,7 @@ mod catalog_store_refresh_20_33 {
     /// User-plugged dynamic catalog source with fixed output.
     struct FixedCatalogSource {
         id: String,
-        catalogs: HashMap<String, Vec<ModelInfo>>,
+        catalogs: HashMap<String, opi_ai::catalog::ModelsStoreEntry>,
     }
 
     enum CancelAtCatalogResult {
@@ -3439,7 +3444,7 @@ mod catalog_store_refresh_20_33 {
             token: CancellationToken,
         ) -> futures_util::future::BoxFuture<
             'static,
-            Result<HashMap<String, Vec<ModelInfo>>, ProviderError>,
+            Result<HashMap<String, opi_ai::catalog::ModelsStoreEntry>, ProviderError>,
         > {
             let later = self.fetches.fetch_add(1, Ordering::SeqCst) > 0;
             let cancellation = self.cancellation.clone();
@@ -3457,10 +3462,10 @@ mod catalog_store_refresh_20_33 {
                     }
                 }
                 let id = if later { "late" } else { "old" };
-                Ok(HashMap::from([(
+                Ok(catalog_fixture::catalogs(HashMap::from([(
                     "dyn".to_owned(),
                     vec![model_info(id, id)],
-                )]))
+                )])))
             })
         }
     }
@@ -3532,7 +3537,7 @@ mod catalog_store_refresh_20_33 {
             assert_eq!(std::fs::read(&path).unwrap(), persisted);
             let reopened = ModelsStore::open(&path).unwrap();
             assert_eq!(reopened.revision(), 1);
-            assert_eq!(reopened.snapshot().catalogs["dyn"][0].id, "old");
+            assert_eq!(reopened.snapshot().catalogs["dyn"].models[0].id(), "old");
         }
     }
 
@@ -3578,7 +3583,7 @@ mod catalog_store_refresh_20_33 {
             _token: CancellationToken,
         ) -> futures_util::future::BoxFuture<
             'static,
-            Result<HashMap<String, Vec<ModelInfo>>, ProviderError>,
+            Result<HashMap<String, opi_ai::catalog::ModelsStoreEntry>, ProviderError>,
         > {
             let catalogs = self.catalogs.clone();
             Box::pin(async move { Ok(catalogs) })
@@ -3599,7 +3604,7 @@ mod catalog_store_refresh_20_33 {
             _token: CancellationToken,
         ) -> futures_util::future::BoxFuture<
             'static,
-            Result<HashMap<String, Vec<ModelInfo>>, ProviderError>,
+            Result<HashMap<String, opi_ai::catalog::ModelsStoreEntry>, ProviderError>,
         > {
             Box::pin(async move {
                 Err(ProviderError::ProviderSide(
@@ -3630,10 +3635,10 @@ mod catalog_store_refresh_20_33 {
         let store = ModelsStore::open(&path).unwrap();
         store
             .begin()
-            .commit(HashMap::from([(
+            .commit(catalog_fixture::catalogs(HashMap::from([(
                 "dyn".to_owned(),
                 vec![model_info("stored-1", "Stored 1")],
-            )]))
+            )])))
             .await
             .unwrap();
 
@@ -3691,10 +3696,10 @@ mod catalog_store_refresh_20_33 {
         let store = ModelsStore::open(&path).unwrap();
         store
             .begin()
-            .commit(HashMap::from([(
+            .commit(catalog_fixture::catalogs(HashMap::from([(
                 "winner".to_owned(),
                 vec![model_info("w1", "W1")],
-            )]))
+            )])))
             .await
             .unwrap();
         collection.set_models_store(store.clone());
@@ -3720,10 +3725,10 @@ mod catalog_store_refresh_20_33 {
         // Publisher B commits revision 2 while A is suspended in fetch.
         store
             .begin()
-            .commit(HashMap::from([(
+            .commit(catalog_fixture::catalogs(HashMap::from([(
                 "winner".to_owned(),
                 vec![model_info("w2", "W2")],
-            )]))
+            )])))
             .await
             .unwrap();
 
@@ -3745,7 +3750,7 @@ mod catalog_store_refresh_20_33 {
         // Reopened store shows B's publication (no rollback).
         let reopened = ModelsStore::open(&path).unwrap();
         assert_eq!(reopened.revision(), 2);
-        assert!(reopened.snapshot().catalogs["winner"][0].id == "w2");
+        assert!(reopened.snapshot().catalogs["winner"].models[0].id() == "w2");
 
         // A fresh collection restoring from the store sees B's world.
         let mut collection_b = Models::new();
@@ -3811,10 +3816,10 @@ mod catalog_store_refresh_20_33 {
         );
         collection.register_catalog_source(Arc::new(FixedCatalogSource {
             id: "custom-src".to_owned(),
-            catalogs: HashMap::from([(
+            catalogs: catalog_fixture::catalogs(HashMap::from([(
                 "custom-prov".to_owned(),
                 vec![model_info("src-model", "Source Model")],
-            )]),
+            )])),
         }));
         collection.register_catalog_source(Arc::new(FailingCatalogSource {
             id: "broken-src".to_owned(),
@@ -4182,9 +4187,10 @@ async fn register_builtin_registers_the_canonical_collection() {
     )
     .expect("builtin registration succeeds");
 
-    // google-vertex is configuration-gated (project/location) like azure.
+    // Vertex source selection is lazy and remains registered without ambient reads.
     for expected in [
         "google",
+        "google-vertex",
         "amazon-bedrock",
         "anthropic",
         "openai",
@@ -4197,12 +4203,12 @@ async fn register_builtin_registers_the_canonical_collection() {
             report.registered
         );
     }
-    // Azure needs a configured endpoint; typesafe is classifier-only.
-    assert!(!report.registered.iter().any(|id| id == "azure"));
+    // Endpoint and credentials are lazy; typesafe is classifier-only.
+    assert!(report.registered.iter().any(|id| id == "azure"));
     assert!(!report.registered.iter().any(|id| id == "typesafe"));
     let skipped_ids: Vec<&str> = report.skipped.iter().map(|(id, _)| id.as_str()).collect();
-    assert!(skipped_ids.contains(&"azure"));
-    assert!(skipped_ids.contains(&"google-vertex"));
+    assert!(!skipped_ids.contains(&"azure"));
+    assert!(!skipped_ids.contains(&"google-vertex"));
     assert!(skipped_ids.contains(&"typesafe"));
 
     // The bundled catalog backs canonical resolution.
@@ -4481,4 +4487,1304 @@ async fn classifier_and_image_builtins_register_from_the_catalog() {
         .image_model("openrouter", &openrouter_image)
         .expect("catalog image record registers");
     assert_eq!(image.provider_id, "openrouter");
+}
+
+#[tokio::test]
+async fn classifier_same_api_keeps_provider_auth_bindings() {
+    use opi_ai::api::system_one::{TypesafeSystemOneApi, default_typesafe_classifier_record};
+    use opi_ai::classifier::{ClassifierCall, ClassifierContext, ClassifierStopReason};
+    use std::sync::Arc;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{header, method},
+    };
+    let mut models = Models::new();
+    let mut records = Vec::new();
+    let mut servers = Vec::new();
+    for (provider, key) in [("provider-a", "fixture-a"), ("provider-b", "fixture-b")] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(header("authorization", format!("Bearer {key}")))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"answers":{}})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut record = default_typesafe_classifier_record();
+        record.provider_id = provider.into();
+        record.base_url = server.uri();
+        models
+            .register_classifier_api(
+                Arc::new(TypesafeSystemOneApi::new(
+                    opi_ai::http::HttpClient::new(),
+                    record.clone(),
+                )),
+                Arc::new(StaticAuthResolver::new(
+                    AuthScheme::Bearer,
+                    secrecy::SecretString::from(key),
+                )),
+                AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        records.push(record);
+        servers.push(server);
+    }
+    for record in records {
+        assert!(
+            models
+                .classifier_model(&record.provider_id, &record.id)
+                .is_ok()
+        );
+        let result = models
+            .classify(
+                record,
+                ClassifierContext::default(),
+                ClassifierCall::default(),
+            )
+            .await;
+        assert_eq!(
+            result.stop_reason,
+            ClassifierStopReason::Stop,
+            "{:?}",
+            result.error
+        );
+    }
+    for server in servers {
+        server.verify().await;
+    }
+}
+
+#[tokio::test]
+async fn classifier_model_modality_is_rejected_before_authentication() {
+    use opi_ai::api::decisions::{OpenAiDecisionsApi, default_decisions_classifier_record};
+    use opi_ai::classifier::{
+        ClassifierCall, ClassifierContext, ClassifierImage, ClassifierInputModality,
+        ClassifierStopReason,
+    };
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    struct Probe(Arc<AtomicUsize>);
+    impl AuthResolver for Probe {
+        fn resolve<'a>(
+            &'a self,
+        ) -> opi_ai::credential::BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {
+                Err(ProviderError::CredentialNeeded {
+                    provider_id: "fixture".into(),
+                })
+            })
+        }
+    }
+    let count = Arc::new(AtomicUsize::new(0));
+    let mut record = default_decisions_classifier_record();
+    record.input = vec![ClassifierInputModality::Text];
+    let mut models = Models::new();
+    models
+        .register_classifier_api(
+            Arc::new(OpenAiDecisionsApi::new(
+                opi_ai::http::HttpClient::new(),
+                record.clone(),
+            )),
+            Arc::new(Probe(count.clone())),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let result = models
+        .classify(
+            record,
+            ClassifierContext {
+                images: Some(vec![ClassifierImage {
+                    mime_type: "image/png".into(),
+                    data: "eA==".into(),
+                }]),
+                ..Default::default()
+            },
+            ClassifierCall::default(),
+        )
+        .await;
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+    assert_eq!(result.stop_reason, ClassifierStopReason::Error);
+    assert!(matches!(
+        result.error,
+        Some(ProviderError::UnsupportedCapability(_))
+    ));
+}
+
+#[test]
+fn builtin_full_record_keeps_pinned_model_compatibility() {
+    let mut models = Models::new();
+    register_builtin(
+        &mut models,
+        map_context(&[]),
+        std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+    let model = models.get_model("opencode", "big-pickle").unwrap();
+    let opi_ai::model_info::WireCompat::OpenAiCompletions(compat) = model.compat else {
+        panic!("chat wire")
+    };
+    assert_eq!(compat.max_tokens_field.as_deref(), Some("max_tokens"));
+    assert_eq!(
+        compat.instruction_role,
+        Some(opi_ai::model_info::ChatInstructionRole::System)
+    );
+}
+
+#[tokio::test]
+async fn builtin_stored_key_wins_and_store_replacement_only_changes_future_calls() {
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    let server = MockServer::start().await;
+    Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_body_string(
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+    )).expect(2).mount(&server).await;
+    let store = |key: &'static str| {
+        Arc::new(FakeStore {
+            entries: Mutex::new(HashMap::from([(
+                "groq".into(),
+                Credential::ApiKey(secret(key).into()),
+            )])),
+        }) as Arc<dyn CredentialStore>
+    };
+    let mut models = Models::new();
+    models.set_credential_store(store("stored-first"));
+    let mut overrides = BuiltinOverrides::default();
+    overrides.base_urls.insert("groq".into(), server.uri());
+    register_builtin(
+        &mut models,
+        map_context(&[("GROQ_API_KEY", "ambient-unused")]),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &overrides,
+    )
+    .unwrap();
+    let id = first_catalog_chat_model("groq");
+    let record = opi_ai::ChatModelRecord::new("groq", models.get_model("groq", &id).unwrap());
+    let request = minimal_request(&format!("groq:{id}"));
+    let frozen = models.complete_simple(record.clone(), request.clone(), Default::default());
+    assert!(server.received_requests().await.unwrap().is_empty());
+    models.set_credential_store(store("stored-second"));
+    frozen.await.expect("old call keeps its source binding");
+    models
+        .complete_simple(record, request, Default::default())
+        .await
+        .unwrap();
+    let sent = server.received_requests().await.unwrap();
+    assert_eq!(sent[0].headers["authorization"], "Bearer stored-first");
+    assert_eq!(sent[1].headers["authorization"], "Bearer stored-second");
+}
+
+#[test]
+fn builtin_all_operation_records_are_available_for_selection() {
+    let mut models = Models::new();
+    register_builtin(
+        &mut models,
+        map_context(&[]),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+    let catalog = Catalog::builtin().unwrap();
+    let mut missing = Vec::new();
+    for provider in catalog.providers() {
+        for operation in [CatalogOperation::Classifier, CatalogOperation::Image] {
+            for entry in catalog.models(provider, operation).unwrap() {
+                let found = match operation {
+                    CatalogOperation::Classifier => {
+                        models.classifier_model(provider, &entry.id).is_ok()
+                    }
+                    CatalogOperation::Image => models.image_model(provider, &entry.id).is_ok(),
+                    CatalogOperation::Chat => unreachable!(),
+                };
+                if !found {
+                    missing.push(format!("{provider}:{}:{operation:?}", entry.id));
+                }
+            }
+        }
+    }
+    assert!(missing.is_empty(), "missing operation records: {missing:?}");
+}
+
+fn node5_reply(wire: WireApi) -> &'static str {
+    match wire {
+        WireApi::OpenAiCompletions | WireApi::MistralConversations => concat!(
+            "data: {\"id\":\"x\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"x\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\n",
+            "data: [DONE]\n\n"
+        ),
+        WireApi::OpenAiResponses
+        | WireApi::AzureOpenAiResponses
+        | WireApi::OpenAiCodexResponses => concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n"
+        ),
+        WireApi::AnthropicMessages => concat!(
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"model\":\"fixture\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ),
+        WireApi::PiMessages => concat!(
+            "data: {\"type\":\"start\"}\n\n",
+            "data: {\"type\":\"text_start\",\"contentIndex\":0}\n\n",
+            "data: {\"type\":\"text_delta\",\"contentIndex\":0,\"delta\":\"hi\"}\n\n",
+            "data: {\"type\":\"text_end\",\"contentIndex\":0,\"content\":\"hi\"}\n\n",
+            "data: {\"type\":\"done\",\"reason\":\"stop\",\"usage\":{\"input\":1,\"output\":1,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":2}}\n\n"
+        ),
+        WireApi::GoogleGenerativeAi => {
+            "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hi\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1,\"totalTokenCount\":2}}\n\n"
+        }
+        _ => panic!("fixture missing for {wire}"),
+    }
+}
+
+#[tokio::test]
+async fn builtin_mapped_calls_use_owned_custom_records_and_header_precedence() {
+    use std::sync::Arc;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    for (provider, env, wire) in [
+        ("groq", "GROQ_API_KEY", WireApi::OpenAiCompletions),
+        ("openai", "OPENAI_API_KEY", WireApi::OpenAiResponses),
+        ("anthropic", "ANTHROPIC_API_KEY", WireApi::AnthropicMessages),
+        ("azure", "AZURE_OPENAI_API_KEY", WireApi::OpenAiCompletions),
+        (
+            "azure",
+            "AZURE_OPENAI_API_KEY",
+            WireApi::AzureOpenAiResponses,
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(node5_reply(wire)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut models = Models::new();
+        register_builtin(
+            &mut models,
+            map_context(&[(env, "fixture-key")]),
+            Arc::new(opi_ai::http::HttpClient::new()),
+            &BuiltinOverrides::default(),
+        )
+        .unwrap();
+        let mut info = ModelInfo::new(
+            "custom-owned",
+            "Custom owned",
+            wire,
+            ModelCapabilities::new(8192, 129),
+        )
+        .with_base_url(format!("{}/owned", server.uri()));
+        info.headers = vec![
+            ("x-model".into(), Some("record".into())),
+            ("x-override".into(), Some("record".into())),
+            ("x-absent".into(), None),
+        ];
+        info.sampling_params
+            .insert("top_p".into(), serde_json::json!(0.34));
+        let mut request = minimal_request("ignored-request-model");
+        request.extra_headers = vec![("x-override".into(), "request".into())];
+        let output = models
+            .complete_simple(
+                opi_ai::ChatModelRecord::new(provider, info.clone()),
+                request,
+                Default::default(),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{provider}/{wire}: {error:?}"));
+        assert_eq!(assistant_text(&output), "hi");
+        assert_eq!(output.provider, provider);
+        assert_eq!(output.model, "custom-owned");
+        let sent = server.received_requests().await.unwrap();
+        let sent = &sent[0];
+        assert!(
+            sent.url.path().starts_with("/owned/"),
+            "{provider}: {}",
+            sent.url
+        );
+        assert_eq!(sent.headers["x-model"], "record");
+        assert_eq!(sent.headers["x-override"], "request");
+        assert!(!sent.headers.contains_key("x-absent"));
+        let body: serde_json::Value = serde_json::from_slice(&sent.body).unwrap();
+        assert_eq!(body["model"], "custom-owned");
+        if wire == WireApi::AnthropicMessages {
+            assert!(body.get("top_p").is_none());
+        } else {
+            assert_eq!(body["top_p"], serde_json::json!(0.34), "{provider}/{wire}");
+        }
+        info.headers
+            .push(("authorization".into(), Some("forbidden".into())));
+        assert!(
+            models
+                .complete_simple(
+                    opi_ai::ChatModelRecord::new(provider, info),
+                    minimal_request("ignored"),
+                    Default::default()
+                )
+                .await
+                .is_err()
+        );
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn builtin_gateway_all_three_wires_use_only_source_auth_header() {
+    use std::sync::Arc;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    for wire in [
+        WireApi::OpenAiCompletions,
+        WireApi::OpenAiResponses,
+        WireApi::AnthropicMessages,
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(node5_reply(wire)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut models = Models::new();
+        register_builtin(
+            &mut models,
+            map_context(&[
+                ("CLOUDFLARE_API_KEY", "gateway-fixture"),
+                ("CLOUDFLARE_ACCOUNT_ID", "account"),
+                ("CLOUDFLARE_GATEWAY_ID", "gateway"),
+            ]),
+            Arc::new(opi_ai::http::HttpClient::new()),
+            &BuiltinOverrides::default(),
+        )
+        .unwrap();
+        let info = ModelInfo::new(
+            "custom-gateway",
+            "Gateway",
+            wire,
+            ModelCapabilities::new(8192, 128),
+        )
+        .with_base_url(format!("{}/selected", server.uri()));
+        let output = models
+            .complete_simple(
+                opi_ai::ChatModelRecord::new("cloudflare-ai-gateway", info),
+                minimal_request("ignored"),
+                Default::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(assistant_text(&output), "hi");
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(
+            sent[0].headers["cf-aig-authorization"],
+            "Bearer gateway-fixture"
+        );
+        assert!(!sent[0].headers.contains_key("authorization"));
+        assert!(!sent[0].headers.contains_key("x-api-key"));
+        assert!(sent[0].url.path().starts_with("/selected/"));
+    }
+}
+
+#[tokio::test]
+async fn builtin_source_profiles_reach_their_registered_wires() {
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    let catalog = opi_ai::catalog::Catalog::builtin().unwrap();
+    let mut checked = BTreeSet::new();
+    for profile in opi_ai::providers::builtin_provider_profiles() {
+        // Native crypto/ADC transports and classifier-only operation have their
+        // own real builtin fixtures; this corpus covers every other profile/wire.
+        if ["amazon-bedrock", "google", "google-vertex", "typesafe"].contains(&profile.id) {
+            continue;
+        }
+        let mut wires = BTreeSet::new();
+        for entry in catalog
+            .models(profile.id, opi_ai::catalog::CatalogOperation::Chat)
+            .unwrap()
+        {
+            if !wires.insert(entry.api.clone()) {
+                continue;
+            }
+            let server = MockServer::start().await;
+            let source_path = if profile.id == "azure" {
+                "/openai/v1".to_owned()
+            } else {
+                url::Url::parse(&entry.base_url)
+                    .unwrap()
+                    .path()
+                    .trim_end_matches('/')
+                    .to_owned()
+            };
+            let controlled_base = format!("{}{source_path}", server.uri());
+            let mut overrides = BuiltinOverrides::default();
+            overrides
+                .base_urls
+                .insert(profile.id.into(), controlled_base.clone());
+            if profile.id == "azure" {
+                overrides.azure_endpoint = Some(controlled_base);
+            }
+            let credential = if profile.id == "openai-codex" {
+                Credential::OAuthToken {
+                    access: "fixture-codex".into(),
+                    refresh: "unused".into(),
+                    expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::hours(1)),
+                    base_url: None,
+                    account_id: Some("fixture-account".into()),
+                    client_id: None,
+                    enterprise_domain: None,
+                    available_model_ids: None,
+                    scopes: None,
+                }
+            } else {
+                Credential::ApiKey("fixture-source-key".into())
+            };
+            let mut models = Models::new();
+            models.set_credential_store(Arc::new(FakeStore {
+                entries: Mutex::new(HashMap::from([(profile.id.into(), credential)])),
+            }));
+            register_builtin(
+                &mut models,
+                map_context(&[
+                    ("CLOUDFLARE_ACCOUNT_ID", "fixture-account"),
+                    ("CLOUDFLARE_GATEWAY_ID", "fixture-gateway"),
+                ]),
+                Arc::new(opi_ai::http::HttpClient::new()),
+                &overrides,
+            )
+            .unwrap();
+            let info = models.get_model(profile.id, &entry.id).unwrap();
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(node5_reply(info.wire_api)),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let mut request = minimal_request("owned model selects routing");
+            request.transport = opi_ai::provider::TransportPreference::Sse;
+            request.max_tokens = Some(32);
+            request.session_id = Some("profile-session".into());
+            request
+                .extra_headers
+                .push(("x-call-proof".into(), "profile-wire".into()));
+            let output = models
+                .complete_simple(
+                    opi_ai::ChatModelRecord::new(profile.id, info.clone()),
+                    request,
+                    Default::default(),
+                )
+                .await
+                .unwrap_or_else(|error| panic!("{}/{}: {error:?}", profile.id, entry.api));
+            assert_eq!(output.provider, profile.id, "{}/{}", profile.id, entry.api);
+            assert_eq!(output.model, entry.id);
+            assert_eq!(assistant_text(&output), "hi");
+            let sent = server.received_requests().await.unwrap();
+            assert_eq!(sent.len(), 1, "{}/{}", profile.id, entry.api);
+            let suffix = match info.wire_api {
+                WireApi::OpenAiCompletions => Some("/chat/completions"),
+                WireApi::MistralConversations => Some("/v1/chat/completions"),
+                WireApi::OpenAiResponses | WireApi::AzureOpenAiResponses => Some("/responses"),
+                WireApi::OpenAiCodexResponses => Some("/codex/responses"),
+                WireApi::AnthropicMessages => Some("/v1/messages"),
+                WireApi::PiMessages => Some("/messages"),
+                _ => None,
+            };
+            if let Some(suffix) = suffix {
+                assert_eq!(
+                    sent[0].url.path(),
+                    format!("{source_path}{suffix}"),
+                    "{}/{}",
+                    profile.id,
+                    entry.api
+                );
+            }
+
+            assert_eq!(sent[0].headers["x-call-proof"], "profile-wire");
+            let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+            if info.wire_api == WireApi::GoogleGenerativeAi {
+                assert!(sent[0].url.path().contains(&entry.id));
+            } else {
+                assert_eq!(body["model"], entry.id);
+            }
+            if ["opencode", "opencode-go"].contains(&profile.id) {
+                assert_eq!(sent[0].headers["x-opencode-session"], "profile-session");
+            }
+            let auth_header = if profile.id == "cloudflare-ai-gateway" {
+                "cf-aig-authorization"
+            } else if info.wire_api == WireApi::AzureOpenAiResponses {
+                "api-key"
+            } else if info.wire_api == WireApi::GoogleGenerativeAi {
+                "x-goog-api-key"
+            } else if info.wire_api == WireApi::AnthropicMessages && profile.id != "github-copilot"
+            {
+                "x-api-key"
+            } else {
+                "authorization"
+            };
+            assert!(
+                sent[0].headers.contains_key(auth_header),
+                "{}/{} lacks {auth_header}",
+                profile.id,
+                entry.api
+            );
+            checked.insert(profile.id);
+        }
+    }
+    assert_eq!(checked.len(), 38);
+}
+
+#[tokio::test]
+async fn builtin_classifier_profiles_send_the_selected_record_with_stored_auth() {
+    use opi_ai::classifier::{ClassifierCall, ClassifierContext, ClassifierStopReason};
+    use std::sync::Arc;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    let catalog = Catalog::builtin().unwrap();
+    for provider in [
+        "typesafe",
+        "openrouter",
+        "opencode",
+        "vercel-ai-gateway",
+        "cloudflare-workers-ai",
+        "openai",
+    ] {
+        let server = MockServer::start().await;
+        let response = match provider {
+            "cloudflare-workers-ai" => {
+                serde_json::json!({"success":true,"result":{"answers":{},"usage":{"input_tokens":2,"output_tokens":1}}})
+            }
+            "openai" => {
+                serde_json::json!({"answers":[],"usage":{"input_tokens":2,"output_tokens":1}})
+            }
+            _ => serde_json::json!({"answers":{},"usage":{"input_tokens":2,"output_tokens":1}}),
+        };
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let store = Arc::new(FakeStore {
+            entries: Mutex::new(HashMap::from([(
+                provider.into(),
+                Credential::ApiKey("stored-classifier".into()),
+            )])),
+        });
+        let mut models = Models::new();
+        models.set_credential_store(store);
+        register_builtin(
+            &mut models,
+            map_context(&[("CLOUDFLARE_ACCOUNT_ID", "fixture")]),
+            Arc::new(opi_ai::http::HttpClient::new()),
+            &BuiltinOverrides::default(),
+        )
+        .unwrap();
+        let entry = catalog
+            .models(provider, CatalogOperation::Classifier)
+            .unwrap()
+            .last()
+            .unwrap();
+        let mut record = models.classifier_model(provider, &entry.id).unwrap();
+        record.base_url = format!("{}/custom-classifier", server.uri());
+        let result = models
+            .classify(
+                record,
+                ClassifierContext::default(),
+                ClassifierCall::default(),
+            )
+            .await;
+        assert_eq!(
+            result.stop_reason,
+            ClassifierStopReason::Stop,
+            "{provider}: {:?}",
+            result.error
+        );
+        assert_eq!(result.provider, provider);
+        assert_eq!(result.model, entry.id);
+        assert_eq!(result.usage.unwrap().input_tokens, 2);
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent[0].headers["authorization"], "Bearer stored-classifier");
+        assert!(sent[0].url.path().starts_with("/custom-classifier/"));
+        assert!(
+            models
+                .get_auth(provider, Default::default())
+                .await
+                .unwrap()
+                .is_some(),
+            "{provider} management auth must expose its configured source"
+        );
+    }
+}
+
+#[test]
+fn builtin_construction_and_unpolled_calls_do_not_read_sources() {
+    struct NoSources;
+    impl opi_ai::auth::AuthContext for NoSources {
+        fn env(&self, _: &str) -> Result<Option<String>, opi_ai::auth::AuthContextError> {
+            panic!("construction read environment")
+        }
+        fn file_exists(&self, _: &str) -> Result<bool, opi_ai::auth::AuthContextError> {
+            panic!("construction inspected a file")
+        }
+    }
+    let mut models = Models::new();
+    let report = register_builtin(
+        &mut models,
+        std::sync::Arc::new(NoSources),
+        std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+    assert_eq!(report.registered.len(), 41);
+    let model = models
+        .get_model("groq", &first_catalog_chat_model("groq"))
+        .unwrap();
+    let call = models.complete_simple(
+        opi_ai::ChatModelRecord::new("groq", model),
+        minimal_request("ignored"),
+        Default::default(),
+    );
+    drop(call);
+}
+
+#[tokio::test]
+async fn builtin_openai_oauth_excludes_decisions_without_falling_back_to_env_key() {
+    use opi_ai::classifier::{ClassifierCall, ClassifierContext, ClassifierStopReason};
+    use std::sync::Arc;
+    let credential = Credential::OAuthToken {
+        access: "fixture-oauth".into(),
+        refresh: "unused".into(),
+        expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::hours(1)),
+        base_url: None,
+        account_id: None,
+        client_id: None,
+        enterprise_domain: None,
+        available_model_ids: None,
+        scopes: None,
+    };
+    let mut models = Models::new();
+    models.set_credential_store(Arc::new(FakeStore {
+        entries: Mutex::new(HashMap::from([("openai".into(), credential)])),
+    }));
+    register_builtin(
+        &mut models,
+        map_context(&[("OPENAI_API_KEY", "must-not-fallback")]),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        models.check_auth("openai").await.unwrap().unwrap().kind,
+        AuthCheckKind::OAuth
+    );
+    assert!(
+        models
+            .get_available_classifiers(Some("openai"))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let entry = Catalog::builtin()
+        .unwrap()
+        .models("openai", CatalogOperation::Classifier)
+        .unwrap()
+        .next()
+        .unwrap();
+    let mut record = models.classifier_model("openai", &entry.id).unwrap();
+    let server = wiremock::MockServer::start().await;
+    record.base_url = server.uri();
+    let result = models
+        .classify(
+            record,
+            ClassifierContext::default(),
+            ClassifierCall::default(),
+        )
+        .await;
+    assert_eq!(result.stop_reason, ClassifierStopReason::Error);
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn builtin_nonstream_operations_reuse_the_injected_redirect_policy() {
+    use opi_ai::classifier::{ClassifierCall, ClassifierContext, ClassifierStopReason};
+    use opi_ai::images::{ImagesCall, ImagesContext, ImagesStopReason};
+    use std::sync::Arc;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    let origin = MockServer::start().await;
+    let redirected = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(307)
+                .insert_header("location", format!("{}/destination", redirected.uri())),
+        )
+        .mount(&origin)
+        .await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"answers":{},"choices":[]})),
+        )
+        .mount(&redirected)
+        .await;
+    let client = opi_ai::http::HttpClientBuilder::new()
+        .redirects(opi_ai::http::RedirectPolicy::None)
+        .build()
+        .unwrap();
+    let mut models = Models::new();
+    register_builtin(
+        &mut models,
+        map_context(&[
+            ("TYPESAFE_API_KEY", "fixture"),
+            ("OPENROUTER_API_KEY", "fixture"),
+        ]),
+        Arc::new(client),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+    let mut classifier = models.classifier_model("typesafe", "jev-latest").unwrap();
+    classifier.base_url = origin.uri();
+    let classified = models
+        .classify(
+            classifier,
+            ClassifierContext::default(),
+            ClassifierCall::default(),
+        )
+        .await;
+    assert_eq!(classified.stop_reason, ClassifierStopReason::Error);
+    let entry = Catalog::builtin()
+        .unwrap()
+        .models("openrouter", CatalogOperation::Image)
+        .unwrap()
+        .last()
+        .unwrap();
+    let mut record = models.image_model("openrouter", &entry.id).unwrap();
+    record.base_url = origin.uri();
+    let generated = models
+        .generate_images(record, ImagesContext::default(), ImagesCall::default())
+        .await;
+    assert_eq!(generated.stop_reason, ImagesStopReason::Error);
+    assert_eq!(origin.received_requests().await.unwrap().len(), 2);
+    assert!(
+        redirected.received_requests().await.unwrap().is_empty(),
+        "source policy forbids redirect transport sends"
+    );
+}
+
+#[tokio::test]
+async fn builtin_oauth_flow_replacement_changes_future_calls_only() {
+    use opi_ai::auth::{LoginPresenter, OAuthCredential, OAuthProvider};
+    use std::sync::Arc;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    struct Flow(&'static str);
+    impl OAuthProvider for Flow {
+        fn id(&self) -> &str {
+            "openai"
+        }
+        fn to_auth(&self, _: &OAuthCredential) -> ResolvedAuth {
+            ResolvedAuth {
+                env: Default::default(),
+                scheme: AuthScheme::Bearer,
+                secret: self.0.into(),
+                base_url: None,
+                account_id: None,
+                provenance: opi_ai::auth::AuthProvenance {
+                    source: AuthProvenanceSource::OAuth {
+                        kind: "openai".into(),
+                    },
+                    fallback: opi_ai::auth::AuthFallback::NotAttempted,
+                },
+            }
+        }
+        fn login<'a>(
+            &'a self,
+            _: &'a dyn LoginPresenter,
+        ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+            panic!("login must not start")
+        }
+        fn refresh<'a>(
+            &'a self,
+            _: &'a OAuthCredential,
+        ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+            panic!("fresh fixture must not refresh")
+        }
+    }
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(node5_reply(WireApi::OpenAiResponses)),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+    let credential = Credential::OAuthToken {
+        access: "acknowledged".into(),
+        refresh: "unused".into(),
+        expires_at: Some(time::OffsetDateTime::now_utc() + time::Duration::hours(1)),
+        base_url: None,
+        account_id: None,
+        client_id: None,
+        enterprise_domain: None,
+        available_model_ids: None,
+        scopes: None,
+    };
+    let mut models = Models::new();
+    models.set_credential_store(Arc::new(FakeStore {
+        entries: Mutex::new(HashMap::from([("openai".into(), credential)])),
+    }));
+    models.register_oauth_flow("openai", Arc::new(Flow("old-flow")));
+    let mut overrides = BuiltinOverrides::default();
+    overrides.base_urls.insert("openai".into(), server.uri());
+    register_builtin(
+        &mut models,
+        map_context(&[]),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &overrides,
+    )
+    .unwrap();
+    let info = models
+        .get_model("openai", &first_catalog_chat_model("openai"))
+        .unwrap();
+    let record = opi_ai::ChatModelRecord::new("openai", info);
+    let old = models.complete_simple(
+        record.clone(),
+        minimal_request("ignored"),
+        Default::default(),
+    );
+    models.register_oauth_flow("openai", Arc::new(Flow("new-flow")));
+    old.await.unwrap();
+    models
+        .complete_simple(record, minimal_request("ignored"), Default::default())
+        .await
+        .unwrap();
+    let sent = server.received_requests().await.unwrap();
+    assert_eq!(sent[0].headers["authorization"], "Bearer old-flow");
+    assert_eq!(sent[1].headers["authorization"], "Bearer new-flow");
+}
+
+#[tokio::test]
+async fn builtin_anthropic_header_owned_token_is_not_an_oauth_identity() {
+    use std::sync::Arc;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(node5_reply(WireApi::AnthropicMessages)),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut models = Models::new();
+    register_builtin(
+        &mut models,
+        map_context(&[
+            ("ANTHROPIC_AUTH_TOKEN", "sk-ant-oat-header-owned-fixture"),
+            ("ANTHROPIC_OAUTH_TOKEN", "must-not-use"),
+            ("ANTHROPIC_API_KEY", "must-not-use"),
+        ]),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+    let model = ModelInfo::new(
+        "owned",
+        "Owned",
+        WireApi::AnthropicMessages,
+        ModelCapabilities::new(2048, 128),
+    )
+    .with_base_url(server.uri());
+    models
+        .complete_simple(
+            opi_ai::ChatModelRecord::new("anthropic", model),
+            minimal_request("ignored"),
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    let sent = server.received_requests().await.unwrap();
+    assert_eq!(
+        sent[0].headers["authorization"],
+        "Bearer sk-ant-oat-header-owned-fixture"
+    );
+    assert!(!sent[0].headers.contains_key("x-api-key"));
+    assert!(!sent[0].headers.contains_key("anthropic-beta"));
+    let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+    assert!(body.get("system").is_none());
+}
+
+#[tokio::test]
+async fn builtin_azure_chat_and_responses_resolve_source_endpoint_and_deployment() {
+    use std::sync::Arc;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    struct AzureEnv(String);
+    impl opi_ai::auth::AuthContext for AzureEnv {
+        fn env(&self, name: &str) -> Result<Option<String>, opi_ai::auth::AuthContextError> {
+            Ok(match name {
+                "AZURE_OPENAI_API_KEY" => Some("azure-fixture".into()),
+                "AZURE_OPENAI_BASE_URL" => Some(self.0.clone()),
+                "AZURE_OPENAI_API_VERSION" => Some("fixture-version".into()),
+                "AZURE_OPENAI_DEPLOYMENT_NAME_MAP" => Some("catalog-id=actual-deployment".into()),
+                _ => None,
+            })
+        }
+        fn file_exists(&self, _: &str) -> Result<bool, opi_ai::auth::AuthContextError> {
+            Ok(false)
+        }
+    }
+    for wire in [WireApi::OpenAiCompletions, WireApi::AzureOpenAiResponses] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(node5_reply(wire)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let unused = MockServer::start().await;
+        let mut models = Models::new();
+        register_builtin(
+            &mut models,
+            Arc::new(AzureEnv(format!("{}/openai/v1", server.uri()))),
+            Arc::new(opi_ai::http::HttpClient::new()),
+            &BuiltinOverrides::default(),
+        )
+        .unwrap();
+        let model = ModelInfo::new(
+            "catalog-id",
+            "Catalog identity",
+            wire,
+            ModelCapabilities::new(2048, 128),
+        )
+        .with_base_url(unused.uri());
+        let output = models
+            .complete_simple(
+                opi_ai::ChatModelRecord::new("azure", model),
+                minimal_request("ignored"),
+                Default::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(output.provider, "azure");
+        assert_eq!(output.model, "catalog-id");
+        assert!(unused.received_requests().await.unwrap().is_empty());
+        let sent = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+        assert_eq!(body["model"], "actual-deployment");
+        if wire == WireApi::OpenAiCompletions {
+            assert_eq!(sent[0].url.path(), "/openai/v1/chat/completions");
+            assert_eq!(sent[0].headers["authorization"], "Bearer azure-fixture");
+        } else {
+            assert_eq!(sent[0].url.path(), "/openai/v1/responses");
+            assert!(
+                sent[0]
+                    .url
+                    .query_pairs()
+                    .any(|(key, value)| key == "api-version" && value == "fixture-version")
+            );
+            assert_eq!(sent[0].headers["api-key"], "azure-fixture");
+        }
+    }
+}
+
+#[tokio::test]
+async fn builtin_simple_tool_choice_reaches_each_chat_wire() {
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    for (provider, env, wire) in [
+        ("groq", "GROQ_API_KEY", WireApi::OpenAiCompletions),
+        ("openai", "OPENAI_API_KEY", WireApi::OpenAiResponses),
+        ("anthropic", "ANTHROPIC_API_KEY", WireApi::AnthropicMessages),
+        ("azure", "AZURE_OPENAI_API_KEY", WireApi::OpenAiCompletions),
+        (
+            "azure",
+            "AZURE_OPENAI_API_KEY",
+            WireApi::AzureOpenAiResponses,
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(node5_reply(wire)),
+            )
+            .expect(2)
+            .mount(&server)
+            .await;
+        let mut models = Models::new();
+        register_builtin(
+            &mut models,
+            map_context(&[(env, "fixture-key")]),
+            Arc::new(opi_ai::http::HttpClient::new()),
+            &BuiltinOverrides::default(),
+        )
+        .unwrap();
+        let record = opi_ai::ChatModelRecord::new(
+            provider,
+            ModelInfo::new(
+                "choice-fixture",
+                "Choice fixture",
+                wire,
+                ModelCapabilities::new(8192, 64),
+            )
+            .with_base_url(server.uri()),
+        );
+        for choice in [
+            opi_ai::SimpleToolChoice::Auto,
+            opi_ai::SimpleToolChoice::None,
+        ] {
+            models
+                .complete_simple(
+                    record.clone(),
+                    minimal_request("ignored"),
+                    opi_ai::SimpleOptions {
+                        tool_choice: Some(choice),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap_or_else(|error| panic!("{provider}/{wire}/{choice:?}: {error:?}"));
+        }
+        for (request, expected) in server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .zip(["auto", "none"])
+        {
+            let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+            let choice = if wire == WireApi::AnthropicMessages {
+                &body["tool_choice"]["type"]
+            } else {
+                &body["tool_choice"]
+            };
+            assert_eq!(choice, expected, "{provider}/{wire}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn builtin_azure_freezes_endpoint_deployment_and_payload_across_retries() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    struct ChangingSource {
+        bases: [String; 2],
+        reads: AtomicUsize,
+        model: String,
+    }
+    impl opi_ai::auth::AuthContext for ChangingSource {
+        fn env(&self, name: &str) -> Result<Option<String>, opi_ai::auth::AuthContextError> {
+            Ok(match name {
+                "AZURE_OPENAI_API_KEY" => Some("isolated-key".into()),
+                "AZURE_OPENAI_BASE_URL" => {
+                    Some(self.bases[self.reads.fetch_add(1, Ordering::SeqCst).min(1)].clone())
+                }
+                "AZURE_OPENAI_DEPLOYMENT_NAME_MAP" => Some(format!(
+                    "{}=deployment-{}",
+                    self.model,
+                    self.reads.load(Ordering::SeqCst)
+                )),
+                _ => None,
+            })
+        }
+        fn file_exists(&self, _: &str) -> Result<bool, opi_ai::auth::AuthContextError> {
+            panic!("unselected source")
+        }
+    }
+    for wire in [WireApi::OpenAiCompletions, WireApi::AzureOpenAiResponses] {
+        for advanced in [false, true] {
+            let first = MockServer::start().await;
+            let second = MockServer::start().await;
+            let sends = Arc::new(AtomicUsize::new(0));
+            let count = sends.clone();
+            Mock::given(method("POST"))
+                .respond_with(move |_: &wiremock::Request| {
+                    if count.fetch_add(1, Ordering::SeqCst) == 0 && advanced {
+                        ResponseTemplate::new(429).insert_header("retry-after", "0")
+                    } else {
+                        ResponseTemplate::new(200)
+                            .insert_header("content-type", "text/event-stream")
+                            .set_body_string(node5_reply(wire))
+                    }
+                })
+                .expect(if advanced { 2 } else { 1 })
+                .mount(&first)
+                .await;
+            let catalog = Catalog::builtin().unwrap();
+            let entry = catalog
+                .models("azure", CatalogOperation::Chat)
+                .unwrap()
+                .find(|entry| entry.api == wire.to_string())
+                .unwrap();
+            let source = Arc::new(ChangingSource {
+                bases: [first.uri(), second.uri()],
+                reads: AtomicUsize::new(0),
+                model: entry.id.clone(),
+            });
+            let mut models = Models::new();
+            let overrides = BuiltinOverrides {
+                azure_endpoint: Some(first.uri()),
+                ..Default::default()
+            };
+            register_builtin(
+                &mut models,
+                source.clone(),
+                Arc::new(opi_ai::http::HttpClient::new()),
+                &overrides,
+            )
+            .unwrap();
+            let spec = format!("azure:{}", entry.id);
+            let mut request = minimal_request(&spec);
+            let payloads = Arc::new(AtomicUsize::new(0));
+            let calls = payloads.clone();
+            request.callbacks =
+                opi_ai::callbacks::RequestCallbacks::new().with_async_on_payload(move |_| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    async { Ok(None) }
+                });
+            if advanced {
+                let prepared = models
+                    .prepare_call_with_policy(
+                        &spec,
+                        request,
+                        opi_ai::retry::AcquisitionPolicy {
+                            max_retries: 1,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap();
+                assert!(
+                    opi_ai::ChatStream::new(prepared.start_attempt().unwrap())
+                        .result()
+                        .await
+                        .is_err()
+                );
+                assert!(prepared.retry_admission().is_some());
+                opi_ai::ChatStream::new(prepared.start_attempt().unwrap())
+                    .result()
+                    .await
+                    .unwrap();
+            } else {
+                let model = models.get_model("azure", &entry.id).unwrap();
+                models
+                    .complete_simple(
+                        opi_ai::ChatModelRecord::new("azure", model),
+                        request,
+                        Default::default(),
+                    )
+                    .await
+                    .unwrap();
+            }
+            assert_eq!(source.reads.load(Ordering::SeqCst), 1, "{wire}/{advanced}");
+            assert_eq!(payloads.load(Ordering::SeqCst), 1);
+            assert!(second.received_requests().await.unwrap().is_empty());
+            let sent = first.received_requests().await.unwrap();
+            for request in &sent {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                assert_eq!(body["model"], "deployment-1");
+            }
+            if advanced {
+                assert_eq!(sent[0].body, sent[1].body);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn builtin_profile_api_base_paths_reach_exact_endpoints() {
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+    for (provider, env, wire, azure_base, suffix) in [
+        (
+            "groq",
+            "GROQ_API_KEY",
+            WireApi::OpenAiCompletions,
+            false,
+            "/chat/completions",
+        ),
+        (
+            "openai",
+            "OPENAI_API_KEY",
+            WireApi::OpenAiResponses,
+            false,
+            "/responses",
+        ),
+        (
+            "azure",
+            "AZURE_OPENAI_API_KEY",
+            WireApi::OpenAiCompletions,
+            true,
+            "/chat/completions",
+        ),
+        (
+            "azure",
+            "AZURE_OPENAI_API_KEY",
+            WireApi::AzureOpenAiResponses,
+            true,
+            "/responses",
+        ),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(node5_reply(wire)),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut models = Models::new();
+        register_builtin(
+            &mut models,
+            map_context(&[(env, "fixture-key")]),
+            Arc::new(opi_ai::http::HttpClient::new()),
+            &BuiltinOverrides::default(),
+        )
+        .unwrap();
+        let catalog = Catalog::builtin().unwrap();
+        let entry = catalog
+            .models(provider, CatalogOperation::Chat)
+            .unwrap()
+            .find(|entry| entry.api == wire.to_string())
+            .unwrap();
+        let mut model = models.get_model(provider, &entry.id).unwrap();
+        let source_path = if azure_base {
+            "/openai/v1".into()
+        } else {
+            url::Url::parse(model.base_url.as_deref().unwrap())
+                .unwrap()
+                .path()
+                .trim_end_matches('/')
+                .to_owned()
+        };
+        model.base_url = Some(format!("{}{source_path}", server.uri()));
+        models
+            .complete_simple(
+                opi_ai::ChatModelRecord::new(provider, model),
+                minimal_request("ignored"),
+                Default::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            server.received_requests().await.unwrap()[0].url.path(),
+            format!("{source_path}{suffix}"),
+            "{provider}/{wire}"
+        );
+    }
 }

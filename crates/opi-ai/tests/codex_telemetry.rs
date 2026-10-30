@@ -153,6 +153,7 @@ impl AuthResolver for StaticBearer {
     {
         Box::pin(async {
             Ok(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::Bearer,
                 secret: secrecy::SecretString::from("fake-key"),
                 base_url: None,

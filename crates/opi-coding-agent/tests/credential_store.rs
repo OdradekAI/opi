@@ -432,7 +432,7 @@ fn store_with(backend: FakeKeyringBackend) -> (TempDir, KeychainCredentialStore)
 }
 
 fn api_key_credential() -> Credential {
-    Credential::ApiKey(secret(API_KEY))
+    Credential::ApiKey(secret(API_KEY).into())
 }
 
 fn oauth_credential() -> Credential {
@@ -447,6 +447,157 @@ fn oauth_credential() -> Credential {
         available_model_ids: None,
         scopes: None,
     }
+}
+
+#[tokio::test]
+async fn scoped_api_key_envelope_persists_reopens_and_preserves_missing_and_empty_fields() {
+    const SCOPED_SECRET: &str = "scoped-env-canary-never-in-diagnostics";
+    for key in [None, Some(""), Some(API_KEY)] {
+        let backend = FakeKeyringBackend::new();
+        let mut expected = serde_json::json!({
+            "version": 2,
+            "kind": "api_key",
+            "env": {
+                "CLOUDFLARE_ACCOUNT_ID": SCOPED_SECRET,
+                "CLOUDFLARE_GATEWAY_ID": "",
+            },
+        });
+        if let Some(key) = key {
+            expected["api_key"] = serde_json::json!(key);
+        }
+        backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "source", "api_key");
+        backend.seed_raw(KEYCHAIN_SERVICE, "source", &expected.to_string());
+        let (dir, store) = store_with(backend.clone());
+        let credential = store.read("source").await.unwrap().unwrap();
+        let debug = format!("{credential:?}");
+        assert!(!debug.contains(API_KEY));
+        assert!(!debug.contains(SCOPED_SECRET));
+        store.write("saved", &credential).await.unwrap();
+        drop(credential);
+        drop(store);
+
+        let reopened = KeychainCredentialStore::with_lock_timeout(
+            Box::new(backend.clone()),
+            dir.path().to_path_buf(),
+            Duration::from_millis(80),
+        );
+        let credential = reopened.read("saved").await.unwrap().unwrap();
+        reopened.write("saved-again", &credential).await.unwrap();
+        for id in ["saved", "saved-again"] {
+            let raw = backend.raw_entry(KEYCHAIN_SERVICE, id).unwrap();
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
+                expected
+            );
+            assert_eq!(
+                backend.raw_entry(KEYCHAIN_PRESENCE_SERVICE, id).as_deref(),
+                Some("api_key")
+            );
+        }
+        assert!(matches!(
+            reopened.probe("saved").await,
+            CredentialSource::Present { .. }
+        ));
+    }
+}
+
+#[tokio::test]
+async fn scoped_api_key_envelope_rejects_malformed_fields_without_weakening_v1() {
+    const CANARY: &str = "invalid-scoped-secret-never-in-diagnostics";
+    let payloads = [
+        serde_json::json!({"version":1,"kind":"api_key"}),
+        serde_json::json!({"version":1,"kind":"api_key","api_key":"key","env":{"SECRET":CANARY}}),
+        serde_json::json!({"version":2,"kind":"api_key","api_key":null,"env":{"SECRET":CANARY}}),
+        serde_json::json!({"version":2,"kind":"api_key","api_key":42,"env":{"SECRET":CANARY}}),
+        serde_json::json!({"version":2,"kind":"api_key","env":null}),
+        serde_json::json!({"version":2,"kind":"api_key","env":{"SECRET":[CANARY]}}),
+        serde_json::json!({"version":2,"kind":"api_key","env":{"SECRET":CANARY},"access":CANARY}),
+        serde_json::json!({"version":2,"kind":"api_key","env":{"SECRET":CANARY},"unexpected":true}),
+    ];
+    for payload in payloads {
+        let backend = FakeKeyringBackend::new();
+        backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "provider", "api_key");
+        backend.seed_raw(KEYCHAIN_SERVICE, "provider", &payload.to_string());
+        let (_dir, store) = store_with(backend);
+        let error = store
+            .read("provider")
+            .await
+            .expect_err("malformed envelope");
+        assert!(matches!(
+            error,
+            CredentialStoreError::MalformedEnvelope { .. }
+        ));
+        assert!(!format!("{error}").contains(CANARY));
+        assert!(!format!("{error:?}").contains(CANARY));
+    }
+}
+
+#[tokio::test]
+async fn scoped_api_key_resolver_merges_only_missing_fields() {
+    for (key, scoped, expected, expected_env_reads) in [
+        (Some("stored-key"), Some("scoped-key"), "stored-key", 0),
+        (Some(""), Some("scoped-key"), "", 0),
+        (None, Some("scoped-key"), "scoped-key", 0),
+        (None, Some(""), "", 0),
+        (None, None, "ambient-key", 1),
+    ] {
+        let backend = FakeKeyringBackend::new();
+        let (_dir, store) = store_with(backend);
+        let env = scoped
+            .map(|value| ("PROVIDER_KEY".to_owned(), secret(value)))
+            .into_iter()
+            .collect();
+        let credential = Credential::ApiKey(opi_ai::ApiKeyCredential::new(key.map(secret), env));
+        store.write("provider", &credential).await.unwrap();
+        let reads = Arc::new(AtomicUsize::new(0));
+        let env_reads = reads.clone();
+        let resolver = CredentialResolver::new(
+            Arc::new(store),
+            Arc::new(move |name| {
+                assert_eq!(name, "PROVIDER_KEY");
+                env_reads.fetch_add(1, Ordering::SeqCst);
+                Some("ambient-key".into())
+            }),
+        );
+        let resolved = resolver
+            .resolve_api_key("provider", "PROVIDER_KEY")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved.value.expose_secret(), expected);
+        assert_eq!(reads.load(Ordering::SeqCst), expected_env_reads);
+    }
+}
+
+#[tokio::test]
+async fn scoped_api_key_envelope_reads_legacy_v1_and_keeps_oauth_at_v1() {
+    let backend = FakeKeyringBackend::new();
+    backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "legacy", "api_key");
+    backend.seed_raw(
+        KEYCHAIN_SERVICE,
+        "legacy",
+        r#"{"version":1,"kind":"api_key","api_key":""}"#,
+    );
+    let (_dir, store) = store_with(backend.clone());
+    let credential = store.read("legacy").await.unwrap().unwrap();
+    let Credential::ApiKey(key) = &credential else {
+        panic!("API key")
+    };
+    assert_eq!(key.key().unwrap().expose_secret(), "");
+    assert!(key.env().is_empty());
+    store.write("legacy", &credential).await.unwrap();
+    let raw = backend.raw_entry(KEYCHAIN_SERVICE, "legacy").unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
+        serde_json::json!({
+            "version":2,"kind":"api_key","api_key":"","env":{},
+        })
+    );
+    store.write("oauth", &oauth_credential()).await.unwrap();
+    let raw = backend.raw_entry(KEYCHAIN_SERVICE, "oauth").unwrap();
+    let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(value["version"], 1);
+    assert!(value.get("env").is_none());
 }
 
 #[tokio::test]
@@ -513,7 +664,7 @@ async fn api_key_envelope_round_trips_and_probes_present() {
         .expect("entry present after write");
     match read_back {
         Credential::ApiKey(key) => {
-            assert_eq!(key.expose_secret(), API_KEY);
+            assert_eq!(key.key().unwrap().expose_secret(), API_KEY);
         }
         other => panic!("expected ApiKey, got {other:?}"),
     }
@@ -646,8 +797,8 @@ async fn malformed_envelope_surfaces_distinct_error() {
 
 #[tokio::test]
 async fn unknown_envelope_version_surfaces_distinct_error() {
-    // version 2 envelope: valid JSON + valid kind, but unknown version.
-    let payload = r#"{"version":2,"kind":"api_key","api_key":"x"}"#;
+    // Valid JSON + valid kind, but a version newer than either supported codec.
+    let payload = r#"{"version":3,"kind":"api_key","api_key":"x"}"#;
     let backend = FakeKeyringBackend::new();
     backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "anthropic", "api_key");
     backend.seed_raw(KEYCHAIN_SERVICE, "anthropic", payload);
@@ -655,11 +806,11 @@ async fn unknown_envelope_version_surfaces_distinct_error() {
 
     match store.read("anthropic").await {
         Err(CredentialStoreError::UnknownEnvelope {
-            version: Some(2),
+            version: Some(3),
             field: UnknownEnvelopeField::Version,
             ..
         }) => {}
-        other => panic!("expected UnknownEnvelope version=2, got {other:?}"),
+        other => panic!("expected UnknownEnvelope version=3, got {other:?}"),
     }
 }
 
@@ -1143,7 +1294,7 @@ async fn api_key_marker_is_not_oauth_and_resolve_oauth_returns_safe_wrong_kind()
     let api_key = "sk-kind-api-DO-NOT-LEAK";
     let (_dir, store) = store_with(FakeKeyringBackend::new());
     store
-        .write("anthropic", &Credential::ApiKey(secret(api_key)))
+        .write("anthropic", &Credential::ApiKey(secret(api_key).into()))
         .await
         .unwrap();
     let resolver = CredentialResolver::new(
@@ -1186,7 +1337,7 @@ async fn mutation_lock_serializes_concurrent_writers() {
     tokio::time::sleep(Duration::from_millis(20)).await;
     let b = tokio::spawn(async move {
         store_b
-            .write("anthropic", &Credential::ApiKey(secret("sk-other")))
+            .write("anthropic", &Credential::ApiKey(secret("sk-other").into()))
             .await
     });
     a.await.unwrap().unwrap();
@@ -1277,7 +1428,7 @@ async fn oauth_refresh_serializes_against_public_write_on_the_same_lock_path() {
         writer_store
             .write(
                 "scripted-oauth",
-                &Credential::ApiKey(secret("replacement-api-key")),
+                &Credential::ApiKey(secret("replacement-api-key").into()),
             )
             .await
     });
@@ -1947,7 +2098,7 @@ async fn replacement_mutation_unconditionally_repairs_corrupt_entries() {
             "replacement must repair {provider}: {receipt:?}"
         );
         assert!(
-            matches!(store.read(provider).await.unwrap(), Some(Credential::ApiKey(key)) if key.expose_secret() == API_KEY)
+            matches!(store.read(provider).await.unwrap(), Some(Credential::ApiKey(key)) if key.key().unwrap().expose_secret() == API_KEY)
         );
     }
 }
@@ -2302,7 +2453,11 @@ async fn github_copilot_resolves_request_base_from_token_proxy_endpoint() {
 async fn account_reference_resolution_matrix() {
     let backend = FakeKeyringBackend::new();
     // Legacy-only: gemini has an account, google does not.
-    backend.seed_credential(KEYCHAIN_SERVICE, "gemini", &Credential::ApiKey(secret("k")));
+    backend.seed_credential(
+        KEYCHAIN_SERVICE,
+        "gemini",
+        &Credential::ApiKey(secret("k").into()),
+    );
     backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "gemini", "api_key");
     let (_dir, store) = store_with(backend.clone());
 
@@ -2332,7 +2487,11 @@ async fn account_reference_resolution_matrix() {
 async fn account_reference_conflict_is_detected_before_copy() {
     let backend = FakeKeyringBackend::new();
     for key in ["gemini", "google"] {
-        backend.seed_credential(KEYCHAIN_SERVICE, key, &Credential::ApiKey(secret("k")));
+        backend.seed_credential(
+            KEYCHAIN_SERVICE,
+            key,
+            &Credential::ApiKey(secret(key).into()),
+        );
         backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, key, "api_key");
     }
     let (_dir, store) = store_with(backend.clone());
@@ -2363,7 +2522,11 @@ async fn account_reference_conflict_is_detected_before_copy() {
 #[tokio::test]
 async fn account_switch_copies_then_removes_and_is_reentrant() {
     let backend = FakeKeyringBackend::new();
-    backend.seed_credential(KEYCHAIN_SERVICE, "vertex", &Credential::ApiKey(secret("k")));
+    backend.seed_credential(
+        KEYCHAIN_SERVICE,
+        "vertex",
+        &Credential::ApiKey(secret("k").into()),
+    );
     backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "vertex", "api_key");
     let (_dir, store) = store_with(backend.clone());
 
@@ -2401,4 +2564,158 @@ async fn account_switch_copies_then_removes_and_is_reentrant() {
         second,
         opi_coding_agent::credential_store::AccountSwitchOutcome::NothingToSwitch
     );
+}
+
+#[tokio::test]
+async fn account_switch_recovers_each_copy_and_finalization_failure() {
+    for (write, service) in [
+        (true, KEYCHAIN_SERVICE),
+        (true, KEYCHAIN_PRESENCE_SERVICE),
+        (false, KEYCHAIN_SERVICE),
+        (false, KEYCHAIN_PRESENCE_SERVICE),
+    ] {
+        let fake = FakeKeyringBackend::new();
+        fake.seed_credential(
+            KEYCHAIN_SERVICE,
+            "gemini",
+            &Credential::ApiKey(secret("legacy-fixture-key").into()),
+        );
+        fake.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "gemini", "api_key");
+        let expected = fake.raw_entry(KEYCHAIN_SERVICE, "gemini").unwrap();
+        let backend = StepFailureBackend::new(fake.clone());
+        if write {
+            backend.fail_next_set(service);
+        } else {
+            backend.fail_next_delete(service);
+        }
+        let dir = TempDir::new().unwrap();
+        let store = KeychainCredentialStore::new(Box::new(backend), dir.path().to_path_buf());
+        assert!(
+            store
+                .switch_provider_account("gemini", "google")
+                .await
+                .is_err()
+        );
+        if write {
+            assert_eq!(
+                fake.raw_entry(KEYCHAIN_SERVICE, "gemini").as_deref(),
+                Some(expected.as_str())
+            );
+            assert_eq!(
+                fake.raw_entry(KEYCHAIN_PRESENCE_SERVICE, "gemini")
+                    .as_deref(),
+                Some("api_key")
+            );
+        }
+        store
+            .switch_provider_account("gemini", "google")
+            .await
+            .expect("the interrupted switch must be resumable");
+        assert_eq!(
+            fake.raw_entry(KEYCHAIN_SERVICE, "google").as_deref(),
+            Some(expected.as_str())
+        );
+        assert!(fake.raw_entry(KEYCHAIN_SERVICE, "gemini").is_none());
+        assert!(
+            fake.raw_entry(KEYCHAIN_PRESENCE_SERVICE, "gemini")
+                .is_none()
+        );
+        assert!(store.read("google").await.unwrap().is_some());
+    }
+}
+
+#[tokio::test]
+async fn account_switch_waits_for_target_mutation_and_keeps_different_accounts() {
+    let backend = FakeKeyringBackend::new();
+    backend.seed_credential(
+        KEYCHAIN_SERVICE,
+        "gemini",
+        &Credential::ApiKey(secret("legacy-fixture-key").into()),
+    );
+    backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "gemini", "api_key");
+    let expected_legacy = backend.raw_entry(KEYCHAIN_SERVICE, "gemini");
+    let (_dir, store) = store_with(backend.clone());
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let writer = store.modify(
+        "google",
+        opi_ai::mutation::CredentialMutationOp::Update(Box::new(move |_, _| {
+            Box::pin(async move {
+                let _ = started_tx.send(());
+                let _ = release_rx.await;
+                Ok(opi_ai::mutation::MutationDecision::Write(
+                    Credential::ApiKey(secret("different-canonical-key").into()),
+                ))
+            })
+        })),
+    );
+    started_rx.await.unwrap();
+    let switch = store.switch_provider_account("gemini", "google");
+    tokio::pin!(switch);
+    let first_poll = futures_util::poll!(&mut switch);
+    release_tx.send(()).unwrap();
+    writer.await.unwrap();
+    assert!(
+        first_poll.is_pending(),
+        "migration must wait for the existing serialized mutation"
+    );
+    assert!(matches!(
+        switch.await,
+        Err(opi_coding_agent::credential_store::AccountReferenceError::Conflict { .. })
+    ));
+    assert_eq!(
+        backend.raw_entry(KEYCHAIN_SERVICE, "gemini"),
+        expected_legacy
+    );
+    let canonical = store.read("google").await.unwrap().unwrap();
+    match canonical {
+        Credential::ApiKey(key) => assert_eq!(
+            key.key().unwrap().expose_secret(),
+            "different-canonical-key"
+        ),
+        _ => panic!("expected fixture API key"),
+    }
+}
+
+#[tokio::test]
+async fn account_switch_never_claims_unowned_or_different_target_parts() {
+    for (marker, payload) in [(true, false), (false, true), (true, true)] {
+        let backend = FakeKeyringBackend::new();
+        backend.seed_credential(
+            KEYCHAIN_SERVICE,
+            "gemini",
+            &Credential::ApiKey(secret("legacy-fixture-key").into()),
+        );
+        backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "gemini", "api_key");
+        if marker {
+            backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "google", "api_key");
+        }
+        if payload {
+            backend.seed_credential(
+                KEYCHAIN_SERVICE,
+                "google",
+                &Credential::ApiKey(secret("different-canonical-key").into()),
+            );
+        }
+        let before = [
+            backend.raw_entry(KEYCHAIN_SERVICE, "gemini"),
+            backend.raw_entry(KEYCHAIN_PRESENCE_SERVICE, "gemini"),
+            backend.raw_entry(KEYCHAIN_SERVICE, "google"),
+            backend.raw_entry(KEYCHAIN_PRESENCE_SERVICE, "google"),
+        ];
+        let (_dir, store) = store_with(backend.clone());
+        assert!(matches!(
+            store.switch_provider_account("gemini", "google").await,
+            Err(opi_coding_agent::credential_store::AccountReferenceError::Conflict { .. })
+        ));
+        assert_eq!(
+            before,
+            [
+                backend.raw_entry(KEYCHAIN_SERVICE, "gemini"),
+                backend.raw_entry(KEYCHAIN_PRESENCE_SERVICE, "gemini"),
+                backend.raw_entry(KEYCHAIN_SERVICE, "google"),
+                backend.raw_entry(KEYCHAIN_PRESENCE_SERVICE, "google"),
+            ]
+        );
+    }
 }

@@ -592,13 +592,20 @@ fn image_cost_rates() -> ImageCostRates {
 
 fn image_record(base_url: String, output: Vec<ImageOutputModality>) -> ImageModelRecord {
     ImageModelRecord {
+        cost_tiers: Vec::new(),
+        headers: Vec::new(),
+        input_limits: None,
+        input: vec![
+            opi_ai::catalog::CatalogInputModality::Text,
+            opi_ai::catalog::CatalogInputModality::Image,
+        ],
         provider_id: "openrouter".into(),
         id: "google/gemini-2.5-flash-image".into(),
         name: "Gemini 2.5 Flash Image (via OpenRouter)".into(),
         api: ApiId::new("openrouter-images"),
         base_url,
         output,
-        cost: image_cost_rates(),
+        cost: Some(image_cost_rates()),
     }
 }
 
@@ -1405,6 +1412,151 @@ async fn images_unsupported_callbacks_reject_typed_before_dispatch() {
 }
 
 #[tokio::test]
+async fn image_preflight_rejects_headers_callbacks_and_timeout_before_auth() {
+    for invalid in ["headers", "callbacks", "timeout"] {
+        let server = wiremock::MockServer::start().await;
+        let record = image_record(server.uri(), vec![ImageOutputModality::Image]);
+        let auth_calls = std::sync::Arc::new(AtomicU32::new(0));
+        let mut models = Models::new();
+        models
+            .register_image_api(
+                std::sync::Arc::new(OpenRouterImagesApi::new(HttpClient::new(), record.clone())),
+                std::sync::Arc::new(opi_ai::test_support::CountingAuthResolver::new(
+                    auth_calls.clone(),
+                )),
+                AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        let mut call = images_call();
+        match invalid {
+            "headers" => {
+                call.extra_headers = vec![("Authorization".into(), "fixture-override".into())]
+            }
+            "callbacks" => {
+                call.callbacks = opi_ai::callbacks::RequestCallbacks::new()
+                    .with_on_raw(std::sync::Arc::new(|_| Ok(())))
+            }
+            "timeout" => call.timeout = Some(Duration::ZERO),
+            _ => unreachable!(),
+        }
+        let result = models
+            .generate_images(
+                record,
+                ImagesContext {
+                    input: vec![ImagesInput::Text {
+                        text: "fixture".into(),
+                    }],
+                },
+                call,
+            )
+            .await;
+        assert!(result.error.is_some());
+        assert_eq!(
+            auth_calls.load(AtomicOrdering::SeqCst),
+            0,
+            "{invalid} rejects before auth"
+        );
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn image_custom_native_option_validation_runs_before_auth() {
+    struct CountBearer(std::sync::Arc<AtomicU32>);
+    impl AuthResolver for CountBearer {
+        fn resolve<'a>(&'a self) -> opi_ai::BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+            Box::pin(async {
+                self.0.fetch_add(1, AtomicOrdering::SeqCst);
+                Ok(opi_ai::test_support::resolved_bearer_auth())
+            })
+        }
+    }
+    struct CheckedImages(OpenRouterImagesApi);
+    impl ImageApi<bool> for CheckedImages {
+        fn api_id(&self) -> &opi_ai::ApiId {
+            self.0.api_id()
+        }
+        fn provider_id(&self) -> &str {
+            self.0.provider_id()
+        }
+        fn complete_record(&self) -> &ImageModelRecord {
+            self.0.complete_record()
+        }
+        fn default_options(&self) -> bool {
+            true
+        }
+        fn validate_options(&self, allowed: &bool) -> Result<(), ProviderError> {
+            if *allowed {
+                Ok(())
+            } else {
+                Err(ProviderError::Config(
+                    opi_ai::provider::ProviderErrorSummary::sanitized(
+                        "fixture native options rejected",
+                    ),
+                ))
+            }
+        }
+        fn generate_images_prepared<'a>(
+            &'a self,
+            record: ImageModelRecord,
+            context: ImagesContext,
+            _options: bool,
+            auth: ResolvedAuth,
+            call: ImagesCall,
+        ) -> opi_ai::api::ImageFuture<'a> {
+            self.0.generate_images_prepared(
+                record,
+                context,
+                OpenRouterImagesOptions::default(),
+                auth,
+                call,
+            )
+        }
+    }
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"choices":[]})))
+        .mount(&server)
+        .await;
+    let record = image_record(server.uri(), vec![ImageOutputModality::Image]);
+    let auth_calls = std::sync::Arc::new(AtomicU32::new(0));
+    let mut models = Models::new();
+    let api = models
+        .register_image_api(
+            std::sync::Arc::new(CheckedImages(OpenRouterImagesApi::new(
+                HttpClient::new(),
+                record.clone(),
+            ))),
+            std::sync::Arc::new(CountBearer(auth_calls.clone())),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let context = ImagesContext {
+        input: vec![ImagesInput::Text {
+            text: "fixture".into(),
+        }],
+    };
+    let rejected = models
+        .generate_images_native(
+            record.clone(),
+            context.clone(),
+            images_call(),
+            api.options(false),
+        )
+        .await;
+    assert!(matches!(rejected.error, Some(ProviderError::Config(_))));
+    assert_eq!(auth_calls.load(AtomicOrdering::SeqCst), 0);
+    assert!(server.received_requests().await.unwrap().is_empty());
+    let accepted = models
+        .generate_images_native(record, context, images_call(), api.options(true))
+        .await;
+    assert_eq!(accepted.stop_reason, ImagesStopReason::Stop);
+    assert_eq!(auth_calls.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn images_telemetry_context_passes_through() {
     let server = wiremock::MockServer::start().await;
     wiremock::Mock::given(method("POST"))
@@ -1469,4 +1621,444 @@ async fn images_base_url_trailing_slash_and_extra_headers() {
 
     assert_eq!(result.stop_reason, ImagesStopReason::Stop);
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn images_reused_callbacks_keep_each_calls_payload() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"choices": []})))
+        .expect(2)
+        .mount(&server)
+        .await;
+    let record = image_record(server.uri(), vec![ImageOutputModality::Image]);
+    let models = image_models(&record);
+    let observed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = observed.clone();
+    let callbacks = opi_ai::callbacks::RequestCallbacks::new().with_on_payload(
+        std::sync::Arc::new(move |_| {
+            counter.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(None)
+        }),
+    );
+    for prompt in ["first image", "second image"] {
+        let result = models
+            .generate_images(
+                record.clone(),
+                ImagesContext {
+                    input: vec![ImagesInput::Text {
+                        text: prompt.into(),
+                    }],
+                },
+                ImagesCall {
+                    callbacks: callbacks.clone(),
+                    ..images_call()
+                },
+            )
+            .await;
+        assert_eq!(result.stop_reason, ImagesStopReason::Stop);
+    }
+    let sent = server.received_requests().await.unwrap();
+    let prompts: Vec<serde_json::Value> = sent
+        .iter()
+        .map(|request| {
+            let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+            body["messages"][0]["content"][0]["text"].clone()
+        })
+        .collect();
+    assert_eq!(
+        prompts,
+        [
+            serde_json::json!("first image"),
+            serde_json::json!("second image")
+        ]
+    );
+    assert_eq!(observed.load(AtomicOrdering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn images_response_callback_is_after_json_and_outside_attempt_timeout() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"choices": []})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let record = image_record(server.uri(), vec![ImageOutputModality::Image]);
+    let models = image_models(&record);
+    let result = models
+        .generate_images(
+            record,
+            ImagesContext::default(),
+            ImagesCall {
+                timeout: Some(Duration::from_millis(300)),
+                callbacks: opi_ai::callbacks::RequestCallbacks::new().with_async_on_response(
+                    |_, _| async {
+                        tokio::time::sleep(Duration::from_millis(600)).await;
+                        Ok(())
+                    },
+                ),
+                ..Default::default()
+            },
+        )
+        .await;
+    assert_eq!(
+        result.stop_reason,
+        ImagesStopReason::Stop,
+        "{:?}",
+        result.error
+    );
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{incomplete"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let record = image_record(server.uri(), vec![ImageOutputModality::Image]);
+    let models = image_models(&record);
+    let observed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = observed.clone();
+    let result = models
+        .generate_images(
+            record,
+            ImagesContext::default(),
+            ImagesCall {
+                callbacks: opi_ai::callbacks::RequestCallbacks::new().with_on_response(
+                    std::sync::Arc::new(move |_, _| {
+                        counter.fetch_add(1, AtomicOrdering::SeqCst);
+                        Ok(())
+                    }),
+                ),
+                ..images_call()
+            },
+        )
+        .await;
+    assert_eq!(result.stop_reason, ImagesStopReason::Error);
+    assert_eq!(observed.load(AtomicOrdering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn images_protected_headers_never_reach_direct_transport() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"choices": []})))
+        .mount(&server)
+        .await;
+    let record = image_record(server.uri(), vec![ImageOutputModality::Image]);
+    let adapter = OpenRouterImagesApi::new(HttpClient::new(), record.clone());
+    for header in ["Authorization", "aPi-KeY", "Host"] {
+        let result = adapter
+            .generate_images_prepared(
+                record.clone(),
+                ImagesContext::default(),
+                adapter.default_options(),
+                ResolvedAuth {
+                    env: Default::default(),
+                    scheme: AuthScheme::Bearer,
+                    secret: secrecy::SecretString::from("fixture-key"),
+                    base_url: None,
+                    account_id: None,
+                    provenance: Default::default(),
+                },
+                ImagesCall {
+                    extra_headers: vec![(header.into(), "untrusted-override".into())],
+                    ..images_call()
+                },
+            )
+            .await;
+        assert!(
+            matches!(result.error, Some(ProviderError::RequestFailed(_))),
+            "{:?}",
+            result.error
+        );
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn images_empty_and_partial_usage_do_not_become_reliable_zero() {
+    for raw in [
+        serde_json::json!({}),
+        serde_json::json!({"prompt_tokens": "many", "completion_tokens": 7}),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"choices": [], "usage": raw})),
+            )
+            .mount(&server)
+            .await;
+        let record = image_record(server.uri(), vec![ImageOutputModality::Image]);
+        let models = image_models(&record);
+        let result = models
+            .generate_images(record, ImagesContext::default(), images_call())
+            .await;
+        assert_eq!(result.stop_reason, ImagesStopReason::Stop);
+        if raw.get("completion_tokens").is_some() {
+            let usage = result.usage.expect("valid output count survives");
+            assert_eq!(usage.output_tokens, 7);
+            assert!(!usage.reported);
+            assert_eq!(usage.total_tokens, None);
+        } else {
+            assert!(result.usage.is_none());
+        }
+        assert!(result.cost.is_none());
+    }
+}
+
+#[tokio::test]
+async fn images_unknown_prices_stay_distinct_from_known_free_usage() {
+    assert!(default_openrouter_image_record().cost.is_none());
+    for cost in [None, Some(ImageCostRates::default())] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [], "usage": {"prompt_tokens": 12, "completion_tokens": 0}
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut record = image_record(server.uri(), vec![ImageOutputModality::Image]);
+        record.cost = cost;
+        let models = image_models(&record);
+        let result = models
+            .generate_images(record, ImagesContext::default(), images_call())
+            .await;
+        let usage = result.usage.expect("valid usage survives unknown prices");
+        assert!(usage.reported);
+        assert_eq!(usage.input_tokens, 12);
+        assert_eq!(result.cost.map(|cost| cost.total), cost.map(|_| 0.0));
+    }
+}
+
+#[tokio::test]
+async fn image_call_owns_binding_before_first_poll() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"choices": []})))
+        .expect(2)
+        .mount(&server)
+        .await;
+    let record = image_record(server.uri(), vec![ImageOutputModality::Image]);
+    let mut models = image_models(&record);
+    let ordinary = models.generate_images(record.clone(), ImagesContext::default(), images_call());
+    let handle = models
+        .register_image_api(
+            std::sync::Arc::new(OpenRouterImagesApi::new(HttpClient::new(), record.clone())),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                AuthScheme::Bearer,
+                secrecy::SecretString::from("native-key"),
+            )),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let native = models.generate_images_native(
+        record,
+        ImagesContext::default(),
+        images_call(),
+        handle.options(Default::default()),
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+    drop(models);
+    assert_eq!(ordinary.await.stop_reason, ImagesStopReason::Stop);
+    assert_eq!(native.await.stop_reason, ImagesStopReason::Stop);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(
+        requests[0].headers.get("authorization").unwrap(),
+        "Bearer test-key"
+    );
+    assert_eq!(
+        requests[1].headers.get("authorization").unwrap(),
+        "Bearer native-key"
+    );
+}
+
+#[path = "support/pending_auth.rs"]
+mod pending_auth;
+
+#[tokio::test]
+async fn image_auth_lifecycle_preaborted_never_starts_resolution() {
+    let resolver = std::sync::Arc::new(pending_auth::PendingAuth::default());
+    let record = image_record(
+        "http://127.0.0.1:1".into(),
+        vec![ImageOutputModality::Image],
+    );
+    let mut models = Models::new();
+    models
+        .register_image_api(
+            std::sync::Arc::new(OpenRouterImagesApi::new(HttpClient::new(), record.clone())),
+            resolver.clone(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let call = images_call();
+    call.cancel.cancel();
+    let result = models.generate_images(record, ImagesContext::default(), call);
+    tokio::pin!(result);
+    let outcome = futures_util::poll!(&mut result);
+    assert_eq!(
+        resolver.calls.load(AtomicOrdering::SeqCst),
+        0,
+        "pre-aborted generation must not start auth"
+    );
+    let std::task::Poll::Ready(result) = outcome else {
+        panic!("pre-aborted image call must settle")
+    };
+    assert_eq!(result.stop_reason, ImagesStopReason::Aborted);
+    assert!(matches!(result.error, Some(ProviderError::Cancelled)));
+}
+
+#[tokio::test]
+async fn image_auth_lifecycle_cancel_releases_pending_resolution() {
+    let resolver = std::sync::Arc::new(pending_auth::PendingAuth::default());
+    let record = image_record(
+        "http://127.0.0.1:1".into(),
+        vec![ImageOutputModality::Image],
+    );
+    let mut models = Models::new();
+    models
+        .register_image_api(
+            std::sync::Arc::new(OpenRouterImagesApi::new(HttpClient::new(), record.clone())),
+            resolver.clone(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let call = images_call();
+    let cancel = call.cancel.clone();
+    let result = models.generate_images(record, ImagesContext::default(), call);
+    tokio::pin!(result);
+    assert!(futures_util::poll!(&mut result).is_pending());
+    assert_eq!(resolver.calls.load(AtomicOrdering::SeqCst), 1);
+    cancel.cancel();
+    let std::task::Poll::Ready(result) = futures_util::poll!(&mut result) else {
+        panic!("cancellation must interrupt pending image auth")
+    };
+    assert_eq!(result.stop_reason, ImagesStopReason::Aborted);
+    assert!(matches!(result.error, Some(ProviderError::Cancelled)));
+    assert!(resolver.released.load(AtomicOrdering::SeqCst));
+}
+
+#[tokio::test]
+async fn custom_chat_replacement_keeps_its_resolver_after_store_attachment() {
+    use opi_ai::credential::{
+        BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
+    };
+    use std::sync::Arc;
+
+    struct NoAmbient;
+    impl opi_ai::auth::AuthContext for NoAmbient {
+        fn env(&self, _: &str) -> Result<Option<String>, opi_ai::auth::AuthContextError> {
+            Ok(None)
+        }
+        fn file_exists(&self, _: &str) -> Result<bool, opi_ai::auth::AuthContextError> {
+            Ok(false)
+        }
+    }
+    struct Store(AtomicU32);
+    impl CredentialStore for Store {
+        fn read<'a>(
+            &'a self,
+            _: &'a str,
+        ) -> BoxAuthFuture<'a, Result<Option<Credential>, CredentialStoreError>> {
+            self.0.fetch_add(1, AtomicOrdering::SeqCst);
+            Box::pin(async {
+                Ok(Some(Credential::ApiKey(
+                    secrecy::SecretString::from("builtin-store-key").into(),
+                )))
+            })
+        }
+        fn write<'a>(
+            &'a self,
+            _: &'a str,
+            _: &'a Credential,
+        ) -> BoxAuthFuture<'a, Result<(), CredentialStoreError>> {
+            panic!("fixture never writes")
+        }
+        fn delete<'a>(&'a self, _: &'a str) -> BoxAuthFuture<'a, Result<(), CredentialStoreError>> {
+            panic!("fixture never deletes")
+        }
+        fn probe<'a>(&'a self, _: &'a str) -> BoxAuthFuture<'a, CredentialSource> {
+            Box::pin(async { CredentialSource::Absent })
+        }
+    }
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("content-type", "text/event-stream")
+            .set_body_string("data: {\"id\":\"fixture\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+        .expect(1).mount(&server).await;
+    let mut models = Models::new();
+    let context: Arc<dyn opi_ai::auth::AuthContext> = Arc::new(NoAmbient);
+    models.set_auth_context(context.clone());
+    opi_ai::provider_collection::register_builtin(
+        &mut models,
+        context,
+        Arc::new(HttpClient::new()),
+        &Default::default(),
+    )
+    .unwrap();
+    let info = opi_ai::ModelInfo::new(
+        "custom",
+        "Custom",
+        opi_ai::WireApi::OpenAiCompletions,
+        opi_ai::ModelCapabilities::new(8192, 1024).with_streaming(true),
+    )
+    .with_base_url(server.uri());
+    let api = opi_ai::openai_chat::OpenAiCompletionsChatApi::new(
+        Arc::new(opi_ai::openrouter::openrouter_provider(Some(server.uri()))),
+        info.clone(),
+    )
+    .unwrap();
+    let handle = models
+        .register_chat_api(
+            Arc::new(api),
+            Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                AuthScheme::Bearer,
+                secrecy::SecretString::from("custom-route-key"),
+            )),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let store = Arc::new(Store(AtomicU32::new(0)));
+    models.set_credential_store(store.clone());
+    let request = Request {
+        model: "openrouter:custom".into(),
+        context: opi_ai::transcript::normalize_context(Default::default()).unwrap(),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: Default::default(),
+        session_id: None,
+        callbacks: Default::default(),
+        telemetry_context: None,
+        transport: Default::default(),
+    };
+    models
+        .complete(
+            opi_ai::ChatModelRecord::new("openrouter", info),
+            request,
+            handle.options(Default::default()),
+        )
+        .await
+        .unwrap();
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(
+        requests[0].headers.get("authorization").unwrap(),
+        "Bearer custom-route-key"
+    );
+    assert_eq!(
+        store.0.load(AtomicOrdering::SeqCst),
+        0,
+        "custom route must not read replaced builtin sources"
+    );
 }

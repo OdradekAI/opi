@@ -155,6 +155,10 @@ struct RawChoice {
 struct RawDelta {
     role: Option<String>,
     content: Option<String>,
+    reasoning_content: Option<serde_json::Value>,
+    reasoning: Option<serde_json::Value>,
+    reasoning_text: Option<serde_json::Value>,
+    reasoning_details: Option<serde_json::Value>,
     tool_calls: Option<Vec<RawToolCall>>,
 }
 
@@ -237,6 +241,15 @@ pub enum OpenAiChatEvent {
     /// Text content delta.
     ContentDelta {
         content: String,
+        id: Option<String>,
+        model: Option<String>,
+        usage: Option<Usage>,
+    },
+    /// Visible reasoning and source-qualified opaque replay metadata.
+    ThinkingDelta {
+        content: String,
+        signature: String,
+        details: Vec<serde_json::Value>,
         id: Option<String>,
         model: Option<String>,
         usage: Option<Usage>,
@@ -331,54 +344,75 @@ impl OpenAiChatEvent {
         }
 
         let mut events = Vec::new();
-
         if let Some(choice) = choices.into_iter().next() {
-            if let Some(reason) = choice.finish_reason {
-                return vec![OpenAiChatEvent::Finish {
-                    finish_reason: reason,
-                    id: response_id,
-                    model,
-                    usage,
-                }];
-            }
-
-            let delta = match choice.delta {
-                Some(d) => d,
-                None => return events,
-            };
-
-            // Check for tool calls first (they take priority over content)
-            if let Some(tool_calls) = delta.tool_calls {
-                for tc in tool_calls {
-                    let func = tc.function.unwrap_or(RawFunction {
-                        name: None,
-                        arguments: None,
+            if let Some(delta) = choice.delta {
+                if delta.role.is_some() {
+                    events.push(OpenAiChatEvent::RoleDelta {
+                        role: delta.role,
+                        model: model.clone(),
+                        id: response_id.clone(),
+                        usage: usage.clone(),
                     });
-
-                    if let Some(id) = tc.id {
-                        let name = func.name.unwrap_or_default();
-                        events.push(OpenAiChatEvent::ToolCallStart {
-                            index: tc.index,
-                            id,
-                            name,
-                            response_id: response_id.clone(),
-                            model: model.clone(),
-                            usage: usage.clone(),
+                }
+                let thinking = [
+                    ("reasoning_content", delta.reasoning_content.as_ref()),
+                    ("reasoning", delta.reasoning.as_ref()),
+                    ("reasoning_text", delta.reasoning_text.as_ref()),
+                ]
+                .into_iter()
+                .find_map(|(field, value)| {
+                    value
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|value| !value.is_empty())
+                        .map(|value| (field, value))
+                });
+                let details: Vec<_> = delta
+                    .reasoning_details
+                    .as_ref()
+                    .and_then(serde_json::Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter(|detail| valid_reasoning_detail(detail))
+                    .cloned()
+                    .collect();
+                if thinking.is_some() || !details.is_empty() {
+                    let (signature, content) = thinking.unwrap_or(("", ""));
+                    events.push(OpenAiChatEvent::ThinkingDelta {
+                        content: content.into(),
+                        signature: signature.into(),
+                        details,
+                        id: response_id.clone(),
+                        model: model.clone(),
+                        usage: usage.clone(),
+                    });
+                }
+                if let Some(content) = delta.content.filter(|content| !content.is_empty()) {
+                    events.push(OpenAiChatEvent::ContentDelta {
+                        content,
+                        id: response_id.clone(),
+                        model: model.clone(),
+                        usage: usage.clone(),
+                    });
+                }
+                if let Some(tool_calls) = delta.tool_calls {
+                    for tc in tool_calls {
+                        let func = tc.function.unwrap_or(RawFunction {
+                            name: None,
+                            arguments: None,
                         });
-                        if let Some(arguments) = func.arguments
-                            && !arguments.is_empty()
-                        {
-                            events.push(OpenAiChatEvent::ToolCallDelta {
+                        if let Some(id) = tc.id {
+                            events.push(OpenAiChatEvent::ToolCallStart {
                                 index: tc.index,
-                                arguments,
-                                id: response_id.clone(),
+                                id,
+                                name: func.name.unwrap_or_default(),
+                                response_id: response_id.clone(),
                                 model: model.clone(),
                                 usage: usage.clone(),
                             });
                         }
-                    } else {
-                        let arguments = func.arguments.unwrap_or_default();
-                        if !arguments.is_empty() {
+                        if let Some(arguments) =
+                            func.arguments.filter(|arguments| !arguments.is_empty())
+                        {
                             events.push(OpenAiChatEvent::ToolCallDelta {
                                 index: tc.index,
                                 arguments,
@@ -389,35 +423,79 @@ impl OpenAiChatEvent {
                         }
                     }
                 }
-                if !events.is_empty() {
-                    return events;
-                }
             }
-
-            // Check for role in the first chunk
-            if delta.role.is_some() {
-                return vec![OpenAiChatEvent::RoleDelta {
-                    role: delta.role,
-                    model,
-                    id: response_id,
-                    usage,
-                }];
-            }
-
-            // Text content delta
-            let content = delta.content.unwrap_or_default();
-            if !content.is_empty() {
-                return vec![OpenAiChatEvent::ContentDelta {
-                    content,
+            // A final chunk can also carry content; process its deltas before
+            // closing the output so none of the acknowledged data is lost.
+            if let Some(finish_reason) = choice.finish_reason {
+                events.push(OpenAiChatEvent::Finish {
+                    finish_reason,
                     id: response_id,
                     model,
                     usage,
-                }];
+                });
             }
         }
 
         events
     }
+}
+
+fn valid_reasoning_detail(value: &serde_json::Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    if object
+        .get("id")
+        .is_some_and(|value| !value.is_null() && !value.is_string())
+        || object.get("format").is_some_and(|value| !value.is_string())
+        || object.get("index").is_some_and(|value| !value.is_number())
+    {
+        return false;
+    }
+    match value.get("type").and_then(serde_json::Value::as_str) {
+        Some("reasoning.summary") => value
+            .get("summary")
+            .is_some_and(serde_json::Value::is_string),
+        Some("reasoning.encrypted") => value.get("data").is_some_and(serde_json::Value::is_string),
+        Some("reasoning.text") => {
+            value.get("text").is_some_and(serde_json::Value::is_string)
+                && !object
+                    .get("signature")
+                    .is_some_and(|value| !value.is_null() && !value.is_string())
+        }
+        _ => false,
+    }
+}
+
+fn append_reasoning_detail(details: &mut Vec<serde_json::Value>, detail: serde_json::Value) {
+    let field = match detail["type"].as_str() {
+        Some("reasoning.text") => Some("text"),
+        Some("reasoning.summary") => Some("summary"),
+        _ => None,
+    };
+    if let Some(field) = field
+        && let Some(last) = details
+            .last_mut()
+            .filter(|last| last["type"] == detail["type"])
+    {
+        last[field] = format!(
+            "{}{}",
+            last[field].as_str().unwrap_or_default(),
+            detail[field].as_str().unwrap_or_default()
+        )
+        .into();
+        for key in ["id", "format", "index", "signature"] {
+            let missing = last.get(key).is_none_or(|value| {
+                value.is_null()
+                    || (matches!(key, "format" | "signature") && value.as_str() == Some(""))
+            });
+            if missing && let Some(value) = detail.get(key) {
+                last[key] = value.clone();
+            }
+        }
+        return;
+    }
+    details.push(detail);
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +510,10 @@ pub struct OpenAiChatMapper {
     saw_done: bool,
     started: bool,
     text_started: bool,
+    text_content_index: Option<usize>,
+    thinking_content_index: Option<usize>,
+    thinking_ended: bool,
+    reasoning_details: Vec<serde_json::Value>,
     pending_stop_reason: Option<StopReason>,
 }
 
@@ -474,6 +556,10 @@ impl OpenAiChatMapper {
             saw_done: false,
             started: false,
             text_started: false,
+            text_content_index: None,
+            thinking_content_index: None,
+            thinking_ended: false,
+            reasoning_details: Vec::new(),
             pending_stop_reason: None,
         }
     }
@@ -538,6 +624,60 @@ impl OpenAiChatMapper {
                 self.ensure_start(&mut events);
                 events
             }
+            OpenAiChatEvent::ThinkingDelta {
+                content,
+                mut signature,
+                details,
+                id,
+                model,
+                usage,
+            } => {
+                self.update_metadata(id, model, usage);
+                let mut events = Vec::new();
+                self.ensure_start(&mut events);
+                if self.partial.provider == "opencode-go" && signature == "reasoning" {
+                    signature = "reasoning_content".into();
+                }
+                let index = if let Some(index) = self.thinking_content_index {
+                    index
+                } else {
+                    let index = self.partial.content.len();
+                    self.thinking_content_index = Some(index);
+                    self.partial.content.push(AssistantContent::Thinking {
+                        thinking: String::new(),
+                        signature: Some(signature),
+                    });
+                    events.push(Ok(AssistantStreamEvent::ThinkingStart {
+                        content_index: index,
+                        partial: self.partial.clone(),
+                    }));
+                    index
+                };
+                for detail in details {
+                    append_reasoning_detail(&mut self.reasoning_details, detail);
+                }
+                if let Some(AssistantContent::Thinking {
+                    thinking,
+                    signature,
+                }) = self.partial.content.get_mut(index)
+                {
+                    thinking.push_str(&content);
+                    if !self.reasoning_details.is_empty() {
+                        *signature = Some(
+                            serde_json::to_string(&self.reasoning_details)
+                                .expect("JSON reasoning details"),
+                        );
+                    }
+                }
+                if !content.is_empty() {
+                    events.push(Ok(AssistantStreamEvent::ThinkingDelta {
+                        content_index: index,
+                        delta: content,
+                        partial: self.partial.clone(),
+                    }));
+                }
+                events
+            }
             OpenAiChatEvent::ContentDelta {
                 content,
                 id,
@@ -552,20 +692,24 @@ impl OpenAiChatMapper {
                 self.ensure_start(&mut events);
                 if !self.text_started {
                     self.text_started = true;
+                    self.text_content_index = Some(self.partial.content.len());
                     self.partial.content.push(AssistantContent::Text {
                         text: String::new(),
                         signature: None,
                     });
                     events.push(Ok(AssistantStreamEvent::TextStart {
-                        content_index: 0,
+                        content_index: self.text_content_index.expect("started text block"),
                         partial: self.partial.clone(),
                     }));
                 }
-                if let Some(AssistantContent::Text { text, .. }) = self.partial.content.last_mut() {
+                let index = self.text_content_index.expect("started text block");
+                if let Some(AssistantContent::Text { text, .. }) =
+                    self.partial.content.get_mut(index)
+                {
                     text.push_str(&content);
                 }
                 events.push(Ok(AssistantStreamEvent::TextDelta {
-                    content_index: 0,
+                    content_index: index,
                     delta: content,
                     partial: self.partial.clone(),
                 }));
@@ -585,10 +729,13 @@ impl OpenAiChatMapper {
                 self.ensure_start(&mut events);
                 if self.text_started {
                     self.text_started = false;
-                    if let Some(AssistantContent::Text { text, .. }) = self.partial.content.last() {
+                    if let Some(index) = self.text_content_index
+                        && let Some(AssistantContent::Text { text, .. }) =
+                            self.partial.content.get(index)
+                    {
                         let content = text.clone();
                         events.push(Ok(AssistantStreamEvent::TextEnd {
-                            content_index: 0,
+                            content_index: index,
                             content,
                             partial: self.partial.clone(),
                         }));
@@ -679,13 +826,29 @@ impl OpenAiChatMapper {
                     self.ensure_start(&mut events);
                 }
 
+                if !is_metadata_only
+                    && !self.thinking_ended
+                    && let Some(index) = self.thinking_content_index
+                    && let Some(AssistantContent::Thinking { thinking, .. }) =
+                        self.partial.content.get(index)
+                {
+                    self.thinking_ended = true;
+                    events.push(Ok(AssistantStreamEvent::ThinkingEnd {
+                        content_index: index,
+                        content: thinking.clone(),
+                        partial: self.partial.clone(),
+                    }));
+                }
                 // Close any open text block
                 if !is_metadata_only && self.pending_stop_reason.is_none() && self.text_started {
                     self.text_started = false;
-                    if let Some(AssistantContent::Text { text, .. }) = self.partial.content.last() {
+                    if let Some(index) = self.text_content_index
+                        && let Some(AssistantContent::Text { text, .. }) =
+                            self.partial.content.get(index)
+                    {
                         let content = text.clone();
                         events.push(Ok(AssistantStreamEvent::TextEnd {
-                            content_index: 0,
+                            content_index: index,
                             content,
                             partial: self.partial.clone(),
                         }));
@@ -1073,6 +1236,7 @@ pub struct OpenAiChatProvider {
     /// Typed native options for one direct/native dispatch; `None` on shared
     /// profile instances (task 20.36). Never cloned between logical calls.
     native_options: Option<OpenAiCompletionsOptions>,
+    wire_model_override: Option<String>,
     headers: ProviderHeaders,
     route_headers: Vec<(String, String)>,
     catalog_compat: bool,
@@ -1123,6 +1287,11 @@ pub fn model_catalog() -> Vec<ModelInfo> {
 }
 
 impl OpenAiChatProvider {
+    pub(crate) fn with_wire_model(mut self, deployment: String) -> Self {
+        self.wire_model_override = Some(deployment);
+        self
+    }
+
     pub fn new(base_url: Option<String>) -> Self {
         Self::new_with_compat(base_url, CompatConfig::default())
     }
@@ -1180,6 +1349,7 @@ impl OpenAiChatProvider {
             direct_prompt_cache_key,
             copilot_initiator: false,
             native_options: None,
+            wire_model_override: None,
             client,
         }
     }
@@ -1205,6 +1375,7 @@ impl OpenAiChatProvider {
             direct_prompt_cache_key: false,
             copilot_initiator: false,
             native_options: None,
+            wire_model_override: None,
             client: Arc::new(HttpClient::new()),
         }
     }
@@ -1230,6 +1401,7 @@ impl OpenAiChatProvider {
             direct_prompt_cache_key: false,
             copilot_initiator: false,
             native_options: None,
+            wire_model_override: None,
             client,
         }
     }
@@ -1303,6 +1475,11 @@ impl OpenAiChatProvider {
             if let Some(field) = &ov.max_tokens_field {
                 resolved.max_tokens_field = Some(field.clone());
             }
+        }
+        if model.is_some_and(|model| model.base_url.is_some())
+            && resolved.chat_completions_path == CompatConfig::default().chat_completions_path
+        {
+            resolved.chat_completions_path = "/chat/completions".into();
         }
         resolved
     }
@@ -1378,7 +1555,7 @@ impl OpenAiChatProvider {
             crate::replay::ReplayProjection::NativeOrCollapse,
         )?;
         let mut body = serde_json::json!({
-            "model": model_id,
+            "model": self.wire_model_override.as_deref().unwrap_or(model_id),
             "stream": true,
             "messages": serialize_messages(
                 &replay.messages,
@@ -1491,11 +1668,7 @@ impl OpenAiChatProvider {
         }
         // Last so model and request sampling parameters override named
         // request fields (model base < effective level < request, per key).
-        let effective_level = if request.thinking.enabled {
-            request.thinking.level
-        } else {
-            crate::model_info::ThinkingLevel::None
-        };
+        let effective_level = effort.unwrap_or(crate::model_info::ThinkingLevel::None);
         if let Some(model) = self.models.iter().find(|model| model.id == model_id)
             && let Some(sampling) = crate::model_info::resolve_sampling_params(
                 model,
@@ -1589,8 +1762,11 @@ impl OpenAiChatProvider {
     ) -> Result<(), ProviderError> {
         let secret = resolved.secret.expose_secret();
         let bearer = match resolved.scheme {
+            AuthScheme::ApiKey if provider_id == "cloudflare-ai-gateway" => {
+                format!("Bearer {secret}")
+            }
             AuthScheme::Bearer => format!("Bearer {secret}"),
-            AuthScheme::ApiKey | AuthScheme::AwsSigV4(_) => {
+            AuthScheme::ApiKey | AuthScheme::AwsSigV4(_) | AuthScheme::AnthropicFederation => {
                 return Err(ProviderError::Config(
                     ProviderErrorSummary::attested_static(
                         "OpenAI Chat accepts only Bearer authentication",
@@ -1603,7 +1779,14 @@ impl OpenAiChatProvider {
                 &base_url,
                 &chat_completions_path,
             ))
-            .header("authorization", bearer)
+            .header(
+                if provider_id == "cloudflare-ai-gateway" {
+                    "cf-aig-authorization"
+                } else {
+                    "authorization"
+                },
+                bearer,
+            )
             .header("content-type", "application/json");
         // Apply per-request timeout.
         if let Some(d) = timeout {
@@ -2367,11 +2550,61 @@ fn serialize_messages(
 }
 
 impl Provider for OpenAiChatProvider {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        validate_complete_chat_record(model)
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        let mut configured = self.clone();
+        configured.models = vec![model];
+        configured.native_options = Some(OpenAiCompletionsOptions::from_simple(&options));
+
+        configured.stream_resource_attempt(request, auth, attempt, resources)
+    }
+
     fn stream_prepared(
         &self,
         mut request: Request,
         resolved: crate::auth::ResolvedAuth,
     ) -> EventStream {
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, id)| id)
+            .unwrap_or(&request.model);
+        let selected_base = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.base_url.as_deref())
+            .unwrap_or(&self.base_url);
+        let effective_base =
+            crate::auth::builtin::effective_base_url(&self.provider_id, selected_base, &resolved);
+        if effective_base != selected_base {
+            let mut configured = self.clone();
+            if let Some(model) = configured
+                .models
+                .iter_mut()
+                .find(|model| model.id == model_id)
+            {
+                model.base_url = Some(effective_base);
+            } else {
+                configured.base_url = effective_base;
+            }
+            return configured.stream_prepared(request, resolved);
+        }
         request.callbacks = request.callbacks.ensure_call_scope();
         // Same as `stream` but skips per-call auth resolution: the collection
         // resolved and froze authentication once for the logical call.
@@ -2426,8 +2659,15 @@ impl Provider for OpenAiChatProvider {
         }
         let extra_headers = copilot_headers.and_then(|copilot_headers| {
             extra_headers.extend(copilot_headers);
-            self.headers
-                .merge_request(&extra_headers, &request.extra_headers)
+            self.headers.merge_model_request(
+                self.models
+                    .iter()
+                    .find(|model| model.id == model_id)
+                    .map(|model| model.headers.as_slice())
+                    .unwrap_or_default(),
+                &extra_headers,
+                &request.extra_headers,
+            )
         });
         let timeout = request.timeout;
         let body = match self.build_request_body(&request) {
@@ -2488,11 +2728,11 @@ impl Provider for OpenAiChatProvider {
                         return;
                     }
                 };
-                let base_url = resolved
-                    .base_url
-                    .clone()
-                    .or(model_base_url)
-                    .unwrap_or(default_base_url);
+                let base_url = crate::auth::builtin::effective_base_url(
+                    &provider_id,
+                    &model_base_url.unwrap_or(default_base_url),
+                    &resolved,
+                );
                 if let Err(e) = Self::stream_http(
                     http_client,
                     resolved,
@@ -2796,6 +3036,17 @@ fn validate_complete_chat_record(model: &ModelInfo) -> Result<(), crate::provide
                 "openai-completions adapters require a valid complete Chat model record",
             ),
         ));
+    }
+    if let Some(base) = model.base_url.as_deref() {
+        let valid = url::Url::parse(base)
+            .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some());
+        if !valid {
+            return Err(ProviderError::Config(
+                ProviderErrorSummary::attested_static(
+                    "The selected model requires an absolute HTTP or HTTPS API base URL",
+                ),
+            ));
+        }
     }
     Ok(())
 }

@@ -157,6 +157,36 @@ pub enum AuthDescriptor {
     },
 }
 
+pub(crate) struct BuiltinAuthStatus {
+    pub check: AuthCheck,
+    pub available_model_ids: Option<Vec<String>>,
+    pub responses_only: bool,
+    pub classifiers_allowed: bool,
+}
+
+pub(crate) type BuiltinAuthCheck = Arc<
+    dyn Fn() -> crate::credential::BoxAuthFuture<
+            'static,
+            Result<Option<BuiltinAuthStatus>, ProviderError>,
+        > + Send
+        + Sync,
+>;
+
+pub(crate) struct BuiltinAuthBindings {
+    pub chat: Arc<dyn AuthResolver>,
+    pub classifier: Arc<dyn AuthResolver>,
+    pub check: BuiltinAuthCheck,
+}
+
+pub(crate) type BuiltinAuthFactory = Arc<
+    dyn Fn(
+            Option<Arc<dyn CredentialStore>>,
+            Option<Arc<dyn crate::auth::OAuthProvider>>,
+        ) -> BuiltinAuthBindings
+        + Send
+        + Sync,
+>;
+
 /// Non-secret result of an on-demand source-configuration check.
 ///
 /// Produced by [`Models::check_auth`] and [`Models::get_available`]. `source`
@@ -265,6 +295,12 @@ pub enum ModelsError {
     /// registration.
     #[error("no classifier API registered for '{api}'")]
     ClassifierApiNotRegistered {
+        /// API identity the record carried.
+        api: String,
+    },
+    /// An image record has no matching provider/API registration.
+    #[error("no image API registered for '{api}'")]
+    ImageApiNotRegistered {
         /// API identity the record carried.
         api: String,
     },
@@ -487,6 +523,10 @@ pub struct Models {
     oauth_flows: HashMap<String, std::sync::Arc<dyn crate::auth::OAuthProvider>>,
     /// Routes whose resolver is generated from the attached OAuth store.
     oauth_routes: std::collections::HashSet<String>,
+    builtin_auth_factories: HashMap<String, BuiltinAuthFactory>,
+    builtin_auth_checks: HashMap<String, BuiltinAuthCheck>,
+    /// Default/chat auth slots still owned by their builtin registrar.
+    builtin_default_auth: std::collections::HashSet<String>,
     /// Typed custom chat API registrations keyed by exact [`ApiId`]. Entries
     /// are captured (cloned `Arc`s) at call creation, so later registration
     /// changes never mutate an existing call.
@@ -494,11 +534,11 @@ pub struct Models {
     /// Typed custom image API registrations keyed by exact [`ApiId`] (task
     /// 20.45). The image operation dispatches on the record's API identity;
     /// image records never enter the chat catalog.
-    image_apis: BTreeMap<ApiId, ImageApiRegistration>,
+    image_apis: BTreeMap<(String, ApiId), ImageApiRegistration>,
     /// Typed custom classifier API registrations keyed by exact [`ApiId`]
     /// (task 20.46). The classifier operation dispatches on the record's
     /// API identity; classifier records never enter the chat catalog.
-    classifier_apis: BTreeMap<ApiId, ClassifierApiRegistration>,
+    classifier_apis: BTreeMap<(String, ApiId), ClassifierApiRegistration>,
     /// Typed deferred-response backend registrations keyed by exact
     /// [`ApiId`] (task 20.50). Deferred fetch/cancel dispatch on the
     /// handle's API identity after route validation; deferred backends
@@ -524,9 +564,11 @@ pub struct Models {
     /// Publisher ownership from the same acknowledged revision as each
     /// dynamic catalog; unrelated sources cannot retain a native snapshot.
     catalog_publishers: HashMap<String, crate::catalog::store::CatalogPublisher>,
-    /// Whether the attached store's snapshot has already been restored into
-    /// the registry during a refresh round.
-    store_restored: bool,
+    /// Acknowledged catalogs for all three operations; chat is projected into the registry.
+    dynamic_catalogs: HashMap<String, crate::catalog::ModelsStoreEntry>,
+    /// Last attached-store revision restored into the registry. Shared-store
+    /// changes are observed by the next refresh, including offline refresh.
+    store_revision: Option<u64>,
 }
 
 impl Models {
@@ -545,6 +587,9 @@ impl Models {
             sources: HashMap::new(),
             oauth_flows: HashMap::new(),
             oauth_routes: std::collections::HashSet::new(),
+            builtin_auth_factories: HashMap::new(),
+            builtin_auth_checks: HashMap::new(),
+            builtin_default_auth: std::collections::HashSet::new(),
             chat_apis: BTreeMap::new(),
             image_apis: BTreeMap::new(),
             classifier_apis: BTreeMap::new(),
@@ -554,7 +599,8 @@ impl Models {
             models_store: None,
             catalog_sources: Vec::new(),
             catalog_publishers: HashMap::new(),
-            store_restored: false,
+            dynamic_catalogs: HashMap::new(),
+            store_revision: None,
         }
     }
 
@@ -592,6 +638,9 @@ impl Models {
             sources: HashMap::new(),
             oauth_flows: HashMap::new(),
             oauth_routes: std::collections::HashSet::new(),
+            builtin_auth_factories: HashMap::new(),
+            builtin_auth_checks: HashMap::new(),
+            builtin_default_auth: std::collections::HashSet::new(),
             chat_apis: BTreeMap::new(),
             image_apis: BTreeMap::new(),
             classifier_apis: BTreeMap::new(),
@@ -601,7 +650,8 @@ impl Models {
             models_store: None,
             catalog_sources: Vec::new(),
             catalog_publishers: HashMap::new(),
-            store_restored: false,
+            dynamic_catalogs: HashMap::new(),
+            store_revision: None,
         }
     }
 
@@ -626,7 +676,9 @@ impl Models {
             .session_resources()
             .map(|owner| owner.new_namespace());
         self.registry.register_provider(provider)?;
+        self.clear_catalog_entry(&id);
         self.replace_resource_owner(&id, resource_owner);
+        self.builtin_default_auth.remove(&id);
         self.resolvers.remove(&id);
         self.oauth_routes.remove(&id);
         self.sources.remove(&id);
@@ -659,7 +711,9 @@ impl Models {
             .session_resources()
             .map(|owner| owner.new_namespace());
         self.registry.register_provider(provider)?;
+        self.clear_catalog_entry(&id);
         self.replace_resource_owner(&id, resource_owner);
+        self.builtin_default_auth.remove(&id);
         self.oauth_routes.remove(&id);
         self.auth.remove(&id);
         self.probed.remove(&id);
@@ -707,7 +761,9 @@ impl Models {
                 provider_id: provider_id.clone(),
                 dispatch: Arc::clone(&dispatch),
             }))?;
+        self.clear_catalog_entry(&provider_id);
         self.replace_resource_owner(&provider_id, resource_owner.clone());
+        self.builtin_default_auth.remove(&provider_id);
         self.auth.remove(&provider_id);
         self.oauth_routes.remove(&provider_id);
         self.probed.remove(&provider_id);
@@ -733,8 +789,8 @@ impl Models {
     /// [`crate::api::ImageApi`] implementation, its provider auth resolver and provenance
     /// source. The registration owns the adapter's complete
     /// [`crate::images::ImageModelRecord`] for operation-qualified selection; image records
-    /// never enter the chat catalog, and an upsert with the same exact
-    /// [`ApiId`] replaces the previous registration wholesale.
+    /// never enter the chat catalog. An upsert for the same provider and
+    /// [`ApiId`] replaces that registration wholesale.
     pub fn register_image_api<O: Send + 'static>(
         &mut self,
         api: std::sync::Arc<dyn crate::api::ImageApi<O>>,
@@ -752,13 +808,14 @@ impl Models {
         let record = api.complete_record().clone();
         self.sources.insert(provider_id.clone(), source);
         self.image_apis.insert(
-            api_id.clone(),
+            (provider_id.clone(), api_id.clone()),
             ImageApiRegistration {
+                builtin_auth: false,
                 provider_id,
                 options_type: std::any::TypeId::of::<O>(),
                 dispatch: Arc::new(TypedImageApi { api }),
                 resolver,
-                record,
+                records: vec![record],
             },
         );
         Ok(ImageApiHandle {
@@ -767,13 +824,37 @@ impl Models {
         })
     }
 
+    /// Append or replace an image model within its exact provider/API registration.
+    pub fn register_image_model_record(
+        &mut self,
+        record: crate::images::ImageModelRecord,
+    ) -> Result<(), ModelsError> {
+        let Some(registration) = self
+            .image_apis
+            .get_mut(&(record.provider_id.clone(), record.api.clone()))
+        else {
+            return Err(ModelsError::ImageApiNotRegistered {
+                api: record.api.as_str().to_owned(),
+            });
+        };
+        match registration
+            .records
+            .iter()
+            .position(|existing| existing.id == record.id)
+        {
+            Some(index) => registration.records[index] = record,
+            None => registration.records.push(record),
+        }
+        Ok(())
+    }
+
     /// Register one typed classifier adapter (task 20.46): the fixed-`O`
     /// [`crate::api::ClassifierApi`] implementation, its provider auth
     /// resolver and provenance source. The registration owns the adapter's
     /// complete [`crate::classifier::ClassifierModelRecord`] for
     /// operation-qualified selection; classifier records never enter the
-    /// chat catalog, and an upsert with the same exact [`ApiId`] replaces
-    /// the previous registration wholesale. One shared conformance spans
+    /// chat catalog, and an upsert with the same provider and exact [`ApiId`]
+    /// replaces that registration wholesale. One shared conformance spans
     /// every real classifier protocol through this seam.
     pub fn register_classifier_api<O: Send + 'static>(
         &mut self,
@@ -792,8 +873,9 @@ impl Models {
         let record = api.complete_record().clone();
         self.sources.insert(provider_id.clone(), source);
         self.classifier_apis.insert(
-            api_id.clone(),
+            (provider_id.clone(), api_id.clone()),
             ClassifierApiRegistration {
+                builtin_auth: false,
                 provider_id,
                 options_type: std::any::TypeId::of::<O>(),
                 dispatch: Arc::new(TypedClassifierApi { api }),
@@ -808,7 +890,7 @@ impl Models {
     }
 
     /// Append (or replace, keyed by provider/model id) one additional
-    /// classifier record to the registration matching `record.api`.
+    /// classifier record to the registration matching its provider and `record.api`.
     ///
     /// One provider serves many classifier models under one API (pi's
     /// Cloudflare Workers AI family); registration replaces the model set
@@ -818,7 +900,10 @@ impl Models {
         &mut self,
         record: crate::classifier::ClassifierModelRecord,
     ) -> Result<(), ModelsError> {
-        let Some(registration) = self.classifier_apis.get_mut(&record.api) else {
+        let Some(registration) = self
+            .classifier_apis
+            .get_mut(&(record.provider_id.clone(), record.api.clone()))
+        else {
             return Err(ModelsError::ClassifierApiNotRegistered {
                 api: record.api.as_str().to_owned(),
             });
@@ -1041,6 +1126,26 @@ impl Models {
         provider: &str,
         id: &str,
     ) -> Result<crate::classifier::ClassifierModelRecord, ModelsError> {
+        if let Some(entry) = self.dynamic_catalogs.get(provider) {
+            return entry
+                .models
+                .iter()
+                .find_map(|model| match model {
+                    crate::catalog::CatalogRecord::Classifier(record)
+                        if record.id == id
+                            && self
+                                .classifier_apis
+                                .contains_key(&(provider.to_owned(), record.api.clone())) =>
+                    {
+                        Some(record.clone())
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| ModelsError::NotAClassifierModel {
+                    provider: provider.into(),
+                    id: id.into(),
+                });
+        }
         for registration in self.classifier_apis.values() {
             for record in &registration.records {
                 if record.provider_id == provider && record.id == id {
@@ -1061,65 +1166,104 @@ impl Models {
     /// Never rejects: selection, auth and provider failures stay inside the
     /// returned [`crate::classifier::ClassifierResult`] with `stop_reason =
     /// Error`/`Aborted` and the typed cause.
-    pub async fn classify(
+    /// Captures owned inputs and the current registration at creation; auth
+    /// starts only when polled. Later registration changes do not retarget it.
+    pub fn classify(
         &self,
         record: crate::classifier::ClassifierModelRecord,
         context: crate::classifier::ClassifierContext,
         call: crate::classifier::ClassifierCall,
-    ) -> crate::classifier::ClassifierResult {
-        let Some(registration) = self.classifier_apis.get(&record.api) else {
-            return no_classifier_api_result(&record);
-        };
-        let options = registration.dispatch.default_options_erased();
-        self.dispatch_classifier(registration, record, context, options, call)
-            .await
+    ) -> crate::api::ClassifierFuture<'static> {
+        let registration = self
+            .classifier_apis
+            .get(&(record.provider_id.clone(), record.api.clone()))
+            .cloned();
+        Box::pin(async move {
+            let Some(registration) = registration else {
+                return no_classifier_api_result(&record);
+            };
+            let options = registration.dispatch.default_options_erased();
+            Self::dispatch_classifier(&registration, record, context, options, call).await
+        })
     }
 
     /// Classify with typed native options created by a
     /// [`ClassifierApiHandle`]. The options must carry the same exact
     /// [`ApiId`] and options type as the registration; a mismatch is a typed
     /// pre-dispatch failure result.
-    pub async fn classify_native<O: Send + 'static>(
+    pub fn classify_native<O: Send + 'static>(
         &self,
         record: crate::classifier::ClassifierModelRecord,
         context: crate::classifier::ClassifierContext,
         call: crate::classifier::ClassifierCall,
         options: ClassifierNativeOptions<O>,
-    ) -> crate::classifier::ClassifierResult {
-        let Some(registration) = self.classifier_apis.get(&record.api) else {
-            return no_classifier_api_result(&record);
-        };
-        if options.type_id != std::any::TypeId::of::<O>()
-            || options.api_id != record.api
-            || options.type_id != registration.options_type
-        {
-            let message = format!(
-                "classifier options tagged for API '{}' do not match the registration for '{}'",
-                options.api_id.as_str(),
-                record.api.as_str()
-            );
-            return crate::classifier::ClassifierResult::failure(
-                &record,
-                crate::classifier::ClassifierStopReason::Error,
-                crate::provider::ProviderError::Config(
-                    crate::provider::ProviderErrorSummary::sanitized(message.clone()),
-                ),
-                message,
-            );
-        }
-        self.dispatch_classifier(registration, record, context, Box::new(options.value), call)
+    ) -> crate::api::ClassifierFuture<'static> {
+        let registration = self
+            .classifier_apis
+            .get(&(record.provider_id.clone(), record.api.clone()))
+            .cloned();
+        Box::pin(async move {
+            let Some(registration) = registration else {
+                return no_classifier_api_result(&record);
+            };
+            if options.type_id != std::any::TypeId::of::<O>()
+                || options.api_id != record.api
+                || options.type_id != registration.options_type
+            {
+                let message = format!(
+                    "classifier options tagged for API '{}' do not match the registration for '{}'",
+                    options.api_id.as_str(),
+                    record.api.as_str()
+                );
+                return crate::classifier::ClassifierResult::failure(
+                    &record,
+                    crate::classifier::ClassifierStopReason::Error,
+                    crate::provider::ProviderError::Config(
+                        crate::provider::ProviderErrorSummary::sanitized(message.clone()),
+                    ),
+                    message,
+                );
+            }
+            Self::dispatch_classifier(
+                &registration,
+                record,
+                context,
+                Box::new(options.value),
+                call,
+            )
             .await
+        })
     }
 
     async fn dispatch_classifier(
-        &self,
         registration: &ClassifierApiRegistration,
         record: crate::classifier::ClassifierModelRecord,
         context: crate::classifier::ClassifierContext,
         options: Box<dyn std::any::Any + Send>,
         call: crate::classifier::ClassifierCall,
     ) -> crate::classifier::ClassifierResult {
-        let auth = match registration.resolver.resolve().await {
+        if let Err(error) =
+            registration
+                .dispatch
+                .validate_erased(&record, &context, options.as_ref(), &call)
+        {
+            let message = match &error {
+                ProviderError::UnsupportedCapability(summary) => summary.as_str().to_owned(),
+                _ => error.to_string(),
+            };
+            return crate::classifier::ClassifierResult::failure(
+                &record,
+                crate::classifier::ClassifierStopReason::Error,
+                error,
+                message,
+            );
+        }
+        let resolution = tokio::select! {
+            biased;
+            _ = call.cancel.cancelled() => Err(ProviderError::Cancelled),
+            auth = async { registration.resolver.resolve().await } => auth,
+        };
+        let auth = match resolution {
             Ok(auth) => auth,
             Err(error) => {
                 let message = if matches!(
@@ -1132,7 +1276,11 @@ impl Models {
                 };
                 return crate::classifier::ClassifierResult::failure(
                     &record,
-                    crate::classifier::ClassifierStopReason::Error,
+                    if matches!(error, ProviderError::Cancelled) {
+                        crate::classifier::ClassifierStopReason::Aborted
+                    } else {
+                        crate::classifier::ClassifierStopReason::Error
+                    },
                     error,
                     message,
                 );
@@ -1142,6 +1290,64 @@ impl Models {
             .dispatch
             .classify_erased(record, context, options, auth, call)
             .await
+    }
+
+    /// List classifier records whose selected source is configured, without
+    /// refreshing credentials or performing network work.
+    pub async fn get_available_classifiers(
+        &self,
+        provider: Option<&str>,
+    ) -> Result<Vec<crate::classifier::ClassifierModelRecord>, ModelsError> {
+        let mut records = Vec::new();
+        let mut allowed = HashMap::new();
+        for ((_, api_id), registration) in &self.classifier_apis {
+            let id = &registration.provider_id;
+            if provider.is_some_and(|wanted| wanted != id) {
+                continue;
+            }
+            let builtin_check = registration
+                .builtin_auth
+                .then(|| self.builtin_auth_checks.get(id))
+                .flatten();
+            let available = if let Some(check) = builtin_check {
+                if let Some(value) = allowed.get(id) {
+                    *value
+                } else {
+                    let value = check()
+                        .await
+                        .map_err(|error| ModelsError::AuthResolution {
+                            provider: id.clone(),
+                            error: Box::new(error),
+                        })?
+                        .is_some_and(|status| status.classifiers_allowed);
+                    allowed.insert(id.clone(), value);
+                    value
+                }
+            } else {
+                match registration.resolver.check_configuration() {
+                    Some(check) => check.await.map_err(|error| ModelsError::AuthResolution {
+                        provider: id.clone(),
+                        error: Box::new(error),
+                    })?,
+                    None => true,
+                }
+            };
+            if available {
+                if let Some(entry) = self.dynamic_catalogs.get(id) {
+                    records.extend(entry.models.iter().filter_map(|model| match model {
+                        crate::catalog::CatalogRecord::Classifier(record)
+                            if &record.api == api_id =>
+                        {
+                            Some(record.clone())
+                        }
+                        _ => None,
+                    }));
+                } else {
+                    records.extend(registration.records.iter().cloned());
+                }
+            }
+        }
+        Ok(records)
     }
 
     /// Operation-qualified image selection: resolve the registered image
@@ -1155,9 +1361,31 @@ impl Models {
         provider: &str,
         id: &str,
     ) -> Result<crate::images::ImageModelRecord, ModelsError> {
+        if let Some(entry) = self.dynamic_catalogs.get(provider) {
+            return entry
+                .models
+                .iter()
+                .find_map(|model| match model {
+                    crate::catalog::CatalogRecord::Image(record)
+                        if record.id == id
+                            && self
+                                .image_apis
+                                .contains_key(&(provider.to_owned(), record.api.clone())) =>
+                    {
+                        Some(record.clone())
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| ModelsError::NotAnImageModel {
+                    provider: provider.into(),
+                    id: id.into(),
+                });
+        }
         for registration in self.image_apis.values() {
-            if registration.record.provider_id == provider && registration.record.id == id {
-                return Ok(registration.record.clone());
+            for record in &registration.records {
+                if record.provider_id == provider && record.id == id {
+                    return Ok(record.clone());
+                }
             }
         }
         Err(ModelsError::NotAnImageModel {
@@ -1173,68 +1401,107 @@ impl Models {
     /// Never rejects: selection, auth and provider failures stay inside the
     /// returned [`crate::images::ImagesResult`] with `stop_reason = Error`/`Aborted` and the
     /// typed cause.
-    pub async fn generate_images(
+    /// Captures owned inputs and the current registration at creation; auth
+    /// starts only when polled. Later registration changes do not retarget it.
+    pub fn generate_images(
         &self,
         record: crate::images::ImageModelRecord,
         context: crate::images::ImagesContext,
         call: crate::images::ImagesCall,
-    ) -> crate::images::ImagesResult {
-        let Some(registration) = self.image_apis.get(&record.api) else {
-            return no_image_api_result(&record);
-        };
-        let options = registration.dispatch.default_options_erased();
-        self.dispatch_image(registration, record, context, options, call)
-            .await
+    ) -> crate::api::ImageFuture<'static> {
+        let registration = self
+            .image_apis
+            .get(&(record.provider_id.clone(), record.api.clone()))
+            .cloned();
+        Box::pin(async move {
+            let Some(registration) = registration else {
+                return no_image_api_result(&record);
+            };
+            let options = registration.dispatch.default_options_erased();
+            Self::dispatch_image(&registration, record, context, options, call).await
+        })
     }
 
     /// Generate images with typed native options created by an
     /// [`ImageApiHandle`]. The options must carry the same exact [`ApiId`]
     /// and options type as the registration; a mismatch is a typed
     /// pre-dispatch failure result.
-    pub async fn generate_images_native<O: Send + 'static>(
+    pub fn generate_images_native<O: Send + 'static>(
         &self,
         record: crate::images::ImageModelRecord,
         context: crate::images::ImagesContext,
         call: crate::images::ImagesCall,
         options: ImageNativeOptions<O>,
-    ) -> crate::images::ImagesResult {
-        let Some(registration) = self.image_apis.get(&record.api) else {
-            return no_image_api_result(&record);
-        };
-        if options.type_id != std::any::TypeId::of::<O>()
-            || options.api_id != record.api
-            || options.type_id != registration.options_type
-        {
-            return crate::images::ImagesResult::failure(
-                &record,
-                crate::images::ImagesStopReason::Error,
-                crate::provider::ProviderError::Config(
-                    crate::provider::ProviderErrorSummary::sanitized(format!(
+    ) -> crate::api::ImageFuture<'static> {
+        let registration = self
+            .image_apis
+            .get(&(record.provider_id.clone(), record.api.clone()))
+            .cloned();
+        Box::pin(async move {
+            let Some(registration) = registration else {
+                return no_image_api_result(&record);
+            };
+            if options.type_id != std::any::TypeId::of::<O>()
+                || options.api_id != record.api
+                || options.type_id != registration.options_type
+            {
+                return crate::images::ImagesResult::failure(
+                    &record,
+                    crate::images::ImagesStopReason::Error,
+                    crate::provider::ProviderError::Config(
+                        crate::provider::ProviderErrorSummary::sanitized(format!(
+                            "image options tagged for API '{}' do not match the registration for '{}'",
+                            options.api_id.as_str(),
+                            record.api.as_str()
+                        )),
+                    ),
+                    format!(
                         "image options tagged for API '{}' do not match the registration for '{}'",
                         options.api_id.as_str(),
                         record.api.as_str()
-                    )),
-                ),
-                format!(
-                    "image options tagged for API '{}' do not match the registration for '{}'",
-                    options.api_id.as_str(),
-                    record.api.as_str()
-                ),
-            );
-        }
-        self.dispatch_image(registration, record, context, Box::new(options.value), call)
+                    ),
+                );
+            }
+            Self::dispatch_image(
+                &registration,
+                record,
+                context,
+                Box::new(options.value),
+                call,
+            )
             .await
+        })
     }
 
     async fn dispatch_image(
-        &self,
         registration: &ImageApiRegistration,
         record: crate::images::ImageModelRecord,
         context: crate::images::ImagesContext,
         options: Box<dyn std::any::Any + Send>,
         call: crate::images::ImagesCall,
     ) -> crate::images::ImagesResult {
-        let auth = match registration.resolver.resolve().await {
+        if let Err(error) =
+            registration
+                .dispatch
+                .validate_erased(&record, &context, options.as_ref(), &call)
+        {
+            let message = match &error {
+                ProviderError::UnsupportedCapability(summary) => summary.as_str().to_owned(),
+                _ => error.to_string(),
+            };
+            return crate::images::ImagesResult::failure(
+                &record,
+                crate::images::ImagesStopReason::Error,
+                error,
+                message,
+            );
+        }
+        let resolution = tokio::select! {
+            biased;
+            _ = call.cancel.cancelled() => Err(ProviderError::Cancelled),
+            auth = async { registration.resolver.resolve().await } => auth,
+        };
+        let auth = match resolution {
             Ok(auth) => auth,
             Err(error) => {
                 let message = if matches!(
@@ -1247,7 +1514,11 @@ impl Models {
                 };
                 return crate::images::ImagesResult::failure(
                     &record,
-                    crate::images::ImagesStopReason::Error,
+                    if matches!(error, ProviderError::Cancelled) {
+                        crate::images::ImagesStopReason::Aborted
+                    } else {
+                        crate::images::ImagesStopReason::Error
+                    },
                     error,
                     message,
                 );
@@ -1384,7 +1655,8 @@ impl Models {
         // supported level (Pi streamSimple) before the shared compiler's
         // per-wire thinking preflight; native entries retain exact levels and
         // fail typed preflight instead.
-        if request.thinking.enabled
+        if record.info().wire_api != crate::WireApi::PiMessages
+            && request.thinking.enabled
             && let Some(level) = record
                 .info()
                 .thinking_level_map
@@ -1469,7 +1741,8 @@ impl Models {
     /// typed error without selecting another provider, model, wire, credential
     /// policy, or local implementation. Ordinary entries reuse this exact
     /// compiler and auth resolution through [`ChatCall`].
-    /// An omitted output limit resolves to the selected registry model's output
+    /// Pi Messages preserves its source passthrough options. On other wires,
+    /// an omitted output limit resolves to the selected registry model's output
     /// capacity before authentication. An enabled thinking budget must fit
     /// below that default limit. Implicit and explicit ceilings are then clamped
     /// to remaining context with 4,096 safety tokens (minimum one output token).
@@ -1522,13 +1795,17 @@ impl Models {
             .cloned()
             .unwrap_or(AuthProvenanceSource::Static);
 
-        let auth = resolve_route_auth(&resolver, source, &request.cancel).await?;
+        let mut auth = resolve_route_auth(&resolver, source, &request.cancel).await?;
         let provider = self
             .registry
             .get_provider_arc(&provider_id)
             .ok_or_else(|| {
                 ModelsError::Registry(RegistryError::UnknownProvider(provider_id.clone()))
             })?;
+        let mut selected_model = model.clone();
+        let provider = provider
+            .prepare_model_call(&mut selected_model, &mut auth)?
+            .unwrap_or(provider);
         let route = PreparedRoute {
             provider_id,
             model_id,
@@ -1544,7 +1821,7 @@ impl Models {
             invocation_id: uuid::Uuid::new_v4().to_string(),
             resources,
             resource_owner,
-            selected_model: Some(Box::new(model.clone())),
+            selected_model: Some(Box::new(selected_model)),
             simple_options: SimpleOptions::default(),
         })
     }
@@ -1691,6 +1968,83 @@ impl Models {
             }
         }
         self.credential_store = Some(store);
+        let providers: Vec<_> = self.builtin_auth_factories.keys().cloned().collect();
+        for id in providers {
+            self.rebind_builtin_auth(&id);
+        }
+    }
+
+    pub(crate) fn oauth_flow_for_builtin(
+        &self,
+        provider: &str,
+    ) -> Option<Arc<dyn crate::auth::OAuthProvider>> {
+        self.oauth_flows.get(provider).cloned()
+    }
+
+    pub(crate) fn register_builtin_auth_factory(
+        &mut self,
+        provider: &str,
+        factory: BuiltinAuthFactory,
+    ) {
+        self.builtin_auth_factories
+            .insert(provider.to_owned(), factory);
+        self.rebind_builtin_auth(provider);
+    }
+
+    pub(crate) fn mark_builtin_default_auth(&mut self, provider: &str, only_if_unbound: bool) {
+        if !only_if_unbound
+            || (!self.resolvers.contains_key(provider) && !self.auth.contains_key(provider))
+        {
+            self.builtin_default_auth.insert(provider.to_owned());
+        }
+    }
+
+    pub(crate) fn mark_builtin_image_auth(&mut self, provider: &str, api: &ApiId) {
+        if let Some(registration) = self.image_apis.get_mut(&(provider.into(), api.clone())) {
+            registration.builtin_auth = true;
+        }
+    }
+
+    pub(crate) fn mark_builtin_classifier_auth(&mut self, provider: &str, api: &ApiId) {
+        if let Some(registration) = self
+            .classifier_apis
+            .get_mut(&(provider.into(), api.clone()))
+        {
+            registration.builtin_auth = true;
+        }
+    }
+
+    fn rebind_builtin_auth(&mut self, provider: &str) {
+        let Some(factory) = self.builtin_auth_factories.get(provider) else {
+            return;
+        };
+        let bindings = factory(
+            self.credential_store.clone(),
+            self.oauth_flows.get(provider).cloned(),
+        );
+        if self.builtin_default_auth.contains(provider) {
+            self.resolvers
+                .insert(provider.to_owned(), bindings.chat.clone());
+            self.auth.remove(provider);
+            self.sources
+                .insert(provider.to_owned(), AuthProvenanceSource::Static);
+        }
+        for registration in self
+            .image_apis
+            .values_mut()
+            .filter(|entry| entry.provider_id == provider && entry.builtin_auth)
+        {
+            registration.resolver = bindings.chat.clone();
+        }
+        for registration in self
+            .classifier_apis
+            .values_mut()
+            .filter(|entry| entry.provider_id == provider && entry.builtin_auth)
+        {
+            registration.resolver = bindings.classifier.clone();
+        }
+        self.builtin_auth_checks
+            .insert(provider.to_owned(), bindings.check);
     }
 
     /// Register the SDK OAuth flow serving [`login`](Self::login) for one
@@ -1702,12 +2056,17 @@ impl Models {
         provider_id: &str,
         flow: std::sync::Arc<dyn crate::auth::OAuthProvider>,
     ) {
-        self.sources.insert(
-            provider_id.to_owned(),
-            AuthProvenanceSource::OAuth {
-                kind: provider_id.to_owned(),
-            },
-        );
+        if self.builtin_default_auth.contains(provider_id)
+            || self.oauth_routes.contains(provider_id)
+            || (!self.resolvers.contains_key(provider_id) && !self.auth.contains_key(provider_id))
+        {
+            self.sources.insert(
+                provider_id.to_owned(),
+                AuthProvenanceSource::OAuth {
+                    kind: provider_id.to_owned(),
+                },
+            );
+        }
         self.oauth_flows
             .insert(provider_id.to_owned(), flow.clone());
         if self.oauth_routes.contains(provider_id)
@@ -1722,6 +2081,7 @@ impl Models {
                 )),
             );
         }
+        self.rebind_builtin_auth(provider_id);
     }
 
     /// Bind an SDK OAuth flow to a dispatchable provider and the attached store.
@@ -1837,6 +2197,17 @@ impl Models {
     /// configuration checker when present, then their non-secret source
     /// classification. Checking never resolves or refreshes authentication.
     pub async fn check_auth(&self, provider_id: &str) -> Result<Option<AuthCheck>, ModelsError> {
+        if self.builtin_default_auth.contains(provider_id)
+            && let Some(check) = self.builtin_auth_checks.get(provider_id)
+        {
+            return check()
+                .await
+                .map(|status| status.map(|status| status.check))
+                .map_err(|error| ModelsError::AuthResolution {
+                    provider: provider_id.to_owned(),
+                    error: Box::new(error),
+                });
+        }
         if let Some(descriptor) = self.auth.get(provider_id) {
             return self.check_descriptor(provider_id, descriptor).await;
         }
@@ -1871,7 +2242,27 @@ impl Models {
             .collect();
         let mut available = Vec::new();
         let mut account_models = std::collections::HashMap::new();
+        let mut responses_only = std::collections::HashSet::new();
         for id in ids {
+            if self.builtin_default_auth.contains(&id)
+                && let Some(check) = self.builtin_auth_checks.get(&id)
+            {
+                if let Some(status) =
+                    check().await.map_err(|error| ModelsError::AuthResolution {
+                        provider: id.clone(),
+                        error: Box::new(error),
+                    })?
+                {
+                    if let Some(models) = status.available_model_ids {
+                        account_models.insert(id.clone(), models);
+                    }
+                    if status.responses_only {
+                        responses_only.insert(id.clone());
+                    }
+                    available.push(id);
+                }
+                continue;
+            }
             if !self.auth.contains_key(&id)
                 && matches!(
                     self.sources.get(&id),
@@ -1900,6 +2291,8 @@ impl Models {
         let mut entries = Vec::new();
         for (provider, model) in self.registry.all_models() {
             if available.iter().any(|id| id == provider)
+                && (!responses_only.contains(provider)
+                    || model.wire_api == crate::WireApi::OpenAiResponses)
                 && account_models
                     .get(provider)
                     .is_none_or(|ids| ids.iter().any(|id| id == &model.id))
@@ -1956,6 +2349,7 @@ impl Models {
         }
         if let Some(api_key) = overrides.api_key {
             return Ok(Some(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::ApiKey,
                 secret: api_key,
                 base_url: None,
@@ -1968,6 +2362,7 @@ impl Models {
         }
         if let Some(bearer) = overrides.bearer {
             return Ok(Some(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::Bearer,
                 secret: bearer,
                 base_url: None,
@@ -2003,6 +2398,7 @@ impl Models {
         match descriptor {
             AuthDescriptor::StaticApiKey { value } => {
                 Ok(value.is_present().then(|| ResolvedAuth {
+                    env: Default::default(),
                     scheme: AuthScheme::ApiKey,
                     secret: secrecy::SecretString::from(value.as_str().to_owned()),
                     base_url: None,
@@ -2012,6 +2408,7 @@ impl Models {
             }
             AuthDescriptor::EnvApiKey { env_var } => match self.auth_context.env(env_var)? {
                 Some(value) => Ok(Some(ResolvedAuth {
+                    env: Default::default(),
                     scheme: AuthScheme::ApiKey,
                     secret: secrecy::SecretString::from(value),
                     base_url: None,
@@ -2213,8 +2610,14 @@ impl Models {
         };
         match store.read(key).await? {
             Some(Credential::ApiKey(value)) => Ok(Some(ResolvedAuth {
+                env: value.env().clone(),
                 scheme: AuthScheme::ApiKey,
-                secret: value,
+                secret: value
+                    .key()
+                    .cloned()
+                    .ok_or_else(|| ProviderError::CredentialNeeded {
+                        provider_id: _provider_id.to_owned(),
+                    })?,
                 base_url: None,
                 account_id: None,
                 provenance: AuthProvenance {
@@ -2230,6 +2633,7 @@ impl Models {
                 account_id,
                 ..
             }) => Ok(Some(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::Bearer,
                 secret: access,
                 base_url,
@@ -2266,16 +2670,6 @@ impl Models {
 
     /// Refresh provider-side model catalogs.
     ///
-    /// Calls [`Provider::refresh_models`] on every registered provider in
-    /// deterministic (sorted) id order. Collects all results: if every
-    /// provider succeeds, atomically replaces the registry-owned dynamic
-    /// catalogs. If **any** provider returns an error, the last-known
-    /// catalogs are left unchanged and the first error is returned.
-    ///
-    /// Refresh results are replace-all snapshots: `Ok(Some(models))` replaces
-    /// that provider's prior dynamic catalog, while `Ok(None)` clears any prior
-    /// dynamic snapshot and exposes the provider's built-in models. Repeated
-    /// refreshes replace rather than append.
     /// Refresh provider-side model catalogs.
     ///
     /// `allow_network` selects the two refresh modes:
@@ -2320,37 +2714,34 @@ impl Models {
             entries: Vec::new(),
         };
 
-        // Restore the persisted cache before any network work.
-        if !self.store_restored {
-            if let Some(store) = &self.models_store {
-                let (snapshot, publishers) = store.snapshot_with_publishers();
+        // Capture the publication and its commit guard under one store lock.
+        // A later invalidation cannot be merged with stale in-memory records.
+        let guard = if let Some(store) = &self.models_store {
+            let (guard, snapshot, publishers) = store.begin_snapshot(Some(token.clone()));
+            if self.store_revision != Some(snapshot.revision) {
                 for (id, models) in &snapshot.catalogs {
                     report.entries.push(RefreshReportEntry {
                         id: id.clone(),
                         outcome: RefreshOutcome::Restored {
-                            models: models.len(),
+                            models: models.models.len(),
                         },
                     });
                 }
-                self.registry
-                    .replace_all_dynamic_catalogs(snapshot.catalogs);
+                self.store_revision = Some(snapshot.revision);
+                self.apply_catalog_entries(snapshot.catalogs);
                 self.catalog_publishers = publishers;
             }
-            self.store_restored = true;
-        }
-
+            Some(guard)
+        } else {
+            None
+        };
         if !allow_network {
             report.status = RefreshStatus::OfflineRestored;
             return Ok(report);
         }
 
-        let guard = self
-            .models_store
-            .as_ref()
-            .map(|store| store.begin_with(token.clone()));
-
         // Merge over the current publication: failures retain prior data.
-        let mut merged = self.registry.dynamic_catalogs();
+        let mut merged = self.dynamic_catalogs.clone();
         let mut publishers = self.catalog_publishers.clone();
         publishers.retain(|provider, _| merged.contains_key(provider));
         let mut cancelled = false;
@@ -2389,7 +2780,16 @@ impl Models {
                         });
                         publishers
                             .insert(id.clone(), crate::catalog::store::CatalogPublisher::Native);
-                        merged.insert(id, models);
+                        merged.insert(
+                            id,
+                            crate::catalog::ModelsStoreEntry {
+                                models: models
+                                    .into_iter()
+                                    .map(crate::catalog::CatalogRecord::from)
+                                    .collect(),
+                                ..Default::default()
+                            },
+                        );
                     }
                     Err(error) => report.entries.push(RefreshReportEntry {
                         id: id.clone(),
@@ -2410,7 +2810,7 @@ impl Models {
                     report.entries.push(RefreshReportEntry {
                         id: id.clone(),
                         outcome: RefreshOutcome::Published {
-                            models: merged.get(&id).map_or(0, Vec::len),
+                            models: merged.get(&id).map_or(0, |entry| entry.models.len()),
                         },
                     });
                 }
@@ -2440,19 +2840,9 @@ impl Models {
                         let mut published = 0_usize;
                         let mut source_error = None;
                         for (provider_id, models) in catalogs {
-                            if self.registry.get_provider(&provider_id).is_none() {
-                                source_error.get_or_insert(ProviderError::Config(
-                                    ProviderErrorSummary::sanitized(format!(
-                                        "catalog source '{}' published unknown provider '{}'",
-                                        source.id(),
-                                        provider_id
-                                    )),
-                                ));
-                                continue;
-                            }
-                            match validate_dynamic_catalog(&provider_id, &models) {
+                            match self.validate_catalog_entry(&provider_id, &models) {
                                 Ok(()) => {
-                                    published += models.len();
+                                    published += models.models.len();
                                     publishers.insert(
                                         provider_id.clone(),
                                         crate::catalog::store::CatalogPublisher::Source {
@@ -2493,7 +2883,8 @@ impl Models {
         match guard {
             Some(guard) => match guard.commit_with_publishers(merged, publishers).await {
                 Ok((commit, publishers)) => {
-                    self.registry.replace_all_dynamic_catalogs(commit.catalogs);
+                    self.store_revision = Some(commit.revision);
+                    self.apply_catalog_entries(commit.catalogs);
                     self.catalog_publishers = publishers;
                 }
                 Err(crate::catalog::StoreCommitError::Superseded { .. }) => {
@@ -2514,18 +2905,92 @@ impl Models {
                     report.status = RefreshStatus::Cancelled;
                     return Ok(report);
                 }
-                self.registry.replace_all_dynamic_catalogs(merged);
+                self.apply_catalog_entries(merged);
                 self.catalog_publishers = publishers;
             }
         }
         Ok(report)
     }
 
+    fn clear_catalog_entry(&mut self, provider: &str) {
+        self.dynamic_catalogs.remove(provider);
+        self.catalog_publishers.remove(provider);
+    }
+
+    fn apply_catalog_entries(
+        &mut self,
+        entries: HashMap<String, crate::catalog::ModelsStoreEntry>,
+    ) {
+        let chat = entries
+            .iter()
+            .map(|(provider, entry)| {
+                (
+                    provider.clone(),
+                    entry
+                        .models
+                        .iter()
+                        .filter_map(|record| match record {
+                            crate::catalog::CatalogRecord::Chat(model) => {
+                                Some(model.as_ref().clone())
+                            }
+                            _ => None,
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+        self.registry.replace_all_dynamic_catalogs(chat);
+        self.dynamic_catalogs = entries;
+    }
+
+    fn validate_catalog_entry(
+        &self,
+        provider: &str,
+        entry: &crate::catalog::ModelsStoreEntry,
+    ) -> Result<(), ProviderError> {
+        let invalid =
+            |message: String| ProviderError::Config(ProviderErrorSummary::sanitized(message));
+        crate::catalog::wire::validate_provider_entry(provider, entry).map_err(invalid)?;
+        if self.registry.get_provider(provider).is_none()
+            && !self.image_apis.keys().any(|(owner, _)| owner == provider)
+            && !self
+                .classifier_apis
+                .keys()
+                .any(|(owner, _)| owner == provider)
+        {
+            return Err(invalid(format!(
+                "catalog contains unknown provider '{provider}'"
+            )));
+        }
+        for record in &entry.models {
+            let registered = match record {
+                crate::catalog::CatalogRecord::Chat(_) => {
+                    self.registry.get_provider(provider).is_some()
+                }
+                crate::catalog::CatalogRecord::Image(model) => self
+                    .image_apis
+                    .contains_key(&(provider.into(), model.api.clone())),
+                crate::catalog::CatalogRecord::Classifier(model) => self
+                    .classifier_apis
+                    .contains_key(&(provider.into(), model.api.clone())),
+            };
+            if !registered {
+                return Err(invalid(format!(
+                    "catalog model '{}:{}' has no registered {} route",
+                    provider,
+                    record.id(),
+                    record.operation()
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Attach a persisted dynamic-catalog store. Restores happen at the next
     /// refresh round; nothing is fetched or written here.
     pub fn set_models_store(&mut self, store: crate::catalog::ModelsStore) {
         self.models_store = Some(store);
-        self.store_restored = false;
+        self.store_revision = None;
     }
 
     /// Register a dynamic-catalog source fetched during `refresh(true)`
@@ -3035,6 +3500,13 @@ fn compile_prepared_request(
     model: &ModelInfo,
     request: &mut Request,
 ) -> Result<(), ProviderError> {
+    if model.wire_api == crate::WireApi::PiMessages {
+        return crate::provider::validate_request_structure_for_model(
+            provider_id,
+            Some(model),
+            request,
+        );
+    }
     if request.max_tokens.is_none() {
         let limit = model.capabilities.max_output_tokens;
         if request.thinking.enabled
@@ -3485,17 +3957,26 @@ impl<O: Send + 'static> std::fmt::Debug for ImageNativeOptions<O> {
 }
 
 /// Type-erased storage for one registered image adapter.
+#[derive(Clone)]
 struct ImageApiRegistration {
+    builtin_auth: bool,
     provider_id: String,
     options_type: TypeId,
     dispatch: Arc<dyn ImageApiDispatch>,
     resolver: Arc<dyn AuthResolver>,
-    record: crate::images::ImageModelRecord,
+    records: Vec<crate::images::ImageModelRecord>,
 }
 
 /// Object-safe dispatch over one fixed image options type.
 trait ImageApiDispatch: Send + Sync {
     fn default_options_erased(&self) -> Box<dyn std::any::Any + Send>;
+    fn validate_erased(
+        &self,
+        record: &crate::images::ImageModelRecord,
+        context: &crate::images::ImagesContext,
+        options: &(dyn std::any::Any + Send),
+        call: &crate::images::ImagesCall,
+    ) -> Result<(), ProviderError>;
     fn generate_erased<'a>(
         &'a self,
         record: crate::images::ImageModelRecord,
@@ -3514,6 +3995,19 @@ struct TypedImageApi<O: Send + 'static> {
 impl<O: Send + 'static> ImageApiDispatch for TypedImageApi<O> {
     fn default_options_erased(&self) -> Box<dyn std::any::Any + Send> {
         Box::new(self.api.default_options())
+    }
+
+    fn validate_erased(
+        &self,
+        record: &crate::images::ImageModelRecord,
+        context: &crate::images::ImagesContext,
+        options: &(dyn std::any::Any + Send),
+        call: &crate::images::ImagesCall,
+    ) -> Result<(), ProviderError> {
+        let options = options
+            .downcast_ref::<O>()
+            .expect("registration owns its options type");
+        self.api.validate_request(record, context, options, call)
     }
 
     fn generate_erased<'a>(
@@ -3611,7 +4105,9 @@ impl<O: Send + 'static> std::fmt::Debug for ClassifierNativeOptions<O> {
 /// Type-erased storage for one registered classifier adapter and its model
 /// records (the adapter's complete record seeds the set; providers serving
 /// multiple models under one API append the rest).
+#[derive(Clone)]
 struct ClassifierApiRegistration {
+    builtin_auth: bool,
     provider_id: String,
     options_type: TypeId,
     dispatch: Arc<dyn ClassifierApiDispatch>,
@@ -3685,6 +4181,13 @@ impl<O: Send + 'static> DeferredApiDispatch for TypedDeferredApi<O> {
 /// Object-safe dispatch over one fixed classifier options type.
 trait ClassifierApiDispatch: Send + Sync {
     fn default_options_erased(&self) -> Box<dyn std::any::Any + Send>;
+    fn validate_erased(
+        &self,
+        record: &crate::classifier::ClassifierModelRecord,
+        context: &crate::classifier::ClassifierContext,
+        options: &(dyn std::any::Any + Send),
+        call: &crate::classifier::ClassifierCall,
+    ) -> Result<(), ProviderError>;
     fn classify_erased<'a>(
         &'a self,
         record: crate::classifier::ClassifierModelRecord,
@@ -3705,6 +4208,19 @@ struct TypedClassifierApi<O: Send + 'static> {
 impl<O: Send + 'static> ClassifierApiDispatch for TypedClassifierApi<O> {
     fn default_options_erased(&self) -> Box<dyn std::any::Any + Send> {
         Box::new(self.api.default_options())
+    }
+
+    fn validate_erased(
+        &self,
+        record: &crate::classifier::ClassifierModelRecord,
+        context: &crate::classifier::ClassifierContext,
+        options: &(dyn std::any::Any + Send),
+        call: &crate::classifier::ClassifierCall,
+    ) -> Result<(), ProviderError> {
+        let Some(options) = options.downcast_ref::<O>() else {
+            unreachable!("dispatch validates the registered options type");
+        };
+        self.api.validate_request(record, context, options, call)
     }
 
     fn classify_erased<'a>(
@@ -4136,6 +4652,12 @@ async fn materialize_chat_call(
                     api_id.as_str()
                 )));
             }
+            crate::provider::validate_request_structure_for_model(
+                binding.record.provider_id(),
+                Some(binding.record.info()),
+                &request,
+            )
+            .map_err(|error| CallFailure::from_partial(None, error))?;
             entry
                 .dispatch
                 .validate_native_erased(binding.record.info(), &request, value.as_ref())
@@ -4174,14 +4696,19 @@ async fn materialize_chat_call(
                 &mut request,
             )
             .map_err(|error| CallFailure::from_partial(None, error))?;
-            let auth = resolve_binding_auth(&binding.auth_plan, &request.cancel).await?;
+            let mut auth = resolve_binding_auth(&binding.auth_plan, &request.cancel).await?;
+            let mut selected_model = binding.record.info().clone();
+            let provider = provider
+                .prepare_model_call(&mut selected_model, &mut auth)
+                .map_err(|error| CallFailure::from_partial(None, error))?
+                .unwrap_or(provider);
             drive_resolved_call_registered(
                 provider,
                 request,
                 auth,
                 resources,
                 binding.resource_owner,
-                Some(binding.record.info().clone()),
+                Some(selected_model),
                 simple_options,
             )
         }

@@ -50,6 +50,7 @@ async fn static_auth_resolver_is_object_safe_and_resolves_baked_secret() {
 #[tokio::test]
 async fn resolved_auth_debug_redacts_secret() {
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("sk-secret-xyz"),
         base_url: None,
@@ -223,6 +224,7 @@ fn auth_provenance_debug_carries_no_secret() {
         fallback: AuthFallback::NotAttempted,
     };
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::ApiKey,
         secret: SecretString::from(SECRET_CANARY),
         base_url: None,
@@ -621,6 +623,7 @@ async fn explicit_per_call_typed_sigv4_credentials_win_without_source_access() {
             self.resolves.fetch_add(1, Ordering::SeqCst);
             Box::pin(async {
                 Ok(ResolvedAuth {
+                    env: Default::default(),
                     scheme: AuthScheme::ApiKey,
                     secret: SecretString::from("route-resolved"),
                     base_url: None,
@@ -974,11 +977,11 @@ async fn logout_acks_only_the_selected_local_deletion() {
     let store = std::sync::Arc::new(RecordingStore::new([
         (
             "prov-logout",
-            opi_ai::Credential::ApiKey(SecretString::from("sk-a")),
+            opi_ai::Credential::ApiKey(SecretString::from("sk-a").into()),
         ),
         (
             "prov-other",
-            opi_ai::Credential::ApiKey(SecretString::from("sk-b")),
+            opi_ai::Credential::ApiKey(SecretString::from("sk-b").into()),
         ),
     ]));
     let context = std::sync::Arc::new(CountingMapContext::new([]));
@@ -1236,7 +1239,7 @@ use opi_ai::{
 };
 
 fn stored_api_key(value: &str) -> Credential {
-    Credential::ApiKey(SecretString::from(value.to_owned()))
+    Credential::ApiKey(SecretString::from(value.to_owned()).into())
 }
 
 fn write_op(value: &'static str) -> opi_ai::CredentialMutationOp {
@@ -1441,7 +1444,7 @@ async fn started_mutation_survives_waiter_cancellation() {
     }
     match store.read("prov").await.unwrap() {
         Some(Credential::ApiKey(secret)) => {
-            assert_eq!(secret.expose_secret(), "committed");
+            assert_eq!(secret.key().unwrap().expose_secret(), "committed");
         }
         other => panic!("expected committed api key, got {other:?}"),
     }
@@ -1689,7 +1692,7 @@ async fn network_timeout_scope_excludes_lock_wait_and_ack() {
     assert!(matches!(receipt.outcome, MutationOutcome::Written { .. }));
     match store.read("prov").await.unwrap() {
         Some(Credential::ApiKey(secret)) => {
-            assert_eq!(secret.expose_secret(), "after-wait");
+            assert_eq!(secret.key().unwrap().expose_secret(), "after-wait");
         }
         other => panic!("expected committed api key, got {other:?}"),
     }
@@ -5488,4 +5491,41 @@ mod adc_impersonation {
         assert_eq!(third.access_token.expose_secret(), "c");
         assert_eq!(*exchanges.lock().unwrap(), 2);
     }
+}
+#[test]
+fn scoped_credential_values_and_resolved_snapshot_are_owned_and_redacted() {
+    use opi_ai::ApiKeyCredential;
+    const KEY: &str = "api-key-snapshot-canary";
+    const VALUE: &str = "env-snapshot-canary";
+    let env = std::collections::BTreeMap::from([
+        ("SECRET_CONFIG".into(), SecretString::from(VALUE)),
+        ("EMPTY".into(), SecretString::from("")),
+    ]);
+    let credential = ApiKeyCredential::new(Some(SecretString::from(KEY)), env.clone());
+    assert_eq!(credential.key().unwrap().expose_secret(), KEY);
+    assert_eq!(credential.env()["EMPTY"].expose_secret(), "");
+    assert!(!credential.env().contains_key("ABSENT"));
+    let mut resolved = opi_ai::test_support::resolved_auth();
+    resolved.env = credential.env().clone();
+    let frozen = resolved.clone();
+    resolved
+        .env
+        .insert("SECRET_CONFIG".into(), SecretString::from("changed"));
+    assert_eq!(frozen.env["SECRET_CONFIG"].expose_secret(), VALUE);
+    for debug in [
+        format!("{credential:?}"),
+        format!("{frozen:?}"),
+        format!("{:?}", Credential::ApiKey(credential)),
+    ] {
+        assert!(!debug.contains(KEY));
+        assert!(!debug.contains(VALUE));
+    }
+    assert!(ApiKeyCredential::new(None, env).key().is_none());
+    assert_eq!(
+        ApiKeyCredential::from(SecretString::from(""))
+            .into_key()
+            .unwrap()
+            .expose_secret(),
+        ""
+    );
 }

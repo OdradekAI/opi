@@ -1636,6 +1636,41 @@ mod responses_constrained_tests {
         request
     }
 
+    #[tokio::test]
+    async fn models_complete_record_enables_explicit_grammar_support() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(responses_sse_ok()))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut model = o3_responses_model();
+        if let opi_ai::model_info::WireCompat::OpenAiResponses(compat) = &mut model.compat {
+            compat.supports_grammar = true;
+        } else {
+            panic!("Responses compat");
+        }
+        // The registered default denies grammar; the complete selected record
+        // opts in for this call, without changing the registered adapter.
+        let (models, handle) =
+            registered_responses_models(server.uri(), o3_responses_model()).await;
+        let mut request = request_with(vec![grammar_tool(Some("start: WORD"), None)]);
+        request.model = "openai-responses:o3".into();
+        models
+            .complete(
+                ChatModelRecord::new("openai-responses", model),
+                request,
+                handle.options(OpenAiResponsesOptions::default()),
+            )
+            .await
+            .unwrap();
+        let sent = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+        assert_eq!(body["tools"][0]["type"], "custom");
+        assert_eq!(body["tools"][0]["format"]["syntax"], "lark");
+    }
+
     #[test]
     fn grammar_tool_projects_custom_tool_preferring_lark() {
         let provider = OpenAiResponsesProvider::new_with_config(
@@ -2264,6 +2299,77 @@ async fn models_native_options_reach_the_responses_wire() {
 }
 
 #[tokio::test]
+async fn native_sampling_uses_native_effort_summary_default_and_request_overrides() {
+    for (effort, summary, request_temperature, expected, wire_effort) in [
+        (Some(ThinkingLevel::High), None, None, 0.9, "high"),
+        (
+            None,
+            Some(ResponsesReasoningSummary::Detailed),
+            None,
+            0.6,
+            "medium",
+        ),
+        (None, None, None, 0.2, "none"),
+        (Some(ThinkingLevel::High), None, Some(0.4), 0.4, "high"),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(responses_sse_ok()))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let model = o3_responses_model()
+            .with_sampling_params(
+                [("temperature".into(), serde_json::json!(0.1))]
+                    .into_iter()
+                    .collect(),
+            )
+            .with_sampling_level_params(
+                ThinkingLevel::None,
+                [("temperature".into(), serde_json::json!(0.2))]
+                    .into_iter()
+                    .collect(),
+            )
+            .with_sampling_level_params(
+                ThinkingLevel::Medium,
+                [("temperature".into(), serde_json::json!(0.6))]
+                    .into_iter()
+                    .collect(),
+            )
+            .with_sampling_level_params(
+                ThinkingLevel::High,
+                [("temperature".into(), serde_json::json!(0.9))]
+                    .into_iter()
+                    .collect(),
+            );
+        let (models, handle) = registered_responses_models(server.uri(), model.clone()).await;
+        let mut request = responses_public_request("o3", Some(ThinkingLevel::Low));
+        if let Some(value) = request_temperature {
+            request
+                .sampling_params
+                .insert("temperature".into(), serde_json::json!(value));
+        }
+        let mut options = OpenAiResponsesOptions::default();
+        options.reasoning_effort = effort;
+        options.reasoning_summary = summary;
+        models
+            .complete(
+                ChatModelRecord::new("openai-responses", model),
+                request,
+                handle.options(options),
+            )
+            .await
+            .expect("native call completes");
+        let sent = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+        assert_eq!(body["reasoning"]["effort"], wire_effort);
+        assert_eq!(body["temperature"], serde_json::json!(expected));
+        server.verify().await;
+    }
+}
+
+#[tokio::test]
 async fn models_native_unsupported_effort_fails_typed_before_auth() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -2368,6 +2474,7 @@ async fn models_direct_adapter_uses_injected_auth_and_returns_result() {
             responses_public_request("o3", None),
             options,
             opi_ai::auth::ResolvedAuth {
+                env: Default::default(),
                 scheme: opi_ai::auth::AuthScheme::Bearer,
                 secret: secrecy::SecretString::from("injected-key"),
                 base_url: None,
@@ -2761,4 +2868,112 @@ async fn responses_setup_failure_before_activation_has_no_duration() {
     }
     assert!(!saw_done, "setup failure never reaches a terminal Done");
     server.verify().await;
+}
+
+#[tokio::test]
+async fn native_known_invalid_input_and_endpoint_fail_before_authentication() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    struct CountingAuth(Arc<AtomicUsize>);
+    impl opi_ai::auth::AuthResolver for CountingAuth {
+        fn resolve(
+            &self,
+        ) -> opi_ai::credential::BoxAuthFuture<'_, Result<opi_ai::auth::ResolvedAuth, ProviderError>>
+        {
+            Box::pin(async move {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(opi_ai::auth::ResolvedAuth {
+                    env: Default::default(),
+                    scheme: opi_ai::auth::AuthScheme::Bearer,
+                    secret: "fixture-key".into(),
+                    base_url: None,
+                    account_id: None,
+                    provenance: Default::default(),
+                })
+            })
+        }
+    }
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(responses_sse_ok()),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let model = ModelInfo::new(
+        "probe",
+        "Probe",
+        WireApi::OpenAiResponses,
+        ModelCapabilities::new(100000, 1000),
+    )
+    .with_base_url(server.uri());
+    let api = OpenAiResponsesChatApi::new(
+        Arc::new(OpenAiResponsesProvider::new(Some(server.uri()))),
+        model.clone(),
+    )
+    .unwrap();
+    let count = Arc::new(AtomicUsize::new(0));
+    let mut models = Models::new();
+    let handle = models
+        .register_chat_api(
+            Arc::new(api),
+            Arc::new(CountingAuth(count.clone())),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let mut request = responses_public_request("probe", None);
+    request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        tools: vec![],
+        messages: vec![Message::User(opi_ai::message::UserMessage {
+            content: vec![opi_ai::message::InputContent::Image {
+                source: opi_ai::message::ImageSource::Base64 {
+                    data: "AA==".into(),
+                },
+                media_type: opi_ai::message::MediaType::Png,
+            }],
+            timestamp_ms: 0,
+        })],
+    })
+    .unwrap();
+    assert!(
+        models
+            .complete(
+                ChatModelRecord::new("openai-responses", model.clone()),
+                request,
+                handle.options(Default::default())
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+    for base in ["not-a-valid-url", "file:///tmp/not-an-http-endpoint"] {
+        let mut invalid = model.clone();
+        invalid.base_url = Some(base.into());
+        let failure = models
+            .complete(
+                ChatModelRecord::new("openai-responses", invalid),
+                responses_public_request("probe", None),
+                handle.options(Default::default()),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(failure.cause(), ProviderError::Config(_)));
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+    models
+        .complete(
+            ChatModelRecord::new("openai-responses", model),
+            responses_public_request("probe", None),
+            handle.options(Default::default()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(count.load(Ordering::SeqCst), 1);
 }

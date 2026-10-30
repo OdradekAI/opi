@@ -1,7 +1,8 @@
 //! Azure OpenAI provider profile (task 20.38: explicit dual wires).
 //!
 //! - Chat wire: `{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={version}`
-//! - Responses wire: `{endpoint}/openai/deployments/{deployment}/responses?api-version={version}`
+//! - Responses wire: `{api_base}/responses?api-version={version}`; standard Azure
+//!   resource hosts use `/openai/v1` as their API base.
 //! - Auth: `api-key` header (not `Authorization: Bearer`)
 //! - Endpoint/deployment/api-version resolution follows the pinned source:
 //!   explicit base URL or resource name, then the model base URL; the
@@ -98,6 +99,11 @@ fn normalize_azure_base_url(base_url: &str) -> Result<String, ProviderError> {
             "Invalid Azure OpenAI base URL: {trimmed}"
         )))
     })?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err(azure_config_error(
+            "Azure OpenAI requires an absolute HTTP or HTTPS API base URL.",
+        ));
+    }
     let host = url.host_str().unwrap_or_default();
     let is_azure_host = AZURE_HOST_SUFFIXES
         .iter()
@@ -110,6 +116,27 @@ fn normalize_azure_base_url(base_url: &str) -> Result<String, ProviderError> {
         return Ok(format!("{}://{host}", url.scheme()));
     }
     Ok(trimmed.to_owned())
+}
+
+fn responses_url(endpoint: &str, api_version: &str) -> String {
+    let mut url = url::Url::parse(endpoint).expect("Azure endpoint was validated at resolution");
+    let path = url.path().trim_end_matches('/');
+    let standard_resource = url.host_str().is_some_and(|host| {
+        AZURE_HOST_SUFFIXES
+            .iter()
+            .any(|suffix| host.ends_with(suffix))
+    }) && AZURE_ROOT_PATHS.contains(&path);
+    let path = if standard_resource {
+        "/openai/v1/responses".to_owned()
+    } else if path.ends_with("/responses") {
+        path.to_owned()
+    } else {
+        format!("{path}/responses")
+    };
+    url.set_path(&path);
+    url.query_pairs_mut()
+        .append_pair("api-version", api_version);
+    url.into()
 }
 
 /// Resolve the request api-version: explicit value wins, else the pinned
@@ -142,8 +169,8 @@ fn parse_deployment_map(value: Option<&str>) -> std::collections::HashMap<String
 
 /// Resolve the deployment name for one model (pinned source precedence):
 /// explicit deployment, then the configured deployment map, then the model
-/// id. The deployment rides the request body's `model` field and the URL
-/// path; the catalog id never changes.
+/// id. The deployment rides the request body's `model` field; Chat also
+/// includes it in the URL path. The catalog id never changes.
 pub fn resolve_deployment_name(
     explicit: Option<&str>,
     deployment_map: Option<&str>,
@@ -345,12 +372,9 @@ impl AzureOpenAIProvider {
         )
     }
 
-    /// Build the Azure Responses deployment URL (task 20.38 dual wire).
-    pub fn build_azure_responses_url(&self, deployment: &str) -> String {
-        format!(
-            "{}/openai/deployments/{}/responses?api-version={}",
-            self.endpoint, deployment, self.api_version
-        )
+    /// Build the Azure Responses URL. Deployment belongs in `body.model`.
+    pub fn build_azure_responses_url(&self, _deployment: &str) -> String {
+        responses_url(&self.endpoint, &self.api_version)
     }
 
     /// Set the optional `modelId=deployment` map used when a dispatch has
@@ -387,7 +411,9 @@ impl AzureOpenAIProvider {
         let secret = auth.secret.expose_secret().to_string();
         let api_key = match auth.scheme {
             crate::auth::AuthScheme::ApiKey => secret,
-            crate::auth::AuthScheme::Bearer | crate::auth::AuthScheme::AwsSigV4(_) => {
+            crate::auth::AuthScheme::Bearer
+            | crate::auth::AuthScheme::AwsSigV4(_)
+            | crate::auth::AuthScheme::AnthropicFederation => {
                 return Box::pin(stream::once(async move {
                     Err(ProviderError::Config(
                         ProviderErrorSummary::attested_static(
@@ -413,25 +439,19 @@ impl AzureOpenAIProvider {
                     .cloned()
             })
             .unwrap_or_else(|| requested_model.clone());
-        let endpoint = native
-            .azure_base_url
-            .as_deref()
-            .map(str::to_owned)
-            .or_else(|| {
-                native
-                    .azure_resource_name
-                    .as_deref()
-                    .map(|resource| format!("https://{resource}.openai.azure.com"))
-            })
-            .and_then(|base| normalize_azure_base_url(&base).ok())
-            .unwrap_or_else(|| self.endpoint.clone());
+        let endpoint = match resolve_azure_base_url(
+            native.azure_base_url.as_deref(),
+            native.azure_resource_name.as_deref(),
+            record.base_url.as_deref().or(Some(self.endpoint.as_str())),
+        ) {
+            Ok(endpoint) => endpoint,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
         let api_version = native
             .azure_api_version
             .clone()
             .unwrap_or_else(|| self.api_version.clone());
-        let url = format!(
-            "{endpoint}/openai/deployments/{deployment}/responses?api-version={api_version}"
-        );
+        let url = responses_url(&endpoint, &api_version);
 
         // Shared 20.37 parameter assembly under the azure identity: the
         // record keeps its own wire so same-identity replay works
@@ -465,7 +485,14 @@ impl AzureOpenAIProvider {
 
         let cancel = request.cancel;
         let timeout = request.timeout;
-        let extra_headers = request.extra_headers;
+        let extra_headers = match ProviderHeaders::default().merge_model_request(
+            &record.headers,
+            &[],
+            &request.extra_headers,
+        ) {
+            Ok(headers) => headers,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
         let callbacks = request.callbacks;
         // Explicit frozen telemetry context (task 20.54/AIR-055): the
         // producer task runs under the captured parent/Dispatch when
@@ -571,6 +598,43 @@ fn deployment_model(deployment: &str) -> ModelInfo {
 }
 
 impl Provider for AzureOpenAIProvider {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        if model.wire_api == WireApi::AzureOpenAiResponses {
+            validate_complete_azure_responses_record(model)
+        } else {
+            options.validate_default()
+        }
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        let mut configured =
+            self.dispatch_configured(model.clone(), AzureOpenAIOptions::from_simple(&options));
+        configured.models = vec![model.clone()];
+        configured.inner = OpenAiChatProvider::for_route(
+            model
+                .base_url
+                .clone()
+                .or_else(|| Some(self.endpoint.clone())),
+            "azure".into(),
+            ProviderHeaders::default(),
+            vec![model],
+            self.client.clone(),
+        );
+        configured.stream_resource_attempt(request, auth, attempt, resources)
+    }
+
     fn id(&self) -> &str {
         "azure"
     }
@@ -588,7 +652,9 @@ impl Provider for AzureOpenAIProvider {
         let secret = auth.secret.expose_secret();
         let api_key = match auth.scheme {
             crate::auth::AuthScheme::ApiKey => secret.to_string(),
-            crate::auth::AuthScheme::Bearer | crate::auth::AuthScheme::AwsSigV4(_) => {
+            crate::auth::AuthScheme::Bearer
+            | crate::auth::AuthScheme::AwsSigV4(_)
+            | crate::auth::AuthScheme::AnthropicFederation => {
                 return Box::pin(stream::iter(vec![Err(ProviderError::Config(
                     ProviderErrorSummary::attested_static(
                         "Azure OpenAI requires prepared API-key authentication",
@@ -629,7 +695,20 @@ impl Provider for AzureOpenAIProvider {
         };
         let cancel = request.cancel;
         let timeout = request.timeout;
-        let extra_headers = request.extra_headers;
+        let model_headers = self
+            .active_record
+            .as_ref()
+            .or_else(|| self.models.iter().find(|model| model.id == model_id))
+            .map(|model| model.headers.as_slice())
+            .unwrap_or_default();
+        let extra_headers = match ProviderHeaders::default().merge_model_request(
+            model_headers,
+            &[],
+            &request.extra_headers,
+        ) {
+            Ok(headers) => headers,
+            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+        };
         let callbacks = request.callbacks;
         // Explicit frozen telemetry context (task 20.54/AIR-055): the chat
         // producer runs under the captured parent/Dispatch when provided.
@@ -1241,6 +1320,14 @@ impl crate::models::ChatApi<AzureOpenAIOptions> for AzureOpenAIResponsesChatApi 
         options: &AzureOpenAIOptions,
     ) -> Result<(), ProviderError> {
         validate_complete_azure_responses_record(model)?;
+        resolve_azure_base_url(
+            options.azure_base_url.as_deref(),
+            options.azure_resource_name.as_deref(),
+            model
+                .base_url
+                .as_deref()
+                .or(Some(self.provider.endpoint.as_str())),
+        )?;
         // Native/exact effort fails typed preflight on unsupported levels;
         // the neutral entry clamps instead.
         if let Some(level) = options.reasoning_effort
@@ -1270,11 +1357,23 @@ impl crate::models::ChatApi<AzureOpenAIOptions> for AzureOpenAIResponsesChatApi 
         request: Request,
         options: AzureOpenAIOptions,
         auth: crate::auth::ResolvedAuth,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.stream_model_resource_prepared(self.model.clone(), request, options, auth, resources)
+    }
+
+    fn stream_model_resource_prepared(
+        &self,
+        model: ModelInfo,
+        request: Request,
+        options: AzureOpenAIOptions,
+        auth: crate::auth::ResolvedAuth,
         _resources: Option<crate::codex_resources::CallResourceLease>,
     ) -> EventStream {
-        let provider = self
-            .provider
-            .dispatch_configured(self.model.clone(), options);
+        if let Err(error) = self.validate_native_request(&model, &request, &options) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
+        let provider = self.provider.dispatch_configured(model, options);
         provider.stream_prepared(request, auth)
     }
 }

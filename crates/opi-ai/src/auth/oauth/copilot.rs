@@ -722,6 +722,7 @@ struct DeviceCodeBody {
 impl OAuthProvider for GitHubCopilotOAuthProvider {
     fn to_auth(&self, cred: &OAuthCredential) -> crate::auth::ResolvedAuth {
         crate::auth::ResolvedAuth {
+            env: Default::default(),
             scheme: crate::auth::AuthScheme::Bearer,
             secret: cred.access.clone(),
             base_url: cred.base_url.clone().or_else(|| {

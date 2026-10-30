@@ -25,14 +25,14 @@
 //! the critical section deliberately holds a `std::sync::Mutex` so callers
 //! observe strict commit ordering.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use crate::model_info::ModelInfo;
+use super::ModelsStoreEntry;
 
 use super::wire;
 
@@ -87,7 +87,10 @@ pub struct StoreSnapshot {
     /// Currently published revision.
     pub revision: u64,
     /// Per-provider dynamic catalogs at that revision.
-    pub catalogs: HashMap<String, Vec<ModelInfo>>,
+    pub catalogs: HashMap<String, ModelsStoreEntry>,
+    /// Explicitly invalidated source identities. A new successful publication
+    /// from that source clears its tombstone.
+    pub invalidated_sources: BTreeSet<String>,
 }
 
 /// The acknowledged result of a successful [`RefreshGuard::commit`].
@@ -96,14 +99,15 @@ pub struct StoreCommit {
     /// Revision this commit published.
     pub revision: u64,
     /// The committed catalog map to apply to the in-memory registry.
-    pub catalogs: HashMap<String, Vec<ModelInfo>>,
+    pub catalogs: HashMap<String, ModelsStoreEntry>,
 }
 
 #[derive(Debug, Default)]
 struct StoreInner {
     revision: u64,
-    catalogs: HashMap<String, Vec<ModelInfo>>,
+    catalogs: HashMap<String, ModelsStoreEntry>,
     publishers: HashMap<String, CatalogPublisher>,
+    invalidated_sources: BTreeSet<String>,
 }
 
 /// Handle to the persisted dynamic-catalog store. Cloning shares one inner
@@ -145,6 +149,7 @@ impl ModelsStore {
                     revision: decoded.revision,
                     catalogs: decoded.catalogs.into_iter().collect(),
                     publishers: decoded.publishers.into_iter().collect(),
+                    invalidated_sources: decoded.invalidated_sources,
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => StoreInner::default(),
@@ -179,6 +184,51 @@ impl ModelsStore {
             StoreSnapshot {
                 revision: inner.revision,
                 catalogs: inner.catalogs.clone(),
+                invalidated_sources: inner.invalidated_sources.clone(),
+            },
+            inner.publishers.clone(),
+        )
+    }
+
+    /// Persistently withdraw the cached records last published by `source_id`.
+    /// This is an explicit host action; HTTP status codes do not invoke it.
+    /// The revision advance also rejects every already-running refresh guard.
+    pub async fn invalidate_source(
+        &self,
+        source_id: &str,
+    ) -> Result<StoreCommit, StoreCommitError> {
+        let (guard, snapshot, mut publishers) = self.begin_snapshot(None);
+        let mut catalogs = snapshot.catalogs;
+        let mut invalidated = snapshot.invalidated_sources;
+        catalogs.retain(|provider, _| !matches!(publishers.get(provider), Some(CatalogPublisher::Source { id }) if id == source_id));
+        publishers.retain(|provider, _| catalogs.contains_key(provider));
+        invalidated.insert(source_id.to_owned());
+        guard
+            .commit_publication(catalogs, publishers, Some(invalidated))
+            .await
+            .map(|(commit, _)| commit)
+    }
+
+    pub(crate) fn begin_snapshot(
+        &self,
+        token: Option<CancellationToken>,
+    ) -> (
+        RefreshGuard,
+        StoreSnapshot,
+        HashMap<String, CatalogPublisher>,
+    ) {
+        let inner = self.inner.lock().expect("store poisoned");
+        (
+            RefreshGuard {
+                inner: Arc::clone(&self.inner),
+                path: self.path.clone(),
+                guard_revision: inner.revision,
+                token,
+            },
+            StoreSnapshot {
+                revision: inner.revision,
+                catalogs: inner.catalogs.clone(),
+                invalidated_sources: inner.invalidated_sources.clone(),
             },
             inner.publishers.clone(),
         )
@@ -228,7 +278,7 @@ impl RefreshGuard {
     /// rejection nothing is written and the published state is unchanged.
     pub async fn commit(
         self,
-        catalogs: HashMap<String, Vec<ModelInfo>>,
+        catalogs: HashMap<String, ModelsStoreEntry>,
     ) -> Result<StoreCommit, StoreCommitError> {
         self.commit_with_publishers(catalogs, HashMap::new())
             .await
@@ -237,8 +287,17 @@ impl RefreshGuard {
 
     pub(crate) async fn commit_with_publishers(
         self,
-        catalogs: HashMap<String, Vec<ModelInfo>>,
+        catalogs: HashMap<String, ModelsStoreEntry>,
+        publishers: HashMap<String, CatalogPublisher>,
+    ) -> Result<(StoreCommit, HashMap<String, CatalogPublisher>), StoreCommitError> {
+        self.commit_publication(catalogs, publishers, None).await
+    }
+
+    async fn commit_publication(
+        self,
+        catalogs: HashMap<String, ModelsStoreEntry>,
         mut publishers: HashMap<String, CatalogPublisher>,
+        invalidated: Option<BTreeSet<String>>,
     ) -> Result<(StoreCommit, HashMap<String, CatalogPublisher>), StoreCommitError> {
         if self
             .token
@@ -248,15 +307,12 @@ impl RefreshGuard {
             return Err(StoreCommitError::Cancelled);
         }
         // Deterministic provider ordering keeps the serialized bytes stable.
-        let ordered: BTreeMap<String, Vec<ModelInfo>> = catalogs.into_iter().collect();
+        let ordered: BTreeMap<String, ModelsStoreEntry> = catalogs.into_iter().collect();
+        for (provider, entry) in &ordered {
+            wire::validate_provider_entry(provider, entry)
+                .map_err(|message| ModelsStoreError::Corrupt { message })?;
+        }
         publishers.retain(|provider, _| ordered.contains_key(provider));
-        let document = wire::encode_store_document(self.guard_revision + 1, &ordered, &publishers);
-        let bytes = serde_json::to_vec_pretty(&document)
-            .map_err(|error| ModelsStoreError::Corrupt {
-                message: format!("store document failed to encode: {error}"),
-            })?
-            .to_owned();
-
         let mut inner = self.inner.lock().expect("store poisoned");
         if inner.revision != self.guard_revision {
             return Err(StoreCommitError::Superseded {
@@ -264,6 +320,25 @@ impl RefreshGuard {
                 store_revision: inner.revision,
             });
         }
+        let mut invalidated_sources =
+            invalidated.unwrap_or_else(|| inner.invalidated_sources.clone());
+        for publisher in publishers.values() {
+            if let CatalogPublisher::Source { id } = publisher {
+                invalidated_sources.remove(id);
+            }
+        }
+        let document = wire::encode_store_document(
+            self.guard_revision + 1,
+            &ordered,
+            &publishers,
+            &invalidated_sources,
+        );
+        let bytes = serde_json::to_vec_pretty(&document)
+            .map_err(|error| ModelsStoreError::Corrupt {
+                message: format!("store document failed to encode: {error}"),
+            })?
+            .to_owned();
+
         let temp_path = self.path.with_extension("json.committing");
         std::fs::write(&temp_path, &bytes).map_err(ModelsStoreError::Io)?;
         // Rename within the same directory is atomic on the supported
@@ -273,6 +348,7 @@ impl RefreshGuard {
         inner.revision += 1;
         inner.catalogs = ordered.into_iter().collect();
         inner.publishers = publishers;
+        inner.invalidated_sources = invalidated_sources;
         Ok((
             StoreCommit {
                 revision: inner.revision,

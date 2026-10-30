@@ -274,6 +274,12 @@ impl ThinkingLevelMap {
         self
     }
 
+    pub(crate) fn mapping(&self, level: ThinkingLevel) -> &ThinkingLevelMapping {
+        self.mappings
+            .get(&level)
+            .unwrap_or(&ThinkingLevelMapping::Unsupported)
+    }
+
     pub fn resolve(
         &self,
         level: ThinkingLevel,
@@ -579,6 +585,8 @@ pub struct OpenAiResponsesCompat {
     /// reply that recorded a level, one at the end; the request
     /// `reasoning.effort` stays fixed. Source default false.
     pub supports_mid_convo_effort: bool,
+    /// Explicit model support for OpenAI custom grammar tools. Omission is false.
+    pub supports_grammar: bool,
 }
 
 impl Default for OpenAiResponsesCompat {
@@ -590,6 +598,7 @@ impl Default for OpenAiResponsesCompat {
             responses_path: "/v1/responses".into(),
             send_session_id_header: false,
             supports_mid_convo_effort: false,
+            supports_grammar: false,
         }
     }
 }
@@ -694,6 +703,29 @@ impl ModelPricing {
         Ok(())
     }
 
+    /// Source catalogs may retain finite negative placeholders for unknown
+    /// rates. Validate their representation without treating them as prices.
+    pub(crate) fn validate_source_metadata(&self) -> Result<(), ModelInfoError> {
+        for pricing in
+            std::iter::once(&self.base).chain(self.tiers.iter().map(|tier| &tier.pricing))
+        {
+            if [
+                pricing.input_cost_per_mtok,
+                pricing.output_cost_per_mtok,
+                pricing.cache_read_cost_per_mtok,
+                pricing.cache_write_cost_per_mtok,
+            ]
+            .into_iter()
+            .any(|rate| !rate.is_finite())
+            {
+                return Err(ModelInfoError::InvalidPricing(
+                    "source pricing metadata must be finite".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub fn effective(&self, input_tokens: u64) -> Pricing {
         self.effective_for_prompt_tokens(input_tokens)
     }
@@ -761,32 +793,56 @@ pub fn resolve_sampling_params(
 ///
 /// Selects rates through [`ModelPricing::effective_for_usage`], applies the
 /// base arithmetic (1-hour subset at twice the input rate, never double
-/// counted), and scales every component by the response-reported service
-/// tier. The explicit source exception: OpenRouter image `parse_usage` keeps
+/// counted), and scales every component by the adapter's effective service
+/// tier under the explicit wire. Codex does not mark up `fast`; Azure has
+/// no service-tier multiplier. Unknown usage, unrecognized pricing tiers,
+/// unknown selected rates and non-finite results return `None`; finite
+/// negative source placeholders in unselected tiers do not affect cost.
+/// Known free usage is
+/// `Some` zero. The explicit source exception: OpenRouter image `parse_usage` keeps
 /// base model rates without tiers — image callers use
 /// [`crate::stream::calculate_cost`] directly.
 pub fn calculate_cost_tiered(
     usage: &Usage,
     pricing: &ModelPricing,
     model_id: &str,
-) -> CostBreakdown {
-    let rates = pricing.effective_for_usage(usage);
-    let cost = calculate_cost(usage, &rates);
-    let multiplier = usage
-        .service_tier
-        .map_or(1.0, |tier| tier.cost_multiplier(model_id));
-    if multiplier == 1.0 {
-        return cost;
+    wire: WireApi,
+) -> Option<CostBreakdown> {
+    if !usage.reported || pricing.validate_source_metadata().is_err() {
+        return None;
     }
-    CostBreakdown {
+    let rates = pricing.effective_for_usage(usage);
+    validate_pricing(&rates).ok()?;
+    let cost = calculate_cost(usage, &rates);
+    let tier = usage.effective_service_tier.or(usage.service_tier);
+    let multiplier = match wire {
+        WireApi::OpenAiResponses | WireApi::OpenAiCodexResponses => match tier {
+            Some(crate::stream::ServiceTier::Unknown) => return None,
+            Some(crate::stream::ServiceTier::Fast) if wire == WireApi::OpenAiCodexResponses => 1.0,
+            Some(tier) => tier.cost_multiplier(model_id),
+            None => 1.0,
+        },
+        _ => 1.0,
+    };
+    let cost = CostBreakdown {
         input_cost: cost.input_cost * multiplier,
         output_cost: cost.output_cost * multiplier,
         cache_read_cost: cost.cache_read_cost * multiplier,
         cache_write_cost: cost.cache_write_cost * multiplier,
-    }
+    };
+    [
+        cost.input_cost,
+        cost.output_cost,
+        cost.cache_read_cost,
+        cost.cache_write_cost,
+        cost.total_cost(),
+    ]
+    .into_iter()
+    .all(f64::is_finite)
+    .then_some(cost)
 }
 
-fn validate_pricing(pricing: &Pricing) -> Result<(), ModelInfoError> {
+pub(crate) fn validate_pricing(pricing: &Pricing) -> Result<(), ModelInfoError> {
     let rates = [
         pricing.input_cost_per_mtok,
         pricing.output_cost_per_mtok,
@@ -823,6 +879,11 @@ pub struct ModelInfo {
     pub sampling_params: SamplingParams,
     /// Sampling parameter overrides selected by the effective thinking level.
     pub sampling_params_by_thinking_level: BTreeMap<ThinkingLevel, SamplingParams>,
+    /// Model header defaults; a null value removes an inherited default.
+    pub headers: Vec<(String, Option<String>)>,
+    /// Source input-limit metadata. Preservation does not enable a resize or
+    /// rejection policy; callers choose whether to apply these limits.
+    pub input_limits: Option<serde_json::Value>,
 }
 
 impl ModelInfo {
@@ -848,6 +909,8 @@ impl ModelInfo {
             pricing: None,
             sampling_params: SamplingParams::new(),
             sampling_params_by_thinking_level: BTreeMap::new(),
+            headers: Vec::new(),
+            input_limits: None,
         }
     }
 
@@ -909,17 +972,6 @@ impl ModelInfo {
                 field: "max_output_tokens",
             });
         }
-        if !self.capabilities.supports_thinking
-            && ThinkingLevel::ALL
-                .into_iter()
-                .filter(|level| *level != ThinkingLevel::None)
-                .any(|level| self.thinking_level_map.resolve(level).is_ok())
-        {
-            return Err(ModelInfoError::IncoherentCapabilities {
-                model_id: self.id.clone(),
-                detail: "thinking levels are enabled while supports_thinking is false",
-            });
-        }
         if self.capabilities.supports_long_cache_retention
             && !self.capabilities.supports_cache_control
         {
@@ -936,8 +988,10 @@ impl ModelInfo {
                 compat_wire,
             });
         }
+        crate::provider_headers::validate_model_headers(&self.headers)
+            .map_err(|error| ModelInfoError::InvalidHeaders(error.to_string()))?;
         if let Some(pricing) = &self.pricing {
-            pricing.validate()?;
+            pricing.validate_source_metadata()?;
         }
         Ok(())
     }
@@ -962,6 +1016,8 @@ pub enum ModelInfoError {
         wire_api: WireApi,
         compat_wire: WireApi,
     },
+    #[error("invalid model headers: {0}")]
+    InvalidHeaders(String),
     #[error("invalid model pricing: {0}")]
     InvalidPricing(String),
 }

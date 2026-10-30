@@ -1732,7 +1732,7 @@ mod request_compatibility {
         );
     }
     #[test]
-    fn anthropic_direct_catalog_preserves_fixed_thinking_and_temperature() {
+    fn anthropic_direct_catalog_preserves_fixed_thinking_and_suppresses_temperature() {
         let provider = AnthropicProvider::new(None);
         let mut request = request("anthropic:claude-sonnet-4-5-20250514");
         request.temperature = Some(0.4);
@@ -1744,7 +1744,7 @@ mod request_compatibility {
 
         let body = provider.build_request_body(&request).unwrap();
 
-        assert_eq!(body["temperature"], 0.4);
+        assert!(body.get("temperature").is_none());
         // Task 20.39 replacement proof: enabled thinking always carries the
         // display field (default summarized) per pi buildParams.
         assert_eq!(
@@ -2630,6 +2630,10 @@ mod anthropic_strict_variant_tests {
     }
 
     fn strict_models(base_url: String) -> Models {
+        strict_models_with_inline(base_url, false)
+    }
+
+    fn strict_models_with_inline(base_url: String, inline: bool) -> Models {
         let model = ModelInfo::new(
             "strict-model",
             "Strict Model",
@@ -2641,8 +2645,8 @@ mod anthropic_strict_variant_tests {
             force_adaptive_thinking: false,
             supports_temperature: true,
             supports_strict_tools: true,
-            supports_mid_convo_system_messages: false,
-            supports_mid_convo_tool_changes: false,
+            supports_mid_convo_system_messages: inline,
+            supports_mid_convo_tool_changes: inline,
         }))
         .unwrap();
         let client = Arc::new(HttpClientBuilder::new().build().expect("client build"));
@@ -2784,6 +2788,91 @@ mod anthropic_strict_variant_tests {
     #[tokio::test]
     async fn ordinary_models_drives_the_single_strict_variant() {
         ordinary_strict_variant_contract(false).await;
+    }
+
+    #[tokio::test]
+    async fn inline_preferred_tools_participate_in_the_single_strict_variant() {
+        for initial_preferred in [false, true] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/v1/messages"))
+                .respond_with(ResponseTemplate::new(400).set_body_string(strict_limits_400()))
+                .up_to_n_times(1)
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path("/v1/messages"))
+                .respond_with(ResponseTemplate::new(200).set_body_string(anthropic_sse_ok()))
+                .mount(&server)
+                .await;
+            let models = strict_models_with_inline(server.uri(), true);
+            let mut initial = strict_tool("initial", StrictPreference::Prefer);
+            if !initial_preferred {
+                initial.constrained_sampling = None;
+            }
+            let payload_calls = Arc::new(AtomicUsize::new(0));
+            let observed = payload_calls.clone();
+            let mut request = variant_request(
+                vec![],
+                RequestCallbacks::new().with_on_payload(Arc::new(move |_| {
+                    observed.fetch_add(1, Ordering::SeqCst);
+                    Ok(None)
+                })),
+            );
+            request.context = opi_ai::transcript::normalize_context(Context {
+                messages: vec![
+                    Message::System(opi_ai::transcript::SystemMessage {
+                        tools_added: vec![initial],
+                        ..Default::default()
+                    }),
+                    Message::User(UserMessage {
+                        content: vec![InputContent::Text { text: "go".into() }],
+                        timestamp_ms: 0,
+                    }),
+                    Message::System(opi_ai::transcript::SystemMessage {
+                        tools_added: vec![
+                            ToolDef {
+                                description: "inline replacement".into(),
+                                ..strict_tool("initial", StrictPreference::Prefer)
+                            },
+                            strict_tool("later-require", StrictPreference::Require),
+                        ],
+                        ..Default::default()
+                    }),
+                ],
+                ..Default::default()
+            })
+            .unwrap();
+            models
+                .complete_simple(
+                    opi_ai::ChatModelRecord::new(
+                        "test",
+                        models.get_model("test", "strict-model").unwrap(),
+                    ),
+                    request,
+                    Default::default(),
+                )
+                .await
+                .expect("inline Prefer admits the strict variant");
+            let sent = server.received_requests().await.unwrap();
+            assert_eq!(sent.len(), 2);
+            assert_eq!(payload_calls.load(Ordering::SeqCst), 2);
+            for (index, request) in sent.iter().enumerate() {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                let definitions: Vec<_> = body["messages"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .flat_map(|message| message["content"].as_array().into_iter().flatten())
+                    .filter(|block| block["type"] == "tool_addition")
+                    .map(|block| &block["tool"]["definition"])
+                    .collect();
+                assert_eq!(definitions.len(), 2);
+                assert_eq!(definitions[0]["description"], "inline replacement");
+                assert_eq!(definitions[0].get("strict").is_some(), index == 0);
+                assert_eq!(definitions[1]["strict"], true);
+            }
+        }
     }
 
     #[tokio::test]
@@ -3983,6 +4072,69 @@ async fn anthropic_direct_adapter_native_lifecycle_reaches_the_wire() {
     assert_eq!(message.stop_reason, StopReason::Stop);
 }
 
+async fn native_defaults_body(thinking_enabled: bool) -> serde_json::Value {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(text_fixture()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut model =
+        model_39("claude-sonnet-4-5", compat_39(false, false, false)).with_base_url(server.uri());
+    model.capabilities.max_output_tokens = 12_345;
+    let provider = std::sync::Arc::new(AnthropicProvider::for_route(
+        "anthropic".into(),
+        vec![model.clone()],
+        None,
+        Default::default(),
+        std::sync::Arc::new(HttpClient::new()),
+        false,
+    ));
+    let api = AnthropicMessagesChatApi::new(provider, model.clone()).unwrap();
+    let mut models = Models::new();
+    let handle = models
+        .register_chat_api(
+            std::sync::Arc::new(api),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::ApiKey,
+                secrecy::SecretString::from("offline-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let mut request = request_39(ThinkingConfig::default());
+    request.max_tokens = None;
+    request.temperature = Some(0.3);
+    let mut options = native_options_39();
+    options.thinking_enabled = Some(thinking_enabled);
+    models
+        .complete(
+            opi_ai::models::ChatModelRecord::new("anthropic", model),
+            request,
+            handle.options(options),
+        )
+        .await
+        .unwrap();
+    let sent = server.received_requests().await.unwrap();
+    server.verify().await;
+    serde_json::from_slice(&sent[0].body).unwrap()
+}
+
+#[tokio::test]
+async fn native_absent_max_tokens_uses_the_selected_model_cap() {
+    let body = native_defaults_body(false).await;
+    assert_eq!(body["max_tokens"], 12_345);
+    assert_eq!(body["temperature"], serde_json::json!(0.3));
+}
+
+#[tokio::test]
+async fn native_enabled_thinking_suppresses_temperature() {
+    let body = native_defaults_body(true).await;
+    assert_eq!(body["thinking"]["budget_tokens"], 1024);
+    assert!(body.get("temperature").is_none());
+}
+
 #[test]
 fn anthropic_direct_adapter_rejects_wrong_wire_records() {
     let wrong = ModelInfo::new(
@@ -4264,4 +4416,834 @@ async fn anthropic_telemetry_carrier_instruments_the_producer() {
         "producer telemetry flows to the frozen carrier: {:?}",
         state.spans
     );
+}
+
+#[tokio::test]
+async fn direct_unknown_model_without_max_tokens_fails_typed_before_send() {
+    let server = MockServer::start().await;
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut request = request_39(ThinkingConfig::default());
+    request.model = "anthropic:unknown-model".into();
+    request.max_tokens = None;
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    assert!(matches!(
+        stream.next().await,
+        Some(Err(ProviderError::Config(_)))
+    ));
+    assert!(stream.next().await.is_none());
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn oauth_key_projects_identity_inline_tools_and_capture_reload_replay() {
+    use opi_ai::constrained_sampling::{ConstrainedSampling, StrictPreference};
+    use opi_ai::message::{AssistantContent, AssistantMessage, OutputContent, ToolResultMessage};
+    use std::sync::{Arc, Mutex};
+    let server = MockServer::start().await;
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let reply = [
+        serde_json::json!({"type":"message_start","message":{"id":"oauth-fixture","model":"claude-sonnet-4-5","usage":{"input_tokens":1,"output_tokens":0}}}),
+        serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call-read","name":"Read","input":{}}}),
+        serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"x\":\"fixture\"}"}}),
+        serde_json::json!({"type":"content_block_stop","index":0}),
+        serde_json::json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}),
+        serde_json::json!({"type":"message_stop"}),
+    ].into_iter().map(|event| format!("event: {}\ndata: {event}\n\n", event["type"].as_str().unwrap())).collect::<String>();
+    let count = calls.clone();
+    Mock::given(method("POST")).respond_with(move |_: &wiremock::Request| {
+        if count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            ResponseTemplate::new(400).set_body_json(serde_json::json!({"type":"error","error":{"type":"invalid_request_error","message":"Schemas contains too many parameters with union types (fixture)"}}))
+        } else { ResponseTemplate::new(200).insert_header("content-type", "text/event-stream").set_body_string(reply.clone()) }
+    }).mount(&server).await;
+    let mut compat = compat_39(false, true, true);
+    compat.supports_strict_tools = true;
+    let model = model_39("claude-sonnet-4-5", compat).with_base_url(server.uri());
+    let api = AnthropicMessagesChatApi::new(
+        Arc::new(provider_39(&model, native_options_39())),
+        model.clone(),
+    )
+    .unwrap();
+    let mut models = Models::new();
+    let handle = models
+        .register_chat_api(
+            Arc::new(api),
+            Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::ApiKey,
+                "sk-ant-oat-fixture-only".into(),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let strict = |name: &str, preference| ToolDef {
+        constrained_sampling: Some(ConstrainedSampling::JsonSchema { strict: preference }),
+        ..tool_def_39(name)
+    };
+    let context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages: vec![
+            Message::System(opi_ai::transcript::SystemMessage {
+                content: "caller prompt".into(),
+                sections: vec![],
+                tools_added: vec![
+                    strict("read", StrictPreference::Prefer),
+                    tool_def_39("write"),
+                ],
+                tools_removed: vec![],
+                timestamp_ms: 0,
+            }),
+            Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "inspect".into(),
+                }],
+                timestamp_ms: 1,
+            }),
+            Message::System(opi_ai::transcript::SystemMessage {
+                content: "later prompt".into(),
+                sections: vec![],
+                tools_added: vec![
+                    strict("read", StrictPreference::Prefer),
+                    strict("bash", StrictPreference::Require),
+                ],
+                tools_removed: vec![opi_ai::transcript::ToolReference {
+                    name: "write".into(),
+                }],
+                timestamp_ms: 2,
+            }),
+        ],
+        tools: vec![],
+    })
+    .unwrap();
+    let raw_names = Arc::new(Mutex::new(Vec::new()));
+    let recorder = raw_names.clone();
+    let mut request = request_39(ThinkingConfig::default());
+    request.context = context.clone();
+    request.callbacks = RequestCallbacks::new().with_on_raw(Arc::new(move |event| {
+        if let Some(name) = event["content_block"]["name"].as_str() {
+            recorder.lock().unwrap().push(name.to_owned());
+        }
+        Ok(())
+    }));
+    let result = models
+        .complete(
+            opi_ai::ChatModelRecord::new("anthropic", model.clone()),
+            request,
+            handle.options(native_options_39()),
+        )
+        .await
+        .unwrap();
+    let sent = server.received_requests().await.unwrap();
+    assert_eq!(sent.len(), 2, "one lawful strict variant");
+    assert_eq!(
+        sent[0]
+            .headers
+            .get("authorization")
+            .map(|value| value.to_str().unwrap()),
+        Some("Bearer sk-ant-oat-fixture-only")
+    );
+    assert!(!sent[0].headers.contains_key("x-api-key"));
+    assert_eq!(sent[0].headers["user-agent"], "claude-cli/2.1.280");
+    assert_eq!(sent[0].headers["x-app"], "cli");
+    for (index, sent) in sent.iter().enumerate() {
+        let body: serde_json::Value = serde_json::from_slice(&sent.body).unwrap();
+        assert_eq!(
+            body["system"][0]["text"],
+            "You are Claude Code, Anthropic's official CLI for Claude."
+        );
+        assert_eq!(body["system"][1]["text"], "caller prompt");
+        assert_eq!(body["tools"][0]["name"], "Read");
+        assert_eq!(
+            body["tools"][0]
+                .get("strict")
+                .and_then(|value| value.as_bool()),
+            (index == 0).then_some(true)
+        );
+        let blocks: Vec<_> = body["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|message| message["content"].as_array().into_iter().flatten())
+            .collect();
+        assert!(
+            blocks
+                .iter()
+                .any(|block| block["type"] == "tool_removal" && block["tool"]["name"] == "Write")
+        );
+        assert!(blocks.iter().any(|block| block["type"] == "tool_addition"
+            && block["tool"]["definition"]["name"] == "Bash"
+            && block["tool"]["definition"]["strict"] == true));
+    }
+    assert_eq!(*raw_names.lock().unwrap(), vec!["Read"]);
+    let tool_call = result
+        .content
+        .iter()
+        .find_map(|block| match block {
+            AssistantContent::ToolCall { tool_call } => Some(tool_call),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(tool_call.name, "read");
+    let reloaded: AssistantMessage =
+        serde_json::from_str(&serde_json::to_string(&result).unwrap()).unwrap();
+    let mut messages = context.messages().to_vec();
+    messages.push(Message::Assistant(reloaded));
+    messages.push(Message::ToolResult(ToolResultMessage {
+        tool_call_id: "call-read".into(),
+        tool_name: "read".into(),
+        content: vec![OutputContent::Text {
+            text: "done".into(),
+        }],
+        details: None,
+        is_error: false,
+        not_executed: None,
+        truncated: false,
+        timestamp_ms: 3,
+    }));
+    let mut next = request_39(ThinkingConfig::default());
+    next.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages,
+        tools: vec![],
+    })
+    .unwrap();
+    models
+        .complete(
+            opi_ai::ChatModelRecord::new("anthropic", model),
+            next,
+            handle.options(native_options_39()),
+        )
+        .await
+        .unwrap();
+    let sent = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&sent[2].body).unwrap();
+    assert!(
+        body["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|message| message["content"].as_array().into_iter().flatten())
+            .any(|block| block["type"] == "tool_use" && block["name"] == "Read")
+    );
+}
+
+mod federation_fixtures {
+    use super::*;
+    use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
+    use opi_ai::credential::BoxAuthFuture;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    #[derive(Clone)]
+    struct FederationAuth(ResolvedAuth);
+    impl AuthResolver for FederationAuth {
+        fn resolve(&self) -> BoxAuthFuture<'_, Result<ResolvedAuth, ProviderError>> {
+            Box::pin(async { Ok(self.0.clone()) })
+        }
+    }
+
+    fn prepared(file: &std::path::Path) -> ResolvedAuth {
+        let mut auth = opi_ai::test_support::resolved_auth();
+        auth.scheme = AuthScheme::AnthropicFederation;
+        auth.secret = "".into();
+        auth.env = [
+            ("ANTHROPIC_FEDERATION_RULE_ID", "rule-fixture".to_owned()),
+            ("ANTHROPIC_ORGANIZATION_ID", "org-fixture".to_owned()),
+            (
+                "ANTHROPIC_IDENTITY_TOKEN_FILE",
+                file.to_string_lossy().into_owned(),
+            ),
+            ("ANTHROPIC_SERVICE_ACCOUNT_ID", "service-fixture".to_owned()),
+            ("ANTHROPIC_WORKSPACE_ID", "workspace-fixture".to_owned()),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.into()))
+        .collect();
+        auth
+    }
+
+    fn setup(server: &MockServer, auth: ResolvedAuth) -> (Models, opi_ai::ChatModelRecord) {
+        let model = model_39("claude-sonnet-4-5", compat_39(false, false, false))
+            .with_base_url(server.uri());
+        let provider = Arc::new(provider_39(&model, native_options_39()));
+        let api = AnthropicMessagesChatApi::new(provider, model.clone()).unwrap();
+        let mut models = Models::new();
+        models
+            .register_chat_api(
+                Arc::new(api),
+                Arc::new(FederationAuth(auth)),
+                opi_ai::AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        (models, opi_ai::ChatModelRecord::new("anthropic", model))
+    }
+
+    fn success() -> ResponseTemplate {
+        let body = [
+            serde_json::json!({"type":"message_start","message":{"id":"federated","model":"claude-sonnet-4-5","usage":{"input_tokens":1,"output_tokens":0}}}),
+            serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":"ok"}}),
+            serde_json::json!({"type":"content_block_stop","index":0}),
+            serde_json::json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}),
+            serde_json::json!({"type":"message_stop"}),
+        ].into_iter().map(|e| format!("event: {}\ndata: {e}\n\n",e["type"].as_str().unwrap())).collect::<String>();
+        ResponseTemplate::new(200)
+            .insert_header("content-type", "text/event-stream")
+            .set_body_string(body)
+    }
+
+    #[tokio::test]
+    async fn federation_real_models_exchanges_caches_and_keeps_non_subscription_wire() {
+        let server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("identity.jwt");
+        let (models, record) = setup(&server, prepared(&file));
+        let call = models.complete_simple(
+            record.clone(),
+            request_39(Default::default()),
+            SimpleOptions::default(),
+        );
+        assert!(server.received_requests().await.unwrap().is_empty());
+        std::fs::write(&file, "  fixture-identity-jwt\n").unwrap();
+        Mock::given(method("POST")).and(path("/v1/oauth/token"))
+            .and(wiremock::matchers::headers("anthropic-beta", vec!["oauth-2025-04-20", "oidc-federation-2026-04-01"]))
+            .and(body_partial_json(serde_json::json!({"grant_type":"urn:ietf:params:oauth:grant-type:jwt-bearer","assertion":"fixture-identity-jwt","federation_rule_id":"rule-fixture","organization_id":"org-fixture","service_account_id":"service-fixture","workspace_id":"workspace-fixture"})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"access_token":"federated-access","expires_in":3600,"token_type":"Bearer"})))
+            .expect(1).mount(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .and(header("authorization", "Bearer federated-access"))
+            .respond_with(success())
+            .expect(2)
+            .mount(&server)
+            .await;
+        call.await.expect("real federation exchange and generation");
+        std::fs::remove_file(&file).unwrap();
+        models
+            .complete_simple(record, request_39(Default::default()), Default::default())
+            .await
+            .expect("cached token needs no identity file");
+        let requests = server.received_requests().await.unwrap();
+        let generation = requests
+            .iter()
+            .filter(|r| r.url.path() == "/v1/messages")
+            .collect::<Vec<_>>();
+        assert_eq!(generation.len(), 2);
+        for request in generation {
+            assert_eq!(request.headers["anthropic-beta"], "oauth-2025-04-20");
+            assert!(!request.headers.contains_key("x-api-key"));
+            assert!(!request.headers.contains_key("x-app"));
+            let body = String::from_utf8(request.body.clone()).unwrap();
+            assert!(!body.contains("Claude Code"));
+            assert!(!body.contains("fixture-identity-jwt"));
+        }
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn federation_401_invalidates_next_call_without_hidden_generation_retry() {
+        let server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("identity.jwt");
+        std::fs::write(&file, "first-identity").unwrap();
+        let (models, record) = setup(&server, prepared(&file));
+        let exchanges = Arc::new(AtomicUsize::new(0));
+        let count = exchanges.clone();
+        Mock::given(method("POST"))
+            .and(path("/v1/oauth/token"))
+            .respond_with(move |_: &wiremock::Request| {
+                let n = count.fetch_add(1, Ordering::SeqCst) + 1;
+                ResponseTemplate::new(200).set_body_json(
+                    serde_json::json!({"access_token":format!("access-{n}"),"expires_in":3600}),
+                )
+            })
+            .expect(2)
+            .mount(&server)
+            .await;
+        let sends = Arc::new(AtomicUsize::new(0));
+        let count = sends.clone();
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(move |_: &wiremock::Request| {
+                if count.fetch_add(1, Ordering::SeqCst) == 1 {
+                    ResponseTemplate::new(401)
+                } else {
+                    success()
+                }
+            })
+            .expect(3)
+            .mount(&server)
+            .await;
+        models
+            .complete_simple(
+                record.clone(),
+                request_39(Default::default()),
+                Default::default(),
+            )
+            .await
+            .unwrap();
+        let failure = models
+            .complete_simple(
+                record.clone(),
+                request_39(Default::default()),
+                Default::default(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            failure.cause().category(),
+            opi_ai::provider::ProviderErrorCategory::Auth
+        );
+        assert_eq!(sends.load(Ordering::SeqCst), 2);
+        assert_eq!(exchanges.load(Ordering::SeqCst), 1);
+        std::fs::write(&file, "second-identity").unwrap();
+        models
+            .complete_simple(record, request_39(Default::default()), Default::default())
+            .await
+            .unwrap();
+        let requests = server.received_requests().await.unwrap();
+        let auths = requests
+            .iter()
+            .filter(|r| r.url.path() == "/v1/messages")
+            .map(|r| r.headers["authorization"].to_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            auths,
+            vec!["Bearer access-1", "Bearer access-1", "Bearer access-2"]
+        );
+        let tokens = requests
+            .iter()
+            .filter(|r| r.url.path() == "/v1/oauth/token")
+            .map(|r| {
+                serde_json::from_slice::<serde_json::Value>(&r.body).unwrap()["assertion"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(tokens, vec!["first-identity", "second-identity"]);
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn federation_expiry_and_complete_model_base_select_fresh_exchange() {
+        let first = MockServer::start().await;
+        let second = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("identity");
+        std::fs::write(&file, "rotating-1").unwrap();
+        let (models, record) = setup(&first, prepared(&file));
+        for server in [&first, &second] {
+            Mock::given(method("POST"))
+                .and(path("/v1/oauth/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(
+                    serde_json::json!({"access_token":"short-token","expires_in":0}),
+                ))
+                .mount(server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path("/v1/messages"))
+                .respond_with(success())
+                .mount(server)
+                .await;
+        }
+        models
+            .complete_simple(
+                record.clone(),
+                request_39(Default::default()),
+                Default::default(),
+            )
+            .await
+            .unwrap();
+        std::fs::write(&file, "rotating-2").unwrap();
+        models
+            .complete_simple(
+                record.clone(),
+                request_39(Default::default()),
+                Default::default(),
+            )
+            .await
+            .unwrap();
+        let mut changed = record.info().clone();
+        changed.base_url = Some(second.uri());
+        models
+            .complete_simple(
+                opi_ai::ChatModelRecord::new("anthropic", changed),
+                request_39(Default::default()),
+                Default::default(),
+            )
+            .await
+            .unwrap();
+        let sent = first.received_requests().await.unwrap();
+        let assertions = sent
+            .iter()
+            .filter(|r| r.url.path() == "/v1/oauth/token")
+            .map(|r| {
+                serde_json::from_slice::<serde_json::Value>(&r.body).unwrap()["assertion"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(assertions, vec!["rotating-1", "rotating-2"]);
+        let second = second.received_requests().await.unwrap();
+        assert_eq!(
+            second
+                .iter()
+                .filter(|r| r.url.path() == "/v1/oauth/token")
+                .count(),
+            1
+        );
+        assert_eq!(
+            second
+                .iter()
+                .filter(|r| r.url.path() == "/v1/messages")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn federation_callback_failure_and_unsafe_base_do_no_auth_io() {
+        let server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        let (models, record) = setup(&server, prepared(&missing));
+        let mut request = request_39(Default::default());
+        request.callbacks = opi_ai::RequestCallbacks::new().with_on_payload(Arc::new(|_| {
+            Err(opi_ai::CallbackError::new("fixture callback failed"))
+        }));
+        let failure = models
+            .complete_simple(record.clone(), request, Default::default())
+            .await
+            .unwrap_err();
+        assert!(matches!(failure.cause(), ProviderError::CallbackPhase(_)));
+        assert!(server.received_requests().await.unwrap().is_empty());
+        let mut unsafe_model = record.info().clone();
+        unsafe_model.base_url = Some("http://unsafe-federation.invalid".into());
+        let failure = models
+            .complete_simple(
+                opi_ai::ChatModelRecord::new("anthropic", unsafe_model),
+                request_39(Default::default()),
+                Default::default(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(failure.cause(), ProviderError::Config(_)));
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn federation_failed_exchange_never_generates_or_exposes_identity_material() {
+        for (status, response) in [
+            (
+                401,
+                serde_json::json!({"assertion":"identity-secret-canary","access_token":"access-secret-canary"}),
+            ),
+            (
+                200,
+                serde_json::json!({"access_token":"access-secret-canary","expires_in":"not-finite"}),
+            ),
+            (
+                200,
+                serde_json::json!({"access_token":"access-secret-canary","expires_in":3600,"token_type":"Mac"}),
+            ),
+            (
+                200,
+                serde_json::json!({"access_token":"","expires_in":3600}),
+            ),
+        ] {
+            let server = MockServer::start().await;
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("identity");
+            std::fs::write(&file, "identity-secret-canary").unwrap();
+            let (models, record) = setup(&server, prepared(&file));
+            Mock::given(method("POST"))
+                .and(path("/v1/oauth/token"))
+                .respond_with(
+                    ResponseTemplate::new(status)
+                        .insert_header("request-id", "federation-request-fixture")
+                        .set_body_json(response),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let failure = models
+                .complete_simple(record, request_39(Default::default()), Default::default())
+                .await
+                .unwrap_err();
+            assert!(matches!(failure.cause(), ProviderError::AuthFailed(_)));
+            let diagnostic = format!("{}", failure.cause());
+            assert!(diagnostic.contains(&status.to_string()), "{diagnostic}");
+            assert!(
+                diagnostic.contains("federation-request-fixture"),
+                "{diagnostic}"
+            );
+            for text in [format!("{}", failure.cause()), format!("{failure:?}")] {
+                assert!(!text.contains("identity-secret-canary"));
+                assert!(!text.contains("access-secret-canary"));
+            }
+            assert_eq!(server.received_requests().await.unwrap().len(), 1);
+            server.verify().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn federation_wait_can_be_cancelled_without_generation_send() {
+        let server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("identity");
+        std::fs::write(&file, "fixture-identity").unwrap();
+        let (models, record) = setup(&server, prepared(&file));
+        let exchanged = Arc::new(tokio::sync::Notify::new());
+        let seen = exchanged.clone();
+        Mock::given(method("POST"))
+            .and(path("/v1/oauth/token"))
+            .respond_with(move |_: &wiremock::Request| {
+                seen.notify_one();
+                ResponseTemplate::new(200)
+                    .set_delay(std::time::Duration::from_secs(60))
+                    .set_body_json(serde_json::json!({"access_token":"delayed","expires_in":3600}))
+            })
+            .expect(1)
+            .mount(&server)
+            .await;
+        let request = request_39(Default::default());
+        let cancel = request.cancel.clone();
+        let call = models.complete_simple(record, request, Default::default());
+        let caller = tokio::spawn(call);
+        tokio::time::timeout(std::time::Duration::from_secs(3), exchanged.notified())
+            .await
+            .unwrap();
+        cancel.cancel();
+        let failure = tokio::time::timeout(std::time::Duration::from_secs(3), caller)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert!(matches!(failure.cause(), ProviderError::Cancelled));
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn federation_builtin_env_only_credential_selects_then_generates_without_early_file_io() {
+        use opi_ai::credential::CredentialStore;
+        struct EmptyContext;
+        impl opi_ai::auth::AuthContext for EmptyContext {
+            fn env(&self, _: &str) -> Result<Option<String>, opi_ai::auth::AuthContextError> {
+                Ok(None)
+            }
+            fn file_exists(&self, _: &str) -> Result<bool, opi_ai::auth::AuthContextError> {
+                panic!("configuration checks must not inspect federation identity file")
+            }
+        }
+        let server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not-created-until-generation");
+        let env = [
+            ("ANTHROPIC_FEDERATION_RULE_ID", "stored-rule".to_owned()),
+            ("ANTHROPIC_ORGANIZATION_ID", "stored-org".to_owned()),
+            (
+                "ANTHROPIC_IDENTITY_TOKEN_FILE",
+                file.to_string_lossy().into_owned(),
+            ),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value.into()))
+        .collect();
+        let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
+        store
+            .write(
+                "anthropic",
+                &opi_ai::Credential::ApiKey(opi_ai::ApiKeyCredential::new(None, env)),
+            )
+            .await
+            .unwrap();
+        let mut models = Models::new();
+        models.set_credential_store(store);
+        let mut overrides = opi_ai::provider_collection::BuiltinOverrides::default();
+        overrides.base_urls.insert("anthropic".into(), server.uri());
+        opi_ai::provider_collection::register_builtin(
+            &mut models,
+            Arc::new(EmptyContext),
+            Arc::new(HttpClient::new()),
+            &overrides,
+        )
+        .unwrap();
+        let available = models.get_available(Some("anthropic")).await.unwrap();
+        assert!(!available.is_empty());
+        let auth = models
+            .get_auth("anthropic", Default::default())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(auth.scheme, AuthScheme::AnthropicFederation);
+        assert!(!file.exists());
+        assert!(server.received_requests().await.unwrap().is_empty());
+        Mock::given(method("POST")).and(path("/v1/oauth/token"))
+            .and(body_partial_json(serde_json::json!({"assertion":"stored-identity","federation_rule_id":"stored-rule","organization_id":"stored-org"})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"access_token":"stored-fed-token","expires_in":3600})))
+            .expect(1).mount(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .and(header("authorization", "Bearer stored-fed-token"))
+            .respond_with(success())
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (provider, info) = available.into_iter().next().unwrap();
+        let call = models.complete_simple(
+            opi_ai::ChatModelRecord::new(provider, info),
+            request_39(Default::default()),
+            Default::default(),
+        );
+        std::fs::write(&file, "stored-identity").unwrap();
+        call.await.expect("real federation exchange and generation");
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn federation_identity_file_empty_and_source_utf16_assertion_limit_are_observable() {
+        for (identity, allowed) in [
+            (" \n\t".to_owned(), false),
+            ("x".repeat(16 * 1024 + 1), false),
+            ("\u{1f600}".repeat(8192), true),
+        ] {
+            let server = MockServer::start().await;
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("identity");
+            std::fs::write(&file, identity).unwrap();
+            let (models, record) = setup(&server, prepared(&file));
+            Mock::given(method("POST"))
+                .and(path("/v1/oauth/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(
+                    serde_json::json!({"access_token":"accepted-token","expires_in":"3600"}),
+                ))
+                .expect(if allowed { 1 } else { 0 })
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path("/v1/messages"))
+                .respond_with(success())
+                .expect(if allowed { 1 } else { 0 })
+                .mount(&server)
+                .await;
+            let result = models
+                .complete_simple(record, request_39(Default::default()), Default::default())
+                .await;
+            if allowed {
+                result.unwrap();
+            } else {
+                assert!(matches!(
+                    result.unwrap_err().cause(),
+                    ProviderError::AuthFailed(_)
+                ));
+            }
+            server.verify().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn federation_identity_uses_node_utf8_replacement_and_javascript_trim() {
+        let server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("identity");
+        let mut bytes = b"\xef\xbb\xbf \tidentity-".to_vec();
+        bytes.push(0xff);
+        bytes.extend_from_slice(b"-token\xef\xbb\xbf\n");
+        std::fs::write(&file, bytes).unwrap();
+        let (models, record) = setup(&server, prepared(&file));
+        Mock::given(method("POST"))
+            .and(path("/v1/oauth/token"))
+            .and(body_partial_json(
+                serde_json::json!({"assertion":"identity-\u{fffd}-token"}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"access_token":"decoded-token","expires_in":3600}),
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(success())
+            .expect(1)
+            .mount(&server)
+            .await;
+        models
+            .complete_simple(record, request_39(Default::default()), Default::default())
+            .await
+            .expect("Node UTF8 and JS trim identity projection");
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn federation_expires_in_uses_source_javascript_number_conversion() {
+        for expires in [
+            serde_json::json!("0xE10"),
+            serde_json::json!("0b111000010000"),
+            serde_json::json!("0o7020"),
+            serde_json::json!("\u{feff}3600\u{feff}"),
+            serde_json::json!(null),
+            serde_json::json!(false),
+            serde_json::json!([]),
+            serde_json::json!([null]),
+            serde_json::json!(["3600"]),
+            serde_json::json!([["3600"]]),
+        ] {
+            let server = MockServer::start().await;
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("identity");
+            std::fs::write(&file, "numeric-fixture-identity").unwrap();
+            let (models, record) = setup(&server, prepared(&file));
+            Mock::given(method("POST"))
+                .and(path("/v1/oauth/token"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(
+                    serde_json::json!({"access_token":"numeric-token","expires_in":expires}),
+                ))
+                .expect(1)
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path("/v1/messages"))
+                .respond_with(success())
+                .expect(1)
+                .mount(&server)
+                .await;
+            models
+                .complete_simple(record, request_39(Default::default()), Default::default())
+                .await
+                .expect("source Number(expires_in) remains finite");
+            server.verify().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn federation_token_response_uses_source_utf8_decoder() {
+        let server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("identity");
+        std::fs::write(&file, "fixture-identity").unwrap();
+        let (models, record) = setup(&server, prepared(&file));
+        let mut response=b"\xef\xbb\xbf{\"access_token\":\"decoded-token\",\"expires_in\":3600,\"annotation\":\"".to_vec();
+        response.push(0xff);
+        response.extend_from_slice(b"\"}");
+        Mock::given(method("POST"))
+            .and(path("/v1/oauth/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(response, "application/json"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .and(header("authorization", "Bearer decoded-token"))
+            .respond_with(success())
+            .expect(1)
+            .mount(&server)
+            .await;
+        models
+            .complete_simple(record, request_39(Default::default()), Default::default())
+            .await
+            .expect("source TextDecoder response projection");
+        server.verify().await;
+    }
 }

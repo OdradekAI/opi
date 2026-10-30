@@ -77,6 +77,20 @@ pub trait Provider: Send + Sync {
     /// Models supported by this provider.
     fn models(&self) -> &[ModelInfo];
 
+    /// Freeze source-derived routing after authentication and before attempts.
+    ///
+    /// The model and authentication are owned snapshots of this call. A route
+    /// that resolves endpoint or deployment configuration may update them and
+    /// return an immutable adapter used by every acquisition attempt. The
+    /// default retains this adapter and does no source work.
+    fn prepare_model_call(
+        &self,
+        _model: &mut ModelInfo,
+        _auth: &mut crate::auth::ResolvedAuth,
+    ) -> Result<Option<std::sync::Arc<dyn Provider>>, ProviderError> {
+        Ok(None)
+    }
+
     /// Start a streaming request using already-resolved authentication.
     ///
     /// This is the prepared-auth dispatch seam and the sole provider entry

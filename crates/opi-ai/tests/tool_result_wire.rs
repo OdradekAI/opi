@@ -496,6 +496,7 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "constrained_sampling",
         "context",
         "credential",
+        "deferred",
         "gemini",
         "http",
         // Task 20.53.4: provider identity helpers are a deliberate addition.

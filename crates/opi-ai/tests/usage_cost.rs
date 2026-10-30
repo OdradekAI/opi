@@ -223,6 +223,7 @@ fn cumulative_usage_accumulation_saturates_totals_and_counters() {
         reasoning_tokens: Some(1),
         total_tokens: None,
         service_tier: None,
+        effective_service_tier: None,
         reported: false,
     };
 
@@ -609,7 +610,9 @@ fn tiered_selection_uses_prompt_side_tokens_strictly_exceeded() {
             &Usage::reported(250_000, 1_000, 0, 0, None, None),
             &tiered(),
             "any",
-        ),
+            opi_ai::WireApi::OpenAiResponses,
+        )
+        .unwrap(),
         above_two_hundred,
     );
 
@@ -622,7 +625,9 @@ fn tiered_selection_uses_prompt_side_tokens_strictly_exceeded() {
             &Usage::reported(200_000, 1_000, 0, 0, None, None),
             &tiered(),
             "any",
-        ),
+            opi_ai::WireApi::OpenAiResponses,
+        )
+        .unwrap(),
         at_boundary,
     );
 
@@ -635,7 +640,9 @@ fn tiered_selection_uses_prompt_side_tokens_strictly_exceeded() {
             &Usage::reported(150_000, 1_000, 60_000, 0, None, None),
             &tiered(),
             "any",
-        ),
+            opi_ai::WireApi::OpenAiResponses,
+        )
+        .unwrap(),
         cache_counts,
     );
 
@@ -648,7 +655,9 @@ fn tiered_selection_uses_prompt_side_tokens_strictly_exceeded() {
             &Usage::reported(100_000, 500_000, 0, 0, None, None),
             &tiered(),
             "any",
-        ),
+            opi_ai::WireApi::OpenAiResponses,
+        )
+        .unwrap(),
         output_does_not_select,
     );
 
@@ -661,7 +670,9 @@ fn tiered_selection_uses_prompt_side_tokens_strictly_exceeded() {
             &Usage::reported(450_000, 1_000, 0, 0, None, None),
             &tiered(),
             "any",
-        ),
+            opi_ai::WireApi::OpenAiResponses,
+        )
+        .unwrap(),
         highest,
     );
 }
@@ -694,7 +705,9 @@ fn tiered_selection_keeps_first_equal_duplicate_and_highest_threshold() {
             &Usage::reported(400_000, 0, 0, 0, None, None),
             &unsorted,
             "any",
-        ),
+            opi_ai::WireApi::OpenAiResponses,
+        )
+        .unwrap(),
         calculate_cost(&Usage::reported(400_000, 0, 0, 0, None, None), &rates(3.0)),
     );
     assert_same_cost(
@@ -702,7 +715,9 @@ fn tiered_selection_keeps_first_equal_duplicate_and_highest_threshold() {
             &Usage::reported(200_000, 0, 0, 0, None, None),
             &unsorted,
             "any",
-        ),
+            opi_ai::WireApi::OpenAiResponses,
+        )
+        .unwrap(),
         calculate_cost(&Usage::reported(200_000, 0, 0, 0, None, None), &rates(2.0)),
     );
 }
@@ -722,21 +737,27 @@ fn service_tier_multiplier_scales_whole_request_cost() {
         &usage.clone().with_service_tier(ServiceTier::Flex),
         &ModelPricing::try_new(rates(1.0), Vec::new()).unwrap(),
         "any",
-    );
+        opi_ai::WireApi::OpenAiResponses,
+    )
+    .unwrap();
     assert_same_cost(flex, scaled(&base, 0.5));
 
     let priority = calculate_cost_tiered(
         &usage.clone().with_service_tier(ServiceTier::Priority),
         &ModelPricing::try_new(rates(1.0), Vec::new()).unwrap(),
         "gpt-5.5",
-    );
+        opi_ai::WireApi::OpenAiResponses,
+    )
+    .unwrap();
     assert_same_cost(priority, scaled(&base, 2.5));
 
     let unscaled = calculate_cost_tiered(
         &usage.clone().with_service_tier(ServiceTier::Default),
         &ModelPricing::try_new(rates(1.0), Vec::new()).unwrap(),
         "gpt-5.5",
-    );
+        opi_ai::WireApi::OpenAiResponses,
+    )
+    .unwrap();
     assert_same_cost(unscaled, base);
 }
 
@@ -755,7 +776,13 @@ fn openrouter_image_parse_usage_uses_base_rates_without_tiers() {
     // base model rates; tier selection never applies to image usage.
     let image_usage = Usage::reported(1_000_000, 1_000_000, 0, 0, None, None);
     let base = calculate_cost(&image_usage, &tiered().base);
-    let tiered_cost = calculate_cost_tiered(&image_usage, &tiered(), "any");
+    let tiered_cost = calculate_cost_tiered(
+        &image_usage,
+        &tiered(),
+        "any",
+        opi_ai::WireApi::OpenAiResponses,
+    )
+    .unwrap();
     assert!(
         (tiered_cost.total_cost() - base.total_cost()).abs() > 1.0,
         "fixture must actually cross a tier boundary"
@@ -788,8 +815,10 @@ fn usage_total_tokens_distinguishes_absent_zero_and_value() {
 #[test]
 fn service_tier_serializes_exact_wire_names() {
     for (tier, name) in [
+        (ServiceTier::Auto, "auto"),
         (ServiceTier::Default, "default"),
         (ServiceTier::Flex, "flex"),
+        (ServiceTier::Scale, "scale"),
         (ServiceTier::Priority, "priority"),
         (ServiceTier::Fast, "fast"),
     ] {
@@ -799,4 +828,33 @@ fn service_tier_serializes_exact_wire_names() {
             tier
         );
     }
+}
+
+#[test]
+fn tiered_cost_rejects_unknown_usage_invalid_prices_and_nonfinite_totals() {
+    let wire = opi_ai::WireApi::OpenAiResponses;
+    assert!(calculate_cost_tiered(&Usage::unknown(), &tiered(), "any", wire).is_none());
+    let usage = Usage::reported(1, 1, 0, 0, None, None);
+    let mut invalid = tiered();
+    invalid.base.input_cost_per_mtok = -1.0;
+    assert!(calculate_cost_tiered(&usage, &invalid, "any", wire).is_none());
+    invalid.base.input_cost_per_mtok = f64::INFINITY;
+    assert!(calculate_cost_tiered(&usage, &invalid, "any", wire).is_none());
+    let extreme = ModelPricing::try_new(
+        Pricing {
+            input_cost_per_mtok: f64::MAX,
+            ..Default::default()
+        },
+        vec![],
+    )
+    .unwrap();
+    assert!(
+        calculate_cost_tiered(
+            &Usage::reported(u32::MAX, u32::MAX, 0, 0, None, None),
+            &extreme,
+            "any",
+            wire
+        )
+        .is_none()
+    );
 }

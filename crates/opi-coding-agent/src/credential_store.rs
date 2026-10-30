@@ -467,6 +467,8 @@ struct EnvelopeFields {
     #[serde(skip_serializing_if = "Option::is_none")]
     api_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    env: Option<std::collections::BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     access: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     refresh: Option<String>,
@@ -490,6 +492,11 @@ struct EnvelopeFields {
 impl Zeroize for EnvelopeFields {
     fn zeroize(&mut self) {
         self.api_key.zeroize();
+        if let Some(env) = &mut self.env {
+            for value in env.values_mut() {
+                value.zeroize();
+            }
+        }
         self.access.zeroize();
         self.refresh.zeroize();
     }
@@ -522,6 +529,38 @@ impl Zeroize for ApiKeyEnvelopeV1 {
 }
 
 impl Drop for ApiKeyEnvelopeV1 {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApiKeyEnvelopeV2 {
+    version: u32,
+    kind: String,
+    #[serde(default, deserialize_with = "optional_present_string")]
+    api_key: Option<String>,
+    #[serde(default)]
+    env: std::collections::BTreeMap<String, String>,
+}
+
+fn optional_present_string<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    <String as serde::Deserialize>::deserialize(deserializer).map(Some)
+}
+
+impl Zeroize for ApiKeyEnvelopeV2 {
+    fn zeroize(&mut self) {
+        self.api_key.zeroize();
+        for value in self.env.values_mut() {
+            value.zeroize();
+        }
+    }
+}
+
+impl Drop for ApiKeyEnvelopeV2 {
     fn drop(&mut self) {
         self.zeroize();
     }
@@ -602,18 +641,25 @@ fn secret_string(value: impl Into<String>) -> SecretString {
     SecretString::new(value.into().into_boxed_str())
 }
 
-/// Encode a [`Credential`] as the v1 JSON envelope.
+/// Encode API-key credentials as v2 and OAuth credentials as v1 envelopes.
 ///
 /// The serialized envelope contains live access/refresh tokens, so it is
 /// returned in a [`Zeroizing`] buffer that wipes its bytes on drop
 /// (defense-in-depth: the `secrecy::SecretString` fields on [`Credential`]
 /// already zeroize, but this derived JSON `String` otherwise would not).
 fn encode_credential(cred: &Credential) -> Zeroizing<String> {
-    let (kind, fields) = match cred {
+    let (version, kind, fields) = match cred {
         Credential::ApiKey(key) => (
+            2,
             "api_key",
             EnvelopeFields {
-                api_key: Some(key.expose_secret().to_owned()),
+                api_key: key.key().map(|key| key.expose_secret().to_owned()),
+                env: Some(
+                    key.env()
+                        .iter()
+                        .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
+                        .collect(),
+                ),
                 access: None,
                 refresh: None,
                 expires_at: None,
@@ -636,9 +682,11 @@ fn encode_credential(cred: &Credential) -> Zeroizing<String> {
             available_model_ids,
             scopes,
         } => (
+            ENVELOPE_VERSION,
             "oauth",
             EnvelopeFields {
                 api_key: None,
+                env: None,
                 access: Some(access.expose_secret().to_owned()),
                 refresh: Some(refresh.expose_secret().to_owned()),
                 expires_at: expires_at.map(|t| t.unix_timestamp()),
@@ -652,14 +700,14 @@ fn encode_credential(cred: &Credential) -> Zeroizing<String> {
         ),
     };
     let envelope = Envelope {
-        version: ENVELOPE_VERSION,
+        version,
         kind: kind.to_owned(),
         fields,
     };
     Zeroizing::new(serde_json::to_string(&envelope).expect("credential envelope serializes"))
 }
 
-/// Decode a v1 JSON envelope into a [`Credential`].
+/// Decode strict legacy v1 or scoped API-key v2 envelopes into a [`Credential`].
 ///
 /// Malformed JSON, an unknown version, or an unknown kind each yield a distinct
 /// [`CredentialStoreError`] and are never collapsed into absence or env
@@ -670,7 +718,7 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
             provider: provider_id.to_owned(),
             reason: "credential envelope does not match the expected schema".to_owned(),
         })?;
-    if header.version != ENVELOPE_VERSION {
+    if header.version != ENVELOPE_VERSION && header.version != 2 {
         return Err(CredentialStoreError::UnknownEnvelope {
             provider: provider_id.to_owned(),
             version: Some(header.version),
@@ -678,6 +726,22 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
         });
     }
     match header.kind.as_str() {
+        "api_key" if header.version == 2 => {
+            let mut envelope: ApiKeyEnvelopeV2 =
+                serde_json::from_str(raw).map_err(|_| CredentialStoreError::MalformedEnvelope {
+                    provider: provider_id.to_owned(),
+                    reason: "api_key credential envelope does not match the expected schema"
+                        .to_owned(),
+                })?;
+            debug_assert_eq!(envelope.version, 2);
+            debug_assert_eq!(envelope.kind, "api_key");
+            let key = envelope.api_key.take().map(secret_string);
+            let env = std::mem::take(&mut envelope.env)
+                .into_iter()
+                .map(|(name, value)| (name, secret_string(value)))
+                .collect();
+            Ok(Credential::ApiKey(opi_ai::ApiKeyCredential::new(key, env)))
+        }
         "api_key" => {
             let mut envelope: ApiKeyEnvelopeV1 =
                 serde_json::from_str(raw).map_err(|_| CredentialStoreError::MalformedEnvelope {
@@ -688,9 +752,9 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
             debug_assert_eq!(envelope.version, ENVELOPE_VERSION);
             debug_assert_eq!(envelope.kind, "api_key");
             let api_key = std::mem::take(&mut envelope.api_key);
-            Ok(Credential::ApiKey(secret_string(api_key)))
+            Ok(Credential::ApiKey(secret_string(api_key).into()))
         }
-        "oauth" => {
+        "oauth" if header.version == ENVELOPE_VERSION => {
             let mut envelope: OAuthEnvelopeV1 =
                 serde_json::from_str(raw).map_err(|_| CredentialStoreError::MalformedEnvelope {
                     provider: provider_id.to_owned(),
@@ -724,6 +788,11 @@ fn decode_credential(raw: &str, provider_id: &str) -> Result<Credential, Credent
                 scopes: envelope.scopes.take(),
             })
         }
+        "oauth" => Err(CredentialStoreError::UnknownEnvelope {
+            provider: provider_id.to_owned(),
+            version: Some(header.version),
+            field: UnknownEnvelopeField::Version,
+        }),
         _ => Err(CredentialStoreError::UnknownEnvelope {
             provider: provider_id.to_owned(),
             version: Some(header.version),
@@ -1325,6 +1394,138 @@ pub enum AccountSwitchOutcome {
     NothingToSwitch,
 }
 
+struct CopiedAccount {
+    marker: String,
+    payload: Zeroizing<String>,
+}
+
+impl AccountReferenceError {
+    fn mutation_error(&self) -> MutationError {
+        match self {
+            Self::Store(error) => MutationError::Store(error.clone()),
+            Self::Conflict { .. } => MutationError::Operation(ProviderError::Config(
+                opi_ai::provider::ProviderErrorSummary::sanitized(
+                    "credential account migration conflict",
+                ),
+            )),
+        }
+    }
+}
+
+impl KeychainCore {
+    fn account_parts(
+        &self,
+        provider: &str,
+    ) -> Result<(Option<String>, Option<Zeroizing<String>>), CredentialStoreError> {
+        let marker = self
+            .backend
+            .get(KEYCHAIN_PRESENCE_SERVICE, provider)
+            .map_err(|error| self.backend_err(provider, error))?;
+        let payload = self
+            .backend
+            .get(&self.service, provider)
+            .map_err(|error| self.backend_err(provider, error))?
+            .map(Zeroizing::new);
+        Ok((marker, payload))
+    }
+
+    fn copy_account_unlocked(
+        &self,
+        from: &str,
+        to: &str,
+    ) -> Result<(Option<CopiedAccount>, MutationApplied), AccountReferenceError> {
+        let conflict = || AccountReferenceError::Conflict {
+            canonical: to.to_owned(),
+            legacy: from.to_owned(),
+        };
+        let (source_marker, source_payload) = self.account_parts(from)?;
+        let (target_marker, target_payload) = self.account_parts(to)?;
+        let Some(payload) = source_payload else {
+            return if source_marker.is_none() {
+                Ok((None, MutationApplied::Keep))
+            } else {
+                Err(conflict())
+            };
+        };
+        let marker = match source_marker {
+            Some(marker) => marker,
+            // A completed copy whose source-marker deletion succeeded can
+            // resume only when the canonical entry proves the same payload.
+            None if target_payload.as_deref() == Some(&*payload) => {
+                target_marker.clone().ok_or_else(conflict)?
+            }
+            None => return Err(conflict()),
+        };
+        if target_payload
+            .as_deref()
+            .is_some_and(|existing| existing != &*payload)
+            || target_marker
+                .as_deref()
+                .is_some_and(|existing| existing != marker)
+            || (target_marker.is_some() && target_payload.is_none())
+        {
+            return Err(conflict());
+        }
+        // Unlike a normal replacement, a migration copies the payload first.
+        // A failed marker write is resumable by comparing the exact copied
+        // payload; an unrelated marker-only slot is never taken over.
+        let mut applied = MutationApplied::Keep;
+        if target_payload.is_none() {
+            self.backend
+                .set(&self.service, to, &payload)
+                .map_err(|error| self.backend_err(to, error))?;
+            applied = MutationApplied::Write;
+        }
+        if target_marker.is_none() {
+            self.backend
+                .set(KEYCHAIN_PRESENCE_SERVICE, to, &marker)
+                .map_err(|error| self.backend_err(to, error))?;
+            applied = MutationApplied::Write;
+        }
+        Ok((Some(CopiedAccount { marker, payload }), applied))
+    }
+
+    fn remove_copied_account_unlocked(
+        &self,
+        from: &str,
+        to: &str,
+        copied: &CopiedAccount,
+    ) -> Result<MutationApplied, AccountReferenceError> {
+        let conflict = || AccountReferenceError::Conflict {
+            canonical: to.to_owned(),
+            legacy: from.to_owned(),
+        };
+        let (target_marker, target_payload) = self.account_parts(to)?;
+        if target_marker.as_deref() != Some(copied.marker.as_str())
+            || target_payload.as_deref() != Some(&*copied.payload)
+        {
+            return Err(conflict());
+        }
+        let (source_marker, source_payload) = self.account_parts(from)?;
+        if source_marker.is_none() && source_payload.is_none() {
+            return Ok(MutationApplied::Keep);
+        }
+        if source_payload.as_deref() != Some(&*copied.payload)
+            || source_marker
+                .as_deref()
+                .is_some_and(|marker| marker != copied.marker)
+        {
+            return Err(conflict());
+        }
+        // Keep the payload until the marker is removed: an interrupted
+        // cleanup retains the bytes needed to prove ownership on reentry.
+        if source_marker.is_some() {
+            self.backend
+                .delete(KEYCHAIN_PRESENCE_SERVICE, from)
+                .map_err(|error| self.backend_err(from, error))?;
+        }
+        self.backend
+            .delete(&self.service, from)
+            .map_err(|error| self.backend_err(from, error))?;
+        Ok(MutationApplied::Delete)
+    }
+}
+
 impl KeychainCredentialStore {
     /// Resolve where `provider_id`'s stored account lives (task 20.34).
     ///
@@ -1359,57 +1560,79 @@ impl KeychainCredentialStore {
 
     /// Explicitly switch one legacy account key to its canonical id.
     ///
-    /// The conflict gate runs before any copy: an existing canonical account
-    /// is never overwritten ([`AccountReferenceError::Conflict`]); an absent
-    /// legacy entry is a reentrant no-op. A switch copies the presence
-    /// marker and the protected payload verbatim and then removes the legacy
-    /// pair. This bypasses the serialized mutation queue by design: it is a
-    /// one-shot maintenance move behind the conflict gate, not a login,
-    /// logout, or refresh.
+    /// Both copy and cleanup use the store's mutation queue and exclusion
+    /// lock. A different canonical account is never overwritten. An exact
+    /// copied payload can resume an interrupted switch; a marker without a
+    /// payload cannot establish ownership. Cleanup is admitted only after
+    /// the canonical copy's ACK and rechecks both accounts under the lock.
+    /// Dropping the wait leaves any admitted mutation owned by the store.
     pub async fn switch_provider_account(
         &self,
         from: &str,
         to: &str,
     ) -> Result<AccountSwitchOutcome, AccountReferenceError> {
-        let marker = self
-            .core
-            .backend
-            .get(KEYCHAIN_PRESENCE_SERVICE, from)
-            .map_err(|error| self.core.backend_err(from, error))?;
-        let payload = self
-            .core
-            .backend
-            .get(&self.core.service, from)
-            .map_err(|error| self.core.backend_err(from, error))?;
-        let (Some(marker), Some(payload)) = (marker, payload) else {
-            // Nothing under the legacy key: already migrated or never
-            // stored. A reentrant no-op even when the canonical account
-            // exists.
-            return Ok(AccountSwitchOutcome::NothingToSwitch);
-        };
-        let to_present = self.core.read_marker_kind(to)?.is_some();
-        if to_present {
+        if from == to {
             return Err(AccountReferenceError::Conflict {
                 canonical: to.to_owned(),
                 legacy: from.to_owned(),
             });
         }
-        self.core
-            .backend
-            .set(KEYCHAIN_PRESENCE_SERVICE, to, &marker)
-            .map_err(|error| self.core.backend_err(to, error))?;
-        self.core
-            .backend
-            .set(&self.core.service, to, &payload)
-            .map_err(|error| self.core.backend_err(to, error))?;
-        self.core
-            .backend
-            .delete(KEYCHAIN_PRESENCE_SERVICE, from)
-            .map_err(|error| self.core.backend_err(from, error))?;
-        self.core
-            .backend
-            .delete(&self.core.service, from)
-            .map_err(|error| self.core.backend_err(from, error))?;
+        let (copy_tx, copy_rx) = tokio::sync::oneshot::channel();
+        let core = self.core.clone();
+        let lock = self.lock.clone();
+        let source = from.to_owned();
+        let target = to.to_owned();
+        let copy = self.queue.submit(
+            to,
+            Box::new(move || {
+                Box::pin(async move {
+                    let result = async {
+                        let _guard = lock.acquire().await?;
+                        core.copy_account_unlocked(&source, &target)
+                    }
+                    .await;
+                    let applied = match &result {
+                        Ok((_, applied)) => Ok(*applied),
+                        Err(error) => Err(error.mutation_error()),
+                    };
+                    let _ = copy_tx.send(result.map(|(copied, _)| copied));
+                    applied
+                })
+            }),
+        );
+        let receipt = copy.await.map_err(|_| mutation_lost_error(to))?;
+        let copied = copy_rx.await.map_err(|_| mutation_lost_error(to))??;
+        receipt_to_store_result(receipt)?;
+        let Some(copied) = copied else {
+            return Ok(AccountSwitchOutcome::NothingToSwitch);
+        };
+
+        let (cleanup_tx, cleanup_rx) = tokio::sync::oneshot::channel();
+        let core = self.core.clone();
+        let lock = self.lock.clone();
+        let source = from.to_owned();
+        let target = to.to_owned();
+        let cleanup = self.queue.submit(
+            from,
+            Box::new(move || {
+                Box::pin(async move {
+                    let result = async {
+                        let _guard = lock.acquire().await?;
+                        core.remove_copied_account_unlocked(&source, &target, &copied)
+                    }
+                    .await;
+                    let applied = result
+                        .as_ref()
+                        .copied()
+                        .map_err(AccountReferenceError::mutation_error);
+                    let _ = cleanup_tx.send(result.map(|_| ()));
+                    applied
+                })
+            }),
+        );
+        let receipt = cleanup.await.map_err(|_| mutation_lost_error(from))?;
+        cleanup_rx.await.map_err(|_| mutation_lost_error(from))??;
+        receipt_to_store_result(receipt)?;
         Ok(AccountSwitchOutcome::Switched)
     }
 }
@@ -1463,10 +1686,15 @@ impl CredentialResolver {
         env_var: &str,
     ) -> Result<Option<ResolvedApiKey>, CredentialStoreError> {
         match self.store.core.read_consistent_unlocked(provider_id).await {
-            Ok(Some(Credential::ApiKey(value))) => Ok(Some(ResolvedApiKey {
-                value,
-                source: ApiKeySource::Store,
-            })),
+            Ok(Some(Credential::ApiKey(value))) => {
+                let key = value.key().or_else(|| value.env().get(env_var)).cloned();
+                Ok(key
+                    .map(|value| ResolvedApiKey {
+                        value,
+                        source: ApiKeySource::Store,
+                    })
+                    .or_else(|| self.env_fallback(env_var, false)))
+            }
             Ok(Some(Credential::OAuthToken { .. })) => {
                 Err(CredentialStoreError::UnexpectedCredentialKind {
                     provider: provider_id.to_owned(),
@@ -1657,6 +1885,7 @@ impl AuthResolver for AuthSource {
                 let secret = secret.clone();
                 Box::pin(async move {
                     Ok(ResolvedAuth {
+                        env: Default::default(),
                         scheme: AuthScheme::ApiKey,
                         secret,
                         base_url: None,
@@ -1686,6 +1915,7 @@ impl AuthResolver for AuthSource {
                 Box::pin(async move {
                     match (env_lookup)(&env_var) {
                         Some(value) if !value.trim().is_empty() => Ok(ResolvedAuth {
+                            env: Default::default(),
                             scheme: AuthScheme::Bearer,
                             secret: SecretString::new(value.into_boxed_str()),
                             base_url: None,
@@ -1722,6 +1952,7 @@ impl AuthResolver for AuthSource {
                             name: oauth_env_var.clone(),
                         };
                         return Ok(ResolvedAuth {
+                            env: Default::default(),
                             scheme: AuthScheme::Bearer,
                             secret: SecretString::new(value.into_boxed_str()),
                             base_url: None,
@@ -1746,6 +1977,7 @@ impl AuthResolver for AuthSource {
                         Some(resolved) => {
                             let api_key_provenance = resolved.provenance();
                             Ok(ResolvedAuth {
+                                env: Default::default(),
                                 scheme: AuthScheme::ApiKey,
                                 secret: resolved.value,
                                 base_url: None,
@@ -1780,6 +2012,7 @@ mod tests {
 
         assert_zeroize::<super::EnvelopeFields>();
         assert_zeroize::<super::ApiKeyEnvelopeV1>();
+        assert_zeroize::<super::ApiKeyEnvelopeV2>();
         assert_zeroize::<super::OAuthEnvelopeV1>();
     }
 

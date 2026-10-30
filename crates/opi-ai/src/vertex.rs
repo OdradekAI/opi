@@ -33,6 +33,7 @@ use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_can
 /// but overrides the HTTP transport layer (URL and auth header).
 #[derive(Clone)]
 pub struct VertexProvider {
+    provider_identity: String,
     project: String,
     location: String,
     base_url: String,
@@ -63,6 +64,7 @@ impl VertexProvider {
         let inner = GeminiProvider::new(None).with_wire(WireApi::GoogleVertex);
         let models = model_catalog();
         Self {
+            provider_identity: "vertex".into(),
             project,
             location,
             base_url,
@@ -81,6 +83,7 @@ impl VertexProvider {
         let inner = GeminiProvider::new(None).with_wire(WireApi::GoogleVertex);
         let models = model_catalog();
         Self {
+            provider_identity: "vertex".into(),
             project: String::new(),
             location: String::new(),
             base_url,
@@ -119,6 +122,7 @@ impl VertexProvider {
             })
             .collect();
         Self {
+            provider_identity: "vertex".into(),
             project,
             location,
             base_url,
@@ -132,6 +136,13 @@ impl VertexProvider {
     /// Replace the HTTP client (for shared connection pooling).
     pub fn with_client(self, client: Arc<HttpClient>) -> Self {
         Self { client, ..self }
+    }
+
+    /// Bind capture and replay to the registered canonical provider identity.
+    pub(crate) fn with_provider_identity(mut self, provider: &str) -> Self {
+        self.provider_identity = provider.to_owned();
+        self.inner = self.inner.with_provider_identity(provider);
+        self
     }
 
     /// Override the model records (task 20.41): direct adapters and tests
@@ -215,6 +226,29 @@ impl VertexProvider {
 }
 
 impl Provider for VertexProvider {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        validate_complete_vertex_record(model)
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.clone()
+            .with_models(vec![model])
+            .with_native_options(GoogleVertexOptions::from_simple(&options))
+            .stream_resource_attempt(request, auth, attempt, resources)
+    }
+
     fn id(&self) -> &str {
         "vertex"
     }
@@ -248,7 +282,7 @@ impl Provider for VertexProvider {
             crate::auth::AuthScheme::ApiKey => VertexAuthMode::Express {
                 api_key: auth.secret.expose_secret().to_string(),
             },
-            crate::auth::AuthScheme::AwsSigV4(_) => {
+            crate::auth::AuthScheme::AwsSigV4(_) | crate::auth::AuthScheme::AnthropicFederation => {
                 return Box::pin(stream::iter(vec![Err(ProviderError::Config(
                     ProviderErrorSummary::attested_static(
                         "Vertex accepts Bearer or API-key authentication",
@@ -260,6 +294,7 @@ impl Provider for VertexProvider {
         // dispatch without either is a typed setup failure, never a silently
         // degraded URL (pi resolveProject/resolveLocation throw).
         if !self.express
+            && auth.base_url.is_none()
             && matches!(auth_mode, VertexAuthMode::Bearer { .. })
             && self.project.trim().is_empty()
         {
@@ -270,6 +305,7 @@ impl Provider for VertexProvider {
             ))]));
         }
         if !self.express
+            && auth.base_url.is_none()
             && matches!(auth_mode, VertexAuthMode::Bearer { .. })
             && self.location.trim().is_empty()
         {
@@ -286,7 +322,32 @@ impl Provider for VertexProvider {
             .unwrap_or(&request.model)
             .to_string();
 
-        let url = if self.express {
+        // An explicit complete model base owns the collection scope. The
+        // catalog's location template remains an instruction to use the
+        // resolved Express/ADC endpoint instead.
+        let model_base = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.base_url.as_deref())
+            .map(str::trim)
+            .filter(|base| !base.is_empty() && !base.contains("{location}"));
+        let url = if let Some(base) = model_base {
+            let version = if vertex_base_has_api_version(base) {
+                ""
+            } else {
+                "/v1"
+            };
+            format!(
+                "{}{version}/publishers/google/models/{model_id}:streamGenerateContent?alt=sse",
+                base.strip_suffix('/').unwrap_or(base)
+            )
+        } else if let Some(collection) = auth.base_url.as_deref() {
+            format!(
+                "{}/{model_id}:streamGenerateContent?alt=sse",
+                collection.trim_end_matches('/')
+            )
+        } else if self.express {
             self.build_vertex_url(&model_id)
         } else {
             match &auth_mode {
@@ -306,8 +367,15 @@ impl Provider for VertexProvider {
         let callbacks = request.callbacks.clone();
         let cancel = request.cancel;
         let timeout = request.timeout;
+        let model_headers = self
+            .models
+            .iter()
+            .find(|model| model.id == requested_model)
+            .map(|model| model.headers.clone())
+            .unwrap_or_default();
         let extra_headers = request.extra_headers;
         let http_client = self.client.client().clone();
+        let provider_identity = self.provider_identity.clone();
 
         let snapshot = crate::stream::ProducerSnapshot::default();
         let producer_snapshot = snapshot.clone();
@@ -327,12 +395,14 @@ impl Provider for VertexProvider {
                         .await?;
                     stream_vertex_http(
                         http_client,
+                        provider_identity,
                         auth_mode,
                         &url,
                         requested_model,
                         &body,
                         producer_cancel.clone(),
                         timeout,
+                        model_headers,
                         extra_headers,
                         callbacks,
                         producer_snapshot,
@@ -399,12 +469,14 @@ fn quota_project_of(auth: &crate::auth::ResolvedAuth) -> Option<&str> {
 #[allow(clippy::too_many_arguments)]
 async fn stream_vertex_http(
     http_client: reqwest::Client,
+    provider_identity: String,
     auth_mode: VertexAuthMode,
     url: &str,
     requested_model: String,
     body: &serde_json::Value,
     cancel: CancellationToken,
     timeout: Option<std::time::Duration>,
+    model_headers: Vec<(String, Option<String>)>,
     extra_headers: Vec<(String, String)>,
     callbacks: crate::callbacks::RequestCallbacks,
     snapshot: crate::stream::ProducerSnapshot,
@@ -428,7 +500,11 @@ async fn stream_vertex_http(
         }
     }
     route_headers.push(("content-type".to_owned(), "application/json".to_owned()));
-    let merged = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+    let merged = ProviderHeaders::default().merge_model_request(
+        &model_headers,
+        &route_headers,
+        &extra_headers,
+    )?;
     // Header transform (task 20.51) on the transformable per-call set; the
     // protected auth/quota identity headers are stamped back after the
     // transform and never enter it.
@@ -484,7 +560,7 @@ async fn stream_vertex_http(
     let mut buffer = String::new();
     let mut decoder = crate::text_decode::StreamTextDecoder::new();
     let mut mapper = GeminiMapper::new(
-        "vertex",
+        &provider_identity,
         crate::model_info::WireApi::GoogleVertex,
         &requested_model,
     );
@@ -566,6 +642,23 @@ async fn stream_vertex_http(
 
 /// Default base URL for a location: `global` pins the shared domain, every
 /// other location gets its regional subdomain.
+fn vertex_base_has_api_version(base: &str) -> bool {
+    let path = url::Url::parse(base)
+        .map(|url| url.path().to_owned())
+        .unwrap_or_else(|_| base.to_owned());
+    path.split('/').any(|part| {
+        let Some(version) = part.strip_prefix('v') else {
+            return false;
+        };
+        let (digits, beta) = version
+            .split_once("beta")
+            .map_or((version, None), |(digits, beta)| (digits, Some(beta)));
+        !digits.is_empty()
+            && digits.bytes().all(|byte| byte.is_ascii_digit())
+            && beta.is_none_or(|suffix| suffix.bytes().all(|byte| byte.is_ascii_digit()))
+    })
+}
+
 fn default_vertex_base_url(location: &str) -> String {
     if location == "global" {
         "https://aiplatform.googleapis.com".to_owned()

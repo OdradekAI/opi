@@ -317,7 +317,7 @@ HTTP 响应的 `model` 保留请求模型，`response_model` 保存服务端报�
 | `zai_tool_stream` / `vllm_priority` | 仅显式配置的 `tool_stream` 与 `priority` 附加项；从不推断。 |
 | `thinking_token_budget_field` / `supports_thinking_token_budget` | 顶层 reasoning 预算字段（vLLM `thinking_token_budget`、Qwen/DashScope/SGLang `thinking_budget`、llama.cpp `thinking_budget_tokens`；alias 选择 vLLM 字段）。 |
 | `chat_template_kwargs` / `chat_template_args` | `$var` 模板值（`thinking.enabled`、`thinking.effort`、`thinking.budget`；无 effort 时 `omit_when_off` 丢弃该键）。 |
-| `chat_completions_path` | 相对 `base_url` 的 chat completions 端点路径（默认 `/v1/chat/completions`）。 |
+| `chat_completions_path` | 非默认路径覆盖 suffix。显式 model API base 追加 `/chat/completions`，仅构造器提供的 root 追加 `/v1/chat/completions`。 |
 
 已退役键 `system_role_override`、`supports_store`、`supports_developer_role`
 与静态 `reasoning_effort` 字符串在每个配置位置（catalog `x-opi.compat`、产品
@@ -365,7 +365,7 @@ OpenAI Responses 原生语义（任务 20.37，`OpenAiResponsesOptions`）：
 | `reasoning_effort`（native） | `ThinkingLevel`（`minimal`..`max`） | 省略 = 无 native effort；wire `reasoning.effort` 取自模型 `thinking_level_map` | native effort 取代中性 `Request::thinking`；运行 effort 同时请求 `include: ["reasoning.encrypted_content"]`。不支持的级别在 auth 前以类型化 `Config` 预检失败；simple 条目改为就近收敛。 |
 | off / 关闭（两个条目） | — | 支持推理的模型发送 `reasoning: {effort: "none"}`（映射的 off 投影；`github-copilot` 路由跳过） | off 只发送 effort——无 summary、无 `include`。 |
 | `reasoning_summary`（native） | `ResponsesReasoningSummary`：`Auto`/`Detailed`/`Concise`/`Null` | 省略**与**显式 `Null` 都发送 wire 默认 `"auto"`（源 `\|\|` 语义）；仅有 summary 而无 effort 时 effort 默认 `medium` | wire `reasoning.summary`。 |
-| `service_tier`（native） | `ResponsesServiceTier`：`auto`/`default`/`flex`/`priority`/`fast` | 省略则字段缺失 | wire `service_tier`，字符串原样。响应观察到的 tier 进入 `Usage::service_tier`；本 wire 不计算分层成本倍率。 |
+| `service_tier`（native） | `ResponsesServiceTier`：`auto`/`default`/`flex`/`priority`/`fast` | 省略则字段缺失 | wire `service_tier`，字符串原样。响应观察到的 tier 进入 `Usage::service_tier`；有效计费 tier 单独保留，供按 wire 限定的费用计算使用。 |
 | `tool_choice`（native） | `ResponsesToolChoice`：`None`/`Auto`/`Required`/具名函数 | 省略则字段缺失 | wire `tool_choice`（字符串或 `{type: "function", name}`）；simple 条目只接受中性 `Auto`/`None`。 |
 | `store` | — | 除非 catalog/profile 显式钉住其他值，恒为 `false`（源无条件发送 `store:false`） | catalog compat > provider config > 默认 `false`。 |
 | `max_output_tokens` | `Request::max_tokens`（token） | 省略或零则字段缺失 | 正值以最小 16 发送；simple 调用在此 wire 映射前先解析共享预算。 |
@@ -373,10 +373,13 @@ OpenAI Responses 原生语义（任务 20.37，`OpenAiResponsesOptions`）：
 | 会话中 effort 戳 | catalog compat `supportsMidConvoEffort`（默认 `false`）+ 回放回合的 `provider_thinking_level` | 默认关闭；未记录级别的回合无戳 | 每个记录了级别的早期同模型回复前插入一个 `configuration_update`，末尾一个携带当前 effort；请求 `reasoning.effort` 恒为 `medium`；回复记录自身级别供下一回合使用。 |
 | 会话缓存 | `Request::session_id` + `cache_retention` | `Disabled` 全部抑制；否则发送截断（64 字符）的 `prompt_cache_key` | `cache_retention: Long` 追加 `prompt_cache_retention: "24h"`。显式 prompt-cache 模式（`prompt_cache_options`）未采纳——无 opi catalog 消费者。 |
 
-静态 `reasoning_effort` 仅保留为遗留兼容性元数据；`request.thinking`
+已退役的静态 `reasoning_effort` 兼容性键会被拒绝。`request.thinking`
 与所选 `ModelInfo::thinking_level_map` 是 Chat 和 Responses wire 输出的权威来源。
 `previous_response_id` 刻意缺省——Responses 请求按
 Chat-Completions 类比构造，因此服务端响应链未被接入。
+
+显式 Responses model API base 默认追加 `/responses`，仅构造器提供的 root
+默认追加 `/v1/responses`；非默认 compatibility path 保持显式覆盖。
 
 ### Azure OpenAI 双 wire（任务 20.38）
 
@@ -385,22 +388,24 @@ deployment/resource/api-version：
 
 | 映射 | 优先级 | wire 效果 |
 |---|---|---|
-| Base URL | 显式 `azure_base_url` → 资源名（`https://{resource}.openai.azure.com`）→ 模型 `baseUrl` → 类型化 `Config` 失败 | 携带 `/openai[/v1][/responses]` 路径的 Azure 主机规范化为资源根；非 Azure 主机保留路径 |
-| API 版本 | 显式 `azure_api_version` → 默认 `v1` | 每个请求携带 `?api-version=…`（取代旧默认 `2024-06-01`） |
-| Deployment | 显式 `azure_deployment_name` → provider `modelId=deployment` 映射 → 模型 id | 同时进入 URL 路径 `/openai/deployments/{d}/…` **和** 请求体 `model`；catalog id 不变 |
+| Base URL | 显式 `azure_base_url` → 所选 base 配置 → 资源名 → 模型 `baseUrl` → 类型化 `Config` 失败 | 标准 Azure 资源主机的源 Chat/Responses 使用 `/openai/v1`；custom API base 保留路径，Responses 仅在尚未包含 `/responses` 时追加它。 |
+| API 版本 | 显式 `azure_api_version` → 所选环境配置 → `v1` | Responses 携带 `?api-version=…`；builtin Chat 不带此 query，legacy direct Chat 保留 versioned deployment URL。 |
+| Deployment | 显式 `azure_deployment_name` → provider `modelId=deployment` 映射 → 模型 id | 源 wire 将 deployment 放入 body `model`，保留 catalog 身份；只有 legacy direct Chat 同时放入 URL。 |
 
 Responses wire（`WireApi::AzureOpenAiResponses`、`azure-openai-responses`
 记录、经 `Models::register_chat_api` 注册的公开 `AzureOpenAIResponsesChatApi`）
 复用完整的 Responses 参数装配——`store: false`、off-effort
 `{"effort":"none"}`、summary 默认 `auto`、加密推理 include/签名/回放、
-16-token 输出下限——运行在 Azure 传输（`api-key` 头、deployment URL、
+16-token 输出下限——运行在 Azure 传输（`api-key` 头、API-base `/responses` URL、
 azure 状态映射、终态 duration、冻结 telemetry producer）之上。
 `AzureOpenAIOptions` 携带 native 清单：`reasoning_effort`（类型化预检；
 simple 条目就近收敛）、`reasoning_summary`、`tool_choice` 与四个 Azure
 映射字段。Azure 刻意不含 `service_tier`（源缺省；本 wire 无 Responses
 服务层级倍率）。Azure 不接会话中 effort 戳（源 azure `buildParams` 从不
-传递）。Chat wire 保持既有行为（记录默认走 OpenAI-completions 投影），
-两条 wire 都只接受 `api-key` 头认证。
+传递）。Builtin Azure Chat 使用 `openai-completions`，在 API base 追加
+`/chat/completions` 并使用 Bearer 认证。独立的 legacy direct Chat 保留
+`/openai/deployments/{deployment}/chat/completions` 和 `api-key`。两条源 wire 的
+provider 均为 `azure`，endpoint、deployment 和 API-version 在 acquisition 前冻结一次。
 
 ## 缓存、Response ID 与会话亲和
 
@@ -784,6 +789,36 @@ revision：`try_install` 完整校验候选后原子换入，因此篡改、过�
 任务所有。
 
 ## 动态 Catalog Store 与 Refresh（V-27/AIR-002/AIR-033）
+
+
+`ModelsStore::invalidate_source(id)` 显式撤下该来源发布的记录并持久化失效标记。
+旧 guard 此后不能发布；`refresh(false)` 无需认证或网络即可观察已附加共享 store
+的后续 revision。该来源新的成功发布清除标记；SDK 不默认安装按 HTTP 状态失效的政策。
+
+`catalog::personalize_openrouter_catalog` 接收 owned 目录记录、显式 base URL/key、
+HTTP client 与取消 token，返回独立记录：chat 的过滤、限制和价格按 key 生效，
+image/classifier 保持不变，真实 bundled artifact 不被改写。缺 key 以及 HTTP
+401/403/404 保留输入。来源规定的 15 秒 timeout 包含 body 获取；发布和调度属于调用方。
+`CatalogModel::to_chat_model_info` 可将返回的 chat 记录交给普通 SDK 调用。
+未知费用为 `None`，明确免费的零费率为 `Some`。来源元数据保留有限负数占位值
+和 tier 顺序，计费时严格验证实际选中的费率；caller 的严格价格构造器仍保持验证。
+
+
+`Credential::ApiKey(ApiKeyCredential)` 保存可省略的 key 和 owned provider env
+（`BTreeMap<String, SecretString>`）。缺失字段按该 provider 的来源合同合并，
+显式空值保持区别；`ResolvedAuth::env` 冻结所选配置交给 adapter，Debug 不显示值。
+受保护 keychain envelope 支持 v2 scoped credential 并严格读取旧 v1，产品配置文件格式不变。
+Anthropic federation 只在选择时检查 rule、organization、identity-file 配置，
+实际 adapter 首次执行才读取身份文件并向所选 model base 交换 token；缓存与刷新遵循来源，
+401 使下一次 acquisition 失效，不隐式重发当前 generation。
+取消单次等待后，owner 驱动的交换继续完成；最后一个 owner 释放时中止交换。
+后续调用不会重新起算旧 token 的有效期。
+
+`ModelsStoreEntry` 持有三类 `CatalogRecord`，以及可省略的 `last_modified`、
+`checked_at`（Unix 毫秒）和原样 `etag`；`None` 与零有区别。动态来源返回按 provider
+分组的 entries，model ID 在各 operation 内唯一；恢复/刷新在持久化 ACK 后统一发布三类记录。
+Headers 保留有序 set/remove，input limits 仅为元数据；image pricing tiers 保真保存，
+image 费用仍按 base rates 计算。
 
 `ModelsStore`（`catalog` 模块）是动态 catalog 的唯一 revision-commit owner：
 `RefreshGuard::commit` 先持久化快照（临时文件 + 原子 rename，distribution
@@ -1347,8 +1382,7 @@ id 在**任何鉴权解析之前**类型化失败）；`Models::classify` /
 带 api 不匹配守卫。答案解析仅校验源所要求的部分——record 形状、wire
 类型一致、字符串 `choice`、有限数——**没有**通用的概率范围/求和/
 argmax/标签成员规则；每个已知问题都必须有类型匹配的答案，未知答案
-id 被忽略。usage `{input_tokens, output_tokens}` 保留源容忍度（非数或
-非正 token 计为 0；两字段皆缺则结果不带 usage），并按记录目录 **chat 式
+id 被忽略。usage `{input_tokens, output_tokens}` 保留已知性（缺失或无效字段不成为可靠的零；有效计数保留，残缺用量标记为未完整上报），并按记录目录 **chat 式
 tiered 计价**（区别于图像路径的基础价例外）。
 
 传输遵循源：**无默认超时**（调用方超时 body-inclusive 且**每次重试
@@ -1360,7 +1394,7 @@ attempt 新鲜**，超时报 `"Request timed out after {ms}ms"` 并像任何无�
 `Aborted`，HTTP 失败格式化为 `"System One API error ({status}): {body}"`。
 `temperature` 是 System One 无法应用的类型化选项：永不上线。payload 观
 察器（替换或保留、每次逻辑调用一次、跨重试冻结）与 response 观察器
-（status + headers，先于 body 处理）受支持；raw-event 与 header-transform
+（status + headers，在完整 JSON 解码后，位于 acquisition 重试和超时之外）受支持；raw-event 与 header-transform
 族在派发前类型化拒绝。冻结的 `TelemetryContext` 透传到请求路径。
 curated 基线记录（`typesafe/jev-latest`，64000 token 上下文，文本输入，
 注册前零价）在注册时整体替换；pi 生成的 `data/typesafe.json` 未随钉住
@@ -1407,7 +1441,7 @@ pi 生成的 `data/openrouter.json` 未随钉住源提供，注册方整体替�
 `Aborted`，HTTP 失败格式化为 `"<status>: <error.message | body>"`，
 401/403 → `AuthFailed`、429 → `RateLimited`、408/504 → `Timeout`。回
 调：payload 观察器（替换或保留、每次逻辑调用一次、跨重试冻结）与
-response 观察器（status + headers，先于 body 处理）受支持；raw-event
+response 观察器（status + headers，在完整 JSON 解码后，位于 acquisition 重试和超时之外）受支持；raw-event
 与 header-transform 族在派发前类型化拒绝（ONB-04）。冻结的
 `TelemetryContext`（P20-TELEMETRY）透传到请求路径，无自动 span。
 
@@ -1576,7 +1610,7 @@ await；取消可结束 pending 回调而不再发送。
 |---|---|---|
 | `with_header_transform` | 每个 logical call 一次，作用于组装后的每调用集合 | 输出整体替换该集合；非保护项的省略/设置/删除受支持。已存在的受保护 identity/auth/signing 项可原样返回；删除、修改或引入受保护项在派发前 typed 失败。适配器拥有的凭据不进入变换。 |
 | `with_on_payload` | 采样/compat/wire 投影之后，作用于最终请求体 | `Ok(None)` 保持原体；`Ok(Some(v))` 校验后替换：JSON object、model 身份不变、输出预算不得上调。Chat/Responses/Codex 还在派发前检查 streaming wire shape，保留未知扩展及合法 content/tool 变更。每个 payload variant 只运行一次——普通获取重试按字节复用冻结体（`ORDINARY_PAYLOAD_VARIANT`）。 |
-| `with_on_response` | 在适配器来源定义的响应观测点触发，携带 status 与 headers，先于 body 处理 | Codex SSE 也在分类前观测非成功状态；未产生响应的失败不通知。成功响应 handoff 封闭普通 acquisition retry。 |
+| `with_on_response` | 在适配器来源定义的响应观测点触发，携带 status 与 headers；流式按来源响应边界，image/classifier 在完整 JSON 获取后 | Codex SSE 也在分类前观测非成功状态；未产生响应的失败不通知。成功响应 handoff 封闭普通 acquisition retry。 |
 | `with_on_raw` | 每个已解析 provider wire 事件，严格先于其归一化发射，按 wire 顺序 | 只读；失败以 typed 错误终止当前调用并保留已交付的 partial。 |
 
 适配器覆盖：Anthropic、OpenAI Chat（含 Mistral 与 OpenRouter profile）、
@@ -1607,20 +1641,21 @@ sections 取整一次，added／removed 工具列表的序列化 JSON 各自单�
 | 图片估算 | 每图 4800 字符 | — | — | — |
 | usage 锚点 | total 或桶和 | 无锚 → 内容估算 | total 0 → 已上报则取桶和；未知 → 跳过 | total > 桶和 |
 | simple 上限 | `clamp(M)`：窗口 ≤ 0 时 `max(1,M)`，否则 `min(M, max(1, W−E−4096))` | `None` → 模型默认输出 | 显式 `M` 不再按模型 max 二次封顶 | request < 窗口算术 |
-| 数字 Claude thinking 预算 | 等级表 1024/2048/8192/16384（xhigh/max → high），再夹取留出回答空间 | 省略预算 → 等级默认 | 低于 1024 的预算在鉴权前拒绝 | 等级默认 < 显式预算 |
+| 数字 Claude thinking 预算 | 等级表 1024/2048/8192/16384（xhigh/max → high），再夹取留出回答空间 | 省略预算 → 等级默认 | native enabled 且省略预算用 1024；simple 的零预算按各 wire 处理 | 等级默认 < 显式预算 |
 | sampling 参数 | 按键合并的 JSON 映射 | 空映射 → 不合并 | 缺失键保持缺失 | 模型基座 < 生效等级 < request |
 | temperature | 具名字段 | `None` → 按适配器门控省略 | NaN 省略 | sampling 映射覆盖具名字段（最后合并） |
 | 计价 tier | 以 input+cacheRead+cacheWrite 选择，严格大于，取最高，相等重复取首个 | 无 tier → 基础费率 | 零阈值有效；保持原序及重复项 | 命中费率适用于整个请求 |
 | 1h 缓存写入 | 子集按 2× 输入费率 | `None` → 全部短缓存 | 显式 0 有效，与缺失区分 | 子集，永不重复计费 |
-| service tier | flex 0.5×、priority/fast 2×（`gpt-5.5`：2.5×）、default 1× | 缺失 → 1× | 未识别的 wire 值保持缺失 | 作用于每个成本分量 |
+| service tier | Responses：flex 0.5×、priority/fast 2×（`gpt-5.5`：2.5×）；Codex fast 和 Azure 所有 tier：1× | request/response 回退依选定 wire | 对 tier 敏感的 wire，未知 tier → 未知费用 | 作用于每个成本分量 |
 
 仅 OpenAI 兼容适配器（Chat、Responses）合并解析后的 sampling 映射，且作为 body 的
 最后一步，使模型与 request 的 sampling 覆盖具名请求字段；其他适配器忽略它。
-Responses 适配器把响应中的 `service_tier` 解析进 `Usage`。OpenRouter 图片
-`parse_usage` 是显式源例外：图片用量保留基础模型费率，不做 tier 选择。opi 没有
-Pi-Messages wire，因此该 wire 的 native/simple 直传条款不适用。native `ChatApi`
-调用遵循前述适配器预算语义。元数据本身永远不会产生新的派发前限制或缩放；重复的静态 `reasoning_effort` compat 键
-仍然解析，只有在 AIR-022 替换证明之后才会开始硬报错。
+`Usage::service_tier` 保留响应观察到的类别；`effective_service_tier` 保留选定
+wire 的 request/response 计费规则。`calculate_cost_tiered(usage, pricing,
+model_id, wire)` 在用量未知、价格无效或计费相关 tier 未知时返回 `None`。
+OpenRouter 图片使用基础费率，不做 tier 选择。native 保留各适配器的预算语义；
+Pi Messages simple 透传自己的白名单。`ModelInfo::input_limits` 仅为元数据，
+不自动开启拒绝或缩放政策。已退役的静态 `reasoning_effort` compat 键返回迁移错误。
 
 ## 非目标
 

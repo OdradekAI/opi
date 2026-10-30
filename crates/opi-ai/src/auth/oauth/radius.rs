@@ -574,6 +574,7 @@ impl OAuthProvider for RadiusOAuthProvider {
         // The configured gateway owns routing for fresh and refreshed tokens;
         // credential metadata never supplies a Radius endpoint.
         crate::auth::ResolvedAuth {
+            env: Default::default(),
             scheme: crate::auth::AuthScheme::Bearer,
             secret: cred.access.clone(),
             base_url: None,

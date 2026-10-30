@@ -192,6 +192,7 @@ fn chat_request() -> Request {
         .expect("valid context"),
         max_tokens: None,
         temperature: None,
+        sampling_params: Default::default(),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,
@@ -200,6 +201,9 @@ fn chat_request() -> Request {
         extra_headers: vec![],
         cache_retention: CacheRetention::None,
         session_id: None,
+        callbacks: Default::default(),
+        telemetry_context: None,
+        transport: Default::default(),
     }
 }
 

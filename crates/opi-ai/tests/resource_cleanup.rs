@@ -64,6 +64,7 @@ impl AuthResolver for Resolver {
                 gate.acquire().await.unwrap().forget();
             }
             Ok(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::Bearer,
                 secret: secrecy::SecretString::from("fake"),
                 base_url: None,

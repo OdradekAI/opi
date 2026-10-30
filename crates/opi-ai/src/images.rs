@@ -62,8 +62,8 @@ pub enum ImagesStopReason {
 ///
 /// Only the base rates apply: the pinned OpenRouter image adapter prices with
 /// the record's flat rates (its "base-cost exception"); tiered pricing never
-/// enters the image path. Unknown catalog pricing stays `0.0`, matching the
-/// source generator's fallback, and remains distinct from absent usage.
+/// enters the image path. A model with unknown rates has `cost: None`;
+/// explicit zero rates describe known free usage.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ImageCostRates {
     /// USD per million input tokens.
@@ -127,10 +127,19 @@ pub struct ImageModelRecord {
     pub api: ApiId,
     /// Endpoint base URL (trailing slashes are stripped when joining).
     pub base_url: String,
+    /// Declared input modalities, retained as source metadata.
+    pub input: Vec<crate::catalog::CatalogInputModality>,
+    /// Ordered ordinary header overrides; `None` removes an earlier value.
+    pub headers: Vec<(String, Option<String>)>,
+    /// Source input-limit metadata; it does not impose SDK resize policy.
+    pub input_limits: Option<serde_json::Value>,
     /// Output modalities. Order is preserved on the wire.
     pub output: Vec<ImageOutputModality>,
-    /// Base per-million pricing rates.
-    pub cost: ImageCostRates,
+    /// Base per-million pricing rates, or `None` when catalog pricing is unknown.
+    pub cost: Option<ImageCostRates>,
+    /// Catalog tiers retained as metadata. Image generation uses only `cost`
+    /// base rates, even when the request exceeds one of these thresholds.
+    pub cost_tiers: Vec<crate::model_info::PricingTier>,
 }
 
 /// Per-call image-generation values: timeout, cancellation, headers,
@@ -167,6 +176,15 @@ impl std::fmt::Debug for ImagesCall {
     }
 }
 
+pub(crate) fn validate_image_request(
+    record: &ImageModelRecord,
+    call: &ImagesCall,
+) -> Result<(), ProviderError> {
+    crate::ProviderHeaders::default()
+        .merge_model_request(&record.headers, &[], &call.extra_headers)
+        .map(|_| ())
+}
+
 /// The image-generation result: pi `AssistantImages` semantics.
 ///
 /// Provider failures never surface as `Err`: they keep the record identity,
@@ -187,7 +205,7 @@ pub struct ImagesResult {
     pub response_id: Option<String>,
     /// Reported usage with the provider's cache-bucket split, when reported.
     pub usage: Option<Usage>,
-    /// Base-rate cost computed from the record and usage, when usage exists.
+    /// Base-rate cost when rates and the reported usage are both known.
     pub cost: Option<ImagesCost>,
     /// Terminal state.
     pub stop_reason: ImagesStopReason,

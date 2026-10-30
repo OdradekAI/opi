@@ -66,15 +66,19 @@ impl StopReason {
 
 /// Provider-selected service tier for one response.
 ///
-/// Only tiers with a documented cost multiplier are modeled; unrecognized
-/// wire values stay absent instead of guessing a multiplier.
+/// Known wire values retain their exact names. `Unknown` records a present
+/// unrecognized response value; it never permits a guessed price multiplier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ServiceTier {
+    Auto,
     Default,
     Flex,
+    Scale,
     Priority,
     Fast,
+    /// A provider reported a tier that this SDK cannot price reliably.
+    Unknown,
 }
 
 impl ServiceTier {
@@ -86,7 +90,7 @@ impl ServiceTier {
     /// resolution stays with the owning adapters.
     pub fn cost_multiplier(self, model_id: &str) -> f64 {
         match self {
-            Self::Default => 1.0,
+            Self::Auto | Self::Default | Self::Scale | Self::Unknown => 1.0,
             Self::Flex => 0.5,
             Self::Priority | Self::Fast if model_id == "gpt-5.5" => 2.5,
             Self::Priority | Self::Fast => 2.0,
@@ -120,9 +124,13 @@ pub struct Usage {
     #[serde(default)]
     pub total_tokens: Option<u64>,
     /// Service tier the provider selected for this response, when reported.
-    /// Feeds response-sensitive cost multipliers in the tiered cost helper.
+    /// This original response fact is never replaced by a requested fallback.
     #[serde(default)]
     pub service_tier: Option<ServiceTier>,
+    /// Wire-qualified billing tier after the adapter resolves request fallback
+    /// and response precedence. Absent on wires without service-tier pricing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_service_tier: Option<ServiceTier>,
     #[serde(default)]
     pub reported: bool,
 }
@@ -144,6 +152,7 @@ impl Usage {
             reasoning_tokens: None,
             total_tokens: None,
             service_tier: None,
+            effective_service_tier: None,
             reported: false,
         }
     }
@@ -165,6 +174,7 @@ impl Usage {
             reasoning_tokens,
             total_tokens: None,
             service_tier: None,
+            effective_service_tier: None,
             reported: true,
         }
     }
@@ -323,6 +333,7 @@ impl CumulativeUsage {
                 .map(|tokens| tokens.min(u64::from(output_tokens))),
             total_tokens: None,
             service_tier: None,
+            effective_service_tier: None,
             reported: self.unknown_turns == 0,
         }
     }

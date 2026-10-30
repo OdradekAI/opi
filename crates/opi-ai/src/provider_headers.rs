@@ -14,6 +14,7 @@ use crate::provider::{ProviderError, ProviderErrorSummary};
 pub(crate) const RESERVED_PROVIDER_HEADERS: &[&str] = &[
     "host",
     "authorization",
+    "cf-aig-authorization",
     "x-api-key",
     "api-key",
     "anthropic-version",
@@ -59,6 +60,36 @@ impl ProviderHeaders {
     /// Return the validated provider-configured header values.
     pub fn configured(&self) -> &[(String, String)] {
         &self.configured
+    }
+
+    /// Merge configured defaults, selected-model overrides and per-call headers.
+    /// Model `None` removes an earlier ordinary header. Route-managed identity
+    /// and authentication headers cannot be changed or removed by either input.
+    pub(crate) fn merge_model_request(
+        &self,
+        model_headers: &[(String, Option<String>)],
+        route_headers: &[(String, String)],
+        request_headers: &[(String, String)],
+    ) -> Result<Vec<(String, String)>, ProviderError> {
+        validate_model_headers(model_headers).map_err(provider_header_error)?;
+        crate::provider::validate_extra_headers(request_headers)?;
+        for (name, value) in route_headers {
+            validate_pair(name, value).map_err(provider_header_error)?;
+        }
+        let defaults: Vec<_> = self
+            .configured
+            .iter()
+            .chain(route_headers)
+            .map(|(name, value)| (name.clone(), Some(value.clone())))
+            .collect();
+        let request: Vec<_> = request_headers
+            .iter()
+            .map(|(name, value)| (name.clone(), Some(value.clone())))
+            .collect();
+        Ok(
+            merge_provider_header_sources(&[&defaults, model_headers, &request])
+                .unwrap_or_default(),
+        )
     }
 
     /// Merge route-managed headers with validated per-request headers.
@@ -173,6 +204,18 @@ pub(crate) fn is_protected_header(name: &str) -> bool {
     RESERVED_PROVIDER_HEADERS.contains(&name.as_str())
         || name.starts_with("amz-sdk-")
         || name.starts_with("x-amz-")
+}
+
+pub(crate) fn validate_model_headers(
+    headers: &[(String, Option<String>)],
+) -> Result<(), ProviderHeadersError> {
+    for (name, value) in headers {
+        validate_pair(name, value.as_deref().unwrap_or(""))?;
+        if is_protected_header(name) {
+            return Err(ProviderHeadersError::ReservedName(name.clone()));
+        }
+    }
+    Ok(())
 }
 
 fn validate_pair(name: &str, value: &str) -> Result<(), ProviderHeadersError> {

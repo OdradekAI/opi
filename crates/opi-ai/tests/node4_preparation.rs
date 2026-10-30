@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[path = "support/catalog_store.rs"]
+mod catalog_fixture;
+
 use futures_util::future::BoxFuture;
 use opi_ai::auth::{AuthScheme, ResolvedAuth, StaticAuthResolver};
 use opi_ai::catalog::{DynamicCatalogSource, ModelsStore};
@@ -266,11 +269,12 @@ impl DynamicCatalogSource for SuccessThenFailureSource {
     fn fetch(
         &self,
         _token: CancellationToken,
-    ) -> BoxFuture<'static, Result<HashMap<String, Vec<ModelInfo>>, ProviderError>> {
+    ) -> BoxFuture<'static, Result<HashMap<String, opi_ai::catalog::ModelsStoreEntry>, ProviderError>>
+    {
         let first = self.calls.fetch_add(1, Ordering::SeqCst) == 0;
         Box::pin(async move {
             if first {
-                Ok(HashMap::from([(
+                Ok(catalog_fixture::catalogs(HashMap::from([(
                     "openai".into(),
                     vec![ModelInfo::new(
                         "source-only",
@@ -278,7 +282,7 @@ impl DynamicCatalogSource for SuccessThenFailureSource {
                         WireApi::OpenAiCompletions,
                         ModelCapabilities::new(10_000, 1_000),
                     )],
-                )]))
+                )])))
             } else {
                 Err(ProviderError::ProviderSide(
                     opi_ai::provider::ProviderErrorSummary::from_untrusted("source unavailable"),
@@ -317,7 +321,7 @@ async fn failed_explicit_source_retains_catalog_when_static_provider_returns_non
         "failed source retains memory revision"
     );
     let restored = ModelsStore::open(&store_path).unwrap().snapshot();
-    assert_eq!(restored.catalogs["openai"][0].id, "source-only");
+    assert_eq!(restored.catalogs["openai"].models[0].id(), "source-only");
 }
 
 struct AuthoritativeEmptyProvider {
@@ -372,7 +376,7 @@ async fn explicit_source_failure_does_not_revoke_a_providers_authoritative_empty
     assert!(models.resolve("openai:source-only").is_err());
     assert!(models.resolve("openai:gpt-4o").is_err());
     let snapshot = ModelsStore::open(&store_path).unwrap().snapshot();
-    assert!(snapshot.catalogs["openai"].is_empty());
+    assert!(snapshot.catalogs["openai"].models.is_empty());
 }
 
 struct NativeThenAbsentProvider {
@@ -418,7 +422,8 @@ impl DynamicCatalogSource for IndependentSource {
     fn fetch(
         &self,
         _: CancellationToken,
-    ) -> BoxFuture<'static, Result<HashMap<String, Vec<ModelInfo>>, ProviderError>> {
+    ) -> BoxFuture<'static, Result<HashMap<String, opi_ai::catalog::ModelsStoreEntry>, ProviderError>>
+    {
         let fail = self.fail;
         Box::pin(async move {
             if fail {
@@ -426,7 +431,7 @@ impl DynamicCatalogSource for IndependentSource {
                     opi_ai::provider::ProviderErrorSummary::from_untrusted("unavailable"),
                 ))
             } else {
-                Ok(HashMap::from([(
+                Ok(catalog_fixture::catalogs(HashMap::from([(
                     "provider-b".into(),
                     vec![ModelInfo::new(
                         "source-b-model",
@@ -434,7 +439,7 @@ impl DynamicCatalogSource for IndependentSource {
                         WireApi::OpenAiCompletions,
                         ModelCapabilities::new(10_000, 1_000),
                     )],
-                )]))
+                )])))
             }
         })
     }
@@ -526,7 +531,10 @@ async fn restored_native_catalog_clears_despite_unrelated_source_failure() {
     );
     let snapshot = ModelsStore::open(&path).unwrap().snapshot();
     assert!(!snapshot.catalogs.contains_key("provider-a"));
-    assert_eq!(snapshot.catalogs["provider-b"][0].id, "source-b-model");
+    assert_eq!(
+        snapshot.catalogs["provider-b"].models[0].id(),
+        "source-b-model"
+    );
 }
 
 #[tokio::test]
@@ -551,7 +559,7 @@ async fn restored_source_catalog_retains_on_same_provider_failure() {
     restored.refresh(true).await.unwrap();
     assert!(restored.resolve("openai:source-only").is_ok());
     assert_eq!(
-        ModelsStore::open(&path).unwrap().snapshot().catalogs["openai"][0].id,
+        ModelsStore::open(&path).unwrap().snapshot().catalogs["openai"].models[0].id(),
         "source-only"
     );
 }
@@ -563,7 +571,7 @@ async fn legacy_catalog_has_unknown_publisher_and_malformed_publisher_fails_clos
     let store = ModelsStore::open(&path).unwrap();
     store
         .begin()
-        .commit(HashMap::from([(
+        .commit(catalog_fixture::catalogs(HashMap::from([(
             "provider-a".into(),
             vec![ModelInfo::new(
                 "legacy",
@@ -571,7 +579,7 @@ async fn legacy_catalog_has_unknown_publisher_and_malformed_publisher_fails_clos
                 WireApi::OpenAiCompletions,
                 ModelCapabilities::new(10_000, 1_000),
             )],
-        )]))
+        )])))
         .await
         .unwrap();
     let mut persisted: serde_json::Value =

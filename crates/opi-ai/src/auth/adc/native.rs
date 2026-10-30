@@ -1682,6 +1682,7 @@ impl crate::auth::AuthResolver for AdcNativeOwner {
         Box::pin(async move {
             let token = self.resolve_token().await.map_err(adc_auth_error)?;
             Ok(crate::auth::ResolvedAuth {
+                env: Default::default(),
                 scheme: crate::auth::AuthScheme::Bearer,
                 secret: token.access_token,
                 base_url: None,

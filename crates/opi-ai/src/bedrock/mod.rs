@@ -111,6 +111,7 @@ pub fn proxy_placeholder_auth(
 ) -> Result<crate::auth::ResolvedAuth, ProviderError> {
     validate_proxy_placeholder_endpoint(endpoint)?;
     Ok(crate::auth::ResolvedAuth {
+        env: Default::default(),
         scheme: crate::auth::AuthScheme::AwsSigV4(proxy_placeholder_credentials(region)),
         secret: SecretString::from(""),
         base_url: Some(endpoint.to_owned()),
@@ -127,6 +128,7 @@ pub fn proxy_placeholder_auth(
 /// Concrete AWS Bedrock provider using the Converse API.
 #[derive(Clone)]
 pub struct BedrockProvider {
+    provider_identity: String,
     base_url: Option<String>,
     client: Arc<HttpClient>,
     /// Dedicated HTTP/1.1 client for the explicit proxy-placeholder mode;
@@ -151,6 +153,7 @@ impl BedrockProvider {
     pub fn new(base_url: Option<String>, client: Arc<HttpClient>) -> Self {
         let models = model_catalog();
         Self {
+            provider_identity: "bedrock".into(),
             base_url,
             models,
             client,
@@ -164,6 +167,12 @@ impl BedrockProvider {
     /// record; task 20.42).
     pub fn with_models(mut self, models: Vec<ModelInfo>) -> Self {
         self.models = models;
+        self
+    }
+
+    /// Bind capture and replay to the registered canonical provider identity.
+    pub(crate) fn with_provider_identity(mut self, provider: &str) -> Self {
+        self.provider_identity = provider.to_owned();
         self
     }
 
@@ -276,7 +285,7 @@ impl BedrockProvider {
             &crate::transcript::without_initial_system_message(transcript.messages()),
             &crate::replay::ReplayRoute {
                 wire: crate::model_info::WireApi::BedrockConverseStream,
-                provider: "bedrock".to_owned(),
+                provider: self.provider_identity.clone(),
                 model: model_id.to_owned(),
                 supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
             },
@@ -445,7 +454,7 @@ impl BedrockProvider {
                 ))]));
             }
         };
-        let mut mapper = BedrockMapper::new("");
+        let mut mapper = BedrockMapper::new(&self.provider_identity, "");
 
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
         for frame in frames {
@@ -485,6 +494,29 @@ impl BedrockProvider {
 }
 
 impl Provider for BedrockProvider {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        validate_complete_bedrock_record(model)
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.clone()
+            .with_models(vec![model])
+            .with_native_options(BedrockOptions::from_simple(&options))
+            .stream_resource_attempt(request, auth, attempt, resources)
+    }
+
     fn id(&self) -> &str {
         "bedrock"
     }
@@ -567,23 +599,13 @@ impl Provider for BedrockProvider {
             }
         );
         if placeholder_mode {
-            // The explicit no-real-credential mode is lawful only on a
-            // caller-supplied nonstandard endpoint and only over the
-            // dedicated HTTP/1.1 placeholder client; ordinary AWS endpoints
-            // reject it and no H2-capable fallback exists.
-            let endpoint = self.base_url.clone().or_else(|| auth.base_url.clone());
-            let Some(endpoint) = endpoint else {
-                return Box::pin(stream::iter(vec![Err(ProviderError::Config(
-                    ProviderErrorSummary::attested_static(
-                        "Bedrock proxy-placeholder signing requires a caller-supplied nonstandard endpoint",
-                    ),
-                ))]));
-            };
-            if let Err(error) = validate_proxy_placeholder_endpoint(&endpoint) {
+            let endpoint = self.base_url.as_deref().or(auth.base_url.as_deref());
+            if let Some(endpoint) = endpoint
+                && let Err(error) = validate_proxy_placeholder_endpoint(endpoint)
+            {
                 return Box::pin(stream::iter(vec![Err(error)]));
             }
         }
-
         let mut credentials = None;
         let mut bearer_token = None;
         match auth.scheme {
@@ -607,9 +629,30 @@ impl Provider for BedrockProvider {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
         };
+        let model_base = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.base_url.clone());
+        // A standard catalog endpoint must not replace the already resolved
+        // signing region. Custom/VPC/proxy endpoints remain authoritative.
+        let custom_base = model_base
+            .clone()
+            .filter(|base| placeholder_mode || !is_standard_bedrock_endpoint(base));
+        let resolved_custom_base = auth
+            .base_url
+            .clone()
+            .filter(|base| !is_standard_bedrock_endpoint(base));
         let base_url = match (&credentials, &bearer_token) {
-            (Some(credentials), _) => self.runtime_url(&credentials.region),
-            (None, Some(_)) => match self.base_url.clone().or_else(|| auth.base_url.clone()) {
+            (Some(credentials), _) => custom_base
+                .or(resolved_custom_base)
+                .unwrap_or_else(|| self.runtime_url(&credentials.region)),
+            (None, Some(_)) => match custom_base
+                .or(resolved_custom_base)
+                .or_else(|| self.base_url.clone())
+                .or_else(|| auth.base_url.clone())
+                .or(model_base)
+            {
                 Some(base_url) => base_url,
                 // Bearer auth carries no SigV4 region, so the endpoint must
                 // come from the provider configuration or the resolver that
@@ -624,7 +667,19 @@ impl Provider for BedrockProvider {
             },
             (None, None) => unreachable!("one attachment path is always selected"),
         };
+        // Validate the endpoint actually selected from the frozen record and
+        // resolved authentication; neither may redirect placeholder signing
+        // to a standard AWS endpoint after an earlier host was checked.
+        if placeholder_mode && let Err(error) = validate_proxy_placeholder_endpoint(&base_url) {
+            return Box::pin(stream::iter(vec![Err(error)]));
+        }
         let timeout = request.timeout;
+        let model_headers = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .map(|model| model.headers.clone())
+            .unwrap_or_default();
         let extra_headers = request.extra_headers;
 
         let http_client = if placeholder_mode {
@@ -652,6 +707,7 @@ impl Provider for BedrockProvider {
         // producer task runs under the captured parent/Dispatch when
         // provided; omission observes nothing.
         let telemetry = request.telemetry_context.clone();
+        let provider_identity = self.provider_identity.clone();
         let producer = async move {
             let run = async {
                 let result = async {
@@ -660,6 +716,7 @@ impl Provider for BedrockProvider {
                         .await?;
                     Self::stream_http(
                         http_client,
+                        provider_identity,
                         credentials,
                         bearer_token,
                         base_url,
@@ -667,6 +724,7 @@ impl Provider for BedrockProvider {
                         &body,
                         producer_cancel.clone(),
                         timeout,
+                        model_headers,
                         extra_headers,
                         callbacks,
                         producer_snapshot,
@@ -709,6 +767,7 @@ impl BedrockProvider {
     #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         client: reqwest::Client,
+        provider_identity: String,
         credentials: Option<AwsCredentials>,
         bearer_token: Option<SecretString>,
         base_url: String,
@@ -716,6 +775,7 @@ impl BedrockProvider {
         body: &serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
+        model_headers: Vec<(String, Option<String>)>,
         extra_headers: Vec<(String, String)>,
         callbacks: crate::callbacks::RequestCallbacks,
         snapshot: crate::stream::ProducerSnapshot,
@@ -725,6 +785,8 @@ impl BedrockProvider {
         // the output is revalidated so no signing/identity name can enter.
         // Retry-observability headers belong to the attempt, not the frozen
         // functional transform. Preserve the freshly stamped send counter.
+        let extra_headers =
+            ProviderHeaders::default().merge_model_request(&model_headers, &[], &extra_headers)?;
         let (attempt_headers, transformable): (Vec<_>, Vec<_>) = extra_headers
             .into_iter()
             .partition(|(name, _)| name.to_ascii_lowercase().starts_with("amz-sdk-"));
@@ -870,7 +932,7 @@ impl BedrockProvider {
 
         let mut byte_stream = response.bytes_stream();
         let mut buffer: Vec<u8> = Vec::new();
-        let mut mapper = BedrockMapper::new(model_id);
+        let mut mapper = BedrockMapper::new(&provider_identity, model_id);
 
         mapper.set_snapshot(snapshot);
         callbacks
@@ -1350,10 +1412,10 @@ impl BedrockMapper {
             .failure(cause.with_partial(self.partial.clone()))
     }
 
-    fn new(model: &str) -> Self {
+    fn new(provider: &str, model: &str) -> Self {
         Self {
             snapshot: crate::stream::ProducerSnapshot::default(),
-            partial: empty_assistant_message(model),
+            partial: empty_assistant_message(provider, model),
             blocks: Vec::new(),
             saw_done: false,
             usage: BedrockUsage::default(),
@@ -1692,11 +1754,11 @@ impl BedrockMapper {
     }
 }
 
-fn empty_assistant_message(model: &str) -> AssistantMessage {
+fn empty_assistant_message(provider: &str, model: &str) -> AssistantMessage {
     AssistantMessage {
         content: Vec::new(),
         api: crate::ApiKind::Anthropic, // Bedrock uses Anthropic-style content
-        provider: "bedrock".into(),
+        provider: provider.into(),
         model: model.to_owned(),
         response_model: None,
         wire: Some(crate::model_info::WireApi::BedrockConverseStream),

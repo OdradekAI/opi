@@ -26,6 +26,7 @@
 //! This surface is part of the **unstable 0.x extension substrate**. Breaking
 //! changes may occur between minor versions without a major version bump.
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -35,6 +36,69 @@ use time::OffsetDateTime;
 // ---------------------------------------------------------------------------
 // Credential value
 // ---------------------------------------------------------------------------
+
+/// An optional API key and provider-scoped configuration belonging to the
+/// same stored identity. Missing fields permit the provider's documented
+/// source merge; explicitly empty values remain present and never become an
+/// instruction to select another account.
+///
+/// Environment values use [`SecretString`] because a provider's scoped
+/// configuration can itself contain credentials. Debug output names fields
+/// without exposing their values.
+#[derive(Clone)]
+pub struct ApiKeyCredential {
+    key: Option<SecretString>,
+    env: BTreeMap<String, SecretString>,
+}
+
+impl ApiKeyCredential {
+    /// Preserve the supplied key and scoped values without normalization.
+    pub fn new(key: Option<SecretString>, env: BTreeMap<String, SecretString>) -> Self {
+        Self { key, env }
+    }
+
+    /// The stored key, including an explicitly empty value.
+    pub fn key(&self) -> Option<&SecretString> {
+        self.key.as_ref()
+    }
+
+    /// Provider-scoped values. Absence differs from a present empty value.
+    pub fn env(&self) -> &BTreeMap<String, SecretString> {
+        &self.env
+    }
+
+    /// Take the key while dropping the remaining scoped configuration.
+    pub fn into_key(self) -> Option<SecretString> {
+        self.key
+    }
+}
+
+impl From<SecretString> for ApiKeyCredential {
+    fn from(key: SecretString) -> Self {
+        Self::new(Some(key), BTreeMap::new())
+    }
+}
+
+impl From<String> for ApiKeyCredential {
+    fn from(key: String) -> Self {
+        SecretString::from(key).into()
+    }
+}
+
+impl From<&str> for ApiKeyCredential {
+    fn from(key: &str) -> Self {
+        SecretString::from(key).into()
+    }
+}
+
+impl std::fmt::Debug for ApiKeyCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiKeyCredential")
+            .field("has_key", &self.key.is_some())
+            .field("env_keys", &self.env.keys().collect::<Vec<_>>())
+            .finish()
+    }
+}
 
 /// A persisted credential. Both API keys and OAuth tokens live in the OS
 /// keychain envelope. Every secret field uses [`SecretString`], which zeroizes
@@ -48,8 +112,8 @@ use time::OffsetDateTime;
 /// [`crate::SecretKey`] redacting impl.
 #[derive(Clone)]
 pub enum Credential {
-    /// A static API key (Anthropic, OpenAI, Mistral, ...).
-    ApiKey(SecretString),
+    /// An optional API key and provider-scoped configuration.
+    ApiKey(ApiKeyCredential),
     /// An OAuth token envelope. `base_url` preserves provider-specific
     /// endpoints (e.g. a Copilot enterprise host). `opi-coding-agent` owns the
     /// native keychain backend; this crate owns the OAuth flow, store-owned

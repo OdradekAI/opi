@@ -25,6 +25,7 @@ use crate::auth::ResolvedAuth;
 use crate::classifier::{ClassifierCall, ClassifierContext, ClassifierModelRecord};
 use crate::http::HttpClient;
 use crate::models::ApiId;
+use crate::provider::ProviderError;
 
 /// The exact pi classifier API identity this adapter serves.
 pub const CLOUDFLARE_WORKERS_AI_SYSTEM_ONE_API_ID: &str = "cloudflare-workers-ai-system-one";
@@ -85,7 +86,7 @@ impl ClassifierApi<CloudflareSystemOneOptions> for CloudflareWorkersAiSystemOneA
     }
 
     fn provider_id(&self) -> &str {
-        "cloudflare-workers-ai"
+        &self.record.provider_id
     }
 
     fn complete_record(&self) -> &ClassifierModelRecord {
@@ -100,6 +101,17 @@ impl ClassifierApi<CloudflareSystemOneOptions> for CloudflareWorkersAiSystemOneA
         }
     }
 
+    fn validate_request(
+        &self,
+        record: &ClassifierModelRecord,
+        context: &ClassifierContext,
+        options: &CloudflareSystemOneOptions,
+        call: &ClassifierCall,
+    ) -> Result<(), ProviderError> {
+        self.validate_options(options)?;
+        crate::api::system_one::validate_system_one_request(record, context, call, LABEL)
+    }
+
     fn classify_prepared<'a>(
         &'a self,
         record: ClassifierModelRecord,
@@ -112,7 +124,12 @@ impl ClassifierApi<CloudflareSystemOneOptions> for CloudflareWorkersAiSystemOneA
             // pi `resolveCloudflareModel`: the account placeholder
             // materializes from the resolved provider env; a missing value
             // keeps the literal placeholder.
-            let base = record.base_url.replace(
+            let base = crate::auth::builtin::effective_base_url(
+                &record.provider_id,
+                &record.base_url,
+                &auth,
+            )
+            .replace(
                 CLOUDFLARE_ACCOUNT_ID,
                 auth.account_id.as_deref().unwrap_or(CLOUDFLARE_ACCOUNT_ID),
             );
@@ -218,6 +235,8 @@ pub fn default_cloudflare_classifier_records() -> Vec<ClassifierModelRecord> {
         input_cost_per_mtok: f64,
     ) -> ClassifierModelRecord {
         ClassifierModelRecord {
+            headers: Vec::new(),
+            input_limits: None,
             provider_id: "cloudflare-workers-ai".into(),
             id: id.into(),
             name: name.into(),
@@ -225,14 +244,16 @@ pub fn default_cloudflare_classifier_records() -> Vec<ClassifierModelRecord> {
             base_url: CLOUDFLARE_WORKERS_AI_REST_BASE_URL.into(),
             input: vec![crate::classifier::ClassifierInputModality::Text],
             context_window,
-            cost: crate::model_info::ModelPricing::try_new(
-                crate::stream::Pricing {
-                    input_cost_per_mtok,
-                    ..Default::default()
-                },
-                Vec::new(),
-            )
-            .expect("valid pricing"),
+            cost: Some(
+                crate::model_info::ModelPricing::try_new(
+                    crate::stream::Pricing {
+                        input_cost_per_mtok,
+                        ..Default::default()
+                    },
+                    Vec::new(),
+                )
+                .expect("valid pricing"),
+            ),
         }
     }
     vec![

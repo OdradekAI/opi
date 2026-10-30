@@ -116,7 +116,7 @@ impl ClassifierApi<OpenAiDecisionsOptions> for OpenAiDecisionsApi {
     }
 
     fn provider_id(&self) -> &str {
-        "openai"
+        &self.record.provider_id
     }
 
     fn complete_record(&self) -> &ClassifierModelRecord {
@@ -127,15 +127,43 @@ impl ClassifierApi<OpenAiDecisionsOptions> for OpenAiDecisionsApi {
         OpenAiDecisionsOptions::default()
     }
 
+    fn validate_request(
+        &self,
+        record: &ClassifierModelRecord,
+        context: &ClassifierContext,
+        options: &OpenAiDecisionsOptions,
+        call: &ClassifierCall,
+    ) -> Result<(), ProviderError> {
+        self.validate_options(options)?;
+        crate::classifier::validate_classifier_request(record, context, call)?;
+        if context
+            .images
+            .as_ref()
+            .is_some_and(|images| images.len() > MAX_IMAGES)
+        {
+            return Err(ProviderError::UnsupportedCapability(
+                ProviderErrorSummary::sanitized(format!(
+                    "{LABEL} accepts at most {MAX_IMAGES} images, got {}",
+                    context.images.as_ref().map_or(0, Vec::len)
+                )),
+            ));
+        }
+        Ok(())
+    }
+
     fn classify_prepared<'a>(
         &'a self,
         record: ClassifierModelRecord,
         context: ClassifierContext,
         options: OpenAiDecisionsOptions,
         auth: ResolvedAuth,
-        call: ClassifierCall,
+        mut call: ClassifierCall,
     ) -> ClassifierFuture<'a> {
         Box::pin(async move {
+            call.callbacks = call.callbacks.for_call();
+            if let Err(error) = self.validate_request(&record, &context, &options, &call) {
+                return failure_from_error(&record, &call, error);
+            }
             let label = LABEL;
             // Pre-dispatch rejections: the transport guard, Bearer-only
             // wire, the API-key requirement, unsupported callback families.
@@ -224,6 +252,14 @@ impl ClassifierApi<OpenAiDecisionsOptions> for OpenAiDecisionsApi {
             };
 
             let url = format!("{}/decisions", record.base_url.trim_end_matches('/'));
+            let headers = match crate::ProviderHeaders::default().merge_model_request(
+                &record.headers,
+                &[],
+                &call.extra_headers,
+            ) {
+                Ok(headers) => headers,
+                Err(error) => return failure_from_error(&record, &call, error),
+            };
 
             let attempt = async {
                 let mut retries_remaining = options.max_retries;
@@ -240,12 +276,9 @@ impl ClassifierApi<OpenAiDecisionsOptions> for OpenAiDecisionsApi {
                         .post(&url)
                         .bearer_auth(&secret)
                         .json(&body);
-                    let request = call
-                        .extra_headers
-                        .iter()
-                        .fold(request, |builder, (name, value)| {
-                            builder.header(name, value)
-                        });
+                    let request = headers.iter().fold(request, |builder, (name, value)| {
+                        builder.header(name, value)
+                    });
                     let send = async {
                         let response = request.send().await.map_err(|error| {
                             if error.is_timeout() {
@@ -307,9 +340,6 @@ impl ClassifierApi<OpenAiDecisionsOptions> for OpenAiDecisionsApi {
                                 message,
                             });
                         }
-                        // The response observer fires at the source
-                        // observation point: after the status is known,
-                        // before body processing.
                         let observed_headers: Vec<(String, String)> = headers
                             .iter()
                             .map(|(name, value)| {
@@ -319,19 +349,6 @@ impl ClassifierApi<OpenAiDecisionsOptions> for OpenAiDecisionsApi {
                                 )
                             })
                             .collect();
-                        if let Err(error) = call
-                            .callbacks
-                            .notify_response_async(status.as_u16(), &observed_headers)
-                            .await
-                        {
-                            return Err(AttemptFailure {
-                                status: Some(status.as_u16()),
-                                x_should_retry: None,
-                                server_retry_delay_ms: None,
-                                error: error.clone(),
-                                message: error.to_string(),
-                            });
-                        }
                         let body_text = response.text().await.map_err(|error| AttemptFailure {
                             status: None,
                             x_should_retry: None,
@@ -341,7 +358,21 @@ impl ClassifierApi<OpenAiDecisionsOptions> for OpenAiDecisionsApi {
                             )),
                             message: error.to_string(),
                         })?;
-                        Ok(body_text)
+                        let parsed: serde_json::Value =
+                            serde_json::from_str(&body_text).map_err(|error| {
+                                let message =
+                                    format!("{label} returned an unexpected response: {error}");
+                                AttemptFailure {
+                                    status: None,
+                                    x_should_retry: None,
+                                    server_retry_delay_ms: None,
+                                    error: ProviderError::StreamError(
+                                        ProviderErrorSummary::sanitized(message.clone()),
+                                    ),
+                                    message,
+                                }
+                            })?;
+                        Ok((parsed, status.as_u16(), observed_headers))
                     };
                     let attempt_result = match deadline {
                         Some(deadline) => {
@@ -374,8 +405,18 @@ impl ClassifierApi<OpenAiDecisionsOptions> for OpenAiDecisionsApi {
                         }
                     };
                     match attempt_result {
-                        Ok(Ok(body_text)) => {
-                            return parse_decisions_response(&record, &context, &body_text);
+                        Ok(Ok((parsed, status, headers))) => {
+                            // Response observers run after complete JSON acquisition,
+                            // outside its retry and timeout ownership.
+                            let observed = tokio::select! {
+                                biased;
+                                _ = call.cancel.cancelled() => Err(ProviderError::Cancelled),
+                                result = call.callbacks.notify_response_async(status, &headers) => result,
+                            };
+                            if let Err(error) = observed {
+                                return failure_from_error(&record, &call, error);
+                            }
+                            return parse_decisions_response(&record, &context, &parsed);
                         }
                         Ok(Err(failure)) => {
                             // A listed no-retry status fails at once even
@@ -463,6 +504,8 @@ impl ClassifierApi<OpenAiDecisionsOptions> for OpenAiDecisionsApi {
 /// long-context tier.
 pub fn default_decisions_classifier_record() -> ClassifierModelRecord {
     ClassifierModelRecord {
+        headers: Vec::new(),
+        input_limits: None,
         provider_id: "openai".into(),
         id: "gpt-6-luna".into(),
         name: "GPT-6 Luna".into(),
@@ -473,20 +516,22 @@ pub fn default_decisions_classifier_record() -> ClassifierModelRecord {
             crate::classifier::ClassifierInputModality::Image,
         ],
         context_window: 922_000,
-        cost: crate::model_info::ModelPricing::try_new(
-            crate::stream::Pricing {
-                input_cost_per_mtok: 0.1,
-                ..crate::stream::Pricing::default()
-            },
-            vec![crate::model_info::PricingTier {
-                input_tokens_above: 272_000,
-                pricing: crate::stream::Pricing {
-                    input_cost_per_mtok: 0.2,
+        cost: Some(
+            crate::model_info::ModelPricing::try_new(
+                crate::stream::Pricing {
+                    input_cost_per_mtok: 0.1,
                     ..crate::stream::Pricing::default()
                 },
-            }],
-        )
-        .expect("luna pricing is valid"),
+                vec![crate::model_info::PricingTier {
+                    input_tokens_above: 272_000,
+                    pricing: crate::stream::Pricing {
+                        input_cost_per_mtok: 0.2,
+                        ..crate::stream::Pricing::default()
+                    },
+                }],
+            )
+            .expect("luna pricing is valid"),
+        ),
     }
 }
 
@@ -581,14 +626,6 @@ fn predicate_instructions(question: &ClassifierQuestion) -> String {
     } else {
         format!("{instructions}\n\n{}", meanings.join("\n"))
     }
-}
-
-fn token_count(value: Option<&serde_json::Value>) -> u32 {
-    value
-        .and_then(|value| value.as_f64())
-        .filter(|count| count.is_finite() && *count > 0.0)
-        .map(|count| count as u32)
-        .unwrap_or(0)
 }
 
 /// A required finite number (pi `requiredNumber`).
@@ -695,15 +732,9 @@ fn parse_answer(
 fn parse_decisions_response(
     record: &ClassifierModelRecord,
     context: &ClassifierContext,
-    body_text: &str,
+    parsed: &serde_json::Value,
 ) -> ClassifierResult {
     let label = LABEL;
-    let parsed: serde_json::Value = match serde_json::from_str(body_text) {
-        Ok(value) => value,
-        Err(_) => {
-            return unexpected_response(record);
-        }
-    };
     if !parsed.is_object() {
         return unexpected_response(record);
     }
@@ -711,31 +742,9 @@ fn parse_decisions_response(
     let mut result = ClassifierResult::in_progress(record);
 
     // Usage first: a malformed-answers request keeps its billed usage.
-    let usage_raw = parsed.get("usage").filter(|usage| usage.is_object());
-    let input = usage_raw
-        .map(|usage| token_count(usage.get("input_tokens")))
-        .unwrap_or(0);
-    let output = usage_raw
-        .map(|usage| token_count(usage.get("output_tokens")))
-        .unwrap_or(0);
-    let has_tokens = usage_raw.is_some_and(|usage| {
-        usage.get("input_tokens").is_some() || usage.get("output_tokens").is_some()
-    });
-    if has_tokens {
-        let usage = crate::stream::Usage {
-            input_tokens: input,
-            output_tokens: output,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
-            cache_write_1h_tokens: None,
-            reasoning_tokens: None,
-            total_tokens: Some(u64::from(input) + u64::from(output)),
-            service_tier: None,
-            reported: true,
-        };
+    if let Some(usage) = crate::classifier::parse_classifier_usage(parsed.get("usage")) {
         // Chat-style tiered cost from the record's catalog pricing.
-        let rates = record.cost.effective_for_usage(&usage);
-        result.cost = Some(crate::stream::calculate_cost(&usage, &rates));
+        result.cost = crate::classifier::cost_for_usage(record, &usage);
         result.usage = Some(usage);
     }
 

@@ -475,6 +475,7 @@ impl AuthResolver for FailAuthOnceResolver {
                 })
             } else {
                 Ok(ResolvedAuth {
+                    env: Default::default(),
                     scheme: AuthScheme::ApiKey,
                     secret: secrecy::SecretString::from("test-key"),
                     base_url: None,

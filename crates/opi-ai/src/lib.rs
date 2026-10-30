@@ -76,7 +76,8 @@ pub use callbacks::{CallbackError, ORDINARY_PAYLOAD_VARIANT, RequestCallbacks};
 pub use catalog::{DynamicCatalogSource, HttpCatalogSource, ModelsStore};
 pub use config::{Config, Error};
 pub use credential::{
-    BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
+    ApiKeyCredential, BoxAuthFuture, Credential, CredentialSource, CredentialStore,
+    CredentialStoreError,
 };
 pub use model::Model;
 pub use model_info::{

@@ -232,7 +232,8 @@ counters, skip the wait, or stack sends beyond the frozen budget.
 the first poll. Dropping an unpolled lease sends nothing. The HTTP backend's
 protocol-NACK retries are disabled; extra sends require SDK admission.
 
-Before authentication, `prepare_call` and neutral simple calls resolve an omitted
+Except for the Pi Messages passthrough, before authentication `prepare_call` and
+neutral simple calls resolve an omitted
 `Request.max_tokens` to the selected complete model record's
 `max_output_tokens` capacity, including applicable overrides and refreshed
 catalogs. An explicit request limit remains a ceiling.
@@ -242,8 +243,8 @@ implicit and explicit ceilings are then reduced to fit estimated remaining
 context with 4096 safety tokens and a minimum output of one token. Thinking that
 no longer fits is reduced to leave 1024 answer tokens where possible. The
 non-adaptive Anthropic wire resolves an omitted thinking budget from its level
-and rejects ceilings that cannot fit its minimum thinking and answer room
-before authentication; adaptive effort does not use a numeric minimum. The
+before wire projection; a zero native budget uses the source default of 1024,
+while nonzero native budgets pass through. Adaptive effort does not use a numeric minimum. The
 `context` module estimates the original canonical message chronology, including
 later System changes and tool declarations; the last
 applicable positive successful usage (non-error, non-aborted, timestamp not
@@ -382,7 +383,7 @@ config wins per field, then model-level overrides win over the profile):
 | `zai_tool_stream` / `vllm_priority` | Explicit-only `tool_stream` and `priority` extras; never inferred. |
 | `thinking_token_budget_field` / `supports_thinking_token_budget` | Top-level reasoning budget field (`thinking_token_budget` vLLM, `thinking_budget` Qwen/DashScope/SGLang, `thinking_budget_tokens` llama.cpp; the alias selects vLLM's). |
 | `chat_template_kwargs` / `chat_template_args` | `$var` template values (`thinking.enabled`, `thinking.effort`, `thinking.budget`; `omit_when_off` drops the key when no effort is set). |
-| `chat_completions_path` | Chat completions endpoint path relative to `base_url` (default `/v1/chat/completions`). |
+| `chat_completions_path` | A non-default path overrides the suffix. An explicit model API base uses `/chat/completions`; a constructor-only root uses `/v1/chat/completions`. |
 
 The retired keys `system_role_override`, `supports_store`,
 `supports_developer_role` and the static `reasoning_effort` string fail with
@@ -434,7 +435,7 @@ OpenAI Responses native semantics (task 20.37, `OpenAiResponsesOptions`):
 | `reasoning_effort` (native) | `ThinkingLevel` (`minimal`..`max`) | Omitted = no native effort; wire `reasoning.effort` from the model's `thinking_level_map` | Native effort replaces the neutral `Request::thinking`; running an effort also requests `include: ["reasoning.encrypted_content"]`. An unsupported level fails typed `Config` preflight before auth; the simple entry clamps instead. |
 | Off / disabled (both entries) | — | Reasoning-capable models send `reasoning: {effort: "none"}` (the map's off projection; `github-copilot` routes skip it) | Off sends effort only — no summary, no `include`. |
 | `reasoning_summary` (native) | `ResponsesReasoningSummary`: `Auto`/`Detailed`/`Concise`/`Null` | Omitted **and** explicit `Null` both send the wire default `"auto"` (source `\|\|` semantics); a summary without an effort defaults the effort to `medium` | Wire `reasoning.summary`. |
-| `service_tier` (native) | `ResponsesServiceTier`: `auto`/`default`/`flex`/`priority`/`fast` | Omitted field absent | Wire `service_tier`, exact string. The observed response tier rides `Usage::service_tier`; tiered cost multipliers are not computed on this wire. |
+| `service_tier` (native) | `ResponsesServiceTier`: `auto`/`default`/`flex`/`priority`/`fast` | Omitted field absent | Wire `service_tier`, exact string. The observed response tier rides `Usage::service_tier`; the effective billing tier is retained separately for wire-qualified cost calculation. |
 | `tool_choice` (native) | `ResponsesToolChoice`: `None`/`Auto`/`Required`/named function | Omitted field absent | Wire `tool_choice` (string or `{type: "function", name}`); the simple entry admits only neutral `Auto`/`None`. |
 | `store` | — | Always `false` unless a catalog/profile value pins another value (source sends `store:false` unconditionally) | Catalog compat > provider config > default `false`. |
 | `max_output_tokens` | `Request::max_tokens` (tokens) | Omitted or zero omits the field | A positive value is sent with a floor of 16; simple calls resolve their shared budget before this wire mapping. |
@@ -442,9 +443,11 @@ OpenAI Responses native semantics (task 20.37, `OpenAiResponsesOptions`):
 | Mid-conversation effort | catalog compat `supportsMidConvoEffort` (default `false`) + `provider_thinking_level` on replayed turns | Off by default; turns without a recorded level get no stamp | One `configuration_update` item before each earlier same-model reply that recorded a level, one with the current effort at the end; the request `reasoning.effort` stays fixed at `medium`; the reply records its level for the next turn. |
 | Session cache | `Request::session_id` + `cache_retention` | `Disabled` suppresses; otherwise the clamped (64-char) `prompt_cache_key` | `cache_retention: Long` adds `prompt_cache_retention: "24h"`. Explicit prompt-cache mode (`prompt_cache_options`) is not adopted — no opi catalog consumer. |
 
-Static `reasoning_effort` remains legacy compatibility metadata;
-`request.thinking` plus the selected `ModelInfo::thinking_level_map` is
-authoritative for Chat and Responses wire output.
+Retired static `reasoning_effort` compatibility keys are rejected.
+`request.thinking` plus the selected `ModelInfo::thinking_level_map` controls
+Chat and Responses output. An explicit Responses model API base appends
+`/responses` by default; a constructor-only root appends `/v1/responses`.
+A non-default compatibility path remains an explicit override.
 `previous_response_id` is intentionally absent — Responses requests are built
 as Chat-Completions analogues, so server-side response chaining is not wired.
 
@@ -455,25 +458,27 @@ mapping (pinned source `azure-openai-config.ts`):
 
 | Mapping | Precedence | Wire effect |
 |---|---|---|
-| Base URL | explicit `azure_base_url` → resource name (`https://{resource}.openai.azure.com`) → model `baseUrl` → typed `Config` failure | Azure hosts carrying `/openai[/v1][/responses]` paths normalize to the resource root; non-Azure hosts keep their path |
-| API version | explicit `azure_api_version` → default `v1` | Query `?api-version=…` on every request (replaces the old `2024-06-01` default) |
-| Deployment | explicit `azure_deployment_name` → provider `modelId=deployment` map → model id | Rides the URL path `/openai/deployments/{d}/…` **and** the request body `model`; the catalog id never changes |
+| Base URL | explicit `azure_base_url` → selected base configuration → resource name → model `baseUrl` → typed `Config` failure | Source Chat/Responses use `/openai/v1` for a standard Azure resource host. Custom API bases keep their path; Responses appends `/responses` only if absent. |
+| API version | explicit `azure_api_version` → selected environment configuration → `v1` | Responses sends `?api-version=…`. Builtin Chat uses the OpenAI Chat path without this query; legacy direct Chat retains its versioned deployment URL. |
+| Deployment | explicit `azure_deployment_name` → provider `modelId=deployment` map → model id | Source wires send the deployment in body `model`, preserving catalog identity. Only legacy direct Chat also puts it in its URL. |
 
 The Responses wire (`WireApi::AzureOpenAiResponses`, `azure-openai-responses`
 records, public `AzureOpenAIResponsesChatApi` registered through
 `Models::register_chat_api`) reuses the exact Responses parameter assembly —
 `store: false`, off-effort `{"effort":"none"}`, summary default `auto`,
 encrypted-reasoning include/signature/replay, the 16-token output floor —
-under Azure transport (`api-key` header, deployment URL, azure status
+under Azure transport (`api-key` header, API-base `/responses` URL, azure status
 mapping, terminal duration, frozen telemetry producer). `AzureOpenAIOptions`
 carries the native inventory: `reasoning_effort` (typed preflight; the simple
 entry clamps), `reasoning_summary`, `tool_choice` and the four Azure mapping
 fields. `service_tier` is deliberately absent on Azure (source omission; no
 Responses service-tier multiplier). Mid-conversation effort stamps are not
-wired for Azure (the source's azure `buildParams` never passes them). The
-chat wire keeps its existing behavior (records default through the
-OpenAI-completions projection) and both wires authenticate with the
-`api-key` header only.
+wired for Azure (the source's azure `buildParams` never passes them).
+Builtin Azure Chat uses `openai-completions`, appends `/chat/completions` to its
+API base, and authenticates with Bearer syntax. The separate legacy direct
+Chat surface retains `/openai/deployments/{deployment}/chat/completions` and
+`api-key`. Both source wires keep provider identity `azure`; endpoint,
+deployment and API-version values freeze once before acquisition attempts.
 
 ## Cache, Response IDs, and Session Affinity
 
@@ -960,6 +965,45 @@ typed image API task.
 
 ## Dynamic Catalog Store and Refresh (V-27/AIR-002/AIR-033)
 
+
+`ModelsStore::invalidate_source(id)` explicitly withdraws the records published
+by that source and persists a tombstone. Old guards cannot publish afterward;
+`refresh(false)` observes subsequent revisions of the attached shared store
+without authentication or network work. A new successful source publication
+clears its tombstone. This does not install an HTTP-status invalidation policy.
+
+`catalog::personalize_openrouter_catalog` takes owned catalog records, an explicit
+base URL/key, HTTP client and cancellation token. It returns separate records:
+chat filtering/limits/prices are key-specific, image/classifier records stay
+unchanged, and the authenticated bundled artifact is never rewritten. Missing
+keys and HTTP 401/403/404 preserve the input. The 15-second source timeout covers
+body acquisition; callers own publication and scheduling. `CatalogModel::
+to_chat_model_info` projects a returned chat entry for an ordinary SDK call.
+Unknown billed costs are `None`; known free rates remain `Some` with zero values.
+Source metadata retains finite negative placeholders and tier order, while billing
+validates the selected rates. Strict caller pricing constructors retain validation.
+
+
+`Credential::ApiKey(ApiKeyCredential)` stores an optional key and an owned
+provider environment (`BTreeMap<String, SecretString>`). Missing fields permit
+the provider's documented source merge; present empty values remain distinct.
+`ResolvedAuth::env` freezes selected configuration for the adapter. Debug output
+omits environment values. The protected keychain envelope supports v2 scoped
+credentials and strict legacy v1 reads; this does not change product config files.
+Anthropic federation selects configured rule/organization/identity-file fields
+without reading the identity file. The actual adapter exchanges at the selected
+model base on first execution and retains its source cache/refresh behavior;
+401 invalidates the next acquisition without resending the current generation.
+Cancelling one wait leaves the owner-driven exchange running; releasing its
+last owner aborts it. A later caller cannot restart an old token's expiry clock.
+
+`ModelsStoreEntry` owns `Vec<CatalogRecord>` for chat, image and classifier,
+plus optional `last_modified`/`checked_at` Unix milliseconds and verbatim `etag`.
+`None` and zero differ. Dynamic sources return provider-keyed entries; model IDs
+are unique within each operation. Restore and refresh publish all operations
+after persistence ACK. Headers retain ordered set/remove operations; input limits
+are metadata, and image pricing tiers are preserved while image fees use base rates.
+
 `ModelsStore` (`catalog` module) is the single revision-commit owner for
 dynamic catalogs: a `RefreshGuard::commit` persists the snapshot first
 (atomic temp-file rename, distribution-schema-v1 JSON plus the `opi`
@@ -1433,7 +1477,7 @@ data, and cancellation can end a pending callback without another send.
 |---|---|---|
 | `with_header_transform` | Once per logical call, on the assembled per-call set | Output replaces the set; omission/set/removal of non-protected entries is supported. Protected identity/auth/signing entries already present may be returned unchanged; removing, changing or introducing them fails typed before dispatch. Adapter-owned credentials remain outside the transform. |
 | `with_on_payload` | After sampling/compat/wire projection, on the final body | `Ok(None)` keeps the body; `Ok(Some(v))` replaces it after validation: JSON object, unchanged model identity, output budget never raised. Chat/Responses/Codex also validate the streaming wire shape before dispatch, preserving unknown extensions and legal content/tool changes. Runs once per payload variant — an ordinary acquisition retry reuses the frozen body byte-for-byte (`ORDINARY_PAYLOAD_VARIANT`). |
-| `with_on_response` | At the adapter's source-defined response observation point, with status and headers, before body processing | Codex SSE also observes non-success statuses before classification. Failures without a response are not notified. Successful response handoff seals ordinary acquisition retry. |
+| `with_on_response` | At the adapter's source-defined response observation point, with status and headers; streaming observes the source response boundary, image/classifier after complete JSON acquisition | Codex SSE also observes non-success statuses before classification. Failures without a response are not notified. Successful response handoff seals ordinary acquisition retry. |
 | `with_on_raw` | Per parsed provider wire event, strictly before its normalized emission, in wire order | Read-only; a failure ends the current call with the typed error while preserving the delivered partial. |
 
 Adapter coverage: Anthropic, OpenAI Chat (including the Mistral and OpenRouter
@@ -1473,24 +1517,24 @@ twice.
 | image estimate | 4800 chars per image | — | — | — |
 | usage anchor | total or bucket sum | none → content estimate | total 0 → sum if reported; unknown → skip | total > sum |
 | simple max tokens | `clamp(M)`: `max(1,M)` if window ≤ 0, else `min(M, max(1, W−E−4096))` | `None` → model default output | explicit `M` is not re-capped at the model max | request < window arithmetic |
-| numeric-Claude thinking budget | level table 1024/2048/8192/16384 (xhigh/max → high), then clamped to leave answer room | omitted budget → level default | budgets below 1024 are rejected before auth | level default < explicit budget |
+| numeric-Claude thinking budget | level table 1024/2048/8192/16384 (xhigh/max → high), then clamped to leave answer room | omitted budget → level default | native enabled-without-budget uses 1024; simple budgets keep their wire-specific zero behavior | level default < explicit budget |
 | sampling params | per-key JSON map | empty map → no merge | keys absent stay absent | model base < effective level < request |
 | temperature | named field | `None` → omitted per adapter gating | NaN omitted | sampling map overrides the named field (merged last) |
 | pricing tiers | selection on input+cacheRead+cacheWrite, strict `>`, highest wins, first of equal duplicates | no tiers → base rates | threshold 0 valid; order and duplicates preserved | tier rates apply to the whole request |
 | 1h cache write | subset at 2× input rate | `None` → all short-cache | explicit 0 valid, distinct from absent | subset, never double counted |
-| service tier | flex 0.5×, priority/fast 2× (`gpt-5.5`: 2.5×), default 1× | absent → 1× | unrecognized wire value → absent | applies to every cost component |
+| service tier | Responses: flex 0.5×, priority/fast 2× (`gpt-5.5`: 2.5×); Codex fast and all Azure tiers: 1× | effective request/response fallback follows the selected wire | unknown tier → unknown cost on tier-sensitive wires | applies to every cost component |
 
 Only OpenAI-compatible adapters (Chat, Responses) merge the resolved
 sampling map, as the last body step so model and request sampling override
-named request fields; other adapters ignore it. The Responses adapter parses
-the response `service_tier` into `Usage`. OpenRouter image `parse_usage` is
-the explicit source exception: image usage keeps base model rates without
-tier selection. opi has no Pi-Messages wire, so that wire's native/simple
-passthrough clause is inapplicable. Native `ChatApi` calls follow the adapter
-budget semantics described above.
-Metadata alone never creates a new pre-dispatch limit or
-resize; the duplicate static `reasoning_effort` compat keys still parse and
-only gain hard errors after their AIR-022 replacement proof.
+named request fields; other adapters ignore it. `Usage::service_tier` retains
+the observed response category; `effective_service_tier` retains the selected
+wire's request/response billing rule. `calculate_cost_tiered(usage, pricing,
+model_id, wire)` returns `None` for unknown usage, invalid pricing or an unknown
+tier on a tier-sensitive wire. OpenRouter images use base rates without tiers.
+Native calls preserve their adapter budget semantics; Pi Messages simple calls
+forward their own whitelist. `ModelInfo::input_limits` is metadata, never an
+automatic rejection or resize policy. Retired static `reasoning_effort` compat
+keys fail with a migration error.
 
 ## Non-Goals
 
@@ -1926,8 +1970,7 @@ the frozen payload, cancellation maps to `Aborted`, and HTTP failures
 format `"System One API error ({status}): {body}"`. `temperature` is a
 typed option System One cannot apply: it never reaches the wire. The
 payload observer (replace-or-keep, once per logical call, frozen across
-retries) and the response observer (status + headers before body
-processing) are supported; raw-event and header-transform families reject
+retries) and the response observer (status + headers after complete JSON decoding, outside acquisition retry and its timeout) are supported; raw-event and header-transform families reject
 typed before dispatch. The frozen `TelemetryContext` passes through to the
 request path. The curated baseline record (`typesafe/jev-latest`, 64000-token
 context, text input, zero pricing until registered) replaces wholesale at
@@ -1984,7 +2027,7 @@ cancellation maps to `Aborted`, and HTTP failures format
 `"<status>: <error.message | body>"` with 401/403 → `AuthFailed`, 429 →
 `RateLimited`, 408/504 → `Timeout`. Callbacks: the payload observer
 (replace-or-keep, once per logical call, frozen across retries) and the
-response observer (status + headers before body processing) are supported;
+response observer (status + headers after complete JSON decoding, outside acquisition retry and its timeout) are supported;
 raw-event and header-transform families are rejected typed before dispatch
 (ONB-04). The frozen `TelemetryContext` (P20-TELEMETRY) passes through to
 the request path without automatic spans.
@@ -2151,8 +2194,7 @@ Fetch and cancellation are explicit operations on that handle:
 
 Backends register through `Models::register_deferred_api` (typed
 `DeferredApi` trait: `api_id`/`provider_id`/`model_id`/`default_options`
-plus `fetch_prepared`/`cancel_prepared`), mirroring the image/classifier
-operation-qualified registries; an upsert with the same exact `ApiId`
+plus `fetch_prepared`/`cancel_prepared`); a deferred upsert with the same exact `ApiId`
 replaces the registration wholesale. `Models::validate_deferred_handle`
 exposes the typed pre-auth validation (`RouteMismatch` boxed detail,
 `Expired`, `Unsupported`). Fetch and cancel calls carry an optional frozen

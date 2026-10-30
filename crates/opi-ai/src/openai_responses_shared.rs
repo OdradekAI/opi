@@ -154,6 +154,7 @@ struct RawContentPart {
 struct RawUsage {
     input_tokens: Option<u32>,
     output_tokens: Option<u32>,
+    total_tokens: Option<u64>,
     input_tokens_details: Option<RawInputTokenDetails>,
     #[serde(default)]
     output_tokens_details: Option<RawOutputTokenDetails>,
@@ -162,6 +163,7 @@ struct RawUsage {
 #[derive(Debug, Deserialize)]
 struct RawInputTokenDetails {
     cached_tokens: Option<u32>,
+    cache_write_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -504,17 +506,30 @@ impl ResponsesEvent {
             .as_ref()
             .and_then(|details| details.cached_tokens)
             .unwrap_or(0);
+        let cache_write = usage
+            .input_tokens_details
+            .as_ref()
+            .and_then(|details| details.cache_write_tokens)
+            .unwrap_or(0);
+        let total_tokens = usage.total_tokens;
+        let reported = usage.input_tokens.is_some() && usage.output_tokens.is_some();
         let mut usage = Usage::reported(
-            usage.input_tokens.unwrap_or(0),
+            usage
+                .input_tokens
+                .unwrap_or(0)
+                .saturating_sub(cached)
+                .saturating_sub(cache_write),
             usage.output_tokens.unwrap_or(0),
             cached,
-            0,
+            cache_write,
             None,
             usage
                 .output_tokens_details
                 .as_ref()
                 .and_then(|details| details.reasoning_tokens),
         );
+        usage.reported = reported;
+        usage.total_tokens = total_tokens;
         if let Some(tier) = parse_service_tier(data) {
             usage = usage.with_service_tier(tier);
         }
@@ -523,7 +538,8 @@ impl ResponsesEvent {
 }
 
 /// Parse the response-level service tier into its multiplier-bearing enum.
-/// Unrecognized wire values stay absent rather than guessing a multiplier.
+/// A present unknown value stays distinguishable from absence so it cannot
+/// silently fall back to a requested discounted tier.
 fn parse_service_tier(data: &RawResponseEvent) -> Option<crate::stream::ServiceTier> {
     use crate::stream::ServiceTier;
     match data
@@ -531,11 +547,14 @@ fn parse_service_tier(data: &RawResponseEvent) -> Option<crate::stream::ServiceT
         .as_ref()
         .and_then(|response| response.service_tier.as_deref())
     {
+        Some("auto") => Some(ServiceTier::Auto),
         Some("default") => Some(ServiceTier::Default),
         Some("flex") => Some(ServiceTier::Flex),
+        Some("scale") => Some(ServiceTier::Scale),
         Some("priority") => Some(ServiceTier::Priority),
         Some("fast") => Some(ServiceTier::Fast),
-        _ => None,
+        Some(_) => Some(ServiceTier::Unknown),
+        None => None,
     }
 }
 
@@ -700,6 +719,7 @@ fn dual_packed_id(call_id: &str, item_id: &str, prefix: &str) -> String {
 pub(crate) struct ResponsesMapper {
     snapshot: crate::stream::ProducerSnapshot,
     partial: AssistantMessage,
+    requested_service_tier: Option<crate::stream::ServiceTier>,
     pub(crate) saw_done: bool,
     text_started: bool,
     text_content_index: Option<usize>,
@@ -716,6 +736,35 @@ pub(crate) struct ResponsesMapper {
 }
 
 impl ResponsesMapper {
+    pub(crate) fn with_requested_service_tier(
+        mut self,
+        tier: Option<crate::stream::ServiceTier>,
+    ) -> Self {
+        self.requested_service_tier = tier;
+        self
+    }
+
+    fn record_usage(&mut self, mut usage: Usage) {
+        use crate::model_info::WireApi;
+        use crate::stream::ServiceTier;
+        usage.effective_service_tier = match self.partial.wire {
+            Some(WireApi::OpenAiCodexResponses)
+                if usage.service_tier == Some(ServiceTier::Default)
+                    && matches!(
+                        self.requested_service_tier,
+                        Some(ServiceTier::Flex | ServiceTier::Priority)
+                    ) =>
+            {
+                self.requested_service_tier
+            }
+            Some(WireApi::OpenAiResponses | WireApi::OpenAiCodexResponses) => {
+                usage.service_tier.or(self.requested_service_tier)
+            }
+            _ => None,
+        };
+        self.partial.usage = usage;
+    }
+
     /// The mapper's current partial assistant message (task 20.16): the
     /// WebSocket continuation publishes from the same accumulated state the
     /// public stream observed.
@@ -782,6 +831,7 @@ impl ResponsesMapper {
         Self {
             snapshot: crate::stream::ProducerSnapshot::default(),
             partial: empty_assistant_message(provider, wire, model),
+            requested_service_tier: None,
             saw_done: false,
             text_started: false,
             text_content_index: None,
@@ -1119,7 +1169,7 @@ impl ResponsesMapper {
                     .map(Ok)
                     .collect();
                 if let Some(usage) = usage {
-                    self.partial.usage = usage;
+                    self.record_usage(usage);
                 }
                 self.partial.stop_reason = StopReason::Length;
                 self.saw_done = true;
@@ -1171,7 +1221,7 @@ impl ResponsesMapper {
                     self.partial.response_id = Some(id);
                 }
                 if let Some(usage) = usage {
-                    self.partial.usage = usage;
+                    self.record_usage(usage);
                 }
                 self.partial.stop_reason = if self
                     .partial

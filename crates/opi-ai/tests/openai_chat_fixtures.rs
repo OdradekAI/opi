@@ -856,7 +856,9 @@ fn malformed_and_valid_events_coexist() {
 fn sse_parse_handles_crlf_line_endings() {
     let input = "data: {\"id\":\"chatcmpl-crlf\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hi\"},\"finish_reason\":null}]}\r\n\r\n";
     let events = collect_valid_events(input);
-    assert_eq!(events.len(), 1);
+    assert_eq!(events.len(), 2);
+    assert!(matches!(events[0], OpenAiChatEvent::RoleDelta { .. }));
+    assert!(matches!(&events[1], OpenAiChatEvent::ContentDelta { content, .. } if content == "Hi"));
 }
 
 // --- Provider Tests ---
@@ -3335,6 +3337,67 @@ fn o3_record() -> ChatModelRecord {
             .with_thinking(true),
     );
     ChatModelRecord::new("openai", model)
+}
+
+#[tokio::test]
+async fn native_sampling_uses_native_effort_and_request_overrides() {
+    for (effort, request_temperature, expected) in [
+        (None, None, 0.2),
+        (Some(opi_ai::ThinkingLevel::High), None, 0.9),
+        (Some(opi_ai::ThinkingLevel::High), Some(0.4), 0.4),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(chat_sse_ok()))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let model = ModelInfo::new(
+            "o3",
+            "o3",
+            opi_ai::WireApi::OpenAiCompletions,
+            ModelCapabilities::new(200_000, 100_000).with_thinking(true),
+        )
+        .with_sampling_params(
+            [("temperature".into(), serde_json::json!(0.1))]
+                .into_iter()
+                .collect(),
+        )
+        .with_sampling_level_params(
+            opi_ai::ThinkingLevel::None,
+            [("temperature".into(), serde_json::json!(0.2))]
+                .into_iter()
+                .collect(),
+        )
+        .with_sampling_level_params(
+            opi_ai::ThinkingLevel::High,
+            [("temperature".into(), serde_json::json!(0.9))]
+                .into_iter()
+                .collect(),
+        );
+        let (models, handle) = registered_chat_models(server.uri(), model.clone()).await;
+        let mut request = chat_public_request("o3", Some(opi_ai::ThinkingLevel::Low));
+        if let Some(value) = request_temperature {
+            request
+                .sampling_params
+                .insert("temperature".into(), serde_json::json!(value));
+        }
+        let mut options = OpenAiCompletionsOptions::default();
+        options.reasoning_effort = effort;
+        models
+            .complete(
+                ChatModelRecord::new("openai", model),
+                request,
+                handle.options(options),
+            )
+            .await
+            .expect("native call completes");
+        let sent = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+        assert_eq!(body["temperature"], serde_json::json!(expected));
+        server.verify().await;
+    }
 }
 
 #[tokio::test]

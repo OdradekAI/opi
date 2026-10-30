@@ -310,20 +310,57 @@ fn every_builtin_model_declares_exact_wire() {
     assert_eq!(azure.models()[0].wire_api, WireApi::AzureOpenAiCompletions);
 }
 
-#[test]
-fn model_metadata_rejects_thinking_map_without_thinking_capability() {
-    let model = ModelInfo::new(
-        "bad-thinking",
-        "Bad Thinking",
-        WireApi::OpenAiCompletions,
-        ModelCapabilities::new(1000, 100),
-    )
-    .with_thinking_level_map(
-        ThinkingLevelMap::disabled()
-            .with_mapping(ThinkingLevel::High, ThinkingLevelMapping::Identity),
+#[tokio::test]
+async fn nonreasoning_metadata_preserves_map_without_enabling_thinking() {
+    let catalog = opi_ai::catalog::Catalog::builtin().unwrap();
+    let entry = catalog
+        .model(
+            "openai",
+            opi_ai::catalog::CatalogOperation::Chat,
+            "gpt-5.3-chat-latest",
+        )
+        .unwrap();
+    let mut model = entry.to_chat_model_info().unwrap();
+    assert!(!model.capabilities.supports_thinking);
+    assert_eq!(
+        model
+            .thinking_level_map
+            .resolve(ThinkingLevel::XHigh)
+            .unwrap(),
+        Some("xhigh".into())
     );
+    model.validate().unwrap();
+    let original_map = model.thinking_level_map.clone();
 
-    assert!(model.validate().is_err());
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string(
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"model\":\"gpt-5.3-chat-latest\",\"output\":[]}}\n\n",
+        )).expect(1).mount(&server).await;
+    model.base_url = Some(server.uri());
+    let provider = openai_responses::OpenAiResponsesProvider::for_route(
+        Some(server.uri()),
+        "openai".into(),
+        ProviderHeaders::default(),
+        vec![model],
+        Arc::new(HttpClient::new()),
+    );
+    let mut request = unsupported_thinking_request("openai", "gpt-5.3-chat-latest");
+    request.thinking = Default::default();
+    run_production_request(&provider, request.clone())
+        .await
+        .unwrap();
+    request.thinking = ThinkingConfig {
+        enabled: true,
+        level: ThinkingLevel::XHigh,
+        budget_tokens: None,
+    };
+    assert!(matches!(
+        run_production_request(&provider, request).await,
+        Err(ProviderError::UnsupportedCapability(_))
+    ));
+    assert_eq!(provider.models()[0].thinking_level_map, original_map);
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[test]

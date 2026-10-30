@@ -79,6 +79,7 @@ impl AuthResolver for CountingResolver {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async {
             Ok(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::ApiKey,
                 secret: secrecy::SecretString::from("active-route-key"),
                 base_url: None,

@@ -38,7 +38,7 @@
 //! occur between minor versions without a major version bump.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use secrecy::SecretString;
 
@@ -184,6 +184,9 @@ pub enum TerminalReason {
     /// A process source's selected environment could not be captured.
     #[error("the selected credential process context is unavailable")]
     ProcessSnapshotUnavailable,
+    /// The selected shared-config stage could not read its path configuration.
+    #[error("the shared AWS configuration context is unavailable")]
+    SharedConfigContextUnavailable,
 }
 
 impl CredentialResolutionError {
@@ -550,6 +553,7 @@ fn bearer_auth(
     region: &str,
 ) -> ResolvedAuth {
     ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: token,
         base_url: base_url_override.or_else(|| Some(bedrock_runtime_url(region))),
@@ -770,23 +774,19 @@ fn ambient_non_blank(input: &AwsLocalChainInput<'_>, name: &str) -> Option<Strin
 /// `AWS_REGION` → scoped `AWS_DEFAULT_REGION` → ambient `AWS_DEFAULT_REGION`
 /// → merged profile region (when supplied) → declared default.
 async fn resolve_region(input: &AwsLocalChainInput<'_>, profile_region: Option<&str>) -> String {
-    let candidates = [
-        input
-            .region
-            .map(str::to_owned)
-            .filter(|value| !value.trim().is_empty()),
-        input.scoped.region.clone(),
-        ambient_non_blank(input, ENV_REGION),
-        input.scoped.default_region.clone(),
-        ambient_non_blank(input, ENV_DEFAULT_REGION),
-        profile_region
-            .map(str::to_owned)
-            .filter(|value| !value.trim().is_empty()),
-    ];
-    candidates
-        .into_iter()
-        .flatten()
-        .next()
+    input
+        .region
+        .map(str::to_owned)
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| input.scoped.region.clone())
+        .or_else(|| ambient_non_blank(input, ENV_REGION))
+        .or_else(|| input.scoped.default_region.clone())
+        .or_else(|| ambient_non_blank(input, ENV_DEFAULT_REGION))
+        .or_else(|| {
+            profile_region
+                .map(str::to_owned)
+                .filter(|value| !value.trim().is_empty())
+        })
         .unwrap_or_else(|| input.default_region.to_owned())
 }
 
@@ -1018,7 +1018,7 @@ async fn read_sso_session_data(
     input: &AwsLocalChainInput<'_>,
     session: &str,
 ) -> Option<SsoSessionData> {
-    let path = input.config_file?;
+    let path = shared_file_path(input, input.config_file, "AWS_CONFIG_FILE", "config").ok()??;
     let contents = tokio::fs::read_to_string(path).await.ok()?;
     let target_header = format!("[sso-session {session}]");
     let mut in_target = false;
@@ -1121,7 +1121,7 @@ async fn resolve_ini_profile(
     input: &AwsLocalChainInput<'_>,
     profile_name: &str,
 ) -> Result<(Option<ResolvedAuth>, Option<String>), CredentialResolutionError> {
-    let merged = merged_profile(input, profile_name).await;
+    let merged = merged_profile(input, profile_name).await?;
     let region = resolve_region(input, merged.region.as_deref()).await;
 
     // Assume-role: role_arn plus exactly one of source_profile /
@@ -1340,22 +1340,91 @@ async fn resolve_profile_leaf(
     Ok((None, merged.region.clone().filter(|r| !r.trim().is_empty())))
 }
 
-/// Read and overlay one profile from both shared files.
-async fn merged_profile(input: &AwsLocalChainInput<'_>, profile_name: &str) -> ProfileProperties {
-    let credentials_props = match input.credentials_file {
+fn shared_context_error() -> CredentialResolutionError {
+    CredentialResolutionError::Terminal {
+        credential_source: CredentialSource::ProfileFile,
+        reason: TerminalReason::SharedConfigContextUnavailable,
+    }
+}
+
+// Only the selected shared-file stage asks for a home directory. Injectable
+// contexts never fall through to the real process or operating-system account.
+fn shared_home(context: &dyn AuthContext) -> Result<Option<PathBuf>, CredentialResolutionError> {
+    for name in ["HOME", "USERPROFILE"] {
+        if let Some(home) = context.env(name).map_err(|_| shared_context_error())?
+            && !home.is_empty()
+        {
+            return Ok(Some(home.into()));
+        }
+    }
+    if let Some(path) = context
+        .env("HOMEPATH")
+        .map_err(|_| shared_context_error())?
+        && !path.is_empty()
+    {
+        let drive = context
+            .env("HOMEDRIVE")
+            .map_err(|_| shared_context_error())?
+            .unwrap_or_else(|| format!("C:{}", std::path::MAIN_SEPARATOR));
+        return Ok(Some(format!("{drive}{path}").into()));
+    }
+    context.home_dir().map_err(|_| shared_context_error())
+}
+
+fn shared_file_path(
+    input: &AwsLocalChainInput<'_>,
+    explicit: Option<&Path>,
+    name: &str,
+    filename: &str,
+) -> Result<Option<PathBuf>, CredentialResolutionError> {
+    let path = match explicit {
+        Some(path) => Some(path.to_owned()),
+        None => input
+            .ambient
+            .env(name)
+            .map_err(|_| shared_context_error())?
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from),
+    };
+    match path {
+        Some(path) => {
+            if let Some(rest) = path.to_string_lossy().strip_prefix("~/") {
+                Ok(shared_home(input.ambient)?.map(|home| home.join(rest)))
+            } else {
+                Ok(Some(path))
+            }
+        }
+        None => Ok(shared_home(input.ambient)?.map(|home| home.join(".aws").join(filename))),
+    }
+}
+
+/// Read and overlay one profile from both shared files. Path discovery is lazy:
+/// earlier credential winners never consult this source's environment or files.
+async fn merged_profile(
+    input: &AwsLocalChainInput<'_>,
+    profile_name: &str,
+) -> Result<ProfileProperties, CredentialResolutionError> {
+    let credentials_path = shared_file_path(
+        input,
+        input.credentials_file,
+        "AWS_SHARED_CREDENTIALS_FILE",
+        "credentials",
+    )?;
+    let config_path = shared_file_path(input, input.config_file, "AWS_CONFIG_FILE", "config")?;
+    let credentials_props = match credentials_path.as_deref() {
         Some(path) => {
             read_profile_properties(path, profile_name, ProfileFileKind::Credentials).await
         }
         None => None,
     };
-    let config_props = match input.config_file {
+    let config_props = match config_path.as_deref() {
         Some(path) => read_profile_properties(path, profile_name, ProfileFileKind::Config).await,
         None => None,
     };
     // Per-field overlay: credentials file wins over config file.
-    config_props
+    Ok(config_props
         .unwrap_or_default()
-        .overlay(credentials_props.unwrap_or_default(), true)
+        .overlay(credentials_props.unwrap_or_default(), true))
 }
 
 /// Descend nested role profiles to a complete source, then assume each
@@ -1366,7 +1435,7 @@ async fn resolve_source_profile_credentials(
     region: &str,
     visited: &mut HashSet<String>,
 ) -> Result<Option<AwsSigV4Credentials>, CredentialResolutionError> {
-    let mut merged = merged_profile(input, source_name).await;
+    let mut merged = merged_profile(input, source_name).await?;
     let mut chain: Vec<(String, RoleAssumption)> = Vec::new();
     let mut current = source_name.to_owned();
     let mut credentials = loop {
@@ -1411,7 +1480,7 @@ async fn resolve_source_profile_credentials(
                 },
             ));
             current = next_source.to_owned();
-            merged = merged_profile(input, &current).await;
+            merged = merged_profile(input, &current).await?;
             continue;
         }
         let source = match (role_arn, next_source, credential_source) {
@@ -1681,6 +1750,7 @@ fn sts_exchange_auth(
         .as_deref()
         .and_then(account_from_arn);
     ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::AwsSigV4(exchange.into_credentials(region)),
         secret: SecretString::from(String::new()),
         base_url: None,

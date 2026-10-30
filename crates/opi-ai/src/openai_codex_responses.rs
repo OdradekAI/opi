@@ -199,6 +199,7 @@ impl OpenAiCodexResponsesProvider {
         wire_facts: Option<crate::openai_responses_shared::ResponsesWireTools>,
         base_url: String,
         requested_model: String,
+        requested_service_tier: Option<crate::stream::ServiceTier>,
         extra_headers: Vec<(String, String)>,
         body: serde_json::Value,
         cancel: CancellationToken,
@@ -219,7 +220,7 @@ impl OpenAiCodexResponsesProvider {
         let secret = resolved.secret.expose_secret();
         let bearer = match resolved.scheme {
             AuthScheme::Bearer => format!("Bearer {secret}"),
-            AuthScheme::ApiKey | AuthScheme::AwsSigV4(_) => {
+            AuthScheme::ApiKey | AuthScheme::AwsSigV4(_) | AuthScheme::AnthropicFederation => {
                 return Err(ProviderError::Config(
                     ProviderErrorSummary::attested_static(
                         "OpenAI Codex Responses accepts only Bearer authentication",
@@ -301,7 +302,8 @@ impl OpenAiCodexResponsesProvider {
             PROVIDER_ID,
             crate::model_info::WireApi::OpenAiCodexResponses,
             &requested_model,
-        );
+        )
+        .with_requested_service_tier(requested_service_tier);
         // Task 20.11: the call's constrained-sampling facts ride the mapper.
         if let Some(wire) = wire_facts {
             mapper.set_grammar_tools(wire.grammar_input_properties);
@@ -580,6 +582,22 @@ impl Provider for OpenAiCodexResponsesProvider {
             return Box::pin(stream::once(async move { Err(error) }));
         }
         let default_base_url = self.base_url.clone();
+        let requested_service_tier = self
+            .native_options
+            .as_ref()
+            .and_then(|options| options.service_tier)
+            .and_then(|tier| {
+                use crate::stream::ServiceTier;
+                match tier {
+                    CodexServiceTier::Auto => Some(ServiceTier::Auto),
+                    CodexServiceTier::Default => Some(ServiceTier::Default),
+                    CodexServiceTier::Flex => Some(ServiceTier::Flex),
+                    CodexServiceTier::Scale => Some(ServiceTier::Scale),
+                    CodexServiceTier::Priority => Some(ServiceTier::Priority),
+                    CodexServiceTier::Fast => Some(ServiceTier::Fast),
+                    CodexServiceTier::Null => None,
+                }
+            });
         // C9: strip ONLY the openai-codex: prefix; do not strip arbitrary prefixes.
         let model_id_owned = match request.model.strip_prefix("openai-codex:") {
             Some(rest) => rest.to_owned(),
@@ -723,6 +741,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                         wire_facts,
                         base_url,
                         requested_model,
+                        requested_service_tier,
                         extra_headers,
                         body,
                         cancel,
@@ -744,6 +763,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                         &base_url,
                         &resolved,
                         body.clone(),
+                        requested_service_tier,
                         extra_headers.clone(),
                         wire_facts.clone(),
                         cont_route,
@@ -794,6 +814,7 @@ impl Provider for OpenAiCodexResponsesProvider {
                                 Some(wire_facts),
                                 base_url,
                                 requested_model,
+                                requested_service_tier,
                                 extra_headers,
                                 body,
                                 cancel,
@@ -849,6 +870,7 @@ async fn stream_sse(
     wire_facts: Option<crate::openai_responses_shared::ResponsesWireTools>,
     base_url: String,
     requested_model: String,
+    requested_service_tier: Option<crate::stream::ServiceTier>,
     extra_headers: Vec<(String, String)>,
     body: serde_json::Value,
     cancel: CancellationToken,
@@ -867,6 +889,7 @@ async fn stream_sse(
         wire_facts,
         base_url,
         requested_model,
+        requested_service_tier,
         extra_headers,
         body,
         cancel,

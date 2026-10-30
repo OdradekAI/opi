@@ -2676,7 +2676,7 @@ async fn copilot_models_login_acks_the_store_write() {
         .await
         .expect("local Copilot adapter completed");
     let actual = inference_task.await.expect("local TLS request");
-    assert!(actual.starts_with("POST /v1/chat/completions HTTP/1.1\r\n"));
+    assert!(actual.starts_with("POST /chat/completions HTTP/1.1\r\n"));
     assert!(actual.contains(&format!("authorization: Bearer {token}\r\n")));
     assert!(actual.to_ascii_lowercase().contains("x-initiator:"));
     assert!(!actual.to_ascii_lowercase().contains("x-api-key:"));

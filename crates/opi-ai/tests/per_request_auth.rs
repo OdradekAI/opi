@@ -148,6 +148,7 @@ async fn anthropic_stream_prepared_applies_bearer_header_not_api_key_header() {
 
     let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()));
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("oauth-token-anthropic"),
         base_url: None,
@@ -192,6 +193,7 @@ async fn openai_chat_stream_prepared_applies_resolved_secret_to_authorization_he
         Arc::new(HttpClient::new()),
     );
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("resolved-chat-key"),
         base_url: None,
@@ -223,6 +225,7 @@ async fn openai_responses_stream_prepared_applies_resolved_secret_to_authorizati
         Arc::new(HttpClient::new()),
     );
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("resolved-responses-key"),
         base_url: None,
@@ -254,6 +257,7 @@ async fn anthropic_stream_prepared_uses_supplied_auth_at_the_wire() {
     // resolved auth is the only credential that reaches the HTTP boundary.
     let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()));
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("prepared-token-anthropic"),
         base_url: None,
@@ -298,6 +302,7 @@ async fn openai_chat_stream_prepared_uses_supplied_auth_at_the_wire() {
         Arc::new(HttpClient::new()),
     );
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("prepared-chat-token"),
         base_url: None,
@@ -329,6 +334,7 @@ async fn openai_responses_stream_prepared_uses_supplied_auth_at_the_wire() {
         Arc::new(HttpClient::new()),
     );
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("prepared-responses-token"),
         base_url: None,
@@ -366,6 +372,7 @@ async fn openai_codex_stream_prepared_uses_supplied_auth_at_the_wire() {
         Arc::new(HttpClient::new()),
     );
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("prepared-codex-token"),
         base_url: None,
@@ -412,6 +419,7 @@ async fn openai_chat_rejects_api_key_scheme_before_the_wire() {
         Arc::new(HttpClient::new()),
     );
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::ApiKey,
         secret: SecretString::from("resolved-chat-key"),
         base_url: None,
@@ -430,6 +438,7 @@ async fn gemini_rejects_bearer_scheme_before_the_wire() {
     let server = MockServer::start().await;
     let provider = GeminiProvider::new(Some(server.uri()));
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("resolved-gemini-key"),
         base_url: None,
@@ -449,6 +458,7 @@ async fn azure_rejects_bearer_scheme_before_the_wire() {
     let provider = AzureOpenAIProvider::new(Some(server.uri()), "my-gpt4o".into(), None)
         .expect("wiremock endpoint is a valid azure endpoint");
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("resolved-azure-key"),
         base_url: None,
@@ -492,6 +502,7 @@ async fn vertex_api_key_selects_the_express_wire() {
 
     let provider = VertexProvider::new("proj".into(), "loc".into(), Some(server.uri()));
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::ApiKey,
         secret: SecretString::from("resolved-vertex-token"),
         base_url: None,
@@ -515,6 +526,7 @@ async fn vertex_rejects_sigv4_scheme_before_the_wire() {
     let server = MockServer::start().await;
     let provider = VertexProvider::new("proj".into(), "loc".into(), Some(server.uri()));
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::AwsSigV4(opi_ai::auth::AwsSigV4Credentials::new(
             SecretString::from("ak"),
             SecretString::from("sk"),

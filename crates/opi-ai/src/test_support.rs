@@ -83,6 +83,7 @@ impl AuthResolver for CountingAuthResolver {
 #[doc(hidden)]
 pub fn resolved_auth() -> ResolvedAuth {
     ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::ApiKey,
         secret: SecretString::from("test-key"),
         base_url: None,
@@ -98,6 +99,7 @@ pub fn resolved_auth() -> ResolvedAuth {
 #[doc(hidden)]
 pub fn resolved_bearer_auth() -> ResolvedAuth {
     ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("test-key"),
         base_url: None,

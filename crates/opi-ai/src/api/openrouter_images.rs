@@ -87,7 +87,7 @@ impl ImageApi<OpenRouterImagesOptions> for OpenRouterImagesApi {
     }
 
     fn provider_id(&self) -> &str {
-        "openrouter"
+        &self.record.provider_id
     }
 
     fn complete_record(&self) -> &ImageModelRecord {
@@ -96,6 +96,17 @@ impl ImageApi<OpenRouterImagesOptions> for OpenRouterImagesApi {
 
     fn default_options(&self) -> OpenRouterImagesOptions {
         OpenRouterImagesOptions::default()
+    }
+
+    fn validate_request(
+        &self,
+        record: &ImageModelRecord,
+        _context: &ImagesContext,
+        options: &OpenRouterImagesOptions,
+        call: &ImagesCall,
+    ) -> Result<(), ProviderError> {
+        self.validate_options(options)?;
+        validate_image_call(record, call)
     }
 
     fn generate_images_prepared<'a>(
@@ -125,17 +136,23 @@ impl ImageApi<OpenRouterImagesOptions> for OpenRouterImagesApi {
 /// pi's generated catalog data (`data/openrouter.json`) is absent from the
 /// pinned source, so opi ships one documented baseline entry; a registrar
 /// replaces it wholesale through [`ImageApi::complete_record`] — the record
-/// never enters chat catalog reads. Unknown pricing stays at the source
-/// generator's `0` fallback.
+/// never enters chat catalog reads. Unavailable catalog pricing stays unknown.
 pub fn default_openrouter_image_record() -> ImageModelRecord {
     ImageModelRecord {
+        cost_tiers: Vec::new(),
+        headers: Vec::new(),
+        input_limits: None,
+        input: vec![
+            crate::catalog::CatalogInputModality::Text,
+            crate::catalog::CatalogInputModality::Image,
+        ],
         provider_id: "openrouter".into(),
         id: "google/gemini-2.5-flash-image".into(),
         name: "Gemini 2.5 Flash Image (via OpenRouter)".into(),
         api: ApiId::new(OPENROUTER_IMAGES_API_ID),
         base_url: OPENROUTER_IMAGES_BASE_URL.into(),
         output: vec![ImageOutputModality::Image],
-        cost: ImageCostRates::default(),
+        cost: None,
     }
 }
 
@@ -179,6 +196,23 @@ struct AttemptFailure {
     message: String,
 }
 
+fn validate_image_call(record: &ImageModelRecord, call: &ImagesCall) -> Result<(), ProviderError> {
+    crate::images::validate_image_request(record, call)?;
+    if call.callbacks.has_on_raw() || call.callbacks.has_header_transform() {
+        return Err(ProviderError::UnsupportedCapability(
+            ProviderErrorSummary::attested_static(
+                "openrouter-images supports payload and response observers only",
+            ),
+        ));
+    }
+    if call.timeout.is_some_and(|timeout| timeout.is_zero()) {
+        return Err(ProviderError::Config(
+            ProviderErrorSummary::attested_static("image timeout must be a positive duration"),
+        ));
+    }
+    Ok(())
+}
+
 impl AttemptFailure {
     fn is_retryable(&self) -> bool {
         if let Some(should_retry) = self.x_should_retry {
@@ -198,8 +232,12 @@ async fn generate_openrouter_images(
     context: ImagesContext,
     options: OpenRouterImagesOptions,
     auth: ResolvedAuth,
-    call: ImagesCall,
+    mut call: ImagesCall,
 ) -> ImagesResult {
+    call.callbacks = call.callbacks.for_call();
+    if let Err(error) = validate_image_call(&record, &call) {
+        return failure_from_error(&record, &call, error);
+    }
     // Pre-dispatch rejections: Bearer-only wire, unsupported callback
     // families, and a positive timeout (the source SDK requires a positive
     // integer).
@@ -214,30 +252,15 @@ async fn generate_openrouter_images(
             "openrouter-images requires Bearer auth scheme".to_owned(),
         );
     }
-    if call.callbacks.has_on_raw() || call.callbacks.has_header_transform() {
-        return ImagesResult::failure(
-            &record,
-            ImagesStopReason::Error,
-            ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(
-                "openrouter-images supports payload and response observers only",
-            )),
-            "openrouter-images supports payload and response observers only".to_owned(),
-        );
-    }
-    if let Some(timeout) = call.timeout
-        && timeout.is_zero()
-    {
-        return ImagesResult::failure(
-            &record,
-            ImagesStopReason::Error,
-            ProviderError::Config(ProviderErrorSummary::attested_static(
-                "image timeout must be a positive duration",
-            )),
-            "image timeout must be a positive duration".to_owned(),
-        );
-    }
-
     let timeout = call.timeout.unwrap_or(OPENROUTER_IMAGES_TIMEOUT);
+    let headers = match crate::ProviderHeaders::default().merge_model_request(
+        &record.headers,
+        &[],
+        &call.extra_headers,
+    ) {
+        Ok(headers) => headers,
+        Err(error) => return failure_from_error(&record, &call, error),
+    };
     let mut body = build_request_body(&record, &context);
     // The payload observer runs once per logical call; an ordinary retry
     // reuses the frozen body byte-for-byte (the shared callback seam).
@@ -261,12 +284,9 @@ async fn generate_openrouter_images(
                 .post(&url)
                 .bearer_auth(auth.secret.expose_secret())
                 .json(&body);
-            let request = call
-                .extra_headers
-                .iter()
-                .fold(request, |builder, (name, value)| {
-                    builder.header(name, value)
-                });
+            let request = headers.iter().fold(request, |builder, (name, value)| {
+                builder.header(name, value)
+            });
             let send = async {
                 let response = request.send().await.map_err(|error| {
                     if error.is_timeout() {
@@ -317,8 +337,6 @@ async fn generate_openrouter_images(
                         message,
                     });
                 }
-                // The response observer fires at the source observation point:
-                // after the status is known, before body processing.
                 let observed_headers: Vec<(String, String)> = headers
                     .iter()
                     .map(|(name, value)| {
@@ -328,19 +346,6 @@ async fn generate_openrouter_images(
                         )
                     })
                     .collect();
-                if let Err(error) = call
-                    .callbacks
-                    .notify_response_async(status.as_u16(), &observed_headers)
-                    .await
-                {
-                    return Err(AttemptFailure {
-                        status: Some(status.as_u16()),
-                        x_should_retry: None,
-                        server_retry_delay_ms: None,
-                        error: error.clone(),
-                        message: error.to_string(),
-                    });
-                }
                 let body_text = response.text().await.map_err(|error| AttemptFailure {
                     status: None,
                     x_should_retry: None,
@@ -350,7 +355,20 @@ async fn generate_openrouter_images(
                     )),
                     message: error.to_string(),
                 })?;
-                Ok(body_text)
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&body_text).map_err(|error| {
+                        let message = format!("invalid openrouter-images response body: {error}");
+                        AttemptFailure {
+                            status: None,
+                            x_should_retry: None,
+                            server_retry_delay_ms: None,
+                            error: ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                                message.clone(),
+                            )),
+                            message,
+                        }
+                    })?;
+                Ok((parsed, status.as_u16(), observed_headers))
             };
             let attempt_result = tokio::select! {
                 biased;
@@ -365,8 +383,18 @@ async fn generate_openrouter_images(
                 result = tokio::time::timeout_at(deadline, send) => result,
             };
             match attempt_result {
-                Ok(Ok(body_text)) => {
-                    return parse_openrouter_images_response(&record, &body_text);
+                Ok(Ok((parsed, status, headers))) => {
+                    // JSON acquisition has handed off successfully. Callback
+                    // time and failures cannot restart a generation attempt.
+                    let observed = tokio::select! {
+                        biased;
+                        _ = call.cancel.cancelled() => Err(ProviderError::Cancelled),
+                        result = call.callbacks.notify_response_async(status, &headers) => result,
+                    };
+                    if let Err(error) = observed {
+                        return failure_from_error(&record, &call, error);
+                    }
+                    return parse_openrouter_images_response(&record, &parsed);
                 }
                 Ok(Err(failure)) => {
                     if retries_remaining == 0 || !failure.is_retryable() {
@@ -560,21 +588,10 @@ fn jitter_nanos() -> u64 {
 
 /// Parse the nonstream response: first choice only, ordered text-then-images,
 /// response id, usage split and base-rate cost.
-fn parse_openrouter_images_response(record: &ImageModelRecord, body_text: &str) -> ImagesResult {
-    let parsed: serde_json::Value = match serde_json::from_str(body_text) {
-        Ok(value) => value,
-        Err(error) => {
-            return ImagesResult::failure(
-                record,
-                ImagesStopReason::Error,
-                ProviderError::StreamError(ProviderErrorSummary::sanitized(format!(
-                    "invalid openrouter-images response body: {error}"
-                ))),
-                format!("invalid openrouter-images response body: {error}"),
-            );
-        }
-    };
-
+fn parse_openrouter_images_response(
+    record: &ImageModelRecord,
+    parsed: &serde_json::Value,
+) -> ImagesResult {
     let mut result = ImagesResult {
         api: record.api.as_str().to_owned(),
         provider: record.provider_id.clone(),
@@ -591,66 +608,19 @@ fn parse_openrouter_images_response(record: &ImageModelRecord, body_text: &str) 
         error: None,
     };
 
-    if let Some(usage_raw) = parsed.get("usage").filter(|usage| usage.is_object()) {
-        let prompt_tokens = usage_raw
-            .get("prompt_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0);
-        let completion_tokens = usage_raw
-            .get("completion_tokens")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0);
-        let details = usage_raw
-            .get("prompt_tokens_details")
-            .filter(|details| details.is_object());
-        let reported_cached = details
-            .and_then(|details| details.get("cached_tokens"))
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0);
-        let cache_write = details
-            .and_then(|details| details.get("cache_write_tokens"))
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0);
-        let cache_read = if cache_write > 0 {
-            reported_cached.saturating_sub(cache_write)
-        } else {
-            reported_cached
-        };
-        let input = prompt_tokens
-            .saturating_sub(cache_read)
-            .saturating_sub(cache_write);
-        let output = completion_tokens;
-        let (input_u32, output_u32) = (
-            u32::try_from(input).unwrap_or(u32::MAX),
-            u32::try_from(output).unwrap_or(u32::MAX),
-        );
-        let (cache_read_u32, cache_write_u32) = (
-            u32::try_from(cache_read).unwrap_or(u32::MAX),
-            u32::try_from(cache_write).unwrap_or(u32::MAX),
-        );
-        result.usage = Some(Usage {
-            input_tokens: input_u32,
-            output_tokens: output_u32,
-            cache_read_tokens: cache_read_u32,
-            cache_write_tokens: cache_write_u32,
-            cache_write_1h_tokens: None,
-            reasoning_tokens: None,
-            total_tokens: Some(
-                u64::from(input_u32)
-                    + u64::from(output_u32)
-                    + u64::from(cache_read_u32)
-                    + u64::from(cache_write_u32),
-            ),
-            service_tier: None,
-            reported: true,
-        });
-        result.cost = Some(base_rate_cost(
-            &record.cost,
-            input,
-            output,
-            cache_read,
-            cache_write,
-        ));
+    if let Some(usage) = parsed.get("usage").and_then(parse_image_usage) {
+        if usage.reported {
+            result.cost = record.cost.as_ref().and_then(|rates| {
+                base_rate_cost(
+                    rates,
+                    u64::from(usage.input_tokens),
+                    u64::from(usage.output_tokens),
+                    u64::from(usage.cache_read_tokens),
+                    u64::from(usage.cache_write_tokens),
+                )
+            });
+        }
+        result.usage = Some(usage);
     }
 
     let choice = parsed
@@ -705,6 +675,46 @@ fn parse_data_url(url: &str) -> Option<(String, String)> {
     Some((mime.to_owned(), payload.to_owned()))
 }
 
+fn parse_image_usage(raw: &serde_json::Value) -> Option<Usage> {
+    let raw = raw.as_object()?;
+    let prompt = raw.get("prompt_tokens").and_then(serde_json::Value::as_u64);
+    let output = raw
+        .get("completion_tokens")
+        .and_then(serde_json::Value::as_u64);
+    let details = raw.get("prompt_tokens_details");
+    let cached = details.and_then(|value| value.get("cached_tokens"));
+    let write = details.and_then(|value| value.get("cache_write_tokens"));
+    let cached_count = cached.and_then(serde_json::Value::as_u64);
+    let write_count = write.and_then(serde_json::Value::as_u64);
+    if prompt.is_none() && output.is_none() && cached_count.is_none() && write_count.is_none() {
+        return None;
+    }
+    let cache_write = write_count.unwrap_or_default();
+    let cache_read = cached_count.unwrap_or_default().saturating_sub(cache_write);
+    let input = prompt
+        .unwrap_or_default()
+        .saturating_sub(cache_read)
+        .saturating_sub(cache_write);
+    let output_count = output.unwrap_or_default();
+    let reported = prompt.is_some()
+        && output.is_some()
+        && details.is_none_or(serde_json::Value::is_object)
+        && cached.is_none_or(|value| value.as_u64().is_some())
+        && write.is_none_or(|value| value.as_u64().is_some())
+        && [input, output_count, cache_read, cache_write]
+            .iter()
+            .all(|count| u32::try_from(*count).is_ok());
+    Some(Usage {
+        input_tokens: u32::try_from(input).unwrap_or(u32::MAX),
+        output_tokens: u32::try_from(output_count).unwrap_or(u32::MAX),
+        cache_read_tokens: u32::try_from(cache_read).unwrap_or(u32::MAX),
+        cache_write_tokens: u32::try_from(cache_write).unwrap_or(u32::MAX),
+        total_tokens: reported.then(|| input + output_count + cache_read + cache_write),
+        reported,
+        ..Usage::unknown()
+    })
+}
+
 /// pi `parseUsage` cost: base per-million rates only (the image path's
 /// base-cost exception; tiers never apply).
 fn base_rate_cost(
@@ -713,16 +723,28 @@ fn base_rate_cost(
     output: u64,
     cache_read: u64,
     cache_write: u64,
-) -> ImagesCost {
+) -> Option<ImagesCost> {
+    if [
+        rates.input,
+        rates.output,
+        rates.cache_read,
+        rates.cache_write,
+    ]
+    .iter()
+    .any(|rate| !rate.is_finite() || *rate < 0.0)
+    {
+        return None;
+    }
     let input_cost = (rates.input / 1_000_000.0) * input as f64;
     let output_cost = (rates.output / 1_000_000.0) * output as f64;
     let cache_read_cost = (rates.cache_read / 1_000_000.0) * cache_read as f64;
     let cache_write_cost = (rates.cache_write / 1_000_000.0) * cache_write as f64;
-    ImagesCost {
+    let total = input_cost + output_cost + cache_read_cost + cache_write_cost;
+    total.is_finite().then_some(ImagesCost {
         input: input_cost,
         output: output_cost,
         cache_read: cache_read_cost,
         cache_write: cache_write_cost,
-        total: input_cost + output_cost + cache_read_cost + cache_write_cost,
-    }
+        total,
+    })
 }

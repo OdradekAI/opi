@@ -200,6 +200,54 @@ impl Provider for ApiMappedProvider {
         self.routes[&model.wire_api].stream_prepared(request, auth)
     }
 
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        let route = self.routes.get(&model.wire_api).ok_or_else(|| {
+            ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(format!(
+                "mapped provider '{}' has no route for {}",
+                self.id, model.wire_api,
+            )))
+        })?;
+        route.validate_simple_options(model, options)
+    }
+
+    fn prepare_model_call(
+        &self,
+        model: &mut ModelInfo,
+        auth: &mut crate::auth::ResolvedAuth,
+    ) -> Result<Option<std::sync::Arc<dyn Provider>>, ProviderError> {
+        let route = self.routes.get(&model.wire_api).ok_or_else(|| {
+            ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(format!(
+                "mapped provider '{}' has no route for {}",
+                self.id, model.wire_api,
+            )))
+        })?;
+        route.prepare_model_call(model, auth)
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        let Some(route) = self.routes.get(&model.wire_api) else {
+            let error =
+                ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(format!(
+                    "mapped provider '{}' has no route for {}",
+                    self.id, model.wire_api,
+                )));
+            return Box::pin(stream::once(async move { Err(error) }));
+        };
+        route.stream_model_resource_attempt(model, options, request, auth, attempt, resources)
+    }
+
     fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
         if models.is_empty() {
             return Err(ProviderError::Config(ProviderErrorSummary::sanitized(

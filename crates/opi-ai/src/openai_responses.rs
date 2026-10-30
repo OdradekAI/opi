@@ -204,6 +204,7 @@ impl OpenAiResponsesProvider {
         let mut provider = self.clone();
         provider.models = vec![model];
         provider.native_options = Some(options);
+        provider.catalog_compat = true;
         provider
     }
 
@@ -269,7 +270,7 @@ impl OpenAiResponsesProvider {
             }) = self.models.iter().find(|model| model.id == model_id)
         {
             return ResponsesConfig {
-                supports_grammar_tools: false,
+                supports_grammar_tools: compat.supports_grammar,
                 store: compat.store,
                 reasoning_effort: compat.reasoning_effort.clone(),
                 strict_tools: compat.strict_tools,
@@ -281,17 +282,20 @@ impl OpenAiResponsesProvider {
     }
 
     fn resolve_route_path(&self, model_id: &str) -> String {
-        if self.catalog_compat
-            && let Some(ModelInfo {
-                compat:
-                    crate::model_info::WireCompat::OpenAiResponses(compat)
-                    | crate::model_info::WireCompat::AzureOpenAiResponses(compat),
-                ..
-            }) = self.models.iter().find(|model| model.id == model_id)
+        let model = self.models.iter().find(|model| model.id == model_id);
+        let selected_path = match model.map(|model| &model.compat) {
+            Some(crate::model_info::WireCompat::OpenAiResponses(compat)) if self.catalog_compat => {
+                compat.responses_path.as_str()
+            }
+            _ => DEFAULT_RESPONSES_PATH,
+        };
+        if selected_path == DEFAULT_RESPONSES_PATH
+            && model.is_some_and(|model| model.base_url.is_some())
         {
-            return compat.responses_path.clone();
+            "/responses".into()
+        } else {
+            selected_path.into()
         }
-        DEFAULT_RESPONSES_PATH.into()
     }
 
     /// Access the shared HTTP client.
@@ -433,6 +437,7 @@ impl OpenAiResponsesProvider {
         // Mid-conversation stamps (task 20.37): the request effort stays
         // fixed while configuration items carry the level.
         let stamping = config.supports_mid_convo_effort
+            && self.resolve_wire(model_id) != crate::model_info::WireApi::AzureOpenAiResponses
             && requested_level.is_some_and(|level| level != crate::model_info::ThinkingLevel::None)
             && wire_effort.is_some();
         let stamp_effort = stamping.then(|| wire_effort.clone().unwrap_or_default());
@@ -469,10 +474,7 @@ impl OpenAiResponsesProvider {
         {
             body["service_tier"] = serde_json::Value::String(service_tier.wire_name().into());
         }
-        if let Some(tool_choice) = native
-            .filter(|options| !options.simple)
-            .and_then(|options| options.tool_choice.as_ref())
-        {
+        if let Some(tool_choice) = native.and_then(|options| options.tool_choice.as_ref()) {
             body["tool_choice"] = tool_choice.wire_value();
         }
         // Session affinity body fields (task 20.37, source semantics): the
@@ -524,11 +526,7 @@ impl OpenAiResponsesProvider {
         }
         // Last so model and request sampling parameters override named
         // request fields (model base < effective level < request, per key).
-        let effective_level = if request.thinking.enabled {
-            request.thinking.level
-        } else {
-            crate::model_info::ThinkingLevel::None
-        };
+        let effective_level = requested_level.unwrap_or(crate::model_info::ThinkingLevel::None);
         if let Some(model) = self.models.iter().find(|model| model.id == model_id)
             && let Some(sampling) = crate::model_info::resolve_sampling_params(
                 model,
@@ -612,6 +610,7 @@ impl OpenAiResponsesProvider {
         requested_model: String,
         wire_facts: Option<crate::openai_responses_shared::ResponsesWireTools>,
         effort_stamp: Option<String>,
+        requested_service_tier: Option<crate::stream::ServiceTier>,
         body: serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
@@ -623,8 +622,11 @@ impl OpenAiResponsesProvider {
     ) -> Result<(), ProviderError> {
         let secret = resolved.secret.expose_secret();
         let bearer = match resolved.scheme {
+            AuthScheme::ApiKey if provider_id == "cloudflare-ai-gateway" => {
+                format!("Bearer {secret}")
+            }
             AuthScheme::Bearer => format!("Bearer {secret}"),
-            AuthScheme::ApiKey | AuthScheme::AwsSigV4(_) => {
+            AuthScheme::ApiKey | AuthScheme::AwsSigV4(_) | AuthScheme::AnthropicFederation => {
                 return Err(ProviderError::Config(
                     ProviderErrorSummary::attested_static(
                         "OpenAI Responses accepts only Bearer authentication",
@@ -635,7 +637,14 @@ impl OpenAiResponsesProvider {
         let url = crate::endpoint::join_endpoint(&base_url, &route_path);
         let mut request = client
             .post(url)
-            .header("authorization", bearer)
+            .header(
+                if provider_id == "cloudflare-ai-gateway" {
+                    "cf-aig-authorization"
+                } else {
+                    "authorization"
+                },
+                bearer,
+            )
             .header("content-type", "application/json");
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);
@@ -702,7 +711,8 @@ impl OpenAiResponsesProvider {
             &provider_id,
             crate::model_info::WireApi::OpenAiResponses,
             &requested_model,
-        );
+        )
+        .with_requested_service_tier(requested_service_tier);
         // Task 20.11: the call's constrained-sampling facts ride the mapper.
         if let Some(wire) = wire_facts {
             mapper.set_grammar_tools(wire.grammar_input_properties);
@@ -812,6 +822,30 @@ fn map_http_status(
 }
 
 impl Provider for OpenAiResponsesProvider {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        validate_complete_responses_record(model)
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        let mut configured = self.clone();
+        configured.models = vec![model];
+        configured.native_options = Some(OpenAiResponsesOptions::from_simple(&options));
+        configured.catalog_compat = true;
+        configured.stream_resource_attempt(request, auth, attempt, resources)
+    }
+
     fn id(&self) -> &str {
         &self.provider_id
     }
@@ -825,6 +859,32 @@ impl Provider for OpenAiResponsesProvider {
         mut request: Request,
         resolved: crate::auth::ResolvedAuth,
     ) -> EventStream {
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, id)| id)
+            .unwrap_or(&request.model);
+        let selected_base = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.base_url.as_deref())
+            .unwrap_or(&self.base_url);
+        let effective_base =
+            crate::auth::builtin::effective_base_url(&self.provider_id, selected_base, &resolved);
+        if effective_base != selected_base {
+            let mut configured = self.clone();
+            if let Some(model) = configured
+                .models
+                .iter_mut()
+                .find(|model| model.id == model_id)
+            {
+                model.base_url = Some(effective_base);
+            } else {
+                configured.base_url = effective_base;
+            }
+            return configured.stream_prepared(request, resolved);
+        }
         request.callbacks = request.callbacks.ensure_call_scope();
         // Same as `stream` but skips per-call auth resolution: the collection
         // resolved and froze authentication once for the logical call.
@@ -864,8 +924,15 @@ impl Provider for OpenAiResponsesProvider {
         let extra_headers = copilot_headers.and_then(|copilot_headers| {
             let mut route_headers = self.route_headers.clone();
             route_headers.extend(copilot_headers);
-            self.headers
-                .merge_request(&route_headers, &request.extra_headers)
+            self.headers.merge_model_request(
+                self.models
+                    .iter()
+                    .find(|model| model.id == model_id)
+                    .map(|model| model.headers.as_slice())
+                    .unwrap_or_default(),
+                &route_headers,
+                &request.extra_headers,
+            )
         });
         let session_id = if request.cache_retention != CacheRetention::Disabled {
             request.session_id.clone().filter(|id| !id.is_empty())
@@ -894,6 +961,19 @@ impl Provider for OpenAiResponsesProvider {
         // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
         // task runs under the captured parent/Dispatch when provided; omission
         // observes nothing. Full cross-path proof closes in 20.55.
+        let requested_service_tier = self
+            .native_options
+            .as_ref()
+            .filter(|options| !options.simple)
+            .and_then(|options| options.service_tier)
+            .map(|tier| match tier {
+                ResponsesServiceTier::Auto => crate::stream::ServiceTier::Auto,
+                ResponsesServiceTier::Default => crate::stream::ServiceTier::Default,
+                ResponsesServiceTier::Flex => crate::stream::ServiceTier::Flex,
+                ResponsesServiceTier::Scale => crate::stream::ServiceTier::Scale,
+                ResponsesServiceTier::Priority => crate::stream::ServiceTier::Priority,
+                ResponsesServiceTier::Fast => crate::stream::ServiceTier::Fast,
+            });
         let telemetry = request.telemetry_context.clone();
         let timeout = request.timeout;
         let client = self.client.client().clone();
@@ -937,11 +1017,11 @@ impl Provider for OpenAiResponsesProvider {
                         return;
                     }
                 };
-                let base_url = resolved
-                    .base_url
-                    .clone()
-                    .or(model_base_url)
-                    .unwrap_or(default_base_url);
+                let base_url = crate::auth::builtin::effective_base_url(
+                    &provider_id,
+                    &model_base_url.unwrap_or(default_base_url),
+                    &resolved,
+                );
                 if let Err(error) = Self::stream_http(
                     client,
                     resolved,
@@ -954,6 +1034,7 @@ impl Provider for OpenAiResponsesProvider {
                     requested_model,
                     wire_facts,
                     effort_stamp,
+                    requested_service_tier,
                     body,
                     cancel,
                     timeout,
@@ -1041,6 +1122,7 @@ pub enum ResponsesServiceTier {
     Auto,
     Default,
     Flex,
+    Scale,
     Priority,
     Fast,
 }
@@ -1052,6 +1134,7 @@ impl ResponsesServiceTier {
             Self::Auto => "auto",
             Self::Default => "default",
             Self::Flex => "flex",
+            Self::Scale => "scale",
             Self::Priority => "priority",
             Self::Fast => "fast",
         }
@@ -1141,10 +1224,7 @@ impl OpenAiResponsesChatApi {
         model: ModelInfo,
         options: OpenAiResponsesOptions,
     ) -> OpenAiResponsesProvider {
-        let mut provider = (*self.provider).clone();
-        provider.models = vec![model];
-        provider.native_options = Some(options);
-        provider
+        self.provider.dispatch_configured(model, options)
     }
 }
 
@@ -1161,6 +1241,17 @@ fn validate_complete_responses_record(
                 "openai-responses adapters require a valid complete Responses model record",
             ),
         ));
+    }
+    if let Some(base) = model.base_url.as_deref() {
+        let valid = url::Url::parse(base)
+            .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some());
+        if !valid {
+            return Err(ProviderError::Config(
+                ProviderErrorSummary::attested_static(
+                    "The selected model requires an absolute HTTP or HTTPS API base URL",
+                ),
+            ));
+        }
     }
     Ok(())
 }

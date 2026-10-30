@@ -93,6 +93,8 @@ enum Part {
     FunctionCall {
         #[serde(rename = "functionCall")]
         function_call: FunctionCallPart,
+        #[serde(default, rename = "thoughtSignature")]
+        thought_signature: Option<String>,
     },
 }
 
@@ -106,8 +108,6 @@ struct FunctionCallPart {
     /// locally (task 20.40, pi unsigned tool call handling).
     #[serde(default)]
     id: Option<String>,
-    #[serde(default, rename = "thoughtSignature")]
-    thought_signature: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -250,12 +250,15 @@ impl ParsedEvent {
                                 }));
                             }
                         }
-                        Part::FunctionCall { function_call } => {
+                        Part::FunctionCall {
+                            function_call,
+                            thought_signature,
+                        } => {
                             events.push(ParsedEvent::Valid(GeminiEvent::FunctionCall {
                                 id: function_call.id.clone(),
                                 name: function_call.name.clone(),
                                 args: function_call.args.clone(),
-                                signature: function_call.thought_signature.clone(),
+                                signature: thought_signature.clone(),
                             }));
                         }
                     }
@@ -876,6 +879,7 @@ impl GoogleGenerativeAiOptions {
 
 #[derive(Clone)]
 pub struct GeminiProvider {
+    provider_identity: String,
     base_url: String,
     models: Vec<ModelInfo>,
     client: Arc<HttpClient>,
@@ -930,6 +934,7 @@ impl GeminiProvider {
             base_url.unwrap_or_else(|| "https://generativelanguage.googleapis.com".into());
         let models = model_catalog();
         Self {
+            provider_identity: "gemini".into(),
             base_url,
             models,
             client,
@@ -943,6 +948,15 @@ impl GeminiProvider {
     /// neutral-policy branches (budget table).
     pub(crate) fn with_wire(mut self, wire: WireApi) -> Self {
         self.wire = wire;
+        if wire == WireApi::GoogleVertex {
+            self.provider_identity = "vertex".into();
+        }
+        self
+    }
+
+    /// Bind capture and replay to the registered canonical provider identity.
+    pub(crate) fn with_provider_identity(mut self, provider: &str) -> Self {
+        self.provider_identity = provider.to_owned();
         self
     }
 
@@ -982,6 +996,7 @@ impl GeminiProvider {
             .split_once(':')
             .map(|(_, id)| id)
             .unwrap_or(&request.model);
+        let provider_id = self.provider_identity.as_str();
 
         let mut contents = Vec::new();
 
@@ -1011,8 +1026,8 @@ impl GeminiProvider {
         let replay = crate::replay::project_replay(
             &crate::transcript::without_initial_system_message(transcript.messages()),
             &crate::replay::ReplayRoute {
-                wire: crate::model_info::WireApi::GoogleGenerativeAi,
-                provider: "gemini".to_owned(),
+                wire: self.wire,
+                provider: provider_id.to_owned(),
                 model: model_id.to_owned(),
                 supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
             },
@@ -1075,7 +1090,7 @@ impl GeminiProvider {
                 crate::message::Message::Assistant(a) => {
                     // Signatures replay only for same-provider/same-model
                     // history and only in valid base64 (task 20.40).
-                    let same_model = a.provider == "gemini" && a.model == model_id;
+                    let same_model = a.provider == provider_id && a.model == model_id;
                     let usable = |signature: &Option<String>| {
                         (same_model && valid_thought_signature(signature.as_deref())).then(|| {
                             serde_json::Value::String(signature.clone().unwrap_or_default())
@@ -1456,7 +1471,7 @@ impl GeminiProvider {
             }
         };
         if let Some(config) = thinking_config {
-            body["thinkingConfig"] = config;
+            body["generationConfig"]["thinkingConfig"] = config;
         }
 
         Ok(body)
@@ -1491,23 +1506,32 @@ impl GeminiProvider {
     #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         http_client: reqwest::Client,
+        provider_identity: String,
         api_key: String,
         base_url: String,
         model_id: String,
         body: &serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
+        model_headers: Vec<(String, Option<String>)>,
         extra_headers: Vec<(String, String)>,
         callbacks: crate::callbacks::RequestCallbacks,
         snapshot: crate::stream::ProducerSnapshot,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
-        let url = format!("{base_url}/v1beta/models/{model_id}:streamGenerateContent?alt=sse");
+        let url = format!(
+            "{}/models/{model_id}:streamGenerateContent?alt=sse",
+            base_url.trim_end_matches('/')
+        );
         let route_headers = vec![
             ("x-goog-api-key".to_owned(), api_key),
             ("content-type".to_owned(), "application/json".to_owned()),
         ];
-        let merged = ProviderHeaders::default().merge_request(&route_headers, &extra_headers)?;
+        let merged = ProviderHeaders::default().merge_model_request(
+            &model_headers,
+            &route_headers,
+            &extra_headers,
+        )?;
         // Header transform (task 20.51) on the transformable per-call set; the
         // protected identity/wire headers are stamped back after the
         // transform and never enter it.
@@ -1562,7 +1586,7 @@ impl GeminiProvider {
         let mut buffer = String::new();
         let mut decoder = crate::text_decode::StreamTextDecoder::new();
         let mut mapper = GeminiMapper::new(
-            "gemini",
+            &provider_identity,
             crate::model_info::WireApi::GoogleGenerativeAi,
             &model_id,
         );
@@ -1691,6 +1715,29 @@ fn map_gemini_error(
 }
 
 impl Provider for GeminiProvider {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        validate_complete_google_record(model)
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        self.clone()
+            .with_models(vec![model])
+            .with_native_options(GoogleGenerativeAiOptions::from_simple(&options))
+            .stream_resource_attempt(request, auth, attempt, resources)
+    }
+
     fn stream_prepared(
         &self,
         mut request: Request,
@@ -1708,7 +1755,9 @@ impl Provider for GeminiProvider {
         let secret = auth.secret.expose_secret();
         let api_key = match auth.scheme {
             crate::auth::AuthScheme::ApiKey => secret.to_string(),
-            crate::auth::AuthScheme::Bearer | crate::auth::AuthScheme::AwsSigV4(_) => {
+            crate::auth::AuthScheme::Bearer
+            | crate::auth::AuthScheme::AwsSigV4(_)
+            | crate::auth::AuthScheme::AnthropicFederation => {
                 return Box::pin(stream::iter(vec![Err(ProviderError::Config(
                     ProviderErrorSummary::attested_static(
                         "Gemini requires prepared API-key authentication",
@@ -1716,12 +1765,24 @@ impl Provider for GeminiProvider {
                 ))]));
             }
         };
-        let base_url = self.base_url.clone();
         let model_id = request
             .model
             .split_once(':')
             .map(|(_, id)| id.to_string())
             .unwrap_or(request.model.clone());
+        // A selected record/auth endpoint is already the complete API base,
+        // including any version or proxy path. Only the legacy provider-host
+        // constructor supplies the default version path itself.
+        let base_url = auth
+            .base_url
+            .clone()
+            .or_else(|| {
+                self.models
+                    .iter()
+                    .find(|model| model.id == model_id)
+                    .and_then(|model| model.base_url.clone())
+            })
+            .unwrap_or_else(|| format!("{}/v1beta", self.base_url.trim_end_matches('/')));
         let body = match self.build_request_body(&request) {
             Ok(body) => body,
             Err(error) => return Box::pin(stream::once(async move { Err(error) })),
@@ -1729,8 +1790,15 @@ impl Provider for GeminiProvider {
         let callbacks = request.callbacks.clone();
         let cancel = request.cancel.clone();
         let timeout = request.timeout;
+        let model_headers = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .map(|model| model.headers.clone())
+            .unwrap_or_default();
         let extra_headers = request.extra_headers;
         let http_client = self.client.client().clone();
+        let provider_identity = self.provider_identity.clone();
 
         let snapshot = crate::stream::ProducerSnapshot::default();
         let producer_snapshot = snapshot.clone();
@@ -1750,12 +1818,14 @@ impl Provider for GeminiProvider {
                         .await?;
                     Self::stream_http(
                         http_client,
+                        provider_identity,
                         api_key,
                         base_url,
                         model_id,
                         &body,
                         producer_cancel.clone(),
                         timeout,
+                        model_headers,
                         extra_headers,
                         callbacks,
                         producer_snapshot,

@@ -205,7 +205,8 @@ impl ProxyConfig {
 /// reasonable idle timeout, optional proxy configuration and optional
 /// source-scoped TLS configuration ([`TlsOptions`]). Designed to be
 /// held as `Arc<HttpClient>` per provider or shared across providers.
-#[derive(Debug)]
+/// Cloning retains the same pooled clients and frozen transport configuration.
+#[derive(Debug, Clone)]
 pub struct HttpClient {
     inner: reqwest::Client,
     websocket: reqwest::Client,

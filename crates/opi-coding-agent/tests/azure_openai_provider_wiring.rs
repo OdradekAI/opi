@@ -146,6 +146,7 @@ fn azure_api_key_not_in_debug() {
     );
 
     let auth = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::ApiKey,
         secret: SecretString::from("super-secret-key-12345"),
         base_url: None,

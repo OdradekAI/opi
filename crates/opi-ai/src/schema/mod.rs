@@ -20,7 +20,7 @@
 //! references never makes an unreferenced annotation a validation schema.
 
 mod admission;
-mod ecma_number;
+pub(crate) mod ecma_number;
 mod eval;
 mod format_patterns;
 mod formats;

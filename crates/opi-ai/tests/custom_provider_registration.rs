@@ -671,6 +671,7 @@ impl AuthResolver for CountingResolver {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async {
             Ok(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::ApiKey,
                 secret: SecretString::from("resolver-secret"),
                 base_url: None,
@@ -981,6 +982,7 @@ async fn models_direct_entry_uses_injected_auth_without_models_auth() {
         .unwrap();
 
     let auth = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("direct-secret"),
         base_url: None,
@@ -1161,6 +1163,7 @@ async fn models_completion_entries_capture_owned_binding_before_first_poll() {
             label: "direct".into(),
         }),
         ResolvedAuth {
+            env: Default::default(),
             scheme: AuthScheme::Bearer,
             secret: SecretString::from("direct-secret"),
             base_url: None,

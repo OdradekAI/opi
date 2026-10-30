@@ -1387,7 +1387,8 @@ fn validate_custom_providers(
 /// runtime model-spec dispatch.
 /// Legacy provider ids accepted at the config boundary and their canonical
 /// replacements (task 20.34). The legacy ids are never registered or
-/// dispatched: references migrate in memory at load.
+/// dispatched: uncontested references migrate in memory at load, while
+/// conflicts retain their source configuration for explicit resolution.
 pub const LEGACY_PROVIDER_REFS: [(&str, &str); 3] = [
     ("gemini", "google"),
     ("vertex", "google-vertex"),
@@ -1401,7 +1402,7 @@ pub struct ProviderReferenceMigration {
     /// adopted because no canonical block was explicitly configured.
     pub adopted: Vec<(&'static str, &'static str)>,
     /// `(legacy, canonical)` pairs where both were explicitly configured:
-    /// the canonical block wins and the legacy block is ignored.
+    /// both blocks and any legacy model reference are retained for resolution.
     pub conflicts: Vec<(&'static str, &'static str)>,
     /// Rewritten `defaults.model` specs (legacy prefix → canonical prefix).
     pub model_specs: Vec<(String, String)>,
@@ -1418,7 +1419,7 @@ impl ProviderReferenceMigration {
         }
         for (legacy, canonical) in &self.conflicts {
             notes.push(format!(
-                "providers.{legacy}: ignored; both it and `providers.{canonical}` are configured, the canonical block wins"
+                "providers.{legacy}: retained; both it and `providers.{canonical}` are configured, resolve the conflict before switching references"
             ));
         }
         for (from, to) in &self.model_specs {
@@ -1470,47 +1471,49 @@ impl OpiConfig {
     /// the canonical ids (`google`/`google-vertex`/`amazon-bedrock`) in
     /// memory.
     ///
-    /// Reentrant: a second pass finds empty legacy accumulators and already
-    /// canonical model specs, so it changes nothing. When both the legacy
-    /// and the canonical block are explicitly configured the conflict is
-    /// detected before any adoption: the canonical block wins, the legacy
-    /// block is ignored, and nothing is overwritten. No config file is
-    /// rewritten.
+    /// Reentrant: adopted blocks are empty on the next pass. Conflicting
+    /// legacy and canonical blocks remain intact, and a default model using
+    /// that legacy id is not switched until the conflict is resolved. No
+    /// config file is rewritten.
     pub fn migrate_legacy_provider_references(&mut self) -> ProviderReferenceMigration {
         let mut report = ProviderReferenceMigration::default();
 
+        if generic_provider_explicit(&self.providers.legacy.gemini) {
+            if generic_provider_explicit(&self.providers.google) {
+                report.conflicts.push(("gemini", "google"));
+            } else {
+                self.providers.google = std::mem::take(&mut self.providers.legacy.gemini);
+                report.adopted.push(("gemini", "google"));
+            }
+        }
+        if vertex_provider_explicit(&self.providers.legacy.vertex) {
+            if vertex_provider_explicit(&self.providers.google_vertex) {
+                report.conflicts.push(("vertex", "google-vertex"));
+            } else {
+                self.providers.google_vertex = std::mem::take(&mut self.providers.legacy.vertex);
+                report.adopted.push(("vertex", "google-vertex"));
+            }
+        }
+        if bedrock_provider_explicit(&self.providers.legacy.bedrock) {
+            if bedrock_provider_explicit(&self.providers.amazon_bedrock) {
+                report.conflicts.push(("bedrock", "amazon-bedrock"));
+            } else {
+                self.providers.amazon_bedrock = std::mem::take(&mut self.providers.legacy.bedrock);
+                report.adopted.push(("bedrock", "amazon-bedrock"));
+            }
+        }
+
         let (model, legacy_used) = canonicalize_model_spec(&self.defaults.model);
-        if legacy_used.is_some() {
+        if let Some(legacy) = legacy_used
+            && !report
+                .conflicts
+                .iter()
+                .any(|(conflict, _)| *conflict == legacy)
+        {
             report
                 .model_specs
                 .push((self.defaults.model.clone(), model.clone()));
             self.defaults.model = model;
-        }
-
-        let legacy = std::mem::take(&mut self.providers.legacy);
-        if generic_provider_explicit(&legacy.gemini) {
-            if generic_provider_explicit(&self.providers.google) {
-                report.conflicts.push(("gemini", "google"));
-            } else {
-                self.providers.google = legacy.gemini;
-                report.adopted.push(("gemini", "google"));
-            }
-        }
-        if vertex_provider_explicit(&legacy.vertex) {
-            if vertex_provider_explicit(&self.providers.google_vertex) {
-                report.conflicts.push(("vertex", "google-vertex"));
-            } else {
-                self.providers.google_vertex = legacy.vertex;
-                report.adopted.push(("vertex", "google-vertex"));
-            }
-        }
-        if bedrock_provider_explicit(&legacy.bedrock) {
-            if bedrock_provider_explicit(&self.providers.amazon_bedrock) {
-                report.conflicts.push(("bedrock", "amazon-bedrock"));
-            } else {
-                self.providers.amazon_bedrock = legacy.bedrock;
-                report.adopted.push(("bedrock", "amazon-bedrock"));
-            }
         }
 
         self.provider_migration_notes = report.notes();

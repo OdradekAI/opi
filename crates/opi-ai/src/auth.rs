@@ -32,6 +32,11 @@ use crate::provider::{ProviderError, ProviderErrorSummary};
 /// Store-owned OAuth refresh and request identity assembly.
 pub mod store_oauth;
 
+pub(crate) mod anthropic_federation;
+pub(crate) mod builtin;
+pub mod builtin_aws;
+pub mod builtin_vertex;
+
 // ---------------------------------------------------------------------------
 // Resolved auth + resolver
 // ---------------------------------------------------------------------------
@@ -112,6 +117,10 @@ pub enum AuthScheme {
     ApiKey,
     /// Bearer auth (`Authorization: Bearer <token>`).
     Bearer,
+    /// Selected Anthropic workload identity. The adapter exchanges the
+    /// configuration in [`ResolvedAuth::env`] only when issuing a request;
+    /// source selection and availability checks perform no token exchange.
+    AnthropicFederation,
     /// AWS Signature Version 4 using the complete prepared credential bundle.
     AwsSigV4(AwsSigV4Credentials),
 }
@@ -122,6 +131,7 @@ impl PartialEq for AuthScheme {
             (self, other),
             (Self::ApiKey, Self::ApiKey)
                 | (Self::Bearer, Self::Bearer)
+                | (Self::AnthropicFederation, Self::AnthropicFederation)
                 | (Self::AwsSigV4(_), Self::AwsSigV4(_))
         )
     }
@@ -134,6 +144,7 @@ impl std::fmt::Debug for AuthScheme {
         match self {
             Self::ApiKey => f.write_str("ApiKey"),
             Self::Bearer => f.write_str("Bearer"),
+            Self::AnthropicFederation => f.write_str("AnthropicFederation"),
             Self::AwsSigV4(credentials) => f.debug_tuple("AwsSigV4").field(credentials).finish(),
         }
     }
@@ -185,6 +196,10 @@ pub struct ResolvedAuth {
     pub base_url: Option<String>,
     /// Provider account identity, when required by a concrete wire.
     pub account_id: Option<String>,
+    /// Owned provider-scoped configuration selected with this credential.
+    /// Values are secret-bearing and never appear in diagnostics. Preparation
+    /// consumes this snapshot rather than rereading a potentially changed store.
+    pub env: std::collections::BTreeMap<String, SecretString>,
     /// Non-secret source classification plus fallback decision. Resolver-owned
     /// source selection is retained; [`crate::Models`] supplies the
     /// registered route source only for the default value.
@@ -203,6 +218,7 @@ impl ResolvedAuth {
             secret: SecretString::from(""),
             base_url: None,
             account_id: None,
+            env: Default::default(),
             provenance,
         }
     }
@@ -218,6 +234,7 @@ impl std::fmt::Debug for ResolvedAuth {
             .field("secret", &"<redacted>")
             .field("base_url", &self.base_url)
             .field("account_id", &self.account_id)
+            .field("env_keys", &self.env.keys().collect::<Vec<_>>())
             .field("provenance", &self.provenance)
             .finish()
     }
@@ -512,6 +529,7 @@ impl AuthResolver for StaticAuthResolver {
         let secret = self.secret.clone();
         Box::pin(async move {
             Ok(ResolvedAuth {
+                env: Default::default(),
                 scheme,
                 secret,
                 base_url: None,
@@ -653,6 +671,7 @@ pub trait OAuthProvider: Send + Sync {
     /// Provider-specific endpoint derivation belongs to the flow; no I/O occurs.
     fn to_auth(&self, cred: &OAuthCredential) -> ResolvedAuth {
         ResolvedAuth {
+            env: Default::default(),
             scheme: AuthScheme::Bearer,
             secret: cred.access.clone(),
             base_url: cred.base_url.clone(),
@@ -869,6 +888,13 @@ impl std::fmt::Debug for AuthProcessSnapshot {
 /// The contract never reads a credential to "verify" a source:
 /// [`file_exists`](Self::file_exists) checks path existence only.
 pub trait AuthContext: Send + Sync {
+    /// Resolve the native home-directory source after explicit environment
+    /// choices have been exhausted. Injected contexts default to no fallback,
+    /// so native helpers never consult the real user's home implicitly.
+    fn home_dir(&self) -> Result<Option<std::path::PathBuf>, AuthContextError> {
+        Ok(None)
+    }
+
     /// Read one named environment variable on demand.
     ///
     /// Returns `Ok(None)` when the variable is unset or empty after trimming.
@@ -937,6 +963,14 @@ impl AmbientAuthContext {
 }
 
 impl AuthContext for AmbientAuthContext {
+    fn home_dir(&self) -> Result<Option<std::path::PathBuf>, AuthContextError> {
+        // This API's platform fallback is the source selected here; provider
+        // environment precedence is resolved by the caller before this step.
+        #[allow(deprecated)]
+        let home = std::env::home_dir();
+        Ok(home)
+    }
+
     fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
         match std::env::var(name) {
             Ok(value) if !value.trim().is_empty() => Ok(Some(value)),

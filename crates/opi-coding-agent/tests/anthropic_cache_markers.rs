@@ -219,7 +219,10 @@ async fn factory_built_anthropic_cache_markers_follow_final_capabilities() {
 
     let (_dir, store) = test_store();
     store
-        .write("anthropic", &Credential::ApiKey(secret("factory-test-key")))
+        .write(
+            "anthropic",
+            &Credential::ApiKey(secret("factory-test-key").into()),
+        )
         .await
         .expect("seed Anthropic API key");
     let resolver = CredentialResolver::new(store, Arc::new(|_: &str| None));

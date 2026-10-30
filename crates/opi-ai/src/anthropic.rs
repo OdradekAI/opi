@@ -413,6 +413,93 @@ enum StrictToolDisposition {
     StrictRequire,
 }
 
+/// OAuth projects only known tool-name fields; arguments, schemas and the
+/// canonical transcript keep their original spelling and contents.
+fn oauth_tool_name(name: &str) -> &str {
+    [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Grep",
+        "Glob",
+        "AskUserQuestion",
+        "EnterPlanMode",
+        "ExitPlanMode",
+        "KillShell",
+        "NotebookEdit",
+        "Skill",
+        "Task",
+        "TaskOutput",
+        "TodoWrite",
+        "WebFetch",
+        "WebSearch",
+    ]
+    .into_iter()
+    .find(|known| known.eq_ignore_ascii_case(name))
+    .unwrap_or(name)
+}
+
+fn project_oauth_tool_names(body: &mut serde_json::Value) {
+    fn project_name(tool: &mut serde_json::Value) {
+        if let Some(name) = tool.get("name").and_then(serde_json::Value::as_str) {
+            let name = oauth_tool_name(name).to_owned();
+            tool["name"] = name.into();
+        }
+    }
+    if let Some(tools) = body
+        .get_mut("tools")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for tool in tools {
+            project_name(tool);
+        }
+    }
+    if let Some(messages) = body
+        .get_mut("messages")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for message in messages {
+            if let Some(blocks) = message
+                .get_mut("content")
+                .and_then(serde_json::Value::as_array_mut)
+            {
+                for block in blocks {
+                    match block.get("type").and_then(serde_json::Value::as_str) {
+                        Some("tool_use") => project_name(block),
+                        Some("tool_removal") => project_name(&mut block["tool"]),
+                        Some("tool_addition") => project_name(&mut block["tool"]["definition"]),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct CompiledAnthropicRequest {
+    body: serde_json::Value,
+    preferred_strict_names: Vec<String>,
+    strict_tools: Vec<crate::message::ToolDef>,
+}
+
+fn preferred_strict_names(tools: &[crate::message::ToolDef]) -> Vec<String> {
+    tools
+        .iter()
+        .filter(|tool| {
+            matches!(
+                tool.constrained_sampling,
+                Some(
+                    crate::constrained_sampling::ConstrainedSampling::JsonSchema {
+                        strict: crate::constrained_sampling::StrictPreference::Prefer,
+                    }
+                )
+            )
+        })
+        .map(|tool| tool.name.clone())
+        .collect()
+}
+
 pub struct AnthropicMapper {
     snapshot: crate::stream::ProducerSnapshot,
     partial: AssistantMessage,
@@ -420,6 +507,7 @@ pub struct AnthropicMapper {
     /// (task 20.11): their returned arguments normalize nulls back onto the
     /// original schema at finalization.
     strict_tools: std::collections::HashMap<String, crate::message::ToolDef>,
+    oauth_tool_names: Vec<String>,
     blocks: Vec<BlockState>,
     saw_done: bool,
 }
@@ -474,6 +562,7 @@ impl AnthropicMapper {
             snapshot: crate::stream::ProducerSnapshot::default(),
             partial: empty_assistant_message(provider_id),
             strict_tools: std::collections::HashMap::new(),
+            oauth_tool_names: Vec::new(),
             blocks: Vec::new(),
             saw_done: false,
         }
@@ -540,6 +629,12 @@ impl AnthropicMapper {
                         })]
                     }
                     ContentBlockType::ToolUse { id, name } => {
+                        let name = self
+                            .oauth_tool_names
+                            .iter()
+                            .find(|declared| declared.eq_ignore_ascii_case(&name))
+                            .cloned()
+                            .unwrap_or(name);
                         self.blocks.push(BlockState::ToolUse {
                             id: id.clone(),
                             name: name.clone(),
@@ -804,11 +899,8 @@ fn empty_assistant_message(provider_id: &str) -> AssistantMessage {
 // AnthropicProvider
 // ---------------------------------------------------------------------------
 
-/// The `anthropic-beta` tag Anthropic OAuth requires on every request issued
-/// under a Bearer (OAuth) credential. API-key requests do not send it. Gated on
-/// `AuthScheme::Bearer` in `stream_http` — the only Bearer path for Anthropic —
-/// so no extra-headers field or flag is needed. Values are pinned to the
-/// reviewed pi 0.80.6 Anthropic OAuth profile.
+/// Required tags for the pinned Anthropic OAuth protocol. Header-owned bearer
+/// auth and proxy credentials do not select this protocol.
 const ANTHROPIC_OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20";
 
 /// Neutral public text substituted for the raw upstream Anthropic
@@ -955,6 +1047,7 @@ pub struct AnthropicProvider {
     direct_oauth_beta: bool,
     copilot_headers: bool,
     client: Arc<HttpClient>,
+    federation: crate::auth::anthropic_federation::FederationCache,
     /// Typed native options for one direct/native dispatch (task 20.39);
     /// `None` keeps the plain provider path.
     native_options: Option<AnthropicMessagesOptions>,
@@ -998,6 +1091,7 @@ impl AnthropicProvider {
             direct_oauth_beta,
             copilot_headers: false,
             client,
+            federation: Default::default(),
             native_options: None,
         }
     }
@@ -1148,8 +1242,8 @@ impl AnthropicProvider {
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
-        self.build_request_body_variant(request, false)
-            .map(|(body, _, _)| body)
+        self.build_request_body_variant(request, false, false)
+            .map(|compiled| compiled.body)
     }
 
     /// The variant-aware body compiler (task 20.11): the wire body plus the
@@ -1160,10 +1254,8 @@ impl AnthropicProvider {
         &self,
         request: &Request,
         disable_preferred_strict: bool,
-    ) -> Result<
-        (serde_json::Value, bool, Vec<crate::message::ToolDef>),
-        crate::provider::ProviderError,
-    > {
+        oauth: bool,
+    ) -> Result<CompiledAnthropicRequest, crate::provider::ProviderError> {
         let model_id = request
             .model
             .split_once(':')
@@ -1214,7 +1306,9 @@ impl AnthropicProvider {
         )
         .expect("native-or-collapse projection never fails");
         let transcript = transcript.as_ref();
-        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
+        let system_prompt = crate::transcript::get_initial_system_message(transcript.messages())
+            .map(crate::transcript::system_message_text)
+            .unwrap_or_default();
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
         // Native tool changes (task 20.39, pi `nativeToolChanges`): the
         // request-level tool list stays the initial active set plus the
@@ -1242,16 +1336,29 @@ impl AnthropicProvider {
             },
             crate::replay::ReplayProjection::NativeOrCollapse,
         )?;
-        let tool_projector = native_tool_changes.then_some(NativeToolChanges {
+        let request_level_tools = if native_tool_changes {
+            &initial_tools
+        } else {
+            &current_tools
+        };
+        let (mut tools, _, strict_tools) = self.compile_wire_tools(
+            request_level_tools,
+            compat.supports_strict_tools,
+            disable_preferred_strict,
+        )?;
+        let mut tool_projector = NativeToolChanges {
             provider: self,
             supports_strict: compat.supports_strict_tools,
-        });
+            disable_preferred_strict,
+            preferred_strict_names: preferred_strict_names(&strict_tools),
+            strict_tools,
+        };
         let messages = serialize_messages(
             &replay.messages,
             emit_cache,
             &cache_marker,
             crate::replay::supports_images_in_catalog(&self.models, model_id),
-            tool_projector.as_ref(),
+            native_tool_changes.then_some(&mut tool_projector),
         )?;
         let mut body = serde_json::json!({
             "model": model_id,
@@ -1261,7 +1368,21 @@ impl AnthropicProvider {
 
         // System prompt: when caching is active, wrap the bare string as a
         // singled-content-block array so the marker has a place to live.
-        if !system_prompt.is_empty() {
+        if oauth {
+            let mut blocks = vec![serde_json::json!({
+                "type": "text",
+                "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+            })];
+            if !system_prompt.is_empty() {
+                blocks.push(serde_json::json!({"type": "text", "text": system_prompt}));
+            }
+            if emit_cache {
+                for block in &mut blocks {
+                    block["cache_control"] = cache_marker.clone();
+                }
+            }
+            body["system"] = serde_json::Value::Array(blocks);
+        } else if !system_prompt.is_empty() {
             if emit_cache {
                 body["system"] = serde_json::json!([{
                     "type": "text",
@@ -1272,33 +1393,26 @@ impl AnthropicProvider {
                 body["system"] = serde_json::Value::String(system_prompt.clone());
             }
         }
-        if let Some(max_tokens) = request.max_tokens {
-            body["max_tokens"] = serde_json::Value::Number(max_tokens.into());
-        } else {
-            body["max_tokens"] = serde_json::Value::Number(8192.into());
-        }
+        let max_tokens = request
+            .max_tokens
+            .or_else(|| model_caps.map(|model| model.capabilities.max_output_tokens))
+            .ok_or_else(|| {
+                ProviderError::Config(ProviderErrorSummary::attested_static(
+                    "Anthropic requires max_tokens or a complete model output limit",
+                ))
+            })?;
+        body["max_tokens"] = serde_json::Value::Number(max_tokens.into());
+        let native = self.native_options.as_ref();
+        let native_enabled = native.and_then(|options| options.thinking_enabled);
         if compat.supports_temperature
+            && !native_enabled.unwrap_or(request.thinking.enabled)
             && let Some(temp) = request.temperature
         {
             body["temperature"] = serde_json::Number::from_f64(temp)
                 .map(serde_json::Value::Number)
                 .unwrap_or(serde_json::Value::Null);
         }
-        let mut has_preferred_strict = false;
-        let mut strict_tools = Vec::new();
-        let request_level_tools = if native_tool_changes {
-            initial_tools.clone()
-        } else {
-            current_tools.clone()
-        };
         if !request_level_tools.is_empty() {
-            let (mut tools, preferred_strict, dispatched_strict) = self.compile_wire_tools(
-                &request_level_tools,
-                compat.supports_strict_tools,
-                disable_preferred_strict,
-            )?;
-            has_preferred_strict = preferred_strict;
-            strict_tools = dispatched_strict;
             if emit_cache && let Some(last) = tools.last_mut() {
                 last["cache_control"] = cache_marker.clone();
             }
@@ -1328,8 +1442,6 @@ impl AnthropicProvider {
         // neutral request intent. Enabled budgets follow the source
         // `|| 1024` semantics; the enabled display defaults to summarized
         // on both adaptive and numeric thinking.
-        let native = self.native_options.as_ref();
-        let native_enabled = native.and_then(|options| options.thinking_enabled);
         let neutral_enabled = request.thinking.enabled || native_enabled == Some(true);
         let model_thinking = model_caps
             .map(|model| model.capabilities.supports_thinking)
@@ -1391,6 +1503,9 @@ impl AnthropicProvider {
         // non-adaptive thinking that did not opt out; inline-tools only
         // when native tool changes anchor the request tool list.
         let mut betas: Vec<&str> = Vec::new();
+        if oauth {
+            betas.extend(["claude-code-20250219", "oauth-2025-04-20"]);
+        }
         if neutral_enabled
             && !compat.force_adaptive_thinking
             && native.and_then(|options| options.interleaved_thinking) != Some(false)
@@ -1420,7 +1535,25 @@ impl AnthropicProvider {
                 }
             };
         }
-        Ok((body, has_preferred_strict, strict_tools))
+        if oauth {
+            project_oauth_tool_names(&mut body);
+        }
+        let preferred_strict_names = tool_projector
+            .preferred_strict_names
+            .into_iter()
+            .map(|name| {
+                if oauth {
+                    oauth_tool_name(&name).to_owned()
+                } else {
+                    name
+                }
+            })
+            .collect();
+        Ok(CompiledAnthropicRequest {
+            body,
+            preferred_strict_names,
+            strict_tools: tool_projector.strict_tools,
+        })
     }
 
     /// Stream events from a raw SSE response body.
@@ -1457,9 +1590,35 @@ impl AnthropicProvider {
     fn stream_dispatch(
         &self,
         mut request: Request,
-        resolved: crate::auth::ResolvedAuth,
+        mut resolved: crate::auth::ResolvedAuth,
         variant: crate::provider::PayloadVariant,
     ) -> EventStream {
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, id)| id)
+            .unwrap_or(&request.model);
+        let selected_base = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .and_then(|model| model.base_url.as_deref())
+            .unwrap_or(&self.default_base_url);
+        let effective_base =
+            crate::auth::builtin::effective_base_url(&self.provider_id, selected_base, &resolved);
+        if effective_base != selected_base {
+            let mut configured = self.clone();
+            if let Some(model) = configured
+                .models
+                .iter_mut()
+                .find(|model| model.id == model_id)
+            {
+                model.base_url = Some(effective_base);
+            } else {
+                configured.default_base_url = effective_base;
+            }
+            return configured.stream_dispatch(request, resolved, variant);
+        }
         request.callbacks = request.callbacks.ensure_call_scope();
         // Same as `stream` but skips per-call auth resolution: the collection
         // resolved and froze authentication once for the logical call.
@@ -1469,8 +1628,25 @@ impl AnthropicProvider {
         let default_base_url = self.default_base_url.clone();
         let provider_id = self.provider_id.clone();
         let auth_invalid_policy = self.auth_invalid_policy;
-        let direct_oauth_beta = self.direct_oauth_beta;
-        let credential_base_url_enabled = self.copilot_headers;
+        let header_owned = matches!(&resolved.provenance.source,
+            crate::auth::AuthProvenanceSource::Environment { name } if name == "ANTHROPIC_AUTH_TOKEN");
+        let direct_oauth_beta = !header_owned
+            && !self.copilot_headers
+            && self.provider_id != "cloudflare-ai-gateway"
+            && ((matches!(resolved.scheme, AuthScheme::ApiKey)
+                && resolved.secret.expose_secret().contains("sk-ant-oat"))
+                || (self.direct_oauth_beta && matches!(resolved.scheme, AuthScheme::Bearer)));
+        if direct_oauth_beta {
+            resolved.scheme = AuthScheme::Bearer;
+        }
+        let oauth_tool_names = if direct_oauth_beta {
+            crate::transcript::get_current_tools(request.context.messages())
+                .into_iter()
+                .map(|tool| tool.name)
+                .collect()
+        } else {
+            Vec::new()
+        };
         let model_id = request
             .model
             .split_once(':')
@@ -1483,27 +1659,20 @@ impl AnthropicProvider {
             .and_then(|model| model.base_url.clone());
         let disable_preferred_strict =
             variant == crate::provider::PayloadVariant::AnthropicStrictDowngrade;
-        let (body, has_preferred_strict, strict_tools) =
-            match self.build_request_body_variant(&request, disable_preferred_strict) {
-                Ok(compiled) => compiled,
-                Err(error) => {
-                    return Box::pin(stream::once(async move { Err(error) }));
-                }
-            };
-        let preferred_strict_names: Vec<String> = strict_tools
-            .iter()
-            .filter(|tool| {
-                matches!(
-                    tool.constrained_sampling,
-                    Some(
-                        crate::constrained_sampling::ConstrainedSampling::JsonSchema {
-                            strict: crate::constrained_sampling::StrictPreference::Prefer
-                        }
-                    )
-                )
-            })
-            .map(|tool| tool.name.clone())
-            .collect();
+        let CompiledAnthropicRequest {
+            body,
+            preferred_strict_names,
+            strict_tools,
+        } = match self.build_request_body_variant(
+            &request,
+            disable_preferred_strict,
+            direct_oauth_beta,
+        ) {
+            Ok(compiled) => compiled,
+            Err(error) => {
+                return Box::pin(stream::once(async move { Err(error) }));
+            }
+        };
         let cancel = request.cancel.clone();
         let timeout = request.timeout;
         let copilot_headers = if self.copilot_headers {
@@ -1518,12 +1687,32 @@ impl AnthropicProvider {
         } else {
             Ok(Vec::new())
         };
-        let extra_headers = copilot_headers.and_then(|route_headers| {
-            self.headers
-                .merge_request(&route_headers, &request.extra_headers)
+        let extra_headers = copilot_headers.and_then(|mut route_headers| {
+            if direct_oauth_beta {
+                route_headers.extend([
+                    ("accept".into(), "application/json".into()),
+                    (
+                        "anthropic-dangerous-direct-browser-access".into(),
+                        "true".into(),
+                    ),
+                    ("user-agent".into(), "claude-cli/2.1.280".into()),
+                    ("x-app".into(), "cli".into()),
+                ]);
+            }
+            self.headers.merge_model_request(
+                self.models
+                    .iter()
+                    .find(|model| model.id == model_id)
+                    .map(|model| model.headers.as_slice())
+                    .unwrap_or_default(),
+                &route_headers,
+                &request.extra_headers,
+            )
         });
         let callbacks = request.callbacks.clone();
         let http_client = self.client.client().clone();
+        let federation = self.federation.clone();
+        let federation_client = self.client.clone();
         // The downgrade diagnostic rides the rebuilt variant's message from
         // Start through the terminal (V-34: one recorded downgrade).
         let diagnostics_seed =
@@ -1572,29 +1761,71 @@ impl AnthropicProvider {
                         return;
                     }
                 };
-                let has_preferred_strict = has_preferred_strict
-                    && body
-                        .get("tools")
-                        .and_then(serde_json::Value::as_array)
-                        .is_some_and(|tools| {
-                            tools.iter().any(|tool| {
-                                tool.get("strict").and_then(serde_json::Value::as_bool)
-                                    == Some(true)
-                                    && tool
-                                        .get("name")
-                                        .and_then(serde_json::Value::as_str)
-                                        .is_some_and(|name| {
-                                            preferred_strict_names
-                                                .iter()
-                                                .any(|preferred| preferred == name)
-                                        })
-                            })
-                        });
-                let base_url = credential_base_url_enabled
-                    .then(|| resolved.base_url.clone())
+                let request_tools = body
+                    .get("tools")
+                    .and_then(serde_json::Value::as_array)
+                    .into_iter()
+                    .flatten();
+                let inline_tools = body
+                    .get("messages")
+                    .and_then(serde_json::Value::as_array)
+                    .into_iter()
                     .flatten()
-                    .or(model_base_url)
-                    .unwrap_or(default_base_url);
+                    .flat_map(|message| {
+                        message
+                            .get("content")
+                            .and_then(serde_json::Value::as_array)
+                            .into_iter()
+                            .flatten()
+                    })
+                    .filter(|block| block["type"] == "tool_addition")
+                    .filter_map(|block| block.get("tool").and_then(|tool| tool.get("definition")));
+                let has_preferred_strict = !preferred_strict_names.is_empty()
+                    && request_tools.chain(inline_tools).any(|tool| {
+                        tool.get("strict").and_then(serde_json::Value::as_bool) == Some(true)
+                            && tool
+                                .get("name")
+                                .and_then(serde_json::Value::as_str)
+                                .is_some_and(|name| {
+                                    preferred_strict_names
+                                        .iter()
+                                        .any(|preferred| preferred == name)
+                                })
+                    });
+                let base_url = crate::auth::builtin::effective_base_url(
+                    &provider_id,
+                    &model_base_url.unwrap_or(default_base_url),
+                    &resolved,
+                );
+                let federation = if matches!(resolved.scheme, AuthScheme::AnthropicFederation) {
+                    let result = if provider_id == "anthropic" {
+                        federation.bind(&base_url, &resolved, &federation_client)
+                    } else {
+                        Err(ProviderError::Config(
+                            ProviderErrorSummary::attested_static(
+                                "Federation is only supported by the anthropic provider",
+                            ),
+                        ))
+                    };
+                    match result {
+                        Ok(entry) => match entry.token().await {
+                            Ok(token) => {
+                                resolved.secret = token;
+                                Some(entry)
+                            }
+                            Err(error) => {
+                                let _ = tx.send(Err(error)).await;
+                                return;
+                            }
+                        },
+                        Err(error) => {
+                            let _ = tx.send(Err(error)).await;
+                            return;
+                        }
+                    }
+                } else {
+                    None
+                };
                 if let Err(e) = Self::stream_http(
                     http_client,
                     resolved,
@@ -1604,6 +1835,7 @@ impl AnthropicProvider {
                     direct_oauth_beta,
                     has_preferred_strict,
                     strict_tools,
+                    oauth_tool_names,
                     diagnostics_seed,
                     &body,
                     cancel,
@@ -1611,6 +1843,7 @@ impl AnthropicProvider {
                     extra_headers,
                     callbacks,
                     producer_snapshot,
+                    federation,
                     &tx,
                 )
                 .await
@@ -1641,7 +1874,6 @@ impl AnthropicProvider {
 
     /// Real HTTP streaming: POST to Anthropic Messages API and parse SSE from the byte stream.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         client: reqwest::Client,
         resolved: ResolvedAuth,
@@ -1651,6 +1883,7 @@ impl AnthropicProvider {
         direct_oauth_beta: bool,
         has_preferred_strict: bool,
         strict_tools: Vec<crate::message::ToolDef>,
+        oauth_tool_names: Vec<String>,
         diagnostics_seed: Vec<crate::stream::AssistantDiagnostic>,
         body: &serde_json::Value,
         cancel: CancellationToken,
@@ -1658,6 +1891,7 @@ impl AnthropicProvider {
         extra_headers: Vec<(String, String)>,
         callbacks: crate::callbacks::RequestCallbacks,
         snapshot: crate::stream::ProducerSnapshot,
+        federation: Option<Arc<crate::auth::anthropic_federation::FederationEntry>>,
         tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
     ) -> Result<(), ProviderError> {
         let secret = resolved.secret.expose_secret();
@@ -1675,6 +1909,9 @@ impl AnthropicProvider {
             request = request.timeout(d);
         }
         let request = match resolved.scheme {
+            AuthScheme::ApiKey if provider_id == "cloudflare-ai-gateway" => {
+                request.header("cf-aig-authorization", format!("Bearer {secret}"))
+            }
             AuthScheme::ApiKey => request.header("x-api-key", secret),
             // OAuth Bearer credential: the required beta header rides the same
             // arm. API-key construction never enters this arm.
@@ -1682,10 +1919,13 @@ impl AnthropicProvider {
                 .header("authorization", format!("Bearer {secret}"))
                 .header("anthropic-beta", ANTHROPIC_OAUTH_BETA_HEADER),
             AuthScheme::Bearer => request.header("authorization", format!("Bearer {secret}")),
+            AuthScheme::AnthropicFederation => request
+                .header("authorization", format!("Bearer {secret}"))
+                .header("anthropic-beta", "oauth-2025-04-20"),
             AuthScheme::AwsSigV4(_) => {
                 return Err(ProviderError::Config(
                     ProviderErrorSummary::attested_static(
-                        "Anthropic does not accept AWS SigV4 authentication",
+                        "Anthropic cannot dispatch the selected authentication scheme",
                     ),
                 ));
             }
@@ -1712,6 +1952,11 @@ impl AnthropicProvider {
             })
             .collect();
         let status = response.status();
+        if status.as_u16() == 401
+            && let Some(federation) = &federation
+        {
+            federation.invalidate();
+        }
         if !status.is_success() {
             // The source-qualified strict-limit downgrade (task 20.11,
             // V-34): a 400 invalid_request_error whose message carries one
@@ -1756,6 +2001,7 @@ impl AnthropicProvider {
         }
         let mut mapper = AnthropicMapper::new_for_provider(&provider_id);
         mapper.set_strict_tools(strict_tools);
+        mapper.oauth_tool_names = oauth_tool_names;
         mapper.seed_diagnostics(diagnostics_seed);
         // Keep the requested route for continuation even when the service
         // reports a resolved model name for an alias.
@@ -1944,7 +2190,7 @@ fn serialize_messages(
     emit_cache: bool,
     cache_marker: &serde_json::Value,
     supports_images: bool,
-    tool_changes: Option<&NativeToolChanges<'_>>,
+    mut tool_changes: Option<&mut NativeToolChanges<'_>>,
 ) -> Result<serde_json::Value, crate::provider::ProviderError> {
     use crate::message::{AssistantContent, ImageSource, OutputContent};
 
@@ -2080,7 +2326,7 @@ fn serialize_messages(
                 // on the wire; the collapse projection removed them on every
                 // other route, so without the projector this stays
                 // unreachable.
-                let Some(projector) = tool_changes else {
+                let Some(projector) = tool_changes.as_mut() else {
                     unreachable!("system messages are projected out of the body list")
                 };
                 pending_system.push(serde_json::json!({
@@ -2214,11 +2460,14 @@ fn serialize_messages(
 struct NativeToolChanges<'a> {
     provider: &'a AnthropicProvider,
     supports_strict: bool,
+    disable_preferred_strict: bool,
+    preferred_strict_names: Vec<String>,
+    strict_tools: Vec<crate::message::ToolDef>,
 }
 
 impl NativeToolChanges<'_> {
     fn system_blocks(
-        &self,
+        &mut self,
         system: &crate::transcript::SystemMessage,
     ) -> Result<Vec<serde_json::Value>, crate::provider::ProviderError> {
         let mut blocks = Vec::new();
@@ -2231,6 +2480,7 @@ impl NativeToolChanges<'_> {
             .map(|tool| tool.name.as_str())
             .collect();
         for removed in &system.tools_removed {
+            self.strict_tools.retain(|tool| tool.name != removed.name);
             // A new definition under the same name replaces the old one, so
             // no removal is needed (pi `tool_removal` redefinition rule).
             if redefined.contains(removed.name.as_str()) {
@@ -2242,11 +2492,16 @@ impl NativeToolChanges<'_> {
             }));
         }
         if !system.tools_added.is_empty() {
-            let (tools, _, _) = self.provider.compile_wire_tools(
+            let (tools, _, strict_tools) = self.provider.compile_wire_tools(
                 &system.tools_added,
                 self.supports_strict,
-                false,
+                self.disable_preferred_strict,
             )?;
+            self.preferred_strict_names
+                .extend(preferred_strict_names(&strict_tools));
+            self.strict_tools
+                .retain(|tool| !redefined.contains(tool.name.as_str()));
+            self.strict_tools.extend(strict_tools);
             for definition in tools {
                 blocks.push(serde_json::json!({
                     "type": "tool_addition",
@@ -2282,6 +2537,30 @@ fn mark_last_role_text(
 }
 
 impl Provider for AnthropicProvider {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _options: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        validate_complete_anthropic_record(model)
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        let mut configured = self.clone();
+        configured.models = vec![model];
+        configured.native_options = Some(AnthropicMessagesOptions::from_simple(&options));
+
+        configured.stream_resource_attempt(request, auth, attempt, resources)
+    }
+
     fn stream_prepared(
         &self,
         request: Request,
@@ -2370,6 +2649,17 @@ fn validate_complete_anthropic_record(
                 "anthropic-messages adapters require a valid complete Chat model record",
             ),
         ));
+    }
+    if let Some(base) = model.base_url.as_deref() {
+        let valid = url::Url::parse(base)
+            .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some());
+        if !valid {
+            return Err(ProviderError::Config(
+                ProviderErrorSummary::attested_static(
+                    "The selected model requires an absolute HTTP or HTTPS API base URL",
+                ),
+            ));
+        }
     }
     Ok(())
 }

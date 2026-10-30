@@ -1392,7 +1392,8 @@ mod google_40 {
     }
 
     fn thinking_config_of(body: &serde_json::Value) -> &serde_json::Value {
-        body.get("thinkingConfig")
+        body["generationConfig"]
+            .get("thinkingConfig")
             .expect("thinkingConfig is present")
     }
 
@@ -1548,7 +1549,7 @@ mod google_40 {
             &plain_request_40("gemini-2.5-pro", ThinkingConfig::default()),
         );
         assert!(
-            body.get("thinkingConfig").is_none(),
+            body["generationConfig"].get("thinkingConfig").is_none(),
             "native omission leaves the wire without thinkingConfig: {body}"
         );
     }
@@ -2452,10 +2453,10 @@ mod google_40 {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(body_partial_json(serde_json::json!({
-                "thinkingConfig": {
+                "generationConfig": { "thinkingConfig": {
                     "includeThoughts": true,
                     "thinkingBudget": 2048,
-                }
+                } }
             })))
             .and(query_param("alt", "sse"))
             .respond_with(
@@ -2618,6 +2619,154 @@ mod google_40 {
                 .any(|(name, _)| *name == "payload_probe_40"),
             "producer telemetry flows to the frozen carrier: {:?}",
             state.spans
+        );
+    }
+
+    #[tokio::test]
+    async fn node5_google_explicit_model_base_is_not_given_an_extra_version() {
+        for suffix in ["", "/proxy/custom", "/v1", "/v1beta/"] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_body_string("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}\n\n").insert_header("content-type","text/event-stream")).expect(1).mount(&server).await;
+            let mut model = model_40("gemini-3-pro");
+            model.base_url = Some(format!("{}{suffix}", server.uri()));
+            let provider = std::sync::Arc::new(
+                GeminiProvider::new(Some(format!("{}/factory", server.uri())))
+                    .with_models(vec![model.clone()]),
+            );
+            let api = GoogleGenerativeAiChatApi::new(provider, model.clone()).unwrap();
+            let mut models = opi_ai::models::Models::new();
+            let handle = models
+                .register_chat_api(
+                    std::sync::Arc::new(api),
+                    std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                        opi_ai::auth::AuthScheme::ApiKey,
+                        secrecy::SecretString::from("fixture"),
+                    )),
+                    opi_ai::AuthProvenanceSource::Static,
+                )
+                .unwrap();
+            models
+                .complete(
+                    opi_ai::models::ChatModelRecord::new("gemini", model),
+                    plain_request_40("gemini-3-pro", Default::default()),
+                    handle.options(native_40(None, None)),
+                )
+                .await
+                .unwrap();
+            let sent = server.received_requests().await.unwrap();
+            assert_eq!(
+                sent[0].url.path(),
+                format!(
+                    "{}/models/gemini-3-pro:streamGenerateContent",
+                    suffix.trim_end_matches('/')
+                )
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn node5_google_direct_host_constructor_keeps_default_version() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).and(wiremock::matchers::path("/v1beta/models/gemini-2.5-flash:streamGenerateContent")).respond_with(ResponseTemplate::new(200).set_body_string("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}]}\n\n").insert_header("content-type","text/event-stream")).expect(1).mount(&server).await;
+        let events: Vec<_> = GeminiProvider::new(Some(server.uri()))
+            .stream_prepared(gemini_http_request(), opi_ai::test_support::resolved_auth())
+            .collect()
+            .await;
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, Ok(AssistantStreamEvent::Done { .. })))
+        );
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn node5_google_tool_signature_capture_reload_and_real_replay() {
+        let server = MockServer::start().await;
+        let raw = serde_json::json!({"candidates":[{"content":{"parts":[{"functionCall":{"id":"call-1","name":"lookup","args":{}},"thoughtSignature":"c2ln"}]},"finishReason":"STOP"}]});
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(format!("data: {raw}\n\n"))
+                    .insert_header("content-type", "text/event-stream"),
+            )
+            .expect(2)
+            .mount(&server)
+            .await;
+        let model = model_40("gemini-3-pro");
+        let api = GoogleGenerativeAiChatApi::new(
+            std::sync::Arc::new(
+                GeminiProvider::new(Some(server.uri())).with_models(vec![model.clone()]),
+            ),
+            model.clone(),
+        )
+        .unwrap();
+        let mut models = opi_ai::models::Models::new();
+        let handle = models
+            .register_chat_api(
+                std::sync::Arc::new(api),
+                std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                    opi_ai::auth::AuthScheme::ApiKey,
+                    secrecy::SecretString::from("fixture"),
+                )),
+                opi_ai::AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        let first = models
+            .complete(
+                opi_ai::models::ChatModelRecord::new("gemini", model.clone()),
+                plain_request_40("gemini-3-pro", Default::default()),
+                handle.options(native_40(None, None)),
+            )
+            .await
+            .unwrap();
+        let AssistantContent::ToolCall { tool_call } = &first.content[0] else {
+            panic!("captured tool")
+        };
+        assert_eq!(tool_call.signature.as_deref(), Some("c2ln"));
+        let reload = serde_json::from_slice(&serde_json::to_vec(&first).unwrap()).unwrap();
+        let mut request = plain_request_40("gemini-3-pro", Default::default());
+        request.context = opi_ai::transcript::normalize_context(Context {
+            system_prompt: None,
+            tools: vec![],
+            messages: vec![
+                Message::User(UserMessage {
+                    content: vec![InputContent::Text { text: "go".into() }],
+                    timestamp_ms: 0,
+                }),
+                Message::Assistant(reload),
+                Message::ToolResult(ToolResultMessage {
+                    tool_call_id: "call-1".into(),
+                    tool_name: "lookup".into(),
+                    content: vec![],
+                    details: None,
+                    is_error: false,
+                    not_executed: None,
+                    truncated: false,
+                    timestamp_ms: 0,
+                }),
+            ],
+        })
+        .unwrap();
+        models
+            .complete_simple(
+                opi_ai::models::ChatModelRecord::new("gemini", model),
+                request,
+                Default::default(),
+            )
+            .await
+            .unwrap();
+        let sent = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&sent[1].body).unwrap();
+        let parts = body["contents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|content| content["parts"].as_array().unwrap());
+        assert!(
+            parts.into_iter().any(
+                |part| part.get("functionCall").is_some() && part["thoughtSignature"] == "c2ln"
+            )
         );
     }
 }

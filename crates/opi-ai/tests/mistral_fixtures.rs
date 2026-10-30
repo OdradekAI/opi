@@ -2011,6 +2011,173 @@ mod mistral_43 {
     }
 
     #[tokio::test]
+    async fn node5_models_mistral_simple_tool_choice_reaches_wire() {
+        for typed in [false, true] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/v1/chat/completions"))
+                .respond_with(sse_ok_43())
+                .expect(2)
+                .mount(&server)
+                .await;
+            let model = model_43(SMALL_43, false, false).with_base_url(server.uri());
+            let provider = MistralConversationsProvider::new(Some(server.uri()))
+                .with_models(vec![model.clone()]);
+            let auth = std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::AuthScheme::Bearer,
+                "fixture-key".into(),
+            ));
+            let mut models = opi_ai::Models::new();
+            if typed {
+                models
+                    .register_chat_api(
+                        std::sync::Arc::new(
+                            MistralConversationsChatApi::new(provider, model.clone()).unwrap(),
+                        ),
+                        auth,
+                        opi_ai::AuthProvenanceSource::Static,
+                    )
+                    .unwrap();
+            } else {
+                models
+                    .register_route(
+                        Box::new(provider),
+                        auth,
+                        opi_ai::AuthProvenanceSource::Static,
+                        Default::default(),
+                    )
+                    .unwrap();
+            }
+            for choice in [
+                opi_ai::SimpleToolChoice::Auto,
+                opi_ai::SimpleToolChoice::None,
+            ] {
+                models
+                    .complete_simple(
+                        opi_ai::ChatModelRecord::new("mistral", model.clone()),
+                        req_43("go"),
+                        opi_ai::SimpleOptions {
+                            tool_choice: Some(choice),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap();
+            }
+            let sent = server.received_requests().await.unwrap();
+            for (request, expected) in sent.iter().zip(["auto", "none"]) {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                assert_eq!(body["tool_choice"], expected);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn node5_mistral_producer_capture_reload_preserves_content_and_native_effort() {
+        let server = MockServer::start().await;
+        let sse = concat!(
+            "data: {\"id\":\"capture-1\",\"choices\":[{\"delta\":{\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"text\":\"consider\"}]},{\"type\":\"text\",\"text\":\"answer\"}]}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4,\"total_tokens\":7}}\n\n",
+            "data: [DONE]\n\n",
+        );
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(sse)
+                    .insert_header("content-type", "text/event-stream"),
+            )
+            .expect(2)
+            .mount(&server)
+            .await;
+        let model = model_43(SMALL_43, true, false).with_base_url(server.uri());
+        let api = MistralConversationsChatApi::new(
+            MistralConversationsProvider::new(Some(server.uri())),
+            model.clone(),
+        )
+        .unwrap();
+        let mut models = opi_ai::Models::new();
+        let handle = models
+            .register_chat_api(
+                std::sync::Arc::new(api),
+                std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                    opi_ai::AuthScheme::Bearer,
+                    "fixture-key".into(),
+                )),
+                opi_ai::AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        let options = || {
+            handle.options(MistralOptions::native(
+                None,
+                Some(MistralReasoningEffort::Medium),
+                None,
+            ))
+        };
+        let first = models
+            .complete(
+                opi_ai::ChatModelRecord::new("mistral", model.clone()),
+                req_43("first"),
+                options(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.provider, "mistral");
+        assert_eq!(first.wire, Some(WireApi::MistralConversations));
+        assert_eq!(first.response_id.as_deref(), Some("capture-1"));
+        // The pinned Mistral response protocol does not supply an effort stamp.
+        assert!(first.provider_thinking_level.is_none());
+        let reload: opi_ai::message::AssistantMessage =
+            serde_json::from_slice(&serde_json::to_vec(&first).unwrap()).unwrap();
+        assert_eq!(
+            serde_json::to_value(&reload).unwrap(),
+            serde_json::to_value(&first).unwrap()
+        );
+        let mut request = req_43("second");
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            tools: vec![],
+            messages: vec![
+                Message::Assistant(reload),
+                Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "continue".into(),
+                    }],
+                    timestamp_ms: 0,
+                }),
+            ],
+        })
+        .unwrap();
+        models
+            .complete(
+                opi_ai::ChatModelRecord::new("mistral", model),
+                request,
+                options(),
+            )
+            .await
+            .unwrap();
+        let sent = server.received_requests().await.unwrap();
+        for request in &sent {
+            let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+            assert_eq!(body["reasoning_effort"], "medium");
+        }
+        let replay: serde_json::Value = serde_json::from_slice(&sent[1].body).unwrap();
+        let assistant = replay["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|message| message["role"] == "assistant")
+            .unwrap();
+        assert_eq!(
+            assistant["content"],
+            serde_json::json!([
+                {"type":"thinking","thinking":[{"type":"text","text":"consider"}]},
+                {"type":"text","text":"answer"},
+            ])
+        );
+    }
+
+    #[tokio::test]
     async fn producer_runs_under_the_frozen_telemetry_context() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use tracing_core::span::{Attributes, Id, Record};
@@ -2092,5 +2259,192 @@ mod mistral_43 {
             "mistral producer telemetry flows to the frozen carrier: {:?}",
             state.spans
         );
+    }
+
+    async fn node5_mistral_complete(
+        base: &str,
+        request: Request,
+    ) -> Result<opi_ai::message::AssistantMessage, opi_ai::stream::CallFailure> {
+        let model = model_43(SMALL_43, false, false);
+        let api = MistralConversationsChatApi::new(
+            MistralConversationsProvider::new(Some(base.into())).with_models(vec![model.clone()]),
+            model.clone(),
+        )
+        .unwrap();
+        let mut models = opi_ai::models::Models::new();
+        let handle = models
+            .register_chat_api(
+                std::sync::Arc::new(api),
+                std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                    opi_ai::auth::AuthScheme::Bearer,
+                    SecretString::from("fixture"),
+                )),
+                opi_ai::AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        models
+            .complete(
+                opi_ai::models::ChatModelRecord::new("mistral", model),
+                request,
+                handle.options(MistralOptions::native(None, None, None)),
+            )
+            .await
+    }
+
+    #[tokio::test]
+    async fn node5_mistral_parser_failure_keeps_live_partial_and_usage() {
+        for delta in [
+            serde_json::json!({"content":"visible"}),
+            serde_json::json!({"content":[{"type":"thinking","thinking":[{"text":"reason"}]}]}),
+            serde_json::json!({"tool_calls":[{"index":0,"id":"abcdefghi","function":{"name":"lookup","arguments":"{\"q\":\"live\"}"}}]}),
+            serde_json::json!({}),
+        ] {
+            let server = MockServer::start().await;
+            let raw = serde_json::json!({"id":"partial-id","choices":[{"delta":delta}],"usage":{"prompt_tokens":11,"completion_tokens":3}});
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(format!("data: {raw}\n\ndata: {{broken\n\n"))
+                        .insert_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let failure = node5_mistral_complete(&server.uri(), req_43("probe"))
+                .await
+                .expect_err("malformed stream");
+            assert_eq!(failure.message().usage.input_tokens, 11);
+            assert_eq!(failure.message().usage.output_tokens, 3);
+            assert_eq!(failure.message().response_id.as_deref(), Some("partial-id"));
+            if let Some(content) = delta.get("content") {
+                if content.is_string() {
+                    assert!(
+                        matches!(&failure.message().content[0],AssistantContent::Text{text,..} if text=="visible")
+                    );
+                } else {
+                    assert!(
+                        matches!(&failure.message().content[0],AssistantContent::Thinking{thinking,..} if thinking=="reason")
+                    );
+                }
+            }
+            if delta.get("tool_calls").is_some() {
+                assert!(
+                    matches!(&failure.message().content[0],AssistantContent::ToolCall{tool_call} if tool_call.arguments.contains("live"))
+                );
+            }
+            server.verify().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn node5_mistral_direct_delta_contains_current_text() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(sse_ok_43())
+            .mount(&server)
+            .await;
+        let provider = MistralConversationsProvider::new(Some(server.uri()))
+            .with_models(vec![model_43(SMALL_43, false, false)]);
+        let events: Vec<_> = provider
+            .stream_prepared(
+                req_43("probe"),
+                opi_ai::test_support::resolved_bearer_auth(),
+            )
+            .collect()
+            .await;
+        assert!(events.iter().any(|event|matches!(event,Ok(AssistantStreamEvent::TextDelta{delta,partial,..}) if delta=="Hi"&&matches!(&partial.content[0],AssistantContent::Text{text,..} if text=="Hi"))));
+    }
+
+    #[tokio::test]
+    async fn node5_mistral_raw_and_header_callbacks_reach_real_transport() {
+        for callback_failure in [false, true] {
+            let server = MockServer::start().await;
+            let first = serde_json::json!({"wire_only":"first","choices":[{"delta":{"content":"visible"}}]});
+            let last = serde_json::json!({"wire_only":"last","choices":[{"delta":{},"finish_reason":"stop"}]});
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(format!(
+                            "data: {first}\n\ndata: {last}\n\ndata: [DONE]\n\n"
+                        ))
+                        .insert_header("content-type", "text/event-stream"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let observed = seen.clone();
+            let mut request = req_43("probe");
+            request.callbacks = opi_ai::callbacks::RequestCallbacks::new()
+                .with_async_on_raw(move |value| {
+                    let observed = observed.clone();
+                    async move {
+                        observed.lock().unwrap().push(value.clone());
+                        if callback_failure && value["wire_only"] == "last" {
+                            Err(opi_ai::callbacks::CallbackError::new("fixture raw failure"))
+                        } else {
+                            Ok(())
+                        }
+                    }
+                })
+                .with_async_header_transform(|mut headers| async move {
+                    headers.push(("x-fixture-transform".into(), "applied".into()));
+                    Ok(headers)
+                });
+            let result = node5_mistral_complete(&server.uri(), request).await;
+            assert_eq!(seen.lock().unwrap().as_slice(), &[first, last]);
+            let sent = server.received_requests().await.unwrap();
+            assert_eq!(
+                sent[0].headers.get("x-fixture-transform").unwrap(),
+                "applied"
+            );
+            if callback_failure {
+                let failure = result.expect_err("callback failure");
+                assert!(
+                    matches!(&failure.message().content[0],AssistantContent::Text{text,..} if text=="visible")
+                );
+            } else {
+                assert!(result.is_ok());
+            }
+            server.verify().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn node5_mistral_cache_fields_follow_source_order() {
+        for (extra, expected) in [
+            (serde_json::json!({"num_cached_tokens":30}), 30),
+            (
+                serde_json::json!({"numCachedTokens":40,"num_cached_tokens":30}),
+                40,
+            ),
+            (
+                serde_json::json!({"promptTokensDetails":{"cachedTokens":0},"num_cached_tokens":30}),
+                0,
+            ),
+            (
+                serde_json::json!({"prompt_tokens_details":{"cached_tokens":20},"num_cached_tokens":30}),
+                20,
+            ),
+        ] {
+            let server = MockServer::start().await;
+            let mut usage = extra;
+            usage["prompt_tokens"] = 100.into();
+            usage["completion_tokens"] = 20.into();
+            let raw = serde_json::json!({"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":usage});
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_string(format!("data: {raw}\n\ndata: [DONE]\n\n"))
+                        .insert_header("content-type", "text/event-stream"),
+                )
+                .mount(&server)
+                .await;
+            let message = node5_mistral_complete(&server.uri(), req_43("probe"))
+                .await
+                .unwrap();
+            assert_eq!(message.usage.cache_read_tokens, expected);
+            assert_eq!(message.usage.input_tokens, 100 - expected);
+        }
     }
 }

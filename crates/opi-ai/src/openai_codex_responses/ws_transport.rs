@@ -272,7 +272,7 @@ pub(super) fn bearer_parts(resolved: &ResolvedAuth) -> Result<(String, String), 
     let secret = resolved.secret.expose_secret();
     let bearer = match resolved.scheme {
         AuthScheme::Bearer => format!("Bearer {secret}"),
-        AuthScheme::ApiKey | AuthScheme::AwsSigV4(_) => {
+        AuthScheme::ApiKey | AuthScheme::AwsSigV4(_) | AuthScheme::AnthropicFederation => {
             return Err(ProviderError::Config(
                 ProviderErrorSummary::attested_static(
                     "OpenAI Codex Responses accepts only Bearer authentication",
@@ -473,6 +473,7 @@ pub(super) async fn drive(
     base_url: &str,
     resolved: &ResolvedAuth,
     full_body: serde_json::Value,
+    requested_service_tier: Option<crate::stream::ServiceTier>,
     extra_headers: Vec<(String, String)>,
     wire_facts: Option<ResponsesWireTools>,
     route: ReplayRoute,
@@ -521,6 +522,7 @@ pub(super) async fn drive(
             &bearer,
             base_url,
             &full_body,
+            requested_service_tier,
             &mut continuation,
             &extra_headers,
             wire_facts.as_ref(),
@@ -727,6 +729,7 @@ async fn attempt(
     bearer: &str,
     base_url: &str,
     full_body: &serde_json::Value,
+    requested_service_tier: Option<crate::stream::ServiceTier>,
     continuation: &mut Option<WsContinuation>,
     extra_headers: &[(String, String)],
     wire_facts: Option<&ResponsesWireTools>,
@@ -797,7 +800,8 @@ async fn attempt(
         PROVIDER_ID,
         crate::model_info::WireApi::OpenAiCodexResponses,
         &route.model,
-    );
+    )
+    .with_requested_service_tier(requested_service_tier);
     if let Some(wire) = wire_facts {
         mapper.set_grammar_tools(wire.grammar_input_properties.clone());
         mapper.set_strict_tools(wire.strict_tools.clone());

@@ -469,7 +469,10 @@ async fn listing_uses_selected_credential_kind_and_source_label() {
         dir.path().to_path_buf(),
     );
     store
-        .write("anthropic", &Credential::ApiKey(secret("stored-api-key")))
+        .write(
+            "anthropic",
+            &Credential::ApiKey(secret("stored-api-key").into()),
+        )
         .await
         .unwrap();
     store
@@ -715,7 +718,7 @@ async fn stored_only_credential_lists_models_through_async_orchestration() {
     store
         .write(
             "anthropic",
-            &Credential::ApiKey(SecretString::new(canary.to_owned().into_boxed_str())),
+            &Credential::ApiKey(SecretString::new(canary.to_owned().into_boxed_str()).into()),
         )
         .await
         .expect("seed fake store");

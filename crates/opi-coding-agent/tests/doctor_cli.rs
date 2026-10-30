@@ -665,7 +665,10 @@ async fn provider_scope_uses_stored_kind_for_precedence_and_wrong_kind_rejection
         dir.path().to_path_buf(),
     );
     store
-        .write("anthropic", &Credential::ApiKey(secret("stored-api-key")))
+        .write(
+            "anthropic",
+            &Credential::ApiKey(secret("stored-api-key").into()),
+        )
         .await
         .unwrap();
     let anthropic_env = |name: &str| {
@@ -1491,9 +1494,9 @@ async fn doctor_store_probe_uses_async_command_orchestration() {
         (
             "anthropic:present",
             FakeKeyringBackend::new(),
-            Some(Credential::ApiKey(SecretString::new(
-                canary.to_owned().into_boxed_str(),
-            ))),
+            Some(Credential::ApiKey(
+                SecretString::new(canary.to_owned().into_boxed_str()).into(),
+            )),
         ),
         ("openai:absent", FakeKeyringBackend::new(), None),
         (

@@ -19,8 +19,10 @@
 //! changes may occur between minor versions without a major version bump.
 
 pub mod http_source;
+pub mod openrouter;
+pub use openrouter::personalize_openrouter_catalog;
 pub mod store;
-mod wire;
+pub(crate) mod wire;
 
 pub use http_source::{CatalogDocumentError, DynamicCatalogSource, HttpCatalogSource};
 pub use store::{
@@ -80,6 +82,62 @@ impl fmt::Display for CatalogOperation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
+}
+
+/// One owned executable record in a persisted provider catalog.
+/// The operation and bare id together identify an entry; an image and a chat
+/// model may therefore have the same bare id without replacing each other.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CatalogRecord {
+    /// Complete chat metadata, boxed to keep mixed catalogs compact.
+    Chat(Box<crate::ModelInfo>),
+    /// Complete image-generation metadata.
+    Image(crate::images::ImageModelRecord),
+    /// Complete classifier metadata.
+    Classifier(crate::classifier::ClassifierModelRecord),
+}
+
+impl CatalogRecord {
+    /// The entry's operation identity.
+    pub fn operation(&self) -> CatalogOperation {
+        match self {
+            Self::Chat(_) => CatalogOperation::Chat,
+            Self::Image(_) => CatalogOperation::Image,
+            Self::Classifier(_) => CatalogOperation::Classifier,
+        }
+    }
+
+    /// The bare model id, without a provider or operation prefix.
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Chat(model) => &model.id,
+            Self::Image(model) => &model.id,
+            Self::Classifier(model) => &model.id,
+        }
+    }
+}
+
+impl From<crate::ModelInfo> for CatalogRecord {
+    fn from(model: crate::ModelInfo) -> Self {
+        Self::Chat(Box::new(model))
+    }
+}
+
+/// One provider's complete dynamic catalog and source freshness facts.
+/// Timestamps are Unix milliseconds, matching the source's `Date.now()` and
+/// `Date.parse()`. Missing values stay missing; the SDK does not invent a
+/// refresh schedule or interpret the opaque ETag.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ModelsStoreEntry {
+    /// Complete operation-qualified models, in source order. Empty is an
+    /// authoritative publication, distinct from no provider entry.
+    pub models: Vec<CatalogRecord>,
+    /// Source modification time in Unix milliseconds, when known.
+    pub last_modified: Option<i64>,
+    /// Last source check in Unix milliseconds, when supplied by the caller.
+    pub checked_at: Option<i64>,
+    /// Opaque source validator, including any quotes or weak prefix.
+    pub etag: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -283,17 +341,39 @@ pub struct CatalogModel {
     pub reasoning: bool,
     /// Declared input modalities (always non-empty).
     pub input: Vec<CatalogInputModality>,
-    /// Per-million-token cost metadata.
-    pub cost: CatalogCost,
+    /// Known per-million-token cost metadata. Missing or placeholder prices
+    /// remain unknown; an explicit zero is a known free rate.
+    pub cost: Option<CatalogCost>,
     /// Context window in tokens (chat and classifier entries).
     pub context_window: Option<u64>,
     /// Maximum output tokens (chat entries).
     pub max_tokens: Option<u64>,
-    /// The complete artifact entry, unmodified.
+    /// The complete entry. Bundled records retain authentic bytes; explicit
+    /// personalization returns separate owned records with effective metadata.
     pub raw: Value,
 }
 
 impl CatalogModel {
+    /// Project this owned chat entry into the complete executable model record.
+    /// Image/classifier entries are rejected instead of being treated as chat.
+    pub fn to_chat_model_info(&self) -> Result<crate::ModelInfo, CatalogError> {
+        if self.operation != CatalogOperation::Chat {
+            return Err(CatalogError::InvalidEntry {
+                provider: self.provider.clone(),
+                identity: self.identity(),
+                detail: "expected a chat model".into(),
+            });
+        }
+        let mut info =
+            wire::decode_model_entry(&self.raw).map_err(|detail| CatalogError::InvalidEntry {
+                provider: self.provider.clone(),
+                identity: self.identity(),
+                detail,
+            })?;
+        info.capabilities.supports_streaming = true;
+        Ok(info)
+    }
+
     /// The entry's `type:id` catalog identity.
     pub fn identity(&self) -> String {
         format!("{}:{}", self.operation.as_str(), self.id)
@@ -733,6 +813,10 @@ impl CatalogModel {
             cache_read: cost_field("cacheRead")?,
             cache_write: cost_field("cacheWrite")?,
         };
+        let cost = [cost.input, cost.output, cost.cache_read, cost.cache_write]
+            .into_iter()
+            .all(|rate| rate >= 0.0)
+            .then_some(cost);
 
         let positive_u64 = |field: &str| -> Result<u64, CatalogError> {
             object

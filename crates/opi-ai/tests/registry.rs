@@ -2,6 +2,9 @@
 //!
 //! DoD: "resolves anthropic:model and capabilities"
 
+#[path = "support/catalog_store.rs"]
+mod catalog_fixture;
+
 use opi_ai::WireApi;
 use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, Request};
@@ -362,8 +365,8 @@ use opi_ai::catalog::{HttpCatalogSource, ModelsStore, StoreCommitError};
 use opi_ai::stream::Pricing;
 use opi_ai::{ModelPricing, PricingTier, ThinkingLevel, ThinkingLevelMapping};
 
-fn store_catalogs() -> HashMap<String, Vec<ModelInfo>> {
-    HashMap::from([(
+fn store_catalogs() -> HashMap<String, opi_ai::catalog::ModelsStoreEntry> {
+    catalog_fixture::catalogs(HashMap::from([(
         "prov-a".to_owned(),
         vec![ModelInfo::new(
             "m1",
@@ -371,7 +374,7 @@ fn store_catalogs() -> HashMap<String, Vec<ModelInfo>> {
             WireApi::OpenAiCompletions,
             ModelCapabilities::new(128_000, 8_192),
         )],
-    )])
+    )]))
 }
 
 #[tokio::test]
@@ -391,7 +394,12 @@ async fn models_store_commit_publishes_and_reopens_last_known() {
     assert_eq!(reopened.revision(), 1);
     let snapshot = reopened.snapshot();
     assert_eq!(snapshot.revision, 1);
-    let restored = snapshot.catalogs.get("prov-a").unwrap();
+    let restored_entry = snapshot.catalogs.get("prov-a").unwrap();
+    let restored = restored_entry
+        .models
+        .iter()
+        .map(catalog_fixture::chat)
+        .collect::<Vec<_>>();
     assert_eq!(restored.len(), 1);
     assert_eq!(restored[0].id, "m1");
     assert_eq!(restored[0].display_name, "Model One");
@@ -451,7 +459,10 @@ async fn models_store_rejects_superseded_late_commit_and_keeps_revision() {
             ModelCapabilities::new(1_000, 100),
         )],
     )]);
-    let err = guard_a.commit(late).await.unwrap_err();
+    let err = guard_a
+        .commit(catalog_fixture::catalogs(late))
+        .await
+        .unwrap_err();
     match err {
         StoreCommitError::Superseded {
             guard_revision: 0,
@@ -468,7 +479,7 @@ async fn models_store_rejects_superseded_late_commit_and_keeps_revision() {
     // A guard created after the new revision is current and commits legally.
     store
         .begin()
-        .commit(HashMap::from([(
+        .commit(catalog_fixture::catalogs(HashMap::from([(
             "prov-a".to_owned(),
             vec![ModelInfo::new(
                 "m2",
@@ -476,7 +487,7 @@ async fn models_store_rejects_superseded_late_commit_and_keeps_revision() {
                 WireApi::OpenAiCompletions,
                 ModelCapabilities::new(1_000, 100),
             )],
-        )]))
+        )])))
         .await
         .unwrap();
     assert_eq!(store.revision(), 2);
@@ -561,11 +572,14 @@ async fn store_codec_round_trips_full_model_fidelity() {
     let store = ModelsStore::open(dir.path().join("s.json")).unwrap();
     store
         .begin()
-        .commit(HashMap::from([("full".to_owned(), vec![priced.clone()])]))
+        .commit(catalog_fixture::catalogs(HashMap::from([(
+            "full".to_owned(),
+            vec![priced.clone()],
+        )])))
         .await
         .unwrap();
     let restored = ModelsStore::open(store.path()).unwrap();
-    let back = restored.snapshot().catalogs["full"][0].clone();
+    let back = catalog_fixture::chat(&restored.snapshot().catalogs["full"].models[0]).clone();
 
     assert_eq!(back.id, "f1");
     assert_eq!(back.display_name, "Full Fidelity");
@@ -602,12 +616,15 @@ async fn store_codec_preserves_anthropic_strict_tool_support() {
     let store = ModelsStore::open(dir.path().join("models.json")).unwrap();
     store
         .begin()
-        .commit(HashMap::from([("anthropic".into(), vec![model.clone()])]))
+        .commit(catalog_fixture::catalogs(HashMap::from([(
+            "anthropic".into(),
+            vec![model.clone()],
+        )])))
         .await
         .unwrap();
     let restored = ModelsStore::open(store.path()).unwrap();
     assert_eq!(
-        restored.snapshot().catalogs["anthropic"][0].compat,
+        catalog_fixture::chat(&restored.snapshot().catalogs["anthropic"].models[0]).compat,
         model.compat
     );
 }
@@ -637,7 +654,7 @@ fn v1_entry_without_extension_decodes_with_defaults() {
         }
     });
     let catalogs = HttpCatalogSource::decode_document(&document).unwrap();
-    let model = &catalogs["plain"][0];
+    let model = catalog_fixture::chat(&catalogs["plain"].models[0]);
     assert_eq!(model.id, "p1");
     assert_eq!(model.display_name, "Plain One");
     assert_eq!(model.wire_api, WireApi::AnthropicMessages);

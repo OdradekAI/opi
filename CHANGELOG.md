@@ -2,6 +2,27 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): `Credential::ApiKey` now owns `ApiKeyCredential`, with an
+  optional key and redacted provider-scoped environment. `ResolvedAuth` adds
+  its owned `env` snapshot; `AuthScheme::AnthropicFederation` identifies deferred
+  workload authentication. API-key protected envelopes write version 2 and
+  still read strict version 1; OAuth envelopes retain version 1. Model stores
+  and dynamic sources now exchange `ModelsStoreEntry` with operation-qualified
+  chat/image/classifier records and optional Unix-millisecond freshness/ETag
+  metadata. Nonchat records retain model headers and input limits; image records
+  retain input modalities and pricing tiers without changing base-rate billing.
+  `ClassifierModelRecord::cost` is optional. Source pricing metadata can retain
+  finite negative placeholders; only known selected rates produce billed cost.
+
+- `opi-ai` (0.x): `calculate_cost_tiered` now takes the selected `WireApi`
+  and returns `Option<CostBreakdown>`; unknown usage or prices stay unknown.
+  `Usage` adds optional `effective_service_tier`, separate from the observed
+  response tier; `ServiceTier` includes auto, scale and an unknown category.
+  `ImageModelRecord::cost` and `CatalogModel::cost` are optional, distinguishing
+  unknown rates from explicitly free rates. `ModelInfo` retains model headers
+  and input-limit metadata; `OpenAiResponsesCompat` adds `supports_grammar`.
+  Existing struct-literal callers must supply the new fields.
+
 - `opi-ai` (0.x): `StopReason::Deferred` is a new variant and
   `AssistantMessage` gains a `deferred: Option<Box<DeferredHandle>>` field
   (task 20.50, DEL-11); exhaustive `StopReason` matches gain an arm and
@@ -508,6 +529,44 @@
   typed stream-failure error instead of `AgentError::ProviderProtocol`.
 
 ### Fixed
+
+- `opi-ai`: stored scoped configuration now reaches Cloudflare account/gateway,
+  Azure routing/deployment, Vertex ADC and AWS native sources without changing
+  accounts. Anthropic workload federation performs the selected endpoint's
+  token exchange lazily, shares source-qualified refresh state without restarting
+  old token expiry after a cancelled wait, and invalidates on 401 without
+  implicitly resending the generation. Google thinking config
+  now uses REST `generationConfig`; Vertex custom model API bases follow the
+  pinned collection/version rules. Model-store restoration preserves all three
+  operations, freshness metadata and authoritative empty catalogs.
+
+- `opi-ai`: complete model records and native effort reach the selected
+  adapters. Image/classifier calls own their registrations before first poll;
+  provider-qualified registrations no longer replace another provider's auth.
+  Nonstream callbacks use independent call payloads and cannot trigger an
+  acquisition retry after response handoff. Malformed usage retains known
+  counts without claiming a reliable zero or total. Google/Vertex capture and
+  replay retain canonical identities and part-level tool signatures; Pi
+  Messages preserves its context envelope, authoritative tool arguments, simple
+  passthrough options and partial failures; Mistral retains partial output and source cache precedence.
+- `opi-ai`: builtin routes preserve source-qualified stored-key/OAuth selection,
+  lazy Azure/Vertex/AWS endpoint resolution and all operation records. Azure
+  freezes its endpoint and deployment before acquisition attempts. Native
+  calls reject invalid model input before authentication; cancelled image and
+  classifier calls release pending authentication waits. Model
+  header overrides retain removal semantics and protected authentication.
+  Explicit Chat/Responses model API bases preserve their version path without
+  appending it twice; constructor-only root endpoints retain their existing path.
+  Shared catalog-store revisions observe explicit deletion and source
+  invalidation before refresh; persisted tombstones fence late publications.
+  `catalog::personalize_openrouter_catalog` explicitly returns account-local
+  chat limits/prices while preserving nonchat records, with no automatic
+  factory fetch or publication.
+- `opi-coding-agent`: canonical reference migration checks target conflicts
+  before changing defaults. Credential account copies serialize with normal
+  mutations, acknowledge the complete target before source cleanup, and can
+  resume interrupted same-account writes without taking over ambiguous markers.
+
 
 - `opi-ai`: Codex seals fallback/reconnect on valid provider events even before
   public output, preserves safe fallback diagnostics, disables idle/connect

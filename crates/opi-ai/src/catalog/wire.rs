@@ -29,8 +29,8 @@ use crate::model_info::{
 };
 use crate::stream::Pricing;
 
-use super::ModelsStoreError;
 use super::store::CatalogPublisher;
+use super::{CatalogRecord, ModelsStoreEntry, ModelsStoreError};
 
 /// The distribution schema identity the store and HTTP documents declare.
 pub(crate) const DISTRIBUTION_SCHEMA_ID: &str = "https://pi.dev/schemas/models.schema.json";
@@ -81,6 +81,24 @@ fn pricing_from_json(value: &Value) -> Result<Pricing, String> {
     })
 }
 
+fn known_pricing_from_json(value: &Value) -> Result<Option<Pricing>, String> {
+    let object = value.as_object().ok_or("pricing must be an object")?;
+    for key in ["input", "output", "cacheRead", "cacheWrite"] {
+        match object.get(key) {
+            None | Some(Value::Null) => return Ok(None),
+            Some(value) => {
+                let rate = value
+                    .as_f64()
+                    .ok_or_else(|| format!("pricing field '{key}' must be a number"))?;
+                if !rate.is_finite() || rate < 0.0 {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+    pricing_from_json(value).map(Some)
+}
+
 /// Best-effort v1 `thinkingLevelMap` rendering: mapped/identity levels with a
 /// wire name render their name; everything else renders `null`.
 fn thinking_map_to_v1(map: &ThinkingLevelMap) -> Value {
@@ -100,10 +118,10 @@ fn thinking_map_to_v1(map: &ThinkingLevelMap) -> Value {
 fn thinking_map_to_extension(map: &ThinkingLevelMap) -> Value {
     let mut rendered = Map::new();
     for level in ThinkingLevel::ALL {
-        let value = match map.resolve(level) {
-            Ok(Some(name)) => json!({ "mapped": name }),
-            Ok(None) => json!({ "identity": true }),
-            Err(_) => json!({ "unsupported": true }),
+        let value = match map.mapping(level) {
+            ThinkingLevelMapping::Mapped(name) => json!({ "mapped": name }),
+            ThinkingLevelMapping::Identity => json!({ "identity": true }),
+            ThinkingLevelMapping::Unsupported => json!({ "unsupported": true }),
         };
         rendered.insert(level_key(level).to_owned(), value);
     }
@@ -185,6 +203,8 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
                 .as_ref()
                 .map(|field| field.wire_name()),
             "supportsThinkingTokenBudget": inner.supports_thinking_token_budget,
+            "chatTemplateArgs": template_values_to_extension(&inner.chat_template_args),
+            "chatTemplateKwargs": template_values_to_extension(&inner.chat_template_kwargs),
             "chatCompletionsPath": inner.chat_completions_path,
         }),
         WireCompat::OpenAiResponses(inner) => json!({
@@ -195,6 +215,7 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
             "responsesPath": inner.responses_path,
             "sendSessionIdHeader": inner.send_session_id_header,
             "supportsMidConvoEffort": inner.supports_mid_convo_effort,
+            "supportsOpenAIGrammarTools": inner.supports_grammar,
         }),
         WireCompat::AzureOpenAiResponses(inner) => json!({
             "api": WireApi::AzureOpenAiResponses.as_str(),
@@ -204,6 +225,7 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
             "responsesPath": inner.responses_path,
             "sendSessionIdHeader": inner.send_session_id_header,
             "supportsMidConvoEffort": inner.supports_mid_convo_effort,
+            "supportsOpenAIGrammarTools": inner.supports_grammar,
         }),
         WireCompat::OpenAiCodexResponses(inner) => json!({
             "api": WireApi::OpenAiCodexResponses.as_str(),
@@ -242,6 +264,81 @@ fn opt_flag(value: &Value, key: &str) -> Result<Option<bool>, String> {
         Some(Value::Bool(flag)) => Ok(Some(*flag)),
         Some(_) => Err(format!("field '{key}' must be a boolean when present")),
     }
+}
+
+fn thinking_budget_field(
+    value: &Value,
+) -> Result<Option<crate::model_info::ChatThinkingTokenBudgetField>, String> {
+    use crate::model_info::ChatThinkingTokenBudgetField;
+    match opt_string(value, "thinkingTokenBudgetField")?.as_deref() {
+        None => Ok(None),
+        Some("thinking_token_budget") => {
+            Ok(Some(ChatThinkingTokenBudgetField::ThinkingTokenBudget))
+        }
+        Some("thinking_budget") => Ok(Some(ChatThinkingTokenBudgetField::ThinkingBudget)),
+        Some("thinking_budget_tokens") => {
+            Ok(Some(ChatThinkingTokenBudgetField::ThinkingBudgetTokens))
+        }
+        Some(other) => Err(format!(
+            "field 'thinkingTokenBudgetField' carries unknown budget field '{other}'"
+        )),
+    }
+}
+
+fn template_values_to_extension(
+    values: &BTreeMap<String, crate::model_info::ChatTemplateKwargValue>,
+) -> Value {
+    use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
+    Value::Object(
+        values
+            .iter()
+            .map(|(key, value)| {
+                let value = match value {
+                    ChatTemplateKwargValue::Literal(value) => json!({"literal": value}),
+                    ChatTemplateKwargValue::Var { var, omit_when_off } => json!({
+                        "var": match var {
+                            ChatTemplateKwargVar::ThinkingEnabled => "thinking.enabled",
+                            ChatTemplateKwargVar::ThinkingEffort => "thinking.effort",
+                            ChatTemplateKwargVar::ThinkingBudget => "thinking.budget",
+                        },
+                        "omitWhenOff": omit_when_off,
+                    }),
+                };
+                (key.clone(), value)
+            })
+            .collect(),
+    )
+}
+
+fn template_values_from_extension(
+    value: &Value,
+    key: &str,
+) -> Result<BTreeMap<String, crate::model_info::ChatTemplateKwargValue>, String> {
+    use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
+    let Some(values) = value.get(key) else {
+        return Ok(BTreeMap::new());
+    };
+    values
+        .as_object()
+        .ok_or_else(|| format!("x-opi.compat.{key} must be an object"))?
+        .iter()
+        .map(|(name, entry)| {
+            let value = match (entry.get("literal"), entry.get("var")) {
+                (Some(value), None) => ChatTemplateKwargValue::Literal(value.clone()),
+                (None, Some(value)) => ChatTemplateKwargValue::Var {
+                    var: match value.as_str() {
+                        Some("thinking.enabled") => ChatTemplateKwargVar::ThinkingEnabled,
+                        Some("thinking.effort") => ChatTemplateKwargVar::ThinkingEffort,
+                        Some("thinking.budget") => ChatTemplateKwargVar::ThinkingBudget,
+                        _ => return Err(format!("invalid x-opi.compat.{key} variable")),
+                    },
+                    omit_when_off: opt_flag(entry, "omitWhenOff")?.unwrap_or(false),
+                },
+                _ => return Err(format!("invalid x-opi.compat.{key} value")),
+            };
+            Ok((name.clone(), value))
+        })
+        .collect()
 }
 
 fn parse_chat_thinking_format(
@@ -308,6 +405,7 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                 .to_owned(),
             send_session_id_header: flag("sendSessionIdHeader")?,
             supports_mid_convo_effort: flag("supportsMidConvoEffort")?,
+            supports_grammar: opt_flag(value, "supportsOpenAIGrammarTools")?.unwrap_or(false),
         })
     }
 
@@ -350,26 +448,7 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
         ))),
         WireApi::OpenAiCompletions => {
             reject_retired_chat_compat_keys(value)?;
-            let thinking_token_budget_field = match value
-                .get("thinkingTokenBudgetField")
-                .and_then(Value::as_str)
-            {
-                None => None,
-                Some("thinking_token_budget") => {
-                    Some(crate::model_info::ChatThinkingTokenBudgetField::ThinkingTokenBudget)
-                }
-                Some("thinking_budget") => {
-                    Some(crate::model_info::ChatThinkingTokenBudgetField::ThinkingBudget)
-                }
-                Some("thinking_budget_tokens") => {
-                    Some(crate::model_info::ChatThinkingTokenBudgetField::ThinkingBudgetTokens)
-                }
-                Some(other) => {
-                    return Err(format!(
-                        "field 'thinkingTokenBudgetField' carries unknown budget field '{other}'"
-                    ));
-                }
-            };
+            let thinking_token_budget_field = thinking_budget_field(value)?;
             Ok(Some(WireCompat::OpenAiCompletions(
                 crate::model_info::OpenAiCompletionsCompat {
                     store: match value.get("storeField").and_then(Value::as_str) {
@@ -383,7 +462,8 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                         }
                     },
                     instruction_role: match value.get("instructionRole").and_then(Value::as_str) {
-                        None | Some("auto") => Some(crate::model_info::ChatInstructionRole::Auto),
+                        None => None,
+                        Some("auto") => Some(crate::model_info::ChatInstructionRole::Auto),
                         Some("system") => Some(crate::model_info::ChatInstructionRole::System),
                         Some("developer_for_reasoning") => {
                             Some(crate::model_info::ChatInstructionRole::DeveloperForReasoning)
@@ -415,8 +495,11 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                     vllm_priority: value.get("vllmPriority").and_then(Value::as_i64),
                     thinking_token_budget_field,
                     supports_thinking_token_budget: flag("supportsThinkingTokenBudget")?,
-                    chat_template_kwargs: Default::default(),
-                    chat_template_args: Default::default(),
+                    chat_template_kwargs: template_values_from_extension(
+                        value,
+                        "chatTemplateKwargs",
+                    )?,
+                    chat_template_args: template_values_from_extension(value, "chatTemplateArgs")?,
                     chat_completions_path: value
                         .get("chatCompletionsPath")
                         .and_then(Value::as_str)
@@ -485,6 +568,25 @@ pub(crate) fn encode_model_entry(model: &ModelInfo) -> Value {
         entry["cost"] = pricing_to_json(&pricing.base);
     }
 
+    if let Some(limits) = &model.input_limits {
+        entry["inputLimits"] = limits.clone();
+    }
+    if !model.headers.is_empty() {
+        entry["headers"] = Value::Object(
+            model
+                .headers
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.clone(),
+                        value
+                            .as_ref()
+                            .map_or(Value::Null, |value| Value::String(value.clone())),
+                    )
+                })
+                .collect(),
+        );
+    }
     let mut extension = Map::new();
     extension.insert(
         "streaming".to_owned(),
@@ -503,6 +605,11 @@ pub(crate) fn encode_model_entry(model: &ModelInfo) -> Value {
         thinking_map_to_extension(&model.thinking_level_map),
     );
     extension.insert("compat".to_owned(), compat_to_extension(&model.compat));
+    // A JSON object cannot retain repeated header operations. The fidelity
+    // extension keeps their order, including case-insensitive set/remove pairs.
+    if !model.headers.is_empty() {
+        extension.insert("headers".to_owned(), json!(model.headers));
+    }
     extension.insert(
         "samplingParams".to_owned(),
         Value::Object(model.sampling_params.clone()),
@@ -538,6 +645,142 @@ pub(crate) fn encode_model_entry(model: &ModelInfo) -> Value {
     }
     entry[EXTENSION_KEY] = Value::Object(extension);
     entry
+}
+
+/// Map the source model fields before applying the exact Rust store extension.
+fn apply_source_metadata(model: &mut ModelInfo, entry: &Value) -> Result<(), String> {
+    if let Some(map) = entry.get("thinkingLevelMap").and_then(Value::as_object) {
+        for (name, value) in map {
+            let level =
+                level_from_key(name).ok_or_else(|| format!("unknown thinking level '{name}'"))?;
+            let mapping = match value {
+                Value::Null => ThinkingLevelMapping::Unsupported,
+                Value::String(value) => ThinkingLevelMapping::Mapped(value.clone()),
+                _ => return Err(format!("thinking level '{name}' must be a string or null")),
+            };
+            model.thinking_level_map = model
+                .thinking_level_map
+                .clone()
+                .with_mapping(level, mapping);
+        }
+    }
+    model.input_limits = entry
+        .get("inputLimits")
+        .filter(|value| !value.is_null())
+        .cloned();
+    if let Some(headers) = entry.get("headers") {
+        for (name, value) in headers
+            .as_object()
+            .ok_or("model headers must be an object")?
+        {
+            let value = match value {
+                Value::Null => None,
+                Value::String(value) => Some(value.clone()),
+                _ => return Err("model header must be a string or null".into()),
+            };
+            model.headers.push((name.clone(), value));
+        }
+    }
+    let Some(compat) = entry.get("compat") else {
+        return Ok(());
+    };
+    let flag = |key: &str| opt_flag(compat, key);
+    match &mut model.compat {
+        WireCompat::OpenAiCompletions(c) => {
+            c.store = flag("supportsStore")?.map(|value| {
+                if value {
+                    crate::model_info::ChatStoreField::SendFalse
+                } else {
+                    crate::model_info::ChatStoreField::Omit
+                }
+            });
+            c.instruction_role = match opt_string(compat, "systemRoleOverride")?.as_deref() {
+                Some("system") => Some(crate::model_info::ChatInstructionRole::System),
+                Some("developer") => Some(crate::model_info::ChatInstructionRole::Developer),
+                Some(_) => return Err("invalid systemRoleOverride".into()),
+                None => flag("supportsDeveloperRole")?.map(|value| {
+                    if value {
+                        crate::model_info::ChatInstructionRole::DeveloperForReasoning
+                    } else {
+                        crate::model_info::ChatInstructionRole::System
+                    }
+                }),
+            };
+            c.thinking_format = parse_chat_thinking_format(compat, "thinkingFormat")?;
+            c.max_tokens_field = opt_string(compat, "maxTokensField")?;
+            c.supports_reasoning_effort = flag("supportsReasoningEffort")?;
+            c.usage_in_stream = flag("supportsUsageInStreaming")?;
+            c.strict_tool_schema = flag("supportsStrictMode")?.unwrap_or(c.strict_tool_schema);
+            c.tool_result_name_field =
+                flag("requiresToolResultName")?.unwrap_or(c.tool_result_name_field);
+            c.send_session_affinity_headers = flag("sendSessionAffinityHeaders")?;
+            c.require_assistant_after_tool_result = flag("requiresAssistantAfterToolResult")?
+                .unwrap_or(c.require_assistant_after_tool_result);
+            c.requires_thinking_as_text =
+                flag("requiresThinkingAsText")?.unwrap_or(c.requires_thinking_as_text);
+            c.requires_reasoning_content_on_assistant_messages =
+                flag("requiresReasoningContentOnAssistantMessages")?;
+            c.zai_tool_stream = flag("zaiToolStream")?.unwrap_or(false);
+            c.supports_thinking_token_budget =
+                flag("supportsThinkingTokenBudget")?.unwrap_or(false);
+            c.thinking_token_budget_field = thinking_budget_field(compat)?;
+            c.vllm_priority = compat.get("vllmPriority").and_then(Value::as_i64);
+            for (key, target) in [
+                ("chatTemplateArgs", &mut c.chat_template_args),
+                ("chatTemplateKwargs", &mut c.chat_template_kwargs),
+            ] {
+                if let Some(values) = compat.get(key).and_then(Value::as_object) {
+                    for (name, value) in values {
+                        let value = if let Some(var) = value.get("$var").and_then(Value::as_str) {
+                            use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
+                            ChatTemplateKwargValue::Var {
+                                var: match var {
+                                    "thinking.enabled" => ChatTemplateKwargVar::ThinkingEnabled,
+                                    "thinking.effort" => ChatTemplateKwargVar::ThinkingEffort,
+                                    "thinking.budget" => ChatTemplateKwargVar::ThinkingBudget,
+                                    _ => {
+                                        return Err(format!(
+                                            "unknown chat template variable '{var}'"
+                                        ));
+                                    }
+                                },
+                                omit_when_off: value
+                                    .get("omitWhenOff")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false),
+                            }
+                        } else {
+                            crate::model_info::ChatTemplateKwargValue::Literal(value.clone())
+                        };
+                        target.insert(name.clone(), value);
+                    }
+                }
+            }
+        }
+        WireCompat::OpenAiResponses(c) | WireCompat::AzureOpenAiResponses(c) => {
+            c.strict_tools = flag("supportsStrictMode")?.unwrap_or(c.strict_tools);
+            c.supports_mid_convo_effort = flag("supportsMidConvoEffort")?.unwrap_or(false);
+            c.supports_grammar = flag("supportsOpenAIGrammarTools")?.unwrap_or(false);
+        }
+        WireCompat::AnthropicMessages(c) => {
+            c.supports_eager_tool_input_streaming = flag("supportsEagerToolInputStreaming")?
+                .unwrap_or(c.supports_eager_tool_input_streaming);
+            c.supports_mid_convo_system_messages = flag("supportsMidConvoSystemMessages")?
+                .unwrap_or(c.supports_mid_convo_system_messages);
+            c.supports_mid_convo_tool_changes =
+                flag("supportsMidConvoToolChanges")?.unwrap_or(c.supports_mid_convo_tool_changes);
+            c.force_adaptive_thinking =
+                flag("forceAdaptiveThinking")?.unwrap_or(c.force_adaptive_thinking);
+            c.supports_temperature = flag("supportsTemperature")?.unwrap_or(c.supports_temperature);
+            c.supports_strict_tools =
+                flag("supportsStrictTools")?.unwrap_or(c.supports_strict_tools);
+        }
+        WireCompat::BedrockConverseStream(c) => {
+            c.supports_strict_tools = flag("supportsStrictMode")?.unwrap_or(c.supports_strict_tools)
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// Decode one distribution-schema-v1 model entry. Fields under `x-opi` win
@@ -611,16 +854,30 @@ pub(crate) fn decode_model_entry(entry: &Value) -> Result<ModelInfo, String> {
         model = model.with_base_url(base_url);
     }
 
+    apply_source_metadata(&mut model, entry)?;
+
+    if let Some(headers) = extension.and_then(|ext| ext.get("headers")) {
+        model.headers = serde_json::from_value(headers.clone()).map_err(|_| {
+            "x-opi.headers must be an ordered list of header name/value pairs".to_owned()
+        })?;
+    }
+
     if let Some(thinking) = extension.and_then(|ext| ext.get("thinking")) {
         model = model.with_thinking_level_map(thinking_map_from_extension(thinking)?);
     }
-    if let Some(params) = extension.and_then(|ext| ext.get("samplingParams")) {
+    if let Some(params) = extension
+        .and_then(|ext| ext.get("samplingParams"))
+        .or_else(|| entry.get("samplingParams"))
+    {
         model.sampling_params = params
             .as_object()
             .ok_or("x-opi.samplingParams must be an object")?
             .clone();
     }
-    if let Some(levels) = extension.and_then(|ext| ext.get("samplingParamsByThinkingLevel")) {
+    if let Some(levels) = extension
+        .and_then(|ext| ext.get("samplingParamsByThinkingLevel"))
+        .or_else(|| entry.get("samplingParamsByThinkingLevel"))
+    {
         for (key, params) in levels
             .as_object()
             .ok_or("x-opi.samplingParamsByThinkingLevel must be an object")?
@@ -639,10 +896,11 @@ pub(crate) fn decode_model_entry(entry: &Value) -> Result<ModelInfo, String> {
         }
     }
 
-    if let Some(cost) = entry.get("cost") {
+    if let Some(cost) = entry.get("cost").filter(|value| !value.is_null()) {
         let base = pricing_from_json(cost)?;
         let tiers = extension
             .and_then(|ext| ext.get("pricingTiers"))
+            .or_else(|| cost.get("tiers"))
             .and_then(Value::as_array)
             .map(|tiers| {
                 tiers
@@ -651,6 +909,7 @@ pub(crate) fn decode_model_entry(entry: &Value) -> Result<ModelInfo, String> {
                         Ok(crate::model_info::PricingTier {
                             input_tokens_above: tier
                                 .get("above")
+                                .or_else(|| tier.get("inputTokensAbove"))
                                 .and_then(Value::as_u64)
                                 .ok_or("pricing tier requires an 'above' threshold")?,
                             pricing: pricing_from_json(tier)?,
@@ -675,20 +934,435 @@ pub(crate) fn decode_model_entry(entry: &Value) -> Result<ModelInfo, String> {
     Ok(model)
 }
 
+pub(crate) fn decode_record_headers(
+    entry: &Value,
+) -> Result<Vec<(String, Option<String>)>, String> {
+    if let Some(headers) = entry.pointer("/x-opi/headers") {
+        return serde_json::from_value(headers.clone()).map_err(|_| {
+            "x-opi.headers must be an ordered list of header name/value pairs".into()
+        });
+    }
+    let Some(headers) = entry.get("headers") else {
+        return Ok(Vec::new());
+    };
+    headers
+        .as_object()
+        .ok_or("model headers must be an object")?
+        .iter()
+        .map(|(name, value)| {
+            Ok((
+                name.clone(),
+                match value {
+                    Value::Null => None,
+                    Value::String(value) => Some(value.clone()),
+                    _ => return Err("model header must be a string or null".into()),
+                },
+            ))
+        })
+        .collect()
+}
+
+fn encode_record_headers(
+    entry: &mut Value,
+    headers: &[(String, Option<String>)],
+    limits: &Option<Value>,
+) {
+    if !headers.is_empty() {
+        entry["headers"] = Value::Object(
+            headers
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        value.as_ref().map_or(Value::Null, |value| json!(value)),
+                    )
+                })
+                .collect(),
+        );
+        if entry.get(EXTENSION_KEY).is_none() {
+            entry[EXTENSION_KEY] = json!({});
+        }
+        entry[EXTENSION_KEY]["headers"] = json!(headers);
+    }
+    if let Some(limits) = limits {
+        entry["inputLimits"] = limits.clone();
+    }
+}
+
+fn encode_pricing_tiers(tiers: &[crate::model_info::PricingTier]) -> Value {
+    json!(
+        tiers
+            .iter()
+            .map(|tier| {
+                let mut value = pricing_to_json(&tier.pricing);
+                value["inputTokensAbove"] = json!(tier.input_tokens_above);
+                value
+            })
+            .collect::<Vec<_>>()
+    )
+}
+
+pub(crate) fn decode_pricing_tiers(
+    value: Option<&Value>,
+) -> Result<Vec<crate::model_info::PricingTier>, String> {
+    value
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or("pricing tiers must be an array")?
+                .iter()
+                .map(|tier| {
+                    Ok(crate::model_info::PricingTier {
+                        input_tokens_above: tier
+                            .get("inputTokensAbove")
+                            .and_then(Value::as_u64)
+                            .ok_or("pricing tier requires inputTokensAbove")?,
+                        pricing: pricing_from_json(tier)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()
+        })
+        .transpose()
+        .map(Option::unwrap_or_default)
+}
+
+fn encode_catalog_record(record: &CatalogRecord) -> Value {
+    use crate::classifier::ClassifierInputModality;
+    use crate::images::ImageOutputModality;
+    match record {
+        CatalogRecord::Chat(model) => {
+            let mut entry = encode_model_entry(model);
+            entry["type"] = json!("chat");
+            entry
+        }
+        CatalogRecord::Image(model) => {
+            let input: Vec<_> = model
+                .input
+                .iter()
+                .map(|value| match value {
+                    super::CatalogInputModality::Text => "text",
+                    super::CatalogInputModality::Image => "image",
+                })
+                .collect();
+            let output: Vec<_> = model
+                .output
+                .iter()
+                .map(|value| match value {
+                    ImageOutputModality::Text => "text",
+                    ImageOutputModality::Image => "image",
+                })
+                .collect();
+            let mut entry = json!({"type": "image", "id": model.id, "name": model.name,
+                "provider": model.provider_id, "api": model.api.as_str(), "baseUrl": model.base_url,
+                "input": input, "output": output});
+            if let Some(cost) = model.cost {
+                entry["cost"] = json!({"input": cost.input, "output": cost.output,
+                    "cacheRead": cost.cache_read, "cacheWrite": cost.cache_write});
+            }
+            if !model.cost_tiers.is_empty() {
+                let tiers = encode_pricing_tiers(&model.cost_tiers);
+                if model.cost.is_some() {
+                    entry["cost"]["tiers"] = tiers;
+                } else {
+                    entry[EXTENSION_KEY] = json!({"imagePricingTiers": tiers});
+                }
+            }
+            encode_record_headers(&mut entry, &model.headers, &model.input_limits);
+            entry
+        }
+        CatalogRecord::Classifier(model) => {
+            let input: Vec<_> = model
+                .input
+                .iter()
+                .map(|value| match value {
+                    ClassifierInputModality::Text => "text",
+                    ClassifierInputModality::Image => "image",
+                })
+                .collect();
+            let cost = model.cost.as_ref().map(|pricing| {
+                let mut cost = pricing_to_json(&pricing.base);
+                if !pricing.tiers.is_empty() {
+                    cost["tiers"] = encode_pricing_tiers(&pricing.tiers);
+                }
+                cost
+            });
+            let mut entry = json!({"type": "classifier", "id": model.id, "name": model.name,
+                "provider": model.provider_id, "api": model.api.as_str(), "baseUrl": model.base_url,
+                "input": input, "contextWindow": model.context_window, "cost": cost});
+            encode_record_headers(&mut entry, &model.headers, &model.input_limits);
+            entry
+        }
+    }
+}
+
+fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord, String> {
+    let kind = match entry.get("type") {
+        None => "chat",
+        Some(Value::String(kind)) => kind.as_str(),
+        Some(_) => return Err("model type must be a string".into()),
+    };
+    if let Some(owner) = entry.get("provider")
+        && owner.as_str() != Some(provider)
+    {
+        return Err("model provider does not match its catalog owner".into());
+    }
+    if kind == "chat" {
+        return decode_model_entry(entry).map(CatalogRecord::from);
+    }
+    if kind != "image" && kind != "classifier" {
+        return Err(format!("unsupported model type '{kind}'"));
+    }
+    let string = |key: &str| {
+        entry
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| format!("model requires string '{key}'"))
+    };
+    let id = string("id")?;
+    let name = entry
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or(&id)
+        .to_owned();
+    let api = crate::models::ApiId::new(string("api")?);
+    let base_url = string("baseUrl")?;
+    let input = entry
+        .get("input")
+        .and_then(Value::as_array)
+        .ok_or("model requires input array")?
+        .iter()
+        .map(|value| match value.as_str() {
+            Some("text") => Ok(super::CatalogInputModality::Text),
+            Some("image") => Ok(super::CatalogInputModality::Image),
+            _ => Err("unknown model input modality".to_owned()),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let headers = decode_record_headers(entry)?;
+    let input_limits = entry
+        .get("inputLimits")
+        .filter(|value| !value.is_null())
+        .cloned();
+    if kind == "image" {
+        let output = entry
+            .get("output")
+            .and_then(Value::as_array)
+            .ok_or("image model requires output array")?
+            .iter()
+            .map(|value| match value.as_str() {
+                Some("text") => Ok(crate::images::ImageOutputModality::Text),
+                Some("image") => Ok(crate::images::ImageOutputModality::Image),
+                _ => Err("unknown image output modality".to_owned()),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let cost = entry
+            .get("cost")
+            .filter(|value| !value.is_null())
+            .map(|cost| {
+                Ok::<_, String>(known_pricing_from_json(cost)?.map(|pricing| {
+                    crate::images::ImageCostRates {
+                        input: pricing.input_cost_per_mtok,
+                        output: pricing.output_cost_per_mtok,
+                        cache_read: pricing.cache_read_cost_per_mtok,
+                        cache_write: pricing.cache_write_cost_per_mtok,
+                    }
+                }))
+            })
+            .transpose()?
+            .flatten();
+        Ok(CatalogRecord::Image(crate::images::ImageModelRecord {
+            provider_id: provider.into(),
+            id,
+            name,
+            api,
+            base_url,
+            input,
+            headers,
+            input_limits,
+            output,
+            cost,
+            cost_tiers: decode_pricing_tiers(
+                entry
+                    .pointer("/x-opi/imagePricingTiers")
+                    .or_else(|| entry.pointer("/cost/tiers")),
+            )?,
+        }))
+    } else {
+        let cost = entry.get("cost").filter(|value| !value.is_null());
+        let tiers = cost
+            .and_then(|value| value.get("tiers"))
+            .map(|value| {
+                value
+                    .as_array()
+                    .ok_or("pricing tiers must be an array")?
+                    .iter()
+                    .map(|tier| {
+                        Ok(crate::model_info::PricingTier {
+                            input_tokens_above: tier
+                                .get("inputTokensAbove")
+                                .and_then(Value::as_u64)
+                                .ok_or("pricing tier requires inputTokensAbove")?,
+                            pricing: pricing_from_json(tier)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let cost = cost
+            .map(pricing_from_json)
+            .transpose()?
+            .map(|base| crate::model_info::ModelPricing { base, tiers });
+        Ok(CatalogRecord::Classifier(
+            crate::classifier::ClassifierModelRecord {
+                provider_id: provider.into(),
+                id,
+                name,
+                api,
+                base_url,
+                headers,
+                input_limits,
+                input: input
+                    .into_iter()
+                    .map(|value| match value {
+                        super::CatalogInputModality::Text => {
+                            crate::classifier::ClassifierInputModality::Text
+                        }
+                        super::CatalogInputModality::Image => {
+                            crate::classifier::ClassifierInputModality::Image
+                        }
+                    })
+                    .collect(),
+                context_window: entry
+                    .get("contextWindow")
+                    .and_then(Value::as_u64)
+                    .ok_or("classifier model requires contextWindow")?,
+                cost,
+            },
+        ))
+    }
+}
+
+pub(crate) fn validate_provider_entry(
+    provider: &str,
+    entry: &ModelsStoreEntry,
+) -> Result<(), String> {
+    if provider.is_empty() {
+        return Err("empty provider id".into());
+    }
+    let mut seen = std::collections::HashSet::new();
+    for model in &entry.models {
+        if model.id().is_empty() || !seen.insert((model.operation(), model.id())) {
+            return Err("empty or duplicate operation-qualified model id".into());
+        }
+        let (owner, api, headers) = match model {
+            CatalogRecord::Chat(model) => {
+                model.validate().map_err(|error| error.to_string())?;
+                continue;
+            }
+            CatalogRecord::Image(model) => {
+                let base = if let Some(cost) = model.cost {
+                    let base = Pricing {
+                        input_cost_per_mtok: cost.input,
+                        output_cost_per_mtok: cost.output,
+                        cache_read_cost_per_mtok: cost.cache_read,
+                        cache_write_cost_per_mtok: cost.cache_write,
+                    };
+                    crate::model_info::validate_pricing(&base)
+                        .map_err(|error| error.to_string())?;
+                    base
+                } else {
+                    Pricing::default()
+                };
+                crate::model_info::ModelPricing {
+                    base,
+                    tiers: model.cost_tiers.clone(),
+                }
+                .validate_source_metadata()
+                .map_err(|error| error.to_string())?;
+                (&model.provider_id, &model.api, &model.headers)
+            }
+            CatalogRecord::Classifier(model) => {
+                if let Some(cost) = &model.cost {
+                    cost.validate_source_metadata()
+                        .map_err(|error| error.to_string())?;
+                }
+                (&model.provider_id, &model.api, &model.headers)
+            }
+        };
+        if owner != provider || api.as_str().is_empty() {
+            return Err("model route identity does not match its catalog".into());
+        }
+        crate::provider_headers::validate_model_headers(headers)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+pub(crate) fn decode_provider_entry(
+    provider: &str,
+    value: &Value,
+) -> Result<ModelsStoreEntry, String> {
+    let models = value
+        .get("models")
+        .and_then(Value::as_array)
+        .ok_or("provider requires models array")?
+        .iter()
+        .map(|model| decode_catalog_record(provider, model))
+        .collect::<Result<Vec<_>, _>>()?;
+    let timestamp = |key: &str| {
+        value
+            .get(key)
+            .map(|value| {
+                value
+                    .as_i64()
+                    .ok_or_else(|| format!("{key} must be Unix milliseconds as an integer"))
+            })
+            .transpose()
+    };
+    let entry = ModelsStoreEntry {
+        models,
+        last_modified: timestamp("lastModified")?,
+        checked_at: timestamp("checkedAt")?,
+        etag: value
+            .get("etag")
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or("etag must be a string")
+            })
+            .transpose()?,
+    };
+    validate_provider_entry(provider, &entry)?;
+    Ok(entry)
+}
+
+fn encode_provider_entry(entry: &ModelsStoreEntry) -> Value {
+    let mut value =
+        json!({"models": entry.models.iter().map(encode_catalog_record).collect::<Vec<_>>()});
+    if let Some(timestamp) = entry.last_modified {
+        value["lastModified"] = json!(timestamp);
+    }
+    if let Some(timestamp) = entry.checked_at {
+        value["checkedAt"] = json!(timestamp);
+    }
+    if let Some(etag) = &entry.etag {
+        value["etag"] = json!(etag);
+    }
+    value
+}
+
 /// Encode a full store document: schema identity, revision, providers.
 pub(crate) fn encode_store_document(
     revision: u64,
-    catalogs: &BTreeMap<String, Vec<ModelInfo>>,
+    catalogs: &BTreeMap<String, ModelsStoreEntry>,
     publishers: &HashMap<String, CatalogPublisher>,
+    invalidated_sources: &std::collections::BTreeSet<String>,
 ) -> Value {
     let mut providers = Map::new();
-    for (provider_id, models) in catalogs {
-        let mut provider = json!({
-            "models": models
-                .iter()
-                .map(encode_model_entry)
-                .collect::<Vec<_>>(),
-        });
+    for (provider_id, entry) in catalogs {
+        let mut provider = encode_provider_entry(entry);
         if let Some(publisher) = publishers.get(provider_id) {
             provider[EXTENSION_KEY] = json!({"publisher": publisher});
         }
@@ -698,6 +1372,7 @@ pub(crate) fn encode_store_document(
         "$schema": DISTRIBUTION_SCHEMA_ID,
         "revision": revision,
         "providers": Value::Object(providers),
+        "x-opi": { "invalidatedSources": invalidated_sources },
     })
 }
 
@@ -705,8 +1380,9 @@ pub(crate) fn encode_store_document(
 /// [`encode_store_document`].
 pub(crate) struct DecodedStore {
     pub revision: u64,
-    pub catalogs: BTreeMap<String, Vec<ModelInfo>>,
+    pub catalogs: BTreeMap<String, ModelsStoreEntry>,
     pub publishers: BTreeMap<String, CatalogPublisher>,
+    pub invalidated_sources: std::collections::BTreeSet<String>,
 }
 
 pub(crate) fn decode_store_document(document: &Value) -> Result<DecodedStore, ModelsStoreError> {
@@ -722,18 +1398,8 @@ pub(crate) fn decode_store_document(document: &Value) -> Result<DecodedStore, Mo
     let mut catalogs = BTreeMap::new();
     let mut publishers = BTreeMap::new();
     for (provider_id, provider) in providers {
-        let Some(models) = provider.get("models").and_then(Value::as_array) else {
-            return Err(corrupt(format!(
-                "provider '{provider_id}' requires a models array"
-            )));
-        };
-        let mut decoded = Vec::with_capacity(models.len());
-        for model in models {
-            decoded.push(
-                decode_model_entry(model)
-                    .map_err(|message| corrupt(format!("provider '{provider_id}': {message}")))?,
-            );
-        }
+        let decoded = decode_provider_entry(provider_id, provider)
+            .map_err(|message| corrupt(format!("provider '{provider_id}': {message}")))?;
         catalogs.insert(provider_id.clone(), decoded);
         if let Some(extension) = provider.get(EXTENSION_KEY) {
             let extension = extension.as_object().ok_or_else(|| {
@@ -752,7 +1418,23 @@ pub(crate) fn decode_store_document(document: &Value) -> Result<DecodedStore, Mo
             }
         }
     }
+    let invalidated_sources: std::collections::BTreeSet<String> = document
+        .pointer("/x-opi/invalidatedSources")
+        .map(|value| {
+            serde_json::from_value(value.clone())
+                .map_err(|_| corrupt("invalid source tombstones".into()))
+        })
+        .transpose()?
+        .unwrap_or_default();
+    for (provider, publisher) in &publishers {
+        if matches!(publisher, CatalogPublisher::Source { id } if invalidated_sources.contains(id))
+        {
+            catalogs.remove(provider);
+        }
+    }
+    publishers.retain(|provider, _| catalogs.contains_key(provider));
     Ok(DecodedStore {
+        invalidated_sources,
         revision,
         catalogs,
         publishers,

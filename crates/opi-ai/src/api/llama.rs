@@ -124,7 +124,7 @@ impl ClassifierApi<LlamaCppClassifyOptions> for LlamaCppClassifyApi {
     }
 
     fn provider_id(&self) -> &str {
-        "llama.cpp"
+        &self.record.provider_id
     }
 
     fn complete_record(&self) -> &ClassifierModelRecord {
@@ -137,6 +137,17 @@ impl ClassifierApi<LlamaCppClassifyOptions> for LlamaCppClassifyApi {
             max_retries: 2,
             max_retry_delay_ms: None,
         }
+    }
+
+    fn validate_request(
+        &self,
+        record: &ClassifierModelRecord,
+        context: &ClassifierContext,
+        options: &LlamaCppClassifyOptions,
+        call: &ClassifierCall,
+    ) -> Result<(), ProviderError> {
+        self.validate_options(options)?;
+        validate_llama_request(record, context, options, call)
     }
 
     fn classify_prepared<'a>(
@@ -168,6 +179,8 @@ impl ClassifierApi<LlamaCppClassifyOptions> for LlamaCppClassifyApi {
 /// window stay at the `0` fallback.
 pub fn default_llama_classifier_record() -> ClassifierModelRecord {
     ClassifierModelRecord {
+        headers: Vec::new(),
+        input_limits: None,
         provider_id: "llama.cpp".into(),
         id: "local".into(),
         name: "Local llama-server model".into(),
@@ -175,8 +188,10 @@ pub fn default_llama_classifier_record() -> ClassifierModelRecord {
         base_url: LLAMA_SERVER_DEFAULT_BASE_URL.into(),
         input: vec![crate::classifier::ClassifierInputModality::Text],
         context_window: 0,
-        cost: crate::model_info::ModelPricing::try_new(Default::default(), Vec::new())
-            .expect("zero pricing is valid"),
+        cost: Some(
+            crate::model_info::ModelPricing::try_new(Default::default(), Vec::new())
+                .expect("zero pricing is valid"),
+        ),
     }
 }
 
@@ -235,8 +250,9 @@ struct Wire<'a> {
 impl Wire<'_> {
     /// One endpoint post under the shared classifier retry policy. Only the
     /// completion readout is observed: the payload observer freezes the body
-    /// once per call and the response observer fires after each attempt's
-    /// status is known.
+    /// once per completion readout, including a new depth or question. Its
+    /// acquisition retries reuse that payload. Response observation follows
+    /// successful JSON acquisition and has no transport retry or timeout.
     async fn post(
         &self,
         endpoint: &str,
@@ -244,10 +260,10 @@ impl Wire<'_> {
         observe: bool,
     ) -> Result<serde_json::Value, AttemptFailure> {
         let url = format!("{}{}", self.root, endpoint);
+        let callbacks = self.callbacks.for_call();
         let mut body = body;
         if observe {
-            match self
-                .callbacks
+            match callbacks
                 .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body.clone())
                 .await
             {
@@ -336,32 +352,15 @@ impl Wire<'_> {
                         message,
                     });
                 }
-                // The response observer fires at the source observation
-                // point: after the status is known, before body processing.
-                if observe {
-                    let observed_headers: Vec<(String, String)> = headers
-                        .iter()
-                        .map(|(name, value)| {
-                            (
-                                name.as_str().to_ascii_lowercase(),
-                                value.to_str().unwrap_or_default().to_string(),
-                            )
-                        })
-                        .collect();
-                    if let Err(error) = self
-                        .callbacks
-                        .notify_response_async(status.as_u16(), &observed_headers)
-                        .await
-                    {
-                        return Err(AttemptFailure {
-                            status: Some(status.as_u16()),
-                            x_should_retry: None,
-                            server_retry_delay_ms: None,
-                            error: error.clone(),
-                            message: error.to_string(),
-                        });
-                    }
-                }
+                let observed_headers: Vec<(String, String)> = headers
+                    .iter()
+                    .map(|(name, value)| {
+                        (
+                            name.as_str().to_owned(),
+                            value.to_str().unwrap_or_default().to_owned(),
+                        )
+                    })
+                    .collect();
                 let body_text = response.text().await.map_err(|error| AttemptFailure {
                     status: None,
                     x_should_retry: None,
@@ -371,15 +370,17 @@ impl Wire<'_> {
                     )),
                     message: error.to_string(),
                 })?;
-                serde_json::from_str(&body_text).map_err(|error| AttemptFailure {
-                    status: None,
-                    x_should_retry: None,
-                    server_retry_delay_ms: None,
-                    error: ProviderError::Network(ProviderErrorSummary::sanitized(
-                        error.to_string(),
-                    )),
-                    message: error.to_string(),
-                })
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&body_text).map_err(|error| AttemptFailure {
+                        status: None,
+                        x_should_retry: None,
+                        server_retry_delay_ms: None,
+                        error: ProviderError::Network(ProviderErrorSummary::sanitized(
+                            error.to_string(),
+                        )),
+                        message: error.to_string(),
+                    })?;
+                Ok((parsed, status.as_u16(), observed_headers))
             };
             let attempt_result = match deadline {
                 Some(deadline) => {
@@ -414,7 +415,25 @@ impl Wire<'_> {
                 }
             };
             match attempt_result {
-                Ok(Ok(body)) => return Ok(body),
+                Ok(Ok((body, status, headers))) => {
+                    if observe {
+                        let observed = tokio::select! {
+                            biased;
+                            _ = self.cancel.cancelled() => Err(ProviderError::Cancelled),
+                            result = callbacks.notify_response_async(status, &headers) => result,
+                        };
+                        if let Err(error) = observed {
+                            return Err(AttemptFailure {
+                                status: Some(status),
+                                x_should_retry: None,
+                                server_retry_delay_ms: None,
+                                message: error.to_string(),
+                                error,
+                            });
+                        }
+                    }
+                    return Ok(body);
+                }
                 Ok(Err(failure)) => {
                     if retries_remaining == 0 || !failure.is_retryable() {
                         return Err(failure);
@@ -514,6 +533,37 @@ fn failure_result(
     )
 }
 
+fn validate_llama_request(
+    record: &ClassifierModelRecord,
+    context: &ClassifierContext,
+    options: &LlamaCppClassifyOptions,
+    call: &ClassifierCall,
+) -> Result<(), ProviderError> {
+    if context
+        .images
+        .as_ref()
+        .is_some_and(|images| !images.is_empty())
+    {
+        return Err(ProviderError::UnsupportedCapability(
+            ProviderErrorSummary::attested_static(
+                "llama.cpp classification does not support image input",
+            ),
+        ));
+    }
+    crate::classifier::validate_classifier_request(record, context, call)?;
+    let temperature = options.temperature.unwrap_or(1.0);
+    if !temperature.is_finite() || temperature <= 0.0 {
+        return Err(ProviderError::Config(ProviderErrorSummary::sanitized(
+            format!("Temperature must be a positive number, got {temperature}",),
+        )));
+    }
+    for id in context.questions.keys() {
+        render_question(context, id)
+            .map_err(|message| ProviderError::Config(ProviderErrorSummary::sanitized(message)))?;
+    }
+    Ok(())
+}
+
 async fn classify_llama(
     client: reqwest::Client,
     label_tokens: &Mutex<HashMap<(String, String, String), u64>>,
@@ -523,6 +573,10 @@ async fn classify_llama(
     auth: ResolvedAuth,
     call: ClassifierCall,
 ) -> ClassifierResult {
+    if let Err(error) = validate_llama_request(&record, &context, &options, &call) {
+        let message = error.to_string();
+        return ClassifierResult::failure(&record, ClassifierStopReason::Error, error, message);
+    }
     // Pre-dispatch rejections: the transport guard, the wire scheme, the
     // unsupported callback families, and image input.
     if record.api.as_str() != LLAMA_CPP_CLASSIFY_API_ID {
@@ -555,35 +609,7 @@ async fn classify_llama(
             message,
         );
     }
-    if let Some(images) = context.images.as_ref()
-        && !images.is_empty()
-    {
-        let message = format!("{LABEL} classification does not support image input");
-        return ClassifierResult::failure(
-            &record,
-            ClassifierStopReason::Error,
-            ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(message.clone())),
-            message,
-        );
-    }
-
     let temperature = options.temperature.unwrap_or(1.0);
-    if temperature <= 0.0 || !temperature.is_finite() {
-        let message = format!("Temperature must be a positive number, got {temperature}");
-        return ClassifierResult::failure(
-            &record,
-            ClassifierStopReason::Error,
-            ProviderError::Config(ProviderErrorSummary::sanitized(message.clone())),
-            message,
-        );
-    }
-
-    // Validate every question before the first request.
-    for id in context.questions.keys() {
-        if let Err(message) = render_question(&context, id) {
-            return failure_result(&record, &call, protocol_failure(message));
-        }
-    }
 
     let secret = auth.secret.expose_secret().to_owned();
     let bearer = if secret.is_empty() {
@@ -596,7 +622,21 @@ async fn classify_llama(
         root: llama_server_root(&record.base_url),
         model: record.id.clone(),
         bearer,
-        extra_headers: call.extra_headers.clone(),
+        extra_headers: match crate::ProviderHeaders::default().merge_model_request(
+            &record.headers,
+            &[],
+            &call.extra_headers,
+        ) {
+            Ok(headers) => headers,
+            Err(error) => {
+                return ClassifierResult::failure(
+                    &record,
+                    ClassifierStopReason::Error,
+                    error.clone(),
+                    error.to_string(),
+                );
+            }
+        },
         timeout: call.timeout,
         cancel: call.cancel.clone(),
         callbacks: &call.callbacks,

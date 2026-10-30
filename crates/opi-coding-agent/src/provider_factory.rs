@@ -439,6 +439,7 @@ impl opi_ai::AuthResolver for CredentialAuthResolver {
                     provider_id: self.provider_id.clone(),
                 })?;
             Ok(opi_ai::ResolvedAuth {
+                env: Default::default(),
                 scheme: self.scheme.clone(),
                 provenance: resolved.provenance(),
                 secret: resolved.value,
@@ -2089,6 +2090,7 @@ impl VertexAuthResolver {
         {
             let provenance = key.provenance();
             return Ok(opi_ai::ResolvedAuth {
+                env: Default::default(),
                 scheme: opi_ai::AuthScheme::ApiKey,
                 secret: key.value,
                 base_url: None,
@@ -2099,6 +2101,7 @@ impl VertexAuthResolver {
         // Configured static access token (default VERTEX_ACCESS_TOKEN).
         if let Some(token) = self.resolver.env_value(&self.access_token_env) {
             return Ok(opi_ai::ResolvedAuth {
+                env: Default::default(),
                 scheme: opi_ai::AuthScheme::Bearer,
                 secret: secrecy::SecretString::from(token),
                 base_url: None,
@@ -2119,6 +2122,7 @@ impl VertexAuthResolver {
             .await
             .map_err(map_vertex_adc_error)?;
         Ok(opi_ai::ResolvedAuth {
+            env: Default::default(),
             scheme: opi_ai::AuthScheme::Bearer,
             secret: token.access_token,
             base_url: None,

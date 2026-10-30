@@ -439,6 +439,14 @@ async fn factory_built_copilot_anthropic_models_apply_catalog_compatibility() {
     let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
     assert_eq!(body["thinking"]["type"], "enabled");
     assert_eq!(body["thinking"]["budget_tokens"], 4096);
+    assert!(body.get("temperature").is_none());
+
+    let mut without_thinking = request(model);
+    without_thinking.temperature = Some(0.3);
+    let _ = drain(&collection, without_thinking).await;
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 2);
+    let body: serde_json::Value = serde_json::from_slice(&requests[1].body).unwrap();
     assert_eq!(body["temperature"], 0.3);
 }
 

@@ -43,6 +43,7 @@ impl AuthResolver for CountingResolver {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async {
             Ok(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::Bearer,
                 secret: SecretString::from("test-token"),
                 base_url: None,
@@ -725,6 +726,7 @@ async fn concrete_custom_route_ignores_credential_base_url_and_uses_model_base_u
     // The resolved auth carries the credential's base_url; a non-Copilot route
     // must ignore it and dispatch to the model's own base_url instead.
     let resolved = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("oauth-token"),
         base_url: Some(auth_server.uri()),

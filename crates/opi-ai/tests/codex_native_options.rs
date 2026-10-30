@@ -42,6 +42,7 @@ impl AuthResolver for LocalAuth {
     fn resolve<'a>(&'a self) -> opi_ai::BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
         Box::pin(async {
             Ok(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::Bearer,
                 secret: secrecy::SecretString::from("local-token"),
                 account_id: Some("local-account".into()),

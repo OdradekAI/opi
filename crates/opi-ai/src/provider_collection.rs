@@ -6,10 +6,9 @@
 //! [`crate::api_mapped::ApiMappedProvider`] per profile
 //! over per-wire routes built from the existing constructors. Canonical ids
 //! replace the legacy opi ids (`gemini`, `vertex`, `bedrock`,
-//! `openai-responses`): nothing here registers a permanent alias. Azure and
-//! google-vertex need configuration (endpoint / project+location) and stay
-//! lookup-skipped with a typed reason until supplied; bedrock registers with
-//! a credential-chain label and needs an explicit route before dispatch.
+//! `openai-responses`): nothing here registers a permanent alias. Source-backed
+//! profiles remain registered while credentials and dynamic endpoint inputs
+//! resolve lazily for each call.
 //! Classifier and image builtins register through the typed classifier/image
 //! seams with catalog records. Construction is data-only: no environment,
 //! store, or network access happens here; env keys resolve at dispatch time
@@ -25,7 +24,6 @@ use crate::http::HttpClient;
 use crate::images::{ImageCostRates, ImageModelRecord, ImageOutputModality};
 use crate::models::{AuthDescriptor, CompatMetadata, Models};
 use crate::registry::RegistrationError;
-use std::str::FromStr;
 
 use crate::model_info::{ModelInfo, ModelPricing, PricingTier, WireApi};
 use crate::provider::{
@@ -37,14 +35,18 @@ use crate::stream::Pricing;
 /// Per-construction configuration the builtin table cannot supply itself.
 #[derive(Debug, Clone, Default)]
 pub struct BuiltinOverrides {
-    /// Azure endpoint; without it the azure profile stays skipped.
+    /// Azure API base; omitted values resolve from the injected source context.
     pub azure_endpoint: Option<String>,
     /// Azure API version (e.g. `2024-10-21`).
     pub azure_api_version: Option<String>,
-    /// Vertex project; with `vertex_location` it enables google-vertex.
+    /// Vertex project fallback for `vertex_auth`.
     pub vertex_project: Option<String>,
     /// Vertex location (e.g. `us-central1`).
     pub vertex_location: Option<String>,
+    /// Vertex source owner and endpoint overrides; fields here take precedence.
+    pub vertex_auth: crate::auth::builtin_vertex::BuiltinVertexConfig,
+    /// Bedrock source-chain inputs and isolated source transports.
+    pub aws_auth: crate::auth::builtin_aws::BuiltinAwsConfig,
     /// Per-provider default base URL overrides (tests point profiles at
     /// local mock servers).
     pub base_urls: BTreeMap<String, String>,
@@ -137,6 +139,7 @@ impl AuthResolver for BuiltinEnvAuthResolver {
         Box::pin(async move {
             match value {
                 Ok(Some(secret)) => Ok(ResolvedAuth {
+                    env: Default::default(),
                     scheme,
                     secret: secrecy::SecretString::from(secret),
                     base_url: None,
@@ -172,6 +175,7 @@ struct CanonicalRoute {
     id: String,
     models: Vec<ModelInfo>,
     inner: Box<dyn Provider>,
+    builtin_auth: bool,
 }
 
 impl std::fmt::Debug for CanonicalRoute {
@@ -188,7 +192,53 @@ impl CanonicalRoute {
     /// Republish the model spec under the inner adapter's historical id:
     /// prefix-sensitive adapters (Bedrock model families) parse their own
     /// `id:` prefix, so the canonical spec must not leak through.
+    fn wire_auth(&self, wire: Option<WireApi>, mut auth: ResolvedAuth) -> ResolvedAuth {
+        if self.builtin_auth
+            && !matches!(auth.scheme, AuthScheme::AnthropicFederation)
+            && matches!(
+                auth.provenance.source,
+                AuthProvenanceSource::CredentialStore { .. }
+                    | AuthProvenanceSource::Environment { .. }
+            )
+        {
+            let header_owned = matches!(&auth.provenance.source, AuthProvenanceSource::Environment { name } if name == "ANTHROPIC_AUTH_TOKEN");
+            if !header_owned
+                && (wire == Some(WireApi::GoogleGenerativeAi)
+                    || (wire == Some(WireApi::AnthropicMessages)
+                        && self.id != "github-copilot"
+                        && self.id != "cloudflare-ai-gateway"))
+            {
+                auth.scheme = AuthScheme::ApiKey;
+            }
+        }
+        auth
+    }
+    fn request_wire(&self, request: &Request) -> Option<WireApi> {
+        let id = request
+            .model
+            .strip_prefix(&format!("{}:", self.id))
+            .unwrap_or(&request.model);
+        self.models
+            .iter()
+            .find(|model| model.id == id)
+            .map(|model| model.wire_api)
+    }
     fn rewrite_model_spec(&self, mut request: Request) -> Request {
+        if self.builtin_auth
+            && matches!(self.id.as_str(), "opencode" | "opencode-go")
+            && !request
+                .extra_headers
+                .iter()
+                .any(|(name, _)| name.eq_ignore_ascii_case("x-opencode-session"))
+            && let Some(session) = request
+                .session_id
+                .as_ref()
+                .filter(|session| !session.is_empty())
+        {
+            request
+                .extra_headers
+                .push(("x-opencode-session".into(), session.clone()));
+        }
         let canonical_prefix = format!("{}:", self.id);
         if let Some(rest) = request.model.strip_prefix(&canonical_prefix) {
             request.model = format!("{}:{rest}", self.inner.id());
@@ -198,6 +248,15 @@ impl CanonicalRoute {
 }
 
 impl Provider for CanonicalRoute {
+    fn prepare_model_call(
+        &self,
+        model: &mut ModelInfo,
+        auth: &mut ResolvedAuth,
+    ) -> Result<Option<Arc<dyn Provider>>, ProviderError> {
+        *auth = self.wire_auth(Some(model.wire_api), auth.clone());
+        self.inner.prepare_model_call(model, auth)
+    }
+
     fn validate_simple_options(
         &self,
         model: &ProviderModelInfo,
@@ -212,6 +271,7 @@ impl Provider for CanonicalRoute {
         &self.models
     }
     fn stream_prepared(&self, request: Request, auth: ResolvedAuth) -> EventStream {
+        let auth = self.wire_auth(self.request_wire(&request), auth);
         let request = self.rewrite_model_spec(request);
         self.inner.stream_prepared(request, auth)
     }
@@ -221,6 +281,7 @@ impl Provider for CanonicalRoute {
         auth: ResolvedAuth,
         attempt: crate::provider::AttemptContext,
     ) -> EventStream {
+        let auth = self.wire_auth(self.request_wire(&request), auth);
         let request = self.rewrite_model_spec(request);
         self.inner.stream_attempt(request, auth, attempt)
     }
@@ -231,6 +292,7 @@ impl Provider for CanonicalRoute {
         attempt: crate::provider::AttemptContext,
         resources: Option<crate::codex_resources::CallResourceLease>,
     ) -> EventStream {
+        let auth = self.wire_auth(self.request_wire(&request), auth);
         let request = self.rewrite_model_spec(request);
         self.inner
             .stream_resource_attempt(request, auth, attempt, resources)
@@ -244,6 +306,7 @@ impl Provider for CanonicalRoute {
         attempt: crate::provider::AttemptContext,
         resources: Option<crate::codex_resources::CallResourceLease>,
     ) -> EventStream {
+        let auth = self.wire_auth(Some(model.wire_api), auth);
         let request = self.rewrite_model_spec(request);
         self.inner
             .stream_model_resource_attempt(model, options, request, auth, attempt, resources)
@@ -282,7 +345,181 @@ pub fn canonical_route(
             id: id.to_owned(),
             models,
             inner,
+            builtin_auth: false,
         })
+    }
+}
+
+fn builtin_route(id: &str, models: Vec<ModelInfo>, inner: Box<dyn Provider>) -> Box<dyn Provider> {
+    Box::new(CanonicalRoute {
+        id: id.into(),
+        models,
+        inner,
+        builtin_auth: true,
+    })
+}
+
+/// Azure's builtin profile uses its source Chat API as well as Responses.
+/// The legacy direct Azure provider retains its separate deployment-URL API.
+struct BuiltinAzureRoute {
+    models: Vec<ModelInfo>,
+    context: Arc<dyn AuthContext>,
+    client: Arc<HttpClient>,
+    api_version: Option<String>,
+}
+
+impl Provider for BuiltinAzureRoute {
+    fn id(&self) -> &str {
+        "azure"
+    }
+    fn models(&self) -> &[ModelInfo] {
+        &self.models
+    }
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        _: &crate::models::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        if let Some(base) = model.base_url.as_deref().filter(|base| !base.is_empty()) {
+            crate::azure_openai::resolve_azure_base_url(Some(base), None, None)?;
+        }
+        if !matches!(
+            model.wire_api,
+            WireApi::OpenAiCompletions | WireApi::AzureOpenAiResponses
+        ) {
+            return Err(ProviderError::Config(
+                crate::provider::ProviderErrorSummary::attested_static(
+                    "Azure builtin models require Chat or Azure Responses",
+                ),
+            ));
+        }
+        Ok(())
+    }
+    fn stream_prepared(&self, request: Request, auth: ResolvedAuth) -> EventStream {
+        let model_id = request
+            .model
+            .strip_prefix("azure:")
+            .unwrap_or(&request.model);
+        let Some(model) = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .cloned()
+        else {
+            let error = ProviderError::UnknownModel {
+                provider_id: "azure".into(),
+                model_id: model_id.into(),
+            };
+            return Box::pin(futures_util::stream::once(async move { Err(error) }));
+        };
+        self.stream_model_resource_attempt(
+            model,
+            Default::default(),
+            request,
+            auth,
+            crate::provider::AttemptContext {
+                invocation_id: uuid::Uuid::new_v4().to_string(),
+                attempt: 1,
+                max_attempts: 1,
+                payload_variant: crate::provider::PayloadVariant::Ordinary,
+            },
+            None,
+        )
+    }
+    fn prepare_model_call(
+        &self,
+        model: &mut ModelInfo,
+        auth: &mut ResolvedAuth,
+    ) -> Result<Option<Arc<dyn Provider>>, ProviderError> {
+        let env = |name: &str| {
+            if let Some(value) = auth.env.get(name) {
+                return Ok(Some(secrecy::ExposeSecret::expose_secret(value).to_owned()));
+            }
+            self.context.env(name).map_err(|error| {
+                ProviderError::Config(crate::provider::ProviderErrorSummary::from_untrusted(
+                    error.to_string(),
+                ))
+            })
+        };
+        let base = env("AZURE_OPENAI_BASE_URL")?;
+        let resource = if base.as_deref().is_none_or(|base| base.trim().is_empty()) {
+            env("AZURE_OPENAI_RESOURCE_NAME")?
+        } else {
+            None
+        };
+        let endpoint = crate::azure_openai::resolve_azure_base_url(
+            base.as_deref(),
+            resource.as_deref(),
+            model.base_url.as_deref(),
+        )?;
+        let version = match &self.api_version {
+            Some(version) => Some(version.clone()),
+            None => env("AZURE_OPENAI_API_VERSION")?,
+        };
+        let deployment_map = env("AZURE_OPENAI_DEPLOYMENT_NAME_MAP")?;
+        model.base_url = Some(endpoint.clone());
+        if model.wire_api == WireApi::AzureOpenAiResponses {
+            let provider = crate::azure_openai::AzureOpenAIProvider::for_records(
+                Some(endpoint),
+                vec![model.clone()],
+                version,
+            )?
+            .with_client(self.client.clone())
+            .with_deployment_map(deployment_map);
+            return Ok(Some(Arc::new(provider)));
+        }
+        // Resolve one source route before the acquisition owner starts. Every
+        // attempt reuses this adapter, endpoint and deployment snapshot.
+        let mut url = url::Url::parse(&endpoint).expect("validated Azure endpoint");
+        if url.host_str().is_some_and(|host| {
+            [
+                ".openai.azure.com",
+                ".cognitiveservices.azure.com",
+                ".ai.azure.com",
+            ]
+            .iter()
+            .any(|suffix| host.ends_with(suffix))
+        }) && url.path().trim_matches('/').is_empty()
+        {
+            url.set_path("/openai/v1");
+        }
+        model.base_url = Some(url.to_string().trim_end_matches('/').into());
+        let deployment = crate::azure_openai::resolve_deployment_name(
+            None,
+            deployment_map.as_deref(),
+            &model.id,
+        );
+        auth.scheme = AuthScheme::Bearer;
+        let provider = crate::openai_chat::OpenAiChatProvider::for_route(
+            model.base_url.clone(),
+            "azure".into(),
+            Default::default(),
+            vec![model.clone()],
+            self.client.clone(),
+        )
+        .with_wire_model(deployment);
+        Ok(Some(Arc::new(provider)))
+    }
+    fn stream_model_resource_attempt(
+        &self,
+        mut model: ModelInfo,
+        options: crate::models::SimpleOptions,
+        request: Request,
+        mut auth: ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        // Direct prepared dispatch has no collection preparation owner.
+        match self.prepare_model_call(&mut model, &mut auth) {
+            Ok(Some(provider)) => provider
+                .stream_model_resource_attempt(model, options, request, auth, attempt, resources),
+            Ok(None) => unreachable!("Azure always freezes a concrete wire adapter"),
+            Err(error) => Box::pin(futures_util::stream::once(async move { Err(error) })),
+        }
+    }
+    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+        self.models = models;
+        Ok(())
     }
 }
 
@@ -322,7 +559,11 @@ fn catalog_pricing(entry: &CatalogModel) -> Result<ModelPricing, BuiltinError> {
             });
         }
     }
-    ModelPricing::try_new(base, tiers).map_err(|error| invalid(&error.to_string()))
+    let pricing = ModelPricing { base, tiers };
+    pricing
+        .validate_source_metadata()
+        .map_err(|error| invalid(&error.to_string()))?;
+    Ok(pricing)
 }
 
 /// One bundled chat entry into its complete registered [`ModelInfo`].
@@ -335,31 +576,14 @@ fn chat_model_info(
         model: entry.id.clone(),
         reason,
     };
-    let wire_api = WireApi::from_str(&entry.api).map_err(|error| invalid(error.to_string()))?;
-    let context_window = entry
-        .context_window
-        .ok_or_else(|| invalid("chat entry has no context window".into()))?;
-    let max_tokens = entry.max_tokens.unwrap_or_else(|| context_window.min(4096));
-    let mut capabilities = crate::ModelCapabilities::new(context_window, max_tokens);
-    if entry
-        .input
-        .iter()
-        .any(|modality| matches!(modality, crate::catalog::CatalogInputModality::Image))
-    {
-        capabilities = capabilities.with_images(true);
+    let mut model = entry
+        .to_chat_model_info()
+        .map_err(|error| invalid(error.to_string()))?;
+    model.capabilities.supports_streaming = true;
+    if let Some(base) = forced_base {
+        model.base_url = Some(base.to_owned());
     }
-    if entry.reasoning {
-        capabilities = capabilities.with_thinking(true);
-    }
-    let mut model = ModelInfo::new(&entry.id, &entry.name, wire_api, capabilities);
-    // An explicit provider override (tests point profiles at local mocks)
-    // wins over per-entry catalog base URLs.
-    if forced_base.is_none() && !entry.base_url.is_empty() {
-        model = model.with_base_url(entry.base_url.clone());
-    }
-    model
-        .with_pricing(catalog_pricing(entry)?)
-        .map_err(|error| invalid(error.to_string()))
+    Ok(model)
 }
 
 /// One bundled classifier entry into its complete record.
@@ -377,6 +601,18 @@ fn classifier_record(entry: &CatalogModel) -> Result<ClassifierModelRecord, Buil
         })
         .collect();
     Ok(ClassifierModelRecord {
+        headers: crate::catalog::wire::decode_record_headers(&entry.raw).map_err(|reason| {
+            BuiltinError::InvalidModel {
+                provider: entry.provider.clone(),
+                model: entry.id.clone(),
+                reason,
+            }
+        })?,
+        input_limits: entry
+            .raw
+            .get("inputLimits")
+            .filter(|value| !value.is_null())
+            .cloned(),
         provider_id: entry.provider.clone(),
         id: entry.id.clone(),
         name: entry.name.clone(),
@@ -384,25 +620,63 @@ fn classifier_record(entry: &CatalogModel) -> Result<ClassifierModelRecord, Buil
         base_url: entry.base_url.clone(),
         input,
         context_window: entry.context_window.unwrap_or(0),
-        cost: catalog_pricing(entry)?,
+        cost: entry
+            .raw
+            .get("cost")
+            .filter(|cost| !cost.is_null())
+            .map(|_| catalog_pricing(entry))
+            .transpose()?,
     })
 }
 
 /// One bundled image entry into its complete record.
 fn image_record(entry: &CatalogModel) -> Result<ImageModelRecord, BuiltinError> {
     Ok(ImageModelRecord {
+        cost_tiers: crate::catalog::wire::decode_pricing_tiers(entry.raw.pointer("/cost/tiers"))
+            .map_err(|reason| BuiltinError::InvalidModel {
+                provider: entry.provider.clone(),
+                model: entry.id.clone(),
+                reason,
+            })?,
+        headers: crate::catalog::wire::decode_record_headers(&entry.raw).map_err(|reason| {
+            BuiltinError::InvalidModel {
+                provider: entry.provider.clone(),
+                model: entry.id.clone(),
+                reason,
+            }
+        })?,
+        input_limits: entry
+            .raw
+            .get("inputLimits")
+            .filter(|value| !value.is_null())
+            .cloned(),
+        input: entry.input.clone(),
         provider_id: entry.provider.clone(),
         id: entry.id.clone(),
         name: entry.name.clone(),
         api: crate::models::ApiId::new(&entry.api),
         base_url: entry.base_url.clone(),
-        output: vec![ImageOutputModality::Image],
-        cost: ImageCostRates {
-            input: entry.cost.input,
-            output: entry.cost.output,
-            cache_read: entry.cost.cache_read,
-            cache_write: entry.cost.cache_write,
-        },
+        output: entry
+            .raw
+            .get("output")
+            .and_then(serde_json::Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(|value| match value.as_str() {
+                        Some("image") => Some(ImageOutputModality::Image),
+                        Some("text") => Some(ImageOutputModality::Text),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_else(|| vec![ImageOutputModality::Image]),
+        cost: entry.cost.as_ref().map(|cost| ImageCostRates {
+            input: cost.input,
+            output: cost.output,
+            cache_read: cost.cache_read,
+            cache_write: cost.cache_write,
+        }),
     })
 }
 
@@ -445,9 +719,42 @@ pub fn register_builtin(
             overrides,
             &mut report,
         )?;
+        // A classifier-only profile may own the provider's default auth
+        // management slot, but must not claim an existing custom chat route.
+        models.mark_builtin_default_auth(profile.id, profile.classifier_only);
     }
-    register_classifiers(models, catalog, &context, &mut report)?;
-    register_images(models, catalog, &context, &mut report)?;
+    register_classifiers(models, catalog, &context, &client, overrides, &mut report)?;
+    register_images(models, catalog, &context, &client, overrides, &mut report)?;
+    for profile in builtin_provider_profiles() {
+        let flow = models
+            .oauth_flow_for_builtin(profile.id)
+            .or_else(|| crate::auth::builtin::default_oauth_flow(profile.id));
+        if let Some(flow) = &flow {
+            models.register_oauth_flow(profile.id, flow.clone());
+        }
+        let factory = match profile.id {
+            "google-vertex" => {
+                let mut config = overrides.vertex_auth.clone();
+                config.project = config.project.or_else(|| overrides.vertex_project.clone());
+                config.location = config
+                    .location
+                    .or_else(|| overrides.vertex_location.clone());
+                config.base_url = config
+                    .base_url
+                    .or_else(|| overrides.base_urls.get(profile.id).cloned());
+                crate::auth::builtin_vertex::factory(context.clone(), config)
+            }
+            "amazon-bedrock" => {
+                let mut config = overrides.aws_auth.clone();
+                config.base_url = config
+                    .base_url
+                    .or_else(|| overrides.base_urls.get(profile.id).cloned());
+                crate::auth::builtin_aws::factory(context.clone(), config)
+            }
+            _ => crate::auth::builtin::factory(profile, context.clone(), flow),
+        };
+        models.register_builtin_auth_factory(profile.id, factory);
+    }
     Ok(report)
 }
 
@@ -470,25 +777,20 @@ fn register_chat_profile(
     }
     match profile.endpoint {
         BuiltinEndpoint::AzureDeployment => {
-            let Some(endpoint) = overrides.azure_endpoint.clone() else {
-                report
-                    .skipped
-                    .push((id.into(), "azure requires a configured endpoint".into()));
-                return Ok(());
+            let records = chat_infos(
+                catalog,
+                profile,
+                overrides
+                    .azure_endpoint
+                    .as_deref()
+                    .or_else(|| overrides.base_urls.get(id).map(String::as_str)),
+            )?;
+            let provider = BuiltinAzureRoute {
+                models: records,
+                context: context.clone(),
+                client: client.clone(),
+                api_version: overrides.azure_api_version.clone(),
             };
-            let deployments: Vec<String> = catalog
-                .models(id, CatalogOperation::Chat)
-                .map(|entries| entries.map(|entry| entry.id.clone()).collect::<Vec<_>>())
-                .unwrap_or_default();
-            let provider = crate::azure_openai::AzureOpenAIProvider::from_config(
-                Some(endpoint),
-                deployments,
-                overrides.azure_api_version.clone(),
-            )
-            .map_err(|error| BuiltinError::Construction {
-                provider: id.into(),
-                message: error.to_string(),
-            })?;
             register_env_route(
                 models,
                 profile,
@@ -496,40 +798,32 @@ fn register_chat_profile(
                 context,
                 CompatMetadata {
                     openai_compatible: true,
-                    profile: Some(profile.name.to_owned()),
+                    profile: Some(profile.name.into()),
                 },
             )?;
             report.registered.push(id.into());
             return Ok(());
         }
         BuiltinEndpoint::VertexLocation => {
-            match (&overrides.vertex_project, &overrides.vertex_location) {
-                (Some(project), Some(location)) => {
-                    let forced = overrides.base_urls.get(profile.id).map(String::as_str);
-                    let infos = chat_infos(catalog, profile, forced)?;
-                    let base_url = profile_base_url(profile, overrides);
-                    let provider = crate::vertex::VertexProvider::new(
-                        project.clone(),
-                        location.clone(),
-                        base_url,
-                    )
-                    .with_models(infos);
-                    let provider =
-                        canonical_route(id, provider_models(&provider), Box::new(provider));
-                    register_env_route(
-                        models,
-                        profile,
-                        provider,
-                        context,
-                        CompatMetadata::default(),
-                    )?;
-                    report.registered.push(id.into());
-                }
-                _ => report.skipped.push((
-                    id.into(),
-                    "google-vertex requires project and location configuration".into(),
-                )),
-            }
+            let forced = overrides.base_urls.get(profile.id).map(String::as_str);
+            let infos = chat_infos(catalog, profile, forced)?;
+            let provider = crate::vertex::VertexProvider::new(
+                overrides.vertex_project.clone().unwrap_or_default(),
+                overrides.vertex_location.clone().unwrap_or_default(),
+                profile_base_url(profile, overrides),
+            )
+            .with_models(infos)
+            .with_provider_identity(id)
+            .with_client(Arc::clone(client));
+            let provider = builtin_route(id, provider_models(&provider), Box::new(provider));
+            register_env_route(
+                models,
+                profile,
+                provider,
+                context,
+                CompatMetadata::default(),
+            )?;
+            report.registered.push(id.into());
             return Ok(());
         }
         BuiltinEndpoint::BedrockRegion => {
@@ -539,9 +833,10 @@ fn register_chat_profile(
                 profile_base_url(profile, overrides),
                 Arc::clone(client),
             )
-            .with_models(infos);
-            let provider = canonical_route(id, provider_models(&provider), Box::new(provider));
-            // Lookup-only until an explicit AWS route is supplied.
+            .with_models(infos)
+            .with_provider_identity(id);
+            let provider = builtin_route(id, provider_models(&provider), Box::new(provider));
+            // The lazy source factory below binds the native chain after registration.
             models
                 .register(
                     provider,
@@ -591,7 +886,7 @@ fn register_chat_profile(
                 base_url.clone(),
                 headers.clone(),
                 Arc::clone(client),
-                false,
+                id == "anthropic",
             )),
             WireApi::OpenAiResponses => {
                 Box::new(crate::openai_responses::OpenAiResponsesProvider::for_route(
@@ -604,10 +899,12 @@ fn register_chat_profile(
             }
             WireApi::MistralConversations => Box::new(
                 crate::mistral::MistralConversationsProvider::new(base_url.clone())
+                    .with_client(Arc::clone(client))
                     .with_models(subset.clone()),
             ),
             WireApi::PiMessages => Box::new(
                 crate::pi_messages::PiMessagesProvider::new(base_url.clone())
+                    .with_client(Arc::clone(client))
                     .with_models(subset.clone()),
             ),
             WireApi::OpenAiCodexResponses => Box::new(
@@ -619,7 +916,8 @@ fn register_chat_profile(
             ),
             WireApi::GoogleGenerativeAi => Box::new(
                 crate::gemini::GeminiProvider::with_client(base_url.clone(), Arc::clone(client))
-                    .with_models(subset.clone()),
+                    .with_models(subset.clone())
+                    .with_provider_identity(id),
             ),
             other => {
                 return Err(BuiltinError::Construction {
@@ -628,7 +926,7 @@ fn register_chat_profile(
                 });
             }
         };
-        routes.insert(wire, canonical_route(id, subset, route));
+        routes.insert(wire, builtin_route(id, subset, route));
     }
     let compat = CompatMetadata {
         openai_compatible: openai_compatible(&group_by_wire(chat_infos(
@@ -751,11 +1049,16 @@ fn register_classifiers(
     models: &mut Models,
     catalog: &Catalog,
     context: &Arc<dyn AuthContext>,
+    client: &Arc<HttpClient>,
+    overrides: &BuiltinOverrides,
     report: &mut BuiltinReport,
 ) -> Result<(), BuiltinError> {
     // (provider, api id, env key) triples sourced from the profile table.
     let plans: &[(&str, &str)] = &[
         ("typesafe", "typesafe-system-one"),
+        ("openrouter", "typesafe-system-one"),
+        ("opencode", "typesafe-system-one"),
+        ("vercel-ai-gateway", "typesafe-system-one"),
         ("openai", "openai-decisions"),
         ("cloudflare-workers-ai", "cloudflare-workers-ai-system-one"),
     ];
@@ -769,8 +1072,15 @@ fn register_classifiers(
         let Some(first) = entries.first() else {
             continue;
         };
-        let record = classifier_record(first)?;
-        let http = HttpClient::new();
+        let make_record = |entry: &CatalogModel| {
+            let mut record = classifier_record(entry)?;
+            if let Some(base) = overrides.base_urls.get(*provider_id) {
+                record.base_url = base.clone();
+            }
+            Ok::<_, BuiltinError>(record)
+        };
+        let record = make_record(first)?;
+        let http = client.as_ref().clone();
         let api_id_owned = (*api_id).to_owned();
         let result = match *api_id {
             "typesafe-system-one" => register_one_classifier(
@@ -812,7 +1122,7 @@ fn register_classifiers(
         })?;
         for extra in entries.iter().skip(1) {
             models
-                .register_classifier_model_record(classifier_record(extra)?)
+                .register_classifier_model_record(make_record(extra)?)
                 .map_err(|error| BuiltinError::Construction {
                     provider: (*provider_id).to_owned(),
                     message: error.to_string(),
@@ -831,6 +1141,8 @@ fn register_one_classifier<O: Send + 'static>(
     context: &Arc<dyn AuthContext>,
     _record: ClassifierModelRecord,
 ) -> Result<(), RegistrationError> {
+    let provider_id = api.provider_id().to_owned();
+    let api_id = api.api_id().clone();
     let api: Arc<dyn crate::api::ClassifierApi<O>> = Arc::from(api);
     let (resolver, source) = match profile.api_key_env {
         Some(env_var) => (
@@ -851,15 +1163,17 @@ fn register_one_classifier<O: Send + 'static>(
             AuthProvenanceSource::Static,
         ),
     };
-    models
-        .register_classifier_api(api, resolver, source)
-        .map(|_| ())
+    models.register_classifier_api(api, resolver, source)?;
+    models.mark_builtin_classifier_auth(&provider_id, &api_id);
+    Ok(())
 }
 
 fn register_images(
     models: &mut Models,
     catalog: &Catalog,
     context: &Arc<dyn AuthContext>,
+    client: &Arc<HttpClient>,
+    overrides: &BuiltinOverrides,
     report: &mut BuiltinReport,
 ) -> Result<(), BuiltinError> {
     let Some(profile) = crate::providers::builtin_profile("openrouter") else {
@@ -872,9 +1186,16 @@ fn register_images(
     let Some(first) = entries.first() else {
         return Ok(());
     };
-    let record = image_record(first)?;
+    let make_record = |entry: &CatalogModel| {
+        let mut record = image_record(entry)?;
+        if let Some(base) = overrides.base_urls.get("openrouter") {
+            record.base_url = base.clone();
+        }
+        Ok::<_, BuiltinError>(record)
+    };
+    let record = make_record(first)?;
     let api = Arc::new(crate::api::openrouter_images::OpenRouterImagesApi::new(
-        HttpClient::new(),
+        client.as_ref().clone(),
         record,
     ));
     let resolver = Arc::new(BuiltinEnvAuthResolver::new(
@@ -894,6 +1215,87 @@ fn register_images(
             provider: "openrouter".into(),
             message: error.to_string(),
         })?;
+    models.mark_builtin_image_auth(
+        "openrouter",
+        &crate::models::ApiId::new("openrouter-images"),
+    );
+    for extra in entries.iter().skip(1) {
+        models
+            .register_image_model_record(make_record(extra)?)
+            .map_err(|error| BuiltinError::Construction {
+                provider: "openrouter".into(),
+                message: error.to_string(),
+            })?;
+    }
     report.image_apis.push("openrouter-images".into());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model_info::ModelCapabilities;
+
+    struct NoAmbient;
+
+    impl AuthContext for NoAmbient {
+        fn env(&self, name: &str) -> Result<Option<String>, crate::auth::AuthContextError> {
+            assert!(
+                !matches!(name, "AZURE_OPENAI_BASE_URL" | "AZURE_OPENAI_RESOURCE_NAME"),
+                "selected scoped fields must not read ambient values"
+            );
+            Ok(None)
+        }
+
+        fn file_exists(&self, _: &str) -> Result<bool, crate::auth::AuthContextError> {
+            panic!("Azure route preparation must not discover credential files")
+        }
+    }
+
+    #[test]
+    fn azure_blank_scoped_base_allows_same_scope_resource_before_model_fallback() {
+        for wire in [WireApi::OpenAiCompletions, WireApi::AzureOpenAiResponses] {
+            for base in ["", "  \t "] {
+                for model_base in [None, Some("https://wrong-model.example.com")] {
+                    let route = BuiltinAzureRoute {
+                        models: vec![],
+                        context: Arc::new(NoAmbient),
+                        client: Arc::new(HttpClient::new()),
+                        api_version: None,
+                    };
+                    let mut model = ModelInfo::new(
+                        "model",
+                        "model",
+                        wire,
+                        ModelCapabilities::new(4096, 1024).with_streaming(true),
+                    );
+                    model.base_url = model_base.map(str::to_owned);
+                    let mut auth = crate::test_support::resolved_auth();
+                    auth.env = [
+                        ("AZURE_OPENAI_BASE_URL".into(), base.into()),
+                        (
+                            "AZURE_OPENAI_RESOURCE_NAME".into(),
+                            "scoped-resource".into(),
+                        ),
+                    ]
+                    .into();
+                    let prepared = route.prepare_model_call(&mut model, &mut auth);
+                    assert!(
+                        prepared.is_ok(),
+                        "wire={wire}, base={base:?}: {:?}",
+                        prepared.err()
+                    );
+                    assert_eq!(
+                        model.base_url.as_deref(),
+                        Some(if wire == WireApi::OpenAiCompletions {
+                            "https://scoped-resource.openai.azure.com/openai/v1"
+                        } else {
+                            "https://scoped-resource.openai.azure.com"
+                        }),
+                        "wire={wire}, base={base:?}, model_base={model_base:?}"
+                    );
+                }
+            }
+        }
+    }
 }

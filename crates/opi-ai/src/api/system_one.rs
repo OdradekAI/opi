@@ -96,7 +96,7 @@ impl ClassifierApi<TypesafeSystemOneOptions> for TypesafeSystemOneApi {
     }
 
     fn provider_id(&self) -> &str {
-        "typesafe"
+        &self.record.provider_id
     }
 
     fn complete_record(&self) -> &ClassifierModelRecord {
@@ -109,6 +109,17 @@ impl ClassifierApi<TypesafeSystemOneOptions> for TypesafeSystemOneApi {
             max_retries: 2,
             max_retry_delay_ms: None,
         }
+    }
+
+    fn validate_request(
+        &self,
+        record: &ClassifierModelRecord,
+        context: &ClassifierContext,
+        options: &TypesafeSystemOneOptions,
+        call: &ClassifierCall,
+    ) -> Result<(), ProviderError> {
+        self.validate_options(options)?;
+        validate_system_one_request(record, context, call, LABEL)
     }
 
     fn classify_prepared<'a>(
@@ -154,6 +165,8 @@ impl ClassifierApi<TypesafeSystemOneOptions> for TypesafeSystemOneApi {
 /// reads. Unknown pricing stays at the source generator's `0` fallback.
 pub fn default_typesafe_classifier_record() -> ClassifierModelRecord {
     ClassifierModelRecord {
+        headers: Vec::new(),
+        input_limits: None,
         provider_id: "typesafe".into(),
         id: "jev-latest".into(),
         name: "Jev".into(),
@@ -161,11 +174,10 @@ pub fn default_typesafe_classifier_record() -> ClassifierModelRecord {
         base_url: TYPESAFE_SYSTEM_ONE_BASE_URL.into(),
         input: vec![crate::classifier::ClassifierInputModality::Text],
         context_window: 64000,
-        cost: crate::model_info::ModelPricing::try_new(
-            crate::stream::Pricing::default(),
-            Vec::new(),
-        )
-        .expect("zero pricing is valid"),
+        cost: Some(
+            crate::model_info::ModelPricing::try_new(crate::stream::Pricing::default(), Vec::new())
+                .expect("zero pricing is valid"),
+        ),
     }
 }
 
@@ -264,6 +276,24 @@ pub(crate) struct SystemOneCoreOptions {
     pub max_retry_delay_ms: Option<u64>,
 }
 
+pub(crate) fn validate_system_one_request(
+    record: &ClassifierModelRecord,
+    context: &ClassifierContext,
+    call: &ClassifierCall,
+    label: &str,
+) -> Result<(), ProviderError> {
+    if context
+        .images
+        .as_ref()
+        .is_some_and(|images| !images.is_empty())
+    {
+        return Err(ProviderError::UnsupportedCapability(
+            ProviderErrorSummary::sanitized(format!("{label} does not support image input")),
+        ));
+    }
+    crate::classifier::validate_classifier_request(record, context, call)
+}
+
 /// The shared System One attempt loop: guards, payload freeze, retries,
 /// per-attempt timeouts and the shared output parser.
 #[allow(clippy::too_many_arguments)]
@@ -273,9 +303,13 @@ pub(crate) async fn classify_over_system_one(
     context: ClassifierContext,
     options: SystemOneCoreOptions,
     auth: ResolvedAuth,
-    call: ClassifierCall,
+    mut call: ClassifierCall,
     transport: SystemOneTransport,
 ) -> ClassifierResult {
+    call.callbacks = call.callbacks.for_call();
+    if let Err(error) = validate_system_one_request(&record, &context, &call, transport.label) {
+        return failure_from_error(&record, &call, error);
+    }
     let label = transport.label;
     // Pre-dispatch rejections: the transport guard, Bearer-only wire,
     // unsupported callback families, and image input.
@@ -321,6 +355,14 @@ pub(crate) async fn classify_over_system_one(
         );
     }
 
+    let headers = match crate::ProviderHeaders::default().merge_model_request(
+        &record.headers,
+        &[],
+        &call.extra_headers,
+    ) {
+        Ok(headers) => headers,
+        Err(error) => return failure_from_error(&record, &call, error),
+    };
     let mut body = (transport.payload)(build_request_body(&record, &context));
     // The payload observer runs once per logical call; an ordinary retry
     // reuses the frozen body byte-for-byte (the shared callback seam).
@@ -348,12 +390,9 @@ pub(crate) async fn classify_over_system_one(
                 .post(&url)
                 .bearer_auth(auth.secret.expose_secret())
                 .json(&body);
-            let request = call
-                .extra_headers
-                .iter()
-                .fold(request, |builder, (name, value)| {
-                    builder.header(name, value)
-                });
+            let request = headers.iter().fold(request, |builder, (name, value)| {
+                builder.header(name, value)
+            });
             let send = async {
                 let response = request.send().await.map_err(|error| {
                     if error.is_timeout() {
@@ -408,8 +447,6 @@ pub(crate) async fn classify_over_system_one(
                         message,
                     });
                 }
-                // The response observer fires at the source observation
-                // point: after the status is known, before body processing.
                 let observed_headers: Vec<(String, String)> = headers
                     .iter()
                     .map(|(name, value)| {
@@ -419,19 +456,6 @@ pub(crate) async fn classify_over_system_one(
                         )
                     })
                     .collect();
-                if let Err(error) = call
-                    .callbacks
-                    .notify_response_async(status.as_u16(), &observed_headers)
-                    .await
-                {
-                    return Err(AttemptFailure {
-                        status: Some(status.as_u16()),
-                        x_should_retry: None,
-                        server_retry_delay_ms: None,
-                        error: error.clone(),
-                        message: error.to_string(),
-                    });
-                }
                 let body_text = response.text().await.map_err(|error| AttemptFailure {
                     status: None,
                     x_should_retry: None,
@@ -441,7 +465,20 @@ pub(crate) async fn classify_over_system_one(
                     )),
                     message: error.to_string(),
                 })?;
-                Ok(body_text)
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&body_text).map_err(|error| {
+                        let message = format!("{label} returned an unexpected response: {error}");
+                        AttemptFailure {
+                            status: None,
+                            x_should_retry: None,
+                            server_retry_delay_ms: None,
+                            error: ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                                message.clone(),
+                            )),
+                            message,
+                        }
+                    })?;
+                Ok((parsed, status.as_u16(), observed_headers))
             };
             let attempt_result = match deadline {
                 Some(deadline) => {
@@ -474,13 +511,22 @@ pub(crate) async fn classify_over_system_one(
                 }
             };
             match attempt_result {
-                Ok(Ok(body_text)) => {
+                Ok(Ok((parsed, status, headers))) => {
+                    // A successful JSON handoff closes acquisition retries.
+                    let observed = tokio::select! {
+                        biased;
+                        _ = call.cancel.cancelled() => Err(ProviderError::Cancelled),
+                        result = call.callbacks.notify_response_async(status, &headers) => result,
+                    };
+                    if let Err(error) = observed {
+                        return failure_from_error(&record, &call, error);
+                    }
                     return parse_system_one_response(
                         label,
                         transport.output,
                         &record,
                         &context,
-                        &body_text,
+                        &parsed,
                     );
                 }
                 Ok(Err(failure)) => {
@@ -673,15 +719,6 @@ fn jitter_nanos() -> u64 {
         .unwrap_or(0)
 }
 
-/// pi `tokenCount`: a finite positive number counts, anything else is zero.
-fn token_count(value: Option<&serde_json::Value>) -> u32 {
-    value
-        .and_then(serde_json::Value::as_f64)
-        .filter(|tokens| tokens.is_finite() && *tokens > 0.0)
-        .map(|tokens| tokens as u32)
-        .unwrap_or(0)
-}
-
 /// The direct TypeSafe endpoint returns the System One output unwrapped:
 /// any JSON object is the output record itself.
 fn typesafe_output(body: &serde_json::Value, label: &str) -> Result<serde_json::Value, String> {
@@ -700,21 +737,9 @@ fn parse_system_one_response(
     output: fn(&serde_json::Value, &str) -> Result<serde_json::Value, String>,
     record: &ClassifierModelRecord,
     context: &ClassifierContext,
-    body_text: &str,
+    parsed: &serde_json::Value,
 ) -> ClassifierResult {
-    let parsed: serde_json::Value = match serde_json::from_str(body_text) {
-        Ok(value) => value,
-        Err(error) => {
-            let message = format!("{label} returned an unexpected response: {error}");
-            return ClassifierResult::failure(
-                record,
-                ClassifierStopReason::Error,
-                ProviderError::StreamError(ProviderErrorSummary::sanitized(message.clone())),
-                message,
-            );
-        }
-    };
-    let parsed = match output(&parsed, label) {
+    let parsed = match output(parsed, label) {
         Ok(output) => output,
         Err(message) => {
             return ClassifierResult::failure(
@@ -729,31 +754,9 @@ fn parse_system_one_response(
     let mut result = ClassifierResult::in_progress(record);
 
     // Usage first: a malformed-answers request keeps its billed usage.
-    let usage_raw = parsed.get("usage").filter(|usage| usage.is_object());
-    let input = usage_raw
-        .map(|usage| token_count(usage.get("input_tokens")))
-        .unwrap_or(0);
-    let output = usage_raw
-        .map(|usage| token_count(usage.get("output_tokens")))
-        .unwrap_or(0);
-    let has_tokens = usage_raw.is_some_and(|usage| {
-        usage.get("input_tokens").is_some() || usage.get("output_tokens").is_some()
-    });
-    if has_tokens {
-        let usage = crate::stream::Usage {
-            input_tokens: input,
-            output_tokens: output,
-            cache_read_tokens: 0,
-            cache_write_tokens: 0,
-            cache_write_1h_tokens: None,
-            reasoning_tokens: None,
-            total_tokens: Some(u64::from(input) + u64::from(output)),
-            service_tier: None,
-            reported: true,
-        };
+    if let Some(usage) = crate::classifier::parse_classifier_usage(parsed.get("usage")) {
         // Chat-style tiered cost from the record's catalog pricing.
-        let rates = record.cost.effective_for_usage(&usage);
-        result.cost = Some(crate::stream::calculate_cost(&usage, &rates));
+        result.cost = crate::classifier::cost_for_usage(record, &usage);
         result.usage = Some(usage);
     }
 

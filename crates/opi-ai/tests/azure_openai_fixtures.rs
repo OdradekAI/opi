@@ -544,6 +544,7 @@ async fn stream_drains_text_lifecycle_through_http() {
     // production transport derives the `api-key` header from `auth.secret`
     // in stream_prepared.
     let auth = opi_ai::auth::ResolvedAuth {
+        env: Default::default(),
         scheme: opi_ai::auth::AuthScheme::ApiKey,
         secret: secrecy::SecretString::from("test-api-key-12345"),
         base_url: None,
@@ -653,6 +654,7 @@ async fn request_enrichment_reaches_azure_http_boundary() {
     )
     .unwrap();
     let auth = opi_ai::auth::ResolvedAuth {
+        env: Default::default(),
         scheme: opi_ai::auth::AuthScheme::ApiKey,
         secret: secrecy::SecretString::from("test-api-key-12345"),
         base_url: None,
@@ -872,6 +874,7 @@ async fn azure_async_callbacks_flow_through_shared_responses_wire() {
     )
     .unwrap();
     let auth = opi_ai::auth::ResolvedAuth {
+        env: Default::default(),
         scheme: opi_ai::auth::AuthScheme::ApiKey,
         secret: secrecy::SecretString::from("test-api-key-12345"),
         base_url: None,
@@ -1006,6 +1009,7 @@ fn azure_responses_sse_tool() -> String {
 
 fn azure_api_key_auth() -> opi_ai::auth::ResolvedAuth {
     opi_ai::auth::ResolvedAuth {
+        env: Default::default(),
         scheme: opi_ai::auth::AuthScheme::ApiKey,
         secret: secrecy::SecretString::from("offline-azure-key"),
         base_url: None,
@@ -1017,7 +1021,7 @@ fn azure_api_key_auth() -> opi_ai::auth::ResolvedAuth {
 async fn mount_azure_responses_mock(server: &wiremock::MockServer, body: String) {
     use wiremock::matchers::{method, path, query_param};
     wiremock::Mock::given(method("POST"))
-        .and(path("/openai/deployments/my-gpt4o/responses"))
+        .and(path("/openai/v1/responses"))
         .and(query_param("api-version", "v1"))
         .respond_with(
             wiremock::ResponseTemplate::new(200)
@@ -1120,14 +1124,14 @@ fn azure_responses_url_construction() {
     .unwrap();
     assert_eq!(
         provider.build_azure_responses_url("my-gpt4o"),
-        "https://myresource.openai.azure.com/openai/deployments/my-gpt4o/responses?api-version=2024-10-21"
+        "https://myresource.openai.azure.com/openai/v1/responses?api-version=2024-10-21"
     );
     // Default version follows the pinned source default v1.
     let provider = azure_responses_provider("https://myresource.openai.azure.com".into());
     assert!(
         provider
             .build_azure_responses_url("my-gpt4o")
-            .ends_with("/openai/deployments/my-gpt4o/responses?api-version=v1")
+            .ends_with("/openai/v1/responses?api-version=v1")
     );
 }
 
@@ -1136,7 +1140,7 @@ async fn azure_responses_text_lifecycle_uses_deployment_url_and_api_key_auth() {
     let server = wiremock::MockServer::start().await;
     mount_azure_responses_mock(&server, azure_responses_sse_text()).await;
 
-    let provider = azure_responses_provider(server.uri());
+    let provider = azure_responses_provider(format!("{}/openai/v1", server.uri()));
     let mut stream = provider.stream_prepared(
         azure_responses_request("my-gpt4o", None),
         azure_api_key_auth(),
@@ -1176,7 +1180,7 @@ async fn azure_responses_tool_call_lifecycle_reaches_the_wire() {
     let server = wiremock::MockServer::start().await;
     mount_azure_responses_mock(&server, azure_responses_sse_tool()).await;
 
-    let provider = azure_responses_provider(server.uri());
+    let provider = azure_responses_provider(format!("{}/openai/v1", server.uri()));
     let mut request = azure_responses_request("my-gpt4o", None);
     request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
         system_prompt: None,
@@ -1243,7 +1247,7 @@ async fn registered_azure_responses_models(
     opi_ai::models::Models,
     opi_ai::models::ChatApiHandle<AzureOpenAIOptions>,
 ) {
-    let provider = azure_responses_provider(server_uri);
+    let provider = azure_responses_provider(format!("{server_uri}/openai/v1"));
     let api = AzureOpenAIResponsesChatApi::new(provider, model).expect("valid azure record");
     let mut models = opi_ai::models::Models::new();
     let handle = models
@@ -1301,6 +1305,69 @@ async fn azure_responses_native_options_reach_the_wire_without_service_tier() {
 }
 
 #[tokio::test]
+async fn azure_responses_uses_the_complete_per_call_record() {
+    let factory_server = wiremock::MockServer::start().await;
+    let selected_server = wiremock::MockServer::start().await;
+    // Accept either server so a stale factory record produces an assertion
+    // failure rather than a connection error.
+    for server in [&factory_server, &selected_server] {
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_string(azure_responses_sse_text()),
+            )
+            .mount(server)
+            .await;
+    }
+    let registered = azure_responses_record("my-gpt4o")
+        .with_base_url(format!("{}/factory-api", factory_server.uri()));
+    let provider = std::sync::Arc::new(
+        AzureOpenAIProvider::for_records(
+            Some(format!("{}/factory-api", factory_server.uri())),
+            vec![registered.clone()],
+            None,
+        )
+        .unwrap(),
+    );
+    let api = AzureOpenAIResponsesChatApi::new(provider, registered).unwrap();
+    let mut models = opi_ai::models::Models::new();
+    let handle = models
+        .register_chat_api(
+            std::sync::Arc::new(api),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::ApiKey,
+                secrecy::SecretString::from("offline-azure-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let selected = azure_responses_record("my-gpt4o")
+        .with_base_url(format!("{}/custom-api", selected_server.uri()))
+        .with_sampling_params(
+            [("temperature".into(), serde_json::json!(0.37))]
+                .into_iter()
+                .collect(),
+        );
+    let mut options = AzureOpenAIOptions::default();
+    options.azure_deployment_name = Some("selected-deployment".into());
+    let result = models
+        .complete(
+            opi_ai::models::ChatModelRecord::new("azure", selected),
+            azure_responses_request("my-gpt4o", None),
+            handle.options(options),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.provider, "azure");
+    assert!(factory_server.received_requests().await.unwrap().is_empty());
+    let sent = selected_server.received_requests().await.unwrap();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].url.path(), "/custom-api/responses");
+    let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+    assert_eq!(body["model"], "selected-deployment");
+    assert_eq!(body["temperature"], serde_json::json!(0.37));
+}
+
+#[tokio::test]
 async fn azure_responses_simple_entry_maps_neutral_thinking_and_clamps() {
     let server = wiremock::MockServer::start().await;
     mount_azure_responses_mock(&server, azure_responses_sse_text()).await;
@@ -1334,7 +1401,7 @@ async fn azure_responses_disabled_thinking_sends_off_projection() {
     let server = wiremock::MockServer::start().await;
     mount_azure_responses_mock(&server, azure_responses_sse_text()).await;
 
-    let provider = azure_responses_provider(server.uri());
+    let provider = azure_responses_provider(format!("{}/openai/v1", server.uri()));
     let mut stream = provider.stream_prepared(
         azure_responses_request("my-gpt4o", None),
         azure_api_key_auth(),
@@ -1358,7 +1425,7 @@ async fn azure_responses_endpoint_overrides_in_native_options_reach_the_url() {
     let (models, handle) =
         registered_azure_responses_models(server.uri(), azure_responses_record("my-gpt4o")).await;
     let mut value = AzureOpenAIOptions::default();
-    value.azure_base_url = Some(server.uri());
+    value.azure_base_url = Some(format!("{}/openai/v1", server.uri()));
     value.azure_api_version = Some("v1".into());
     value.azure_deployment_name = Some("my-gpt4o".into());
     let options = handle.options(value);
@@ -1383,7 +1450,7 @@ async fn azure_responses_setup_failure_before_activation_is_typed() {
         .mount(&server)
         .await;
 
-    let provider = azure_responses_provider(server.uri());
+    let provider = azure_responses_provider(format!("{}/openai/v1", server.uri()));
     let mut stream = provider.stream_prepared(
         azure_responses_request("my-gpt4o", None),
         azure_api_key_auth(),
@@ -1440,7 +1507,7 @@ async fn azure_responses_cancellation_during_body_is_typed_and_prompt() {
         }
         let text = String::from_utf8_lossy(&request);
         assert!(
-            text.starts_with("POST /openai/deployments/my-gpt4o/responses?api-version=v1 "),
+            text.starts_with("POST /openai/v1/responses?api-version=v1 "),
             "unexpected request line: {text}"
         );
         tokio::io::AsyncWriteExt::write_all(
@@ -1456,7 +1523,7 @@ async fn azure_responses_cancellation_during_body_is_typed_and_prompt() {
         std::future::pending::<()>().await;
     });
 
-    let provider = azure_responses_provider(format!("http://{addr}"));
+    let provider = azure_responses_provider(format!("http://{addr}/openai/v1"));
     let request = azure_responses_request("my-gpt4o", None);
     let cancel = request.cancel.clone();
     let mut stream = provider.stream_prepared(request, azure_api_key_auth());
@@ -1500,7 +1567,7 @@ async fn azure_responses_replays_signed_reasoning_for_same_identity_turns() {
     let server = wiremock::MockServer::start().await;
     mount_azure_responses_mock(&server, azure_responses_sse_text()).await;
 
-    let provider = azure_responses_provider(server.uri());
+    let provider = azure_responses_provider(format!("{}/openai/v1", server.uri()));
     let mut request = azure_responses_request("my-gpt4o", None);
     request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
         system_prompt: None,
@@ -1562,7 +1629,7 @@ async fn azure_responses_foreign_identity_history_never_replays_reasoning() {
     let server = wiremock::MockServer::start().await;
     mount_azure_responses_mock(&server, azure_responses_sse_text()).await;
 
-    let provider = azure_responses_provider(server.uri());
+    let provider = azure_responses_provider(format!("{}/openai/v1", server.uri()));
     let mut request = azure_responses_request("my-gpt4o", None);
     request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
         system_prompt: None,

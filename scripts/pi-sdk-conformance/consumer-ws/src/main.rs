@@ -184,6 +184,7 @@ impl AuthResolver for StaticBearer {
     fn resolve<'a>(&'a self) -> BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
         Box::pin(async move {
             Ok(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::Bearer,
                 secret: SecretString::from(self.secret),
                 base_url: None,
@@ -411,7 +412,7 @@ async fn codex_real_chain(compressed: bool) -> Result<(), String> {
             .content
             .iter()
             .filter_map(|block| match block {
-                opi_ai::message::AssistantContent::Text { text } => Some(text.as_str()),
+                opi_ai::message::AssistantContent::Text { text, .. } => Some(text.as_str()),
                 _ => None,
             })
             .collect();

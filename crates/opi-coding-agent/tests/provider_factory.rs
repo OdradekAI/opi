@@ -655,7 +655,7 @@ async fn anthropic_stored_api_key_routes_to_api_key_wire_auth() {
     store
         .write(
             "anthropic",
-            &Credential::ApiKey(SecretString::new(api_key.to_owned().into_boxed_str())),
+            &Credential::ApiKey(SecretString::new(api_key.to_owned().into_boxed_str()).into()),
         )
         .await
         .unwrap();
@@ -674,6 +674,7 @@ async fn anthropic_stored_api_key_routes_to_api_key_wire_auth() {
     let mut stream = provider.stream_prepared(
         minimal_request("anthropic:claude-sonnet-4-5-20250514"),
         opi_ai::auth::ResolvedAuth {
+            env: Default::default(),
             scheme: opi_ai::AuthScheme::ApiKey,
             secret: secrecy::SecretString::from("sk-anthropic-stored-api"),
             base_url: None,
@@ -1624,6 +1625,7 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
                 _ => opi_ai::AuthScheme::Bearer,
             };
             opi_ai::auth::ResolvedAuth {
+                env: Default::default(),
                 scheme,
                 secret: secrecy::SecretString::from("test-secret"),
                 base_url: None,

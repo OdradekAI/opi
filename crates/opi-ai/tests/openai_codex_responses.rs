@@ -23,6 +23,7 @@ mod deflate_audit;
 
 fn auth(secret: &str, base_url: Option<String>, account_id: Option<String>) -> ResolvedAuth {
     ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from(secret),
         base_url,
@@ -530,7 +531,7 @@ async fn dedicated_codex_data_only_frames_stream_to_completion() {
             signature: None,
         }]
     );
-    assert_eq!(message.usage, Usage::reported(13, 9, 4, 0, None, Some(3)));
+    assert_eq!(message.usage, Usage::reported(9, 9, 4, 0, None, Some(3)));
     assert_eq!(serde_json::to_vec(&request.context).unwrap(), canonical);
     server.verify().await;
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
@@ -583,7 +584,7 @@ async fn dedicated_codex_incomplete_terminal_is_length_not_error() {
             signature: None,
         }]
     );
-    assert_eq!(message.usage, Usage::reported(17, 7, 5, 0, None, Some(2)));
+    assert_eq!(message.usage, Usage::reported(12, 7, 5, 0, None, Some(2)));
     assert_eq!(serde_json::to_vec(&request.context).unwrap(), canonical);
     server.verify().await;
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
@@ -2393,6 +2394,7 @@ mod ws_resources {
         ) -> opi_ai::credential::BoxAuthFuture<'_, Result<ResolvedAuth, ProviderError>> {
             Box::pin(async move {
                 Ok(ResolvedAuth {
+                    env: Default::default(),
                     scheme: AuthScheme::Bearer,
                     secret: SecretString::from(self.secret),
                     base_url: None,

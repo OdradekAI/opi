@@ -5317,6 +5317,7 @@ impl AuthResolver for OneShotThenRevokedResolver {
                 Err(AiProviderError::CredentialRevoked { provider_id })
             } else {
                 Ok(ResolvedAuth {
+                    env: Default::default(),
                     scheme: AuthScheme::Bearer,
                     secret,
                     base_url: None,
@@ -5554,7 +5555,7 @@ async fn factory_stream_reresolves_after_store_change() {
         let old = format!("old-{provider_id}-credential");
         if provider_id == "anthropic" {
             store
-                .write(provider_id, &Credential::ApiKey(secret(&old)))
+                .write(provider_id, &Credential::ApiKey(secret(&old).into()))
                 .await
                 .unwrap();
         } else {
@@ -5712,7 +5713,7 @@ async fn refresh_timeout_releases_lock_and_preserves_prior_credential() {
     );
     tokio::time::timeout(
         Duration::from_millis(250),
-        competing_store.write("lock-probe", &Credential::ApiKey(secret("probe"))),
+        competing_store.write("lock-probe", &Credential::ApiKey(secret("probe").into())),
     )
     .await
     .expect("refresh timeout must release the mutation lock")

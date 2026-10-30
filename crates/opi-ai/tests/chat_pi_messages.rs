@@ -158,6 +158,7 @@ async fn first_error_44(events: &[Result<AssistantStreamEvent, ProviderError>]) 
     events
         .iter()
         .find_map(|item| match item {
+            Err(ProviderError::StreamFailure(failure)) => Some(failure.cause().clone()),
             Err(error) => Some(error.clone()),
             _ => None,
         })
@@ -507,7 +508,9 @@ async fn context_projects_pi_wire_json() {
     run_44(&provider, request).await;
 
     let body = body_44(&server).await;
-    let messages = body["context"].as_array().expect("context array");
+    let messages = body["context"]["messages"]
+        .as_array()
+        .expect("context messages");
     assert_eq!(messages.len(), 4);
 
     let system = &messages[0];
@@ -620,7 +623,9 @@ async fn mid_conversation_system_messages_stay_native() {
     run_44(&provider, request).await;
 
     let body = body_44(&server).await;
-    let messages = body["context"].as_array().expect("context array");
+    let messages = body["context"]["messages"]
+        .as_array()
+        .expect("context messages");
     assert_eq!(messages.len(), 3, "chronology stays native, no collapse");
     assert_eq!(messages[2]["role"], serde_json::json!("system"));
     assert_eq!(messages[2]["content"], serde_json::json!("more"));
@@ -1154,6 +1159,7 @@ async fn non_bearer_auth_is_rejected_typed() {
         .with_models(vec![model_44(MODEL_44)])
         .with_native_options(PiMessagesOptions::native(None, None, false));
     let auth = opi_ai::auth::ResolvedAuth {
+        env: Default::default(),
         scheme: opi_ai::auth::AuthScheme::ApiKey,
         secret: SecretString::from("key"),
         base_url: None,
@@ -1288,4 +1294,364 @@ async fn native_lifecycle_through_models_complete() {
     assert_eq!(message.stop_reason, StopReason::Stop);
     assert_eq!(message.response_id.as_deref(), Some("resp-1"));
     server.verify().await;
+}
+
+fn node5_pi_sse(events: &[serde_json::Value]) -> String {
+    events
+        .iter()
+        .map(|event| format!("data: {event}\n\n"))
+        .collect()
+}
+
+#[tokio::test]
+async fn node5_models_pi_simple_bypasses_budget_and_effort_mapping_with_tool_choice() {
+    for typed in [false, true] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .respond_with(sse_ok_44())
+            .expect(2)
+            .mount(&server)
+            .await;
+        let mut model = clamped_model_44();
+        model.base_url = Some(server.uri());
+        let provider = PiMessagesProvider::new(Some(server.uri())).with_models(vec![model.clone()]);
+        let mut models = opi_ai::Models::new();
+        let auth = std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+            opi_ai::auth::AuthScheme::Bearer,
+            SecretString::from("fixture-key"),
+        ));
+        if typed {
+            models
+                .register_chat_api(
+                    std::sync::Arc::new(PiMessagesChatApi::new(provider, model.clone()).unwrap()),
+                    auth,
+                    opi_ai::AuthProvenanceSource::Static,
+                )
+                .unwrap();
+        } else {
+            models
+                .register_route(
+                    Box::new(provider),
+                    auth,
+                    opi_ai::AuthProvenanceSource::Static,
+                    Default::default(),
+                )
+                .unwrap();
+        }
+        for (max_tokens, choice) in [
+            (None, opi_ai::SimpleToolChoice::Auto),
+            (Some(999_999_999), opi_ai::SimpleToolChoice::None),
+        ] {
+            let mut request = req_44("go");
+            request.max_tokens = max_tokens;
+            request.thinking = ThinkingConfig {
+                enabled: true,
+                level: ThinkingLevel::XHigh,
+                budget_tokens: None,
+            };
+            models
+                .complete_simple(
+                    opi_ai::ChatModelRecord::new("radius", model.clone()),
+                    request,
+                    opi_ai::SimpleOptions {
+                        tool_choice: Some(choice),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+        }
+        let sent = server.received_requests().await.unwrap();
+        for (index, choice) in ["auto", "none"].iter().enumerate() {
+            let body: serde_json::Value = serde_json::from_slice(&sent[index].body).unwrap();
+            assert_eq!(body["options"]["reasoning"], "xhigh");
+            assert_eq!(body["options"]["toolChoice"], *choice);
+            if index == 0 {
+                assert!(body["options"].get("maxTokens").is_none());
+            } else {
+                assert_eq!(body["options"]["maxTokens"], 999_999_999_u64);
+            }
+        }
+    }
+}
+
+fn node5_pi_terminal(kind: &str) -> serde_json::Value {
+    serde_json::json!({"type":kind,"reason":if kind=="error"{"error"}else{"toolUse"},
+        "responseId":"terminal-id","errorMessage":"fixture failure",
+        "usage":{"input":13,"output":7,"cacheRead":0,"cacheWrite":0,"totalTokens":20,
+            "cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}})
+}
+
+async fn node5_pi_complete(
+    base: &str,
+) -> Result<opi_ai::message::AssistantMessage, opi_ai::stream::CallFailure> {
+    let model = model_44(MODEL_44);
+    let api = PiMessagesChatApi::new(
+        PiMessagesProvider::new(Some(base.into())).with_models(vec![model.clone()]),
+        model.clone(),
+    )
+    .unwrap();
+    let mut models = opi_ai::models::Models::new();
+    let handle = models
+        .register_chat_api(
+            std::sync::Arc::new(api),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::auth::AuthScheme::Bearer,
+                SecretString::from("test-key"),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    models
+        .complete(
+            opi_ai::models::ChatModelRecord::new("radius", model),
+            req_44("probe"),
+            handle.options(PiMessagesOptions::native(None, None, false)),
+        )
+        .await
+}
+
+#[tokio::test]
+async fn node5_pi_terminal_error_preserves_final_accounting_and_context_envelope() {
+    let server = MockServer::start().await;
+    let body = node5_pi_sse(&[
+        serde_json::json!({"type":"start"}),
+        serde_json::json!({"type":"text_start","contentIndex":0}),
+        serde_json::json!({"type":"text_delta","contentIndex":0,"delta":"partial"}),
+        node5_pi_terminal("error"),
+    ]);
+    mount_44(
+        &server,
+        ResponseTemplate::new(200)
+            .set_body_string(body)
+            .insert_header("content-type", "text/event-stream"),
+    )
+    .await;
+    let failure = node5_pi_complete(&server.uri())
+        .await
+        .expect_err("error terminal");
+    assert!(matches!(failure.cause(), ProviderError::StreamError(_)));
+    assert_eq!(failure.message().usage.input_tokens, 13);
+    assert_eq!(failure.message().usage.output_tokens, 7);
+    assert_eq!(
+        failure.message().response_id.as_deref(),
+        Some("terminal-id")
+    );
+    assert!(
+        matches!(&failure.message().content[0],opi_ai::message::AssistantContent::Text{text,..} if text=="partial")
+    );
+    let body = body_44(&server).await;
+    assert!(body["context"].is_object());
+    assert!(body["context"]["messages"].is_array());
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn node5_pi_toolcall_end_overrides_delta_arguments() {
+    for delta in [None, Some("{\"q\":\"draft\"}")] {
+        let server = MockServer::start().await;
+        let mut events = vec![
+            serde_json::json!({"type":"start"}),
+            serde_json::json!({"type":"toolcall_start","contentIndex":0,"id":"call-1","toolName":"lookup"}),
+        ];
+        if let Some(delta) = delta {
+            events
+                .push(serde_json::json!({"type":"toolcall_delta","contentIndex":0,"delta":delta}));
+        }
+        events.extend([serde_json::json!({"type":"toolcall_end","contentIndex":0,"toolCall":{"type":"toolCall","id":"call-1","name":"lookup","arguments":{"q":"final"},"thoughtSignature":"opaque"}}),node5_pi_terminal("done")]);
+        mount_44(
+            &server,
+            ResponseTemplate::new(200)
+                .set_body_string(node5_pi_sse(&events))
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .await;
+        let provider =
+            PiMessagesProvider::new(Some(server.uri())).with_models(vec![model_44(MODEL_44)]);
+        let events = run_44(&provider, req_44("probe")).await;
+        let message = done_message_44(&events).await;
+        let opi_ai::message::AssistantContent::ToolCall { tool_call } = &message.content[0] else {
+            panic!("tool call")
+        };
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&tool_call.arguments).unwrap(),
+            serde_json::json!({"q":"final"})
+        );
+        assert_eq!(tool_call.signature.as_deref(), Some("opaque"));
+    }
+}
+
+#[tokio::test]
+async fn node5_pi_producer_capture_reload_preserves_authoritative_tools_and_effort() {
+    let server = MockServer::start().await;
+    let mut terminal = node5_pi_terminal("done");
+    terminal["providerThinkingLevel"] = serde_json::json!("high");
+    let body = node5_pi_sse(&[
+        serde_json::json!({"type":"start"}),
+        serde_json::json!({"type":"toolcall_start","contentIndex":0,"id":"call-1","toolName":"lookup"}),
+        serde_json::json!({"type":"toolcall_delta","contentIndex":0,"delta":"{\"q\":\"draft\"}"}),
+        serde_json::json!({"type":"toolcall_end","contentIndex":0,"toolCall":{"type":"toolCall","id":"call-1","name":"lookup","arguments":{"q":"final"},"thoughtSignature":"opaque-signature"}}),
+        terminal,
+    ]);
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(body)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+    let model = thinking_model_44().with_base_url(server.uri());
+    let api =
+        PiMessagesChatApi::new(PiMessagesProvider::new(Some(server.uri())), model.clone()).unwrap();
+    let mut models = opi_ai::Models::new();
+    let handle = models
+        .register_chat_api(
+            std::sync::Arc::new(api),
+            std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                opi_ai::AuthScheme::Bearer,
+                "fixture-key".into(),
+            )),
+            opi_ai::AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let options = || {
+        handle.options(PiMessagesOptions::native(
+            Some(ThinkingLevel::High),
+            None,
+            false,
+        ))
+    };
+    let first = models
+        .complete(
+            opi_ai::ChatModelRecord::new("radius", model.clone()),
+            req_44("first"),
+            options(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.provider_thinking_level.as_deref(), Some("high"));
+    assert_eq!(first.response_id.as_deref(), Some("terminal-id"));
+    let encoded = serde_json::to_vec(&first).unwrap();
+    let reload: opi_ai::message::AssistantMessage = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(
+        serde_json::to_value(&reload).unwrap(),
+        serde_json::to_value(&first).unwrap()
+    );
+    let mut request = req_44("second");
+    request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        tools: vec![],
+        messages: vec![
+            Message::Assistant(reload),
+            Message::ToolResult(opi_ai::message::ToolResultMessage {
+                tool_call_id: "call-1".into(),
+                tool_name: "lookup".into(),
+                content: vec![],
+                details: None,
+                is_error: false,
+                not_executed: None,
+                truncated: false,
+                timestamp_ms: 0,
+            }),
+        ],
+    })
+    .unwrap();
+    models
+        .complete(
+            opi_ai::ChatModelRecord::new("radius", model),
+            request,
+            options(),
+        )
+        .await
+        .unwrap();
+    let sent = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&sent[1].body).unwrap();
+    let replay = body["context"]["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| message["role"] == "assistant")
+        .unwrap();
+    assert_eq!(replay["provider"], "radius");
+    assert_eq!(replay["api"], "pi-messages");
+    assert_eq!(replay["providerThinkingLevel"], "high");
+    assert_eq!(
+        replay["content"][0]["arguments"],
+        serde_json::json!({"q":"final"})
+    );
+    assert_eq!(replay["content"][0]["thoughtSignature"], "opaque-signature");
+    assert_eq!(body["options"]["reasoning"], "high");
+}
+
+#[tokio::test]
+async fn node5_pi_split_utf8_preserves_delta_and_final_text() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let task = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            let mut byte = [0; 1];
+            socket.read_exact(&mut byte).await.unwrap();
+            head.push(byte[0]);
+        }
+        let content_length = std::str::from_utf8(&head)
+            .unwrap()
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+            .map(|(_, value)| value.trim().parse::<usize>().unwrap())
+            .unwrap();
+        let mut input = vec![0; content_length];
+        socket.read_exact(&mut input).await.unwrap();
+        socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await.unwrap();
+        let body = node5_pi_sse(&[
+            serde_json::json!({"type":"start"}),
+            serde_json::json!({"type":"text_start","contentIndex":0}),
+            serde_json::json!({"type":"text_delta","contentIndex":0,"delta":"中"}),
+            serde_json::json!({"type":"text_end","contentIndex":0,"content":"中"}),
+            node5_pi_terminal("done"),
+        ])
+        .into_bytes();
+        let mut bounds = vec![0];
+        bounds.extend(
+            body.iter()
+                .enumerate()
+                .filter_map(|(i, b)| (*b == 0xe4).then_some(i + 1)),
+        );
+        bounds.push(body.len());
+        for range in bounds.windows(2) {
+            let bytes = &body[range[0]..range[1]];
+            socket
+                .write_all(format!("{:x}\r\n", bytes.len()).as_bytes())
+                .await
+                .unwrap();
+            socket.write_all(bytes).await.unwrap();
+            socket.write_all(b"\r\n").await.unwrap();
+            socket.flush().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+        }
+        socket.write_all(b"0\r\n\r\n").await.unwrap();
+    });
+    let provider = PiMessagesProvider::new(Some(format!("http://{address}")))
+        .with_models(vec![model_44(MODEL_44)]);
+    let events = run_44(&provider, req_44("probe")).await;
+    let deltas: String = events
+        .iter()
+        .filter_map(|event| match event {
+            Ok(AssistantStreamEvent::TextDelta { delta, .. }) => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(deltas, "中");
+    let message = done_message_44(&events).await;
+    assert!(
+        matches!(&message.content[0],opi_ai::message::AssistantContent::Text{text,..} if text=="中")
+    );
+    task.await.unwrap();
 }

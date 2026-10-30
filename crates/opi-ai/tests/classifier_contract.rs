@@ -44,6 +44,65 @@ use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+#[path = "support/pending_auth.rs"]
+mod pending_auth;
+
+#[tokio::test]
+async fn classifier_auth_lifecycle_preaborted_never_starts_resolution() {
+    let resolver = Arc::new(pending_auth::PendingAuth::default());
+    let record = classifier_record("http://127.0.0.1:1".into());
+    let mut models = Models::new();
+    models
+        .register_classifier_api(
+            Arc::new(TypesafeSystemOneApi::new(HttpClient::new(), record.clone())),
+            resolver.clone(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let call = ClassifierCall::default();
+    call.cancel.cancel();
+    let result = models.classify(record, classify_context(), call);
+    tokio::pin!(result);
+    let outcome = futures_util::poll!(&mut result);
+    assert_eq!(
+        resolver.calls.load(AtomicOrdering::SeqCst),
+        0,
+        "pre-aborted classification must not start auth"
+    );
+    let std::task::Poll::Ready(result) = outcome else {
+        panic!("pre-aborted classifier call must settle")
+    };
+    assert_eq!(result.stop_reason, ClassifierStopReason::Aborted);
+    assert!(matches!(result.error, Some(ProviderError::Cancelled)));
+}
+
+#[tokio::test]
+async fn classifier_auth_lifecycle_cancel_releases_pending_resolution() {
+    let resolver = Arc::new(pending_auth::PendingAuth::default());
+    let record = classifier_record("http://127.0.0.1:1".into());
+    let mut models = Models::new();
+    models
+        .register_classifier_api(
+            Arc::new(TypesafeSystemOneApi::new(HttpClient::new(), record.clone())),
+            resolver.clone(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let call = ClassifierCall::default();
+    let cancel = call.cancel.clone();
+    let result = models.classify(record, classify_context(), call);
+    tokio::pin!(result);
+    assert!(futures_util::poll!(&mut result).is_pending());
+    assert_eq!(resolver.calls.load(AtomicOrdering::SeqCst), 1);
+    cancel.cancel();
+    let std::task::Poll::Ready(result) = futures_util::poll!(&mut result) else {
+        panic!("cancellation must interrupt pending classifier auth")
+    };
+    assert_eq!(result.stop_reason, ClassifierStopReason::Aborted);
+    assert!(matches!(result.error, Some(ProviderError::Cancelled)));
+    assert!(resolver.released.load(AtomicOrdering::SeqCst));
+}
+
 // ---------------------------------------------------------------------
 // Fixture helpers
 // ---------------------------------------------------------------------
@@ -72,6 +131,8 @@ fn classifier_pricing() -> ModelPricing {
 
 fn classifier_record(base_url: String) -> ClassifierModelRecord {
     ClassifierModelRecord {
+        headers: Vec::new(),
+        input_limits: None,
         provider_id: "typesafe".into(),
         id: "jev-latest".into(),
         name: "Jev".into(),
@@ -79,7 +140,7 @@ fn classifier_record(base_url: String) -> ClassifierModelRecord {
         base_url,
         input: vec![opi_ai::classifier::ClassifierInputModality::Text],
         context_window: 64000,
-        cost: classifier_pricing(),
+        cost: Some(classifier_pricing()),
     }
 }
 
@@ -400,7 +461,9 @@ async fn classify_tolerates_malformed_and_absent_usage() {
     let usage = result.usage.expect("usage present");
     assert_eq!(usage.input_tokens, 0);
     assert_eq!(usage.output_tokens, 3);
-    assert_eq!(usage.total_tokens, Some(3));
+    assert!(!usage.reported, "malformed input is not a reported zero");
+    assert_eq!(usage.total_tokens, None);
+    assert!(result.cost.is_none());
 
     let absent = MockServer::start().await;
     Mock::given(method("POST"))
@@ -840,6 +903,8 @@ async fn classifier_selection_rejects_unknown_before_auth_and_resolves_registere
 async fn classify_without_registration_fails_without_dispatch() {
     let models = Models::new();
     let record = ClassifierModelRecord {
+        headers: Vec::new(),
+        input_limits: None,
         provider_id: "typesafe".into(),
         id: "jev-latest".into(),
         name: "Jev".into(),
@@ -847,7 +912,7 @@ async fn classify_without_registration_fails_without_dispatch() {
         base_url: "http://127.0.0.1:9".into(),
         input: vec![opi_ai::classifier::ClassifierInputModality::Text],
         context_window: 64000,
-        cost: classifier_pricing(),
+        cost: Some(classifier_pricing()),
     };
     let result = models
         .classify(record, classify_context(), ClassifierCall::default())
@@ -1091,7 +1156,7 @@ fn default_record_is_curated_typesafe_jev() {
         vec![opi_ai::classifier::ClassifierInputModality::Text]
     );
     assert_eq!(
-        record.cost.base,
+        record.cost.as_ref().unwrap().base,
         Pricing {
             input_cost_per_mtok: 0.0,
             output_cost_per_mtok: 0.0,
@@ -1099,7 +1164,7 @@ fn default_record_is_curated_typesafe_jev() {
             cache_write_cost_per_mtok: 0.0,
         }
     );
-    assert!(record.cost.tiers.is_empty());
+    assert!(record.cost.as_ref().unwrap().tiers.is_empty());
 }
 
 // =====================================================================
@@ -1119,6 +1184,7 @@ impl AuthResolver for CloudflareAccountResolver {
         let account_id = self.account_id.clone();
         Box::pin(async move {
             Ok(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::Bearer,
                 secret: SecretString::from("cf-key"),
                 base_url: None,
@@ -1153,6 +1219,8 @@ fn cloudflare_models(
 /// `{CLOUDFLARE_ACCOUNT_ID}` placeholder URL rooted at the mock server.
 fn cloudflare_record(server_uri: &str, id: &str, cost: ModelPricing) -> ClassifierModelRecord {
     ClassifierModelRecord {
+        headers: Vec::new(),
+        input_limits: None,
         provider_id: "cloudflare-workers-ai".into(),
         id: id.into(),
         name: id.into(),
@@ -1160,7 +1228,7 @@ fn cloudflare_record(server_uri: &str, id: &str, cost: ModelPricing) -> Classifi
         base_url: format!("{server_uri}/accounts/{{CLOUDFLARE_ACCOUNT_ID}}/ai"),
         input: vec![opi_ai::classifier::ClassifierInputModality::Text],
         context_window: 64000,
-        cost,
+        cost: Some(cost),
     }
 }
 
@@ -1886,6 +1954,7 @@ impl AuthResolver for LlamaAuthResolver {
     ) -> opi_ai::credential::BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
         Box::pin(async move {
             Ok(ResolvedAuth {
+                env: Default::default(),
                 scheme: AuthScheme::Bearer,
                 secret: SecretString::from("local"),
                 base_url: None,
@@ -1900,6 +1969,8 @@ impl AuthResolver for LlamaAuthResolver {
 /// OpenAI-compatible `/v1` base URL (pi's llama.cpp models carry it).
 fn llama_record(server_uri: &str) -> ClassifierModelRecord {
     ClassifierModelRecord {
+        headers: Vec::new(),
+        input_limits: None,
         provider_id: "llama.cpp".into(),
         id: "qwen".into(),
         name: "qwen".into(),
@@ -1907,7 +1978,7 @@ fn llama_record(server_uri: &str) -> ClassifierModelRecord {
         base_url: format!("{server_uri}/v1"),
         input: vec![opi_ai::classifier::ClassifierInputModality::Text],
         context_window: 32768,
-        cost: zero_pricing(),
+        cost: Some(zero_pricing()),
     }
 }
 
@@ -2601,6 +2672,8 @@ fn decisions_pricing() -> ModelPricing {
 /// base URL.
 fn decisions_record(server_uri: &str) -> ClassifierModelRecord {
     ClassifierModelRecord {
+        headers: Vec::new(),
+        input_limits: None,
         provider_id: "openai".into(),
         id: "gpt-6-luna".into(),
         name: "GPT-6 Luna".into(),
@@ -2611,7 +2684,7 @@ fn decisions_record(server_uri: &str) -> ClassifierModelRecord {
             opi_ai::classifier::ClassifierInputModality::Image,
         ],
         context_window: 922_000,
-        cost: decisions_pricing(),
+        cost: Some(decisions_pricing()),
     }
 }
 
@@ -3317,8 +3390,22 @@ async fn four_classifier_protocols_share_one_models_dispatch() {
         .mount(&decisions_server)
         .await;
 
+    let decorate = |mut record: ClassifierModelRecord| {
+        record.headers = vec![
+            ("x-model".into(), Some("complete-record".into())),
+            ("x-override".into(), Some("model".into())),
+            ("x-remove".into(), Some("on".into())),
+            ("X-Remove".into(), Some("off".into())),
+            ("x-remove".into(), None),
+        ];
+        record
+    };
+    let call = || ClassifierCall {
+        extra_headers: vec![("X-Override".into(), "call".into())],
+        ..Default::default()
+    };
     let mut models = Models::new();
-    let typesafe_record = classifier_record(typesafe_server.uri());
+    let typesafe_record = decorate(classifier_record(typesafe_server.uri()));
     models
         .register_classifier_api(
             Arc::new(TypesafeSystemOneApi::new(
@@ -3332,7 +3419,7 @@ async fn four_classifier_protocols_share_one_models_dispatch() {
             AuthProvenanceSource::Static,
         )
         .expect("register typesafe");
-    let cloudflare_record = cloudflare_jev(&cloudflare_server.uri());
+    let cloudflare_record = decorate(cloudflare_jev(&cloudflare_server.uri()));
     models
         .register_classifier_api(
             Arc::new(CloudflareWorkersAiSystemOneApi::new(
@@ -3345,7 +3432,7 @@ async fn four_classifier_protocols_share_one_models_dispatch() {
             AuthProvenanceSource::Static,
         )
         .expect("register cloudflare");
-    let llama_record = llama_record(&llama_server.uri());
+    let llama_record = decorate(llama_record(&llama_server.uri()));
     models
         .register_classifier_api(
             Arc::new(LlamaCppClassifyApi::new(
@@ -3356,7 +3443,7 @@ async fn four_classifier_protocols_share_one_models_dispatch() {
             AuthProvenanceSource::Static,
         )
         .expect("register llama");
-    let decisions_record = decisions_record(&decisions_server.uri());
+    let decisions_record = decorate(decisions_record(&decisions_server.uri()));
     models
         .register_classifier_api(
             Arc::new(OpenAiDecisionsApi::new(
@@ -3388,11 +3475,7 @@ async fn four_classifier_protocols_share_one_models_dispatch() {
 
     // System One bool rides as `noul`.
     let result = models
-        .classify(
-            typesafe_record,
-            bool_context.clone(),
-            ClassifierCall::default(),
-        )
+        .classify(typesafe_record, bool_context.clone(), call())
         .await;
     assert_eq!(
         result.stop_reason,
@@ -3407,11 +3490,7 @@ async fn four_classifier_protocols_share_one_models_dispatch() {
 
     // Cloudflare wraps the same System One shape in its run envelope.
     let result = models
-        .classify(
-            cloudflare_record,
-            bool_context.clone(),
-            ClassifierCall::default(),
-        )
+        .classify(cloudflare_record, bool_context.clone(), call())
         .await;
     assert_eq!(result.stop_reason, ClassifierStopReason::Stop);
     assert_eq!(
@@ -3420,15 +3499,13 @@ async fn four_classifier_protocols_share_one_models_dispatch() {
     );
 
     // llama.cpp reads the bool from Yes/No label log-probabilities.
-    let result = models
-        .classify(llama_record, llama_context(), ClassifierCall::default())
-        .await;
+    let result = models.classify(llama_record, llama_context(), call()).await;
     assert_eq!(result.stop_reason, ClassifierStopReason::Stop);
     assert!(result.answers.contains_key("urgent"));
 
     // Decisions maps the same public bool to a `predicate` question.
     let result = models
-        .classify(decisions_record, bool_context, ClassifierCall::default())
+        .classify(decisions_record, bool_context, call())
         .await;
     assert_eq!(result.stop_reason, ClassifierStopReason::Stop);
     assert_eq!(
@@ -3445,4 +3522,392 @@ async fn four_classifier_protocols_share_one_models_dispatch() {
     let body: serde_json::Value =
         serde_json::from_slice(&decisions_sent[0].body).expect("json body");
     assert_eq!(body["questions"][0]["type"], "predicate");
+    for server in [
+        &typesafe_server,
+        &cloudflare_server,
+        &llama_server,
+        &decisions_server,
+    ] {
+        let requests = server.received_requests().await.unwrap();
+        assert!(!requests.is_empty());
+        for sent in requests {
+            assert_eq!(sent.headers["x-model"], "complete-record");
+            assert_eq!(sent.headers["x-override"], "call");
+            assert!(!sent.headers.contains_key("x-remove"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn classifiers_reused_callbacks_keep_each_calls_payload() {
+    for decisions in [false, true] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(if decisions {
+                serde_json::json!({"answers": []})
+            } else {
+                serde_json::json!({"answers": {}})
+            }))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let record = if decisions {
+            decisions_record(&server.uri())
+        } else {
+            classifier_record(server.uri())
+        };
+        let models = if decisions {
+            decisions_models(&record, "fixture-key").0
+        } else {
+            classifier_models(&record).0
+        };
+        let observed = Arc::new(AtomicU32::new(0));
+        let counter = observed.clone();
+        let callbacks =
+            opi_ai::callbacks::RequestCallbacks::new().with_on_payload(Arc::new(move |_| {
+                counter.fetch_add(1, AtomicOrdering::SeqCst);
+                Ok(None)
+            }));
+        for state in ["first state", "second state"] {
+            let result = models
+                .classify(
+                    record.clone(),
+                    ClassifierContext {
+                        state: serde_json::json!({"text": state}),
+                        ..Default::default()
+                    },
+                    ClassifierCall {
+                        callbacks: callbacks.clone(),
+                        ..Default::default()
+                    },
+                )
+                .await;
+            assert_eq!(
+                result.stop_reason,
+                ClassifierStopReason::Stop,
+                "{:?}",
+                result.error
+            );
+        }
+        let sent = server.received_requests().await.unwrap();
+        assert!(String::from_utf8_lossy(&sent[0].body).contains("first state"));
+        assert!(String::from_utf8_lossy(&sent[1].body).contains("second state"));
+        assert_eq!(observed.load(AtomicOrdering::SeqCst), 2);
+    }
+}
+
+#[tokio::test]
+async fn llama_callbacks_keep_each_question_and_readout_depth() {
+    let server = MockServer::start().await;
+    let mut llama = LlamaServer::new();
+    llama.tokenize = Box::new(llama_char_tokens);
+    llama.next = Box::new(|_, depth| {
+        if depth < 4096 {
+            vec![(b'A' as u64, -0.1)]
+        } else {
+            vec![(b'A' as u64, -0.1), (b'B' as u64, -2.0)]
+        }
+    });
+    mount_llama(&server, llama).await;
+    let record = llama_record(&server.uri());
+    let (models, _) = llama_models(&record);
+    let mut context = llama_pick_context();
+    let mut second = context.questions.values().next().unwrap().clone();
+    if let ClassifierQuestion::Choice { instructions, .. } = &mut second {
+        *instructions = "A second independent question".into();
+    }
+    context.questions.insert("second".into(), second);
+    let observed = Arc::new(AtomicU32::new(0));
+    let counter = observed.clone();
+    let result = models
+        .classify(
+            record,
+            context,
+            ClassifierCall {
+                callbacks: opi_ai::callbacks::RequestCallbacks::new().with_on_payload(Arc::new(
+                    move |_| {
+                        counter.fetch_add(1, AtomicOrdering::SeqCst);
+                        Ok(None)
+                    },
+                )),
+                ..Default::default()
+            },
+        )
+        .await;
+    assert_eq!(
+        result.stop_reason,
+        ClassifierStopReason::Stop,
+        "{:?}",
+        result.error
+    );
+    let completions: Vec<serde_json::Value> = llama_requests(&server)
+        .await
+        .into_iter()
+        .filter(|(path, _)| path == "/completion")
+        .map(|(_, body)| body)
+        .collect();
+    assert_eq!(
+        completions
+            .iter()
+            .map(|body| body["n_probs"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        [256, 4096, 256, 4096]
+    );
+    assert_eq!(completions[0]["prompt"], completions[1]["prompt"]);
+    assert_ne!(completions[0]["prompt"], completions[2]["prompt"]);
+    assert_eq!(observed.load(AtomicOrdering::SeqCst), 4);
+}
+
+#[tokio::test]
+async fn classifiers_response_callback_is_outside_attempt_timeout() {
+    for decisions in [false, true] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(if decisions {
+                serde_json::json!({"answers": []})
+            } else {
+                serde_json::json!({"answers": {}})
+            }))
+            .mount(&server)
+            .await;
+        let record = if decisions {
+            decisions_record(&server.uri())
+        } else {
+            classifier_record(server.uri())
+        };
+        let models = if decisions {
+            decisions_models(&record, "fixture-key").0
+        } else {
+            classifier_models(&record).0
+        };
+        let result = models
+            .classify(
+                record,
+                ClassifierContext::default(),
+                ClassifierCall {
+                    timeout: Some(Duration::from_millis(300)),
+                    callbacks: opi_ai::callbacks::RequestCallbacks::new().with_async_on_response(
+                        |_, _| async {
+                            tokio::time::sleep(Duration::from_millis(600)).await;
+                            Ok(())
+                        },
+                    ),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        assert_eq!(
+            result.stop_reason,
+            ClassifierStopReason::Stop,
+            "{:?}",
+            result.error
+        );
+    }
+}
+
+#[tokio::test]
+async fn classifiers_protected_headers_never_reach_transport() {
+    for api in ["typesafe", "decisions", "llama"] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"answers": {}})),
+            )
+            .mount(&server)
+            .await;
+        let (record, models, context) = match api {
+            "decisions" => {
+                let record = decisions_record(&server.uri());
+                let models = decisions_models(&record, "fixture-key").0;
+                (record, models, ClassifierContext::default())
+            }
+            "llama" => {
+                let record = llama_record(&server.uri());
+                let models = llama_models(&record).0;
+                (record, models, llama_pick_context())
+            }
+            _ => {
+                let record = classifier_record(server.uri());
+                let models = classifier_models(&record).0;
+                (record, models, ClassifierContext::default())
+            }
+        };
+        for header in ["Authorization", "aPi-KeY", "Host"] {
+            let result = models
+                .classify(
+                    record.clone(),
+                    context.clone(),
+                    ClassifierCall {
+                        extra_headers: vec![(header.into(), "untrusted-override".into())],
+                        ..Default::default()
+                    },
+                )
+                .await;
+            assert_eq!(result.stop_reason, ClassifierStopReason::Error);
+            assert!(
+                matches!(result.error, Some(ProviderError::RequestFailed(_))),
+                "{api}: {:?}",
+                result.error
+            );
+        }
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "{api}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn decisions_text_only_record_rejects_images_on_direct_path() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(decisions_ok(serde_json::json!(decisions_wire_answers())))
+        .mount(&server)
+        .await;
+    let mut record = decisions_record(&server.uri());
+    record.input = vec![opi_ai::classifier::ClassifierInputModality::Text];
+    let adapter = OpenAiDecisionsApi::new(HttpClient::new(), record.clone());
+    let mut context = decisions_context();
+    context.images = Some(vec![ClassifierImage {
+        mime_type: "image/png".into(),
+        data: "QUJD".into(),
+    }]);
+    let result = adapter
+        .classify_prepared(
+            record,
+            context,
+            adapter.default_options(),
+            ResolvedAuth {
+                env: Default::default(),
+                scheme: AuthScheme::Bearer,
+                secret: SecretString::from("fixture-key"),
+                base_url: None,
+                account_id: None,
+                provenance: Default::default(),
+            },
+            ClassifierCall::default(),
+        )
+        .await;
+    assert!(matches!(
+        result.error,
+        Some(ProviderError::UnsupportedCapability(_))
+    ));
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn classifiers_response_callbacks_require_successful_json_acquisition() {
+    for decisions in [false, true] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("{incomplete"))
+            .mount(&server)
+            .await;
+        let record = if decisions {
+            decisions_record(&server.uri())
+        } else {
+            classifier_record(server.uri())
+        };
+        let models = if decisions {
+            decisions_models(&record, "fixture-key").0
+        } else {
+            classifier_models(&record).0
+        };
+        let observed = Arc::new(AtomicU32::new(0));
+        let counter = observed.clone();
+        let result = models
+            .classify(
+                record,
+                ClassifierContext::default(),
+                ClassifierCall {
+                    callbacks: opi_ai::callbacks::RequestCallbacks::new().with_on_response(
+                        Arc::new(move |_, _| {
+                            counter.fetch_add(1, AtomicOrdering::SeqCst);
+                            Ok(())
+                        }),
+                    ),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert_eq!(result.stop_reason, ClassifierStopReason::Error);
+        assert_eq!(observed.load(AtomicOrdering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
+async fn llama_response_callback_cannot_timeout_or_repeat_completion() {
+    let server = MockServer::start().await;
+    mount_llama(&server, LlamaServer::new()).await;
+    let record = llama_record(&server.uri());
+    let (models, _) = llama_models(&record);
+    let result = models
+        .classify(
+            record,
+            llama_pick_context(),
+            ClassifierCall {
+                timeout: Some(Duration::from_millis(300)),
+                callbacks: opi_ai::callbacks::RequestCallbacks::new().with_async_on_response(
+                    |_, _| async {
+                        tokio::time::sleep(Duration::from_millis(600)).await;
+                        Ok(())
+                    },
+                ),
+                ..Default::default()
+            },
+        )
+        .await;
+    assert_eq!(
+        result.stop_reason,
+        ClassifierStopReason::Stop,
+        "{:?}",
+        result.error
+    );
+    let completions = llama_requests(&server)
+        .await
+        .into_iter()
+        .filter(|(path, _)| path == "/completion")
+        .count();
+    assert_eq!(completions, 1);
+}
+
+#[tokio::test]
+async fn classifier_call_owns_binding_before_first_poll() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ok_response())
+        .expect(2)
+        .mount(&server)
+        .await;
+    let record = classifier_record(server.uri());
+    let (mut models, handle) = classifier_models(&record);
+    let ordinary = models.classify(
+        record.clone(),
+        classify_context(),
+        ClassifierCall::default(),
+    );
+    let native = models.classify_native(
+        record.clone(),
+        classify_context(),
+        ClassifierCall::default(),
+        handle.options(TypesafeSystemOneOptions::default()),
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+    models
+        .register_classifier_api(
+            Arc::new(TypesafeSystemOneApi::new(HttpClient::new(), record)),
+            Arc::new(MissingKeyResolver),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    drop(models);
+    for result in [ordinary.await, native.await] {
+        assert_eq!(
+            result.stop_reason,
+            ClassifierStopReason::Stop,
+            "{:?}",
+            result.error
+        );
+    }
 }

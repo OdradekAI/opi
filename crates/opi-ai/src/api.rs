@@ -52,6 +52,18 @@ pub trait ImageApi<O: Send + 'static>: Send + Sync {
         Ok(())
     }
 
+    /// Validate known call inputs before resolving authentication.
+    fn validate_request(
+        &self,
+        record: &ImageModelRecord,
+        _context: &ImagesContext,
+        options: &O,
+        call: &ImagesCall,
+    ) -> Result<(), crate::provider::ProviderError> {
+        self.validate_options(options)?;
+        crate::images::validate_image_request(record, call)
+    }
+
     /// Dispatch one generation with resolved authentication. Provider
     /// failures stay inside the returned [`ImagesResult`]; this method never
     /// panics and never consults a resolver.
@@ -96,6 +108,19 @@ pub trait ClassifierApi<O: Send + 'static>: Send + Sync {
     /// adapters with invariants override this.
     fn validate_options(&self, _options: &O) -> Result<(), crate::provider::ProviderError> {
         Ok(())
+    }
+
+    /// Validate known input and options before resolving authentication.
+    /// Protocol adapters also enforce their source-specific input rules here.
+    fn validate_request(
+        &self,
+        record: &ClassifierModelRecord,
+        context: &ClassifierContext,
+        options: &O,
+        call: &ClassifierCall,
+    ) -> Result<(), crate::provider::ProviderError> {
+        self.validate_options(options)?;
+        crate::classifier::validate_classifier_request(record, context, call)
     }
 
     /// Dispatch one classification with resolved authentication. Provider

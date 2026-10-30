@@ -96,6 +96,7 @@ async fn drain(stream: &mut opi_ai::provider::EventStream) {
 /// seam consumes this directly at the HTTP boundary).
 fn bearer_auth(token: &str) -> ResolvedAuth {
     ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from(token),
         base_url: None,
@@ -107,6 +108,7 @@ fn bearer_auth(token: &str) -> ResolvedAuth {
 /// Build an ApiKey `ResolvedAuth` carrying `key`.
 fn apikey_auth(key: &str) -> ResolvedAuth {
     ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::ApiKey,
         secret: SecretString::from(key),
         base_url: None,
@@ -622,6 +624,7 @@ fn codex_provider(server: &MockServer) -> OpenAiCodexResponsesProvider {
 /// the account id derived from the bearer JWT.
 fn codex_auth(secret: &str, account_id: Option<&str>) -> ResolvedAuth {
     ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from(secret),
         base_url: None,

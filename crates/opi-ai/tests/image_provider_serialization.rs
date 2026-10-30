@@ -103,9 +103,8 @@ fn make_request(messages: Vec<Message>) -> Request {
 
 async fn drain_stream(mut stream: opi_ai::provider::EventStream) {
     while let Some(result) = stream.next().await {
-        if let Ok(event) = result
-            && event.is_terminal()
-        {
+        let event = result.expect("image serialization reaches the real adapter");
+        if event.is_terminal() {
             break;
         }
     }
@@ -136,7 +135,10 @@ async fn anthropic_image_url_in_request_body() {
 
     let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
     drain_stream(provider.stream_prepared(
-        make_request(vec![image_url_msg()]),
+        Request {
+            max_tokens: Some(64),
+            ..make_request(vec![image_url_msg()])
+        },
         opi_ai::test_support::resolved_auth(),
     ))
     .await;
@@ -162,7 +164,10 @@ async fn anthropic_image_base64_in_request_body() {
 
     let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
     drain_stream(provider.stream_prepared(
-        make_request(vec![image_base64_msg()]),
+        Request {
+            max_tokens: Some(64),
+            ..make_request(vec![image_base64_msg()])
+        },
         opi_ai::test_support::resolved_auth(),
     ))
     .await;
@@ -188,7 +193,10 @@ async fn anthropic_image_bytes_encoded_as_base64() {
 
     let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
     drain_stream(provider.stream_prepared(
-        make_request(vec![image_bytes_msg()]),
+        Request {
+            max_tokens: Some(64),
+            ..make_request(vec![image_bytes_msg()])
+        },
         opi_ai::test_support::resolved_auth(),
     ))
     .await;
@@ -479,23 +487,31 @@ use secrecy::SecretString;
 
 fn adapter_record(base_url: String, output: Vec<ImageOutputModality>) -> ImageModelRecord {
     ImageModelRecord {
+        cost_tiers: Vec::new(),
+        headers: Vec::new(),
+        input_limits: None,
+        input: vec![
+            opi_ai::catalog::CatalogInputModality::Text,
+            opi_ai::catalog::CatalogInputModality::Image,
+        ],
         provider_id: "openrouter".into(),
         id: "google/gemini-2.5-flash-image".into(),
         name: "Gemini 2.5 Flash Image (via OpenRouter)".into(),
         api: ApiId::new("openrouter-images"),
         base_url,
         output,
-        cost: ImageCostRates {
+        cost: Some(ImageCostRates {
             input: 3.0,
             output: 15.0,
             cache_read: 0.3,
             cache_write: 3.75,
-        },
+        }),
     }
 }
 
 fn adapter_bearer_auth() -> ResolvedAuth {
     ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::Bearer,
         secret: SecretString::from("test-key"),
         base_url: None,
@@ -626,6 +642,7 @@ async fn openrouter_images_rejects_non_bearer_scheme_before_dispatch() {
         .await;
 
     let auth = ResolvedAuth {
+        env: Default::default(),
         scheme: AuthScheme::ApiKey,
         secret: SecretString::from("test-key"),
         base_url: None,

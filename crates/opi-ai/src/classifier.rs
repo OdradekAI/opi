@@ -150,12 +150,18 @@ pub struct ClassifierModelRecord {
     pub api: ApiId,
     /// Endpoint base URL (trailing slashes are stripped when joining).
     pub base_url: String,
+    /// Ordered ordinary header overrides; `None` removes an earlier value.
+    pub headers: Vec<(String, Option<String>)>,
+    /// Source input-limit metadata; it does not impose SDK resize policy.
+    pub input_limits: Option<serde_json::Value>,
     /// Accepted input modalities.
     pub input: Vec<ClassifierInputModality>,
     /// Context window in tokens.
     pub context_window: u64,
-    /// Catalog pricing with tiers; cost applies chat-style to reported usage.
-    pub cost: ModelPricing,
+    /// Catalog pricing with tiers, or `None` when absent. Finite negative
+    /// source placeholders remain metadata; an unknown selected rate yields
+    /// no calculated cost.
+    pub cost: Option<ModelPricing>,
 }
 
 /// Per-call classifier values: timeout, cancellation, headers, callbacks and
@@ -189,6 +195,73 @@ impl std::fmt::Debug for ClassifierCall {
             .field("callbacks", &self.callbacks)
             .finish_non_exhaustive()
     }
+}
+
+/// Validate the operation's frozen record and caller-managed headers before
+/// authentication. Protocol adapters add their own narrower input rules.
+pub(crate) fn validate_classifier_request(
+    record: &ClassifierModelRecord,
+    context: &ClassifierContext,
+    call: &ClassifierCall,
+) -> Result<(), ProviderError> {
+    if context
+        .images
+        .as_ref()
+        .is_some_and(|images| !images.is_empty())
+        && !record.input.contains(&ClassifierInputModality::Image)
+    {
+        return Err(ProviderError::UnsupportedCapability(
+            crate::provider::ProviderErrorSummary::attested_static(
+                "classifier model does not support image input",
+            ),
+        ));
+    }
+    crate::ProviderHeaders::default()
+        .merge_model_request(&record.headers, &[], &call.extra_headers)
+        .map(|_| ())
+}
+
+pub(crate) fn cost_for_usage(
+    record: &ClassifierModelRecord,
+    usage: &Usage,
+) -> Option<CostBreakdown> {
+    if !usage.reported {
+        return None;
+    }
+    let pricing = record.cost.as_ref()?;
+    pricing.validate_source_metadata().ok()?;
+    let rates = pricing.effective_for_usage(usage);
+    crate::model_info::validate_pricing(&rates).ok()?;
+    let cost = crate::stream::calculate_cost(usage, &rates);
+    cost.total_cost().is_finite().then_some(cost)
+}
+
+/// Classifier protocols report input/output parent counts without cache
+/// buckets. Preserve usable counts while marking a partial report unknown;
+/// a malformed or absent bucket must not become a reliable reported zero.
+pub(crate) fn parse_classifier_usage(value: Option<&serde_json::Value>) -> Option<Usage> {
+    let value = value?.as_object()?;
+    let count = |name: &str| {
+        value
+            .get(name)
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|count| u32::try_from(count).ok())
+    };
+    let input = count("input_tokens");
+    let output = count("output_tokens");
+    if input.is_none() && output.is_none() {
+        return None;
+    }
+    let reported = input.is_some() && output.is_some();
+    Some(Usage {
+        input_tokens: input.unwrap_or_default(),
+        output_tokens: output.unwrap_or_default(),
+        total_tokens: input
+            .zip(output)
+            .map(|(input, output)| u64::from(input) + u64::from(output)),
+        reported,
+        ..Usage::unknown()
+    })
 }
 
 /// The classifier result: pi `ClassifierResult` semantics.

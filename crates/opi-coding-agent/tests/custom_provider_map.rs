@@ -704,7 +704,7 @@ async fn production_custom_provider_reloads_store_then_env_auth_for_each_stream(
     backend.seed_credential(
         KEYCHAIN_SERVICE,
         "acme",
-        &Credential::ApiKey(SecretString::new("stored-token-at-build".into())),
+        &Credential::ApiKey(SecretString::new("stored-token-at-build".into()).into()),
     );
     let injected_backend = backend.clone();
     let root = tempfile::tempdir().unwrap();
