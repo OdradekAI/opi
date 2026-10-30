@@ -1219,6 +1219,30 @@ opi 策划的基线目录（一条）覆盖目录到来之前的窗口；pi 生�
 `data/radius.json` 基线未随钉住源提供，配置网关的动态目录在注册时整
 体替换基线。
 
+## OpenAI Decisions 适配器与四协议分类器闭环（任务 20.49）
+
+第四个真实分类器协议：`api::decisions::OpenAiDecisionsApi`（api id
+`openai-decisions`，provider `openai`）服务 OpenAI 的 Decisions API——一次
+`POST <base>/decisions`，携带 `{model, input, questions}`。state 以 JSON
+**字符串**上送；有图时 input 变为一条 user 消息：state 作 `input_text`，
+图作 `input_image` data URL 依次随后（至多 128 张，请求前类型化拒绝）。
+问题映射到 Decisions 类型：`choice` 保留选项（空描述不上线，与其他 opi
+criteria 映射一样按字母序）、`score` 保留层级、`bool` 变为 `predicate`
+并把真/假语义并入 instructions——System One 的 `noul` 与 Decisions 的
+`predicate` 不可互换。答案以数组返回并按 name 匹配；拒答、缺答、形状
+错型与非 finite 必填数均为类型化错误，且保留已计费的 usage 与按目录分
+层的成本（仅做 source 必需的校验——不加任何通用概率范围/求和/argmax/
+标签成员规则）。该路由只接受 OpenAI API key：空 key 在任何请求前类型
+化失败。api.openai.com 前方的 Cloudflare 在请求超过约五秒时以 HTML 页
+应答 504；重发同一输入只会再次超时，因此 **504 永不重试**，失败消息
+解释网关限制而不透出页面——其余状态保持共享分类器重试策略（默认 2 次
+额外重试、Retry-After 感知封顶延迟、逐 attempt body-inclusive 超时）。
+curated 的 `gpt-6-luna` 记录记载被测模型及其 272K token 以上的长上下文
+计价分层。`temperature` 在 pi 选项类型上存在但 Decisions 请求从不读
+取，故类型化选项只携带重试旋钮。至此分类器缝完成四协议证明：
+typesafe、Cloudflare、llama.cpp 与 Decisions 在同一个 `Models` 中并列注
+册，经同一公共 `classify` 派发应答，同时保持各自的 wire 形状。
+
 ## llama.cpp 标签 token 读出分类（任务 20.48）
 
 第三个真实分类器协议完全不需要专用分类服务：

@@ -1746,6 +1746,39 @@ pre-catalog window; pi's generated `data/radius.json` baseline is absent
 from the pinned source and a configured gateway's dynamic catalog replaces
 the baseline at registration time.
 
+## OpenAI Decisions Adapter and Four-Protocol Classifier Closure (task 20.49)
+
+The fourth real classifier protocol: `api::decisions::OpenAiDecisionsApi`
+(api id `openai-decisions`, provider `openai`) serves OpenAI's Decisions
+API — one `POST <base>/decisions` with `{model, input, questions}`. The
+state rides as a JSON *string*; with images the input becomes one user
+message with the state as `input_text` followed by the images as
+`input_image` data URLs (at most 128, rejected typed before any request).
+Questions map to Decisions types: `choice` keeps its options (empty
+descriptions stay off the wire, alphabetical like every opi criteria
+map), `score` keeps its levels and `bool` becomes a `predicate` whose
+criteria meanings join the instructions — a System One `noul` and a
+Decisions `predicate` are not interchangeable. Answers come back as an
+array matched by name; refusals, missing answers, mistyped shapes and
+non-finite required numbers are typed errors that keep the billed usage
+and its catalog-tiered cost (source-required validations only — no
+universal probability range, sum, argmax or label-membership rule). The
+route accepts only OpenAI API keys: an empty key fails typed before any
+request. Cloudflare in front of api.openai.com answers 504 with an HTML
+page when a request runs past about five seconds; retrying the same input
+hits it again, so **504 never retries** and the failure explains the
+gateway limit instead of surfacing the page — everything else keeps the
+shared classifier retry policy (two extra retries by default,
+Retry-After-aware capped delays, fresh per-attempt body-inclusive
+timeouts). The curated `gpt-6-luna` record documents the tested model
+with its long-context pricing tier above 272K tokens. `temperature`
+exists on the pi options type but the Decisions request never reads it,
+so the typed options carry the retry knobs only. With this adapter the
+classifier seam closes its four-protocol proof: typesafe, Cloudflare,
+llama.cpp and Decisions register side by side in one `Models` and answer
+through the same public `classify` dispatch while keeping their own wire
+shapes.
+
 ## llama.cpp Classification by Label-Token Readout (task 20.48)
 
 The third real classifier protocol needs no dedicated classification

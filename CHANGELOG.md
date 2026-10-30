@@ -651,6 +651,27 @@
   unchanged.
 ### Added
 
+- `opi-ai`: OpenAI Decisions classifier adapter and four-protocol closure
+  (task 20.49, DEL-11). `api::decisions::OpenAiDecisionsApi` (api id
+  `openai-decisions`, provider `openai`) serves OpenAI's Decisions API:
+  one `POST <base>/decisions` with `{model, input, questions}` where the
+  state rides as a JSON string (with images: one user message of
+  `input_text` plus `input_image` data URLs, max 128 rejected typed
+  before any request), `choice`/`score` questions keep their options and
+  levels (empty descriptions off the wire, alphabetical criteria order)
+  and `bool` becomes a `predicate` whose criteria meanings join the
+  instructions. Answers arrive as an array matched by name; refusals,
+  missing answers, mistyped shapes and non-finite required numbers are
+  typed errors retaining the billed usage and its catalog-tiered cost
+  (source-required validations only). API-key-only availability (empty
+  key fails typed), gateway 504 never retries and explains the ~600K
+  token limit instead of surfacing Cloudflare's HTML page, while other
+  failures keep the shared retry policy; the curated `gpt-6-luna` record
+  documents the long-context pricing tier above 272K tokens; `temperature`
+  stays off the typed options (the wire never reads it). With this
+  adapter the classifier seam proves one shared conformance across all
+  four real protocols (typesafe, Cloudflare, llama.cpp, Decisions) in a
+  single `Models` dispatch.
 - `opi-ai`: llama.cpp classification by label-token readout (task 20.48,
   DEL-11). `api::llama::LlamaCppClassifyApi` (api id `llama-cpp-classify`,
   provider `llama.cpp`) classifies with an ordinary chat model served by
