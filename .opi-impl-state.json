@@ -14707,7 +14707,7 @@
       "definition_of_done": "Submit via normal generation returns Pending or final, wait0 checks once, handle identity/expiry/serialization and selected auth validate with typed errors. Fetch remains pending or ready, local abort differs from explicit best-effort remote cancel. Reopen isolated consumer checkpoint without resubmit or route switch, monotonic fake-clock schedule and fixture5s fallback never become SDK polling. No real remote backend/deployment/replay service is claimed.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -14776,6 +14776,18 @@
           "field": "test_support_ownership",
           "reason": "Add only the distinct operation-specific script/record support needed by this vertical slice after its real operation types exist. Reuse 20.53.8 chat events and final-outcome ownership; mocks supplement real adapter/source fixtures and never close wire acceptance.",
           "source": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md#执行层次与流程同步要求"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Compiler-enumerated mechanical ownership appends: the DoD's pending submission requires StopReason::Deferred (stream.rs) and AssistantMessage.deferred (message.rs); every AssistantMessage literal and exhaustive StopReason match in opi-ai needs a mechanical `deferred: None` / Deferred arm (anthropic, bedrock, gemini, mistral, openai_chat, openai_responses_shared, pi_messages, replay). provider.rs was appended speculatively but is NOT edited: the submission trigger stays fixture-owned (DoD requires normal generation only, no request flag), so it is removed from task_owned_paths."
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Compiler-enumerated cross-crate mechanical append: opi-agent's public event redaction copies AssistantMessage field-by-field and needed the new deferred handle field (passed through, no credential content) once the field was added in opi-ai."
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "Compiler-enumerated mechanical test-file appends: every AssistantMessage literal across opi-ai tests (and the two opi-agent/opi-coding-agent suites already recorded) gains `deferred: None` once the handle field ships; no behavior changes in those files."
         }
       ],
       "tier": "library",
@@ -14805,7 +14817,7 @@
             "opi_ai::Models::{stream_deferred,fetch_deferred,cancel_deferred} (target)",
             "opi_ai scripted/custom deferred backend (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-38",
@@ -14818,7 +14830,7 @@
             "opi_ai::Models::{stream_deferred,fetch_deferred,cancel_deferred} (target)",
             "opi_ai scripted/custom deferred backend (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-043",
@@ -14831,7 +14843,7 @@
             "opi_ai::Models::{stream_deferred,fetch_deferred,cancel_deferred} (target)",
             "opi_ai scripted/custom deferred backend (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-044",
@@ -14844,7 +14856,7 @@
             "opi_ai::Models::{stream_deferred,fetch_deferred,cancel_deferred} (target)",
             "opi_ai scripted/custom deferred backend (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S50",
@@ -14857,7 +14869,7 @@
             "opi_ai::Models::{stream_deferred,fetch_deferred,cancel_deferred} (target)",
             "opi_ai scripted/custom deferred backend (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -14865,9 +14877,9 @@
         "opi_ai scripted/custom deferred backend (target)"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "ee126cb709fd730cab94b7d83a63c0907231e4d7",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -14879,12 +14891,103 @@
         "crates/opi-ai/src/telemetry.rs",
         "crates/opi-ai/src/test_support.rs",
         "crates/opi-ai/tests/deferred_contract.rs",
-        "crates/opi-ai/tests/test_support_tests.rs"
+        "crates/opi-ai/tests/test_support_tests.rs",
+        "crates/opi-ai/src/stream.rs",
+        "crates/opi-ai/src/message.rs",
+        "crates/opi-ai/src/anthropic.rs",
+        "crates/opi-ai/src/bedrock/mod.rs",
+        "crates/opi-ai/src/gemini.rs",
+        "crates/opi-ai/src/mistral.rs",
+        "crates/opi-ai/src/openai_chat.rs",
+        "crates/opi-ai/src/openai_responses_shared.rs",
+        "crates/opi-ai/src/pi_messages.rs",
+        "crates/opi-ai/src/replay.rs",
+        "crates/opi-ai/tests/bedrock_fixtures.rs",
+        "crates/opi-ai/tests/node4_preparation.rs",
+        "crates/opi-ai/tests/gemini_fixtures.rs",
+        "crates/opi-ai/tests/openai_responses_fixtures.rs",
+        "crates/opi-ai/tests/whole_call_retry.rs",
+        "crates/opi-ai/tests/mistral_fixtures.rs",
+        "crates/opi-agent/src/event.rs",
+        "crates/opi-agent/tests/session_context.rs",
+        "crates/opi-agent/tests/agent_loop_semantics.rs",
+        "crates/opi-agent/tests/agent_wrapper.rs",
+        "crates/opi-agent/tests/compaction.rs",
+        "crates/opi-agent/tests/evidence_runtime.rs",
+        "crates/opi-agent/tests/hooks_queues.rs",
+        "crates/opi-agent/tests/session_branching.rs",
+        "crates/opi-agent/tests/session_contract.rs",
+        "crates/opi-agent/tests/thinking_session.rs",
+        "crates/opi-agent/tests/tool_validation.rs",
+        "crates/opi-coding-agent/tests/anthropic_cache_markers.rs",
+        "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+        "crates/opi-coding-agent/tests/rpc_jsonl.rs",
+        "crates/opi-coding-agent/tests/session_export.rs",
+        "crates/opi-ai/tests/anthropic_fixtures.rs",
+        "crates/opi-ai/tests/api_mapped_provider.rs",
+        "crates/opi-ai/tests/azure_openai_fixtures.rs",
+        "crates/opi-ai/tests/context_budget.rs",
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
+        "crates/opi-ai/tests/openai_codex_responses/replay.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/provider_trait.rs",
+        "crates/opi-ai/tests/public_utilities.rs",
+        "crates/opi-ai/tests/replay_contract.rs",
+        "crates/opi-ai/tests/stream_events.rs",
+        "crates/opi-ai/tests/tool_result_no_leak.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "4b3600fcdeb3ade41bf4f66249337c382630af23",
+      "evidence": {
+        "Opi-Task": "20.50",
+        "Opi-DoD-SHA256": "53f57ef8561bcee52d81657719d2a985e9f0ed551187163f72a27cb1550e5aaf",
+        "Opi-Verification": "library; opi-impl-smoke scoped PASSED; workspace check clean; 63 suites green across opi-ai/opi-agent/opi-coding-agent (53692 oauth env flake passed on clean-window retry)",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "V-37, V-38, AIR-043, AIR-044, P20-S50"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-30T12:46:04+00:00",
+          "attempt": 1,
+          "summary": "B.2 contract authorized (submit via normal generation, wait0 single check, typed identity/expiry/serialization/auth validation, pending-or-ready fetch, local abort vs best-effort remote cancel, reopenable consumer checkpoint, no SDK polling, no real remote claims). Starting TDD implementation."
+        },
+        {
+          "timestamp": "2026-10-30T13:53:14+00:00",
+          "attempt": 1,
+          "summary": "Deferred-response contracts complete and green. Shipped: StopReason::Deferred (Ok on ChatStream::result per P20-FINAL) + AssistantMessage.deferred (Boxed handle, serde default/skip, credential-free) + pi-camelCase DeferredHandle (expiresAt/pollAfterMs/data) with typed identity/expiry validation against a caller-injected clock; the operation-qualified deferred registry (register_deferred_api mirroring image/classifier, upsert by exact ApiId, deferred_registration lookup filtering provider) backing Models::{validate_deferred_handle, stream_deferred, fetch_deferred, cancel_deferred}: identity then expiry before auth, resolver-based CredentialNeeded typed failures, exactly one fetch per call at wait0, a local-cancellation race (zero backend work before first poll, Cancelled typed, remote job untouched) independent of best-effort remote cancel; TelemetryContext frozen carrier reaches the backend on fetch/cancel (AIR-054). test_support ships ScriptedDeferredBackend (deterministic id counter, pending-fetch countdown, cancel recording, fail_cancels, telemetry-presence capture) and MockProvider::with_deferred; deferred_contract.rs proves submission pending-vs-final through the real complete_simple path, wait0 single checks with exact fetch-count assertions, typed unsupported/unknown/expired/missing-credential failures, pending-or-ready readiness, local abort vs explicit cancel independence, the reopenable consumer checkpoint (serialized handle/model/next-poll reopened against a rebuilt collection sharing only the backend; fake monotonic clock; the 5s poll advice stays fixture input - one fetch per explicit call), and telemetry presence. Mechanical deferred:None literal updates spanned compiler-enumerated workspace assistant-message callers (opi-ai adapters/tests, opi-agent event redaction passes the handle through + suites, opi-coding-agent suites); a first ad-hoc insertion script inserted after closing braces and was reverted with targeted checkout before a string/comment-aware scanner redid the whole set; ownership appends recorded before each edit batch. D.1 scoped PASSED (fmt+clippy -D warnings+tests); workspace --all-targets check clean; cargo test across the three touched crates: 63 suites green with the single known 53692 oauth env flake passing on a >300s clean-window retry; doc-check PASS. D.2 exec single-reviewer fallback (wf_ref=null): 0 must-fix; 3 low flags: (1) stream_deferred auth failures keep the typed cause instead of classify's 'No API key for provider: X' message rewrite (semantically equivalent, different wording); (2) DeferredApiDispatch has no native-options type-check path yet - the ordinary entry always dispatches default options, native deferred options arrive with the first real wire adapter; (3) pi_messages stop_reason_wire serializes Deferred as 'deferred' for vocabulary completeness while the radius adapter never produces pending terminals. Test disposition: add 14 (13 deferred_contract + 1 test_support_tests), update mechanical literal/match updates across ~35 files, retain all predecessor suites.",
+          "gate_results": {
+            "d1": "smoke scoped PASSED (deferred_contract + test_support_tests)",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 3 low flags",
+            "test_disposition": [
+              {
+                "subject": "P20-S50/V-37/V-38/AIR-043/AIR-044",
+                "action": "add",
+                "test": "tests/deferred_contract.rs (13 tests: handle serialization/identity/expiry, submission pending-or-final, wait0 single check, unsupported/unknown/expired/missing-credential typed failures, local abort vs explicit cancel, reopenable consumer checkpoint with fake clock, telemetry presence) + tests/test_support_tests.rs deferred scripting coverage",
+                "interface": "Models::{stream_deferred, fetch_deferred, cancel_deferred, validate_deferred_handle, register_deferred_api} + deferred::{DeferredHandle, DeferredApi, DeferredFetchCall, DeferredCancelCall} + test_support::{ScriptedDeferredBackend, MockProvider::with_deferred}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.50",
+                "action": "update",
+                "test": "compiler-enumerated mechanical `deferred: None` literal inserts across workspace assistant-message callers and the two new StopReason match arms (stream.rs as_str/result, pi_messages stop_reason_wire)",
+                "interface": "AssistantMessage.deferred + StopReason::Deferred",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.50",
+                "action": "retain",
+                "test": "all predecessor suites stay green unchanged (stream_events P20-FINAL closure, replay_contract, telemetry_carrier P20-TELEMETRY closure, fixtures, coding-agent suites)",
+                "interface": "existing",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "id": "20.51",
@@ -23182,6 +23285,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-30T12:16:41+00:00",
       "task_id": "20.34",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 0,
+      "ran_at": "2026-10-30T13:53:14+00:00",
+      "task_id": "20.50",
       "criterion_id": null
     }
   ]
