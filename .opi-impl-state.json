@@ -14419,7 +14419,7 @@
       "definition_of_done": "Public classify reaches real openai-decisions adapter with predicate bool and API-key-only availability plus source504 retry exclusion. Preserve native options/request/result/retry/timeout from SDK annex§4. Validate only source-required field/type/finite constraints, no universal probability range/sum/argmax/label membership rule. Typed invalid result retains known usage/metadata, cancellation and callback failure do not trigger hidden retry. One shared ClassifierApi conformance spans all four real protocols, not image adapter count. Own full four-protocol V-24/AIR-028/AIR-029 closure over completed 20.46/47/48 plus this adapter. Reuse one ClassifierApi conformance surface; add distinct assembled cases rather than a second implementation or copied suites. For adopted Pi 1.3 options record source/type/unit/omission/default/false/zero/null/removal/precedence/wire/typed-rejection and capture actual public native/simple requests; reuse existing wire cases and add only distinct missing input/outcome cases. Decisions remains API-key-only, with its own predicate/result/options and 504 retry exclusion; close the assembled four-classifier proof without duplicate suites.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -14531,7 +14531,7 @@
             "opi_ai openai-decisions direct adapter (target)",
             "opi_ai four real classifier protocol adapters via Models::classify (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-028",
@@ -14545,7 +14545,7 @@
             "opi_ai openai-decisions direct adapter (target)",
             "opi_ai four real classifier protocol adapters via Models::classify (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-029",
@@ -14559,7 +14559,7 @@
             "opi_ai openai-decisions direct adapter (target)",
             "opi_ai four real classifier protocol adapters via Models::classify (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S49",
@@ -14573,7 +14573,7 @@
             "opi_ai openai-decisions direct adapter (target)",
             "opi_ai four real classifier protocol adapters via Models::classify (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-03-20.49",
@@ -14587,7 +14587,7 @@
             "opi_ai openai-decisions direct adapter (target)",
             "opi_ai four real classifier protocol adapters via Models::classify (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -14596,9 +14596,9 @@
         "opi_ai four real classifier protocol adapters via Models::classify (target)"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "6fda6ca",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -14612,10 +14612,45 @@
         "crates/opi-ai/src/telemetry.rs",
         "crates/opi-ai/tests/classifier_contract.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "9df875859f358d2b36b649b8ec66feab6d8c2812",
+      "evidence": {
+        "Opi-Task": "20.49",
+        "Opi-DoD-SHA256": "53494b81dd0a5cd620fe2f32d6d8e63533cff49f7f39bc43d26ab567efb19731",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED on attempt 2 (environmental 53692 then strict clean window)",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "V-24, AIR-028, AIR-029, P20-S49, ONB-03-20.49"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-30T04:45:32+00:00",
+          "attempt": 1,
+          "summary": "Fourth real classifier protocol closes the four-protocol assembled proof: api::decisions::OpenAiDecisionsApi (openai-decisions, provider openai) serves OpenAI's Decisions API with one POST <base>/decisions carrying {model, input, questions}. The state rides as a JSON string; with images the input becomes one user message of input_text followed by input_image data URLs, at most 128 (rejected typed before any request). choice keeps its options (empty descriptions off the wire, alphabetical criteria order replacing pi insertion order, documented), score keeps its levels, bool becomes a predicate whose true/false meanings join the instructions (noul and predicate are not interchangeable). Answers arrive as an array matched by name; refusals, missing answers, mistyped shapes and non-finite required numbers are typed errors that retain the billed usage and its catalog-tiered cost (source-required validations only; no universal range/sum/argmax/membership rule). API-key-only availability: an empty key fails typed with 'No API key for provider: openai' before any request. Gateway 504 never retries (the same oversized input would time out again) and its message explains the ~600K token gateway limit instead of surfacing Cloudflare's HTML page; other failures keep the shared retry policy (default two extra retries proven by a 503 test asserting byte-identical frozen bodies across attempts, Retry-After-aware capped delays, fresh per-attempt body-inclusive timeouts, cancel->Aborted, telemetry instrument wrapping the attempt loop) implemented over the system_one pub(super) policy pieces in a decisions-owned loop. Curated gpt-6-luna record documents the tested model with its 272K long-context pricing tier (base $0.1/M, tier $0.2/M; cost tests 0.0000164 and 0.06); temperature stays off the typed options because the Decisions wire never reads it (pi carries it on the shared options type only). TDD red-first (missing api::decisions) then green: classifier_contract 55/55 (43 retained + 12 new; the new assembled test registers typesafe, cloudflare, llama and decisions in one Models and answers one bool through each protocol's own wire - noul vs predicate - via the same public classify dispatch). fmt/clippy -D warnings clean; full crate 192 passed with only the environmental 53692 failure in that run; doc-check PASS. D.1 smoke full PASSED on attempt 2 (attempt 1 was the documented 53692 environmental class with a strict >300s clean window before the retry). D.2 exec single-reviewer fallback (wf_ref=null): 0 must-fix; 5 low flags: (1) timeout message and cancel not separately asserted for decisions (loop mirrors the 20.46-reviewed shape and shares the policy fns); (2) callback-failure non-retry untested locally (shared behavior via status Some(200)); (3) x-should-retry/Retry-After honored through the shared policy fns, separately pinned by the typesafe suite; (4) a mistyped score answer for a predicate question reports the question-type error first (pi's same order); (5) BTreeMap alphabetical order replaces pi insertion order for both the questions array and choice options (documented in test comment and README, same class as 20.48). owned paths classifier.rs/models.rs/telemetry.rs/lib.rs needed no change.",
+          "gate_results": {
+            "d1": "smoke full PASSED on attempt 2 (attempt 1 environmental 53692, strict clean window respected)",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 5 low flags; no shared-decision finding",
+            "test_disposition": [
+              {
+                "subject": "V-24 / AIR-028 / AIR-029 / P20-S49 / ONB-03-20.49",
+                "action": "add",
+                "test": "classifier_contract decisions section (11 tests): three-question mapping with answers out of order matched by name plus full wire assertions (input as JSON string, empty description omitted, predicate instructions with both meanings, alphabetical questions array, model field, Bearer, /v1/decisions endpoint), base-tier cost 0.0000164, long-context tier cost 0.06 at 300K tokens, images after state in one user message with data URLs, 129-image rejection with zero requests, refusal retaining billed usage 164, missing/mistyped/string-confidence typed errors, gateway 504 single request with the gateway-limit message and no HTML, 503 retried once with byte-identical frozen bodies, 400 body surfaced with max_retries 0 on the native path, api mismatch + empty key + on_raw rejections with zero requests, observer payload transform + response status; plus one assembled four-protocol test registering typesafe, cloudflare, llama and decisions in one Models and classifying one bool through each protocol's own wire (noul vs predicate) via the same public dispatch",
+                "interface": "api::decisions::{OPENAI_DECISIONS_API_ID, OPENAI_DECISIONS_BASE_URL, OpenAiDecisionsOptions, OpenAiDecisionsApi, default_decisions_classifier_record}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.49",
+                "action": "retain",
+                "test": "the 43 typesafe+cloudflare+llama tests stay green unchanged",
+                "interface": "api::{system_one, cloudflare, llama} (untouched this task)",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ],
+      "started_at": "2026-10-30T03:52:26+00:00"
     },
     {
       "id": "20.50",
@@ -23081,6 +23116,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-29T20:24:39+00:00",
       "task_id": "20.48",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 5,
+      "rejected_count": 0,
+      "ran_at": "2026-10-30T04:45:32+00:00",
+      "task_id": "20.49",
       "criterion_id": null
     }
   ]
