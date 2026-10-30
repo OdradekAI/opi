@@ -224,6 +224,7 @@ async fn simple_preparation_counts_canonical_system_changes_after_the_usage_anch
                     signature: None,
                 }],
                 api: opi_ai::ApiKind::OpenAi,
+                deferred: None,
                 provider: "openai".into(),
                 model: "gpt-4o".into(),
                 response_model: None,

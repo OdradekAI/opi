@@ -50,6 +50,8 @@ fn assistant_text(id: &str, text: &str) -> Entry {
             diagnostics: Vec::new(),
             duration_ms: None,
             provider_thinking_level: None,
+
+            deferred: None,
         })),
     }
 }

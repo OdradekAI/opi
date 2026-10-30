@@ -53,6 +53,10 @@ use crate::auth::{
     AwsSigV4Credentials, ResolvedAuth,
 };
 use crate::credential::{Credential, CredentialSource, CredentialStore, CredentialStoreError};
+use crate::deferred::{
+    DeferredApi, DeferredApiHandle, DeferredCancelCall, DeferredError, DeferredFetchCall,
+    DeferredHandle,
+};
 use crate::message::AssistantMessage;
 use crate::mutation::{MutationError, MutationOutcome};
 use crate::provider::{
@@ -495,6 +499,11 @@ pub struct Models {
     /// (task 20.46). The classifier operation dispatches on the record's
     /// API identity; classifier records never enter the chat catalog.
     classifier_apis: BTreeMap<ApiId, ClassifierApiRegistration>,
+    /// Typed deferred-response backend registrations keyed by exact
+    /// [`ApiId`] (task 20.50). Deferred fetch/cancel dispatch on the
+    /// handle's API identity after route validation; deferred backends
+    /// never enter the chat catalog.
+    deferred_apis: BTreeMap<ApiId, DeferredApiRegistration>,
     /// Injectable ambient-source access consulted on demand by the auth
     /// management operations. Defaults to the lazy
     /// [`AmbientAuthContext`](crate::auth::AmbientAuthContext); construction
@@ -539,6 +548,7 @@ impl Models {
             chat_apis: BTreeMap::new(),
             image_apis: BTreeMap::new(),
             classifier_apis: BTreeMap::new(),
+            deferred_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
             models_store: None,
@@ -585,6 +595,7 @@ impl Models {
             chat_apis: BTreeMap::new(),
             image_apis: BTreeMap::new(),
             classifier_apis: BTreeMap::new(),
+            deferred_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
             credential_store: None,
             models_store: None,
@@ -822,6 +833,201 @@ impl Models {
             None => registration.records.push(record),
         }
         Ok(())
+    }
+
+    /// Register one typed deferred-response backend (task 20.50): the
+    /// fixed-`O` [`DeferredApi`] implementation, its provider auth resolver
+    /// and provenance source. The registration owns the backend's route
+    /// identity (`ApiId`, provider, model); an upsert with the same exact
+    /// [`ApiId`] replaces the previous registration wholesale.
+    ///
+    /// Deferred submission stays a normal generation through the chat
+    /// surface; only the explicit fetch/cancel operations resolve here,
+    /// after validating the handle's route identity against this
+    /// registration.
+    pub fn register_deferred_api<O: Send + 'static>(
+        &mut self,
+        api: std::sync::Arc<dyn DeferredApi<O>>,
+        resolver: std::sync::Arc<dyn AuthResolver>,
+        source: AuthProvenanceSource,
+    ) -> Result<DeferredApiHandle<O>, RegistrationError> {
+        let api_id = api.api_id().clone();
+        if api_id.as_str().trim().is_empty() {
+            return Err(RegistrationError::EmptyApiId);
+        }
+        let provider_id = api.provider_id().to_owned();
+        if provider_id.trim().is_empty() {
+            return Err(RegistrationError::EmptyProviderId);
+        }
+        let model_id = api.model_id().to_owned();
+        self.sources.insert(provider_id.clone(), source);
+        self.deferred_apis.insert(
+            api_id.clone(),
+            DeferredApiRegistration {
+                api_id: api_id.clone(),
+                provider_id,
+                model_id,
+                dispatch: Arc::new(TypedDeferredApi { api }),
+                resolver,
+            },
+        );
+        Ok(DeferredApiHandle::new(api_id))
+    }
+
+    /// Validate one deferred handle against the registered backends
+    /// (AIR-043): route identity and, when the caller injects a clock
+    /// reading, expiry — both before any authentication. Returns the typed
+    /// [`DeferredError`] without touching resolvers or network.
+    pub fn validate_deferred_handle(
+        &self,
+        handle: &DeferredHandle,
+        now_ms: Option<u64>,
+    ) -> Result<(), DeferredError> {
+        let registration = self.deferred_registration(handle)?;
+        handle.validate_identity(
+            &registration.provider_id,
+            &registration.model_id,
+            registration.api_id.as_str(),
+        )?;
+        if let Some(now_ms) = now_ms {
+            handle.validate_expiry(now_ms)?;
+        }
+        Ok(())
+    }
+
+    /// Fetch one deferred response as an event stream: validate the handle
+    /// (identity, then expiry), resolve authentication through the
+    /// backend's registered resolver, and dispatch exactly one fetch.
+    ///
+    /// Pre-dispatch failures (unsupported provider, route mismatch,
+    /// expiry, missing credential) surface as one typed `Err` stream item,
+    /// which [`ChatStream`] converts into the canonical `CallFailure`.
+    /// `wait_ms = 0` (pi wait0) performs a single status check; the SDK
+    /// never polls implicitly.
+    pub fn stream_deferred(&self, handle: &DeferredHandle, call: DeferredFetchCall) -> EventStream {
+        let validated = self
+            .deferred_registration(handle)
+            .and_then(|registration| {
+                handle
+                    .validate_identity(
+                        &registration.provider_id,
+                        &registration.model_id,
+                        registration.api_id.as_str(),
+                    )
+                    .map(|()| registration)
+            })
+            .and_then(|registration| match call.now_ms {
+                Some(now_ms) => handle.validate_expiry(now_ms).map(|()| registration),
+                None => Ok(registration),
+            });
+        let (registration, options) = match validated {
+            Ok(registration) => {
+                let options = registration.dispatch.default_options_erased();
+                (registration, options)
+            }
+            Err(error) => {
+                let provider_error = error.into_provider_error();
+                return Box::pin(stream::once(async move { Err(provider_error) }));
+            }
+        };
+        let resolver = Arc::clone(&registration.resolver);
+        let dispatch = Arc::clone(&registration.dispatch);
+        let handle = handle.clone();
+        let cancel = call.cancel.clone();
+        let setup: BoxFuture<'static, EventStream> = Box::pin(async move {
+            match resolver.resolve().await {
+                Ok(auth) => dispatch.fetch_erased(&handle, options.as_ref(), auth, call),
+                Err(error) => Box::pin(stream::once(async move {
+                    Err::<AssistantStreamEvent, ProviderError>(error)
+                })) as EventStream,
+            }
+        });
+        let fetched = futures_util::FutureExt::flatten_stream(setup);
+        // Local abort (AIR-043): cancelling the fetch token ends the local
+        // attempt with a typed Cancelled failure and never reaches the
+        // remote deferred job.
+        if cancel.is_cancelled() {
+            return Box::pin(stream::once(async move {
+                Err::<AssistantStreamEvent, ProviderError>(ProviderError::Cancelled)
+            }));
+        }
+        Box::pin(stream::unfold(
+            (fetched, cancel, false),
+            |(mut inner, cancel, done)| async move {
+                if done {
+                    return None;
+                }
+                // None (outer) = cancelled; Some(None) = stream end.
+                let outcome = {
+                    let mut cancelled = std::pin::pin!(cancel.cancelled());
+                    let selected = futures_util::future::select(inner.next(), &mut cancelled).await;
+                    match selected {
+                        futures_util::future::Either::Left((item, _)) => Some(item),
+                        futures_util::future::Either::Right(((), _)) => None,
+                    }
+                };
+                match outcome {
+                    Some(Some(event)) => Some((event, (inner, cancel, false))),
+                    Some(None) => None,
+                    None => Some((
+                        Err::<AssistantStreamEvent, ProviderError>(ProviderError::Cancelled),
+                        (inner, cancel, true),
+                    )),
+                }
+            },
+        ))
+    }
+
+    /// Fetch one deferred response to the single final outcome: pending
+    /// results are `Ok` with [`crate::stream::StopReason::Deferred`] and the
+    /// handle on the returned message; ready results deliver the final
+    /// assistant message; every failure is one `Err(CallFailure)`.
+    pub async fn fetch_deferred(
+        &self,
+        handle: &DeferredHandle,
+        call: DeferredFetchCall,
+    ) -> Result<crate::message::AssistantMessage, CallFailure> {
+        drain_to_completion(self.stream_deferred(handle, call)).await
+    }
+
+    /// Cancel one deferred response remotely, best effort (AIR-043/AIR-044).
+    ///
+    /// The handle validates exactly like a fetch; the backend's failure is
+    /// reported and never taken as a guarantee. Local fetch cancellation
+    /// never reaches this operation.
+    pub async fn cancel_deferred(
+        &self,
+        handle: &DeferredHandle,
+        call: DeferredCancelCall,
+    ) -> Result<(), ProviderError> {
+        let registration = self
+            .deferred_registration(handle)
+            .map_err(DeferredError::into_provider_error)?;
+        handle
+            .validate_identity(
+                &registration.provider_id,
+                &registration.model_id,
+                registration.api_id.as_str(),
+            )
+            .map_err(DeferredError::into_provider_error)?;
+        let options = registration.dispatch.default_options_erased();
+        let auth = registration.resolver.resolve().await?;
+        registration
+            .dispatch
+            .cancel_erased(handle, options.as_ref(), auth, call)
+            .await
+    }
+
+    fn deferred_registration(
+        &self,
+        handle: &DeferredHandle,
+    ) -> Result<&DeferredApiRegistration, DeferredError> {
+        self.deferred_apis
+            .get(&ApiId::new(handle.api.clone()))
+            .filter(|registration| registration.provider_id == handle.provider)
+            .ok_or_else(|| DeferredError::Unsupported {
+                provider: handle.provider.clone(),
+            })
     }
 
     /// Operation-qualified classifier selection: resolve the registered
@@ -3411,6 +3617,69 @@ struct ClassifierApiRegistration {
     dispatch: Arc<dyn ClassifierApiDispatch>,
     resolver: Arc<dyn AuthResolver>,
     records: Vec<crate::classifier::ClassifierModelRecord>,
+}
+
+struct DeferredApiRegistration {
+    api_id: ApiId,
+    provider_id: String,
+    model_id: String,
+    dispatch: Arc<dyn DeferredApiDispatch>,
+    resolver: Arc<dyn AuthResolver>,
+}
+
+/// Object-safe dispatch over one fixed deferred options type.
+trait DeferredApiDispatch: Send + Sync {
+    fn default_options_erased(&self) -> Box<dyn std::any::Any + Send>;
+    fn fetch_erased(
+        &self,
+        handle: &DeferredHandle,
+        options: &(dyn std::any::Any + Send),
+        auth: crate::auth::ResolvedAuth,
+        call: DeferredFetchCall,
+    ) -> crate::provider::EventStream;
+    fn cancel_erased<'a>(
+        &'a self,
+        handle: &'a DeferredHandle,
+        options: &'a (dyn std::any::Any + Send),
+        auth: crate::auth::ResolvedAuth,
+        call: DeferredCancelCall,
+    ) -> futures_util::future::BoxFuture<'a, Result<(), ProviderError>>;
+}
+
+struct TypedDeferredApi<O: Send + 'static> {
+    api: std::sync::Arc<dyn DeferredApi<O>>,
+}
+
+impl<O: Send + 'static> DeferredApiDispatch for TypedDeferredApi<O> {
+    fn default_options_erased(&self) -> Box<dyn std::any::Any + Send> {
+        Box::new(self.api.default_options())
+    }
+
+    fn fetch_erased(
+        &self,
+        handle: &DeferredHandle,
+        options: &(dyn std::any::Any + Send),
+        auth: crate::auth::ResolvedAuth,
+        call: DeferredFetchCall,
+    ) -> crate::provider::EventStream {
+        let Some(options) = options.downcast_ref::<O>() else {
+            unreachable!("dispatch only receives its registration's options type")
+        };
+        self.api.fetch_prepared(handle, options, auth, call)
+    }
+
+    fn cancel_erased<'a>(
+        &'a self,
+        handle: &'a DeferredHandle,
+        options: &'a (dyn std::any::Any + Send),
+        auth: crate::auth::ResolvedAuth,
+        call: DeferredCancelCall,
+    ) -> futures_util::future::BoxFuture<'a, Result<(), ProviderError>> {
+        let Some(options) = options.downcast_ref::<O>() else {
+            unreachable!("dispatch only receives its registration's options type")
+        };
+        self.api.cancel_prepared(handle, options, auth, call)
+    }
 }
 
 /// Object-safe dispatch over one fixed classifier options type.

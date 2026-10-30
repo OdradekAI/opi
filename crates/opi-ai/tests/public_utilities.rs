@@ -510,6 +510,8 @@ fn diagnostic_message(
         diagnostics: vec![],
         duration_ms: None,
         provider_thinking_level: None,
+
+        deferred: None,
     }
 }
 

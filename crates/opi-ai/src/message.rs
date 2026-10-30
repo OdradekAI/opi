@@ -65,6 +65,12 @@ pub struct AssistantMessage {
     /// items. `None` on wires without that mechanism.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_thinking_level: Option<String>,
+    /// Deferred-response handle for a pending submission (task 20.50,
+    /// AIR-043): present exactly when `stop_reason` is `Deferred`. The
+    /// handle is source-owned identity plus provider advice and never
+    /// carries a credential.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deferred: Option<Box<crate::deferred::DeferredHandle>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

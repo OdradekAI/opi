@@ -570,6 +570,8 @@ fn two_tool_response() -> Vec<AssistantStreamEvent> {
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+
+        deferred: None,
     };
     let calls = [
         ToolCall {
@@ -2422,6 +2424,8 @@ async fn in_band_stream_error_terminal_fails_the_run_without_retry() {
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+
+        deferred: None,
     };
     partial.content.push(AssistantContent::Text {
         text: "partial before failure".to_owned(),

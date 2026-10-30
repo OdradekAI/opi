@@ -2595,6 +2595,7 @@ fn history_assistant_message(
         content,
         api: opi_ai::ApiKind::OpenAi,
         provider: "openai-responses".into(),
+        deferred: None,
         model: "o3".into(),
         response_model: None,
         wire: Some(WireApi::OpenAiResponses),

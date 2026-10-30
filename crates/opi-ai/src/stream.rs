@@ -23,6 +23,13 @@ pub enum StopReason {
     Error,
     #[serde(rename = "aborted")]
     Aborted,
+    /// Deferred submission outcome: the turn is still pending behind a
+    /// deferred handle (task 20.50, AIR-043). Terminal `Deferred` results
+    /// are `Ok` outcomes exactly like `Stop`/`Length`/`ToolUse`; the
+    /// message carries no content and the handle rides the assistant
+    /// message's `deferred` field.
+    #[serde(rename = "deferred")]
+    Deferred,
 }
 
 /// A message-level constrained-sampling diagnostic (task 20.11): the
@@ -52,6 +59,7 @@ impl StopReason {
             Self::ToolUse => "tool_use",
             Self::Error => "error",
             Self::Aborted => "aborted",
+            Self::Deferred => "deferred",
         }
     }
 }
@@ -603,6 +611,7 @@ fn setup_failure_message(cause: &ProviderError) -> crate::message::AssistantMess
         content: Vec::new(),
         api: crate::ApiKind::Anthropic,
         provider: String::new(),
+        deferred: None,
         model: String::new(),
         response_model: None,
         wire: None,
@@ -731,9 +740,10 @@ impl Stream for ChatStream {
                 match &event {
                     AssistantStreamEvent::Done { reason, message } => {
                         let outcome = match reason {
-                            StopReason::Stop | StopReason::Length | StopReason::ToolUse => {
-                                Ok(message.clone())
-                            }
+                            StopReason::Stop
+                            | StopReason::Length
+                            | StopReason::ToolUse
+                            | StopReason::Deferred => Ok(message.clone()),
                             StopReason::Error | StopReason::Aborted => Err(
                                 CallFailure::from_error_stop_reason(*reason, message.clone()),
                             ),

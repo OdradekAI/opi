@@ -2,6 +2,12 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): `StopReason::Deferred` is a new variant and
+  `AssistantMessage` gains a `deferred: Option<Box<DeferredHandle>>` field
+  (task 20.50, DEL-11); exhaustive `StopReason` matches gain an arm and
+  assistant-message literals gain the field. `Deferred` terminals are `Ok`
+  outcomes on `ChatStream::result` exactly like `Stop`/`Length`/`ToolUse`.
+
 - `opi-ai` (0.x): `WireApi::PiMessages` and `WireCompat::PiMessages` are
   new variants (task 20.44, DEL-11); exhaustive matches over either enum
   gain an arm.
@@ -649,6 +655,24 @@
   `ResponsesConfig` gains `supports_grammar_tools`. Existing struct-literal
   call sites add `Default`/`None` fields; historical records deserialize
   unchanged.
+### Added
+
+- `opi-ai`: deferred-response contracts (task 20.50, DEL-11). Submission
+  stays a normal generation returning a pending `StopReason::Deferred`
+  message with a source-owned `DeferredHandle` (no credential, pi-shaped
+  camelCase serialization). `Models::{stream_deferred, fetch_deferred,
+  cancel_deferred}` operate on the handle with typed pre-auth validation
+  (route identity, caller-clock expiry, unsupported provider), one status
+  check at wait0 and never implicit polling; local fetch cancellation is
+  independent of best-effort remote cancel. Backends register through the
+  operation-qualified `register_deferred_api` seam
+  (`DeferredApi`/`DeferredApiHandle`, upsert by exact `ApiId`);
+  `test_support` gains `ScriptedDeferredBackend` and
+  `MockProvider::with_deferred` for deterministic scripting, and
+  `tests/deferred_contract.rs` proves the reopenable consumer checkpoint
+  (no resubmission, fake monotonic clock, fixture-only poll advice) and
+  AIR-054 telemetry-carrier participation. No real remote deferred
+  protocol is claimed.
 ### Added
 
 - `opi-ai`: builtin provider factory layer with 42 canonical profiles

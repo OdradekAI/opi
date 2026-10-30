@@ -796,6 +796,7 @@ fn empty_assistant_message(provider_id: &str) -> AssistantMessage {
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+        deferred: None,
     }
 }
 
@@ -2507,6 +2508,7 @@ mod tests {
             diagnostics: Vec::new(),
             duration_ms: None,
             provider_thinking_level: None,
+            deferred: None,
         })
     }
 
@@ -2689,6 +2691,7 @@ mod tests {
                         diagnostics: Vec::new(),
                         duration_ms: None,
                         provider_thinking_level: None,
+                        deferred: None,
                     }),
                 ],
                 tools: vec![crate::message::ToolDef {

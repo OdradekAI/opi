@@ -750,3 +750,105 @@ async fn mixed_script_queue_consumes_in_order() {
     ));
     assert_eq!(provider.stream_call_count(), 4);
 }
+
+// ---------------------------------------------------------------------------
+// Deferred scripting helpers (task 20.50)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn deferred_mock_emits_pending_terminal_with_handle() {
+    use opi_ai::deferred::DeferredApi as _;
+    use opi_ai::test_support::ScriptedDeferredBackend;
+
+    let backend = std::sync::Arc::new(ScriptedDeferredBackend::new("test", "mock-model"));
+    let provider = test_support::MockProvider::new("test", vec![test_support::text_response("x")])
+        .with_deferred(std::sync::Arc::clone(&backend), 2, Some(1_500));
+
+    let request = Request {
+        transport: Default::default(),
+        model: "mock-model".into(),
+        context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "Hi".into() }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        })
+        .expect("valid context declarations"),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        telemetry_context: None,
+        callbacks: Default::default(),
+    };
+
+    let events: Vec<_> = provider
+        .stream_prepared(request, test_support::resolved_auth())
+        .collect()
+        .await;
+    let terminal = events
+        .iter()
+        .find_map(|event| match event.as_ref().unwrap() {
+            AssistantStreamEvent::Done { reason, message } => Some((*reason, message)),
+            _ => None,
+        })
+        .expect("pending terminal");
+    assert_eq!(terminal.0, StopReason::Deferred);
+    let handle = terminal.1.deferred.as_ref().expect("handle");
+    assert_eq!(handle.provider, "test");
+    assert_eq!(handle.model_id, "mock-model");
+    assert_eq!(handle.api, "scripted-deferred");
+    assert_eq!(handle.poll_after_ms, Some(1_500));
+    assert_eq!(provider.stream_call_count(), 1);
+
+    // The scripted backend serves fetches: two pending, then the scripted
+    // final events.
+    assert_eq!(backend.provider_id(), "test");
+    assert_eq!(backend.model_id(), "mock-model");
+    let first = backend
+        .fetch_prepared(
+            handle,
+            &(),
+            test_support::resolved_auth(),
+            Default::default(),
+        )
+        .collect::<Vec<_>>()
+        .await;
+    let pending_done = first
+        .iter()
+        .find_map(|event| match event.as_ref().unwrap() {
+            AssistantStreamEvent::Done { reason, .. } => Some(*reason),
+            _ => None,
+        })
+        .expect("pending fetch terminal");
+    assert_eq!(pending_done, StopReason::Deferred);
+    assert_eq!(backend.fetch_count(), 1);
+
+    let second = backend
+        .fetch_prepared(
+            handle,
+            &(),
+            test_support::resolved_auth(),
+            Default::default(),
+        )
+        .collect::<Vec<_>>()
+        .await;
+    let ready_done = second
+        .iter()
+        .find_map(|event| match event.as_ref().unwrap() {
+            AssistantStreamEvent::Done { reason, .. } => Some(*reason),
+            _ => None,
+        })
+        .expect("second pending fetch terminal");
+    assert_eq!(ready_done, StopReason::Deferred);
+    assert_eq!(backend.fetch_count(), 2);
+}

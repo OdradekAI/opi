@@ -19,6 +19,7 @@ pub mod config;
 pub mod constrained_sampling;
 pub mod context;
 pub mod credential;
+pub mod deferred;
 mod endpoint;
 // Private upstream crypto substrate (RDF-23): explicit-provider key
 // admission/signing owner over unmodified crates.io rustls/aws-lc-rs.

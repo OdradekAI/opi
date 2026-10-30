@@ -531,6 +531,8 @@ fn call_assistant(id: &str, name: &str) -> Message {
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+
+        deferred: None,
     })
 }
 

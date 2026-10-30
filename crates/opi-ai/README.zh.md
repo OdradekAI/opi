@@ -1736,6 +1736,44 @@ cleanup 验收。
 `openrouter`、`mistral`、`gemini`、`bedrock`、`azure_openai`、`vertex`、
 `config`、`time` 和 `test_support`。
 
+## Deferred 响应（任务 20.50）
+
+Deferred 提交就是普通生成（AIR-043）：具备能力的后端返回一条
+`StopReason::Deferred`、内容为空并携带 `deferred` handle 的 assistant
+消息，而不是最终内容——不存在 `submitDeferred` API。`DeferredHandle`
+携带 source 拥有的身份（`provider`/`model_id`/`api`/`id`）、可选的过期
+与轮询提示、可选的 provider 转换数据；它绝不携带凭据，并按 pi 形态的
+camelCase（`expiresAt`、`pollAfterMs`、`data`）序列化。
+
+获取与取消是针对该 handle 的显式操作：
+
+- `Models::stream_deferred(handle, call) -> EventStream` 先校验 handle
+  （身份，然后按调用方注入的 `now_ms` 校验过期），再经后端注册的
+  resolver 解析鉴权，最后恰好派发一次 fetch。派发前失败以单个类型化
+  `Err` 流项呈现，由 `ChatStream` 转换为规范 `CallFailure`（含类型化
+  `CredentialNeeded` 原因）。
+- `Models::fetch_deferred(handle, call)` 驱动该流至单一最终结果：仍
+  pending 的结果是 `Ok`，返回消息携带 `StopReason::Deferred` 与 handle；
+  ready 的结果交付最终 assistant 消息。`wait_ms = 0`（pi wait0）执行一次
+  状态检查；无论 `poll_after_ms` 为何，SDK 绝不隐式轮询。
+- `Models::cancel_deferred(handle, call)` 是尽力而为的远端取消：失败会
+  报告，从不保证成功。取消 fetch 调用的本地令牌只中止本地尝试
+  （`ProviderError::Cancelled`；首次 poll 前取消则零后端工作），绝不触及
+  远端任务——两条取消路径相互独立（AIR-044）。
+
+后端经 `Models::register_deferred_api` 注册（类型化 `DeferredApi` trait：
+`api_id`/`provider_id`/`model_id`/`default_options` 加上
+`fetch_prepared`/`cancel_prepared`），镜像 image/classifier 的按操作限定
+注册表；同一精确 `ApiId` 的 upsert 整体替换注册。
+`Models::validate_deferred_handle` 暴露类型化的鉴权前校验（装箱 detail 的
+`RouteMismatch`、`Expired`、`Unsupported`）。fetch/cancel 调用可将可选的
+冻结 `TelemetryContext` 直达后端（AIR-054）；提交复用 chat 请求既有的
+载体。本任务不声称任何真实远端 deferred 协议：发布的接缝服务于脚本化与
+自定义后端，`test_support::ScriptedDeferredBackend` 与
+`MockProvider::with_deferred` 提供确定性的 pi-faux 脚本（pending 倒计时、
+取消记录、可选强制取消失败），`tests/deferred_contract.rs` 中的可重开
+consumer fixture 在伪造单调时钟下不重提交地演练这些行为。
+
 ## 许可证
 
 MIT。详见包内 [LICENSE](LICENSE) 与压缩 [NOTICE](NOTICE)。

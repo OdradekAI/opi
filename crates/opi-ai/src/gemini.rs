@@ -599,6 +599,7 @@ fn empty_assistant_message(
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+        deferred: None,
     }
 }
 

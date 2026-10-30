@@ -121,6 +121,8 @@ impl Provider for RecordingRoute {
                     diagnostics: Vec::new(),
                     duration_ms: None,
                     provider_thinking_level: None,
+
+                    deferred: None,
                 },
             })
         }))

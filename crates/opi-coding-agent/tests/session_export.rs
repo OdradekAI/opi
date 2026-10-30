@@ -82,6 +82,8 @@ fn assistant_msg(id: &str, parent: Option<&str>, text: &str) -> SessionEntry {
             diagnostics: Vec::new(),
             duration_ms: None,
             provider_thinking_level: None,
+
+            deferred: None,
         }),
     })
 }
@@ -120,6 +122,8 @@ fn assistant_with_thinking(
             diagnostics: Vec::new(),
             duration_ms: None,
             provider_thinking_level: None,
+
+            deferred: None,
         }),
     })
 }
@@ -158,6 +162,8 @@ fn assistant_with_tool_call(
             diagnostics: Vec::new(),
             duration_ms: None,
             provider_thinking_level: None,
+
+            deferred: None,
         }),
     })
 }

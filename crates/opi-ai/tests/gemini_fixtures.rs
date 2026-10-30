@@ -1828,6 +1828,7 @@ mod google_40 {
             content: vec![],
             api: opi_ai::ApiKind::Google,
             provider: "gemini".into(),
+            deferred: None,
             model: model.into(),
             response_model: None,
             wire: Some(WireApi::GoogleGenerativeAi),

@@ -52,6 +52,8 @@ fn assistant(content: Vec<AssistantContent>, stop_reason: StopReason) -> Message
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+
+        deferred: None,
     })
 }
 
@@ -864,6 +866,8 @@ fn assistant_with_openai_identity(content: Vec<AssistantContent>) -> Message {
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+
+        deferred: None,
     })
 }
 

@@ -349,6 +349,10 @@ fn redact_assistant_message(
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+        // The deferred handle carries source-owned identity with no
+        // credential; pass it through so redacted events keep the pending
+        // terminal intact (task 20.50).
+        deferred: message.deferred.clone(),
     }
 }
 

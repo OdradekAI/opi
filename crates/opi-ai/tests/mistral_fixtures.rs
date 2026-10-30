@@ -1727,6 +1727,7 @@ mod mistral_43 {
             diagnostics: vec![],
             duration_ms: None,
             provider_thinking_level: None,
+            deferred: None,
         };
         assistant.content[1] = AssistantContent::Text {
             text: "  ".into(),

@@ -2118,6 +2118,54 @@ dedicated flash-lite entry, and pi's substring match routes
 wire's dedicated table maps minimal 512). The vertex producer runs under
 the explicit frozen `TelemetryContext`.
 
+## Deferred Responses (task 20.50)
+
+Deferred submission is a normal generation (AIR-043): a capable backend
+returns an assistant message with `StopReason::Deferred`, empty content and
+a `deferred` handle instead of final content — no `submitDeferred` API
+exists. `DeferredHandle` carries source-owned identity
+(`provider`/`model_id`/`api`/`id`), optional expiry and poll advice, and
+optional provider conversion data; it never carries a credential and
+serializes pi-shaped camelCase (`expiresAt`, `pollAfterMs`, `data`).
+
+Fetch and cancellation are explicit operations on that handle:
+
+- `Models::stream_deferred(handle, call) -> EventStream` validates the
+  handle (identity, then expiry against the caller-injected `now_ms`),
+  resolves authentication through the backend's registered resolver, and
+  dispatches exactly one fetch. Pre-dispatch failures surface as one typed
+  `Err` stream item that `ChatStream` converts into the canonical
+  `CallFailure` (typed `CredentialNeeded` causes included).
+- `Models::fetch_deferred(handle, call)` drives that stream to the single
+  final outcome: still-pending results are `Ok` with
+  `StopReason::Deferred` and the handle on the returned message; ready
+  results deliver the final assistant message. `wait_ms = 0` (pi wait0)
+  performs one status check; the SDK never polls implicitly regardless of
+  `poll_after_ms`.
+- `Models::cancel_deferred(handle, call)` is a best-effort remote cancel:
+  failures are reported, never guaranteed. Cancelling the fetch call's
+  local token aborts only the local attempt (`ProviderError::Cancelled`,
+  zero backend work when cancelled before the first poll) and never
+  reaches the remote job — the two cancellation paths are independent
+  (AIR-044).
+
+Backends register through `Models::register_deferred_api` (typed
+`DeferredApi` trait: `api_id`/`provider_id`/`model_id`/`default_options`
+plus `fetch_prepared`/`cancel_prepared`), mirroring the image/classifier
+operation-qualified registries; an upsert with the same exact `ApiId`
+replaces the registration wholesale. `Models::validate_deferred_handle`
+exposes the typed pre-auth validation (`RouteMismatch` boxed detail,
+`Expired`, `Unsupported`). Fetch and cancel calls carry an optional frozen
+`TelemetryContext` straight to the backend (AIR-054); submission reuses the
+chat request's existing carrier. No real remote deferred protocol is
+claimed: the published seam serves scripted and custom backends, and
+`test_support::ScriptedDeferredBackend` plus
+`MockProvider::with_deferred` provide the deterministic pi-faux scripting
+(pending-fetch countdown, cancel recording, optional forced cancel
+failure) that the reopenable consumer fixture in
+`tests/deferred_contract.rs` exercises without resubmission under a fake
+monotonic clock.
+
 ## License
 
 MIT. See the packaged [LICENSE](LICENSE) and compression [NOTICE](NOTICE).

@@ -31,6 +31,8 @@ fn sample_assistant_message() -> AssistantMessage {
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+
+        deferred: None,
     }
 }
 
@@ -699,6 +701,8 @@ mod diagnostics_serde_tests {
             }],
             duration_ms: None,
             provider_thinking_level: None,
+
+            deferred: None,
         };
         let wire = serde_json::to_value(&message).unwrap();
         let back: AssistantMessage = serde_json::from_value(wire.clone()).unwrap();

@@ -320,6 +320,9 @@ fn stop_reason_wire(reason: StopReason) -> &'static str {
         StopReason::ToolUse => "toolUse",
         StopReason::Error => "error",
         StopReason::Aborted => "aborted",
+        // Deferred pending turns serialize with pi's stopReason vocabulary;
+        // radius wire support for pending handles is a future adapter slice.
+        StopReason::Deferred => "deferred",
     }
 }
 
@@ -854,6 +857,7 @@ impl PiMessagesSseMapper {
             content: Vec::new(),
             api: crate::ApiKind::OpenAi,
             provider: "radius".to_owned(),
+            deferred: None,
             model: requested_model.to_owned(),
             response_model: None,
             wire: Some(WireApi::PiMessages),

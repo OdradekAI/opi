@@ -11,8 +11,10 @@ use crate::auth::{
     StaticAuthResolver,
 };
 use crate::credential::BoxAuthFuture;
+use crate::deferred::{DeferredApi, DeferredCancelCall, DeferredFetchCall, DeferredHandle};
 use crate::message::AssistantMessage;
 use crate::model_info::WireApi;
+use crate::models::ApiId;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
@@ -177,6 +179,19 @@ pub struct MockProvider {
     models: Vec<ModelInfo>,
     responses: Arc<Mutex<Vec<MockResponse>>>,
     call_log: Arc<Mutex<Vec<Request>>>,
+    deferred_scripting: Option<DeferredScripting>,
+}
+
+/// Deferred-submission scripting attached to a [`MockProvider`] (task
+/// 20.50): every prepared attempt registers its scripted final events with
+/// the shared [`ScriptedDeferredBackend`] and returns a pending
+/// `StopReason::Deferred` terminal carrying the new handle (pi faux
+/// `options.deferred`).
+#[doc(hidden)]
+pub struct DeferredScripting {
+    backend: Arc<ScriptedDeferredBackend>,
+    pending_fetches: u64,
+    poll_after_ms: Option<u64>,
 }
 
 impl MockProvider {
@@ -205,6 +220,7 @@ impl MockProvider {
             )],
             responses: Arc::new(Mutex::new(responses)),
             call_log: Arc::new(Mutex::new(Vec::new())),
+            deferred_scripting: None,
         }
     }
 
@@ -221,6 +237,7 @@ impl MockProvider {
                 responses.into_iter().map(MockResponse::Events).collect(),
             )),
             call_log: Arc::new(Mutex::new(Vec::new())),
+            deferred_scripting: None,
         }
     }
 
@@ -236,7 +253,28 @@ impl MockProvider {
             models,
             responses: Arc::new(Mutex::new(responses)),
             call_log: Arc::new(Mutex::new(Vec::new())),
+            deferred_scripting: None,
         }
+    }
+
+    /// Attach deferred-submission scripting (task 20.50): every prepared
+    /// attempt registers its scripted final events with `backend` as a
+    /// deferred response and returns a pending terminal with the new
+    /// handle. `pending_fetches` fetches stay pending before the final
+    /// events become ready; `poll_after_ms` stamps the handle's poll
+    /// advice (caller-owned schedule, never an SDK polling default).
+    pub fn with_deferred(
+        mut self,
+        backend: Arc<ScriptedDeferredBackend>,
+        pending_fetches: u64,
+        poll_after_ms: Option<u64>,
+    ) -> Self {
+        self.deferred_scripting = Some(DeferredScripting {
+            backend,
+            pending_fetches,
+            poll_after_ms,
+        });
+        self
     }
 
     /// Number of prepared attempts made through `stream_prepared`.
@@ -283,6 +321,7 @@ pub fn base_assistant() -> AssistantMessage {
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+        deferred: None,
     }
 }
 
@@ -458,6 +497,30 @@ impl Provider for MockProvider {
         };
         match response {
             MockResponse::Events(events) => {
+                if let Some(scripting) = &self.deferred_scripting {
+                    // Deferred submission (task 20.50): register the
+                    // scripted final events and deliver a pending terminal.
+                    let handle = scripting.backend.submit(
+                        events,
+                        scripting.pending_fetches,
+                        scripting.poll_after_ms,
+                    );
+                    let mut pending = base_assistant();
+                    pending.provider = self.id.clone();
+                    pending.model = self.models[0].id.clone();
+                    pending.stop_reason = StopReason::Deferred;
+                    pending.deferred = Some(Box::new(handle));
+                    let stream = futures_util::stream::iter(vec![
+                        Ok::<_, ProviderError>(AssistantStreamEvent::Start {
+                            partial: pending.clone(),
+                        }),
+                        Ok(AssistantStreamEvent::Done {
+                            reason: StopReason::Deferred,
+                            message: pending,
+                        }),
+                    ]);
+                    return Box::pin(stream);
+                }
                 let stream =
                     futures_util::stream::iter(events.into_iter().map(Ok::<_, ProviderError>));
                 Box::pin(stream)
@@ -647,4 +710,237 @@ pub fn portable_executable_script(
 /// deterministic tests.
 pub fn force_sequence_exhausted(generator: &mut crate::identity::UuidV7Generator) {
     generator.set_sequence_for_tests((1u64 << 41) - 1);
+}
+
+// ---------------------------------------------------------------------------
+// Scripted deferred backend (task 20.50)
+// ---------------------------------------------------------------------------
+
+#[doc(hidden)]
+struct ScriptedDeferredEntry {
+    handle: DeferredHandle,
+    final_events: Vec<AssistantStreamEvent>,
+    pending_fetches: u64,
+    cancelled: bool,
+}
+
+#[doc(hidden)]
+struct ScriptedDeferredState {
+    entries: std::collections::BTreeMap<String, ScriptedDeferredEntry>,
+    next_id: u64,
+    fetch_count: usize,
+    cancelled_handles: Vec<DeferredHandle>,
+    fail_cancels: bool,
+    /// Whether each fetch carried an explicit telemetry carrier (AIR-054
+    /// participation evidence for the deferred surface).
+    fetch_telemetry_present: Vec<bool>,
+    cancel_telemetry_present: Vec<bool>,
+}
+
+/// Deterministic scripted deferred backend (pi faux `fetchDeferred`/
+/// `cancelDeferred`): pending fetches return the original handle, the
+/// countdown then delivers the registered final events, unknown or
+/// cancelled handles fail typed, and cancel records every attempt while
+/// optionally reporting best-effort failure.
+///
+/// Shares entries with a [`MockProvider`] built through
+/// [`MockProvider::with_deferred`]; the same backend survives collection
+/// rebuilds so a reopened consumer fetches without resubmitting.
+pub struct ScriptedDeferredBackend {
+    api_id: ApiId,
+    provider_id: String,
+    model_id: String,
+    state: Mutex<ScriptedDeferredState>,
+}
+
+impl ScriptedDeferredBackend {
+    /// Create a backend serving `provider_id`/`model_id` under the fixed
+    /// `scripted-deferred` API identity.
+    pub fn new(provider_id: &str, model_id: &str) -> Self {
+        Self {
+            api_id: ApiId::new("scripted-deferred"),
+            provider_id: provider_id.to_owned(),
+            model_id: model_id.to_owned(),
+            state: Mutex::new(ScriptedDeferredState {
+                entries: std::collections::BTreeMap::new(),
+                next_id: 1,
+                fetch_count: 0,
+                cancelled_handles: Vec::new(),
+                fail_cancels: false,
+                fetch_telemetry_present: Vec::new(),
+                cancel_telemetry_present: Vec::new(),
+            }),
+        }
+    }
+
+    /// Register one deferred response: the handle's eventual final events,
+    /// how many fetches stay pending first, and optional poll/expiry advice.
+    pub fn submit(
+        &self,
+        final_events: Vec<AssistantStreamEvent>,
+        pending_fetches: u64,
+        poll_after_ms: Option<u64>,
+    ) -> DeferredHandle {
+        self.submit_with_expiry(final_events, pending_fetches, poll_after_ms, None)
+    }
+
+    /// Register one deferred response with an absolute expiry (epoch
+    /// milliseconds); the SDK validates expiry against the caller-injected
+    /// clock reading.
+    pub fn submit_with_expiry(
+        &self,
+        final_events: Vec<AssistantStreamEvent>,
+        pending_fetches: u64,
+        poll_after_ms: Option<u64>,
+        expires_at_ms: Option<u64>,
+    ) -> DeferredHandle {
+        let mut state = self.state.lock().unwrap();
+        let id = format!("deferred-{}", state.next_id);
+        state.next_id += 1;
+        let handle = DeferredHandle {
+            provider: self.provider_id.clone(),
+            model_id: self.model_id.clone(),
+            api: self.api_id.as_str().to_owned(),
+            id: id.clone(),
+            expires_at_ms,
+            poll_after_ms,
+            data: None,
+        };
+        state.entries.insert(
+            id,
+            ScriptedDeferredEntry {
+                handle: handle.clone(),
+                final_events,
+                pending_fetches,
+                cancelled: false,
+            },
+        );
+        handle
+    }
+
+    /// Number of fetch operations dispatched through this backend.
+    pub fn fetch_count(&self) -> usize {
+        self.state.lock().unwrap().fetch_count
+    }
+
+    /// Every handle passed to `cancel_deferred`, in order.
+    pub fn cancelled_handles(&self) -> Vec<DeferredHandle> {
+        self.state.lock().unwrap().cancelled_handles.clone()
+    }
+
+    /// Make subsequent cancellations report best-effort failure.
+    pub fn fail_cancels(&self) {
+        self.state.lock().unwrap().fail_cancels = true;
+    }
+
+    /// Whether each dispatched fetch/cancel carried an explicit telemetry
+    /// carrier (AIR-054): `true` when the call supplied one.
+    pub fn fetch_telemetry_present(&self) -> Vec<bool> {
+        self.state.lock().unwrap().fetch_telemetry_present.clone()
+    }
+
+    #[doc(hidden)]
+    pub fn cancel_telemetry_present(&self) -> Vec<bool> {
+        self.state.lock().unwrap().cancel_telemetry_present.clone()
+    }
+
+    fn scripted_error(message: String) -> ProviderError {
+        ProviderError::Config(crate::provider::ProviderErrorSummary::sanitized(message))
+    }
+}
+
+impl DeferredApi<()> for ScriptedDeferredBackend {
+    fn api_id(&self) -> &ApiId {
+        &self.api_id
+    }
+
+    fn provider_id(&self) -> &str {
+        &self.provider_id
+    }
+
+    fn model_id(&self) -> &str {
+        &self.model_id
+    }
+
+    fn default_options(&self) {}
+
+    fn fetch_prepared(
+        &self,
+        handle: &DeferredHandle,
+        _options: &(),
+        _auth: ResolvedAuth,
+        call: DeferredFetchCall,
+    ) -> EventStream {
+        let mut state = self.state.lock().unwrap();
+        state.fetch_count += 1;
+        state
+            .fetch_telemetry_present
+            .push(call.telemetry_context.is_some());
+        let Some(entry) = state.entries.get_mut(&handle.id) else {
+            let error =
+                Self::scripted_error(format!("Unknown scripted deferred response: {}", handle.id));
+            return Box::pin(futures_util::stream::once(async move {
+                Err::<AssistantStreamEvent, ProviderError>(error)
+            }));
+        };
+        if entry.cancelled {
+            let error = Self::scripted_error(format!(
+                "Scripted deferred response was cancelled: {}",
+                handle.id
+            ));
+            return Box::pin(futures_util::stream::once(async move {
+                Err::<AssistantStreamEvent, ProviderError>(error)
+            }));
+        }
+        if entry.pending_fetches > 0 {
+            entry.pending_fetches -= 1;
+            let mut pending = base_assistant();
+            pending.provider = self.provider_id.clone();
+            pending.model = self.model_id.clone();
+            pending.stop_reason = StopReason::Deferred;
+            pending.deferred = Some(Box::new(entry.handle.clone()));
+            let events = vec![
+                Ok::<_, ProviderError>(AssistantStreamEvent::Start {
+                    partial: pending.clone(),
+                }),
+                Ok(AssistantStreamEvent::Done {
+                    reason: StopReason::Deferred,
+                    message: pending,
+                }),
+            ];
+            return Box::pin(futures_util::stream::iter(events));
+        }
+        let events = entry
+            .final_events
+            .iter()
+            .cloned()
+            .map(Ok::<_, ProviderError>)
+            .collect::<Vec<_>>();
+        Box::pin(futures_util::stream::iter(events))
+    }
+
+    fn cancel_prepared<'a>(
+        &'a self,
+        handle: &'a DeferredHandle,
+        _options: &'a (),
+        _auth: ResolvedAuth,
+        call: DeferredCancelCall,
+    ) -> crate::credential::BoxAuthFuture<'a, Result<(), ProviderError>> {
+        Box::pin(async move {
+            let mut state = self.state.lock().unwrap();
+            state.cancelled_handles.push(handle.clone());
+            state
+                .cancel_telemetry_present
+                .push(call.telemetry_context.is_some());
+            if let Some(entry) = state.entries.get_mut(&handle.id) {
+                entry.cancelled = true;
+            }
+            if state.fail_cancels {
+                return Err(Self::scripted_error(
+                    "scripted deferred cancel failed (best-effort reporting)".to_owned(),
+                ));
+            }
+            Ok(())
+        })
+    }
 }

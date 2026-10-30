@@ -1385,6 +1385,8 @@ async fn phase13_rpc_session_metadata_shape() {
                 diagnostics: Vec::new(),
                 duration_ms: None,
                 provider_thinking_level: None,
+
+                deferred: None,
             }),
         };
         let m3 = MessageEntry {
@@ -1409,6 +1411,8 @@ async fn phase13_rpc_session_metadata_shape() {
                 diagnostics: Vec::new(),
                 duration_ms: None,
                 provider_thinking_level: None,
+
+                deferred: None,
             }),
         };
         let leaf = LeafEntry {

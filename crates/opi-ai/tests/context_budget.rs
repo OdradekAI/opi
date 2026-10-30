@@ -31,6 +31,8 @@ fn assistant(timestamp_ms: i64) -> Message {
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+
+        deferred: None,
     })
 }
 
@@ -231,6 +233,8 @@ fn message_granularity_rounding_aggregates_before_ceil() {
         diagnostics: Vec::new(),
         duration_ms: None,
         provider_thinking_level: None,
+
+        deferred: None,
     });
     assert_eq!(estimate_message_tokens(&three_blocks), 1);
 

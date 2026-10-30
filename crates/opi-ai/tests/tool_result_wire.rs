@@ -91,6 +91,8 @@ fn request_with_tool_result(is_error: bool, payload: &str) -> Request {
                     diagnostics: Vec::new(),
                     duration_ms: None,
                     provider_thinking_level: None,
+
+                    deferred: None,
                 }),
                 Message::ToolResult(ToolResultMessage {
                     not_executed: None,

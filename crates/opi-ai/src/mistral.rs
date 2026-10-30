@@ -1075,6 +1075,7 @@ impl MistralSseMapper {
             content: Vec::new(),
             api: crate::ApiKind::Mistral,
             provider: "mistral".into(),
+            deferred: None,
             model: requested_model.to_owned(),
             response_model: None,
             wire: Some(crate::model_info::WireApi::MistralConversations),
