@@ -247,7 +247,7 @@ fn staged_parent_config_debug_redacts_bedrock_access_key_id() {
         dir.path(),
         &format!(
             r#"
-[providers.bedrock]
+[providers.amazon-bedrock]
 access_key_id = "{access_key_canary}"
 secret_access_key_env = "BEDROCK_SECRET_ENV"
 session_token_env = "BEDROCK_SESSION_ENV"
@@ -515,7 +515,7 @@ fn empty_config_has_no_proxy() {
     assert!(config.providers.anthropic.proxy.is_none());
     assert!(config.providers.openai.proxy.is_none());
     assert!(config.providers.openrouter.proxy.is_none());
-    assert!(config.providers.gemini.proxy.is_none());
+    assert!(config.providers.google.proxy.is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -608,10 +608,10 @@ fn parse_gemini_proxy_url() {
     let path = write_temp_config(
         dir.path(),
         r#"
-[providers.gemini]
+[providers.google]
 api_key_env = "GEMINI_API_KEY"
 
-[providers.gemini.proxy]
+[providers.google.proxy]
 url = "http://proxy.example.com:8080"
 no_proxy = "localhost"
 "#,
@@ -619,7 +619,7 @@ no_proxy = "localhost"
     let config = load_config_file(&path).unwrap();
     let proxy = config
         .providers
-        .gemini
+        .google
         .proxy
         .as_ref()
         .expect("proxy should be set");
@@ -752,7 +752,7 @@ no_proxy = "localhost"
     assert_eq!(op.no_proxy.as_deref(), Some("localhost"));
 
     // Gemini has no proxy configured
-    assert!(config.providers.gemini.proxy.is_none());
+    assert!(config.providers.google.proxy.is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -1394,4 +1394,136 @@ model = "config-model"
         config.defaults.model, "cli-model",
         "--model should override --config and env"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Canonical provider reference migration (task 20.34)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn canonical_provider_keys_are_accepted_directly() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_temp_config(
+        dir.path(),
+        r#"
+[providers.google]
+base_url = "https://generativelanguage.example.test"
+
+[providers.google-vertex]
+project = "p"
+location = "us-central1"
+
+[providers.amazon-bedrock]
+region = "eu-west-1"
+"#,
+    );
+    let config = load_config_file(&path).unwrap();
+    assert_eq!(
+        config.providers.google.base_url.as_deref(),
+        Some("https://generativelanguage.example.test")
+    );
+    assert_eq!(config.providers.google_vertex.project.as_deref(), Some("p"));
+    assert_eq!(
+        config.providers.amazon_bedrock.region.as_deref(),
+        Some("eu-west-1")
+    );
+    // No legacy accumulation remains.
+    assert_eq!(config.providers.legacy, Default::default());
+    assert!(config.provider_migration_notes.is_empty());
+}
+
+#[test]
+fn legacy_provider_references_migrate_in_memory_reentrantly() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_temp_config(
+        dir.path(),
+        r#"
+[providers.gemini]
+base_url = "https://gemini.example.test"
+
+[providers.vertex]
+project = "legacy-project"
+location = "europe-west4"
+
+[providers.bedrock]
+region = "us-west-2"
+"#,
+    );
+    let mut config = load_config_file(&path).unwrap();
+    // The legacy blocks were adopted under the canonical ids in memory.
+    assert_eq!(
+        config.providers.google.base_url.as_deref(),
+        Some("https://gemini.example.test")
+    );
+    assert_eq!(
+        config.providers.google_vertex.project.as_deref(),
+        Some("legacy-project")
+    );
+    assert_eq!(
+        config.providers.amazon_bedrock.region.as_deref(),
+        Some("us-west-2")
+    );
+    assert_eq!(config.providers.legacy, Default::default());
+    assert!(
+        config
+            .provider_migration_notes
+            .iter()
+            .any(|note| note.contains("adopted under the canonical id `google`"))
+    );
+
+    // Reentrant: a second pass changes nothing and clears the notes.
+    let second = config.migrate_legacy_provider_references();
+    assert_eq!(second, Default::default());
+    assert!(config.provider_migration_notes.is_empty());
+}
+
+#[test]
+fn legacy_and_canonical_conflict_keeps_canonical() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_temp_config(
+        dir.path(),
+        r#"
+[providers.google]
+base_url = "https://canonical.example.test"
+
+[providers.gemini]
+base_url = "https://legacy.example.test"
+"#,
+    );
+    let config = load_config_file(&path).unwrap();
+    assert_eq!(
+        config.providers.google.base_url.as_deref(),
+        Some("https://canonical.example.test"),
+        "the canonical block wins"
+    );
+    assert!(
+        config
+            .provider_migration_notes
+            .iter()
+            .any(|note| note.contains("ignored") && note.contains("canonical block wins"))
+    );
+}
+
+#[test]
+fn defaults_model_spec_migrates_to_canonical_prefixes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write_temp_config(
+        dir.path(),
+        r#"
+[defaults]
+model = "gemini:gemini-2.5-flash"
+"#,
+    );
+    let config = load_config_file(&path).unwrap();
+    assert_eq!(config.defaults.model, "google:gemini-2.5-flash");
+
+    let (spec, legacy) = opi_coding_agent::config::canonicalize_model_spec("bedrock:x");
+    assert_eq!(spec, "amazon-bedrock:x");
+    assert_eq!(legacy, Some("bedrock"));
+    let (spec, legacy) = opi_coding_agent::config::canonicalize_model_spec("vertex:y");
+    assert_eq!(spec, "google-vertex:y");
+    assert_eq!(legacy, Some("vertex"));
+    let (spec, legacy) = opi_coding_agent::config::canonicalize_model_spec("anthropic:z");
+    assert_eq!(spec, "anthropic:z");
+    assert_eq!(legacy, None);
 }

@@ -1219,6 +1219,23 @@ opi 策划的基线目录（一条）覆盖目录到来之前的窗口；pi 生�
 `data/radius.json` 基线未随钉住源提供，配置网关的动态目录在注册时整
 体替换基线。
 
+## 内置 Provider 工厂层：42 个 canonical profile（任务 20.34）
+
+`providers::builtin_provider_profiles` 携带 pi 1.3.0 能力清单中逐字提
+取的 42 条 profile 表：canonical id（`google`、`google-vertex`、
+`amazon-bedrock` 等）、显示名、默认 base URL、env API-key 名、auth
+scheme、OAuth 可用性与端点语义（Azure 部署、Vertex location 模板、
+Bedrock 区域、动态 radius）。旧的 opi id（`gemini`、`vertex`、
+`bedrock`、`openai-responses`）不是别名——表从不注册它们。
+`provider_collection::register_builtin` 把该表与内置目录转成基于已完
+成 wire 适配器的注册 provider：每 profile 一个 mapped provider（Azure
+与 google-vertex 受配置门控并给出类型化跳过原因，bedrock 以 AWS 链
+描述符 lookup-only 注册），canonical-route 包装器把固定 id 适配器重发
+布为 canonical id（含前缀敏感适配器所需的 model-spec 前缀重写），目
+录条目连同分层计价转换进 `ModelInfo::pricing`，classifier/image 协议
+经类型化缝以目录记录注册。环境 key 在派发时经注入的 `AuthContext`
+解析——构造不读环境、存储或网络。
+
 ## OpenAI Decisions 适配器与四协议分类器闭环（任务 20.49）
 
 第四个真实分类器协议：`api::decisions::OpenAiDecisionsApi`（api id

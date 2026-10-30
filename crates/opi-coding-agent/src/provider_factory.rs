@@ -294,24 +294,24 @@ fn route_explicitly_configured(config: &OpiConfig, provider_id: &str) -> bool {
             providers.openai_responses.base_url.is_some()
                 || providers.openai_responses.proxy.is_some()
         }
-        "gemini" => providers.gemini.base_url.is_some() || providers.gemini.proxy.is_some(),
-        "bedrock" => {
-            providers.bedrock.region.is_some()
-                || providers.bedrock.profile.is_some()
-                || providers.bedrock.base_url.is_some()
-                || providers.bedrock.proxy.is_some()
+        "google" => providers.google.base_url.is_some() || providers.google.proxy.is_some(),
+        "amazon-bedrock" => {
+            providers.amazon_bedrock.region.is_some()
+                || providers.amazon_bedrock.profile.is_some()
+                || providers.amazon_bedrock.base_url.is_some()
+                || providers.amazon_bedrock.proxy.is_some()
         }
         "azure" => {
             !providers.azure.deployments.is_empty()
                 || providers.azure.endpoint.is_some()
                 || providers.azure.proxy.is_some()
         }
-        "vertex" => {
-            providers.vertex.project.is_some()
-                || providers.vertex.location.is_some()
-                || !providers.vertex.models.is_empty()
-                || providers.vertex.base_url.is_some()
-                || providers.vertex.proxy.is_some()
+        "google-vertex" => {
+            providers.google_vertex.project.is_some()
+                || providers.google_vertex.location.is_some()
+                || !providers.google_vertex.models.is_empty()
+                || providers.google_vertex.base_url.is_some()
+                || providers.google_vertex.proxy.is_some()
         }
         // Custom and openai-compatible providers exist only because the user
         // declared their sections; they are always explicitly configured.
@@ -519,10 +519,10 @@ pub(crate) const BUILT_IN_PROVIDER_IDS: &[&str] = &[
     "openrouter",
     "mistral",
     "openai-responses",
-    "gemini",
-    "bedrock",
+    "google",
+    "amazon-bedrock",
     "azure",
-    "vertex",
+    "google-vertex",
     "github-copilot",
     "openai-codex",
 ];
@@ -840,7 +840,7 @@ pub(crate) fn provider_availability(
         crate::credential_store::CredentialMetadataProbe,
     >,
 ) -> Option<ProviderAvailability> {
-    if provider_id == "bedrock" {
+    if provider_id == "amazon-bedrock" {
         let presence = bedrock_auth_presence(config, env_var);
         let (state, label) = match presence {
             BedrockAuthPresence::ConfigPair { secret_env } => (
@@ -937,7 +937,7 @@ pub(crate) fn bedrock_auth_presence(
     config: &OpiConfig,
     env_var: &dyn Fn(&str) -> Option<String>,
 ) -> BedrockAuthPresence {
-    let bedrock = &config.providers.bedrock;
+    let bedrock = &config.providers.amazon_bedrock;
     let configured_attempted = bedrock.access_key_id.is_some()
         || bedrock.secret_access_key_env.is_some()
         || bedrock.session_token_env.is_some();
@@ -1055,12 +1055,12 @@ fn build_list_models_metadata(
         ),
         "github-copilot" => (None, crate::github_copilot::github_copilot_catalog()),
         "openai-codex" => (None, crate::openai_codex::openai_codex_catalog()),
-        "gemini" => (
-            config.providers.gemini.proxy.as_ref(),
+        "google" => (
+            config.providers.google.proxy.as_ref(),
             opi_ai::gemini::model_catalog(),
         ),
-        "bedrock" => (
-            config.providers.bedrock.proxy.as_ref(),
+        "amazon-bedrock" => (
+            config.providers.amazon_bedrock.proxy.as_ref(),
             opi_ai::bedrock::model_catalog(),
         ),
         "azure" => {
@@ -1085,8 +1085,8 @@ fn build_list_models_metadata(
                 ),
             )
         }
-        "vertex" => {
-            let vertex = &config.providers.vertex;
+        "google-vertex" => {
+            let vertex = &config.providers.google_vertex;
             match (vertex.project.is_some(), vertex.location.is_some()) {
                 (true, true) | (false, false) => {}
                 (true, false) => {
@@ -1318,7 +1318,7 @@ async fn build_provider_with_resolver_outcome(
     // when a credential is missing. A diagnostic-only probe (mirroring the
     // anthropic live-auth path) surfaces a warning when the keychain backend is
     // unavailable and the env fallback is used; it never gates construction.
-    if provider_id != "bedrock"
+    if provider_id != "amazon-bedrock"
         && let Some(env_name) = api_key_env_name(config, provider_id)
         && let Ok(Some(resolved)) = resolver.resolve_api_key(provider_id, &env_name).await
         && let ApiKeySource::Env {
@@ -1699,16 +1699,16 @@ fn api_key_env_name(config: &OpiConfig, provider_id: &str) -> Option<String> {
             &config.providers.openai_responses.api_key_env,
             "OPENAI_API_KEY",
         )),
-        "gemini" => Some(resolve_env_name(
-            &config.providers.gemini.api_key_env,
+        "google" => Some(resolve_env_name(
+            &config.providers.google.api_key_env,
             "GEMINI_API_KEY",
         )),
         "azure" => Some(resolve_env_name(
             &config.providers.azure.api_key_env,
             "AZURE_OPENAI_API_KEY",
         )),
-        "vertex" => Some(resolve_env_name(
-            &config.providers.vertex.access_token_env,
+        "google-vertex" => Some(resolve_env_name(
+            &config.providers.google_vertex.access_token_env,
             "VERTEX_ACCESS_TOKEN",
         )),
         _ => config
@@ -1753,17 +1753,17 @@ fn route_credentials(
             ),
             opi_ai::AuthScheme::Bearer,
         )),
-        "gemini" => Some((
-            resolve_env_name(&config.providers.gemini.api_key_env, "GEMINI_API_KEY"),
+        "google" => Some((
+            resolve_env_name(&config.providers.google.api_key_env, "GEMINI_API_KEY"),
             opi_ai::AuthScheme::ApiKey,
         )),
         "azure" => Some((
             resolve_env_name(&config.providers.azure.api_key_env, "AZURE_OPENAI_API_KEY"),
             opi_ai::AuthScheme::ApiKey,
         )),
-        "vertex" => Some((
+        "google-vertex" => Some((
             resolve_env_name(
-                &config.providers.vertex.access_token_env,
+                &config.providers.google_vertex.access_token_env,
                 "VERTEX_ACCESS_TOKEN",
             ),
             opi_ai::AuthScheme::Bearer,
@@ -1898,19 +1898,27 @@ fn build_runtime_adapter(
                 WireApi::OpenAiResponses,
             )
         }
-        "gemini" => {
-            let client = build_proxied_client(config.providers.gemini.proxy.as_ref())?;
+        "google" => {
+            let client = build_proxied_client(config.providers.google.proxy.as_ref())?;
+            let provider = opi_ai::gemini::GeminiProvider::with_client(
+                config.providers.google.base_url.clone(),
+                client,
+            );
+            let models = provider.models().to_vec();
+            // The adapter keeps its historical id; the route publishes the
+            // canonical one.
             (
-                Box::new(opi_ai::gemini::GeminiProvider::with_client(
-                    config.providers.gemini.base_url.clone(),
-                    client,
-                )) as Box<dyn Provider>,
+                opi_ai::provider_collection::canonical_route("google", models, Box::new(provider)),
                 WireApi::GoogleGenerativeAi,
             )
         }
-        "bedrock" => {
+        "amazon-bedrock" => {
             let provider = build_bedrock_adapter(config)?;
-            (provider, WireApi::BedrockConverseStream)
+            let models = provider.models().to_vec();
+            (
+                opi_ai::provider_collection::canonical_route("amazon-bedrock", models, provider),
+                WireApi::BedrockConverseStream,
+            )
         }
         "azure" => {
             let azure_config = &config.providers.azure;
@@ -1941,9 +1949,13 @@ fn build_runtime_adapter(
                 WireApi::AzureOpenAiCompletions,
             )
         }
-        "vertex" => {
-            let provider = vertex_adapter(&config.providers.vertex)?;
-            (provider, WireApi::GoogleVertex)
+        "google-vertex" => {
+            let provider = vertex_adapter(&config.providers.google_vertex)?;
+            let models = provider.models().to_vec();
+            (
+                opi_ai::provider_collection::canonical_route("google-vertex", models, provider),
+                WireApi::GoogleVertex,
+            )
         }
         "copilot" => {
             return Err(ProviderBuildError::Config(
@@ -1987,10 +1999,10 @@ fn build_runtime_route(
     provider_id: &str,
     resolver: &CredentialResolver,
 ) -> Result<ProviderAuthPair, ProviderBuildError> {
-    if provider_id == "bedrock" {
+    if provider_id == "amazon-bedrock" {
         return build_bedrock(config, resolver);
     }
-    if provider_id == "vertex" {
+    if provider_id == "google-vertex" {
         return build_vertex_route(config, resolver);
     }
     let provider = build_runtime_adapter(config, provider_id)?;
@@ -2038,7 +2050,7 @@ impl opi_ai::AuthResolver for VertexAuthResolver {
         Some(Box::pin(async move {
             if self
                 .resolver
-                .resolve_api_key("vertex", "GOOGLE_CLOUD_API_KEY")
+                .resolve_api_key("google-vertex", "GOOGLE_CLOUD_API_KEY")
                 .await
                 .map_err(|error| {
                     ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
@@ -2067,7 +2079,7 @@ impl VertexAuthResolver {
         // never reused for Vertex).
         if let Some(key) = self
             .resolver
-            .resolve_api_key("vertex", "GOOGLE_CLOUD_API_KEY")
+            .resolve_api_key("google-vertex", "GOOGLE_CLOUD_API_KEY")
             .await
             .map_err(|error| {
                 ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
@@ -2124,7 +2136,7 @@ impl VertexAuthResolver {
 fn map_vertex_adc_error(error: AdcResolutionError) -> ProviderError {
     match error {
         AdcResolutionError::NotConfigured => ProviderError::CredentialNeeded {
-            provider_id: "vertex".into(),
+            provider_id: "google-vertex".into(),
         },
         other => ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
             other.safe_summary(),
@@ -2142,7 +2154,7 @@ fn build_vertex_route(
         AdcAuthSelection, AdcNativeOwner, ReqwestAdcTransport, SystemAdcClock,
     };
 
-    let vertex_config = &config.providers.vertex;
+    let vertex_config = &config.providers.google_vertex;
     let provider = vertex_adapter(vertex_config)?;
     let adc = Arc::new(
         AdcNativeOwner::new(
@@ -2186,14 +2198,25 @@ fn vertex_adapter(
                     vertex_config.base_url.clone(),
                 )
             };
-            Ok(Box::new(provider.with_client(build_proxied_client(
-                vertex_config.proxy.as_ref(),
-            )?)))
+            let provider =
+                provider.with_client(build_proxied_client(vertex_config.proxy.as_ref())?);
+            let models = provider.models().to_vec();
+            Ok(opi_ai::provider_collection::canonical_route(
+                "google-vertex",
+                models,
+                Box::new(provider),
+            ))
         }
-        (None, None) => Ok(Box::new(
-            opi_ai::vertex::VertexProvider::express(vertex_config.base_url.clone())
-                .with_client(build_proxied_client(vertex_config.proxy.as_ref())?),
-        )),
+        (None, None) => {
+            let provider = opi_ai::vertex::VertexProvider::express(vertex_config.base_url.clone())
+                .with_client(build_proxied_client(vertex_config.proxy.as_ref())?);
+            let models = provider.models().to_vec();
+            Ok(opi_ai::provider_collection::canonical_route(
+                "google-vertex",
+                models,
+                Box::new(provider),
+            ))
+        }
         (Some(_), None) => Err(ProviderBuildError::Config(
             "vertex provider requires location when project is set".into(),
         )),
@@ -2352,7 +2375,7 @@ fn map_bedrock_resolution_error(
     match error {
         opi_ai::auth::aws::local::CredentialResolutionError::Exhausted => {
             ProviderError::CredentialNeeded {
-                provider_id: "bedrock".into(),
+                provider_id: "amazon-bedrock".into(),
             }
         }
         other => ProviderError::Config(other.into_safe_provider_summary()),
@@ -2365,10 +2388,16 @@ fn complete_bedrock_credential_pair(access_key_id: Option<&str>, secret_key: Opt
 }
 
 fn build_bedrock_adapter(config: &OpiConfig) -> Result<Box<dyn Provider>, ProviderBuildError> {
-    let bedrock_config = &config.providers.bedrock;
+    let bedrock_config = &config.providers.amazon_bedrock;
     let client = build_proxied_client(bedrock_config.proxy.as_ref())?;
     let provider = opi_ai::bedrock::BedrockProvider::new(bedrock_config.base_url.clone(), client);
-    Ok(Box::new(provider))
+    let models = provider.models().to_vec();
+    // The adapter keeps its historical id; routes publish the canonical one.
+    Ok(opi_ai::provider_collection::canonical_route(
+        "amazon-bedrock",
+        models,
+        Box::new(provider),
+    ))
 }
 
 fn build_bedrock(
@@ -2389,7 +2418,7 @@ fn build_bedrock(
         )),
     );
     let auth: Arc<dyn opi_ai::AuthResolver> = Arc::new(BedrockAuthResolver {
-        config: Arc::new(config.providers.bedrock.clone()),
+        config: Arc::new(config.providers.amazon_bedrock.clone()),
         source_cache,
         transport,
     });
@@ -2464,13 +2493,13 @@ pub fn auth_descriptor_for(config: &OpiConfig, provider_id: &str) -> Option<Auth
             &config.providers.openai_responses.api_key_env,
             "OPENAI_API_KEY",
         ),
-        "gemini" => resolve_env_name(&config.providers.gemini.api_key_env, "GEMINI_API_KEY"),
+        "google" => resolve_env_name(&config.providers.google.api_key_env, "GEMINI_API_KEY"),
         "azure" => resolve_env_name(&config.providers.azure.api_key_env, "AZURE_OPENAI_API_KEY"),
-        "vertex" => resolve_env_name(
-            &config.providers.vertex.access_token_env,
+        "google-vertex" => resolve_env_name(
+            &config.providers.google_vertex.access_token_env,
             "VERTEX_ACCESS_TOKEN",
         ),
-        "bedrock" => "AWS_ACCESS_KEY_ID".to_string(),
+        "amazon-bedrock" => "AWS_ACCESS_KEY_ID".to_string(),
         _ => return None,
     };
     // API-key providers (everything except Bedrock's AWS
@@ -2478,7 +2507,7 @@ pub fn auth_descriptor_for(config: &OpiConfig, provider_id: &str) -> Option<Auth
     // user selects the keychain backend. The descriptor is secret-free; the
     // redacted probe state is injected separately by the caller.
     if config.defaults.credential_backend == Some(crate::config::CredentialBackendSource::Keychain)
-        && provider_id != "bedrock"
+        && provider_id != "amazon-bedrock"
     {
         Some(AuthDescriptor::StoreCredential {
             key: provider_id.to_owned(),
@@ -2563,7 +2592,7 @@ fn build_collection_for_listing_with_probes(
         ) {
             (true, Some(store_auth @ AuthDescriptor::StoreCredential { .. })) => store_auth,
             _ => AuthDescriptor::Resolved {
-                source: if *provider_id == "bedrock" {
+                source: if *provider_id == "amazon-bedrock" {
                     "aws credential chain".to_owned()
                 } else {
                     availability.label.clone()
@@ -2927,7 +2956,7 @@ mod tests {
         // pair is skipped entirely (verified adapter rule), and an absent
         // profile is a typed credential-needed outcome, not an env fallback.
         let mut profiled = OpiConfig::default();
-        profiled.providers.bedrock.profile = Some("fixture".into());
+        profiled.providers.amazon_bedrock.profile = Some("fixture".into());
         let (_provider, profiled_resolver) =
             build_bedrock(&profiled, &credential_resolver).expect("lazy Bedrock factory");
         assert!(matches!(
@@ -3029,7 +3058,7 @@ mod tests {
                 ..Default::default()
             };
             let mut listing_config = OpiConfig::default();
-            listing_config.providers.bedrock = config.clone();
+            listing_config.providers.amazon_bedrock = config.clone();
             let env_values = HashMap::from([
                 ("AWS_ACCESS_KEY_ID", "ENV_ACCESS"),
                 ("AWS_SECRET_ACCESS_KEY", "ENV_SECRET"),
@@ -3048,7 +3077,7 @@ mod tests {
             )
             .await
             .expect("listing collection");
-            assert!(listing.registry().get_provider("bedrock").is_none());
+            assert!(listing.registry().get_provider("amazon-bedrock").is_none());
             assert!(matches!(
                 resolve_bedrock_auth(
                     &config,
@@ -3065,7 +3094,7 @@ mod tests {
                 session_token_env: Some("OPI_TEST_BEDROCK_SESSION".into()),
                 ..Default::default()
             };
-            listing_config.providers.bedrock = token_only_config.clone();
+            listing_config.providers.amazon_bedrock = token_only_config.clone();
             assert_eq!(
                 super::bedrock_auth_presence(&listing_config, &env_var),
                 super::BedrockAuthPresence::MissingConfigPair { secret_env: None }
@@ -3205,12 +3234,12 @@ mod tests {
             std::fs::write(&config_file, "").expect("config fixture");
             let _env = ScopedBedrockEnv::new(case.env, &credentials_file, &config_file);
             let mut config = OpiConfig::default();
-            config.defaults.model = "bedrock:anthropic.claude-test".into();
-            config.providers.bedrock.access_key_id =
+            config.defaults.model = "amazon-bedrock:anthropic.claude-test".into();
+            config.providers.amazon_bedrock.access_key_id =
                 case.access_key_id.map(secrecy::SecretString::from);
-            config.providers.bedrock.secret_access_key_env =
+            config.providers.amazon_bedrock.secret_access_key_env =
                 case.secret_access_key_env.map(str::to_owned);
-            config.providers.bedrock.profile = case.configured.map(str::to_owned);
+            config.providers.amazon_bedrock.profile = case.configured.map(str::to_owned);
             let env_values: HashMap<_, _> = case.env.iter().copied().collect();
             let env_var = |name: &str| env_values.get(name).map(|value| (*value).to_owned());
             let empty_probe = HashMap::new();
@@ -3251,7 +3280,10 @@ mod tests {
             .await
             .unwrap_or_else(|error| panic!("{}: listing: {error}", case.name));
             assert_eq!(
-                collection.registry().get_provider("bedrock").is_some(),
+                collection
+                    .registry()
+                    .get_provider("amazon-bedrock")
+                    .is_some(),
                 case.expected_present,
                 "{}: listing",
                 case.name
@@ -3309,7 +3341,7 @@ mod vertex_configuration_checks {
             if selected == "stored-key" {
                 store
                     .write(
-                        "vertex",
+                        "google-vertex",
                         &Credential::ApiKey("synthetic-express-key".into()),
                     )
                     .await

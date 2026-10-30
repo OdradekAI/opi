@@ -21,7 +21,7 @@ fn write_project_config(workspace: &std::path::Path) {
     std::fs::create_dir_all(workspace.join(".opi")).expect("create .opi");
     std::fs::write(
         workspace.join(".opi").join("config.toml"),
-        "[providers.bedrock]\nprofile = \"proj-aws-profile\"\n",
+        "[providers.amazon-bedrock]\nprofile = \"proj-aws-profile\"\n",
     )
     .expect("write project config");
 }
@@ -84,7 +84,7 @@ async fn headless_ask_defaults_untrusted_with_overrides() {
     .await;
     assert_eq!(decision, TrustDecision::Untrusted);
     assert_eq!(
-        config.providers.bedrock.profile, None,
+        config.providers.amazon_bedrock.profile, None,
         "untrusted project config must be skipped on the headless path"
     );
 
@@ -101,7 +101,7 @@ async fn headless_ask_defaults_untrusted_with_overrides() {
     .await;
     assert_eq!(decision, TrustDecision::Trusted);
     assert_eq!(
-        config.providers.bedrock.profile.as_deref(),
+        config.providers.amazon_bedrock.profile.as_deref(),
         Some("proj-aws-profile"),
         "trusted project config must be merged"
     );

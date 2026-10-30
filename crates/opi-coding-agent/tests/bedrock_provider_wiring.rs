@@ -23,13 +23,13 @@ fn parse_bedrock_config_with_region() {
     let path = write_temp_config(
         dir.path(),
         r#"
-[providers.bedrock]
+[providers.amazon-bedrock]
 region = "eu-west-1"
 "#,
     );
     let config = load_config_file(&path).unwrap();
     assert_eq!(
-        config.providers.bedrock.region.as_deref(),
+        config.providers.amazon_bedrock.region.as_deref(),
         Some("eu-west-1")
     );
 }
@@ -40,7 +40,7 @@ fn parse_bedrock_config_with_access_key() {
     let path = write_temp_config(
         dir.path(),
         r#"
-[providers.bedrock]
+[providers.amazon-bedrock]
 access_key_id = "AKIAEXAMPLE"
 secret_access_key_env = "MY_SECRET_KEY"
 region = "ap-southeast-1"
@@ -50,18 +50,22 @@ region = "ap-southeast-1"
     assert_eq!(
         config
             .providers
-            .bedrock
+            .amazon_bedrock
             .access_key_id
             .as_ref()
             .map(secrecy::ExposeSecret::expose_secret),
         Some("AKIAEXAMPLE")
     );
     assert_eq!(
-        config.providers.bedrock.secret_access_key_env.as_deref(),
+        config
+            .providers
+            .amazon_bedrock
+            .secret_access_key_env
+            .as_deref(),
         Some("MY_SECRET_KEY")
     );
     assert_eq!(
-        config.providers.bedrock.region.as_deref(),
+        config.providers.amazon_bedrock.region.as_deref(),
         Some("ap-southeast-1")
     );
 }
@@ -72,14 +76,14 @@ fn parse_bedrock_config_with_session_token() {
     let path = write_temp_config(
         dir.path(),
         r#"
-[providers.bedrock]
+[providers.amazon-bedrock]
 region = "us-east-1"
 session_token_env = "AWS_SESSION_TOKEN"
 "#,
     );
     let config = load_config_file(&path).unwrap();
     assert_eq!(
-        config.providers.bedrock.session_token_env.as_deref(),
+        config.providers.amazon_bedrock.session_token_env.as_deref(),
         Some("AWS_SESSION_TOKEN")
     );
 }
@@ -90,14 +94,14 @@ fn parse_bedrock_config_with_profile() {
     let path = write_temp_config(
         dir.path(),
         r#"
-[providers.bedrock]
+[providers.amazon-bedrock]
 profile = "production"
 region = "us-west-2"
 "#,
     );
     let config = load_config_file(&path).unwrap();
     assert_eq!(
-        config.providers.bedrock.profile.as_deref(),
+        config.providers.amazon_bedrock.profile.as_deref(),
         Some("production")
     );
 }
@@ -108,14 +112,14 @@ fn parse_bedrock_config_with_base_url() {
     let path = write_temp_config(
         dir.path(),
         r#"
-[providers.bedrock]
+[providers.amazon-bedrock]
 region = "us-east-1"
 base_url = "https://custom-bedrock-endpoint.example.com"
 "#,
     );
     let config = load_config_file(&path).unwrap();
     assert_eq!(
-        config.providers.bedrock.base_url.as_deref(),
+        config.providers.amazon_bedrock.base_url.as_deref(),
         Some("https://custom-bedrock-endpoint.example.com")
     );
 }
@@ -123,11 +127,17 @@ base_url = "https://custom-bedrock-endpoint.example.com"
 #[test]
 fn default_bedrock_config_has_no_explicit_credentials() {
     let config = OpiConfig::default();
-    assert!(config.providers.bedrock.access_key_id.is_none());
-    assert!(config.providers.bedrock.secret_access_key_env.is_none());
-    assert!(config.providers.bedrock.session_token_env.is_none());
-    assert!(config.providers.bedrock.profile.is_none());
-    assert!(config.providers.bedrock.base_url.is_none());
+    assert!(config.providers.amazon_bedrock.access_key_id.is_none());
+    assert!(
+        config
+            .providers
+            .amazon_bedrock
+            .secret_access_key_env
+            .is_none()
+    );
+    assert!(config.providers.amazon_bedrock.session_token_env.is_none());
+    assert!(config.providers.amazon_bedrock.profile.is_none());
+    assert!(config.providers.amazon_bedrock.base_url.is_none());
 }
 
 #[test]
@@ -136,17 +146,17 @@ fn parse_bedrock_config_with_proxy() {
     let path = write_temp_config(
         dir.path(),
         r#"
-[providers.bedrock]
+[providers.amazon-bedrock]
 region = "us-east-1"
 
-[providers.bedrock.proxy]
+[providers.amazon-bedrock.proxy]
 url = "http://proxy.example.com:8080"
 "#,
     );
     let config = load_config_file(&path).unwrap();
     let proxy = config
         .providers
-        .bedrock
+        .amazon_bedrock
         .proxy
         .as_ref()
         .expect("proxy should be set");
@@ -260,8 +270,8 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
         .await;
 
     let mut config = OpiConfig::default();
-    config.defaults.model = "bedrock:anthropic.claude-sonnet-4-20250514-v2:0".to_owned();
-    config.providers.bedrock.base_url = Some(server.uri());
+    config.defaults.model = "amazon-bedrock:anthropic.claude-sonnet-4-20250514-v2:0".to_owned();
+    config.providers.amazon_bedrock.base_url = Some(server.uri());
     let user_dir = tempfile::tempdir().unwrap();
     let bundle = opi_coding_agent::provider_factory::build_provider_bundle(
         &config,
@@ -283,7 +293,7 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
 
     // The selected local source is observable through the management seam.
     let resolved = collection
-        .get_auth("bedrock", Default::default())
+        .get_auth("amazon-bedrock", Default::default())
         .await
         .expect("factory route resolves")
         .expect("environment pair selected");
@@ -296,7 +306,7 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
 
     let mut request = opi_ai::provider::Request {
         transport: Default::default(),
-        model: "bedrock:anthropic.claude-sonnet-4-20250514-v2:0".into(),
+        model: "amazon-bedrock:anthropic.claude-sonnet-4-20250514-v2:0".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
             messages: vec![opi_ai::message::Message::User(
@@ -326,7 +336,10 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
     };
     let _ = &mut request;
     let prepared = collection
-        .prepare_call("bedrock:anthropic.claude-sonnet-4-20250514-v2:0", request)
+        .prepare_call(
+            "amazon-bedrock:anthropic.claude-sonnet-4-20250514-v2:0",
+            request,
+        )
         .await
         .expect("prepare factory bedrock call");
     let mut attempt = prepared.start_attempt().expect("start factory attempt");

@@ -3996,3 +3996,487 @@ mod catalog_store_refresh_20_33 {
         assert_eq!(assistant_text(&message), "bound response");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Builtin provider factory layer (task 20.34)
+// ---------------------------------------------------------------------------
+
+use opi_ai::catalog::{Catalog, CatalogOperation};
+use opi_ai::provider_collection::{BuiltinEnvAuthResolver, BuiltinOverrides, register_builtin};
+use opi_ai::providers::{BuiltinEndpoint, builtin_profile, builtin_provider_profiles};
+
+/// The exact canonical builtin provider set, sorted (pi `builtinProviders`).
+const ALL_42_CANONICAL: [&str; 42] = [
+    "amazon-bedrock",
+    "ant-ling",
+    "anthropic",
+    "azure",
+    "baseten",
+    "cerebras",
+    "cloudflare-ai-gateway",
+    "cloudflare-workers-ai",
+    "deepseek",
+    "fireworks",
+    "github-copilot",
+    "google",
+    "google-vertex",
+    "groq",
+    "huggingface",
+    "kimi-coding",
+    "meta",
+    "minimax",
+    "minimax-cn",
+    "mistral",
+    "moonshotai",
+    "moonshotai-cn",
+    "nvidia",
+    "openai",
+    "openai-codex",
+    "opencode",
+    "opencode-go",
+    "openrouter",
+    "qwen-token-plan",
+    "qwen-token-plan-cn",
+    "qwen-token-plan-individual",
+    "radius",
+    "together",
+    "typesafe",
+    "vercel-ai-gateway",
+    "xai",
+    "xiaomi",
+    "xiaomi-token-plan-ams",
+    "xiaomi-token-plan-cn",
+    "xiaomi-token-plan-sgp",
+    "zai",
+    "zai-coding-cn",
+];
+
+/// Injected auth context answering from a fixed map: no process environment.
+struct MapAuthContext(std::collections::BTreeMap<&'static str, &'static str>);
+
+impl opi_ai::auth::AuthContext for MapAuthContext {
+    fn env(&self, name: &str) -> Result<Option<String>, opi_ai::auth::AuthContextError> {
+        Ok(self.0.get(name).map(|value| (*value).to_owned()))
+    }
+    fn file_exists(&self, _path: &str) -> Result<bool, opi_ai::auth::AuthContextError> {
+        Ok(false)
+    }
+}
+
+fn map_context(
+    pairs: &[(&'static str, &'static str)],
+) -> std::sync::Arc<dyn opi_ai::auth::AuthContext> {
+    std::sync::Arc::new(MapAuthContext(pairs.iter().copied().collect()))
+}
+
+fn first_catalog_chat_model(provider: &str) -> String {
+    let catalog = Catalog::builtin().expect("builtin catalog loads");
+    catalog
+        .models(provider, CatalogOperation::Chat)
+        .expect("provider has chat entries")
+        .next()
+        .expect("non-empty chat catalog")
+        .id
+        .clone()
+}
+
+#[test]
+fn builtin_profiles_cover_exactly_the_42_canonical_providers() {
+    let profiles = builtin_provider_profiles();
+    assert_eq!(profiles.len(), 42, "the pinned capability inventory count");
+    let ids: Vec<&str> = profiles.iter().map(|profile| profile.id).collect();
+    assert_eq!(ids, ALL_42_CANONICAL.to_vec(), "table is sorted canonical");
+    // No permanent legacy aliases.
+    for legacy in ["gemini", "vertex", "bedrock", "openai-responses"] {
+        assert!(builtin_profile(legacy).is_none(), "{legacy} must not exist");
+    }
+}
+
+#[test]
+fn builtin_profiles_pin_source_qualified_metadata() {
+    let openai = builtin_profile("openai").expect("openai profile");
+    assert_eq!(openai.name, "OpenAI");
+    assert_eq!(openai.base_url, Some("https://api.openai.com/v1"));
+    assert_eq!(openai.api_key_env, Some("OPENAI_API_KEY"));
+    assert_eq!(openai.auth_scheme, AuthScheme::Bearer);
+    assert!(openai.oauth, "ChatGPT subscription OAuth exists");
+    assert!(
+        openai.hides_classifiers_on_oauth,
+        "ChatGPT tokens never reach the Decisions API"
+    );
+
+    let google = builtin_profile("google").expect("google profile");
+    assert_eq!(
+        google.base_url,
+        Some("https://generativelanguage.googleapis.com/v1beta")
+    );
+    assert_eq!(google.api_key_env, Some("GEMINI_API_KEY"));
+    assert_eq!(google.auth_scheme, AuthScheme::ApiKey);
+
+    let azure = builtin_profile("azure").expect("azure profile");
+    assert_eq!(azure.base_url, None, "the endpoint is deployment-derived");
+    assert_eq!(azure.api_key_env, Some("AZURE_OPENAI_API_KEY"));
+    assert!(matches!(azure.endpoint, BuiltinEndpoint::AzureDeployment));
+
+    let vertex = builtin_profile("google-vertex").expect("google-vertex profile");
+    assert_eq!(vertex.api_key_env, None, "Google Cloud credentials chain");
+    assert!(matches!(vertex.endpoint, BuiltinEndpoint::VertexLocation));
+
+    let bedrock = builtin_profile("amazon-bedrock").expect("amazon-bedrock profile");
+    assert_eq!(bedrock.api_key_env, None, "AWS SigV4 credential chain");
+    assert!(matches!(bedrock.endpoint, BuiltinEndpoint::BedrockRegion));
+
+    let deepseek = builtin_profile("deepseek").expect("deepseek profile");
+    assert_eq!(deepseek.base_url, Some("https://api.deepseek.com"));
+    assert_eq!(deepseek.api_key_env, Some("DEEPSEEK_API_KEY"));
+    assert_eq!(deepseek.auth_scheme, AuthScheme::Bearer);
+
+    let copilot = builtin_profile("github-copilot").expect("github-copilot profile");
+    assert_eq!(
+        copilot.base_url,
+        Some("https://api.individual.githubcopilot.com")
+    );
+    assert_eq!(copilot.api_key_env, Some("COPILOT_GITHUB_TOKEN"));
+    assert!(copilot.oauth);
+
+    let workers = builtin_profile("cloudflare-workers-ai").expect("cloudflare-workers-ai");
+    assert_eq!(workers.api_key_env, Some("CLOUDFLARE_API_KEY"));
+
+    let radius = builtin_profile("radius").expect("radius profile");
+    assert_eq!(radius.api_key_env, Some("RADIUS_API_KEY"));
+    assert!(matches!(radius.endpoint, BuiltinEndpoint::Dynamic));
+
+    let typesafe = builtin_profile("typesafe").expect("typesafe profile");
+    assert!(typesafe.classifier_only, "typesafe ships only classifiers");
+}
+
+#[tokio::test]
+async fn builtin_env_resolver_reads_through_injected_context() {
+    let resolver = BuiltinEnvAuthResolver::new(
+        map_context(&[("DEEPSEEK_API_KEY", "sk-deepseek")]),
+        "DEEPSEEK_API_KEY",
+        AuthScheme::Bearer,
+    );
+    let resolved = resolver.resolve().await.expect("mapped key resolves");
+    assert_eq!(resolved.scheme, AuthScheme::Bearer);
+    assert_eq!(resolved.base_url, None);
+
+    let missing =
+        BuiltinEnvAuthResolver::new(map_context(&[]), "DEEPSEEK_API_KEY", AuthScheme::Bearer);
+    assert!(matches!(
+        missing.resolve().await,
+        Err(ProviderError::CredentialNeeded { .. })
+    ));
+}
+
+#[tokio::test]
+async fn register_builtin_registers_the_canonical_collection() {
+    let mut models = Models::new();
+    let report = register_builtin(
+        &mut models,
+        map_context(&[]),
+        std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .expect("builtin registration succeeds");
+
+    // google-vertex is configuration-gated (project/location) like azure.
+    for expected in [
+        "google",
+        "amazon-bedrock",
+        "anthropic",
+        "openai",
+        "deepseek",
+        "openrouter",
+    ] {
+        assert!(
+            report.registered.iter().any(|id| id == expected),
+            "{expected} must register; got {:?}",
+            report.registered
+        );
+    }
+    // Azure needs a configured endpoint; typesafe is classifier-only.
+    assert!(!report.registered.iter().any(|id| id == "azure"));
+    assert!(!report.registered.iter().any(|id| id == "typesafe"));
+    let skipped_ids: Vec<&str> = report.skipped.iter().map(|(id, _)| id.as_str()).collect();
+    assert!(skipped_ids.contains(&"azure"));
+    assert!(skipped_ids.contains(&"google-vertex"));
+    assert!(skipped_ids.contains(&"typesafe"));
+
+    // The bundled catalog backs canonical resolution.
+    let google_model = first_catalog_chat_model("google");
+    assert!(models.resolve(&format!("google:{google_model}")).is_ok());
+    // No permanent legacy aliases in the collection.
+    assert!(models.resolve("gemini:anything").is_err());
+    let provider_ids = models.provider_ids();
+    assert!(!provider_ids.contains(&"gemini"));
+    assert!(!provider_ids.contains(&"bedrock"));
+    assert!(!provider_ids.contains(&"vertex"));
+}
+
+#[tokio::test]
+async fn azure_builtin_registers_with_configured_endpoint() {
+    let mut models = Models::new();
+    // Fixture host per the acceptance-source hermeticity contract.
+    let overrides = BuiltinOverrides {
+        azure_endpoint: Some("https://azure.example.com".into()),
+        ..BuiltinOverrides::default()
+    };
+    let report = register_builtin(
+        &mut models,
+        map_context(&[("AZURE_OPENAI_API_KEY", "azure-key")]),
+        std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+        &overrides,
+    )
+    .expect("builtin registration succeeds");
+    assert!(report.registered.iter().any(|id| id == "azure"));
+    let provider_ids = models.provider_ids();
+    assert!(provider_ids.contains(&"azure"), "provider stays `azure`");
+}
+
+#[tokio::test]
+async fn real_public_call_through_a_groq_completions_builtin_profile() {
+    use wiremock::matchers;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    let sse = concat!(
+        "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\n",
+        "data: [DONE]\n\n",
+    );
+    Mock::given(matchers::method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(sse)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let mut models = Models::new();
+    let mut overrides = BuiltinOverrides::default();
+    overrides.base_urls.insert("groq".into(), server.uri());
+    register_builtin(
+        &mut models,
+        map_context(&[("GROQ_API_KEY", "gsk-groq")]),
+        std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+        &overrides,
+    )
+    .unwrap();
+
+    // groq's first catalog model is a plain non-thinking completions model.
+    let model = first_catalog_chat_model("groq");
+    let spec = format!("groq:{model}");
+    let prepared = models
+        .prepare_call(&spec, minimal_request(&spec))
+        .await
+        .expect("canonical builtin dispatches");
+    let message = drain_to_completion(prepared.start_attempt().unwrap())
+        .await
+        .expect("stream completes");
+    assert_eq!(assistant_text(&message), "hi");
+
+    let requests = server.received_requests().await.expect("captured");
+    let request = &requests[0];
+    assert!(
+        request.url.path().ends_with("chat/completions"),
+        "openai-completions wire, got {}",
+        request.url.path()
+    );
+    assert_eq!(
+        request.headers.get("authorization").unwrap(),
+        "Bearer gsk-groq"
+    );
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["model"], model, "the wire model is the catalog id");
+}
+
+#[tokio::test]
+async fn real_public_call_through_openai_defaults_to_responses_wire() {
+    use wiremock::matchers;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    let sse = concat!(
+        "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n",
+        "data: [DONE]\n\n",
+    );
+    Mock::given(matchers::method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(sse)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let mut models = Models::new();
+    let mut overrides = BuiltinOverrides::default();
+    overrides.base_urls.insert("openai".into(), server.uri());
+    register_builtin(
+        &mut models,
+        map_context(&[("OPENAI_API_KEY", "sk-openai")]),
+        std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+        &overrides,
+    )
+    .unwrap();
+
+    let model = first_catalog_chat_model("openai");
+    let spec = format!("openai:{model}");
+    let prepared = models
+        .prepare_call(&spec, minimal_request(&spec))
+        .await
+        .expect("openai builtin dispatches");
+    let message = drain_to_completion(prepared.start_attempt().unwrap())
+        .await
+        .expect("stream completes");
+    assert_eq!(assistant_text(&message), "hi");
+
+    let requests = server.received_requests().await.expect("captured");
+    let request = &requests[0];
+    assert!(
+        request.url.path().ends_with("/responses"),
+        "openai defaults to the Responses wire, got {}",
+        request.url.path()
+    );
+    assert_eq!(
+        request.headers.get("authorization").unwrap(),
+        "Bearer sk-openai"
+    );
+}
+
+#[tokio::test]
+async fn catalog_tiered_pricing_flows_into_registered_models() {
+    let mut models = Models::new();
+    register_builtin(
+        &mut models,
+        map_context(&[]),
+        std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+
+    // Find one tiered chat entry in the bundled catalog.
+    let catalog = Catalog::builtin().unwrap();
+    let mut tiered: Option<(String, String, serde_json::Value)> = None;
+    for provider in catalog.providers() {
+        for entry in catalog.models(provider, CatalogOperation::Chat).unwrap() {
+            if entry.raw.get("cost").and_then(|c| c.get("tiers")).is_some() {
+                tiered = Some((provider.to_owned(), entry.id.clone(), entry.raw.clone()));
+                break;
+            }
+        }
+        if tiered.is_some() {
+            break;
+        }
+    }
+    let Some((provider, id, raw)) = tiered else {
+        panic!("bundled catalog has no tiered pricing entry");
+    };
+    let (_, model) = models
+        .resolve(&format!("{provider}:{id}"))
+        .expect("tiered model registers");
+    let pricing = model.pricing.as_ref().expect("pricing attached");
+    let cost = &raw["cost"];
+    assert_eq!(
+        pricing.base.input_cost_per_mtok,
+        cost["input"].as_f64().unwrap()
+    );
+    let raw_tier = &cost["tiers"][0];
+    let tier = &pricing.tiers[0];
+    assert_eq!(
+        tier.input_tokens_above,
+        raw_tier["inputTokensAbove"].as_u64().unwrap()
+    );
+    assert_eq!(
+        tier.pricing.input_cost_per_mtok,
+        raw_tier["input"].as_f64().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn builtin_registration_keeps_custom_record_upsert() {
+    let mut models = Models::new();
+    register_builtin(
+        &mut models,
+        map_context(&[]),
+        std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+
+    // A custom registration replaces the builtin provider wholesale.
+    models
+        .register_route(
+            text_mock("google", "custom wins"),
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                secret(SECRET_VALUE),
+            )) as Arc<dyn AuthResolver>,
+            AuthProvenanceSource::Static,
+            CompatMetadata::default(),
+        )
+        .unwrap();
+    let prepared = models
+        .prepare_call("google:mock-model", minimal_request("google:mock-model"))
+        .await
+        .expect("custom record dispatches after builtin");
+    let message = drain_to_completion(prepared.start_attempt().unwrap())
+        .await
+        .expect("custom mock completes");
+    assert_eq!(assistant_text(&message), "custom wins");
+}
+
+#[tokio::test]
+async fn classifier_and_image_builtins_register_from_the_catalog() {
+    let mut models = Models::new();
+    let report = register_builtin(
+        &mut models,
+        map_context(&[
+            ("TYPESAFE_API_KEY", "ts-key"),
+            ("OPENAI_API_KEY", "sk-openai"),
+            ("CLOUDFLARE_API_KEY", "cf-key"),
+        ]),
+        std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+    assert!(
+        report
+            .classifier_apis
+            .iter()
+            .any(|api| api == "typesafe-system-one")
+    );
+    assert!(
+        report
+            .classifier_apis
+            .iter()
+            .any(|api| api == "openai-decisions")
+    );
+    assert!(
+        report
+            .image_apis
+            .iter()
+            .any(|api| api == "openrouter-images")
+    );
+
+    let typesafe_record = models
+        .classifier_model("typesafe", "jev-latest")
+        .expect("catalog classifier record registers");
+    assert_eq!(typesafe_record.provider_id, "typesafe");
+    let catalog = Catalog::builtin().unwrap();
+    let openrouter_image = catalog
+        .models("openrouter", CatalogOperation::Image)
+        .unwrap()
+        .next()
+        .unwrap()
+        .id
+        .clone();
+    let image = models
+        .image_model("openrouter", &openrouter_image)
+        .expect("catalog image record registers");
+    assert_eq!(image.provider_id, "openrouter");
+}

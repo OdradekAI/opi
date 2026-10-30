@@ -21,7 +21,7 @@ pub fn lookup_pricing(model_spec: &str) -> Option<Pricing> {
         "anthropic" => anthropic_pricing(model),
         "openai" | "openai-responses" => openai_pricing(model),
         "openrouter" => openrouter_pricing(model),
-        "gemini" => gemini_pricing(model),
+        "google" => gemini_pricing(model),
         "mistral" => mistral_pricing(model),
         _ => None,
     }
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn gemini_flash_resolves() {
-        let p = lookup_pricing("gemini:gemini-1.5-flash").unwrap();
+        let p = lookup_pricing("google:gemini-1.5-flash").unwrap();
         assert_eq!(p.input_cost_per_mtok, 0.075);
     }
 

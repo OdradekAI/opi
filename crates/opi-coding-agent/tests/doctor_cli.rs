@@ -768,7 +768,7 @@ fn provider_scope_never_emits_credential_value() {
 
 #[test]
 fn provider_scope_bedrock_requires_access_key_and_secret() {
-    let config = test_config("bedrock:anthropic.claude-test");
+    let config = test_config("amazon-bedrock:anthropic.claude-test");
     let dir = tempfile::tempdir().unwrap();
 
     let only_access_key: HashMap<&str, String> =
@@ -818,9 +818,9 @@ fn provider_scope_bedrock_requires_access_key_and_secret() {
 
 #[test]
 fn provider_scope_bedrock_accepts_config_access_key_with_custom_secret_env() {
-    let mut config = test_config("bedrock:anthropic.claude-test");
-    config.providers.bedrock.access_key_id = Some("CONFIG_AKID".into());
-    config.providers.bedrock.secret_access_key_env = Some("BEDROCK_SECRET".into());
+    let mut config = test_config("amazon-bedrock:anthropic.claude-test");
+    config.providers.amazon_bedrock.access_key_id = Some("CONFIG_AKID".into());
+    config.providers.amazon_bedrock.secret_access_key_env = Some("BEDROCK_SECRET".into());
     let dir = tempfile::tempdir().unwrap();
     let env_values: HashMap<&str, String> =
         [("BEDROCK_SECRET", "secret".into())].into_iter().collect();
@@ -844,8 +844,8 @@ fn provider_scope_bedrock_accepts_config_access_key_with_custom_secret_env() {
 
 #[test]
 fn provider_scope_bedrock_accepts_configured_profile() {
-    let mut config = test_config("bedrock:anthropic.claude-test");
-    config.providers.bedrock.profile = Some("dev".into());
+    let mut config = test_config("amazon-bedrock:anthropic.claude-test");
+    config.providers.amazon_bedrock.profile = Some("dev".into());
     let dir = tempfile::tempdir().unwrap();
 
     let report = run_doctor(&[DoctorScope::Provider], &ctx(&config, dir.path(), &no_env));
@@ -865,7 +865,7 @@ fn provider_scope_bedrock_accepts_configured_profile() {
 
 #[test]
 fn provider_scope_bedrock_accepts_aws_profile_env() {
-    let config = test_config("bedrock:anthropic.claude-test");
+    let config = test_config("amazon-bedrock:anthropic.claude-test");
     let dir = tempfile::tempdir().unwrap();
     let env_values: HashMap<&str, String> = [("AWS_PROFILE", "dev".into())].into_iter().collect();
     let env = |n: &str| env_values.get(n).cloned();
@@ -887,9 +887,9 @@ fn provider_scope_bedrock_accepts_aws_profile_env() {
 
 #[test]
 fn provider_scope_bedrock_incomplete_configured_source_fails_closed_before_default_env_pair() {
-    let mut config = test_config("bedrock:anthropic.claude-test");
-    config.providers.bedrock.access_key_id = Some("CONFIG_AKID_DO_NOT_LEAK".into());
-    config.providers.bedrock.secret_access_key_env = Some("BEDROCK_SECRET".into());
+    let mut config = test_config("amazon-bedrock:anthropic.claude-test");
+    config.providers.amazon_bedrock.access_key_id = Some("CONFIG_AKID_DO_NOT_LEAK".into());
+    config.providers.amazon_bedrock.secret_access_key_env = Some("BEDROCK_SECRET".into());
     let dir = tempfile::tempdir().unwrap();
     let env_values: HashMap<&str, String> = [
         ("AWS_ACCESS_KEY_ID", "DEFAULT_AKID_DO_NOT_LEAK".into()),
@@ -907,7 +907,7 @@ fn provider_scope_bedrock_incomplete_configured_source_fails_closed_before_defau
                 && e.diagnostic.code == "doctor_provider_credentials"
                 && e.diagnostic.source == "provider"
                 && e.diagnostic.details.as_ref().is_some_and(|details| {
-                    details["provider"] == "bedrock"
+                    details["provider"] == "amazon-bedrock"
                         && details["credentials_present"] == false
                         && details["credential_probe"]
                             == "config access_key_id + env BEDROCK_SECRET"
@@ -928,8 +928,8 @@ fn provider_scope_bedrock_incomplete_configured_source_fails_closed_before_defau
 
 #[test]
 fn provider_scope_bedrock_config_access_requires_configured_secret_env() {
-    let mut config = test_config("bedrock:anthropic.claude-test");
-    config.providers.bedrock.access_key_id = Some("CONFIG_AKID".into());
+    let mut config = test_config("amazon-bedrock:anthropic.claude-test");
+    config.providers.amazon_bedrock.access_key_id = Some("CONFIG_AKID".into());
     let dir = tempfile::tempdir().unwrap();
     let env_values: HashMap<&str, String> = [("AWS_SECRET_ACCESS_KEY", "secret".into())]
         .into_iter()
@@ -1497,7 +1497,7 @@ async fn doctor_store_probe_uses_async_command_orchestration() {
         ),
         ("openai:absent", FakeKeyringBackend::new(), None),
         (
-            "gemini:unavailable",
+            "google:unavailable",
             FakeKeyringBackend::new().with_unavailable(),
             None,
         ),

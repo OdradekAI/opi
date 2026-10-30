@@ -2293,3 +2293,112 @@ async fn github_copilot_resolves_request_base_from_token_proxy_endpoint() {
         .expect("resolved");
     assert_eq!(resolved.base_url.as_deref(), Some("https://legacy.example"));
 }
+
+// ---------------------------------------------------------------------------
+// Canonical account reference migration (task 20.34)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn account_reference_resolution_matrix() {
+    let backend = FakeKeyringBackend::new();
+    // Legacy-only: gemini has an account, google does not.
+    backend.seed_credential(KEYCHAIN_SERVICE, "gemini", &Credential::ApiKey(secret("k")));
+    backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "gemini", "api_key");
+    let (_dir, store) = store_with(backend.clone());
+
+    let reference = store.resolve_account_reference("google").await.unwrap();
+    assert_eq!(
+        reference,
+        opi_coding_agent::credential_store::AccountReference::Legacy {
+            key: "gemini".into()
+        }
+    );
+    // Non-migrating providers resolve canonically without probing.
+    assert_eq!(
+        store.resolve_account_reference("anthropic").await.unwrap(),
+        opi_coding_agent::credential_store::AccountReference::Canonical
+    );
+    // Absent pair.
+    assert_eq!(
+        store
+            .resolve_account_reference("google-vertex")
+            .await
+            .unwrap(),
+        opi_coding_agent::credential_store::AccountReference::Absent
+    );
+}
+
+#[tokio::test]
+async fn account_reference_conflict_is_detected_before_copy() {
+    let backend = FakeKeyringBackend::new();
+    for key in ["gemini", "google"] {
+        backend.seed_credential(KEYCHAIN_SERVICE, key, &Credential::ApiKey(secret("k")));
+        backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, key, "api_key");
+    }
+    let (_dir, store) = store_with(backend.clone());
+
+    assert_eq!(
+        store.resolve_account_reference("google").await.unwrap(),
+        opi_coding_agent::credential_store::AccountReference::Conflict {
+            canonical: "google".into(),
+            legacy: "gemini".into()
+        }
+    );
+    // A switch on the conflict never overwrites the canonical account.
+    match store.switch_provider_account("gemini", "google").await {
+        Err(opi_coding_agent::credential_store::AccountReferenceError::Conflict {
+            canonical,
+            legacy,
+        }) => {
+            assert_eq!(canonical, "google");
+            assert_eq!(legacy, "gemini");
+        }
+        other => panic!("expected conflict, got {other:?}"),
+    }
+    // Both accounts survive untouched.
+    assert!(backend.raw_entry(KEYCHAIN_SERVICE, "google").is_some());
+    assert!(backend.raw_entry(KEYCHAIN_SERVICE, "gemini").is_some());
+}
+
+#[tokio::test]
+async fn account_switch_copies_then_removes_and_is_reentrant() {
+    let backend = FakeKeyringBackend::new();
+    backend.seed_credential(KEYCHAIN_SERVICE, "vertex", &Credential::ApiKey(secret("k")));
+    backend.seed_raw(KEYCHAIN_PRESENCE_SERVICE, "vertex", "api_key");
+    let (_dir, store) = store_with(backend.clone());
+
+    let outcome = store
+        .switch_provider_account("vertex", "google-vertex")
+        .await
+        .unwrap();
+    assert_eq!(
+        outcome,
+        opi_coding_agent::credential_store::AccountSwitchOutcome::Switched
+    );
+    assert!(backend.raw_entry(KEYCHAIN_SERVICE, "vertex").is_none());
+    assert!(
+        backend
+            .raw_entry(KEYCHAIN_PRESENCE_SERVICE, "vertex")
+            .is_none()
+    );
+    assert!(
+        backend
+            .raw_entry(KEYCHAIN_SERVICE, "google-vertex")
+            .is_some()
+    );
+    assert!(
+        backend
+            .raw_entry(KEYCHAIN_PRESENCE_SERVICE, "google-vertex")
+            .is_some()
+    );
+
+    // Reentrant: nothing left to switch.
+    let second = store
+        .switch_provider_account("vertex", "google-vertex")
+        .await
+        .unwrap();
+    assert_eq!(
+        second,
+        opi_coding_agent::credential_store::AccountSwitchOutcome::NothingToSwitch
+    );
+}

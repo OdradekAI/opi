@@ -25,10 +25,10 @@ fn parse_vertex_config_defaults() {
     let dir = tempfile::tempdir().unwrap();
     let path = write_temp_config(dir.path(), "");
     let config = load_config_file(&path);
-    assert!(config.providers.vertex.access_token_env.is_empty());
-    assert!(config.providers.vertex.project.is_none());
-    assert!(config.providers.vertex.location.is_none());
-    assert!(config.providers.vertex.models.is_empty());
+    assert!(config.providers.google_vertex.access_token_env.is_empty());
+    assert!(config.providers.google_vertex.project.is_none());
+    assert!(config.providers.google_vertex.location.is_none());
+    assert!(config.providers.google_vertex.models.is_empty());
 }
 
 #[test]
@@ -37,20 +37,23 @@ fn parse_vertex_config_with_project_and_location() {
     let path = write_temp_config(
         dir.path(),
         r#"
-[providers.vertex]
+[providers.google-vertex]
 access_token_env = "MY_VERTEX_TOKEN"
 project = "my-gcp-project"
 location = "europe-west1"
 "#,
     );
     let config = load_config_file(&path);
-    assert_eq!(config.providers.vertex.access_token_env, "MY_VERTEX_TOKEN");
     assert_eq!(
-        config.providers.vertex.project.as_deref(),
+        config.providers.google_vertex.access_token_env,
+        "MY_VERTEX_TOKEN"
+    );
+    assert_eq!(
+        config.providers.google_vertex.project.as_deref(),
         Some("my-gcp-project")
     );
     assert_eq!(
-        config.providers.vertex.location.as_deref(),
+        config.providers.google_vertex.location.as_deref(),
         Some("europe-west1")
     );
 }
@@ -61,16 +64,16 @@ fn parse_vertex_config_with_models() {
     let path = write_temp_config(
         dir.path(),
         r#"
-[providers.vertex]
+[providers.google-vertex]
 project = "my-project"
 location = "us-central1"
 models = ["gemini-2.5-flash", "gemini-2.5-pro"]
 "#,
     );
     let config = load_config_file(&path);
-    assert_eq!(config.providers.vertex.models.len(), 2);
-    assert_eq!(config.providers.vertex.models[0], "gemini-2.5-flash");
-    assert_eq!(config.providers.vertex.models[1], "gemini-2.5-pro");
+    assert_eq!(config.providers.google_vertex.models.len(), 2);
+    assert_eq!(config.providers.google_vertex.models[0], "gemini-2.5-flash");
+    assert_eq!(config.providers.google_vertex.models[1], "gemini-2.5-pro");
 }
 
 #[test]
@@ -79,17 +82,20 @@ fn vertex_config_independent_from_other_providers() {
     let path = write_temp_config(
         dir.path(),
         r#"
-[providers.gemini]
+[providers.google]
 api_key_env = "GEMINI_KEY"
 
-[providers.vertex]
+[providers.google-vertex]
 access_token_env = "VERTEX_TOKEN"
 project = "my-project"
 "#,
     );
     let config = load_config_file(&path);
-    assert_eq!(config.providers.gemini.api_key_env, "GEMINI_KEY");
-    assert_eq!(config.providers.vertex.access_token_env, "VERTEX_TOKEN");
+    assert_eq!(config.providers.google.api_key_env, "GEMINI_KEY");
+    assert_eq!(
+        config.providers.google_vertex.access_token_env,
+        "VERTEX_TOKEN"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +106,8 @@ project = "my-project"
 fn vertex_provider_builds_with_token() {
     let provider =
         opi_ai::vertex::VertexProvider::new("my-project".into(), "us-central1".into(), None);
+    // The adapter keeps its historical id; host routes republish it as
+    // `google-vertex` through the canonical wrapper.
     assert_eq!(provider.id(), "vertex");
 }
 
@@ -111,6 +119,8 @@ fn vertex_provider_from_config_with_models() {
         vec!["model-a".into(), "model-b".into()],
         None,
     );
+    // The adapter keeps its historical id; host routes republish it as
+    // `google-vertex` through the canonical wrapper.
     assert_eq!(provider.id(), "vertex");
     assert_eq!(provider.models().len(), 2);
     assert_eq!(provider.models()[0].id, "model-a");
@@ -226,9 +236,9 @@ mod adc_wiring {
 
     fn vertex_config(project: Option<&str>, location: Option<&str>) -> OpiConfig {
         let mut config = OpiConfig::default();
-        config.defaults.model = "vertex:gemini-2.5-flash".to_owned();
-        config.providers.vertex.project = project.map(str::to_owned);
-        config.providers.vertex.location = location.map(str::to_owned);
+        config.defaults.model = "google-vertex:gemini-2.5-flash".to_owned();
+        config.providers.google_vertex.project = project.map(str::to_owned);
+        config.providers.google_vertex.location = location.map(str::to_owned);
         config
     }
 
@@ -239,7 +249,7 @@ mod adc_wiring {
         let (_provider, resolver) =
             opi_coding_agent::provider_factory::build_runtime_route_for_tests(
                 &vertex_config(None, None),
-                "vertex",
+                "google-vertex",
                 &test_resolver(),
             )
             .expect("express route builds");
@@ -255,7 +265,7 @@ mod adc_wiring {
         let (_provider, resolver) =
             opi_coding_agent::provider_factory::build_runtime_route_for_tests(
                 &vertex_config(Some("p1"), Some("us-central1")),
-                "vertex",
+                "google-vertex",
                 &test_resolver(),
             )
             .expect("vertex route builds");
@@ -273,7 +283,7 @@ mod adc_wiring {
         let (_provider, resolver) =
             opi_coding_agent::provider_factory::build_runtime_route_for_tests(
                 &vertex_config(Some("p1"), Some("us-central1")),
-                "vertex",
+                "google-vertex",
                 &test_resolver(),
             )
             .expect("route builds lazily");
@@ -293,14 +303,14 @@ mod adc_wiring {
         let (_provider, resolver) =
             opi_coding_agent::provider_factory::build_runtime_route_for_tests(
                 &vertex_config(Some("p1"), Some("us-central1")),
-                "vertex",
+                "google-vertex",
                 &test_resolver(),
             )
             .expect("route builds");
         let error = resolver.resolve().await.expect_err("no source configured");
         assert!(matches!(
             error,
-            ProviderError::CredentialNeeded { provider_id } if provider_id == "vertex"
+            ProviderError::CredentialNeeded { provider_id } if provider_id == "google-vertex"
         ));
     }
 
@@ -308,7 +318,7 @@ mod adc_wiring {
     fn express_provider_builds_without_project_and_location() {
         use opi_coding_agent::provider_factory::build_provider;
         let provider = build_provider(&vertex_config(None, None)).expect("express builds");
-        assert_eq!(provider.id(), "vertex");
+        assert_eq!(provider.id(), "google-vertex");
     }
 
     #[test]

@@ -136,16 +136,32 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | `openai-responses:` | `OpenAiResponsesProvider` | `OPENAI_API_KEY` |
 | `openrouter:` | OpenRouter profile | `OPENROUTER_API_KEY` |
 | `mistral:` | Mistral profile | `MISTRAL_API_KEY` |
-| `gemini:` | `GeminiProvider` | `GEMINI_API_KEY` |
-| `bedrock:` | `BedrockProvider` | AWS env vars or shared AWS profile/config |
+| `google:` | `GeminiProvider` under its canonical id | `GEMINI_API_KEY` |
+| `amazon-bedrock:` | `BedrockProvider` under its canonical id | AWS env vars or shared AWS profile/config |
 | `azure:` | `AzureOpenAIProvider` | `AZURE_OPENAI_API_KEY`; endpoint/deployments in config |
-| `vertex:` | `VertexProvider` | `VERTEX_ACCESS_TOKEN`; project/location in config |
+| `google-vertex:` | `VertexProvider` under its canonical id | `VERTEX_ACCESS_TOKEN`; project/location in config |
 | `github-copilot:` | One audited static catalog mapped across Anthropic Messages, OpenAI Completions/Chat, and OpenAI Responses | OS keychain via `/login github-copilot` |
 | `openai-codex:` | Dedicated `OpenAiCodexResponsesProvider` | OS keychain via `/login openai-codex` |
 | configured profile | OpenAI-compatible profile | profile-specific `api_key_env`, `base_url`, and model list |
 
 Provider credential env names, base URLs, model lists, and proxies can be
 overridden in config.
+
+### Canonical provider ids and legacy reference migration (task 20.34)
+
+The provider prefixes are canonical (`google`, `google-vertex`,
+`amazon-bedrock`). Legacy references still load: `[providers.gemini]`,
+`[providers.vertex]` and `[providers.bedrock]` config blocks and
+`defaults.model` specs with the old prefixes migrate in memory at load —
+adoption when the canonical block is unconfigured, a recorded conflict
+(canonical wins, legacy ignored) when both are explicit, and the whole pass
+is reentrant. No config file is rewritten. Credential-store account keys
+follow the same shape: `resolve_account_reference` probes the canonical key
+first with a metadata-only legacy fallback, both-present conflicts are
+detected before any copy, and `switch_provider_account` is the explicit,
+never-overwriting switch. The historical adapter ids (`gemini`, `vertex`,
+`bedrock`) remain internal to their adapters and are never registered as
+dispatchable aliases.
 
 ### Custom mapped providers
 

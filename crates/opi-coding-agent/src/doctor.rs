@@ -490,8 +490,8 @@ fn provider_diagnostics(
                 ));
             }
         }
-        "vertex" => {
-            let vertex = &config.providers.vertex;
+        "google-vertex" => {
+            let vertex = &config.providers.google_vertex;
             if vertex.project.is_none() || vertex.location.is_none() {
                 out.push(Diagnostic::new(
                     Severity::Warning,
@@ -803,10 +803,18 @@ fn provider_proxy_url<'a>(config: &'a OpiConfig, provider: &str) -> Option<&'a s
             .proxy
             .as_ref()
             .map(|p| p.url.as_str()),
-        "gemini" => providers.gemini.proxy.as_ref().map(|p| p.url.as_str()),
-        "bedrock" => providers.bedrock.proxy.as_ref().map(|p| p.url.as_str()),
+        "google" => providers.google.proxy.as_ref().map(|p| p.url.as_str()),
+        "amazon-bedrock" => providers
+            .amazon_bedrock
+            .proxy
+            .as_ref()
+            .map(|p| p.url.as_str()),
         "azure" => providers.azure.proxy.as_ref().map(|p| p.url.as_str()),
-        "vertex" => providers.vertex.proxy.as_ref().map(|p| p.url.as_str()),
+        "google-vertex" => providers
+            .google_vertex
+            .proxy
+            .as_ref()
+            .map(|p| p.url.as_str()),
         other => providers
             .custom
             .get(other)

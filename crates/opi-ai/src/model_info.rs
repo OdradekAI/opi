@@ -111,7 +111,7 @@ pub enum WireApi {
 }
 
 impl WireApi {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::AnthropicMessages,
         Self::OpenAiCompletions,
         Self::OpenAiResponses,
@@ -119,6 +119,7 @@ impl WireApi {
         Self::GoogleGenerativeAi,
         Self::GoogleVertex,
         Self::BedrockConverseStream,
+        Self::PiMessages,
         Self::AzureOpenAiCompletions,
         Self::AzureOpenAiResponses,
         Self::MistralConversations,

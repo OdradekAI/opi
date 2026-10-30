@@ -651,6 +651,37 @@
   unchanged.
 ### Added
 
+- `opi-ai`: builtin provider factory layer with 42 canonical profiles
+  (task 20.34, DEL-10). `providers::builtin_provider_profiles` carries the
+  source-qualified 42-entry table (canonical ids `google`/`google-vertex`/
+  `amazon-bedrock`/…; no legacy aliases) and
+  `provider_collection::register_builtin` registers the bundled catalog
+  over the completed adapters: mapped providers per profile (azure and
+  google-vertex config-gated with typed skip reasons, bedrock lookup-only
+  behind its AWS-chain descriptor), a `canonical_route` wrapper republishing
+  fixed-id adapters under canonical ids with the model-spec prefix rewrite,
+  catalog entries converted with tiered pricing into `ModelInfo::pricing`,
+  and the classifier/image protocols registered from catalog records
+  through the typed seams; env keys resolve at dispatch through an injected
+  `AuthContext` (no environment/store/network reads at construction).
+- `opi-coding-agent`: explicit 32 MiB Windows main-thread stack reserve for
+  the `opi` binary. The MSVC default 1 MiB reserve left the non-interactive
+  async turn pipeline (already mitigated once via `Box::pin` at the
+  `run_non_interactive` call site) without headroom; after the task 20.34
+  construction layers, unoptimized builds overflowed the main-thread stack
+  (`0xC00000FD`) mid-turn. The reserve is a linker argument emitted by the
+  new `build.rs` for MSVC targets only.
+- `opi-coding-agent`: canonical provider ids with reentrant legacy reference
+  migration (task 20.34, DEL-10). Provider prefixes are canonical
+  (`google`, `google-vertex`, `amazon-bedrock`); legacy
+  `[providers.gemini|vertex|bedrock]` blocks and `defaults.model` specs
+  migrate in memory at load (adoption when the canonical block is
+  unconfigured, recorded conflict with the canonical block winning when
+  both are explicit, reentrant, no file rewrites). Credential-store account
+  references follow the same shape: metadata-only canonical-first probing
+  with legacy fallback, conflicts detected before any copy, and an
+  explicit never-overwriting `switch_provider_account`. The historical
+  adapter ids stay internal and are never registered as aliases.
 - `opi-ai`: OpenAI Decisions classifier adapter and four-protocol closure
   (task 20.49, DEL-11). `api::decisions::OpenAiDecisionsApi` (api id
   `openai-decisions`, provider `openai`) serves OpenAI's Decisions API:

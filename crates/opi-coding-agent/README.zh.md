@@ -130,15 +130,28 @@ opi --allow-mutating "更新 README。"
 | `openai-responses:` | `OpenAiResponsesProvider` | `OPENAI_API_KEY` |
 | `openrouter:` | OpenRouter profile | `OPENROUTER_API_KEY` |
 | `mistral:` | Mistral profile | `MISTRAL_API_KEY` |
-| `gemini:` | `GeminiProvider` | `GEMINI_API_KEY` |
-| `bedrock:` | `BedrockProvider` | AWS 环境变量或共享 AWS profile/config |
+| `google:` | 以 canonical id 发布的 `GeminiProvider` | `GEMINI_API_KEY` |
+| `amazon-bedrock:` | 以 canonical id 发布的 `BedrockProvider` | AWS 环境变量或共享 AWS profile/config |
 | `azure:` | `AzureOpenAIProvider` | `AZURE_OPENAI_API_KEY`；endpoint/deployments 在配置中 |
-| `vertex:` | `VertexProvider` | `VERTEX_ACCESS_TOKEN`；project/location 在配置中 |
+| `google-vertex:` | 以 canonical id 发布的 `VertexProvider` | `VERTEX_ACCESS_TOKEN`；project/location 在配置中 |
 | `github-copilot:` | 一个经审计的静态 catalog，映射到 Anthropic Messages、OpenAI Completions/Chat 与 OpenAI Responses | 通过 `/login github-copilot` 写入 OS keychain |
 | `openai-codex:` | 专用 `OpenAiCodexResponsesProvider` | 通过 `/login openai-codex` 写入 OS keychain |
 | 已配置 profile | OpenAI-compatible profile | profile 自己的 `api_key_env`、`base_url` 和模型列表 |
 
 Provider 凭据环境变量名、base URL、模型列表和代理都可以在配置中覆盖。
+
+### Canonical provider id 与旧引用迁移（任务 20.34）
+
+provider 前缀是 canonical 的（`google`、`google-vertex`、
+`amazon-bedrock`）。旧引用仍可加载：`[providers.gemini]`、
+`[providers.vertex]` 与 `[providers.bedrock]` 配置块、以及带旧前缀的
+`defaults.model` spec 会在加载时内存迁移——canonical 块未配置时采
+纳、两者都显式时记录冲突（canonical 胜出，旧块忽略）、整趟可重入。
+不重写任何配置文件。凭据 store 的账户 key 同形：
+`resolve_account_reference` 先探测 canonical key 并以仅元数据方式回
+退旧 key，双键并存冲突在任何 copy 之前检出，`switch_provider_account`
+是显式的、从不覆盖的切换。历史适配器 id（`gemini`、`vertex`、
+`bedrock`）仍是适配器内部实现，从不注册为可派发别名。
 
 ### 自定义 mapped provider
 

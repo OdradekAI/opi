@@ -1746,6 +1746,27 @@ pre-catalog window; pi's generated `data/radius.json` baseline is absent
 from the pinned source and a configured gateway's dynamic catalog replaces
 the baseline at registration time.
 
+## Builtin Provider Factory Layer: 42 Canonical Profiles (task 20.34)
+
+`providers::builtin_provider_profiles` carries the 42-entry source-qualified
+profile table from the pi 1.3.0 capability inventory: canonical ids
+(`google`, `google-vertex`, `amazon-bedrock`, …), display names, default
+base URLs, env API-key names, auth schemes, OAuth availability and endpoint
+semantics (Azure deployments, Vertex location templates, Bedrock regions,
+dynamic radius). Legacy opi ids (`gemini`, `vertex`, `bedrock`,
+`openai-responses`) are not aliases — the table never registers them.
+`provider_collection::register_builtin` turns the table plus the bundled
+catalog into registered providers over the completed wire adapters: one
+mapped provider per profile (Azure and google-vertex stay config-gated with
+typed skip reasons, bedrock registers lookup-only behind its AWS-chain
+descriptor), a canonical-route wrapper republishing fixed-id adapters under
+canonical ids (including the model-spec prefix rewrite prefix-sensitive
+adapters need), catalog entries converted with their tiered pricing into
+`ModelInfo::pricing`, and the classifier/image protocols registered through
+the typed seams with catalog records. Environment keys resolve at dispatch
+through an injected `AuthContext` — construction reads no environment,
+store, or network.
+
 ## OpenAI Decisions Adapter and Four-Protocol Classifier Closure (task 20.49)
 
 The fourth real classifier protocol: `api::decisions::OpenAiDecisionsApi`

@@ -516,8 +516,12 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "pi_messages",
         "provider",
         // Task 20.53.6: provider environment helpers are a deliberate addition.
+        // Task 20.34: the builtin provider profile table and its
+        // construction layer are deliberate later-phase additions.
+        "provider_collection",
         "provider_env",
         "provider_headers",
+        "providers",
         "registry",
         "replay",
         "retry",

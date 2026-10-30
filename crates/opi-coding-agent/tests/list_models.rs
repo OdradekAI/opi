@@ -1031,11 +1031,11 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
     for case in cases {
         let _env = ScopedEnv::cleared_with_values(&BEDROCK_ENV_NAMES, case.env);
         let mut config = opi_coding_agent::config::OpiConfig::default();
-        config.providers.bedrock.access_key_id =
+        config.providers.amazon_bedrock.access_key_id =
             case.access_key_id.map(secrecy::SecretString::from);
-        config.providers.bedrock.secret_access_key_env =
+        config.providers.amazon_bedrock.secret_access_key_env =
             case.secret_access_key_env.map(str::to_owned);
-        config.providers.bedrock.profile = case.profile.map(str::to_owned);
+        config.providers.amazon_bedrock.profile = case.profile.map(str::to_owned);
         let dir = tempfile::tempdir().expect("temp user config dir");
 
         let collection = build_collection_for_listing_command(
@@ -1046,7 +1046,9 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
         .await
         .unwrap_or_else(|error| panic!("{}: listing core failed: {error}", case.name));
         let entries = model_entries_from_registry(collection.registry());
-        let bedrock_present = entries.iter().any(|entry| entry.provider_id == "bedrock");
+        let bedrock_present = entries
+            .iter()
+            .any(|entry| entry.provider_id == "amazon-bedrock");
         assert_eq!(
             bedrock_present, case.expected_present,
             "{}: unexpected Bedrock listing presence",
@@ -1055,33 +1057,37 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
         if case.expected_present {
             assert!(
                 matches!(
-                    collection.auth_descriptor("bedrock"),
+                    collection.auth_descriptor("amazon-bedrock"),
                     Some(AuthDescriptor::Resolved { source }) if source == "aws credential chain"
                 ),
                 "{}: unexpected safe Bedrock auth source: {:?}",
                 case.name,
-                collection.auth_descriptor("bedrock")
+                collection.auth_descriptor("amazon-bedrock")
             );
             let check = collection
-                .check_auth("bedrock")
+                .check_auth("amazon-bedrock")
                 .await
                 .expect("bedrock check")
                 .expect("configured bedrock provider checks configured");
             assert_eq!(check.kind, opi_ai::AuthCheckKind::ApiKey);
         } else {
             assert!(
-                collection.auth_descriptor("bedrock").is_none(),
+                collection.auth_descriptor("amazon-bedrock").is_none(),
                 "{}: unavailable Bedrock provider retained auth metadata",
                 case.name
             );
             assert!(
-                collection.check_auth("bedrock").await.unwrap().is_none(),
+                collection
+                    .check_auth("amazon-bedrock")
+                    .await
+                    .unwrap()
+                    .is_none(),
                 "{}: unavailable Bedrock provider must check unconfigured",
                 case.name
             );
         }
         assert!(
-            collection.probe("bedrock").is_none(),
+            collection.probe("amazon-bedrock").is_none(),
             "{}: Bedrock must not expose store probe metadata",
             case.name
         );
@@ -1089,7 +1095,7 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
         let rendered = format!(
             "providers={:?}\nauth={:?}\nentries={}",
             collection.provider_ids(),
-            collection.auth_descriptor("bedrock"),
+            collection.auth_descriptor("amazon-bedrock"),
             entries
                 .iter()
                 .map(|entry| format!(

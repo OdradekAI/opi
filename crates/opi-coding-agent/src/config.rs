@@ -25,6 +25,10 @@ pub struct OpiConfig {
     pub defaults: DefaultsConfig,
     pub thinking: ThinkingConfig,
     pub providers: ProvidersConfig,
+    /// Human-readable notes from the last legacy→canonical provider
+    /// reference migration pass (diagnostics only; empty until migration
+    /// adopts a block, records a conflict, or rewrites a model spec).
+    pub provider_migration_notes: Vec<String>,
     pub keybindings: KeybindingsConfig,
     pub retry: opi_ai::retry::RetryConfig,
     pub compaction: CompactionConfigSection,
@@ -257,12 +261,32 @@ pub struct ProvidersConfig {
     pub openrouter: OpenRouterProviderConfig,
     pub mistral: GenericProviderConfig,
     pub openai_responses: GenericProviderConfig,
-    pub gemini: GenericProviderConfig,
-    pub bedrock: BedrockProviderConfig,
+    pub google: GenericProviderConfig,
+    pub amazon_bedrock: BedrockProviderConfig,
     pub azure: AzureProviderConfig,
-    pub vertex: VertexProviderConfig,
+    pub google_vertex: VertexProviderConfig,
     pub openai_compatible: BTreeMap<String, OpenAiCompatibleProviderConfig>,
     pub custom: BTreeMap<String, CustomProviderConfig>,
+    /// Accumulated legacy (`gemini`/`vertex`/`bedrock`) TOML layers, adopted
+    /// under the canonical ids by
+    /// [`OpiConfig::migrate_legacy_provider_references`] after the final
+    /// merge. Empty after migration (reentrant).
+    pub legacy: LegacyProviderReferences,
+}
+
+/// Legacy provider blocks pending the canonical reference migration.
+///
+/// The legacy ids are accepted only at the TOML boundary; they are never
+/// registered or dispatched.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LegacyProviderReferences {
+    /// Legacy `[providers.gemini]` accumulation → canonical `google`.
+    pub gemini: GenericProviderConfig,
+    /// Legacy `[providers.vertex]` accumulation → canonical `google-vertex`.
+    pub vertex: VertexProviderConfig,
+    /// Legacy `[providers.bedrock]` accumulation → canonical
+    /// `amazon-bedrock`.
+    pub bedrock: BedrockProviderConfig,
 }
 
 /// Fully validated `[providers.custom.<id>]` mapped provider.
@@ -562,13 +586,18 @@ struct TomlThinking {
 #[serde(default)]
 struct TomlProviders {
     anthropic: TomlAnthropic,
+    #[serde(rename = "amazon-bedrock")]
+    amazon_bedrock: TomlBedrockProvider,
     bedrock: TomlBedrockProvider,
     openai: TomlGenericProvider,
     openrouter: TomlOpenRouterProvider,
     mistral: TomlGenericProvider,
     openai_responses: TomlGenericProvider,
+    google: TomlGenericProvider,
     gemini: TomlGenericProvider,
     azure: TomlAzureProvider,
+    #[serde(rename = "google-vertex")]
+    google_vertex: TomlVertexProvider,
     vertex: TomlVertexProvider,
     openai_compatible: BTreeMap<String, TomlOpenAiCompatibleProvider>,
     custom: BTreeMap<String, TomlCustomProvider>,
@@ -928,28 +957,94 @@ impl TomlConfig {
                 no_proxy: p.no_proxy,
             });
         }
+        if let Some(v) = self.providers.amazon_bedrock.access_key_id {
+            config.providers.amazon_bedrock.access_key_id = Some(v.into());
+        }
+        if let Some(v) = self.providers.amazon_bedrock.secret_access_key_env {
+            config.providers.amazon_bedrock.secret_access_key_env = Some(v);
+        }
+        if let Some(v) = self.providers.amazon_bedrock.session_token_env {
+            config.providers.amazon_bedrock.session_token_env = Some(v);
+        }
+        if let Some(v) = self.providers.amazon_bedrock.region {
+            config.providers.amazon_bedrock.region = Some(v);
+        }
+        if let Some(v) = self.providers.amazon_bedrock.profile {
+            config.providers.amazon_bedrock.profile = Some(v);
+        }
+        if let Some(v) = self.providers.amazon_bedrock.base_url {
+            config.providers.amazon_bedrock.base_url = Some(v);
+        }
+        if let Some(p) = self.providers.amazon_bedrock.proxy
+            && let Some(url) = p.url.filter(|s| !s.trim().is_empty())
+        {
+            config.providers.amazon_bedrock.proxy = Some(ProviderProxyConfig {
+                url,
+                no_proxy: p.no_proxy,
+            });
+        }
+        // Legacy `[providers.gemini]`/`[providers.vertex]`/`[providers.bedrock]`
+        // layers accumulate separately; the post-load reference migration
+        // adopts them under the canonical ids or records the conflict.
+        if let Some(v) = self.providers.gemini.api_key_env {
+            config.providers.legacy.gemini.api_key_env = v;
+        }
+        if let Some(v) = self.providers.gemini.base_url {
+            config.providers.legacy.gemini.base_url = Some(v);
+        }
+        if let Some(p) = self.providers.gemini.proxy
+            && let Some(url) = p.url.filter(|s| !s.trim().is_empty())
+        {
+            config.providers.legacy.gemini.proxy = Some(ProviderProxyConfig {
+                url,
+                no_proxy: p.no_proxy,
+            });
+        }
+        if let Some(v) = self.providers.vertex.access_token_env {
+            config.providers.legacy.vertex.access_token_env = v;
+        }
+        if let Some(v) = self.providers.vertex.project {
+            config.providers.legacy.vertex.project = Some(v);
+        }
+        if let Some(v) = self.providers.vertex.location {
+            config.providers.legacy.vertex.location = Some(v);
+        }
+        if let Some(v) = self.providers.vertex.models {
+            config.providers.legacy.vertex.models = v;
+        }
+        if let Some(v) = self.providers.vertex.base_url {
+            config.providers.legacy.vertex.base_url = Some(v);
+        }
+        if let Some(p) = self.providers.vertex.proxy
+            && let Some(url) = p.url.filter(|s| !s.trim().is_empty())
+        {
+            config.providers.legacy.vertex.proxy = Some(ProviderProxyConfig {
+                url,
+                no_proxy: p.no_proxy,
+            });
+        }
         if let Some(v) = self.providers.bedrock.access_key_id {
-            config.providers.bedrock.access_key_id = Some(v.into());
+            config.providers.legacy.bedrock.access_key_id = Some(v.into());
         }
         if let Some(v) = self.providers.bedrock.secret_access_key_env {
-            config.providers.bedrock.secret_access_key_env = Some(v);
+            config.providers.legacy.bedrock.secret_access_key_env = Some(v);
         }
         if let Some(v) = self.providers.bedrock.session_token_env {
-            config.providers.bedrock.session_token_env = Some(v);
+            config.providers.legacy.bedrock.session_token_env = Some(v);
         }
         if let Some(v) = self.providers.bedrock.region {
-            config.providers.bedrock.region = Some(v);
+            config.providers.legacy.bedrock.region = Some(v);
         }
         if let Some(v) = self.providers.bedrock.profile {
-            config.providers.bedrock.profile = Some(v);
+            config.providers.legacy.bedrock.profile = Some(v);
         }
         if let Some(v) = self.providers.bedrock.base_url {
-            config.providers.bedrock.base_url = Some(v);
+            config.providers.legacy.bedrock.base_url = Some(v);
         }
         if let Some(p) = self.providers.bedrock.proxy
             && let Some(url) = p.url.filter(|s| !s.trim().is_empty())
         {
-            config.providers.bedrock.proxy = Some(ProviderProxyConfig {
+            config.providers.legacy.bedrock.proxy = Some(ProviderProxyConfig {
                 url,
                 no_proxy: p.no_proxy,
             });
@@ -974,25 +1069,25 @@ impl TomlConfig {
                 no_proxy: p.no_proxy,
             });
         }
-        if let Some(v) = self.providers.vertex.access_token_env {
-            config.providers.vertex.access_token_env = v;
+        if let Some(v) = self.providers.google_vertex.access_token_env {
+            config.providers.google_vertex.access_token_env = v;
         }
-        if let Some(v) = self.providers.vertex.project {
-            config.providers.vertex.project = Some(v);
+        if let Some(v) = self.providers.google_vertex.project {
+            config.providers.google_vertex.project = Some(v);
         }
-        if let Some(v) = self.providers.vertex.location {
-            config.providers.vertex.location = Some(v);
+        if let Some(v) = self.providers.google_vertex.location {
+            config.providers.google_vertex.location = Some(v);
         }
-        if let Some(v) = self.providers.vertex.models {
-            config.providers.vertex.models = v;
+        if let Some(v) = self.providers.google_vertex.models {
+            config.providers.google_vertex.models = v;
         }
-        if let Some(v) = self.providers.vertex.base_url {
-            config.providers.vertex.base_url = Some(v);
+        if let Some(v) = self.providers.google_vertex.base_url {
+            config.providers.google_vertex.base_url = Some(v);
         }
-        if let Some(p) = self.providers.vertex.proxy
+        if let Some(p) = self.providers.google_vertex.proxy
             && let Some(url) = p.url.filter(|s| !s.trim().is_empty())
         {
-            config.providers.vertex.proxy = Some(ProviderProxyConfig {
+            config.providers.google_vertex.proxy = Some(ProviderProxyConfig {
                 url,
                 no_proxy: p.no_proxy,
             });
@@ -1056,16 +1151,16 @@ impl TomlConfig {
                 no_proxy: p.no_proxy,
             });
         }
-        if let Some(v) = self.providers.gemini.api_key_env {
-            config.providers.gemini.api_key_env = v;
+        if let Some(v) = self.providers.google.api_key_env {
+            config.providers.google.api_key_env = v;
         }
-        if let Some(v) = self.providers.gemini.base_url {
-            config.providers.gemini.base_url = Some(v);
+        if let Some(v) = self.providers.google.base_url {
+            config.providers.google.base_url = Some(v);
         }
-        if let Some(p) = self.providers.gemini.proxy
+        if let Some(p) = self.providers.google.proxy
             && let Some(url) = p.url.filter(|s| !s.trim().is_empty())
         {
-            config.providers.gemini.proxy = Some(ProviderProxyConfig {
+            config.providers.google.proxy = Some(ProviderProxyConfig {
                 url,
                 no_proxy: p.no_proxy,
             });
@@ -1290,6 +1385,139 @@ fn validate_custom_providers(
 
 /// Validate the final merged provider-id namespace used by both listing and
 /// runtime model-spec dispatch.
+/// Legacy provider ids accepted at the config boundary and their canonical
+/// replacements (task 20.34). The legacy ids are never registered or
+/// dispatched: references migrate in memory at load.
+pub const LEGACY_PROVIDER_REFS: [(&str, &str); 3] = [
+    ("gemini", "google"),
+    ("vertex", "google-vertex"),
+    ("bedrock", "amazon-bedrock"),
+];
+
+/// Result of one legacy→canonical provider reference migration pass.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ProviderReferenceMigration {
+    /// `(legacy, canonical)` pairs whose accumulated legacy block was
+    /// adopted because no canonical block was explicitly configured.
+    pub adopted: Vec<(&'static str, &'static str)>,
+    /// `(legacy, canonical)` pairs where both were explicitly configured:
+    /// the canonical block wins and the legacy block is ignored.
+    pub conflicts: Vec<(&'static str, &'static str)>,
+    /// Rewritten `defaults.model` specs (legacy prefix → canonical prefix).
+    pub model_specs: Vec<(String, String)>,
+}
+
+impl ProviderReferenceMigration {
+    /// Human-readable diagnostics of this pass.
+    pub fn notes(&self) -> Vec<String> {
+        let mut notes = Vec::new();
+        for (legacy, canonical) in &self.adopted {
+            notes.push(format!(
+                "providers.{legacy}: adopted under the canonical id `{canonical}`"
+            ));
+        }
+        for (legacy, canonical) in &self.conflicts {
+            notes.push(format!(
+                "providers.{legacy}: ignored; both it and `providers.{canonical}` are configured, the canonical block wins"
+            ));
+        }
+        for (from, to) in &self.model_specs {
+            notes.push(format!("defaults.model: `{from}` migrated to `{to}`"));
+        }
+        notes
+    }
+}
+
+/// Rewrite one `provider:model` spec to its canonical provider prefix.
+///
+/// Returns the rewritten spec and the legacy prefix it came from, if any.
+pub fn canonicalize_model_spec(spec: &str) -> (String, Option<&'static str>) {
+    for (legacy, canonical) in LEGACY_PROVIDER_REFS {
+        if let Some(rest) = spec.strip_prefix(legacy)
+            && rest.starts_with(':')
+        {
+            return (format!("{canonical}{rest}"), Some(legacy));
+        }
+    }
+    (spec.to_owned(), None)
+}
+
+fn generic_provider_explicit(config: &GenericProviderConfig) -> bool {
+    !config.api_key_env.trim().is_empty() || config.base_url.is_some() || config.proxy.is_some()
+}
+
+fn vertex_provider_explicit(config: &VertexProviderConfig) -> bool {
+    !config.access_token_env.trim().is_empty()
+        || config.project.is_some()
+        || config.location.is_some()
+        || !config.models.is_empty()
+        || config.base_url.is_some()
+        || config.proxy.is_some()
+}
+
+fn bedrock_provider_explicit(config: &BedrockProviderConfig) -> bool {
+    config.access_key_id.is_some()
+        || config.secret_access_key_env.is_some()
+        || config.session_token_env.is_some()
+        || config.region.is_some()
+        || config.profile.is_some()
+        || config.base_url.is_some()
+        || config.proxy.is_some()
+}
+
+impl OpiConfig {
+    /// Migrate legacy provider references (`gemini`/`vertex`/`bedrock`) to
+    /// the canonical ids (`google`/`google-vertex`/`amazon-bedrock`) in
+    /// memory.
+    ///
+    /// Reentrant: a second pass finds empty legacy accumulators and already
+    /// canonical model specs, so it changes nothing. When both the legacy
+    /// and the canonical block are explicitly configured the conflict is
+    /// detected before any adoption: the canonical block wins, the legacy
+    /// block is ignored, and nothing is overwritten. No config file is
+    /// rewritten.
+    pub fn migrate_legacy_provider_references(&mut self) -> ProviderReferenceMigration {
+        let mut report = ProviderReferenceMigration::default();
+
+        let (model, legacy_used) = canonicalize_model_spec(&self.defaults.model);
+        if legacy_used.is_some() {
+            report
+                .model_specs
+                .push((self.defaults.model.clone(), model.clone()));
+            self.defaults.model = model;
+        }
+
+        let legacy = std::mem::take(&mut self.providers.legacy);
+        if generic_provider_explicit(&legacy.gemini) {
+            if generic_provider_explicit(&self.providers.google) {
+                report.conflicts.push(("gemini", "google"));
+            } else {
+                self.providers.google = legacy.gemini;
+                report.adopted.push(("gemini", "google"));
+            }
+        }
+        if vertex_provider_explicit(&legacy.vertex) {
+            if vertex_provider_explicit(&self.providers.google_vertex) {
+                report.conflicts.push(("vertex", "google-vertex"));
+            } else {
+                self.providers.google_vertex = legacy.vertex;
+                report.adopted.push(("vertex", "google-vertex"));
+            }
+        }
+        if bedrock_provider_explicit(&legacy.bedrock) {
+            if bedrock_provider_explicit(&self.providers.amazon_bedrock) {
+                report.conflicts.push(("bedrock", "amazon-bedrock"));
+            } else {
+                self.providers.amazon_bedrock = legacy.bedrock;
+                report.adopted.push(("bedrock", "amazon-bedrock"));
+            }
+        }
+
+        self.provider_migration_notes = report.notes();
+        report
+    }
+}
+
 pub fn validate_provider_namespace(config: &OpiConfig) -> Result<(), ConfigError> {
     const DEPRECATED_PROVIDER_IDS: &[&str] = &["copilot", "codex"];
 
@@ -2056,6 +2284,7 @@ fn parse_toml(contents: &str, path: &Path) -> Result<OpiConfig, ConfigError> {
     let mut config = OpiConfig::default();
     let mut custom = BTreeMap::new();
     raw.merge_into(&mut config, &mut custom);
+    config.migrate_legacy_provider_references();
     config.providers.custom = validate_custom_providers(custom)?;
     validate_provider_namespace(&config)?;
     validate_execution_config(&config)?;
@@ -2157,6 +2386,7 @@ impl StagedConfig {
         if let Some(cli_model) = self.cli_model {
             config.defaults.model = cli_model;
         }
+        config.migrate_legacy_provider_references();
 
         config.providers.custom = validate_custom_providers(custom)?;
         validate_provider_namespace(&config)?;

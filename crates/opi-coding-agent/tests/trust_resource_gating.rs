@@ -46,7 +46,7 @@ fn write_project_resources(workspace: &Path) {
     fs::create_dir_all(workspace.join(".opi")).expect("create .opi");
     fs::write(
         workspace.join(".opi").join("config.toml"),
-        "[providers.bedrock]\nprofile = \"proj-aws-profile\"\n",
+        "[providers.amazon-bedrock]\nprofile = \"proj-aws-profile\"\n",
     )
     .expect("write project config");
 
@@ -404,14 +404,14 @@ fn pre_trust_config_omits_project_bedrock_profile() {
     fs::create_dir_all(workspace.path().join(".opi")).expect("create .opi");
     fs::write(
         workspace.path().join(".opi").join("config.toml"),
-        "[providers.bedrock]\nprofile = \"proj-aws-profile\"\n",
+        "[providers.amazon-bedrock]\nprofile = \"proj-aws-profile\"\n",
     )
     .expect("write project config");
 
     let pre = resolve_pre_trust_config(config_source(workspace.path(), global.path()))
         .expect("pre-trust resolve");
     assert_eq!(
-        pre.providers.bedrock.profile, None,
+        pre.providers.amazon_bedrock.profile, None,
         "project .opi/config.toml must NOT be merged at the pre-trust stage"
     );
 }
@@ -425,16 +425,16 @@ fn merge_project_config_loads_project_bedrock_profile() {
     fs::create_dir_all(workspace.path().join(".opi")).expect("create .opi");
     fs::write(
         workspace.path().join(".opi").join("config.toml"),
-        "[providers.bedrock]\nprofile = \"proj-aws-profile\"\n",
+        "[providers.amazon-bedrock]\nprofile = \"proj-aws-profile\"\n",
     )
     .expect("write project config");
 
     let source = config_source(workspace.path(), global.path());
     let pre = resolve_pre_trust_config(source).expect("pre-trust resolve");
-    assert_eq!(pre.providers.bedrock.profile, None);
+    assert_eq!(pre.providers.amazon_bedrock.profile, None);
     let full = merge_project_config(pre, workspace.path()).expect("merge project config");
     assert_eq!(
-        full.providers.bedrock.profile.as_deref(),
+        full.providers.amazon_bedrock.profile.as_deref(),
         Some("proj-aws-profile"),
         "trusted project's .opi/config.toml must be merged"
     );

@@ -1276,6 +1276,144 @@ impl ResolvedApiKey {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Canonical account reference migration (task 20.34)
+// ---------------------------------------------------------------------------
+
+/// Legacy credential account keys and their canonical provider ids.
+pub const LEGACY_ACCOUNT_REFS: [(&str, &str); 3] = [
+    ("gemini", "google"),
+    ("vertex", "google-vertex"),
+    ("bedrock", "amazon-bedrock"),
+];
+
+/// Where a canonical provider id's stored account reference resolves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AccountReference {
+    /// The canonical key is the only relevant answer: no migration pair, or
+    /// only the canonical entry exists.
+    Canonical,
+    /// Only the legacy key holds an entry; lookups fall back to it without
+    /// copying anything.
+    Legacy { key: String },
+    /// Both keys hold entries: switching requires an explicit decision.
+    Conflict { canonical: String, legacy: String },
+    /// Neither key holds an entry (migration pair only).
+    Absent,
+}
+
+/// Typed failure of an explicit account switch.
+#[derive(Debug, thiserror::Error)]
+pub enum AccountReferenceError {
+    /// Both keys hold entries; the switch never overwrites an account.
+    #[error(
+        "both `{canonical}` and `{legacy}` have stored accounts; resolve the conflict manually (a switch never overwrites)"
+    )]
+    Conflict { canonical: String, legacy: String },
+    /// A store probe or copy failed.
+    #[error(transparent)]
+    Store(#[from] CredentialStoreError),
+}
+
+/// Outcome of an explicit legacy→canonical account switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountSwitchOutcome {
+    /// The legacy entry moved to the canonical key.
+    Switched,
+    /// Nothing to switch (already migrated or never stored): a reentrant
+    /// no-op.
+    NothingToSwitch,
+}
+
+impl KeychainCredentialStore {
+    /// Resolve where `provider_id`'s stored account lives (task 20.34).
+    ///
+    /// Probes only the non-secret presence markers: the canonical key first,
+    /// the mapped legacy key second; both present is the conflict detected
+    /// before any copy/ACK/switch. Never reads credential payloads, never
+    /// writes.
+    pub async fn resolve_account_reference(
+        &self,
+        provider_id: &str,
+    ) -> Result<AccountReference, CredentialStoreError> {
+        let Some(&(legacy, canonical)) = LEGACY_ACCOUNT_REFS
+            .iter()
+            .find(|(_, canonical)| *canonical == provider_id)
+        else {
+            return Ok(AccountReference::Canonical);
+        };
+        let canonical_present = self.core.read_marker_kind(canonical)?.is_some();
+        let legacy_present = self.core.read_marker_kind(legacy)?.is_some();
+        match (canonical_present, legacy_present) {
+            (true, true) => Ok(AccountReference::Conflict {
+                canonical: canonical.to_owned(),
+                legacy: legacy.to_owned(),
+            }),
+            (true, false) => Ok(AccountReference::Canonical),
+            (false, true) => Ok(AccountReference::Legacy {
+                key: legacy.to_owned(),
+            }),
+            (false, false) => Ok(AccountReference::Absent),
+        }
+    }
+
+    /// Explicitly switch one legacy account key to its canonical id.
+    ///
+    /// The conflict gate runs before any copy: an existing canonical account
+    /// is never overwritten ([`AccountReferenceError::Conflict`]); an absent
+    /// legacy entry is a reentrant no-op. A switch copies the presence
+    /// marker and the protected payload verbatim and then removes the legacy
+    /// pair. This bypasses the serialized mutation queue by design: it is a
+    /// one-shot maintenance move behind the conflict gate, not a login,
+    /// logout, or refresh.
+    pub async fn switch_provider_account(
+        &self,
+        from: &str,
+        to: &str,
+    ) -> Result<AccountSwitchOutcome, AccountReferenceError> {
+        let marker = self
+            .core
+            .backend
+            .get(KEYCHAIN_PRESENCE_SERVICE, from)
+            .map_err(|error| self.core.backend_err(from, error))?;
+        let payload = self
+            .core
+            .backend
+            .get(&self.core.service, from)
+            .map_err(|error| self.core.backend_err(from, error))?;
+        let (Some(marker), Some(payload)) = (marker, payload) else {
+            // Nothing under the legacy key: already migrated or never
+            // stored. A reentrant no-op even when the canonical account
+            // exists.
+            return Ok(AccountSwitchOutcome::NothingToSwitch);
+        };
+        let to_present = self.core.read_marker_kind(to)?.is_some();
+        if to_present {
+            return Err(AccountReferenceError::Conflict {
+                canonical: to.to_owned(),
+                legacy: from.to_owned(),
+            });
+        }
+        self.core
+            .backend
+            .set(KEYCHAIN_PRESENCE_SERVICE, to, &marker)
+            .map_err(|error| self.core.backend_err(to, error))?;
+        self.core
+            .backend
+            .set(&self.core.service, to, &payload)
+            .map_err(|error| self.core.backend_err(to, error))?;
+        self.core
+            .backend
+            .delete(KEYCHAIN_PRESENCE_SERVICE, from)
+            .map_err(|error| self.core.backend_err(from, error))?;
+        self.core
+            .backend
+            .delete(&self.core.service, from)
+            .map_err(|error| self.core.backend_err(from, error))?;
+        Ok(AccountSwitchOutcome::Switched)
+    }
+}
+
 /// Composes a [`CredentialStore`] with environment fallback. For API keys the
 /// keychain is primary; on `Absent` or `BackendUnavailable` the resolver falls
 /// back to the configured env var. Persisted OAuth remains keychain-required

@@ -231,6 +231,8 @@ fn openai_responses_provider_construction() {
 #[test]
 fn gemini_provider_construction() {
     let provider = opi_ai::gemini::GeminiProvider::new(None);
+    // The adapter keeps its historical id; host routes republish it as
+    // `google` through the canonical wrapper.
     assert_eq!(provider.id(), "gemini");
 }
 
@@ -381,7 +383,7 @@ async fn build_provider_bundle_populates_eager_extra_dispatch_routes() {
         "openrouter",
         "mistral",
         "openai-responses",
-        "gemini",
+        "google",
     ] {
         assert!(
             extra_ids.contains(&expected),
@@ -959,16 +961,16 @@ fn toml_parses_gemini_provider() {
     std::fs::write(
         &path,
         r#"
-[providers.gemini]
+[providers.google]
 api_key_env = "MY_GEMINI_KEY"
 base_url = "https://custom-gemini.example.com"
 "#,
     )
     .unwrap();
     let config = load_config_file(&path).unwrap();
-    assert_eq!(config.providers.gemini.api_key_env, "MY_GEMINI_KEY");
+    assert_eq!(config.providers.google.api_key_env, "MY_GEMINI_KEY");
     assert_eq!(
-        config.providers.gemini.base_url.as_deref(),
+        config.providers.google.base_url.as_deref(),
         Some("https://custom-gemini.example.com")
     );
 }
@@ -986,7 +988,7 @@ api_key_env = "KEY_A"
 [providers.openai]
 api_key_env = "KEY_O"
 
-[providers.gemini]
+[providers.google]
 api_key_env = "KEY_G"
 
 [providers.mistral]
@@ -1003,7 +1005,7 @@ api_key_env = "KEY_OAR"
     let config = load_config_file(&path).unwrap();
     assert_eq!(config.providers.anthropic.api_key_env, "KEY_A");
     assert_eq!(config.providers.openai.api_key_env, "KEY_O");
-    assert_eq!(config.providers.gemini.api_key_env, "KEY_G");
+    assert_eq!(config.providers.google.api_key_env, "KEY_G");
     assert_eq!(config.providers.mistral.api_key_env, "KEY_M");
     assert_eq!(config.providers.openrouter.api_key_env, "KEY_OR");
     assert_eq!(config.providers.openai_responses.api_key_env, "KEY_OAR");
@@ -1388,8 +1390,8 @@ fn build_provider_wires_each_builtin_provider_family() {
         c.providers.azure.endpoint = Some("https://test.openai.azure.com".into());
     }
     fn configure_vertex(c: &mut OpiConfig) {
-        c.providers.vertex.project = Some("test-project".into());
-        c.providers.vertex.location = Some("us-central1".into());
+        c.providers.google_vertex.project = Some("test-project".into());
+        c.providers.google_vertex.location = Some("us-central1".into());
     }
     fn noop(_: &mut OpiConfig) {}
 
@@ -1406,9 +1408,9 @@ fn build_provider_wires_each_builtin_provider_family() {
         ("openrouter", &[("OPENROUTER_API_KEY", "test-key")], noop),
         ("mistral", &[("MISTRAL_API_KEY", "test-key")], noop),
         ("openai-responses", &[("OPENAI_API_KEY", "test-key")], noop),
-        ("gemini", &[("GEMINI_API_KEY", "test-key")], noop),
+        ("google", &[("GEMINI_API_KEY", "test-key")], noop),
         (
-            "bedrock",
+            "amazon-bedrock",
             &[
                 ("AWS_ACCESS_KEY_ID", "test-akid"),
                 ("AWS_SECRET_ACCESS_KEY", "test-sak"),
@@ -1421,7 +1423,7 @@ fn build_provider_wires_each_builtin_provider_family() {
             configure_azure,
         ),
         (
-            "vertex",
+            "google-vertex",
             &[("VERTEX_ACCESS_TOKEN", "test-token")],
             configure_vertex,
         ),
@@ -1495,17 +1497,17 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
             route: Route::OpenAiChat,
         },
         RouteCase {
-            provider_id: "gemini",
+            provider_id: "google",
             expected_wire: WireApi::GoogleGenerativeAi,
             route: Route::Gemini,
         },
         RouteCase {
-            provider_id: "vertex",
+            provider_id: "google-vertex",
             expected_wire: WireApi::GoogleVertex,
             route: Route::Vertex,
         },
         RouteCase {
-            provider_id: "bedrock",
+            provider_id: "amazon-bedrock",
             expected_wire: WireApi::BedrockConverseStream,
             route: Route::Bedrock,
         },
@@ -1526,7 +1528,7 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
             .await;
 
         let mut config = OpiConfig::default();
-        let selected_model = if case.provider_id == "bedrock" {
+        let selected_model = if case.provider_id == "amazon-bedrock" {
             "anthropic.route-model"
         } else {
             "route-model"
@@ -1553,21 +1555,21 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
                 config.providers.mistral.api_key_env = ROUTE_KEY_ENV.into();
                 config.providers.mistral.base_url = Some(server.uri());
             }
-            "gemini" => {
-                config.providers.gemini.api_key_env = ROUTE_KEY_ENV.into();
-                config.providers.gemini.base_url = Some(server.uri());
+            "google" => {
+                config.providers.google.api_key_env = ROUTE_KEY_ENV.into();
+                config.providers.google.base_url = Some(server.uri());
             }
-            "vertex" => {
-                config.providers.vertex.access_token_env = ROUTE_KEY_ENV.into();
-                config.providers.vertex.project = Some("test-project".into());
-                config.providers.vertex.location = Some("us-central1".into());
-                config.providers.vertex.base_url = Some(server.uri());
+            "google-vertex" => {
+                config.providers.google_vertex.access_token_env = ROUTE_KEY_ENV.into();
+                config.providers.google_vertex.project = Some("test-project".into());
+                config.providers.google_vertex.location = Some("us-central1".into());
+                config.providers.google_vertex.base_url = Some(server.uri());
             }
-            "bedrock" => {
-                config.providers.bedrock.access_key_id = Some("test-akid".into());
-                config.providers.bedrock.secret_access_key_env = Some(ROUTE_KEY_ENV.into());
-                config.providers.bedrock.region = Some("us-east-1".into());
-                config.providers.bedrock.base_url = Some(server.uri());
+            "amazon-bedrock" => {
+                config.providers.amazon_bedrock.access_key_id = Some("test-akid".into());
+                config.providers.amazon_bedrock.secret_access_key_env = Some(ROUTE_KEY_ENV.into());
+                config.providers.amazon_bedrock.region = Some("us-east-1".into());
+                config.providers.amazon_bedrock.base_url = Some(server.uri());
             }
             "azure" => {
                 config.providers.azure.api_key_env = ROUTE_KEY_ENV.into();
@@ -1597,7 +1599,7 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
         model.validate().unwrap();
         let model_id = model.id.clone();
 
-        let auth = if case.provider_id == "bedrock" {
+        let auth = if case.provider_id == "amazon-bedrock" {
             opi_ai::ResolvedAuth::aws_sigv4(
                 opi_ai::AwsSigV4Credentials {
                     access_key_id: "test-access-key".into(),
@@ -1618,7 +1620,7 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
             // ApiKey/Bearer, gemini and azure attach ApiKey, and every other
             // built-in single-wire provider attaches Bearer.
             let scheme = match case.provider_id {
-                "anthropic" | "gemini" | "azure" => opi_ai::AuthScheme::ApiKey,
+                "anthropic" | "google" | "azure" => opi_ai::AuthScheme::ApiKey,
                 _ => opi_ai::AuthScheme::Bearer,
             };
             opi_ai::auth::ResolvedAuth {
@@ -1826,7 +1828,7 @@ fn build_provider_builds_all_credentials_lazily_including_bedrock() {
     let lazy_cases: &[(&str, &[&str])] = &[
         ("anthropic", &["ANTHROPIC_API_KEY"]),
         ("azure", &["AZURE_OPENAI_API_KEY"]),
-        ("vertex", &["VERTEX_ACCESS_TOKEN"]),
+        ("google-vertex", &["VERTEX_ACCESS_TOKEN"]),
     ];
     for (id, remove) in lazy_cases.iter().copied() {
         with_env_managed(remove, &[], || {
@@ -1836,9 +1838,9 @@ fn build_provider_builds_all_credentials_lazily_including_bedrock() {
             // to construct their adapter; the credential is the only lazy half.
             if id == "azure" {
                 config.providers.azure.endpoint = Some("https://test.openai.azure.com".into());
-            } else if id == "vertex" {
-                config.providers.vertex.project = Some("test-project".into());
-                config.providers.vertex.location = Some("us-central1".into());
+            } else if id == "google-vertex" {
+                config.providers.google_vertex.project = Some("test-project".into());
+                config.providers.google_vertex.location = Some("us-central1".into());
             }
             let provider = build_provider(&config).unwrap_or_else(|e| {
                 panic!("{id} must build lazily without a credential, got {e:?}")
@@ -1870,10 +1872,10 @@ fn build_provider_builds_all_credentials_lazily_including_bedrock() {
         ],
         || {
             let mut config = OpiConfig::default();
-            config.defaults.model = "bedrock:test-model".into();
+            config.defaults.model = "amazon-bedrock:test-model".into();
             let provider = build_provider(&config)
                 .unwrap_or_else(|error| panic!("Bedrock must build lazily, got {error:?}"));
-            assert_eq!(provider.id(), "bedrock");
+            assert_eq!(provider.id(), "amazon-bedrock");
         },
     );
 }
@@ -1941,8 +1943,8 @@ max_output_tokens = 4096
     // Vertex missing project / location on the runtime path -> Config.
     with_env_var("VERTEX_ACCESS_TOKEN", "test-token", || {
         let mut missing_project = opi_coding_agent::config::OpiConfig::default();
-        missing_project.defaults.model = "vertex:test-model".into();
-        missing_project.providers.vertex.location = Some("us-central1".into());
+        missing_project.defaults.model = "google-vertex:test-model".into();
+        missing_project.providers.google_vertex.location = Some("us-central1".into());
         match build_provider(&missing_project) {
             Err(ProviderBuildError::Config(msg)) => assert!(
                 msg.contains("project"),
@@ -1953,8 +1955,8 @@ max_output_tokens = 4096
         }
 
         let mut missing_location = opi_coding_agent::config::OpiConfig::default();
-        missing_location.defaults.model = "vertex:test-model".into();
-        missing_location.providers.vertex.project = Some("test-project".into());
+        missing_location.defaults.model = "google-vertex:test-model".into();
+        missing_location.providers.google_vertex.project = Some("test-project".into());
         match build_provider(&missing_location) {
             Err(ProviderBuildError::Config(msg)) => assert!(
                 msg.contains("location"),

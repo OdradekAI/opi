@@ -150,17 +150,22 @@ async fn vertex_factory_source_rotation_remains_in_the_shared_store_barrier() {
     ));
     let resolver = CredentialResolver::new(store.clone(), Arc::new(|_| None));
     let mut config = OpiConfig::default();
-    config.providers.vertex.project = Some("synthetic-project".into());
-    config.providers.vertex.location = Some("us-central1".into());
-    let route = build_runtime_route_for_tests(&config, "vertex", &resolver).unwrap();
-    let model = format!("vertex:{}", route.0.models()[0].id);
-    let first =
-        build_harness_collection(vec![route], vec![], vec![], "vertex", Some(store.clone()));
+    config.providers.google_vertex.project = Some("synthetic-project".into());
+    config.providers.google_vertex.location = Some("us-central1".into());
+    let route = build_runtime_route_for_tests(&config, "google-vertex", &resolver).unwrap();
+    let model = format!("google-vertex:{}", route.0.models()[0].id);
+    let first = build_harness_collection(
+        vec![route],
+        vec![],
+        vec![],
+        "google-vertex",
+        Some(store.clone()),
+    );
     let second = build_harness_collection(
-        vec![build_runtime_route_for_tests(&config, "vertex", &resolver).unwrap()],
+        vec![build_runtime_route_for_tests(&config, "google-vertex", &resolver).unwrap()],
         vec![],
         vec![],
-        "vertex",
+        "google-vertex",
         Some(store.clone()),
     );
     let call_owner = first.clone();

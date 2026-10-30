@@ -68,7 +68,7 @@ async fn broken_extra_route_config_emits_redacted_skip_diagnostic() {
         "the broken openai route must be dropped, got {extra_ids:?}"
     );
     assert!(
-        extra_ids.contains(&"gemini"),
+        extra_ids.contains(&"google"),
         "a sibling route without config problems stays registered, got {extra_ids:?}"
     );
 

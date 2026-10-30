@@ -233,7 +233,7 @@ async fn rpc_set_model_returns_model_data() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rpc_set_model_accepts_model_ids_containing_colons() {
     let provider = MockProvider::new_with_models(
-        "bedrock",
+        "amazon-bedrock",
         vec![
             rpc_model_info("anthropic.claude-sonnet-4-20250514-v2:0", true),
             rpc_model_info("anthropic.claude-haiku-4-20250514-v1:0", true),
@@ -242,7 +242,7 @@ async fn rpc_set_model_accepts_model_ids_containing_colons() {
     );
     let (command_tx, mut output_rx, task) = custom_provider_runner_with_model(
         provider,
-        "bedrock:anthropic.claude-sonnet-4-20250514-v2:0",
+        "amazon-bedrock:anthropic.claude-sonnet-4-20250514-v2:0",
     );
 
     let header = recv_rpc_line(&mut output_rx).await;
@@ -251,14 +251,14 @@ async fn rpc_set_model_accepts_model_ids_containing_colons() {
     command_tx
         .send(RpcCommand::set_model {
             id: Some("set-colon".into()),
-            model: "bedrock:anthropic.claude-haiku-4-20250514-v1:0".into(),
+            model: "amazon-bedrock:anthropic.claude-haiku-4-20250514-v1:0".into(),
         })
         .unwrap();
     let resp = recv_response(&mut output_rx, "set_model").await;
     assert_eq!(resp["success"], true);
     assert_eq!(
         resp["data"]["model"],
-        "bedrock:anthropic.claude-haiku-4-20250514-v1:0"
+        "amazon-bedrock:anthropic.claude-haiku-4-20250514-v1:0"
     );
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
