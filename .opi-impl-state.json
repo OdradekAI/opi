@@ -10225,7 +10225,7 @@
       "definition_of_done": "Every one of42 factories produces exact source-qualified registered wires/defaults/auth/filter/endpoint metadata, real public calls and full custom record behavior, including OpenAI Responses default plus Chat and Azure dual wires. Reentrant gemini/google, vertex/google-vertex, bedrock/amazon-bedrock config/store reference migration detects conflicts before copy/ACK/switch and never overwrites accounts, rewrites historical ApiKind or retains permanent builtin aliases. Test profile-specific wire fixtures not factory count alone. Own the assembled full source closures for frozen route/effort (AIR-001/V-01), acquisition defaults and source send accounting (AIR-007/V-05/DEL-05/DEL-06), built-in catalog behavior (AIR-034/064/V-28/56), adapter-specific sampling/pricing (AIR-062/V-54), and transcript/native-effort stamps unaffected by sampling/onPayload overrides (V-16). All corresponding mechanisms are supplied by predecessor tasks. Reuse their named fixtures/results at the final relevant state and add only missing cross-path conformance; no second driver, catalog owner, retry coordinator or full implementation pass. Own complete V-32 through actual adapter capture -> terminal -> serialize/reload -> next request, including same-identity effort stamps and cross-identity projection; use the completed 20.7 replay mechanism and 20.37/protocol producers, never hand-constructed metadata alone. Verify source-qualified factory/profile/model and per-call parameters through actual selected adapters, preserving explicit false/zero/omission. Final auth-derived endpoint precedes endpoint-sensitive compatibility. Capture method/URL/headers/body and separate source exchanges from generation attempts; no identity fallback or host TOML/JSON migration. Reuse predecessor cases at the final relevant state rather than rerunning copied suites.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.3",
         "20.16",
@@ -10440,7 +10440,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-052",
@@ -10456,7 +10456,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S34",
@@ -10472,7 +10472,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-10",
@@ -10488,7 +10488,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-01",
@@ -10504,7 +10504,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-001",
@@ -10520,7 +10520,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-05",
@@ -10536,7 +10536,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-007",
@@ -10552,7 +10552,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-16",
@@ -10568,7 +10568,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-28",
@@ -10584,7 +10584,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-034",
@@ -10600,7 +10600,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-56",
@@ -10616,7 +10616,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-064",
@@ -10632,7 +10632,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-54",
@@ -10648,7 +10648,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-062",
@@ -10664,7 +10664,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-05",
@@ -10680,7 +10680,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-06",
@@ -10696,7 +10696,7 @@
             "opi_ai Models public native/simple/direct/advanced calls through all completed built-in adapters (target)",
             "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-32",
@@ -10710,7 +10710,7 @@
             "opi_ai serialized Message roundtrip",
             "opi_ai completed real adapter producers and next-request replay through Models (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-05-20.34",
@@ -10729,7 +10729,7 @@
             "opi_ai serialized Message roundtrip",
             "opi_ai completed real adapter producers and next-request replay through Models (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -10743,9 +10743,9 @@
         "opi_ai completed real adapter producers and next-request replay through Models (target)"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 2,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "8d805ef502dff5b1b9dcf24ebf96067b12f595a7",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -10833,8 +10833,14 @@
         "crates/opi-coding-agent/tests/*rpc*",
         "crates/opi-coding-agent/tests/*session*"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "042971336aa474682ad6a5203a34ab0f3aa1eded",
+      "evidence": {
+        "Opi-Task": "20.34",
+        "Opi-DoD-SHA256": "b647846bec59b79ce32e20c955f4719e382595a884f0f22acc2d091d01ad9be3",
+        "Opi-Verification": "workspace; opi-impl-smoke full PASSED (after the stack-reserve fix)",
+        "Opi-Evaluator": "passed; exec 7-lens single-reviewer fallback (wf_ref=null)",
+        "Opi-Acceptance": "V-44, AIR-052, P20-S34, DEL-10, V-01, AIR-001, V-05, AIR-007, V-16, V-28, AIR-034, V-56, AIR-064, V-54, AIR-062, DEL-05, DEL-06, V-32, ONB-05-20.34"
+      },
       "blocker": null,
       "session_notes": [
         {
@@ -10864,6 +10870,46 @@
                 "action": "none",
                 "test": "none",
                 "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        },
+        {
+          "timestamp": "2026-10-30T05:23:20+00:00",
+          "attempt": 1,
+          "summary": "Part 1 (opi-ai builtin factory layer) complete and green; Part 2 (coding-agent canonical reference migration) not started. Part 1 shipped: src/providers/mod.rs with the 42-entry source-qualified BuiltinProviderProfile table (canonical ids; no gemini/vertex/bedrock/openai-responses aliases; endpoint semantics AzureDeployment/VertexLocation/BedrockRegion/Dynamic; openai hides_classifiers_on_oauth; typesafe classifier_only) generated verbatim from the pinned pi provider factories, and src/provider_collection.rs with register_builtin over an injected AuthContext and HttpClient (azure skips without endpoint, google-vertex skips without project/location, bedrock registers with the aws-chain Resolved descriptor as lookup-only, everything else registers as ApiMappedProvider over the completed adapters via the existing for_route/with_models constructors, a CanonicalRoute wrapper republishes fixed-id adapters under canonical ids, catalog entries convert with tiered pricing into ModelInfo.pricing from the raw artifact tiers), classifier builtins for the three catalog protocols plus the curated llama record and the openrouter image builtin registered through the typed seams, BuiltinEnvAuthResolver reading only through the injected context, and model_info.rs WireApi::ALL extended to include the existing PiMessages variant so the dynamic radius wire parses (11 wires; no other consumer of ALL; adjacent suites green). 11 new tests in tests/provider_collection.rs (78/78 green): 42-profile table exactness, source metadata pins, resolver plus typed missing signal, canonical registration with azure/vertex/typesafe skips and no legacy aliases, azure endpoint path, real public calls through a groq completions profile and the openai responses default against wiremock with captured method/URL/headers/body and the catalog model id on the wire, tiered pricing flow, custom-record upsert after builtin, and classifier+image catalog registration. fmt and clippy -D warnings clean; registry/model_wire_metadata/schema_public suites re-run green after the WireApi::ALL change. Remaining: Part 2 canonical ids and config/credential reference migration with reentrancy/conflict/no-overwrite semantics plus tests, full-crate run, D.1 smoke full, D.2 review, docs, Phase E commits."
+        },
+        {
+          "timestamp": "2026-10-30T12:16:41+00:00",
+          "attempt": 2,
+          "summary": "Part 2 (coding-agent canonical migration) complete and the full task green. Shipped: canonical BUILT_IN_PROVIDER_IDS (google/google-vertex/amazon-bedrock replace gemini/vertex/bedrock), all provider_factory dispatch/listing/credentials arms and config fields renamed to canonical (ProvidersConfig google/google_vertex/amazon_bedrock + legacy accumulators), TomlProviders accepts both canonical (dashed) and legacy keys, migrate_legacy_provider_references runs in memory at both final assembly points (parse_toml + finalize_with_project, after cli_model): adoption when the canonical block is unconfigured, recorded conflict with the canonical block winning when both are explicit, defaults.model spec prefix rewrite via canonicalize_model_spec, reentrant, no file rewrites; credential_store gained resolve_account_reference (metadata-only canonical-first probing with legacy fallback and both-present conflict) and switch_provider_account (conflict gate before copy, marker+payload verbatim copy then legacy removal, reentrant no-op) with LEGACY_ACCOUNT_REFS; historical adapter ids stay internal via canonical_route republishing (bedrock/vertex/gemini host arms and adapter choke points) including the model-spec prefix rewrite prefix-sensitive adapters need; doctor/pricing/main received the same mechanical id updates. 7 new tests (config_tests 4: canonical keys, in-memory reentrant adoption, conflict keeps canonical + note, model-spec prefixes; credential_store 3: reference matrix, conflict-before-copy never overwrites, switch copies/removes/reentrant) and the full existing coding-agent suite green (180 binaries; only the documented oauth loopback env class flakes in full-load runs, standalone-green). D.1 smoke full initially failed deterministically: the opi binary overflowed its Windows main-thread stack (0xC00000FD) mid-turn with json_streaming_cli children dying before any output. Root-caused through an isolated verify-tree bisect (HEAD unified clean, my diff crashed; crash inside the turn pipeline after validate_next_turn_candidate) to the MSVC default 1 MiB stack reserve: the non-interactive async turn pipeline already ran near the limit (main.rs Box::pin mitigation precedent) and the 20.34 construction layers tipped unoptimized builds over; a PE header patch proving 512 MiB reserve fixes it confirmed the mechanism. Fixed by a new msvc-gated build.rs emitting cargo:rustc-link-arg-bins=/STACK:33554432 (32 MiB) for the opi bin; rustdoc link fixes; D.1 smoke full then PASSED. Environment maintenance during the hunt: E: hit 100% (os error 112 corrupting links); reclaimed 54 GiB by deleting this cache's debug/incremental only (documented here, regenerable). D.2 exec single-reviewer fallback (wf_ref=null): 0 must-fix; 5 low flags: (1) the builtin-layer openai profile registers the catalog's Responses wire only (the catalog has no openai chat-completions entries; the host keeps openai + openai-responses as explicit alternatives, so the same-provider explicit Chat path stays host-level); (2) doctor.rs/pricing.rs/main.rs needed mechanical canonical id updates outside task_owned_paths (downstream of the migration; no behavior change); (3) ONB-05 explicit false/zero/omission preservation relies on the predecessor per-adapter fixtures (no new pins this task); (4) CanonicalRoute's prefix rewrite depends on adapters stripping their own id prefix (bedrock covered by tests, gemini/vertex by generic split plus their fixture suites); (5) WireApi::ALL grew to include the existing PiMessages variant (FromStr-only consumer, behavior-neutral public const change). D.3 scenario command green: the 20 behavioral suites (opi-ai) plus config/credential/provider wiring suites (coding-agent) all pass.",
+          "gate_results": {
+            "d1": "smoke full PASSED after the stack-reserve fix (earlier failures were the 0xC00000FD regression, root-caused and fixed; one rustdoc link fix in between)",
+            "d2": "exec 7-lens single-reviewer fallback: 0 must-fix, 5 low flags",
+            "test_disposition": [
+              {
+                "subject": "P20-S34/V-44/AIR-052/ONB-05-20.34",
+                "action": "add",
+                "test": "opi-ai provider_collection builtin section (11 tests: 42-profile table exactness, source metadata pins, resolver typed missing, canonical registration with typed skips and no legacy aliases, azure endpoint path, real groq completions + openai responses calls with wire captures, tiered pricing flow, custom upsert, classifier+image registration) and coding-agent migration tests (config_tests 4 + credential_store 3)",
+                "interface": "opi_ai::providers + opi_ai::provider_collection + config::migrate_legacy_provider_references + credential_store::{resolve_account_reference, switch_provider_account}",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.34",
+                "action": "update",
+                "test": "coding-agent suites mechanically canonicalized (ids, TOML keys dashed, model specs, provider field paths) with adapter-level id expectations pinned to the historical internal ids",
+                "interface": "canonical host provider ids",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.34",
+                "action": "retain",
+                "test": "all predecessor suites stay green unchanged (incl. V-32 transcript/replay, retry/budget, four-protocol classifier)",
+                "interface": "existing",
                 "replacement": null,
                 "slim_candidate": null
               }
@@ -23126,6 +23172,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-30T04:45:32+00:00",
       "task_id": "20.49",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 5,
+      "rejected_count": 0,
+      "ran_at": "2026-10-30T12:16:41+00:00",
+      "task_id": "20.34",
       "criterion_id": null
     }
   ]
