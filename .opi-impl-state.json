@@ -3851,6 +3851,32 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Shared pricing follow-up reference only: finite negative/fractional thresholds and exact integer comparisons are preserved through catalogs and callers; source-order strict threshold selection is tested. Original task delivery remains unchanged.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.12",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -4807,6 +4833,32 @@
                 "action": "retain",
                 "test": "crates/opi-ai/tests/codex_native_options.rs; crates/opi-ai/tests/codex_native_options/deadlines.rs; crates/opi-ai/tests/codex_native_options/lifetimes.rs; crates/opi-ai/tests/openai_codex_responses.rs",
                 "interface": "Real Models/Codex/Upgrade/private codec, native options and local peer",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Codex replay follow-up: actual HTTP terminal capture/reload and next sends cover encrypted/empty/backfill/dual IDs; actual WS persistence and shared compiler/cache path review qualify reused evidence. No extra WS Cartesian execution is claimed.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.16",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
                 "replacement": null,
                 "slim_candidate": null
               }
@@ -10991,6 +11043,32 @@
             "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
             "test_impact_this_maintenance": "none"
           }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Checkpoint-five integration follow-up 949a736: shared pricing/catalog fidelity, provider display names, result facts and per-protocol replay are corrected and source-bound. V-32 named local evidence gaps are closed; the final Phase exit remains separate.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.34",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -11779,6 +11857,32 @@
             "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
             "test_impact_this_maintenance": "none"
           }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Chat follow-up: retain raw termination facts and opaque-only reasoning_details on same-identity replay; actual capture/reload/send boundaries cover malformed and foreign metadata without canonical mutation.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.36",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -12076,6 +12180,32 @@
             "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
             "test_impact_this_maintenance": "none"
           }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Responses follow-up: retain raw status/incomplete facts and source-valid terminal-only encrypted/signed-empty capture/reload/send evidence; invalid/unknown history and same-ID compat changes are distinguished.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.37",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -12322,6 +12452,32 @@
               }
             ],
             "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Azure follow-up: shared Chat/Responses result and replay fixes are backed by actual Azure wire identity and source-valid chained boundary proofs; Azure billing/effort differences are retained.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.38",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
             "test_impact_this_maintenance": "none"
           }
         }
@@ -12590,6 +12746,32 @@
               }
             ],
             "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Anthropic follow-up: preserve raw termination facts; actual signed/redacted/opaque-only terminal capture, reload and next same/foreign requests prove canonical fidelity and target projection.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.39",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
             "test_impact_this_maintenance": "none"
           }
         }
@@ -12916,6 +13098,32 @@
               "ancestor_checked": true
             }
           }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Google follow-up: preserve independent usage/total and absent child subsets, activate lazily and retain duration/failure snapshots; signature replay requires provider/API/model identity and pinned base64 syntax, with real boundary chains.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.40",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -13156,6 +13364,32 @@
               }
             ],
             "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Vertex follow-up: the shared Google usage/timing and exact replay identity rules are verified through actual Vertex endpoints; cross-provider/API, capability and invalid-signature chains retain canonical data.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.41",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
             "test_impact_this_maintenance": "none"
           }
         }
@@ -13436,6 +13670,32 @@
               "disposition": "Historical digest calculation error only; original commit/footer/evidence retained, no contract change or new acceptance result."
             }
           }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Bedrock follow-up: preserve raw stop facts and source-compatible stored-redacted decoding. Actual CRC eventstream bytes, persisted replay and ordered next requests cover signatures, redacted bytes and target boundaries; remote binding enforcement is unclaimed.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.42",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -13683,6 +13943,32 @@
               "disposition": "Historical digest calculation error only; original commit/footer/evidence retained, no contract change or new acceptance result."
             }
           }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Mistral follow-up: apply shared replay projection before the existing native serializer while retaining raw string arguments and call/result IDs; actual changed-model/unknown/foreign continuation is tested.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.43",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -13913,6 +14199,32 @@
               }
             ],
             "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Pi Messages follow-up: raw facts are forwarded only when present. Actual persisted canonical gateway context survives changed outer model selection; a native destination separately projects foreign metadata.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.44",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
             "test_impact_this_maintenance": "none"
           }
         }
@@ -14412,6 +14724,32 @@
             "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
             "test_impact_this_maintenance": "none"
           }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "System One follow-up: JSON/answer/callback failures are outside acquisition retry; source-qualified network/timeout/HTTP retry remains. Shared classifier and usage/pricing regression evidence is referenced.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.46",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -14639,6 +14977,32 @@
             "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
             "test_impact_this_maintenance": "none"
           }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Cloudflare System One follow-up: shared classifier parse failures do not resend; protocol-specific retry and known usage behavior are retained through actual conformance requests.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.47",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -14859,6 +15223,32 @@
               }
             ],
             "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "llama.cpp follow-up: invalid JSON is a terminal StreamError rather than a retryable Network error; actual multi-request classifier/conformance evidence remains source-bound.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.48",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
             "test_impact_this_maintenance": "none"
           }
         }
@@ -15125,6 +15515,32 @@
               }
             ],
             "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Four-classifier follow-up: parser failures do not acquire again, and a failed Decisions answer clears all partial answers while retaining known usage/cost. Decisions 504 and frozen auth rules remain independent.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.49",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "passing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
             "test_impact_this_maintenance": "none"
           }
         }
@@ -18965,6 +19381,32 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Predecessor handoff only, status and complete SDK-operation matrix remain open. Reuse the source-bound 54 external package checks and 333 separately counted extracted SDK WS supplements at 949a736 only while relevant source/features still match.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.57",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "failing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -19297,6 +19739,32 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-31T09:30:44.837966+00:00",
+          "attempt": 0,
+          "summary": "Predecessor handoff only, status and final platform/MSRV/feature/supply-chain matrix remain open. Current Windows package graphs and 12 unique matching native artifacts are retained; they do not recover old e4336ab missing bytes or prove all platforms.",
+          "gate_results": {
+            "record_id": "P20-N5-FOLLOWUP-949a736:20.58",
+            "evidence_ref": "P20-N5-FOLLOWUP-949a736",
+            "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+            "source_binding_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+            "implementation_test_disposition_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+            "proof_ref": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+            "task_status_preserved": "failing",
+            "verification": "Referenced executed evidence is source-bound in the common record; maintenance creates no runtime/evaluator result.",
+            "test_disposition": [
+              {
+                "subject": "Human-approved ledger evidence maintenance only",
+                "action": "none",
+                "test": "none",
+                "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -23624,6 +24092,150 @@
           "plan admission or new graph confirmation",
           "exec/phase-exit evaluator workflow",
           "commit, push or release"
+        ]
+      }
+    },
+    {
+      "timestamp": "2026-10-31T09:30:44.837966+00:00",
+      "attempt": 0,
+      "summary": "User-approved bounded fifth-node follow-up evidence maintenance for committed 949a736. Retain raw F1-F7 repair, later V-32 RED/GREEN and commit/source receipts in stable storage; append current evidence and task references without rewriting original delivery identities, contracts or history. No task/evaluator/Phase exit execution or fabricated Opi evidence.",
+      "gate_results": {
+        "record_id": "P20-N5-FOLLOWUP-949a736",
+        "predecessor_record": "P20-N5-REPAIR-e4336ab",
+        "repair_commit": "949a7369c6a8e65c24f199353e8aea360555f158",
+        "repair_parent": "733ae0f0d35fb7f49562d22088dc43c49249e5a8",
+        "repair_tree": "617965d19f96f9645408b3fa789ef75959749db4",
+        "node_tasks": [
+          "20.34",
+          "20.36",
+          "20.37",
+          "20.38",
+          "20.39",
+          "20.40",
+          "20.41",
+          "20.42",
+          "20.43",
+          "20.44",
+          "20.45",
+          "20.46",
+          "20.47",
+          "20.48",
+          "20.49",
+          "20.50"
+        ],
+        "shared_owner_references": [
+          "20.12",
+          "20.16"
+        ],
+        "regression_only_tasks": [
+          "20.45",
+          "20.50"
+        ],
+        "regression_only_boundary": "Image base-rate and deferred mechanism evidence is retained/reused by the final offline workspace gate; no new image/deferred behavior or remote deferred deployment is claimed.",
+        "current_node_verdict": "Passing for checkpoint five only; named bounded offline V-32 gaps are closed at 949a736. Task 20.55 dependencies remain satisfied. This is evidence maintenance, not a new evaluator or independent Phase exit.",
+        "remaining_current_offline_v32_gaps": [],
+        "source_binding": {
+          "path": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/repair-source-binding.json",
+          "sha256": "f85bbbc04971a169eef2b6df1a12511b855476b10ebe2e6d044a4eeb7d8768ca"
+        },
+        "owned_file_and_test_inventory": {
+          "path": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+          "sha256": "637880064bfef66f82948b08439482430bfb13c1e5247662c1a80b5622c5f695"
+        },
+        "runtime_verification_binding": {
+          "path": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/verification-binding.json",
+          "sha256": "e581d662c81adab7bc6c9feaa1167ae1fdab0dca7a2976cc19a6a7b06232b579"
+        },
+        "runtime_verification_receipt": {
+          "path": "E:/opi/acceptance/phase20-node5-949a736-20261031/retained/v32/v32-handoff.json",
+          "sha256": "f877c5c27ae736b2815a5326a5ac35aae4fc6d16bd1f79ea1a9edf82c0ec42b4"
+        },
+        "prior_followup_receipt": {
+          "path": "E:/opi/acceptance/phase20-node5-949a736-20261031/retained/followup/verification-summary.json",
+          "sha256": "c0ea3bb518ac1ce1a77ff9043220bcd99aeae0184582a07debbe846a4b729de7"
+        },
+        "commit_receipt": {
+          "path": "E:/opi/acceptance/phase20-node5-949a736-20261031/retained/commit/commit-handoff.json",
+          "sha256": "40e96df965b77db333661ca2118a212248e3711193e7561827c774759d5ab16d"
+        },
+        "independent_readonly_proof_audit": {
+          "path": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/proof-audit.json",
+          "sha256": "a7a449d7dcf8a75ea2f3c4d7570cb558d09b373f3c31e191347b22aa1151db0c"
+        },
+        "evidence_retention_index": {
+          "path": "E:/opi/acceptance/phase20-node5-949a736-20261031/retention-index.json",
+          "sha256": "5ae89b03600d51912adb393984acf67aae96f429cc8c5fcd0a21b03dcfc59b7f"
+        },
+        "evidence_link_map": {
+          "path": "E:/opi/acceptance/phase20-node5-949a736-20261031/link-map.json",
+          "sha256": "a86b5054529b69f150bb4b1a0e98d945f3c4ae0144234eaf49909c11815e1409"
+        },
+        "verification": {
+          "workspace_all_targets": {
+            "passed": 6239,
+            "failed": 0,
+            "ignored": 5
+          },
+          "doctests": {
+            "passed": 11,
+            "failed": 0,
+            "ignored": 0
+          },
+          "top_level_test_receipts": 265,
+          "external_package_consumer_checks": 54,
+          "separate_extracted_sdk_ws_checks": 333,
+          "source_archive_mismatches": 0,
+          "current_unique_matching_native_artifacts": 12,
+          "reuse_boundary": "All runtime/package results were already executed on the identical frozen source. Maintenance performs read-only source, log, archive and artifact verification; no Rust/Cargo/Pi/provider test or evaluator is rerun or invented."
+        },
+        "implementation_test_disposition_ref": {
+          "path": "E:/opi/acceptance/phase20-node5-949a736-20261031/maintenance/test-disposition-audit.json",
+          "sha256": "637880064bfef66f82948b08439482430bfb13c1e5247662c1a80b5622c5f695"
+        },
+        "implementation_test_inventory_counts": {
+          "changed_files": 78,
+          "new_test_functions_whole_commit": 45,
+          "updated_test_function_bodies": 50,
+          "retained_test_function_bodies_in_changed_rs_files": 1658,
+          "deleted_test_functions": 0,
+          "mechanical_public_type_updates_among_updated_bodies": 18,
+          "new_v32_supplement_only": 12
+        },
+        "implementation_test_counting_boundary": "The entire committed diff adds 45 test definitions; the V-32-only subset adds 12 of those, not 12 for the whole repair. Updated/retained body inventories are distinct from executed gate counts; shared fixture changes are listed separately in the external inventory.",
+        "test_disposition": [
+          {
+            "subject": "Human-approved ledger evidence maintenance only",
+            "action": "none",
+            "test": "none",
+            "interface": "No implementation or test source changed; committed test disposition is referenced separately.",
+            "replacement": null,
+            "slim_candidate": null
+          }
+        ],
+        "test_impact_this_maintenance": "none",
+        "historical_identity": "No original task start_commit, verified_at_commit, evidence/Opi-* value, status, scenario, counter, graph contract or verify_runs entry is replaced or synthesized. This is a cross-task follow-up repair.",
+        "historical_summary_qualification": [
+          "The retained pre-supplement follow-up receipt says V-32 Partial. Its four named local gap groups are resolved by later source-bound proof; preserve the former statement as historical rather than rewriting it.",
+          "WS cross-target Cartesian proof was an overstated requirement where the shared request compiler/converter and cache paths are source-mapped and backed by actual HTTP/WS chains; no unexecuted case is counted as passing.",
+          "Pi canonical gateway context forwarding is distinct from native signature reuse. No uniform cross-target stripping rule is introduced.",
+          "Fourth-node unresolved F5/F6 source adjudication is separate from same-numbered fifth-node repairs and is not closed here.",
+          "Current matching native artifacts close no historical byte-retention gap: the e4336ab record's three unavailable historical references remain recorded unchanged."
+        ],
+        "later_responsibilities": {
+          "20.55": "Complete SDK telemetry propagation and passivity; not implemented by this repair.",
+          "20.56": "Final old-symbol retirement and complete user-documentation cleanup; the directly affected bilingual READMEs and Unreleased were synchronized here.",
+          "20.57": "Final complete SDK-operation matrix in a real Cargo package external consumer. The bounded crypto/http/ws package evidence here is retained separately.",
+          "20.58": "Final native platform, MSRV, feature and supply-chain delivery. Current Windows package provenance does not prove the full matrix.",
+          "20.59 / F.1a": "Evidence handoff and independent Phase exit; this repair is not Phase 20 completion."
+        },
+        "human_confirmation": "User: agreed to proceed with the bounded ledger evidence maintenance as proposed; no production/spec edits, task execution, Git commit or push authorized by this maintenance.",
+        "not_executed": [
+          "new Rust/Cargo/Pi/provider tests or live/paid calls",
+          "task selection, manual task recovery or plan admission",
+          "evaluator workflow or verify_runs entry",
+          "Phase exit, snapshot archive or later task completion",
+          "staging, commit, branch operation, push or release",
+          "production/spec/test source change or external-cache cleanup"
         ]
       }
     }
