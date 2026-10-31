@@ -1080,9 +1080,15 @@ P20-TELEMETRY shared-decision owner; the closure test lives at
 pair into the real Codex producer, including its async callbacks and SSE
 fallback. Omission captures no implicit ambient context. No carrier is
 serialized or placed on the wire, and no global subscriber, exporter, sampling
-policy or automatic SDK root span is installed. Propagation across all SDK
-operations remains later work (20.55); the actual Codex path is also covered by
-`tests/codex_telemetry.rs`.
+policy or automatic SDK root span is installed. Propagation is closed across
+all SDK operations (task 20.55): the four chat entries (native/simple/direct
+and the advanced `prepare_call` path including acquisition retry and the
+strict-variant rebuild), image generation, classifier calls and deferred
+submit/fetch/cancel observe the same frozen pair through their producers and
+scoped poll/drop sections, with default/`noop` carriers staying passive and
+business results unchanged. The assembled all-operation conformance suite
+lives at `tests/telemetry_operations.rs`; the Codex producer path is
+additionally covered by `tests/codex_telemetry.rs`.
 
 ## Instance Resource Generation, Pool Cleanup and Awaited Release (task 20.17)
 

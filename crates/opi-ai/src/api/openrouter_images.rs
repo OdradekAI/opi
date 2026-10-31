@@ -261,21 +261,25 @@ async fn generate_openrouter_images(
         Ok(headers) => headers,
         Err(error) => return failure_from_error(&record, &call, error),
     };
-    let mut body = build_request_body(&record, &context);
-    // The payload observer runs once per logical call; an ordinary retry
-    // reuses the frozen body byte-for-byte (the shared callback seam).
-    match call
-        .callbacks
-        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body.clone())
-        .await
-    {
-        Ok(replaced) => body = replaced,
-        Err(error) => return failure_from_error(&record, &call, error),
-    }
-
     let url = format!("{}/chat/completions", record.base_url.trim_end_matches('/'));
+    let telemetry = call.telemetry_context.clone();
 
+    // Payload freeze and the wire attempt both observe the caller's frozen
+    // telemetry section (AIR-054): the payload observer routes its
+    // observation to the frozen parent/Dispatch exactly like the attempt.
     let attempt = async {
+        let mut body = build_request_body(&record, &context);
+        // The payload observer runs once per logical call; an ordinary retry
+        // reuses the frozen body byte-for-byte (the shared callback seam).
+        match call
+            .callbacks
+            .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body.clone())
+            .await
+        {
+            Ok(replaced) => body = replaced,
+            Err(error) => return failure_from_error(&record, &call, error),
+        }
+
         let mut retries_remaining = options.max_retries;
         let mut attempt_index: u32 = 0;
         loop {
@@ -452,7 +456,7 @@ async fn generate_openrouter_images(
         }
     };
 
-    match call.telemetry_context.clone() {
+    match telemetry {
         Some(context) => context.instrument(attempt).await,
         None => attempt.await,
     }

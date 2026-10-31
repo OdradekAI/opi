@@ -878,7 +878,11 @@ owner；closure test 位于 `tests/telemetry_carrier.rs`。
 `Request::telemetry_context: Option<TelemetryContext>` 显式将该配对带入真实 Codex
 producer，覆盖其异步回调与 SSE 回退。省略时不隐式捕获 ambient 上下文。载体不序列化、
 不上 wire，不安装 global subscriber、exporter、采样政策或自动 SDK root span。
-全 SDK 操作传播仍归后续工作（20.55）；真实 Codex 路径另由
+全部 SDK 操作的传播已闭合（任务 20.55）：四类 chat 入口（native/simple/direct，
+以及含 acquisition retry 与 strict 变体重建的 advanced `prepare_call` 路径）、
+图片生成、分类器调用与 deferred submit/fetch/cancel 均经各自 producer 与 scoped
+poll/drop 段观察到同一冻结配对；default/`noop` 载体保持被动，业务结果不变。
+跨操作组装一致性套件位于 `tests/telemetry_operations.rs`；真实 Codex 路径另由
 `tests/codex_telemetry.rs` 覆盖。
 
 ## 实例 Resource Generation／Pool 清理／Await 释放（任务 20.17）

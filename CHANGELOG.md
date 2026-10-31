@@ -539,6 +539,11 @@
 
 ### Fixed
 
+- `opi-ai`: image (OpenRouter Images) and classifier (System One) payload
+  observers now run inside the caller's frozen `TelemetryContext` section,
+  so their observation routes to the frozen parent/Dispatch exactly like
+  the wire attempt instead of poll-time ambient dispatch (task 20.55,
+  DEL-12).
 - `opi-ai`: Mistral requests apply canonical replay projection before wire
   serialization, dropping foreign or unknown-source thinking while preserving
   raw string tool arguments and paired tool-result IDs. Google and Vertex part
@@ -752,6 +757,23 @@
   unchanged.
 ### Added
 
+- `opi-ai`: assembled telemetry conformance closure (task 20.55, DEL-12).
+  `tests/telemetry_operations.rs` freezes a caller parent Span plus source
+  Dispatch under a recording subscriber while a different dispatch is
+  ambient at poll time, then proves through the public `Models` seam that
+  the frozen pair reaches the producers of every operation family: the
+  four chat entries (native/simple/direct plus the advanced `prepare_call`
+  path with its acquisition retry and strict-variant rebuild on the real
+  anthropic wire), image generation (OpenRouter Images) and classifier
+  calls (Typesafe System One) through payload/response observers, and
+  deferred submit/fetch/cancel through a custom backend with scoped
+  poll/drop sections. Default/omitted and `noop` carriers add no automatic
+  SDK spans, adopt no ambient root and leave business results, send, poll
+  and callback counts identical to context-free twins; the process-local
+  carrier is absent from serialized handles/messages and wire
+  bodies/headers, and prompt/secret canaries never appear in any recorded
+  telemetry field. Domain status/exporter/flush/evidence stay host-owned;
+  no telemetry crate or automatic SDK spans are added.
 - `opi-ai`: deferred-response contracts (task 20.50, DEL-11). Submission
   stays a normal generation returning a pending `StopReason::Deferred`
   message with a source-owned `DeferredHandle` (no credential, pi-shaped
