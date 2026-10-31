@@ -117,7 +117,7 @@ fn classifier_pricing() -> ModelPricing {
             cache_write_cost_per_mtok: 3.75,
         },
         vec![PricingTier {
-            input_tokens_above: 100,
+            input_tokens_above: 100.into(),
             pricing: Pricing {
                 input_cost_per_mtok: 5.0,
                 output_cost_per_mtok: 15.0,
@@ -2658,7 +2658,7 @@ fn decisions_pricing() -> ModelPricing {
             ..Pricing::default()
         },
         vec![PricingTier {
-            input_tokens_above: 272_000,
+            input_tokens_above: 272_000.into(),
             pricing: Pricing {
                 input_cost_per_mtok: 0.2,
                 ..Pricing::default()
@@ -3909,5 +3909,386 @@ async fn classifier_call_owns_binding_before_first_poll() {
             "{:?}",
             result.error
         );
+    }
+}
+
+mod failure_boundaries {
+    use super::*;
+
+    fn bool_context(ids: &[&str]) -> ClassifierContext {
+        let mut context = ClassifierContext::default();
+        for id in ids {
+            context.questions.insert(
+                (*id).into(),
+                ClassifierQuestion::Bool {
+                    instructions: "Is this true?".into(),
+                    true_criteria: "Yes".into(),
+                    false_criteria: "No".into(),
+                },
+            );
+        }
+        context
+    }
+
+    fn endpoint(protocol: &str) -> &str {
+        match protocol {
+            "typesafe" => "/systemone",
+            "cloudflare" => "/run",
+            "decisions" => "/decisions",
+            "llama" => "/completion",
+            _ => unreachable!(),
+        }
+    }
+
+    fn success(protocol: &str) -> ResponseTemplate {
+        let answer = serde_json::json!({"q": {"type": "noul", "noul": 0.7}});
+        ResponseTemplate::new(200).set_body_json(match protocol {
+            "typesafe" => serde_json::json!({"answers": answer}),
+            "cloudflare" => serde_json::json!({"success": true, "result": {"answers": answer}}),
+            "decisions" => serde_json::json!({"answers": [{"name": "q", "type": "predicate", "probability": 0.7}]}),
+            _ => unreachable!(),
+        })
+    }
+
+    async fn classify(
+        base_url: String,
+        protocol: &str,
+        retries: Option<u32>,
+        call: ClassifierCall,
+    ) -> ClassifierResult {
+        let mut record = match protocol {
+            "typesafe" => default_typesafe_classifier_record(),
+            "cloudflare" => default_cloudflare_classifier_records().remove(0),
+            "decisions" => opi_ai::api::decisions::default_decisions_classifier_record(),
+            "llama" => opi_ai::api::llama::default_llama_classifier_record(),
+            _ => unreachable!(),
+        };
+        record.base_url = base_url;
+        let mut models = Models::new();
+        let auth = Arc::new(opi_ai::auth::StaticAuthResolver::new(
+            AuthScheme::Bearer,
+            "fixture-key".into(),
+        ));
+        let context = bool_context(&["q"]);
+        macro_rules! dispatch {
+            ($adapter:ty, $options:expr) => {{
+                let handle = models
+                    .register_classifier_api(
+                        Arc::new(<$adapter>::new(HttpClient::new(), record.clone())),
+                        auth,
+                        AuthProvenanceSource::Static,
+                    )
+                    .unwrap();
+                match retries {
+                    Some(_) => {
+                        models
+                            .classify_native(record, context, call, handle.options($options))
+                            .await
+                    }
+                    None => models.classify(record, context, call).await,
+                }
+            }};
+        }
+        match protocol {
+            "typesafe" => dispatch!(
+                TypesafeSystemOneApi,
+                TypesafeSystemOneOptions {
+                    max_retries: retries.unwrap_or(2),
+                    ..Default::default()
+                }
+            ),
+            "cloudflare" => dispatch!(
+                CloudflareWorkersAiSystemOneApi,
+                CloudflareSystemOneOptions {
+                    max_retries: retries.unwrap_or(2),
+                    ..Default::default()
+                }
+            ),
+            "decisions" => dispatch!(
+                OpenAiDecisionsApi,
+                OpenAiDecisionsOptions {
+                    max_retries: retries.unwrap_or(2),
+                    ..Default::default()
+                }
+            ),
+            "llama" => dispatch!(
+                LlamaCppClassifyApi,
+                LlamaCppClassifyOptions {
+                    max_retries: retries.unwrap_or(2),
+                    temperature: None,
+                    max_retry_delay_ms: None
+                }
+            ),
+            _ => unreachable!(),
+        }
+    }
+
+    async fn assert_syntax_failure(protocol: &str) {
+        let endpoints = if protocol == "llama" {
+            vec!["/tokenize", "/apply-template", "/completion"]
+        } else {
+            vec![endpoint(protocol)]
+        };
+        for endpoint in endpoints {
+            for retries in [None, Some(0), Some(1), Some(2)] {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .and(path(endpoint))
+                    .respond_with(ResponseTemplate::new(200).set_body_string("{incomplete"))
+                    .up_to_n_times(1)
+                    .mount(&server)
+                    .await;
+                if protocol == "llama" {
+                    mount_llama(&server, LlamaServer::new()).await;
+                } else {
+                    Mock::given(method("POST"))
+                        .respond_with(success(protocol))
+                        .mount(&server)
+                        .await;
+                }
+                let payloads = Arc::new(AtomicU32::new(0));
+                let responses = Arc::new(AtomicU32::new(0));
+                let payload_counter = payloads.clone();
+                let response_counter = responses.clone();
+                let result = classify(
+                    server.uri(),
+                    protocol,
+                    retries,
+                    ClassifierCall {
+                        callbacks: opi_ai::callbacks::RequestCallbacks::new()
+                            .with_on_payload(Arc::new(move |_| {
+                                payload_counter.fetch_add(1, AtomicOrdering::SeqCst);
+                                Ok(None)
+                            }))
+                            .with_on_response(Arc::new(move |_, _| {
+                                response_counter.fetch_add(1, AtomicOrdering::SeqCst);
+                                Ok(())
+                            })),
+                        ..Default::default()
+                    },
+                )
+                .await;
+                assert_eq!(
+                    result.stop_reason,
+                    ClassifierStopReason::Error,
+                    "{protocol} {endpoint} {retries:?}"
+                );
+                assert!(
+                    matches!(result.error, Some(ProviderError::StreamError(_))),
+                    "{protocol}: {:?}",
+                    result.error
+                );
+                assert_eq!(
+                    server
+                        .received_requests()
+                        .await
+                        .unwrap()
+                        .iter()
+                        .filter(|request| request.url.path() == endpoint)
+                        .count(),
+                    1
+                );
+                let observes = u32::from(protocol != "llama" || endpoint == "/completion");
+                assert_eq!(payloads.load(AtomicOrdering::SeqCst), observes);
+                assert_eq!(responses.load(AtomicOrdering::SeqCst), 0);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn typesafe_json_syntax_failure_does_not_retry() {
+        assert_syntax_failure("typesafe").await;
+    }
+    #[tokio::test]
+    async fn cloudflare_json_syntax_failure_does_not_retry() {
+        assert_syntax_failure("cloudflare").await;
+    }
+    #[tokio::test]
+    async fn decisions_json_syntax_failure_does_not_retry() {
+        assert_syntax_failure("decisions").await;
+    }
+    #[tokio::test]
+    async fn llama_json_syntax_failure_does_not_retry() {
+        assert_syntax_failure("llama").await;
+    }
+
+    #[tokio::test]
+    async fn http_retry_headers_and_business_validation_keep_distinct_boundaries() {
+        for protocol in ["typesafe", "cloudflare", "decisions", "llama"] {
+            for (status, retry_header, expected, succeeds) in [
+                (429, None, 2, true),
+                (400, Some("true"), 2, true),
+                (503, Some("false"), 1, false),
+                (200, Some("true"), 1, false),
+            ] {
+                let server = MockServer::start().await;
+                let mut first = ResponseTemplate::new(status)
+                    .insert_header("retry-after-ms", "0")
+                    .set_body_json(serde_json::json!({}));
+                if let Some(value) = retry_header {
+                    first = first.insert_header("x-should-retry", value);
+                }
+                Mock::given(method("POST"))
+                    .and(path(endpoint(protocol)))
+                    .respond_with(first)
+                    .up_to_n_times(1)
+                    .mount(&server)
+                    .await;
+                if protocol == "llama" {
+                    mount_llama(&server, LlamaServer::new()).await;
+                } else {
+                    Mock::given(method("POST"))
+                        .respond_with(success(protocol))
+                        .mount(&server)
+                        .await;
+                }
+                let result = classify(server.uri(), protocol, Some(2), Default::default()).await;
+                assert_eq!(
+                    result.stop_reason == ClassifierStopReason::Stop,
+                    succeeds,
+                    "{protocol} {status}"
+                );
+                let sent = server.received_requests().await.unwrap();
+                let sent: Vec<_> = sent
+                    .iter()
+                    .filter(|request| request.url.path() == endpoint(protocol))
+                    .collect();
+                assert_eq!(sent.len(), expected, "{protocol} {status}");
+                if expected == 2 {
+                    assert_eq!(sent[0].body, sent[1].body);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn network_failure_and_body_timeout_keep_acquisition_retry() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        for drop_before_headers in [false, true] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base_url = format!("http://{}", listener.local_addr().unwrap());
+            let headers_sent = Arc::new(AtomicU32::new(0));
+            let header_counter = headers_sent.clone();
+            let server = tokio::spawn(async move {
+                let mut workers = Vec::new();
+                for attempt in 0..2 {
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    let counter = header_counter.clone();
+                    workers.push(tokio::spawn(async move {
+                    let mut received = Vec::new();
+                    let mut bytes = [0; 4096];
+                    loop {
+                        let count = socket.read(&mut bytes).await.unwrap();
+                        assert_ne!(count, 0, "request must complete before the response");
+                        received.extend_from_slice(&bytes[..count]);
+                        if let Some(end) = received.windows(4).position(|v| v == b"\r\n\r\n") {
+                            let headers = String::from_utf8_lossy(&received[..end]);
+                            let length = headers.lines().find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().unwrap())
+                            }).unwrap();
+                            if received.len() >= end + 4 + length { break; }
+                        }
+                    }
+                    let body = serde_json::json!({"answers": {"q": {"type": "noul", "noul": 0.7}}}).to_string();
+                    if attempt == 0 && drop_before_headers {
+                        return;
+                    }
+                    let headers = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                    socket.write_all(headers.as_bytes()).await.unwrap();
+                    socket.flush().await.unwrap();
+                    counter.fetch_add(1, AtomicOrdering::SeqCst);
+                    if attempt == 0 {
+                        socket.write_all(&body.as_bytes()[..1]).await.unwrap();
+                        socket.flush().await.unwrap();
+                        tokio::time::sleep(Duration::from_millis(600)).await;
+                        let _ = socket.write_all(&body.as_bytes()[1..]).await;
+                    } else {
+                        socket.write_all(body.as_bytes()).await.unwrap();
+                    }
+                }));
+                }
+                for worker in workers {
+                    worker.await.unwrap();
+                }
+            });
+            let result = classify(
+                base_url,
+                "typesafe",
+                Some(1),
+                ClassifierCall {
+                    timeout: Some(Duration::from_millis(200)),
+                    ..Default::default()
+                },
+            )
+            .await;
+            tokio::time::timeout(Duration::from_secs(3), server)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                headers_sent.load(AtomicOrdering::SeqCst),
+                2 - u32::from(drop_before_headers)
+            );
+            assert_eq!(
+                result.stop_reason,
+                ClassifierStopReason::Stop,
+                "{:?}",
+                result.error
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn decisions_failed_question_clears_answers_and_keeps_accounting() {
+        for invalid_first in [false, true] {
+            for kind in ["refusal", "missing", "wrong_type", "invalid_number"] {
+                let (valid, invalid) = if invalid_first {
+                    ("b", "a")
+                } else {
+                    ("a", "b")
+                };
+                let valid =
+                    serde_json::json!({"name": valid, "type": "predicate", "probability": 0.7});
+                let invalid = match kind {
+                    "refusal" => serde_json::json!({"name": invalid, "type": "refusal"}),
+                    "wrong_type" => {
+                        serde_json::json!({"name": invalid, "type": "score", "score": 1})
+                    }
+                    _ => {
+                        serde_json::json!({"name": invalid, "type": "predicate", "probability": "bad"})
+                    }
+                };
+                let mut answers = vec![valid];
+                if kind != "missing" {
+                    answers.push(invalid);
+                }
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .respond_with(decisions_ok(serde_json::json!(answers)))
+                    .expect(1)
+                    .mount(&server)
+                    .await;
+                let record = decisions_record(&server.uri());
+                let (models, _) = decisions_models(&record, "fixture-key");
+                let result = models
+                    .classify(record, bool_context(&["a", "b"]), Default::default())
+                    .await;
+                assert_eq!(result.stop_reason, ClassifierStopReason::Error);
+                assert!(
+                    result.answers.is_empty(),
+                    "{kind}, invalid_first={invalid_first}: {:?}",
+                    result.answers
+                );
+                assert!(matches!(result.error, Some(ProviderError::StreamError(_))));
+                let usage = result.usage.unwrap();
+                assert!(usage.reported);
+                assert_eq!(usage.input_tokens, 164);
+                let cost = result.cost.unwrap().total_cost();
+                assert!((cost - 164.0 * 0.1 / 1_000_000.0).abs() < 1e-12);
+            }
+        }
     }
 }

@@ -8,6 +8,48 @@ use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+#[tokio::test]
+async fn personalization_keeps_finite_negative_and_fractional_price_thresholds() {
+    let server = MockServer::start().await;
+    let model = records()
+        .into_iter()
+        .find(|model| model.operation == CatalogOperation::Chat)
+        .unwrap();
+    Mock::given(method("GET"))
+        .and(path("/models/user"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": [{
+            "id": model.id,
+            "pricing": {"prompt": "0.000001", "completion": "0", "input_cache_read": "0", "input_cache_write": "0",
+                "overrides": [
+                    {"min_prompt_tokens": -2, "prompt": "0.000099"},
+                    {"min_prompt_tokens": -0.5, "prompt": "0.000004"},
+                    {"min_prompt_tokens": 0.5, "prompt": "0.000006"}
+                ]}
+        }]})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let models = personalize_openrouter_catalog(
+        vec![model],
+        &server.uri(),
+        Some(&SecretString::from("fixture-key")),
+        &HttpClient::new(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let tiers = models[0].raw["cost"]["tiers"]
+        .as_array()
+        .expect("tiers retained");
+    assert_eq!(tiers.len(), 3);
+    assert_eq!(tiers[0]["inputTokensAbove"], json!(-2));
+    assert_eq!(tiers[1]["inputTokensAbove"], json!(-0.5));
+    assert_eq!(tiers[2]["inputTokensAbove"], json!(0.5));
+    let pricing = models[0].to_chat_model_info().unwrap().pricing.unwrap();
+    assert_eq!(pricing.effective(0).input_cost_per_mtok, 4.0);
+    assert_eq!(pricing.effective(1).input_cost_per_mtok, 6.0);
+}
+
 fn records() -> Vec<CatalogModel> {
     let catalog = Catalog::builtin().unwrap();
     [

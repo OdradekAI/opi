@@ -108,7 +108,8 @@ pub async fn personalize_openrouter_catalog(
                     .into_iter()
                     .flatten()
                     .filter_map(|entry| {
-                        let threshold = entry.get("min_prompt_tokens")?.as_u64()?;
+                        let threshold = entry.get("min_prompt_tokens")?;
+                        threshold.as_f64().filter(|value| value.is_finite())?;
                         if ["utc_start", "utc_end", "utc_days"]
                             .iter()
                             .any(|key| entry.get(key).is_some())
@@ -123,7 +124,7 @@ pub async fn personalize_openrouter_catalog(
                             cache_write: rate(entry.get("input_cache_write"))
                                 .unwrap_or(base.cache_write),
                         });
-                        tier["inputTokensAbove"] = json!(threshold);
+                        tier["inputTokensAbove"] = threshold.clone();
                         Some(tier)
                     })
                     .collect();

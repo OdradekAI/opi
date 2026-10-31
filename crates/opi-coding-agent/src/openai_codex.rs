@@ -111,7 +111,7 @@ pub fn openai_codex_catalog() -> Vec<ModelInfo> {
                 .tier
                 .map(|tier| {
                     vec![PricingTier {
-                        input_tokens_above: 272_000,
+                        input_tokens_above: 272_000.into(),
                         pricing: pricing(tier),
                     }]
                 })

@@ -496,6 +496,9 @@ fn to_pi_wire_message(message: &Message) -> serde_json::Value {
             if let Some(id) = &assistant.response_id {
                 value["responseId"] = serde_json::json!(id);
             }
+            if let Some(reason) = &assistant.raw_stop_reason {
+                value["rawStopReason"] = serde_json::json!(reason);
+            }
             if let Some(level) = &assistant.provider_thinking_level {
                 value["providerThinkingLevel"] = serde_json::json!(level);
             }
@@ -925,6 +928,7 @@ impl PiMessagesSseMapper {
             timestamp_ms: crate::time::now_ms(),
             diagnostics: Vec::new(),
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
         };
         Self {

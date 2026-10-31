@@ -33,6 +33,7 @@ fn sample_assistant_message() -> AssistantMessage {
         timestamp_ms: 1000,
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
 
         deferred: None,

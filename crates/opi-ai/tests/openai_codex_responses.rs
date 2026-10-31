@@ -1490,6 +1490,201 @@ mod ws_path {
             }
         }
     }
+
+    #[tokio::test]
+    async fn websocket_producer_capture_persist_reload_replays_opaque_reasoning_and_dual_ids() {
+        use opi_ai::message::{OutputContent, ToolResultMessage};
+        use opi_ai::{ChatModelRecord, Models};
+
+        struct ReplayAuth;
+        impl opi_ai::auth::AuthResolver for ReplayAuth {
+            fn resolve(
+                &self,
+            ) -> opi_ai::credential::BoxAuthFuture<'_, Result<ResolvedAuth, ProviderError>>
+            {
+                Box::pin(async { Ok(auth("fixture-ws-key", None, Some("fixture-account".into()))) })
+            }
+        }
+
+        let peer = CodexPeer::spawn(|mut socket, lines, capture| {
+            assert_eq!(
+                header(&lines, "authorization"),
+                Some("Bearer fixture-ws-key")
+            );
+            assert_eq!(
+                header(&lines, "chatgpt-account-id"),
+                Some("fixture-account")
+            );
+            socket.write_all(&response_101(&lines, &[])).unwrap();
+            let (opcode, payload) = read_frame(&mut socket)?;
+            assert_eq!(opcode, 1);
+            capture
+                .lock()
+                .unwrap()
+                .frames
+                .push(serde_json::from_slice(&payload).unwrap());
+            let reasoning = serde_json::json!({
+                "type": "reasoning", "id": "rs-ws-captured",
+                "summary": [{"type": "summary_text", "text": "Plan from the WS producer"}],
+                "encrypted_content": "OPAQUE-WS-REASONING",
+            });
+            let tool = serde_json::json!({
+                "type": "function_call", "id": "fc_ws_captured", "call_id": "call-ws-captured",
+                "name": "read", "arguments": "{\"path\":\"a.rs\"}", "status": "completed",
+            });
+            for event in [
+                serde_json::json!({"type": "response.created", "response": {"id": "ws-captured-response", "model": "reported-gpt-5.4-revision", "status": "in_progress", "output": []}}),
+                serde_json::json!({"type": "response.output_item.added", "output_index": 0, "item": {"type": "reasoning", "id": "rs-ws-captured"}}),
+                serde_json::json!({"type": "response.output_item.done", "output_index": 0, "item": reasoning}),
+                serde_json::json!({"type": "response.output_item.added", "output_index": 1, "item": {"type": "function_call", "id": "fc_ws_captured", "call_id": "call-ws-captured", "name": "read", "arguments": ""}}),
+                serde_json::json!({"type": "response.function_call_arguments.delta", "output_index": 1, "item_id": "fc_ws_captured", "delta": "{\"path\":\"a.rs\"}"}),
+                serde_json::json!({"type": "response.function_call_arguments.done", "output_index": 1, "item_id": "fc_ws_captured", "arguments": "{\"path\":\"a.rs\"}"}),
+                serde_json::json!({"type": "response.output_item.done", "output_index": 1, "item": tool}),
+                serde_json::json!({"type": "response.completed", "response": {"id": "ws-captured-response", "model": "reported-gpt-5.4-revision", "status": "completed", "output": [reasoning, tool], "usage": {"input_tokens": 7, "output_tokens": 3}}}),
+            ] {
+                write_frame(&mut socket, 1, event.to_string().as_bytes());
+            }
+            let (opcode, payload) = read_frame(&mut socket)?;
+            assert_eq!(opcode, 1);
+            capture
+                .lock()
+                .unwrap()
+                .frames
+                .push(serde_json::from_slice(&payload).unwrap());
+            write_frame(&mut socket, 1, completed_event().as_bytes());
+            let (opcode, payload) = read_frame(&mut socket)?;
+            assert_eq!(opcode, 8, "Models cleanup closes the pooled WS connection");
+            write_frame(&mut socket, 8, &payload);
+            Ok(())
+        });
+        let mut models = Models::new();
+        models
+            .register_route(
+                Box::new(OpenAiCodexResponsesProvider::new(
+                    Some(peer.base_url()),
+                    vec![model(None)],
+                    none_redirect_client(),
+                )),
+                Arc::new(ReplayAuth),
+                opi_ai::AuthProvenanceSource::Static,
+                Default::default(),
+            )
+            .unwrap();
+        let record = ChatModelRecord::new("openai-codex", model(None));
+        let mut first_request = request();
+        // Explicit non-cached WS requires full replay input on the next call.
+        first_request.transport = TransportPreference::Websocket;
+        let initial = first_request.context.clone();
+        let mut first = models.stream_simple(record.clone(), first_request, Default::default());
+        let mut captured = None;
+        while let Some(event) = first.next().await {
+            assert!(captured.is_none(), "the first terminal is absorbing");
+            if let AssistantStreamEvent::Done { reason, message } = event.unwrap() {
+                assert_eq!(reason, StopReason::ToolUse);
+                captured = Some(message);
+            }
+        }
+        assert!(first.next().await.is_none());
+        let captured = captured.expect("actual WS producer terminal");
+        assert_eq!(captured.provider, "openai-codex");
+        assert_eq!(captured.model, "gpt-5.4");
+        assert_eq!(captured.wire, Some(WireApi::OpenAiCodexResponses));
+        assert_eq!(
+            captured.response_model.as_deref(),
+            Some("reported-gpt-5.4-revision")
+        );
+        assert_eq!(
+            captured.response_id.as_deref(),
+            Some("ws-captured-response")
+        );
+        assert_eq!(captured.usage.input_tokens, 7);
+        assert_eq!(captured.content.len(), 2);
+        let AssistantContent::Thinking {
+            thinking,
+            signature,
+        } = &captured.content[0]
+        else {
+            panic!("producer reasoning block")
+        };
+        assert_eq!(thinking, "Plan from the WS producer");
+        let signature: serde_json::Value =
+            serde_json::from_str(signature.as_deref().unwrap()).unwrap();
+        assert_eq!(signature["id"], "rs-ws-captured");
+        assert_eq!(signature["encrypted_content"], "OPAQUE-WS-REASONING");
+        let AssistantContent::ToolCall { tool_call } = &captured.content[1] else {
+            panic!("producer function call")
+        };
+        assert_eq!(tool_call.id, "call-ws-captured|fc_ws_captured");
+        let tool_result = ToolResultMessage {
+            tool_call_id: tool_call.id.clone(),
+            tool_name: tool_call.name.clone(),
+            content: vec![OutputContent::Text {
+                text: "fixture contents".into(),
+            }],
+            details: None,
+            is_error: false,
+            not_executed: None,
+            truncated: false,
+            timestamp_ms: 0,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let stored = directory.path().join("assistant.json");
+        let encoded = serde_json::to_vec(&captured).unwrap();
+        std::fs::write(&stored, &encoded).unwrap();
+        let reloaded: AssistantMessage =
+            serde_json::from_slice(&std::fs::read(&stored).unwrap()).unwrap();
+        assert_eq!(reloaded, captured);
+        let mut history = initial.messages().to_vec();
+        history.push(Message::Assistant(reloaded.clone()));
+        history.push(Message::ToolResult(tool_result));
+        let mut replay = request();
+        replay.transport = TransportPreference::Websocket;
+        replay.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: history,
+            tools: vec![],
+        })
+        .unwrap();
+        let second = models
+            .complete_simple(record, replay, Default::default())
+            .await
+            .unwrap();
+        assert_eq!(second.stop_reason, StopReason::Stop);
+        models.cleanup_session_resources(None).await.unwrap();
+        let capture = peer.finish().expect("WS capture/reload peer");
+        let capture = capture.lock().unwrap();
+        assert_eq!(capture.heads.len(), 1);
+        assert!(capture.posts.is_empty(), "both generations must use WS");
+        assert_eq!(capture.frames.len(), 2);
+        for frame in &capture.frames {
+            assert_eq!(frame["type"], "response.create");
+            assert!(frame.get("previous_response_id").is_none());
+        }
+        let input = capture.frames[1]["input"].as_array().unwrap();
+        let reasoning: Vec<_> = input
+            .iter()
+            .filter(|item| item["type"] == "reasoning")
+            .collect();
+        assert_eq!(reasoning.len(), 1);
+        assert_eq!(reasoning[0]["id"], "rs-ws-captured");
+        assert_eq!(reasoning[0]["encrypted_content"], "OPAQUE-WS-REASONING");
+        let tool: Vec<_> = input
+            .iter()
+            .filter(|item| item["type"] == "function_call")
+            .collect();
+        assert_eq!(tool.len(), 1);
+        assert_eq!(tool[0]["id"], "fc_ws_captured");
+        assert_eq!(tool[0]["call_id"], "call-ws-captured");
+        assert_eq!(tool[0]["arguments"], "{\"path\":\"a.rs\"}");
+        let output: Vec<_> = input
+            .iter()
+            .filter(|item| item["type"] == "function_call_output")
+            .collect();
+        assert_eq!(output.len(), 1);
+        assert_eq!(output[0]["call_id"], "call-ws-captured");
+        assert_eq!(output[0]["output"], "fixture contents");
+        assert_eq!(serde_json::to_vec(&reloaded).unwrap(), encoded);
+    }
 }
 
 mod ws_continuation {

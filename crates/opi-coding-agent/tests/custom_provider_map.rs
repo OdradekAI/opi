@@ -104,6 +104,42 @@ max_output_tokens = 8192
 }
 
 #[test]
+fn custom_integer_pricing_threshold_keeps_precision_above_two_to_the_53() {
+    let root = tempfile::tempdir().unwrap();
+    let path = write_config(
+        root.path(),
+        "config.toml",
+        r#"
+[providers.custom.acme]
+api_key_env = "ACME_API_KEY"
+base_url = "https://fixture.invalid"
+api = "openai-completions"
+[[providers.custom.acme.models]]
+id = "fixture"
+context_window = 8192
+max_output_tokens = 512
+[providers.custom.acme.models.pricing]
+input = 1.0
+[[providers.custom.acme.models.pricing.tiers]]
+input_tokens_above = 9007199254740993
+input = 3.0
+"#,
+    );
+    let config = load_config_file(&path).unwrap();
+    let pricing = config.providers.custom["acme"].models[0]
+        .pricing
+        .as_ref()
+        .unwrap();
+    let threshold = 9_007_199_254_740_993_u64;
+    assert_eq!(
+        pricing.tiers[0].input_tokens_above.to_string(),
+        threshold.to_string()
+    );
+    assert_eq!(pricing.effective(threshold).input_cost_per_mtok, 1.0);
+    assert_eq!(pricing.effective(threshold + 1).input_cost_per_mtok, 3.0);
+}
+
+#[test]
 fn custom_provider_decodes_three_wires_thinking_compat_and_pricing() {
     let root = tempfile::tempdir().unwrap();
     let path = write_config(

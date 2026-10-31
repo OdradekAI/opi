@@ -820,6 +820,9 @@ impl AnthropicMapper {
                 }
             }
             AnthropicEvent::MessageDelta { stop_reason, usage } => {
+                if let Some(reason) = stop_reason.as_ref().filter(|reason| !reason.is_empty()) {
+                    self.partial.raw_stop_reason = Some(reason.clone());
+                }
                 self.partial.stop_reason = map_stop_reason(stop_reason.as_deref());
                 if usage.is_reported() {
                     self.partial.usage.reported = true;
@@ -890,6 +893,7 @@ fn empty_assistant_message(provider_id: &str) -> AssistantMessage {
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
         deferred: None,
     }
@@ -2797,6 +2801,7 @@ mod tests {
             timestamp_ms: 0,
             diagnostics: Vec::new(),
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
             deferred: None,
         })
@@ -2980,6 +2985,7 @@ mod tests {
                         timestamp_ms: 0,
                         diagnostics: Vec::new(),
                         duration_ms: None,
+                        raw_stop_reason: None,
                         provider_thinking_level: None,
                         deferred: None,
                     }),

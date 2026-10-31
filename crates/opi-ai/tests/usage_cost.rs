@@ -539,15 +539,15 @@ fn constructed_pricing_accepts_zero_unsorted_and_duplicate_thresholds() {
         rates(1.0),
         vec![
             PricingTier {
-                input_tokens_above: 10,
+                input_tokens_above: 10.into(),
                 pricing: rates(4.0),
             },
             PricingTier {
-                input_tokens_above: 0,
+                input_tokens_above: 0.into(),
                 pricing: rates(2.0),
             },
             PricingTier {
-                input_tokens_above: 0,
+                input_tokens_above: 0.into(),
                 pricing: rates(3.0),
             },
         ],
@@ -568,16 +568,98 @@ fn constructed_pricing_accepts_zero_unsorted_and_duplicate_thresholds() {
     assert_eq!(pricing.effective(1), rates(2.0));
 }
 
+#[test]
+fn tier_threshold_comparison_keeps_u64_token_precision() {
+    let boundary = 9_007_199_254_740_992_u64;
+    let pricing = ModelPricing::try_new(
+        rates(1.0),
+        vec![
+            PricingTier {
+                input_tokens_above: boundary.into(),
+                pricing: rates(2.0),
+            },
+            PricingTier {
+                input_tokens_above: (boundary + 1).into(),
+                pricing: rates(3.0),
+            },
+        ],
+    )
+    .unwrap();
+    assert_eq!(pricing.effective(boundary), rates(1.0));
+    assert_eq!(pricing.effective(boundary + 1), rates(2.0));
+    assert_eq!(pricing.effective(boundary + 2), rates(3.0));
+    assert_eq!(pricing.effective(u64::MAX), rates(3.0));
+    let outside_integer_range = ModelPricing::try_new(
+        rates(1.0),
+        vec![PricingTier {
+            input_tokens_above: serde_json::Number::from_f64(u64::MAX as f64).unwrap(),
+            pricing: rates(2.0),
+        }],
+    )
+    .unwrap();
+    assert_eq!(outside_integer_range.effective(u64::MAX), rates(1.0));
+    for thresholds in [
+        [1.into(), serde_json::Number::from_f64(1.0).unwrap()],
+        [serde_json::Number::from_f64(1.0).unwrap(), 1.into()],
+    ] {
+        let pricing = ModelPricing::try_new(
+            rates(1.0),
+            thresholds
+                .into_iter()
+                .zip([2.0, 3.0])
+                .map(|(input_tokens_above, rate)| PricingTier {
+                    input_tokens_above,
+                    pricing: rates(rate),
+                })
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(pricing.effective(1), rates(1.0));
+        assert_eq!(
+            pricing.effective(2),
+            rates(2.0),
+            "numeric equals keep the first tier"
+        );
+    }
+}
+
+#[test]
+fn finite_threshold_validation_keeps_the_source_negative_boundary() {
+    for threshold in [
+        (-2).into(),
+        (-1).into(),
+        serde_json::Number::from_f64(-2.0).unwrap(),
+        serde_json::Number::from_f64(-1.0).unwrap(),
+    ] {
+        let pricing = ModelPricing::try_new(
+            rates(1.0),
+            vec![PricingTier {
+                input_tokens_above: threshold,
+                pricing: rates(2.0),
+            }],
+        )
+        .unwrap();
+        assert_eq!(pricing.effective(0), rates(1.0));
+        assert_eq!(pricing.effective(u64::MAX), rates(1.0));
+    }
+    for threshold in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(
+            serde_json::Number::from_f64(threshold).is_none(),
+            "the public threshold representation rejects non-finite input"
+        );
+    }
+}
+
 fn tiered() -> ModelPricing {
     ModelPricing::try_new(
         rates(1.0),
         vec![
             PricingTier {
-                input_tokens_above: 200_000,
+                input_tokens_above: 200_000.into(),
                 pricing: rates(2.0),
             },
             PricingTier {
-                input_tokens_above: 400_000,
+                input_tokens_above: 400_000.into(),
                 pricing: rates(3.0),
             },
         ],
@@ -687,15 +769,15 @@ fn tiered_selection_keeps_first_equal_duplicate_and_highest_threshold() {
         base: rates(1.0),
         tiers: vec![
             PricingTier {
-                input_tokens_above: 300_000,
+                input_tokens_above: 300_000.into(),
                 pricing: rates(3.0),
             },
             PricingTier {
-                input_tokens_above: 100_000,
+                input_tokens_above: 100_000.into(),
                 pricing: rates(2.0),
             },
             PricingTier {
-                input_tokens_above: 100_000,
+                input_tokens_above: 100_000.into(),
                 pricing: rates(2.5),
             },
         ],

@@ -117,6 +117,8 @@ struct RawResponse {
     output: Option<Vec<RawOutputItem>>,
     usage: Option<RawUsage>,
     service_tier: Option<String>,
+    status: Option<String>,
+    incomplete_details: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -223,18 +225,21 @@ pub(crate) enum ResponsesEvent {
     },
     Completed {
         usage: Option<Usage>,
+        raw_stop_reason: Option<String>,
         model: Option<String>,
         id: Option<String>,
         output: Vec<RawOutputItemOwned>,
     },
     Incomplete {
         usage: Option<Usage>,
+        raw_stop_reason: Option<String>,
     },
     /// A benign or unrecognized frame that must not advance or terminate the
     /// stream: lifecycle events, reasoning events, function-call finalization,
     /// the `[DONE]` sentinel, and future protocol extensions.
     Ignore,
     Error {
+        raw_stop_reason: Option<String>,
         // Raw upstream error text is captured only to classify the event; it
         // is deliberately never propagated (C6 redaction).
         #[expect(dead_code)]
@@ -426,6 +431,7 @@ impl ResponsesEvent {
                 }),
             }),
             "response.completed" => {
+                let raw_stop_reason = Self::raw_stop_reason(&data);
                 let usage = match Self::parse_response_usage(&data) {
                     Ok(usage) => usage,
                     Err(error) => {
@@ -449,6 +455,7 @@ impl ResponsesEvent {
                     .collect();
                 ParsedEvent::Valid(Self::Completed {
                     usage,
+                    raw_stop_reason,
                     model,
                     id,
                     output,
@@ -461,13 +468,18 @@ impl ResponsesEvent {
                         return ParsedEvent::UsageError(error);
                     }
                 };
-                ParsedEvent::Valid(Self::Incomplete { usage })
+                ParsedEvent::Valid(Self::Incomplete {
+                    usage,
+                    raw_stop_reason: Self::raw_stop_reason(&data),
+                })
             }
             "response.failed" => ParsedEvent::Valid(Self::Error {
                 message: "response.failed".into(),
+                raw_stop_reason: data.response.and_then(|response| response.status),
             }),
             "error" => ParsedEvent::Valid(Self::Error {
                 message: data.message.unwrap_or_else(|| "unknown error".into()),
+                raw_stop_reason: None,
             }),
             // Benign lifecycle, reasoning, function-call-finalization, and any
             // future protocol-extension events must NOT terminate the stream.
@@ -475,6 +487,23 @@ impl ResponsesEvent {
             // types above; an SSE `event:` name is never trusted as an error
             // signal on its own.
             _ => ParsedEvent::Valid(Self::Ignore),
+        }
+    }
+
+    fn raw_stop_reason(data: &RawResponseEvent) -> Option<String> {
+        let response = data.response.as_ref()?;
+        let reason = response
+            .incomplete_details
+            .as_ref()
+            .and_then(|details| details.get("reason"))
+            .and_then(serde_json::Value::as_str)
+            .filter(|reason| !reason.is_empty());
+        match reason {
+            Some(reason) => Some(format!(
+                "{}.{reason}",
+                response.status.as_deref().unwrap_or("undefined")
+            )),
+            None => response.status.clone(),
         }
     }
 
@@ -1161,7 +1190,11 @@ impl ResponsesMapper {
                     .map(Ok)
                     .collect()
             }
-            ResponsesEvent::Incomplete { usage } => {
+            ResponsesEvent::Incomplete {
+                usage,
+                raw_stop_reason,
+            } => {
+                self.partial.raw_stop_reason = raw_stop_reason;
                 let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> = self
                     .end_text()
                     .into_iter()
@@ -1181,10 +1214,12 @@ impl ResponsesMapper {
             }
             ResponsesEvent::Completed {
                 usage,
+                raw_stop_reason,
                 model,
                 id,
                 output,
             } => {
+                self.partial.raw_stop_reason = raw_stop_reason;
                 let mut events: Vec<Result<AssistantStreamEvent, ProviderError>> =
                     self.end_text().into_iter().map(Ok).collect();
                 // Terminal-output backfill (task 20.37) before Done: patch
@@ -1240,7 +1275,11 @@ impl ResponsesMapper {
                 }));
                 events
             }
-            ResponsesEvent::Error { message: _ } => {
+            ResponsesEvent::Error {
+                message: _,
+                raw_stop_reason,
+            } => {
+                self.partial.raw_stop_reason = raw_stop_reason;
                 // Preserve state that did not produce a public event (usage,
                 // opaque content or signatures), alongside the typed cause.
                 self.saw_done = true;
@@ -1594,6 +1633,7 @@ fn empty_assistant_message(
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
         deferred: None,
     }

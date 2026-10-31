@@ -108,7 +108,7 @@ fn openai_codex_catalog_matches_pi_0806_fixture() {
         for (tier, expected) in pricing.tiers.iter().zip(expected_tiers) {
             assert_eq!(
                 tier.input_tokens_above,
-                expected["input_tokens_above"].as_u64().unwrap()
+                expected["input_tokens_above"].as_number().unwrap().clone()
             );
             assert_eq!(
                 tier.pricing.input_cost_per_mtok,

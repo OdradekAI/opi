@@ -2,6 +2,15 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): `PricingTier::input_tokens_above` now uses
+  `serde_json::Number`, preserving exact integers and finite negative/fractional
+  source thresholds. Integer catalog snapshots remain readable without rounding;
+  Rust tier literals use integer `.into()` or `Number::from_f64` for fractions.
+  `AssistantMessage` adds optional `raw_stop_reason`, preserving the original
+  provider termination fact independently of normalized `stop_reason`. Old
+  records read it as `None`, which is omitted on serialization; existing
+  assistant-message literals add `raw_stop_reason: None`.
+
 - `opi-ai` (0.x): `Credential::ApiKey` now owns `ApiKeyCredential`, with an
   optional key and redacted provider-scoped environment. `ResolvedAuth` adds
   its owned `env` snapshot; `AuthScheme::AnthropicFederation` identifies deferred
@@ -55,8 +64,8 @@
 - `opi-ai` (0.x): Gemini wire changes (task 20.40, P20-S40): the builtin
   catalog marks `gemini-2.5-flash`/`gemini-2.5-pro` as reasoning models, so
   a neutral explicit-off request now sends `thinkingConfig: {thinkingBudget:
-  0}`; Google usage reports a numeric reasoning value (`thoughtsTokenCount
-  || 0`) instead of unknown; unmapped finish reasons fail typed carrying
+  0}`; Google usage preserves an omitted reasoning child as unknown and an
+  explicitly reported zero as known; unmapped finish reasons fail typed carrying
   the raw reason instead of mapping to `stop`; tool declarations ride
   `parametersJsonSchema` instead of `parameters`; success/failure function
   responses use the `output`/`error` string keys instead of `content` with
@@ -529,6 +538,33 @@
   typed stream-failure error instead of `AgentError::ProviderProtocol`.
 
 ### Fixed
+
+- `opi-ai`: Mistral requests apply canonical replay projection before wire
+  serialization, dropping foreign or unknown-source thinking while preserving
+  raw string tool arguments and paired tool-result IDs. Google and Vertex part
+  signatures require the exact provider/API/model source, and Chat preserves
+  opaque-only `reasoning_details` on same-identity replay.
+- `opi-ai`: Google and Vertex thought signatures reject misplaced or excess
+  base64 padding and retain source-accepted unused-bit forms such as `AB==`.
+  Bedrock redacted replay accepts omitted padding, ASCII whitespace and nonzero
+  unused bits, while omitting malformed or empty decoded payloads.
+- `opi-ai`: Google and Vertex preserve independent usage fields and reported
+  totals, including usage-only frames after a finish reason. Missing child
+  subsets remain `None`; measured duration starts at adapter response-stream
+  activation, excludes Models auth/loading and survives terminal failures.
+  Pricing tiers round-trip through builtin, dynamic and personalized catalogs
+  and all three stored operations. Selection starts at `-1`, admits only a
+  strictly higher threshold strictly exceeded by input, keeps the first equal
+  tier and preserves integer thresholds and token comparisons above `2^53`.
+- `opi-ai`: classifier JSON syntax, callback and answer-validation failures
+  no longer trigger low-level acquisition retries. Source-qualified network,
+  timeout and eligible HTTP retries remain; Decisions 504 stays non-retryable.
+  A failed Decisions answer clears the whole answer set while retaining known
+  usage and cost. Builtin display names use Amazon Bedrock, Anthropic and
+  Google Vertex AI, independently of their credential labels.
+- `opi-ai`: real Anthropic and Codex producer replay regressions cover terminal
+  capture, serialization/reload and subsequent same-identity, changed-model and
+  foreign-wire requests while preserving canonical opaque data.
 
 - `opi-ai`: stored scoped configuration now reaches Cloudflare account/gateway,
   Azure routing/deployment, Vertex ADC and AWS native sources without changing

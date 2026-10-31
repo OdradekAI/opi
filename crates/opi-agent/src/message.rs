@@ -9,6 +9,10 @@ use serde::{Deserialize, Serialize};
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Inline LLM messages preserve the public construction and matching contract and avoid a per-message allocation"
+)]
 pub enum AgentMessage {
     /// A provider-facing message (user, assistant, or tool result).
     Llm(#[serde(with = "llm_message_serde")] opi_ai::message::Message),

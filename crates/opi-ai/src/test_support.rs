@@ -322,6 +322,7 @@ pub fn base_assistant() -> AssistantMessage {
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
         deferred: None,
     }

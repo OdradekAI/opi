@@ -5,6 +5,7 @@
 //! tagged [`WireCompat`], a thinking-level map, and optional pricing with
 //! deterministic input-token threshold tiers.
 
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
@@ -684,7 +685,8 @@ pub struct ModelPricing {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PricingTier {
-    pub input_tokens_above: u64,
+    /// Finite source threshold; integer precision and fractional values are retained.
+    pub input_tokens_above: serde_json::Number,
     pub pricing: Pricing,
 }
 
@@ -698,6 +700,7 @@ impl ModelPricing {
     pub fn validate(&self) -> Result<(), ModelInfoError> {
         validate_pricing(&self.base)?;
         for tier in &self.tiers {
+            validate_pricing_threshold(&tier.input_tokens_above)?;
             validate_pricing(&tier.pricing)?;
         }
         Ok(())
@@ -706,6 +709,9 @@ impl ModelPricing {
     /// Source catalogs may retain finite negative placeholders for unknown
     /// rates. Validate their representation without treating them as prices.
     pub(crate) fn validate_source_metadata(&self) -> Result<(), ModelInfoError> {
+        for tier in &self.tiers {
+            validate_pricing_threshold(&tier.input_tokens_above)?;
+        }
         for pricing in
             std::iter::once(&self.base).chain(self.tiers.iter().map(|tier| &tier.pricing))
         {
@@ -735,8 +741,9 @@ impl ModelPricing {
     /// Counts `input + cache_read + cache_write` tokens only, picks the
     /// highest threshold that was strictly exceeded, and keeps the first of
     /// equal duplicate thresholds; the chosen rates apply to the whole
-    /// request. Zero thresholds, duplicates and arbitrary input ordering are
-    /// accepted; only the individual rates are validated.
+    /// request. Every finite threshold is retained, including negative and
+    /// fractional values. Only thresholds above the source's initial `-1`
+    /// boundary can match; equal duplicates keep the first source entry.
     pub fn effective_for_usage(&self, usage: &Usage) -> Pricing {
         let prompt_tokens = u64::from(usage.input_tokens)
             + u64::from(usage.cache_read_tokens)
@@ -746,17 +753,81 @@ impl ModelPricing {
 
     fn effective_for_prompt_tokens(&self, prompt_tokens: u64) -> Pricing {
         let mut rates = self.base;
-        let mut matched_threshold = None;
+        let mut matched_threshold = serde_json::Number::from(-1);
+        let input = serde_json::Number::from(prompt_tokens);
         for tier in &self.tiers {
-            if prompt_tokens > tier.input_tokens_above
-                && matched_threshold.is_none_or(|matched| tier.input_tokens_above > matched)
+            let threshold = &tier.input_tokens_above;
+            if compare_pricing_thresholds(threshold, &matched_threshold) == Some(Ordering::Greater)
+                && compare_pricing_thresholds(&input, threshold) == Some(Ordering::Greater)
             {
                 rates = tier.pricing;
-                matched_threshold = Some(tier.input_tokens_above);
+                matched_threshold = threshold.clone();
             }
         }
         rates
     }
+}
+
+fn validate_pricing_threshold(threshold: &serde_json::Number) -> Result<(), ModelInfoError> {
+    if !threshold.as_f64().is_some_and(f64::is_finite) {
+        return Err(ModelInfoError::InvalidPricing(
+            "pricing tier thresholds must be finite".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Numeric ordering, independent of the JSON integer/float representation.
+/// Integer paths never pass through f64, including matched-tier comparisons.
+fn compare_pricing_thresholds(
+    left: &serde_json::Number,
+    right: &serde_json::Number,
+) -> Option<Ordering> {
+    if let Some(left) = left.as_u64() {
+        if let Some(right) = right.as_u64() {
+            return Some(left.cmp(&right));
+        }
+        if right.as_i64().is_some() {
+            return Some(Ordering::Greater);
+        }
+        return compare_unsigned_to_float(left, right.as_f64()?);
+    }
+    if right.as_u64().is_some() {
+        return compare_pricing_thresholds(right, left).map(Ordering::reverse);
+    }
+    if let Some(left) = left.as_i64() {
+        if let Some(right) = right.as_i64() {
+            return Some(left.cmp(&right));
+        }
+        let right = right.as_f64()?;
+        if right >= 0.0 {
+            return Some(Ordering::Less);
+        }
+        return compare_unsigned_to_float(left.unsigned_abs(), -right).map(Ordering::reverse);
+    }
+    if right.as_i64().is_some() {
+        return compare_pricing_thresholds(right, left).map(Ordering::reverse);
+    }
+    left.as_f64()?.partial_cmp(&right.as_f64()?)
+}
+
+fn compare_unsigned_to_float(integer: u64, float: f64) -> Option<Ordering> {
+    if !float.is_finite() {
+        return None;
+    }
+    if float < 0.0 {
+        return Some(Ordering::Greater);
+    }
+    // u64::MAX rounds up to 2^64; no integer input can reach that float.
+    if float >= u64::MAX as f64 {
+        return Some(Ordering::Less);
+    }
+    // Below 2^64 the truncating cast is the exact floor. Keep the integer
+    // operand intact so 2^53+1 does not become equal to the preceding float.
+    Some(match integer.cmp(&(float as u64)) {
+        Ordering::Equal if float.fract() > 0.0 => Ordering::Less,
+        ordering => ordering,
+    })
 }
 
 /// Resolve sampling parameters for one request (AIR-062).

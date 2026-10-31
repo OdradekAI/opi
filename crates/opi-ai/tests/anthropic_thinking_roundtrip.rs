@@ -114,6 +114,7 @@ async fn signed_and_redacted_thinking_survive_http_storage_and_tool_continuation
             }
         }
         let message = completed.expect("complete tool turn");
+        assert_eq!(message.raw_stop_reason.as_deref(), Some("tool_use"));
         let content = serde_json::to_value(&message.content).unwrap();
         assert_eq!(
             content[0],

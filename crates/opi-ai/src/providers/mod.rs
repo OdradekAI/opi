@@ -70,7 +70,7 @@ pub fn builtin_profile(id: &str) -> Option<&'static BuiltinProviderProfile> {
 static BUILTIN_PROVIDER_PROFILES: &[BuiltinProviderProfile] = &[
     BuiltinProviderProfile {
         id: "amazon-bedrock",
-        name: "AWS credentials or bearer token",
+        name: "Amazon Bedrock",
         base_url: None,
         api_key_env: None,
         auth_scheme: AuthScheme::Bearer,
@@ -94,7 +94,7 @@ static BUILTIN_PROVIDER_PROFILES: &[BuiltinProviderProfile] = &[
     },
     BuiltinProviderProfile {
         id: "anthropic",
-        name: "Anthropic API key",
+        name: "Anthropic",
         base_url: Some("https://api.anthropic.com"),
         api_key_env: None,
         auth_scheme: AuthScheme::ApiKey,
@@ -214,7 +214,7 @@ static BUILTIN_PROVIDER_PROFILES: &[BuiltinProviderProfile] = &[
     },
     BuiltinProviderProfile {
         id: "google-vertex",
-        name: "Google Cloud credentials",
+        name: "Google Vertex AI",
         base_url: None,
         api_key_env: None,
         auth_scheme: AuthScheme::Bearer,

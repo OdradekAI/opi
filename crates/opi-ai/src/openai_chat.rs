@@ -820,6 +820,9 @@ impl OpenAiChatMapper {
             } => {
                 let has_usage = usage.is_some();
                 let is_metadata_only = finish_reason.is_empty();
+                if !is_metadata_only {
+                    self.partial.raw_stop_reason = Some(finish_reason.clone());
+                }
                 self.update_metadata(id, model, usage);
                 let mut events = Vec::new();
                 if !is_metadata_only {
@@ -967,6 +970,7 @@ fn empty_assistant_message(
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
         deferred: None,
     }
@@ -2337,6 +2341,7 @@ fn serialize_messages(
                 let mut tool_calls_json = Vec::new();
                 let mut text_parts: Vec<&str> = Vec::new();
                 let mut thinking_blocks: Vec<(&str, Option<&str>)> = Vec::new();
+                let mut reasoning_details = None;
 
                 for c in &a.content {
                     match c {
@@ -2363,6 +2368,16 @@ fn serialize_messages(
                             thinking,
                             signature,
                         } => {
+                            if reasoning_details.is_none()
+                                && let Some(signature) = signature
+                                && let Ok(details) =
+                                    serde_json::from_str::<serde_json::Value>(signature)
+                                && details.as_array().is_some_and(|items| {
+                                    !items.is_empty() && items.iter().all(valid_reasoning_detail)
+                                })
+                            {
+                                reasoning_details = Some(details);
+                            }
                             if !thinking.trim().is_empty() {
                                 thinking_blocks.push((thinking, signature.as_deref()));
                             }
@@ -2406,28 +2421,28 @@ fn serialize_messages(
                     assistant_msg["content"] = serde_json::Value::String(assistant_text.clone());
                 }
 
-                if !thinking_blocks.is_empty() {
+                if !thinking_blocks.is_empty() && reasoning_details.is_none() {
                     let joined = thinking_blocks
                         .iter()
                         .map(|(thinking, _)| *thinking)
                         .collect::<Vec<_>>()
                         .join("\n");
                     let signature = thinking_blocks.iter().find_map(|&(_, signature)| signature);
-                    if let Some(signature) = signature {
-                        if matches!(
+                    if let Some(signature) = signature
+                        && matches!(
                             signature,
                             "reasoning" | "reasoning_content" | "reasoning_text"
-                        ) {
-                            assistant_msg[signature] = serde_json::Value::String(joined);
-                            reasoning_field_sent = true;
-                        } else if let Ok(details) =
-                            serde_json::from_str::<serde_json::Value>(signature)
-                        {
-                            // Serialized reasoning-details replay metadata.
-                            assistant_msg["reasoning_details"] = details;
-                            reasoning_field_sent = true;
-                        }
+                        )
+                    {
+                        assistant_msg[signature] = serde_json::Value::String(joined);
+                        reasoning_field_sent = true;
                     }
+                }
+                if let Some(details) = reasoning_details {
+                    // Structured replay data can be the only contents of a
+                    // signed thinking block; it does not require visible text.
+                    assistant_msg["reasoning_details"] = details;
+                    reasoning_field_sent = true;
                 }
 
                 if !tool_calls_json.is_empty() {

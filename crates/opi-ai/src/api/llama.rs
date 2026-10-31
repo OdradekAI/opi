@@ -375,7 +375,7 @@ impl Wire<'_> {
                         status: None,
                         x_should_retry: None,
                         server_retry_delay_ms: None,
-                        error: ProviderError::Network(ProviderErrorSummary::sanitized(
+                        error: ProviderError::StreamError(ProviderErrorSummary::sanitized(
                             error.to_string(),
                         )),
                         message: error.to_string(),

@@ -81,6 +81,7 @@ fn assistant_msg(id: &str, parent: Option<&str>, text: &str) -> SessionEntry {
             timestamp_ms: 0,
             diagnostics: Vec::new(),
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
 
             deferred: None,
@@ -121,6 +122,7 @@ fn assistant_with_thinking(
             timestamp_ms: 0,
             diagnostics: Vec::new(),
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
 
             deferred: None,
@@ -161,6 +163,7 @@ fn assistant_with_tool_call(
             timestamp_ms: 0,
             diagnostics: Vec::new(),
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
 
             deferred: None,

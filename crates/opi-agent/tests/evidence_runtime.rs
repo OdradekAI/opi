@@ -569,6 +569,7 @@ fn two_tool_response() -> Vec<AssistantStreamEvent> {
         timestamp_ms: 0,
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
 
         deferred: None,
@@ -2423,6 +2424,7 @@ async fn in_band_stream_error_terminal_fails_the_run_without_retry() {
         timestamp_ms: 0,
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
 
         deferred: None,

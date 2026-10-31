@@ -17,6 +17,13 @@ use wiremock::matchers::{body_partial_json, header, method, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper: create a Gemini provider.
+fn direct_cause(error: &ProviderError) -> &ProviderError {
+    match error {
+        ProviderError::StreamFailure(failure) => failure.cause(),
+        cause => cause,
+    }
+}
+
 fn gemini_provider() -> GeminiProvider {
     GeminiProvider::new(None)
 }
@@ -51,7 +58,7 @@ async fn auth_error_bodies_are_absent_from_public_errors() {
             .expect("auth failure should produce an event")
             .expect_err("auth failure should produce ProviderError");
         assert!(matches!(
-            error,
+            direct_cause(&error),
             opi_ai::provider::ProviderError::AuthFailed(_)
         ));
         let rendered = format!("{error} {error:?}");
@@ -72,6 +79,7 @@ async fn direct_auth_statuses_do_not_wait_for_stalled_bodies() {
         let mut stream =
             provider.stream_prepared(gemini_http_request(), opi_ai::test_support::resolved_auth());
 
+        assert!(futures_util::poll!(stream.next()).is_pending());
         tokio::time::timeout(
             std::time::Duration::from_secs(2),
             headers_flushed.notified(),
@@ -86,7 +94,7 @@ async fn direct_auth_statuses_do_not_wait_for_stalled_bodies() {
 
         let error = result.expect_err("Gemini direct auth status must fail");
         assert!(matches!(
-            error,
+            direct_cause(&error),
             opi_ai::provider::ProviderError::AuthFailed(_)
         ));
         assert_eq!(
@@ -118,7 +126,7 @@ async fn oversized_embedded_auth_body_is_not_read_past_the_classification_cap() 
         .expect_err("oversized Gemini error body must fail");
 
     assert!(matches!(
-        error,
+        direct_cause(&error),
         opi_ai::provider::ProviderError::ProviderSide(_)
     ));
 }
@@ -433,10 +441,8 @@ async fn gemini_cache_tokens_in_done_event() {
             message.usage.cache_read_tokens, 400,
             "cachedContentTokenCount must map to cache_read_tokens"
         );
-        // Task 20.40: Google always reports a numeric reasoning value
-        // (`thoughtsTokenCount || 0`), so absent thoughts are zero, not
-        // unknown.
-        assert_eq!(message.usage.reasoning_tokens, Some(0));
+        // The optional child count retains its absence under RDF-07.
+        assert_eq!(message.usage.reasoning_tokens, None);
     }
 }
 
@@ -687,11 +693,11 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
             AssistantStreamEvent::Done { reason, message } => {
                 assert!(!saw_done, "text request must have one terminal event");
                 assert_eq!(reason, opi_ai::stream::StopReason::Stop);
-                // Task 20.40: absent thoughtsTokenCount reports zero
-                // reasoning (pi `thoughtsTokenCount || 0`).
+                // Independent totals and absent child counts retain their wire facts.
                 assert_eq!(
                     message.usage,
-                    opi_ai::stream::Usage::reported(5, 2, 0, 0, None, Some(0)),
+                    opi_ai::stream::Usage::reported(5, 2, 0, 0, None, None)
+                        .with_total_tokens(Some(7)),
                     "HTTP usage must retain the fixture's exact token values"
                 );
                 saw_done = true;
@@ -762,8 +768,8 @@ async fn request_timeout_maps_to_typed_timeout_at_gemini_boundary() {
         .expect("Gemini timeout must produce a stream item");
 
     assert!(matches!(
-        result,
-        Err(opi_ai::provider::ProviderError::Timeout)
+        result.as_ref().err().map(direct_cause),
+        Some(opi_ai::provider::ProviderError::Timeout)
     ));
 }
 
@@ -774,6 +780,7 @@ async fn stalled_embedded_auth_body_uses_a_fixed_default_deadline() {
     let mut stream =
         provider.stream_prepared(gemini_http_request(), opi_ai::test_support::resolved_auth());
 
+    assert!(futures_util::poll!(stream.next()).is_pending());
     tokio::time::timeout(
         std::time::Duration::from_secs(2),
         headers_flushed.notified(),
@@ -787,8 +794,8 @@ async fn stalled_embedded_auth_body_uses_a_fixed_default_deadline() {
         .expect("Gemini error-body timeout must produce a stream item");
 
     assert!(matches!(
-        result,
-        Err(opi_ai::provider::ProviderError::Timeout)
+        result.as_ref().err().map(direct_cause),
+        Some(opi_ai::provider::ProviderError::Timeout)
     ));
 }
 
@@ -801,8 +808,13 @@ async fn request_header_cannot_override_gemini_auth_routing() {
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
     assert!(matches!(
-        stream.next().await,
-        Some(Err(opi_ai::provider::ProviderError::RequestFailed(_)))
+        stream
+            .next()
+            .await
+            .as_ref()
+            .and_then(|item| item.as_ref().err())
+            .map(direct_cause),
+        Some(opi_ai::provider::ProviderError::RequestFailed(_))
     ));
     assert!(
         server
@@ -965,6 +977,7 @@ async fn assert_gemini_cancelled(stall_point: GeminiStallPoint) {
     request.cancel = cancel.clone();
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
 
+    assert!(futures_util::poll!(stream.next()).is_pending());
     tokio::time::timeout(std::time::Duration::from_secs(1), stalled.notified())
         .await
         .expect("Gemini server must reach the selected stall point");
@@ -1172,6 +1185,7 @@ async fn async_google_raw_observation_blocks_normalized_delivery_until_ready() {
     });
     let provider = GeminiProvider::new(Some(server.uri()));
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    assert!(futures_util::poll!(stream.next()).is_pending());
     tokio::time::timeout(std::time::Duration::from_secs(1), entered.notified())
         .await
         .unwrap();
@@ -1218,7 +1232,8 @@ async fn cancelled_async_payload_is_dropped_without_http_dispatch() {
         }
     });
     let provider = GeminiProvider::new(Some(server.uri()));
-    let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    assert!(futures_util::poll!(stream.next()).is_pending());
     tokio::time::timeout(std::time::Duration::from_secs(1), entered.notified())
         .await
         .unwrap();
@@ -1840,6 +1855,7 @@ mod google_40 {
             timestamp_ms: 0,
             diagnostics: vec![],
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
         }
     }
@@ -2017,8 +2033,7 @@ mod google_40 {
             "the signature rides the part beside functionCall"
         );
 
-        // Cross-model history: signatures are unusable and thinking rides
-        // as plain text without tags.
+        // Cross-model history drops all thinking and unusable signatures.
         let foreign = opi_ai::message::AssistantMessage {
             content: vec![
                 AssistantContent::Text {

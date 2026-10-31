@@ -3756,6 +3756,7 @@ fn error_tool_result_images_follow_all_results_in_one_user_message() {
             timestamp_ms: 0,
             diagnostics: vec![],
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
         }),
         Message::ToolResult(opi_ai::message::ToolResultMessage {
@@ -3887,6 +3888,7 @@ fn consecutive_success_tool_results_group_into_one_user_message() {
             timestamp_ms: 0,
             diagnostics: vec![],
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
         }),
         Message::ToolResult(opi_ai::message::ToolResultMessage {
@@ -4261,6 +4263,7 @@ async fn anthropic_direct_adapter_replays_same_identity_signed_thinking() {
         timestamp_ms: 0,
         diagnostics: vec![],
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
     });
     let mut request = request_39(ThinkingConfig::default());

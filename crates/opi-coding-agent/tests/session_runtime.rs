@@ -1968,7 +1968,7 @@ fn embedded_model_pricing_overrides_legacy_fallback() {
                     cache_write_cost_per_mtok: 1.25,
                 },
                 vec![PricingTier {
-                    input_tokens_above: 2_000_000,
+                    input_tokens_above: 2_000_000.into(),
                     pricing: Pricing {
                         input_cost_per_mtok: 2.0,
                         output_cost_per_mtok: 4.0,

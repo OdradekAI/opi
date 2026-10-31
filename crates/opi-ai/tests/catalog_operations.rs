@@ -296,7 +296,7 @@ async fn mixed_operation_catalog_reopens_into_three_real_models_calls() {
         .unwrap();
     assert_eq!(tiers.len(), 2);
     for (tier, rate) in tiers.iter().zip([99.0, 88.0]) {
-        assert_eq!(tier["inputTokensAbove"].as_u64(), Some(0));
+        assert_eq!(tier["inputTokensAbove"].as_f64(), Some(0.0));
         assert_eq!(tier["input"].as_f64(), Some(rate));
         assert_eq!(tier["output"].as_f64(), Some(rate));
     }
@@ -1039,4 +1039,126 @@ async fn source_unknown_base_retains_known_tiers_and_prices_only_above_the_bound
             }
         }
     }
+}
+
+#[tokio::test]
+async fn finite_fractional_thresholds_survive_all_operation_store_reopen_and_costing() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/classifier/systemone"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "answers": {}, "usage": {"input_tokens": 4, "output_tokens": 0}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut value = document(&server.uri());
+    for model in value["providers"]["fixture"]["models"]
+        .as_array_mut()
+        .unwrap()
+    {
+        model["cost"] = json!({"input": 1, "output": 0, "cacheRead": 0, "cacheWrite": 0,
+        "tiers": [
+            {"inputTokensAbove": -2, "input": 99, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            {"inputTokensAbove": -1, "input": 88, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            {"inputTokensAbove": -0.5, "input": 2, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            {"inputTokensAbove": 0.5, "input": 3, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            {"inputTokensAbove": 0.5, "input": 4, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            {"inputTokensAbove": 1.5, "input": 5, "output": 0, "cacheRead": 0, "cacheWrite": 0}
+        ]});
+    }
+    let decoded = HttpCatalogSource::decode_document(&value)
+        .expect("finite source thresholds include negative and fractional numbers");
+    let temp = tempfile::tempdir().unwrap();
+    let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
+    store.begin().commit(decoded).await.unwrap();
+    let mut models = registered_collection(
+        ModelsStore::open(store.path()).unwrap(),
+        &server.uri(),
+        Arc::new(FixtureAuth::default()),
+    );
+    models.refresh(false).await.unwrap();
+    let classifier = models.classifier_model("fixture", "shared").unwrap();
+    let pricing = classifier.cost.as_ref().unwrap();
+    assert_eq!(
+        pricing.tiers.len(),
+        6,
+        "ignored negative tiers remain metadata"
+    );
+    assert_eq!(
+        models
+            .get_model("fixture", "shared")
+            .unwrap()
+            .pricing
+            .as_ref(),
+        Some(pricing)
+    );
+    assert_eq!(
+        models.image_model("fixture", "shared").unwrap().cost_tiers,
+        pricing.tiers
+    );
+    for (input, expected_rate) in [(0, 2.0), (1, 3.0), (2, 5.0)] {
+        assert_eq!(pricing.effective(input).input_cost_per_mtok, expected_rate);
+    }
+    let result = models
+        .classify(classifier, Default::default(), Default::default())
+        .await;
+    assert_eq!(result.stop_reason, ClassifierStopReason::Stop);
+    assert_eq!(result.usage.unwrap().input_tokens, 4);
+    assert!((result.cost.unwrap().total_cost() - 0.000_020).abs() < 1e-12);
+}
+
+#[tokio::test]
+async fn integer_threshold_above_f64_precision_survives_decode_store_and_reopen() {
+    let threshold = 9_007_199_254_740_993_u64;
+    let endpoint = "http://127.0.0.1:1";
+    let mut value = document(endpoint);
+    for model in value["providers"]["fixture"]["models"]
+        .as_array_mut()
+        .unwrap()
+    {
+        model["cost"] = json!({"input": 1, "output": 0, "cacheRead": 0, "cacheWrite": 0,
+        "tiers": [{"inputTokensAbove": threshold, "input": 3, "output": 0, "cacheRead": 0, "cacheWrite": 0}]});
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
+    store
+        .begin()
+        .commit(HttpCatalogSource::decode_document(&value).unwrap())
+        .await
+        .unwrap();
+    let persisted: Value = serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
+    let records = &persisted["providers"]["fixture"]["models"];
+    for number in [
+        &records[0]["x-opi"]["pricingTiers"][0]["above"],
+        &records[1]["cost"]["tiers"][0]["inputTokensAbove"],
+        &records[2]["cost"]["tiers"][0]["inputTokensAbove"],
+    ] {
+        assert_eq!(number.as_u64(), Some(threshold));
+    }
+    let mut models = registered_collection(
+        ModelsStore::open(store.path()).unwrap(),
+        endpoint,
+        Arc::new(FixtureAuth::default()),
+    );
+    models.refresh(false).await.unwrap();
+    let pricing = models
+        .get_model("fixture", "shared")
+        .unwrap()
+        .pricing
+        .unwrap();
+    assert_eq!(
+        pricing.tiers[0].input_tokens_above.to_string(),
+        threshold.to_string()
+    );
+    assert_eq!(pricing.effective(threshold).input_cost_per_mtok, 1.0);
+    assert_eq!(pricing.effective(threshold + 1).input_cost_per_mtok, 3.0);
+    assert_eq!(
+        models.classifier_model("fixture", "shared").unwrap().cost,
+        Some(pricing.clone())
+    );
+    assert_eq!(
+        models.image_model("fixture", "shared").unwrap().cost_tiers,
+        pricing.tiers
+    );
 }

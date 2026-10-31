@@ -243,6 +243,7 @@ fn wire_accepts_string_arguments(wire: WireApi) -> bool {
     matches!(
         wire,
         WireApi::OpenAiCompletions
+            | WireApi::MistralConversations
             | WireApi::AzureOpenAiCompletions
             | WireApi::OpenAiResponses
             | WireApi::OpenAiCodexResponses
@@ -817,6 +818,7 @@ mod tests {
             wire: Some(WireApi::AnthropicMessages),
             diagnostics: Vec::new(),
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
             deferred: None,
         }

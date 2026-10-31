@@ -351,8 +351,19 @@ impl MistralConversationsProvider {
                 error.to_string(),
             ))
         })?;
+        let replay_route = crate::replay::ReplayRoute {
+            wire: crate::model_info::WireApi::MistralConversations,
+            provider: "mistral".into(),
+            model: model.id.clone(),
+            supports_images,
+        };
+        let replay = crate::replay::project_replay(
+            resolved.messages(),
+            &replay_route,
+            crate::replay::ReplayProjection::NativeOrCollapse,
+        )?;
         let mut normalizer = MistralToolCallIdNormalizer::default();
-        let messages = to_chat_messages(resolved.messages(), supports_images, &mut normalizer);
+        let messages = to_chat_messages(&replay.messages, supports_images, &mut normalizer);
 
         let mut body = serde_json::json!({
             "model": model.id,
@@ -1154,6 +1165,7 @@ impl MistralSseMapper {
             timestamp_ms: crate::time::now_ms(),
             diagnostics: Vec::new(),
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
         };
         Self {
@@ -1187,6 +1199,7 @@ impl MistralSseMapper {
             return events;
         };
         if let Some(reason) = choice.get("finish_reason").and_then(|r| r.as_str()) {
+            self.message.raw_stop_reason = Some(reason.to_owned());
             match reason {
                 "stop" => self.stop_reason = Some(StopReason::Stop),
                 "length" | "model_length" => self.stop_reason = Some(StopReason::Length),

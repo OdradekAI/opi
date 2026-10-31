@@ -1690,6 +1690,7 @@ impl BedrockMapper {
                 }
             }
             BedrockEvent::MessageStop { stop_reason } => {
+                self.partial.raw_stop_reason = Some(stop_reason.clone());
                 match map_bedrock_stop_reason(&stop_reason) {
                     Some(reason) => {
                         self.partial.stop_reason = reason;
@@ -1769,6 +1770,7 @@ fn empty_assistant_message(provider: &str, model: &str) -> AssistantMessage {
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
         deferred: None,
     }
@@ -2013,6 +2015,39 @@ fn build_additional_model_request_fields(
     None
 }
 
+/// Decode stored redacted reasoning with the source's forgiving `atob`
+/// semantics. Invalid or empty blobs project away; canonical strings stay owned
+/// by the caller and are never rewritten by this request projection.
+fn decode_redacted_content(data: &str) -> Option<Vec<u8>> {
+    use base64::Engine as _;
+    let mut encoded: Vec<u8> = data
+        .bytes()
+        .filter(|byte| !matches!(byte, b'\t' | b'\n' | b'\x0c' | b'\r' | b' '))
+        .collect();
+    if encoded.len().is_multiple_of(4) {
+        for _ in 0..2 {
+            if encoded.last() == Some(&b'=') {
+                encoded.pop();
+            }
+        }
+    }
+    if encoded.len() % 4 == 1
+        || !encoded
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/'))
+    {
+        return None;
+    }
+    let decoder = base64::engine::GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        base64::engine::general_purpose::NO_PAD.with_decode_allow_trailing_bits(true),
+    );
+    decoder
+        .decode(encoded)
+        .ok()
+        .filter(|bytes| !bytes.is_empty())
+}
+
 /// Serialize replayed messages onto the Converse wire (task 20.42): blank
 /// text drops, `<empty>` placeholders keep required content arrays non-empty,
 /// thinking blocks replay as `reasoningContent` (signed Claude, signature-less
@@ -2205,9 +2240,7 @@ fn serialize_converse_messages(
                             // Opaque payload replays as bytes; a payload that
                             // is not base64 drops instead of failing.
                             use base64::Engine as _;
-                            if let Ok(bytes) =
-                                base64::engine::general_purpose::STANDARD.decode(data.as_bytes())
-                            {
+                            if let Some(bytes) = decode_redacted_content(data) {
                                 content.push(serde_json::json!({
                                     "reasoningContent": {"redactedContent":
                                         base64::engine::general_purpose::STANDARD.encode(bytes)}

@@ -2198,7 +2198,7 @@ fn custom_pricing(
         .unwrap_or_default()
         .into_iter()
         .map(|tier| opi_ai::PricingTier {
-            input_tokens_above: tier.input_tokens_above.unwrap_or_default(),
+            input_tokens_above: tier.input_tokens_above.unwrap_or_default().into(),
             pricing: pricing(tier.input, tier.output, tier.cache_read, tier.cache_write),
         })
         .collect();

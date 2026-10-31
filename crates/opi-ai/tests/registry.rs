@@ -558,7 +558,7 @@ async fn store_codec_round_trips_full_model_fidelity() {
             cache_write_cost_per_mtok: 1.25,
         },
         tiers: vec![PricingTier {
-            input_tokens_above: 100_000,
+            input_tokens_above: 100_000.into(),
             pricing: Pricing {
                 input_cost_per_mtok: 0.9,
                 output_cost_per_mtok: 1.8,

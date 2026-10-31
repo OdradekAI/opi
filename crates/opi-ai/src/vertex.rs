@@ -25,7 +25,7 @@ use crate::provider::{
 };
 use crate::provider_headers::ProviderHeaders;
 use crate::registry::ModelCapabilities;
-use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_cancel};
+use crate::stream::{AssistantStreamEvent, send_or_cancel};
 
 /// Google Vertex AI provider.
 ///
@@ -220,6 +220,7 @@ impl VertexProvider {
             }
         }
 
+        stream_events.extend(mapper.finish_fixture());
         let _cancel = cancel;
         Box::pin(stream::iter(stream_events))
     }
@@ -378,6 +379,11 @@ impl Provider for VertexProvider {
         let provider_identity = self.provider_identity.clone();
 
         let snapshot = crate::stream::ProducerSnapshot::default();
+        snapshot.record(&crate::gemini::empty_assistant_message(
+            &provider_identity,
+            crate::model_info::WireApi::GoogleVertex,
+            &requested_model,
+        ));
         let producer_snapshot = snapshot.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let producer_cancel = cancel.clone();
@@ -425,15 +431,14 @@ impl Provider for VertexProvider {
                 _ = run => (),
             }
         };
-        if let Some(context) = telemetry {
-            tokio::spawn(context.instrument(producer));
-        } else {
-            tokio::spawn(producer);
-        }
-
-        Box::pin(CancelAwareReceiverStream::with_snapshot(
-            rx, cancel, snapshot,
-        ))
+        let producer = async move {
+            if let Some(context) = telemetry {
+                context.instrument(producer).await;
+            } else {
+                producer.await;
+            }
+        };
+        crate::gemini::google_response_stream(producer, rx, cancel, snapshot)
     }
 }
 
@@ -564,7 +569,6 @@ async fn stream_vertex_http(
         crate::model_info::WireApi::GoogleVertex,
         &requested_model,
     );
-    let mut saw_done = false;
 
     mapper.set_snapshot(snapshot);
     let result: Result<(), ProviderError> = async {
@@ -599,15 +603,9 @@ async fn stream_vertex_http(
                     match parsed {
                         ParsedEvent::Valid(event) => {
                             for item in mapper.process(event) {
-                                let is_terminal = match &item {
-                                    Ok(terminal_event) => terminal_event.is_terminal(),
-                                    Err(_) => true,
-                                };
-                                if !send_or_cancel(&cancel, tx, item).await? {
+                                let event = item?;
+                                if !send_or_cancel(&cancel, tx, Ok(event)).await? {
                                     return Ok(());
-                                }
-                                if is_terminal {
-                                    saw_done = true;
                                 }
                             }
                         }
@@ -616,9 +614,7 @@ async fn stream_vertex_http(
                                 ProviderError::StreamError(ProviderErrorSummary::attested_static(
                                     "Vertex returned a malformed streaming frame",
                                 ));
-                            if !send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await? {
-                                return Ok(());
-                            }
+                            return Err(mapper.failure(err));
                         }
                     }
                 }
@@ -627,11 +623,10 @@ async fn stream_vertex_http(
 
         let eof_tail = decoder.finish();
         buffer.push_str(&eof_tail);
-        if !saw_done {
-            let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                "stream ended without a terminal event",
-            ));
-            let _ = send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await?;
+        for item in mapper.finish() {
+            if !send_or_cancel(&cancel, tx, item).await? {
+                return Ok(());
+            }
         }
 
         Ok(())

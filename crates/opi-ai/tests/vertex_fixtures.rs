@@ -16,6 +16,13 @@ use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, header, method, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+fn direct_cause(error: &ProviderError) -> &ProviderError {
+    match error {
+        ProviderError::StreamFailure(failure) => failure.cause(),
+        cause => cause,
+    }
+}
+
 fn vertex_provider() -> VertexProvider {
     VertexProvider::new("my-project".into(), "us-central1".into(), None)
 }
@@ -613,6 +620,321 @@ mod builtin_routes {
                     "/v1/publishers/google/models/gemini-2.5-flash:streamGenerateContent"
                 }
             );
+        }
+    }
+
+    async fn capture_signed_google_parts(
+        provider: &str,
+        expected_requests: u64,
+    ) -> (
+        MockServer,
+        Models,
+        opi_ai::ModelInfo,
+        opi_ai::message::AssistantMessage,
+    ) {
+        let server = MockServer::start().await;
+        let raw = serde_json::json!({"candidates":[{"content":{"parts":[
+            {"text":"","thoughtSignature":"dGV4dA=="},
+            {"text":"","thought":true,"thoughtSignature":"ZW1wdHk="},
+            {"functionCall":{"id":"call-1","name":"lookup","args":{"q":"fixture"}},"thoughtSignature":"dG9vbA=="},
+            {"text":"answer","thoughtSignature":"YW5zd2Vy"}
+        ]},"finishReason":"STOP"}]});
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(format!("data: {raw}\n\n"))
+                    .insert_header("content-type", "text/event-stream"),
+            )
+            .expect(expected_requests)
+            .mount(&server)
+            .await;
+        let context = Arc::new(Sources {
+            env: BTreeMap::from([
+                ("GEMINI_API_KEY".into(), "google-fixture-key".into()),
+                ("GOOGLE_CLOUD_API_KEY".into(), "vertex-fixture-key".into()),
+            ]),
+            ..Default::default()
+        });
+        let mut overrides = BuiltinOverrides::default();
+        overrides
+            .base_urls
+            .insert("google".into(), format!("{}/v1beta", server.uri()));
+        overrides
+            .base_urls
+            .insert("google-vertex".into(), server.uri());
+        let mut models = Models::new();
+        register_builtin(
+            &mut models,
+            context,
+            Arc::new(opi_ai::http::HttpClient::new()),
+            &overrides,
+        )
+        .unwrap();
+        let model = models.get_model(provider, "gemini-2.5-flash").unwrap();
+        let first = models
+            .complete_simple(
+                ChatModelRecord::new(provider, model.clone()),
+                lifecycle_text_request(),
+                Default::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.provider, provider);
+        assert_eq!(first.wire, Some(model.wire_api));
+        assert_eq!(first.model, model.id);
+        assert_eq!(first.raw_stop_reason.as_deref(), Some("STOP"));
+        assert_eq!(first.content.len(), 4, "producer preserves block binding");
+        assert!(
+            matches!(&first.content[0], AssistantContent::Text {text, signature} if text.is_empty() && signature.as_deref() == Some("dGV4dA=="))
+        );
+        assert!(
+            matches!(&first.content[1], AssistantContent::Thinking {thinking, signature} if thinking.is_empty() && signature.as_deref() == Some("ZW1wdHk="))
+        );
+        assert!(
+            matches!(&first.content[2], AssistantContent::ToolCall {tool_call} if tool_call.id == "call-1" && tool_call.signature.as_deref() == Some("dG9vbA=="))
+        );
+        assert!(
+            matches!(&first.content[3], AssistantContent::Text {text, signature} if text == "answer" && signature.as_deref() == Some("YW5zd2Vy"))
+        );
+        let bytes = serde_json::to_vec(&first).unwrap();
+        let reloaded = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(serde_json::to_vec(&reloaded).unwrap(), bytes);
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0].url.path(),
+            if provider == "google" {
+                "/v1beta/models/gemini-2.5-flash:streamGenerateContent"
+            } else {
+                "/v1/publishers/google/models/gemini-2.5-flash:streamGenerateContent"
+            }
+        );
+        assert_eq!(
+            sent[0].headers["x-goog-api-key"],
+            if provider == "google" {
+                "google-fixture-key"
+            } else {
+                "vertex-fixture-key"
+            }
+        );
+        (server, models, model, reloaded)
+    }
+
+    fn replayed_model_parts(body: &serde_json::Value) -> &serde_json::Value {
+        &body["contents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|content| content["role"] == "model")
+            .unwrap()["parts"]
+    }
+
+    fn signed_google_parts() -> serde_json::Value {
+        serde_json::json!([
+            {"text":"","thoughtSignature":"dGV4dA=="},
+            {"text":"","thought":true,"thoughtSignature":"ZW1wdHk="},
+            {"functionCall":{"name":"lookup","args":{"q":"fixture"}},"thoughtSignature":"dG9vbA=="},
+            {"text":"answer","thoughtSignature":"YW5zd2Vy"}
+        ])
+    }
+
+    fn projected_google_parts() -> serde_json::Value {
+        serde_json::json!([
+            {"functionCall":{"name":"lookup","args":{"q":"fixture"}}},
+            {"text":"answer"}
+        ])
+    }
+
+    #[tokio::test]
+    async fn google_and_vertex_signed_empty_capture_reloads_into_same_and_foreign_requests() {
+        for provider in ["google", "google-vertex"] {
+            let (server, models, model, reloaded) = capture_signed_google_parts(provider, 4).await;
+            let canonical = serde_json::to_vec(&reloaded).unwrap();
+            models
+                .complete_simple(
+                    ChatModelRecord::new(provider, model),
+                    replay_request(provider, reloaded.clone()),
+                    Default::default(),
+                )
+                .await
+                .unwrap();
+            let foreign_provider = if provider == "google" {
+                "google-vertex"
+            } else {
+                "google"
+            };
+            let foreign_model = models
+                .get_model(foreign_provider, "gemini-2.5-flash")
+                .unwrap();
+            models
+                .complete_simple(
+                    ChatModelRecord::new(foreign_provider, foreign_model),
+                    replay_request(foreign_provider, reloaded.clone()),
+                    Default::default(),
+                )
+                .await
+                .unwrap();
+            let mut changed_model = models.get_model(provider, "gemini-2.5-flash").unwrap();
+            changed_model.id = "gemini-3-pro".into();
+            models
+                .complete_simple(
+                    ChatModelRecord::new(provider, changed_model),
+                    replay_request(provider, reloaded.clone()),
+                    Default::default(),
+                )
+                .await
+                .unwrap();
+            let sent = server.received_requests().await.unwrap();
+            assert_eq!(sent.len(), 4);
+            let same: serde_json::Value = serde_json::from_slice(&sent[1].body).unwrap();
+            let foreign: serde_json::Value = serde_json::from_slice(&sent[2].body).unwrap();
+            let changed: serde_json::Value = serde_json::from_slice(&sent[3].body).unwrap();
+            assert_eq!(replayed_model_parts(&same), &signed_google_parts());
+            assert_eq!(replayed_model_parts(&foreign), &projected_google_parts());
+            let mut changed_parts = projected_google_parts();
+            changed_parts[0]["functionCall"]["id"] = serde_json::json!("call-1");
+            assert_eq!(replayed_model_parts(&changed), &changed_parts);
+            assert!(
+                sent[3]
+                    .url
+                    .path()
+                    .ends_with("/models/gemini-3-pro:streamGenerateContent")
+            );
+            assert_eq!(
+                sent[2].url.path(),
+                if foreign_provider == "google" {
+                    "/v1beta/models/gemini-2.5-flash:streamGenerateContent"
+                } else {
+                    "/v1/publishers/google/models/gemini-2.5-flash:streamGenerateContent"
+                }
+            );
+            assert_eq!(
+                sent[2].headers["x-goog-api-key"],
+                if foreign_provider == "google" {
+                    "google-fixture-key"
+                } else {
+                    "vertex-fixture-key"
+                }
+            );
+            assert_eq!(serde_json::to_vec(&reloaded).unwrap(), canonical);
+        }
+    }
+
+    #[tokio::test]
+    async fn google_and_vertex_capability_change_preserves_valid_history_without_new_thinking() {
+        for provider in ["google", "google-vertex"] {
+            let (server, models, mut model, reloaded) =
+                capture_signed_google_parts(provider, 2).await;
+            let canonical = serde_json::to_vec(&reloaded).unwrap();
+            assert!(model.capabilities.supports_thinking);
+            model.capabilities.supports_thinking = false;
+            models
+                .complete_simple(
+                    ChatModelRecord::new(provider, model),
+                    replay_request(provider, reloaded.clone()),
+                    Default::default(),
+                )
+                .await
+                .unwrap();
+            let sent = server.received_requests().await.unwrap();
+            let first: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+            let replay: serde_json::Value = serde_json::from_slice(&sent[1].body).unwrap();
+            assert_eq!(
+                first["generationConfig"]["thinkingConfig"],
+                serde_json::json!({"thinkingBudget":0})
+            );
+            assert!(replay["generationConfig"].get("thinkingConfig").is_none());
+            assert_eq!(replayed_model_parts(&replay), &signed_google_parts());
+            assert_eq!(serde_json::to_vec(&reloaded).unwrap(), canonical);
+        }
+    }
+
+    #[tokio::test]
+    async fn google_and_vertex_invalid_signatures_project_after_real_capture_and_reload() {
+        for provider in ["google", "google-vertex"] {
+            let (server, models, model, reloaded) = capture_signed_google_parts(provider, 7).await;
+            let signatures = ["bad!", "====", "A===", "=AAA", "AA=A", "AB=="];
+            for incoming in signatures {
+                let mut history = reloaded.clone();
+                for block in &mut history.content {
+                    match block {
+                        AssistantContent::Text { signature, .. }
+                        | AssistantContent::Thinking { signature, .. } => {
+                            *signature = Some(incoming.into());
+                        }
+                        AssistantContent::ToolCall { tool_call } => {
+                            tool_call.signature = Some(incoming.into());
+                        }
+                        _ => unreachable!("capture contains only text, thinking and tool calls"),
+                    }
+                }
+                let canonical = serde_json::to_vec(&history).unwrap();
+                models
+                    .complete_simple(
+                        ChatModelRecord::new(provider, model.clone()),
+                        replay_request(provider, history.clone()),
+                        Default::default(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(serde_json::to_vec(&history).unwrap(), canonical);
+            }
+            let sent = server.received_requests().await.unwrap();
+            assert_eq!(sent.len(), 7);
+            for (request, signature) in sent[1..].iter().zip(signatures) {
+                let replay: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                let expected = if signature == "AB==" {
+                    // The source regex accepts nonzero unused bits. A strict
+                    // decoder would introduce an unsupported rejection here.
+                    let mut parts = signed_google_parts();
+                    for part in parts.as_array_mut().unwrap() {
+                        part["thoughtSignature"] = serde_json::json!(signature);
+                    }
+                    parts
+                } else {
+                    projected_google_parts()
+                };
+                assert_eq!(
+                    replayed_model_parts(&replay),
+                    &expected,
+                    "signature syntax {signature:?} must follow the source regex: {provider}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn google_and_vertex_unknown_wire_cannot_reuse_captured_text_or_tool_signatures() {
+        for provider in ["google", "google-vertex"] {
+            let (server, models, model, reloaded) = capture_signed_google_parts(provider, 3).await;
+            let changed_wire = match model.wire_api {
+                opi_ai::WireApi::GoogleGenerativeAi => opi_ai::WireApi::GoogleVertex,
+                opi_ai::WireApi::GoogleVertex => opi_ai::WireApi::GoogleGenerativeAi,
+                _ => unreachable!(),
+            };
+            for wire in [None, Some(changed_wire)] {
+                let mut history = reloaded.clone();
+                history.wire = wire;
+                let canonical = serde_json::to_vec(&history).unwrap();
+                models
+                    .complete_simple(
+                        ChatModelRecord::new(provider, model.clone()),
+                        replay_request(provider, history.clone()),
+                        Default::default(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(serde_json::to_vec(&history).unwrap(), canonical);
+            }
+            let sent = server.received_requests().await.unwrap();
+            for request in &sent[1..] {
+                let replay: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                assert_eq!(
+                    replayed_model_parts(&replay),
+                    &projected_google_parts(),
+                    "unknown or changed API cannot reuse captured signatures: {provider}: {replay}"
+                );
+            }
         }
     }
 
@@ -1230,12 +1552,11 @@ async fn stream_drains_text_lifecycle_through_http() {
             // Gemini `STOP` finish reason must map to the shared StopReason::Stop.
             assert_eq!(*reason, opi_ai::stream::StopReason::Stop);
             assert_eq!(message.provider, "vertex");
-            // Task 20.40: absent thoughtsTokenCount reports zero
-            // reasoning (pi `thoughtsTokenCount || 0`), inherited via the
-            // shared Gemini stream compiler.
+            // Shared Google mapping preserves independent totals and absent subsets.
             assert_eq!(
                 message.usage,
-                opi_ai::stream::Usage::reported(42, 13, 0, 0, None, Some(0))
+                opi_ai::stream::Usage::reported(42, 13, 0, 0, None, None)
+                    .with_total_tokens(Some(55))
             );
         }
         other => panic!("expected Done, got {other:?}"),
@@ -1295,7 +1616,7 @@ async fn auth_error_bodies_are_absent_from_public_errors() {
             .expect("auth failure should produce an event")
             .expect_err("auth failure should produce ProviderError");
         assert!(matches!(
-            error,
+            direct_cause(&error),
             opi_ai::provider::ProviderError::AuthFailed(_)
         ));
         let rendered = format!("{error} {error:?}");
@@ -1318,6 +1639,7 @@ async fn direct_auth_statuses_do_not_wait_for_stalled_bodies() {
             opi_ai::test_support::resolved_bearer_auth(),
         );
 
+        assert!(futures_util::poll!(stream.next()).is_pending());
         tokio::time::timeout(
             std::time::Duration::from_secs(2),
             headers_flushed.notified(),
@@ -1332,7 +1654,7 @@ async fn direct_auth_statuses_do_not_wait_for_stalled_bodies() {
 
         let error = result.expect_err("Vertex direct auth status must fail");
         assert!(matches!(
-            error,
+            direct_cause(&error),
             opi_ai::provider::ProviderError::AuthFailed(_)
         ));
         assert_eq!(
@@ -1371,7 +1693,7 @@ async fn oversized_embedded_auth_body_is_not_read_past_the_classification_cap() 
         .expect_err("oversized Vertex error body must fail");
 
     assert!(matches!(
-        error,
+        direct_cause(&error),
         opi_ai::provider::ProviderError::ProviderSide(_)
     ));
 }
@@ -1439,8 +1761,8 @@ async fn request_timeout_maps_to_typed_timeout_at_vertex_boundary() {
         .expect("Vertex timeout must produce a stream item");
 
     assert!(matches!(
-        result,
-        Err(opi_ai::provider::ProviderError::Timeout)
+        result.as_ref().err().map(direct_cause),
+        Some(opi_ai::provider::ProviderError::Timeout)
     ));
 }
 
@@ -1453,6 +1775,7 @@ async fn stalled_embedded_auth_body_respects_a_stricter_request_timeout() {
     let mut stream =
         provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
 
+    assert!(futures_util::poll!(stream.next()).is_pending());
     tokio::time::timeout(
         std::time::Duration::from_secs(2),
         headers_flushed.notified(),
@@ -1466,8 +1789,8 @@ async fn stalled_embedded_auth_body_respects_a_stricter_request_timeout() {
         .expect("Vertex error-body timeout must produce a stream item");
 
     assert!(matches!(
-        result,
-        Err(opi_ai::provider::ProviderError::Timeout)
+        result.as_ref().err().map(direct_cause),
+        Some(opi_ai::provider::ProviderError::Timeout)
     ));
 }
 
@@ -1593,8 +1916,13 @@ async fn request_header_cannot_override_vertex_auth_routing() {
         provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
 
     assert!(matches!(
-        stream.next().await,
-        Some(Err(opi_ai::provider::ProviderError::RequestFailed(_)))
+        stream
+            .next()
+            .await
+            .as_ref()
+            .and_then(|item| item.as_ref().err())
+            .map(direct_cause),
+        Some(opi_ai::provider::ProviderError::RequestFailed(_))
     ));
     assert!(
         server
@@ -1619,6 +1947,7 @@ async fn assert_vertex_cancelled(stall_point: VertexStallPoint) {
     let mut stream =
         provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
 
+    assert!(futures_util::poll!(stream.next()).is_pending());
     tokio::time::timeout(std::time::Duration::from_secs(1), stalled.notified())
         .await
         .expect("Vertex server must reach the selected stall point");

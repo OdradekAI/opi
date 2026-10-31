@@ -1087,8 +1087,11 @@ async fn run_stream(
                     received_event = true;
                 }
                 let event = match event {
-                    ResponsesEvent::Error { .. } => ResponsesEvent::Error {
+                    ResponsesEvent::Error {
+                        raw_stop_reason, ..
+                    } => ResponsesEvent::Error {
                         message: UPSTREAM_STREAM_ERROR.to_owned(),
+                        raw_stop_reason,
                     },
                     event => event,
                 };

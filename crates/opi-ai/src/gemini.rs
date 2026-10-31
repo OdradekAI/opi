@@ -116,9 +116,8 @@ struct UsageMetadata {
     prompt_token_count: Option<u32>,
     #[serde(rename = "candidatesTokenCount")]
     candidates_token_count: Option<u32>,
-    #[allow(dead_code)]
     #[serde(rename = "totalTokenCount")]
-    total_token_count: Option<u32>,
+    total_token_count: Option<u64>,
     #[serde(rename = "cachedContentTokenCount")]
     cached_content_token_count: Option<u32>,
     /// Reasoning tokens: contained by `candidatesTokenCount + thoughtsTokenCount`
@@ -149,7 +148,9 @@ pub(crate) enum ParsedEvent {
 #[derive(Debug, Clone)]
 pub(crate) enum GeminiEvent {
     /// First non-empty response identity (recorded once per stream).
-    ResponseId { id: String },
+    ResponseId {
+        id: String,
+    },
     TextDelta {
         text: String,
         signature: Option<String>,
@@ -164,9 +165,9 @@ pub(crate) enum GeminiEvent {
         args: serde_json::Value,
         signature: Option<String>,
     },
+    Usage(Usage),
     Finish {
         reason: String,
-        usage: Option<Usage>,
     },
     Error {
         #[expect(
@@ -203,18 +204,27 @@ impl ParsedEvent {
 
         // Usage follows the pi mapping: input = prompt - cached,
         // output = candidates + thoughts, reasoning = thoughts.
-        let usage = resp.usage_metadata.map(|u| {
+        let usage = if let Some(u) = resp.usage_metadata {
             let cached = u.cached_content_token_count.unwrap_or(0);
             let thoughts = u.thoughts_token_count.unwrap_or(0);
-            Usage::reported(
+            let Some(output) = u.candidates_token_count.unwrap_or(0).checked_add(thoughts) else {
+                return vec![ParsedEvent::Malformed];
+            };
+            let reported = u.prompt_token_count.is_some() && u.candidates_token_count.is_some();
+            let mut usage = Usage::reported(
                 u.prompt_token_count.unwrap_or(0).saturating_sub(cached),
-                u.candidates_token_count.unwrap_or(0) + thoughts,
+                output,
                 cached,
                 0,
-                None, // cache_write_1h_tokens
-                Some(thoughts as u64),
+                None,
+                u.thoughts_token_count.map(u64::from),
             )
-        });
+            .with_total_tokens(u.total_token_count);
+            usage.reported = reported;
+            Some(usage)
+        } else {
+            None
+        };
 
         if let Some(candidates) = &resp.candidates
             && let Some(candidate) = candidates.first()
@@ -263,27 +273,17 @@ impl ParsedEvent {
                         }
                     }
                 }
-
-                if let Some(ref reason) = finish_reason {
-                    events.push(ParsedEvent::Valid(GeminiEvent::Finish {
-                        reason: reason.clone(),
-                        usage: usage.clone(),
-                    }));
-                }
-
-                if !events.is_empty() {
-                    return events;
-                }
             }
-
-            // Finish reason without content
+            if let Some(usage) = usage {
+                events.push(ParsedEvent::Valid(GeminiEvent::Usage(usage)));
+            }
             if let Some(reason) = finish_reason {
-                return vec![ParsedEvent::Valid(GeminiEvent::Finish { reason, usage })];
+                events.push(ParsedEvent::Valid(GeminiEvent::Finish { reason }));
             }
+        } else if let Some(usage) = usage {
+            events.push(ParsedEvent::Valid(GeminiEvent::Usage(usage)));
         }
-
-        // No useful data  - return empty (silently skip)
-        Vec::new()
+        events
     }
 }
 
@@ -303,6 +303,7 @@ pub(crate) struct GeminiMapper {
     snapshot: crate::stream::ProducerSnapshot,
     partial: AssistantMessage,
     saw_done: bool,
+    saw_finish: bool,
     current_block: Option<CurrentBlock>,
     /// Locally generated ids for unsigned or duplicate tool calls; ids are
     /// unique per stream and derive from the tool name (pi
@@ -336,10 +337,54 @@ impl GeminiMapper {
             snapshot: crate::stream::ProducerSnapshot::default(),
             partial: empty_assistant_message(provider, wire, model),
             saw_done: false,
+            saw_finish: false,
             current_block: None,
             id_counter: 0,
             used_ids: std::collections::HashSet::new(),
         }
+    }
+
+    /// Offline fixture inspection keeps its existing recoverable-frame behavior;
+    /// only a supplied finish marker requests a fixture terminal.
+    pub(crate) fn finish_fixture(&mut self) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        if self.saw_finish {
+            self.finish()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Finish after source exhaustion: usage may follow a finish marker.
+    pub(crate) fn finish(&mut self) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        if self.saw_done {
+            return Vec::new();
+        }
+        self.saw_done = true;
+        let mut events = Vec::new();
+        self.close_block(&mut events);
+        self.start_if_empty(&mut events);
+        self.snapshot.record(&self.partial);
+        if !self.saw_finish {
+            return vec![Err(self.failure(ProviderError::StreamError(
+                ProviderErrorSummary::attested_static("stream ended without a terminal event"),
+            )))];
+        }
+        if self.partial.stop_reason == StopReason::Error {
+            let reason = self.partial.raw_stop_reason.as_deref().unwrap_or_default();
+            let message = if reason.is_empty() {
+                "Provider stopped with an unknown finish reason".to_owned()
+            } else {
+                format!("Provider stopped with: {reason}")
+            };
+            return vec![Err(self.failure(ProviderError::StreamError(
+                ProviderErrorSummary::sanitized(message),
+            )))];
+        }
+        events.push(Ok(AssistantStreamEvent::Done {
+            reason: self.partial.stop_reason,
+            message: self.partial.clone(),
+        }));
+        events
     }
 
     /// Start event on first content (exactly once per stream).
@@ -523,52 +568,26 @@ impl GeminiMapper {
                 }));
                 events
             }
-            GeminiEvent::Finish { reason, usage } => {
-                let mut events = Vec::new();
-                self.close_block(&mut events);
-                self.start_if_empty(&mut events);
-
-                if let Some(u) = usage {
-                    self.partial.usage = u;
-                }
-
-                let has_tool_calls = self
-                    .partial
-                    .content
-                    .iter()
-                    .any(|c| matches!(c, AssistantContent::ToolCall { .. }));
-
+            GeminiEvent::Usage(usage) => {
+                self.partial.usage = usage;
+                Vec::new()
+            }
+            GeminiEvent::Finish { reason } => {
+                self.saw_finish = true;
+                self.partial.raw_stop_reason = Some(reason.clone());
                 self.partial.stop_reason = match reason.as_str() {
-                    "STOP" => {
-                        if has_tool_calls {
-                            StopReason::ToolUse
-                        } else {
-                            StopReason::Stop
-                        }
+                    "STOP"
+                        if self.partial.content.iter().any(|content| {
+                            matches!(content, AssistantContent::ToolCall { .. })
+                        }) =>
+                    {
+                        StopReason::ToolUse
                     }
+                    "STOP" => StopReason::Stop,
                     "MAX_TOKENS" => StopReason::Length,
-                    _ => {
-                        // Unmapped finish reasons are provider stops: the
-                        // raw reason rides the typed failure text (pi
-                        // `Provider stopped with: <raw>`).
-                        self.saw_done = true;
-                        let message = if reason.is_empty() {
-                            "Provider stopped with an unknown finish reason".to_owned()
-                        } else {
-                            format!("Provider stopped with: {reason}")
-                        };
-                        return vec![Err(self.failure(ProviderError::StreamError(
-                            ProviderErrorSummary::sanitized(message),
-                        )))];
-                    }
+                    _ => StopReason::Error,
                 };
-                self.saw_done = true;
-
-                events.push(Ok(AssistantStreamEvent::Done {
-                    reason: self.partial.stop_reason,
-                    message: self.partial.clone(),
-                }));
-                events
+                Vec::new()
             }
             GeminiEvent::Error { message: _ } => {
                 // Preserve state that did not produce a public event (usage,
@@ -582,7 +601,7 @@ impl GeminiMapper {
     }
 }
 
-fn empty_assistant_message(
+pub(crate) fn empty_assistant_message(
     provider: &str,
     wire: crate::model_info::WireApi,
     model: &str,
@@ -601,6 +620,7 @@ fn empty_assistant_message(
         timestamp_ms: crate::time::now_ms(),
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
         deferred: None,
     }
@@ -753,8 +773,7 @@ fn resolve_google_pi_level(
     }
 }
 
-/// Thought signatures must be base64 (TYPE_BYTES); only same-provider and
-/// same-model signatures are usable (pi `resolveThoughtSignature`).
+/// Thought signatures must be base64 (TYPE_BYTES).
 fn valid_thought_signature(signature: Option<&str>) -> bool {
     let Some(signature) = signature else {
         return false;
@@ -762,9 +781,12 @@ fn valid_thought_signature(signature: Option<&str>) -> bool {
     if signature.is_empty() || signature.len() % 4 != 0 {
         return false;
     }
-    signature
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=')
+    let body = signature.trim_end_matches('=');
+    !body.is_empty()
+        && signature.len() - body.len() <= 2
+        && body
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
 }
 
 // ---------------------------------------------------------------------------
@@ -1023,14 +1045,15 @@ impl GeminiProvider {
         )?;
 
         // Canonical replay projection (task 20.7) before body building.
+        let replay_route = crate::replay::ReplayRoute {
+            wire: self.wire,
+            provider: provider_id.to_owned(),
+            model: model_id.to_owned(),
+            supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
+        };
         let replay = crate::replay::project_replay(
             &crate::transcript::without_initial_system_message(transcript.messages()),
-            &crate::replay::ReplayRoute {
-                wire: self.wire,
-                provider: provider_id.to_owned(),
-                model: model_id.to_owned(),
-                supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
-            },
+            &replay_route,
             crate::replay::ReplayProjection::NativeOrCollapse,
         )?;
         let body_messages = replay.messages;
@@ -1088,13 +1111,13 @@ impl GeminiProvider {
                     }));
                 }
                 crate::message::Message::Assistant(a) => {
-                    // Signatures replay only for same-provider/same-model
-                    // history and only in valid base64 (task 20.40).
-                    let same_model = a.provider == provider_id && a.model == model_id;
+                    // Signatures require exact provider/API/model provenance
+                    // and valid base64; unknown API history is never reusable.
+                    let same_identity = crate::replay::same_identity(a, &replay_route);
                     let usable = |signature: &Option<String>| {
-                        (same_model && valid_thought_signature(signature.as_deref())).then(|| {
-                            serde_json::Value::String(signature.clone().unwrap_or_default())
-                        })
+                        (same_identity && valid_thought_signature(signature.as_deref())).then(
+                            || serde_json::Value::String(signature.clone().unwrap_or_default()),
+                        )
                     };
                     let include_id = requires_tool_call_id(model_id);
                     let parts: Vec<serde_json::Value> = a
@@ -1118,7 +1141,7 @@ impl GeminiProvider {
                                 thinking,
                                 signature,
                             } => {
-                                if same_model {
+                                if same_identity {
                                     if thinking.trim().is_empty() && usable(signature).is_none() {
                                         return None;
                                     }
@@ -1129,13 +1152,9 @@ impl GeminiProvider {
                                     }
                                     Some(part)
                                 } else {
-                                    // Cross-model thinking replays as plain
-                                    // text without tags; unusable signatures
-                                    // drop entirely.
-                                    if thinking.trim().is_empty() {
-                                        return None;
-                                    }
-                                    Some(serde_json::json!({"text": thinking}))
+                                    // Cross-identity thinking never becomes
+                                    // visible replay text.
+                                    None
                                 }
                             }
                             AssistantContent::ToolCall { tool_call } => {
@@ -1498,6 +1517,7 @@ impl GeminiProvider {
             }
         }
 
+        stream_events.extend(mapper.finish_fixture());
         let _cancel = cancel;
         Box::pin(stream::iter(stream_events))
     }
@@ -1626,7 +1646,8 @@ impl GeminiProvider {
                         match parsed {
                             ParsedEvent::Valid(event) => {
                                 for item in mapper.process(event) {
-                                    if !send_or_cancel(&cancel, tx, item).await? {
+                                    let event = item?;
+                                    if !send_or_cancel(&cancel, tx, Ok(event)).await? {
                                         return Ok(());
                                     }
                                 }
@@ -1635,9 +1656,7 @@ impl GeminiProvider {
                                 let err = ProviderError::StreamError(
                                     ProviderErrorSummary::attested_static(MALFORMED_STREAM_FRAME),
                                 );
-                                if !send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await? {
-                                    return Ok(());
-                                }
+                                return Err(mapper.failure(err));
                             }
                         }
                     }
@@ -1646,11 +1665,10 @@ impl GeminiProvider {
 
             let eof_tail = decoder.finish();
             buffer.push_str(&eof_tail);
-            if !mapper.saw_done {
-                let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                    "stream ended without a terminal event",
-                ));
-                let _ = send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await?;
+            for item in mapper.finish() {
+                if !send_or_cancel(&cancel, tx, item).await? {
+                    return Ok(());
+                }
             }
 
             Ok(())
@@ -1663,6 +1681,83 @@ impl GeminiProvider {
 // ---------------------------------------------------------------------------
 // Streaming helpers
 // ---------------------------------------------------------------------------
+
+/// Activation and local timing owner for the two Google transports.
+/// An unpolled stream never starts its producer.
+pub(crate) fn google_response_stream(
+    producer: impl std::future::Future<Output = ()> + Send + 'static,
+    rx: tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>,
+    cancel: CancellationToken,
+    snapshot: crate::stream::ProducerSnapshot,
+) -> EventStream {
+    let receiver = CancelAwareReceiverStream::with_snapshot(rx, cancel, snapshot.clone());
+    Box::pin(
+        stream::unfold(
+            (Some(producer), Some(receiver), None),
+            move |(producer, receiver, activated)| {
+                let snapshot = snapshot.clone();
+                async move {
+                    let mut receiver = receiver?;
+                    let activated = match producer {
+                        Some(producer) => {
+                            let at = tokio::time::Instant::now();
+                            tokio::spawn(producer);
+                            at
+                        }
+                        None => activated.expect("a polled Google response is activated"),
+                    };
+                    let item = receiver.next().await?;
+                    let stamp = |message: &mut AssistantMessage| {
+                        if message.duration_ms.is_none() {
+                            message.duration_ms = Some(
+                                activated
+                                    .elapsed()
+                                    .as_millis()
+                                    .try_into()
+                                    .unwrap_or(u64::MAX),
+                            );
+                        }
+                    };
+                    let item = match item {
+                        Ok(AssistantStreamEvent::Done {
+                            reason,
+                            mut message,
+                        }) => {
+                            stamp(&mut message);
+                            Ok(AssistantStreamEvent::Done { reason, message })
+                        }
+                        Err(cause) => {
+                            let cause = snapshot.failure(cause);
+                            let received = cause.response_received();
+                            let (message, cause) = cause.into_stream_parts();
+                            let cause = if let Some(mut message) = message {
+                                stamp(&mut message);
+                                cause.with_partial(message)
+                            } else {
+                                cause
+                            };
+                            Err(if received {
+                                cause.after_response()
+                            } else {
+                                cause
+                            })
+                        }
+                        other => other,
+                    };
+                    let terminal = match &item {
+                        Ok(event) => event.is_terminal(),
+                        Err(_) => true,
+                    };
+                    Some((
+                        item,
+                        (None, (!terminal).then_some(receiver), Some(activated)),
+                    ))
+                }
+            },
+        )
+        .fuse(),
+    )
+}
 
 /// Drain complete SSE events from the buffer (delimited by `\n\n`).
 pub(crate) fn drain_sse_payloads(buffer: &mut String) -> Vec<String> {
@@ -1801,6 +1896,11 @@ impl Provider for GeminiProvider {
         let provider_identity = self.provider_identity.clone();
 
         let snapshot = crate::stream::ProducerSnapshot::default();
+        snapshot.record(&empty_assistant_message(
+            &provider_identity,
+            WireApi::GoogleGenerativeAi,
+            &model_id,
+        ));
         let producer_snapshot = snapshot.clone();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let producer_cancel = cancel.clone();
@@ -1848,15 +1948,14 @@ impl Provider for GeminiProvider {
                 _ = run => (),
             }
         };
-        if let Some(context) = telemetry {
-            tokio::spawn(context.instrument(producer));
-        } else {
-            tokio::spawn(producer);
-        }
-
-        Box::pin(CancelAwareReceiverStream::with_snapshot(
-            rx, cancel, snapshot,
-        ))
+        let producer = async move {
+            if let Some(context) = telemetry {
+                context.instrument(producer).await;
+            } else {
+                producer.await;
+            }
+        };
+        google_response_stream(producer, rx, cancel, snapshot)
     }
 
     fn id(&self) -> &str {

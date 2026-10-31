@@ -243,7 +243,12 @@ impl AttemptFailure {
             return should_retry;
         }
         match self.status {
-            None => true,
+            // No-status network/timeout failures are acquisition failures;
+            // successful HTTP bodies with invalid JSON are terminal instead.
+            None => matches!(
+                self.error,
+                ProviderError::Network(_) | ProviderError::Timeout
+            ),
             Some(status) => status == 408 || status == 409 || status == 429 || status >= 500,
         }
     }

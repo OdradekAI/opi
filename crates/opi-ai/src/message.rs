@@ -45,6 +45,10 @@ pub struct AssistantMessage {
     pub response_id: Option<String>,
     pub usage: crate::stream::Usage,
     pub stop_reason: crate::stream::StopReason,
+    /// Original provider termination fact, independent of the normalized stop
+    /// reason. Absent when the provider did not report one or on old records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_stop_reason: Option<String>,
     pub error_message: Option<String>,
     pub timestamp_ms: i64,
     /// Message-level constrained-sampling diagnostics (task 20.11,
@@ -54,7 +58,7 @@ pub struct AssistantMessage {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<crate::stream::AssistantDiagnostic>,
     /// Monotonic adapter response-stream duration (AIR-061): measured from
-    /// response-stream activation/first body bytes to terminal. `None` when
+    /// response-stream first poll/activation to terminal. `None` when
     /// not measured (setup failures before activation, older records);
     /// forwarding and serialization retain known values without recomputation.
     #[serde(default, skip_serializing_if = "Option::is_none")]

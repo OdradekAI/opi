@@ -348,6 +348,7 @@ fn redact_assistant_message(
         timestamp_ms: message.timestamp_ms,
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
         // The deferred handle carries source-owned identity with no
         // credential; pass it through so redacted events keep the pending

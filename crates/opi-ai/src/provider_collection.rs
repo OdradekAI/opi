@@ -549,8 +549,10 @@ fn catalog_pricing(entry: &CatalogModel) -> Result<ModelPricing, BuiltinError> {
         for tier in raw_tiers {
             let input_tokens_above = tier
                 .get("inputTokensAbove")
-                .and_then(|value| value.as_u64())
-                .ok_or_else(|| invalid("tier threshold is not a non-negative integer"))?;
+                .and_then(serde_json::Value::as_number)
+                .filter(|threshold| threshold.as_f64().is_some_and(f64::is_finite))
+                .cloned()
+                .ok_or_else(|| invalid("tier threshold is not a finite number"))?;
             let pricing = read_rates(tier)
                 .ok_or_else(|| invalid("tier cost rates are not finite numbers"))?;
             tiers.push(PricingTier {
@@ -1236,6 +1238,35 @@ mod tests {
     use super::*;
     use crate::model_info::ModelCapabilities;
 
+    #[test]
+    fn builtin_pricing_ingestion_retains_finite_number_thresholds() {
+        let mut entry = Catalog::builtin()
+            .unwrap()
+            .models("openai", CatalogOperation::Chat)
+            .unwrap()
+            .next()
+            .unwrap()
+            .clone();
+        entry.raw["cost"]["tiers"] = serde_json::json!([
+            {"inputTokensAbove": -2, "input": 99, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            {"inputTokensAbove": -0.5, "input": 2, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            {"inputTokensAbove": 0.5, "input": 3, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            {"inputTokensAbove": 9_007_199_254_740_992_u64, "input": 4, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            {"inputTokensAbove": 9_007_199_254_740_993_u64, "input": 5, "output": 0, "cacheRead": 0, "cacheWrite": 0}
+        ]);
+        let pricing = catalog_pricing(&entry).unwrap();
+        assert_eq!(pricing.tiers.len(), 5);
+        assert_eq!(pricing.effective(0).input_cost_per_mtok, 2.0);
+        assert_eq!(pricing.effective(1).input_cost_per_mtok, 3.0);
+        assert_eq!(
+            pricing.tiers[4].input_tokens_above.as_u64(),
+            Some(9_007_199_254_740_993)
+        );
+        assert_eq!(
+            pricing.effective(9_007_199_254_740_994).input_cost_per_mtok,
+            5.0
+        );
+    }
     struct NoAmbient;
 
     impl AuthContext for NoAmbient {

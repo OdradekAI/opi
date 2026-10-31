@@ -228,6 +228,10 @@ Anthropic 则使用模型能力门控的 cache marker。`ModelInfo` 包含现有
 可区分缺失与显式上报的零。`CostBreakdown` 只有四行：`input_cost`、`output_cost`、
 `cache_read_cost` 和 `cache_write_cost`。加权的一小时 write 子集折算进
 `cache_write_cost`，reasoning 仍计入 `output_cost`，费用与总 token 只计一次父 bucket。
+`AssistantMessage::raw_stop_reason: Option<String>` 保存 provider 已上报的原始
+终止事实，与归一化的 `stop_reason` 独立。旧记录缺失该字段时读为 `None`，
+序列化省略 `None`；现有 assistant-message 结构体字面量补上
+`raw_stop_reason: None`。
 `Provider::refresh_models` 与 `Models::refresh` 实现确定性的原子目录替换，
 但仅为基底、无生产触发。
 
@@ -260,10 +264,11 @@ LLM 可见内容和 provider 专用失败信号。
 
 Anthropic thinking 内容保留不透明的 `signature`，
 `AssistantContent::RedactedThinking` 保留加密的 `data`。这两个字段会经过消息与
-会话序列化完整保存，仅向同一个 Anthropic provider 和请求模型原样回传。
+会话序列化完整保存，仅向同一个 wire、Anthropic provider 和请求模型原样回传。
 HTTP 响应的 `model` 保留请求模型，`response_model` 保存服务端报告的名称，
-因此模型别名可以继续使用自己的签名历史。切换路由时，带签名的可读 thinking 转成文本，
-加密块被省略。会话导出始终省略这两个不透明字段，即使包含可读 thinking。
+因此模型别名可以继续使用自己的签名历史。跨身份时丢弃全部 thinking 块，
+包括 signed 与 redacted 块，绝不转成可见文本。会话导出始终省略这两个不透明字段，
+即使包含可读 thinking。
 已有无签名消息仍可读取，`signature` 为 `None`。
 服务端省略模型名时，`response_model: Some("")` 明确保留未知证据，
 不会回退为请求别名。
@@ -634,12 +639,14 @@ call／result 同步；canonical 不变）。图像在能力路由上保留关�
 标志（Anthropic 错误 result 的图像拆到该轮全部工具结果之后，并与其同处
 一条 user 消息——任务 20.39）；`details` 绝不进 wire，URL 源原样透传不
 下载。`ReplayProjection::Strict` 用类型化错误拒绝同
-批有损转换而不是记录事实。六个 provider adapter 在构造请求体开头消费该投
+批有损转换而不是记录事实。provider adapter 在构造请求体开头消费该投
 影（`build_request_body` 现在返回 `Result`）；Responses 解析器打包
 `call_id|fc_item_id` 支持同身份双 ID 往返，序列化器还原两者，外来历史丢弃
 item id。固定参考：
-`.repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts`；逐 wire 加密推理
-parity（AIR-038）与 effort 戳（V-32）由后续任务收尾。
+`.repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts`。
+loopback 回归捕获真实 Anthropic 与 Codex 终态输出，序列化／重新加载后实际发送
+同身份、改模型及跨 wire 请求，同时保持 canonical 的 signed/redacted 或加密数据
+不变。这些检查不替代最终 SDK package 与平台矩阵。
 
 ## 规范 Context／Transcript 时序
 
@@ -828,7 +835,7 @@ schema v1 JSON 加 `opi` revision 头），再返回确切被确认的 map，
 不触碰已发布状态；被取消的 guard 不落盘；重开 store 时先于任何网络
 工作恢复最后已知 revision。持久化文件采用 Pi 的 *distribution* schema
 （`models.schema.json`），与内置 bundle 内嵌的 hydration 数据（v6）是
-不同 artifact；opi 特有保真度（streaming、cache 开关、保持原序的计价分层，含零阈值及重复项、
+不同 artifact；opi 特有保真度（streaming、cache 开关、保持原序的计价分层，含负数／小数阈值及重复项、
 base 与 thinking 等级的 sampling 映射、精确 thinking 映射、含 strict-tool 支持的
 wire compat 载荷）经显式 `x-opi` 扩展往返，纯 v1 文档
 以封闭默认值解码。
@@ -1211,8 +1218,12 @@ functionCall part 上；仅带签名的空 part 得以保留。成功工具结�
 `Tool result image:` user 轮。流式侧捕获首个非空 `responseId`，thought part
 （`thought: true`）作为 thinking 块流式输出并按块保留签名，未签名或重复的
 工具调用 id 本地再生为 `name_N`，usage 计 `input = prompt - cached`、
-`output = candidates + thoughts` 且 `reasoning = thoughts`（缺失的 thoughts
-记为零），未映射的 finish 原因携带原始原因类型化失败
+`output = candidates + thoughts` 且 `reasoning = thoughts`（缺失 thoughts 时可选
+reasoning 子集保持 `None`，显式零保持 `Some(0)`）。各 usage 字段与
+`totalTokenCount` 独立保留是否存在，已上报 total 不按桶和重建；`finishReason`
+之后仅含 usage 的帧仍更新同一终态结果。duration 从 adapter response stream 的
+首次 poll 计至终态，不计 Models 的 auth/loading；未 poll 的流不启动 generation。
+这些用量与计时规则也适用于 Vertex。未映射的 finish 原因携带原始原因类型化失败
 （`Provider stopped with: <raw>`）。Google producer 运行于显式冻结的
 `TelemetryContext`（P20-TELEMETRY）。
 
@@ -1262,6 +1273,8 @@ opi 策划的基线目录（一条）覆盖目录到来之前的窗口；pi 生�
 scheme、OAuth 可用性与端点语义（Azure 部署、Vertex location 模板、
 Bedrock 区域、动态 radius）。旧的 opi id（`gemini`、`vertex`、
 `bedrock`、`openai-responses`）不是别名——表从不注册它们。
+provider 显示名包括 Amazon Bedrock、Anthropic 与 Google Vertex AI；凭证标签
+作为独立元数据保留。
 `provider_collection::register_builtin` 把该表与内置目录转成基于已完
 成 wire 适配器的注册 provider：每 profile 一个 mapped provider（Azure
 与 google-vertex 受配置门控并给出类型化跳过原因，bedrock 以 AWS 链
@@ -1282,12 +1295,12 @@ Bedrock 区域、动态 radius）。旧的 opi id（`gemini`、`vertex`、
 criteria 映射一样按字母序）、`score` 保留层级、`bool` 变为 `predicate`
 并把真/假语义并入 instructions——System One 的 `noul` 与 Decisions 的
 `predicate` 不可互换。答案以数组返回并按 name 匹配；拒答、缺答、形状
-错型与非 finite 必填数均为类型化错误，且保留已计费的 usage 与按目录分
+错型与非 finite 必填数均为类型化错误，清空整个答案集合并保留已计费的 usage 与按目录分
 层的成本（仅做 source 必需的校验——不加任何通用概率范围/求和/argmax/
 标签成员规则）。该路由只接受 OpenAI API key：空 key 在任何请求前类型
 化失败。api.openai.com 前方的 Cloudflare 在请求超过约五秒时以 HTML 页
 应答 504；重发同一输入只会再次超时，因此 **504 永不重试**，失败消息
-解释网关限制而不透出页面——其余状态保持共享分类器重试策略（默认 2 次
+解释网关限制而不透出页面。network、timeout 与可重试 HTTP 失败保持共享分类器重试策略（默认 2 次
 额外重试、Retry-After 感知封顶延迟、逐 attempt body-inclusive 超时）。
 curated 的 `gpt-6-luna` 记录记载被测模型及其 272K token 以上的长上下文
 计价分层。`temperature` 在 pi 选项类型上存在但 Decisions 请求从不读
@@ -1388,10 +1401,12 @@ tiered 计价**（区别于图像路径的基础价例外）。
 传输遵循源：**无默认超时**（调用方超时 body-inclusive 且**每次重试
 attempt 新鲜**，超时报 `"Request timed out after {ms}ms"` 并像任何无状
 态失败一样可重试），**默认 2 额外重试**并采用 SDK 重试策略
-（`x-should-retry` 覆盖；408/409/429/5xx/无状态可重试；
+（`x-should-retry` 覆盖；408/409/429/5xx 以及 network/timeout 可重试；
 `retry-after-ms`/`retry-after` 生效且有 60 秒服务端延迟上限——超上限请
 求立即失败并保留源消息格式），重试复用冻结 payload，取消映射为
 `Aborted`，HTTP 失败格式化为 `"System One API error ({status}): {body}"`。
+四种 classifier 协议的 JSON 语法、callback 与答案校验失败均不触发底层 acquisition 重试；
+Decisions 另排除 HTTP 504。
 `temperature` 是 System One 无法应用的类型化选项：永不上线。payload 观
 察器（替换或保留、每次逻辑调用一次、跨重试冻结）与 response 观察器
 （status + headers，在完整 JSON 解码后，位于 acquisition 重试和超时之外）受支持；raw-event 与 header-transform
@@ -1547,8 +1562,8 @@ Google 形态（无 named 工具模式；`budget_tokens` 原样保留 `-1` 动�
 `x-goog-api-key`）；Bearer token 走 ADC project/location URL，凭证来源
 持有 quota project 时附加 `x-goog-user-project`。自定义 base URL 绝不丢
 project/location 资源前缀（前缀总是重建），`location = "global"` 钉住共享
-域名。内容引擎、流式解析、usage 计量（`output = candidates + thoughts`、
-`reasoning = thoughts`）、strict 工具处理与 thought 签名规则继承自共享
+域名。内容引擎、流式解析、独立的 usage/total 计量与 activation 起算的 duration、
+strict 工具处理与 thought 签名规则继承自共享
 Google 引擎（任务 20.40）。
 
 每 wire 一处 neutral 策略差异：vertex 预算表没有专用 flash-lite 条目，pi
@@ -1644,7 +1659,7 @@ sections 取整一次，added／removed 工具列表的序列化 JSON 各自单�
 | 数字 Claude thinking 预算 | 等级表 1024/2048/8192/16384（xhigh/max → high），再夹取留出回答空间 | 省略预算 → 等级默认 | native enabled 且省略预算用 1024；simple 的零预算按各 wire 处理 | 等级默认 < 显式预算 |
 | sampling 参数 | 按键合并的 JSON 映射 | 空映射 → 不合并 | 缺失键保持缺失 | 模型基座 < 生效等级 < request |
 | temperature | 具名字段 | `None` → 按适配器门控省略 | NaN 省略 | sampling 映射覆盖具名字段（最后合并） |
-| 计价 tier | 以 input+cacheRead+cacheWrite 选择，严格大于，取最高，相等重复取首个 | 无 tier → 基础费率 | 零阈值有效；保持原序及重复项 | 命中费率适用于整个请求 |
+| 计价 tier | 以 input+cacheRead+cacheWrite 选择，严格大于，取最高，相等重复取首个 | 无 tier → 基础费率 | 保留有限负数／小数阈值；仅 `> -1` 的阈值可命中 | 命中费率适用于整个请求 |
 | 1h 缓存写入 | 子集按 2× 输入费率 | `None` → 全部短缓存 | 显式 0 有效，与缺失区分 | 子集，永不重复计费 |
 | service tier | Responses：flex 0.5×、priority/fast 2×（`gpt-5.5`：2.5×）；Codex fast 和 Azure 所有 tier：1× | request/response 回退依选定 wire | 对 tier 敏感的 wire，未知 tier → 未知费用 | 作用于每个成本分量 |
 
@@ -1653,7 +1668,11 @@ sections 取整一次，added／removed 工具列表的序列化 JSON 各自单�
 `Usage::service_tier` 保留响应观察到的类别；`effective_service_tier` 保留选定
 wire 的 request/response 计费规则。`calculate_cost_tiered(usage, pricing,
 model_id, wire)` 在用量未知、价格无效或计费相关 tier 未知时返回 `None`。
-OpenRouter 图片使用基础费率，不做 tier 选择。native 保留各适配器的预算语义；
+OpenRouter 图片使用基础费率，不做 tier 选择。`PricingTier::input_tokens_above`
+使用 `serde_json::Number`，保留精确整数与有限小数；Rust 整数字面量使用
+`100_000_u64.into()`，小数使用 `Number::from_f64`。旧整数目录快照仍可读取，
+不会舍入；阈值与 `u64` token 比较在超过 `2^53` 时仍保持整数精度。
+native 保留各适配器的预算语义；
 Pi Messages simple 透传自己的白名单。`ModelInfo::input_limits` 仅为元数据，
 不自动开启拒绝或缩放政策。已退役的静态 `reasoning_effort` compat 键返回迁移错误。
 

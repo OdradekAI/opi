@@ -276,6 +276,10 @@ support off.
 
 `Usage::cache_write_1h_tokens` and `Usage::reasoning_tokens` are optional
 `u64` child subsets, preserving absent versus explicitly reported zero.
+`AssistantMessage::raw_stop_reason: Option<String>` retains a reported provider
+termination fact independently of normalized `stop_reason`. Historical records
+read the missing field as `None`, which is omitted when serialized. Existing
+assistant-message literals add `raw_stop_reason: None`.
 `CostBreakdown` has four lines: `input_cost`, `output_cost`,
 `cache_read_cost`, and `cache_write_cost`. The weighted one-hour write subset
 is folded into `cache_write_cost`, reasoning remains in `output_cost`, and
@@ -322,10 +326,11 @@ failure signal.
 Anthropic thinking content retains its opaque `signature`, and
 `AssistantContent::RedactedThinking` retains encrypted `data`. These fields
 survive message/session serialization and are replayed unchanged only on the
-same Anthropic provider and requested model. HTTP responses keep that requested
+same wire, Anthropic provider and requested model. HTTP responses keep that requested
 model in `model` and the service-reported name in `response_model`, so aliases
-can continue their own signed history. A different route receives signed
-thinking as readable text and omits encrypted blocks. Session exports omit both opaque
+can continue their own signed history. A different identity drops all thinking
+blocks, including signed and redacted blocks, without converting them to visible
+text. Session exports omit both opaque
 fields, even when readable thinking is included. Existing unsigned messages
 remain readable with `signature: None`.
 When the service omits the model name, `response_model: Some("")` preserves
@@ -767,14 +772,16 @@ failure flag on capable routes (Anthropic error-result images split after
 all of the turn's tool results inside one user message, task 20.39);
 `details` never serialize and URL sources pass
 through undownloaded. `ReplayProjection::Strict` rejects the same lossy
-transforms with a typed error instead of recording facts. All six provider
+transforms with a typed error instead of recording facts. Provider
 adapters consume the projection at the head of request construction
 (`build_request_body` now returns `Result`); the Responses parser packs
 `call_id|fc_item_id` for same-identity dual-ID round-trip and the
 serializer restores both, dropping the item id for foreign history. Pinned
-reference: `.repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts`;
-per-wire encrypted-reasoning parity (AIR-038) and effort stamps (V-32)
-close with later tasks.
+reference: `.repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts`.
+Loopback regressions capture real Anthropic and Codex terminal output,
+serialize/reload it, then send same-identity, changed-model and foreign-wire
+requests while keeping canonical signed/redacted or encrypted data intact.
+These checks do not replace the final SDK package and platform matrix.
 
 ## Canonical Context/Transcript Chronology
 
@@ -1015,7 +1022,8 @@ nothing; reopening a store restores the last-known revision before any
 network work. The persisted file is the Pi *distribution* schema
 (`models.schema.json`), a different artifact from the hydration data (v6)
 embedded in the builtin bundle; opi-only fidelity (streaming, cache flags,
-pricing tiers in their original order (including zero thresholds and duplicates),
+pricing tiers in their original order (including negative/fractional thresholds
+and duplicates),
 sampling maps at base and thinking levels, exact thinking maps, and wire compat
 payloads including strict-tool support) round-trips
 through an explicit `x-opi` extension, and plain v1 documents decode with
@@ -1520,7 +1528,7 @@ twice.
 | numeric-Claude thinking budget | level table 1024/2048/8192/16384 (xhigh/max → high), then clamped to leave answer room | omitted budget → level default | native enabled-without-budget uses 1024; simple budgets keep their wire-specific zero behavior | level default < explicit budget |
 | sampling params | per-key JSON map | empty map → no merge | keys absent stay absent | model base < effective level < request |
 | temperature | named field | `None` → omitted per adapter gating | NaN omitted | sampling map overrides the named field (merged last) |
-| pricing tiers | selection on input+cacheRead+cacheWrite, strict `>`, highest wins, first of equal duplicates | no tiers → base rates | threshold 0 valid; order and duplicates preserved | tier rates apply to the whole request |
+| pricing tiers | selection on input+cacheRead+cacheWrite, strict `>`, highest wins, first of equal duplicates | no tiers → base rates | finite negative/fractional thresholds retained; only thresholds `> -1` can match | tier rates apply to the whole request |
 | 1h cache write | subset at 2× input rate | `None` → all short-cache | explicit 0 valid, distinct from absent | subset, never double counted |
 | service tier | Responses: flex 0.5×, priority/fast 2× (`gpt-5.5`: 2.5×); Codex fast and all Azure tiers: 1× | effective request/response fallback follows the selected wire | unknown tier → unknown cost on tier-sensitive wires | applies to every cost component |
 
@@ -1531,6 +1539,11 @@ the observed response category; `effective_service_tier` retains the selected
 wire's request/response billing rule. `calculate_cost_tiered(usage, pricing,
 model_id, wire)` returns `None` for unknown usage, invalid pricing or an unknown
 tier on a tier-sensitive wire. OpenRouter images use base rates without tiers.
+`PricingTier::input_tokens_above` uses `serde_json::Number`: exact integers and
+finite fractional values. Integer Rust literals use `100_000_u64.into()`;
+fractions use `Number::from_f64`. Existing integer catalog snapshots remain
+readable without rounding. Thresholds and `u64` token comparisons stay exact
+above `2^53`.
 Native calls preserve their adapter budget semantics; Pi Messages simple calls
 forward their own whitelist. `ModelInfo::input_limits` is metadata, never an
 automatic rejection or resize policy. Retired static `reasoning_effort` compat
@@ -1739,8 +1752,14 @@ turn. Streaming captures the first non-empty `responseId`, thought parts
 (`thought: true`) stream as thinking blocks with per-block signature
 retention, unsigned or duplicate tool call ids regenerate locally as
 `name_N`, usage counts `input = prompt - cached`, `output = candidates +
-thoughts` with `reasoning = thoughts` (absent thoughts report zero), and
-unmapped finish reasons fail typed carrying the raw reason
+thoughts` with `reasoning = thoughts` (absent thoughts leave the optional
+reasoning subset `None`; explicit zero remains `Some(0)`). Usage fields and
+`totalTokenCount` retain their independent presence; a reported total is not
+reconstructed from the buckets. A usage-only frame after `finishReason` updates
+the same terminal result. Duration is measured from the adapter response
+stream's first poll to terminal, excluding Models auth/loading; unpolled
+streams start no generation work. These usage and timing rules also apply to
+Vertex. Unmapped finish reasons fail typed carrying the raw reason
 (`Provider stopped with: <raw>`). The Google producer runs under the
 explicit frozen `TelemetryContext` (P20-TELEMETRY).
 
@@ -1799,6 +1818,8 @@ base URLs, env API-key names, auth schemes, OAuth availability and endpoint
 semantics (Azure deployments, Vertex location templates, Bedrock regions,
 dynamic radius). Legacy opi ids (`gemini`, `vertex`, `bedrock`,
 `openai-responses`) are not aliases — the table never registers them.
+Provider display names include Amazon Bedrock, Anthropic and Google Vertex AI;
+credential labels remain separate metadata.
 `provider_collection::register_builtin` turns the table plus the bundled
 catalog into registered providers over the completed wire adapters: one
 mapped provider per profile (Azure and google-vertex stay config-gated with
@@ -1825,15 +1846,15 @@ map), `score` keeps its levels and `bool` becomes a `predicate` whose
 criteria meanings join the instructions — a System One `noul` and a
 Decisions `predicate` are not interchangeable. Answers come back as an
 array matched by name; refusals, missing answers, mistyped shapes and
-non-finite required numbers are typed errors that keep the billed usage
-and its catalog-tiered cost (source-required validations only — no
-universal probability range, sum, argmax or label-membership rule). The
+non-finite required numbers are typed errors that clear the entire answer set
+while keeping billed usage and its catalog-tiered cost (source-required
+validations only — no universal probability range, sum, argmax or label-membership rule). The
 route accepts only OpenAI API keys: an empty key fails typed before any
 request. Cloudflare in front of api.openai.com answers 504 with an HTML
 page when a request runs past about five seconds; retrying the same input
 hits it again, so **504 never retries** and the failure explains the
-gateway limit instead of surfacing the page — everything else keeps the
-shared classifier retry policy (two extra retries by default,
+gateway limit instead of surfacing the page. Network, timeout and eligible HTTP
+failures keep the shared classifier retry policy (two extra retries by default,
 Retry-After-aware capped delays, fresh per-attempt body-inclusive
 timeouts). The curated `gpt-6-luna` record documents the tested model
 with its long-context pricing tier above 272K tokens. `temperature`
@@ -1954,20 +1975,22 @@ an api-mismatch guard. Answer parsing validates only what the source
 requires — record shape, wire-type agreement, a string `choice`, finite
 numbers — with **no** universal probability-range/sum/argmax/label-membership
 rule; every known question must have a type-matching answer, unknown answer
-ids are ignored. Usage `{input_tokens, output_tokens}` keeps the source
-tolerances (a non-number or non-positive token counts as zero; both fields
-absent leaves the result without usage) and prices **chat-style through the
+ids are ignored. Usage `{input_tokens, output_tokens}` retains known counts;
+missing or invalid fields do not become reliable zero and incomplete parent
+buckets remain marked unreported. It prices **chat-style through the
 record's catalog tiers** (unlike the image path's base-rate exception).
 
 Transport follows the source: **no default timeout** (a caller timeout is
 body-inclusive and **fresh for every retry attempt**, reported as
 `"Request timed out after {ms}ms"` and retryable like any no-status
 failure), **two extra retries by default** with the SDK retry policy
-(`x-should-retry` override, 408/409/429/5xx/no-status retryable,
+(`x-should-retry` override, 408/409/429/5xx plus network/timeout retryable,
 `retry-after-ms`/`retry-after` honoured with the 60 s server-delay cap;
 above-cap requests fail immediately with the source message), retries reuse
 the frozen payload, cancellation maps to `Aborted`, and HTTP failures
-format `"System One API error ({status}): {body}"`. `temperature` is a
+format `"System One API error ({status}): {body}"`. Across all four classifier
+protocols, JSON syntax, callback and answer-validation failures do not trigger
+low-level acquisition retries; Decisions also excludes HTTP 504. `temperature` is a
 typed option System One cannot apply: it never reaches the wire. The
 payload observer (replace-or-keep, once per logical call, frozen across
 retries) and the response observer (status + headers after complete JSON decoding, outside acquisition retry and its timeout) are supported; raw-event and header-transform families reject
@@ -2151,8 +2174,8 @@ ADC project/location URL plus the ADC file's `x-goog-user-project` quota
 header when the credential source owns one. A custom base URL never drops
 the project/location resource prefix (the prefix is always rebuilt), and
 `location = "global"` pins the shared domain. The content engine, streaming
-parse, usage accounting (`output = candidates + thoughts`,
-`reasoning = thoughts`), strict tool handling and thought-signature rules
+parse, independent usage/total accounting and activation-based duration,
+strict tool handling and thought-signature rules
 are inherited from the shared Google engine (task 20.40).
 
 One neutral policy differs per wire: the vertex budget table has no

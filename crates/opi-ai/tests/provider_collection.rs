@@ -490,6 +490,7 @@ async fn dispatch_complete_returns_terminal_error_event() {
         timestamp_ms: 0,
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
 
         deferred: None,
@@ -4101,6 +4102,15 @@ fn builtin_profiles_cover_exactly_the_42_canonical_providers() {
 
 #[test]
 fn builtin_profiles_pin_source_qualified_metadata() {
+    assert_eq!(
+        builtin_profile("amazon-bedrock").unwrap().name,
+        "Amazon Bedrock"
+    );
+    assert_eq!(builtin_profile("anthropic").unwrap().name, "Anthropic");
+    assert_eq!(
+        builtin_profile("google-vertex").unwrap().name,
+        "Google Vertex AI"
+    );
     let openai = builtin_profile("openai").expect("openai profile");
     assert_eq!(openai.name, "OpenAI");
     assert_eq!(openai.base_url, Some("https://api.openai.com/v1"));
@@ -4397,7 +4407,7 @@ async fn catalog_tiered_pricing_flows_into_registered_models() {
     let tier = &pricing.tiers[0];
     assert_eq!(
         tier.input_tokens_above,
-        raw_tier["inputTokensAbove"].as_u64().unwrap()
+        raw_tier["inputTokensAbove"].as_number().unwrap().clone()
     );
     assert_eq!(
         tier.pricing.input_cost_per_mtok,

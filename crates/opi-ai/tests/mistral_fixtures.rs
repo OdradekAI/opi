@@ -1421,6 +1421,7 @@ mod mistral_43 {
             let events = run_43(&provider, req_43("go")).await;
             let message = done_message_43(&events).await;
             assert_eq!(message.stop_reason, expected, "raw {raw}");
+            assert_eq!(message.raw_stop_reason.as_deref(), Some(raw));
         }
     }
 
@@ -1713,6 +1714,15 @@ mod mistral_43 {
                         signature: None,
                     },
                 },
+                AssistantContent::ToolCall {
+                    tool_call: ToolCall {
+                        id: "call_second_error_id".into(),
+                        name: "read_file".into(),
+                        arguments: "{}".into(),
+                        arguments_error: None,
+                        signature: None,
+                    },
+                },
             ],
             api: opi_ai::ApiKind::OpenAi,
             provider: "mistral".into(),
@@ -1726,6 +1736,7 @@ mod mistral_43 {
             timestamp_ms: 0,
             diagnostics: vec![],
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
             deferred: None,
         };
@@ -1774,7 +1785,7 @@ mod mistral_43 {
                 }),
                 Message::ToolResult(opi_ai::message::ToolResultMessage {
                     not_executed: None,
-                    tool_call_id: "call_abcdefgh1234567".into(),
+                    tool_call_id: "call_second_error_id".into(),
                     tool_name: "read_file".into(),
                     content: vec![],
                     details: None,
@@ -2077,7 +2088,8 @@ mod mistral_43 {
         let server = MockServer::start().await;
         let sse = concat!(
             "data: {\"id\":\"capture-1\",\"choices\":[{\"delta\":{\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"text\":\"consider\"}]},{\"type\":\"text\",\"text\":\"answer\"}]}}]}\n\n",
-            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4,\"total_tokens\":7}}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"raw-call\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\"}}]}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4,\"total_tokens\":7}}\n\n",
             "data: [DONE]\n\n",
         );
         Mock::given(method("POST"))
@@ -2087,7 +2099,7 @@ mod mistral_43 {
                     .set_body_string(sse)
                     .insert_header("content-type", "text/event-stream"),
             )
-            .expect(2)
+            .expect(4)
             .mount(&server)
             .await;
         let model = model_43(SMALL_43, true, false).with_base_url(server.uri());
@@ -2125,10 +2137,33 @@ mod mistral_43 {
         assert_eq!(first.provider, "mistral");
         assert_eq!(first.wire, Some(WireApi::MistralConversations));
         assert_eq!(first.response_id.as_deref(), Some("capture-1"));
+        assert_eq!(first.raw_stop_reason.as_deref(), Some("tool_calls"));
+        let captured_call = first
+            .content
+            .iter()
+            .find_map(|content| match content {
+                AssistantContent::ToolCall { tool_call } => Some(tool_call),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(captured_call.arguments, "{");
+        let tool_result = Message::ToolResult(opi_ai::message::ToolResultMessage {
+            tool_call_id: captured_call.id.clone(),
+            tool_name: "lookup".into(),
+            content: vec![OutputContent::Text {
+                text: "invalid JSON was rejected".into(),
+            }],
+            details: None,
+            is_error: true,
+            not_executed: None,
+            truncated: false,
+            timestamp_ms: 0,
+        });
         // The pinned Mistral response protocol does not supply an effort stamp.
         assert!(first.provider_thinking_level.is_none());
         let reload: opi_ai::message::AssistantMessage =
             serde_json::from_slice(&serde_json::to_vec(&first).unwrap()).unwrap();
+        let canonical = serde_json::to_vec(&reload).unwrap();
         assert_eq!(
             serde_json::to_value(&reload).unwrap(),
             serde_json::to_value(&first).unwrap()
@@ -2138,7 +2173,8 @@ mod mistral_43 {
             system_prompt: None,
             tools: vec![],
             messages: vec![
-                Message::Assistant(reload),
+                Message::Assistant(reload.clone()),
+                tool_result.clone(),
                 Message::User(UserMessage {
                     content: vec![InputContent::Text {
                         text: "continue".into(),
@@ -2150,6 +2186,43 @@ mod mistral_43 {
         .unwrap();
         models
             .complete(
+                opi_ai::ChatModelRecord::new("mistral", model.clone()),
+                request.clone(),
+                options(),
+            )
+            .await
+            .unwrap();
+        let mut changed_model = model.clone();
+        changed_model.id = "different-mistral-model".into();
+        let result = models
+            .complete(
+                opi_ai::ChatModelRecord::new("mistral", changed_model.clone()),
+                request.clone(),
+                options(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.model, changed_model.id);
+        let mut unknown = reload.clone();
+        unknown.wire = None;
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            tools: vec![],
+            messages: vec![
+                Message::Assistant(unknown.clone()),
+                tool_result,
+                Message::User(UserMessage {
+                    content: vec![InputContent::Text {
+                        text: "continue".into(),
+                    }],
+                    timestamp_ms: 0,
+                }),
+            ],
+        })
+        .unwrap();
+        let unknown_canonical = serde_json::to_vec(&unknown).unwrap();
+        models
+            .complete(
                 opi_ai::ChatModelRecord::new("mistral", model),
                 request,
                 options(),
@@ -2157,9 +2230,35 @@ mod mistral_43 {
             .await
             .unwrap();
         let sent = server.received_requests().await.unwrap();
-        for request in &sent {
+        for (index, request) in sent.iter().enumerate() {
             let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
             assert_eq!(body["reasoning_effort"], "medium");
+            assert_eq!(
+                body["model"],
+                if index == 2 {
+                    changed_model.id.as_str()
+                } else {
+                    SMALL_43
+                }
+            );
+            if index > 0 {
+                let messages = body["messages"].as_array().unwrap();
+                let assistant = messages
+                    .iter()
+                    .find(|message| message["role"] == "assistant")
+                    .unwrap();
+                let call = &assistant["tool_calls"][0];
+                assert_eq!(call["function"]["arguments"], "{");
+                let tool = messages
+                    .iter()
+                    .find(|message| message["role"] == "tool")
+                    .unwrap();
+                assert_eq!(tool["tool_call_id"], call["id"]);
+                assert_eq!(
+                    tool["content"],
+                    serde_json::json!([{"type":"text","text":"[tool error] invalid JSON was rejected"}])
+                );
+            }
         }
         let replay: serde_json::Value = serde_json::from_slice(&sent[1].body).unwrap();
         let assistant = replay["messages"]
@@ -2175,6 +2274,24 @@ mod mistral_43 {
                 {"type":"text","text":"answer"},
             ])
         );
+        for request in &sent[2..] {
+            assert_eq!(request.url.path(), "/v1/chat/completions");
+            assert_eq!(request.headers["authorization"], "Bearer fixture-key");
+            let projected: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+            let assistant = projected["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|message| message["role"] == "assistant")
+                .unwrap();
+            assert_eq!(
+                assistant["content"],
+                serde_json::json!([{"type":"text","text":"answer"}]),
+                "foreign or unknown-source thinking must not reach the native Mistral wire"
+            );
+        }
+        assert_eq!(serde_json::to_vec(&reload).unwrap(), canonical);
+        assert_eq!(serde_json::to_vec(&unknown).unwrap(), unknown_canonical);
     }
 
     #[tokio::test]

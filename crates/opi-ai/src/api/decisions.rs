@@ -523,7 +523,7 @@ pub fn default_decisions_classifier_record() -> ClassifierModelRecord {
                     ..crate::stream::Pricing::default()
                 },
                 vec![crate::model_info::PricingTier {
-                    input_tokens_above: 272_000,
+                    input_tokens_above: 272_000.into(),
                     pricing: crate::stream::Pricing {
                         input_cost_per_mtok: 0.2,
                         ..crate::stream::Pricing::default()
@@ -773,6 +773,7 @@ fn parse_decisions_response(
                 result.answers.insert(id.clone(), answer);
             }
             Err(message) => {
+                result.answers.clear();
                 result.stop_reason = ClassifierStopReason::Error;
                 result.error_message = Some(message.clone());
                 result.error = Some(ProviderError::StreamError(ProviderErrorSummary::sanitized(

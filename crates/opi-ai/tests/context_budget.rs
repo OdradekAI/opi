@@ -30,6 +30,7 @@ fn assistant(timestamp_ms: i64) -> Message {
         timestamp_ms,
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
 
         deferred: None,
@@ -232,6 +233,7 @@ fn message_granularity_rounding_aggregates_before_ceil() {
         timestamp_ms: 0,
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level: None,
 
         deferred: None,

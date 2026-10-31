@@ -1070,6 +1070,7 @@ async fn assert_drop_closes_owned_http_attempt(bedrock: bool, response_started: 
     }
     .into();
     let mut stream = provider.stream_prepared(request, auth);
+    assert!(futures_util::poll!(stream.next()).is_pending());
     let (mut socket, _) =
         tokio::time::timeout(std::time::Duration::from_secs(5), listener.accept())
             .await
@@ -1130,6 +1131,10 @@ async fn assert_drop_closes_owned_http_attempt(bedrock: bool, response_started: 
     drop(stream);
     let closed =
         tokio::time::timeout(std::time::Duration::from_secs(2), socket.read(&mut buf)).await;
+    assert!(
+        !cancel.is_cancelled(),
+        "drop must preserve the caller token"
+    );
     cancel.cancel(); // also release the producer when this regression fails
     assert!(
         matches!(closed, Ok(Ok(0))),

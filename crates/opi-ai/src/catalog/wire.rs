@@ -910,7 +910,9 @@ pub(crate) fn decode_model_entry(entry: &Value) -> Result<ModelInfo, String> {
                             input_tokens_above: tier
                                 .get("above")
                                 .or_else(|| tier.get("inputTokensAbove"))
-                                .and_then(Value::as_u64)
+                                .and_then(Value::as_number)
+                                .filter(|threshold| threshold.as_f64().is_some_and(f64::is_finite))
+                                .cloned()
                                 .ok_or("pricing tier requires an 'above' threshold")?,
                             pricing: pricing_from_json(tier)?,
                         })
@@ -1015,7 +1017,9 @@ pub(crate) fn decode_pricing_tiers(
                     Ok(crate::model_info::PricingTier {
                         input_tokens_above: tier
                             .get("inputTokensAbove")
-                            .and_then(Value::as_u64)
+                            .and_then(serde_json::Value::as_number)
+                            .filter(|threshold| threshold.as_f64().is_some_and(f64::is_finite))
+                            .cloned()
                             .ok_or("pricing tier requires inputTokensAbove")?,
                         pricing: pricing_from_json(tier)?,
                     })
@@ -1200,7 +1204,9 @@ fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord,
                         Ok(crate::model_info::PricingTier {
                             input_tokens_above: tier
                                 .get("inputTokensAbove")
-                                .and_then(Value::as_u64)
+                                .and_then(serde_json::Value::as_number)
+                                .filter(|threshold| threshold.as_f64().is_some_and(f64::is_finite))
+                                .cloned()
                                 .ok_or("pricing tier requires inputTokensAbove")?,
                             pricing: pricing_from_json(tier)?,
                         })

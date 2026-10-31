@@ -27,6 +27,65 @@ async fn collect_stream(stream: EventStream) -> Vec<AssistantStreamEvent> {
 }
 
 #[tokio::test]
+async fn raw_terminal_reason_survives_response_outcome_and_storage() {
+    use serde_json::json;
+    for (event, status, details, expected) in [
+        (
+            "response.completed",
+            Some("completed"),
+            None,
+            Some("completed"),
+        ),
+        (
+            "response.incomplete",
+            Some("incomplete"),
+            Some(json!({"reason":"max_output_tokens"})),
+            Some("incomplete.max_output_tokens"),
+        ),
+        ("response.failed", Some("failed"), None, Some("failed")),
+        ("response.completed", None, None, None),
+    ] {
+        let server = MockServer::start().await;
+        let mut terminal = json!({"type":event,"response":{"output":[]}});
+        if let Some(status) = status {
+            terminal["response"]["status"] = json!(status);
+        }
+        if let Some(details) = details {
+            terminal["response"]["incomplete_details"] = details;
+        }
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(format!("data: {terminal}\n\n")),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+        let result = opi_ai::stream::ChatStream::new(provider.stream_prepared(
+            responses_text_request(),
+            opi_ai::test_support::resolved_bearer_auth(),
+        ))
+        .result()
+        .await;
+        let message = if event == "response.failed" {
+            result
+                .expect_err("failed response remains a typed failure")
+                .message()
+                .clone()
+        } else {
+            result.expect("successful terminal fixture must reach the adapter")
+        };
+        assert_eq!(message.raw_stop_reason.as_deref(), expected, "{event}");
+        let restored: opi_ai::message::AssistantMessage =
+            serde_json::from_slice(&serde_json::to_vec(&message).unwrap()).unwrap();
+        assert_eq!(restored, message);
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
 async fn successful_headers_seal_acquisition_before_a_body_timeout() {
     use std::io::{Read, Write};
     use std::sync::Arc;
@@ -2713,6 +2772,7 @@ fn history_assistant_message(
         timestamp_ms: 0,
         diagnostics: Vec::new(),
         duration_ms: None,
+        raw_stop_reason: None,
         provider_thinking_level,
     }
 }

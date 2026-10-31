@@ -92,7 +92,7 @@ fn pricing_tier_uses_strict_greater_than_boundary() {
     let model_pricing = ModelPricing::try_new(
         pricing(1.0),
         vec![PricingTier {
-            input_tokens_above: 200_000,
+            input_tokens_above: 200_000.into(),
             pricing: pricing(2.0),
         }],
     )
@@ -110,19 +110,19 @@ fn pricing_validates_rates_without_narrowing_source_tier_order() {
         pricing(1.0),
         vec![
             PricingTier {
-                input_tokens_above: 20,
+                input_tokens_above: 20.into(),
                 pricing: pricing(2.0),
             },
             PricingTier {
-                input_tokens_above: 10,
+                input_tokens_above: 10.into(),
                 pricing: pricing(3.0),
             },
             PricingTier {
-                input_tokens_above: 10,
+                input_tokens_above: 10.into(),
                 pricing: pricing(4.0),
             },
             PricingTier {
-                input_tokens_above: 0,
+                input_tokens_above: 0.into(),
                 pricing: pricing(5.0),
             },
         ],
@@ -135,7 +135,7 @@ fn pricing_validates_rates_without_narrowing_source_tier_order() {
         ModelPricing::try_new(
             pricing(1.0),
             vec![PricingTier {
-                input_tokens_above: 0,
+                input_tokens_above: 0.into(),
                 pricing: pricing(-1.0),
             }]
         )

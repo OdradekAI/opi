@@ -239,6 +239,7 @@ async fn simple_preparation_counts_canonical_system_changes_after_the_usage_anch
                 timestamp_ms: 2,
                 diagnostics: vec![],
                 duration_ms: None,
+                raw_stop_reason: None,
                 provider_thinking_level: None,
             }),
             Message::System(SystemMessage {

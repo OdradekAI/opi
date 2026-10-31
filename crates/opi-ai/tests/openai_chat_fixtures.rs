@@ -1890,6 +1890,7 @@ fn tool_loop_context(
             timestamp_ms: 0,
             diagnostics: Vec::new(),
             duration_ms: None,
+            raw_stop_reason: None,
             provider_thinking_level: None,
 
             deferred: None,
@@ -2155,6 +2156,7 @@ fn chat_assistant_thinking_replay_uses_signature_reasoning_field() {
                 timestamp_ms: 0,
                 diagnostics: Vec::new(),
                 duration_ms: None,
+                raw_stop_reason: None,
                 provider_thinking_level: None,
 
                 deferred: None,
@@ -2208,6 +2210,7 @@ fn chat_empty_assistant_turns_are_skipped() {
                 timestamp_ms: 0,
                 diagnostics: Vec::new(),
                 duration_ms: None,
+                raw_stop_reason: None,
                 provider_thinking_level: None,
 
                 deferred: None,
@@ -2267,6 +2270,7 @@ fn chat_deepseek_baseline_adds_empty_reasoning_content_on_assistant_messages() {
                 timestamp_ms: 0,
                 diagnostics: Vec::new(),
                 duration_ms: None,
+                raw_stop_reason: None,
                 provider_thinking_level: None,
 
                 deferred: None,
@@ -2324,6 +2328,7 @@ fn make_tool_result_request() -> Request {
                     timestamp_ms: 0,
                     diagnostics: Vec::new(),
                     duration_ms: None,
+                    raw_stop_reason: None,
                     provider_thinking_level: None,
 
                     deferred: None,
