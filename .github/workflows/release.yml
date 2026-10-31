@@ -59,29 +59,34 @@ jobs:
     # rather than failing the whole release.
     continue-on-error: ${{ matrix.tier2 == true }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:
           ref: ${{ env.RELEASE_TAG }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Task 20.58: release binaries are built on the declared MSRV so the
+      # shipped artifacts provably satisfy rust-version = "1.97".
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
         with:
+          toolchain: "1.97"
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           key: ${{ matrix.target }}
 
       - name: Install cross
         if: matrix.cross
-        run: cargo install cross --locked --git https://github.com/cross-rs/cross
+        # Task 20.58: deterministic supply chain - cross is installed from the
+        # crates.io release, never a moving git HEAD.
+        run: cargo install cross --locked --version 0.2.5
 
       - name: Build (cross)
         if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }} -p opi-coding-agent
+        run: cross build --release --locked --target ${{ matrix.target }} -p opi-coding-agent
 
       - name: Build (native)
         if: "!matrix.cross"
-        run: cargo build --release --target ${{ matrix.target }} -p opi-coding-agent
+        run: cargo build --release --locked --target ${{ matrix.target }} -p opi-coding-agent
 
       - name: Smoke test binary
         if: matrix.smoke
@@ -105,7 +110,7 @@ jobs:
           7z a ../../../${{ matrix.artifact }}.zip opi.exe
         shell: bash
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}.${{ matrix.ext }}
@@ -132,20 +137,23 @@ jobs:
             platform: macos
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:
           ref: ${{ env.RELEASE_TAG }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Task 20.58: release binaries are built on the declared MSRV so the
+      # shipped artifacts provably satisfy rust-version = "1.97".
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
         with:
+          toolchain: "1.97"
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           key: opi-sandbox-${{ matrix.target }}
 
       - name: Build opi-sandbox release binary
-        run: cargo build --release --target ${{ matrix.target }} -p opi-sandbox --bin opi-sandbox
+        run: cargo build --release --locked --target ${{ matrix.target }} -p opi-sandbox --bin opi-sandbox
 
       - name: Package native archive
         shell: bash
@@ -170,13 +178,13 @@ jobs:
             --archive target/opi-artifacts/${{ matrix.target }}/opi-sandbox-${{ matrix.target }}.tar.gz
 
       - name: Upload opi-sandbox archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: opi-sandbox-${{ matrix.target }}
           path: target/opi-artifacts/${{ matrix.target }}/opi-sandbox-${{ matrix.target }}.tar.gz
 
       - name: Upload opi-sandbox release evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: sandbox-evidence-${{ matrix.target }}
           path: |
@@ -188,13 +196,13 @@ jobs:
   sandbox_windows_posture:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:
           ref: ${{ env.RELEASE_TAG }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           key: sandbox-windows-posture
 
@@ -211,7 +219,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload Windows posture evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: sandbox-evidence-windows
           path: target/opi-artifacts/windows
@@ -220,31 +228,31 @@ jobs:
     needs: [sandbox_archive, sandbox_windows_posture]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:
           ref: ${{ env.RELEASE_TAG }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: sandbox-evidence-x86_64-unknown-linux-gnu
           path: evidence/linux/x86_64-unknown-linux-gnu
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: sandbox-evidence-aarch64-unknown-linux-gnu
           path: evidence/linux/aarch64-unknown-linux-gnu
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: sandbox-evidence-x86_64-apple-darwin
           path: evidence/macos/x86_64-apple-darwin
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: sandbox-evidence-aarch64-apple-darwin
           path: evidence/macos/aarch64-apple-darwin
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: sandbox-evidence-windows
           path: evidence/windows
@@ -256,9 +264,9 @@ jobs:
     needs: [build, sandbox_archive, sandbox_release_audit]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           path: artifacts
           pattern: opi-*

@@ -772,6 +772,23 @@
   unchanged.
 ### Added
 
+- workspace: native platform/MSRV and supply-chain delivery acceptance
+  (task 20.58, DEL-14): a new `platform_delivery` suite freezes the final
+  root Cargo graph (7 members, lockstep internal edges, single `opi-ai`
+  feature union, exact build-script owners, the 22-file workspace `unsafe`
+  inventory, transitive-only proc-macros, 15 pinned crates with lockfile
+  checksums, LICENSE/NOTICE) and asserts declared-host identity; it executed
+  green natively on Linux (rustc exactly the declared MSRV 1.97.1) and on
+  Windows x86_64-pc-windows-msvc (full offline `opi-ai` suite, 2630 tests,
+  with the single parallel-load oauth timing flake classified
+  environment-only after standalone and full-suite reruns). The two native
+  hosts package `opi-ai` to byte-identical 245-member `.crate` file sets.
+  CI is now source-pinned (commit-SHA actions with resolved tags, `--locked`
+  gates, an MSRV 1.97 check job, crates.io-pinned `cross 0.2.5`, MSRV-pinned
+  release builds) with no dispatch executed, macOS stays an explicit CI
+  claim pending an owning host, and a bilingual delivery-evidence baseline
+  records every executed outcome and the advertised release-target map.
+
 - `opi-ai`: final assembled external SDK acceptance (task 20.57, DEL-14):
   a new `external_sdk` behavioral suite drives all ten published chat wires
   (Anthropic, OpenAI responses, OpenRouter, Azure, Google, Vertex, Mistral,

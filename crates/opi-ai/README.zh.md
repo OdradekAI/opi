@@ -872,8 +872,11 @@ permessage-deflate 参数校验（无重复条目、无未知参数、值域合�
 Upgrade 不构造私有 codec。`Negotiation::driver_parameters` 返回
 `Option<NegotiatedPmd>`，保留两个方向各自的 context-takeover 标志与窗口。
 私有 codec 当前尚无生产调用方。仅物理合并不能证明 Models → 真实 Codex →
-Upgrade → codec（20.16）、continuation/pool/cleanup（20.17）、最终组装 SDK
-包（20.57）或原生平台/MSRV（20.58）已验收；这些仍保持 OPEN。
+Upgrade → codec（20.16）、continuation/pool/cleanup（20.17）或最终组装 SDK
+包（20.57）；这些证明现已存在。原生平台／MSRV 验收（20.58）已在 Linux
+x86_64（rustc 恰为声明的 MSRV 1.97.1）与 Windows x86_64-pc-windows-msvc 上
+实际执行，两端打包文件集逐字节一致；macOS 仍为显式 CI 声明，等待 owning
+host。
 
 ### 私有协议所有权
 
@@ -984,7 +987,10 @@ profile，不承诺固定 Unicode 版本。允许的数据差异与升级检查�
 workspace lock 不固定所有库消费者的图。Opi 关闭 regress 默认 features，
 启用 `std`、`utf16`、`prohibit-unsafe`；普通外部消费者也验证 feature union。
 数据差异不放宽 schema guard、admission/ref 顺序、normalization、授权或
-零 I/O 合同。完整 conformance 与包／平台验收仍保持 OPEN。
+零 I/O 合同。完整 schema conformance 闭合仍由 P20-GAP-SCHEMA 场景及其记录的
+机制归属任务承担；包／平台验收证据见
+[phase20-delivery-evidence](../../docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md)
+（Linux 与 Windows 已实际执行，macOS 待 owning host）。
 
 上游 profile 审查（regress、`url`、`idna`、`idna_adapter`、ICU4X `icu_*`、
 `unicode-ident` 及其 `yoke`／`zerofrom`／`zerovec` 支撑 crate）：workspace
@@ -1065,7 +1071,8 @@ item id。固定参考：
 `.repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts`。
 loopback 回归捕获真实 Anthropic 与 Codex 终态输出，序列化／重新加载后实际发送
 同身份、改模型及跨 wire 请求，同时保持 canonical 的 signed/redacted 或加密数据
-不变。这些检查不替代最终 SDK package 与平台矩阵。
+不变。这些检查补充而不替代最终 SDK package 与平台矩阵；矩阵已执行的证据记录在
+[phase20-delivery-evidence](../../docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md)。
 
 ## 规范 Context／Transcript 时序
 

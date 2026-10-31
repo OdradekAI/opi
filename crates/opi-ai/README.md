@@ -965,8 +965,11 @@ negotiation metadata; Upgrade does not construct the private codec.
 both directions' context-takeover flags and windows. The private codec has
 no production caller yet. Physical consolidation alone does not establish
 Models → real Codex → Upgrade → codec behavior (20.16), continuation/pool/
-cleanup (20.17), final assembled SDK package acceptance (20.57), or native
-platform/MSRV acceptance (20.58); those remain open.
+cleanup (20.17), or final assembled SDK package acceptance (20.57); those
+proofs now exist. Native platform/MSRV acceptance (20.58) executed on Linux
+x86_64 (rustc exactly 1.97.1, the declared MSRV) and Windows
+x86_64-pc-windows-msvc with byte-identical packaged file sets; macOS remains
+an explicit CI claim pending an owning host.
 
 ### Private protocol ownership
 
@@ -1107,7 +1110,11 @@ The workspace lock does not fix every library consumer's graph. Opi disables
 regress default features and enables `std`, `utf16`, `prohibit-unsafe`; ordinary
 external consumers also exercise feature union. These data differences do not
 relax schema guards, admission/ref order, normalization, authorization or the
-no-I/O contract. Full conformance and package/platform acceptance remain open.
+no-I/O contract. Full schema conformance closure stays with the
+P20-GAP-SCHEMA scenario and its recorded mechanism owners; package/platform
+acceptance evidence lives in
+[phase20-delivery-evidence](../../docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md)
+(Linux and Windows executed, macOS pending an owning host).
 
 Upstream profile review (regress, `url`, `idna`, `idna_adapter`, ICU4X
 `icu_*`, `unicode-ident`, and their `yoke`/`zerofrom`/`zerovec` support
@@ -1209,7 +1216,9 @@ reference: `.repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts`.
 Loopback regressions capture real Anthropic and Codex terminal output,
 serialize/reload it, then send same-identity, changed-model and foreign-wire
 requests while keeping canonical signed/redacted or encrypted data intact.
-These checks do not replace the final SDK package and platform matrix.
+These checks complement, and do not replace, the final SDK package and
+platform matrix; the matrix's executed evidence is recorded in
+[phase20-delivery-evidence](../../docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md).
 
 ## Canonical Context/Transcript Chronology
 
