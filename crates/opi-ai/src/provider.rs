@@ -928,17 +928,6 @@ pub enum ProviderErrorCategory {
     Cancelled,
 }
 
-/// Discriminant for the kind of provider backend.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProviderKind {
-    OpenAI,
-    Anthropic,
-    Google,
-    Mistral,
-    Bedrock,
-    Azure,
-}
-
 // ---------------------------------------------------------------------------
 // Public typed diagnostic extraction (task 20.53.3, P20-S53-3).
 // Pinned source: `.repo/pi-1.3.0/packages/ai/src/utils/diagnostics.ts`

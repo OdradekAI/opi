@@ -491,7 +491,8 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         // Task 20.17: resource generation/lease/cleanup (P20-RESOURCES) is a
         // deliberate addition.
         "codex_resources",
-        "config",
+        // DEL-13 (task 20.56): the shallow Config/ProviderConfig/Error shell
+        // module was retired with zero in-repo consumers.
         // Task 20.11: constrained sampling (strict wire projection and
         // grammar tools) is a deliberate later-phase addition.
         "constrained_sampling",
@@ -506,7 +507,8 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "images",
         "message",
         "mistral",
-        "model",
+        // DEL-13 (task 20.56): the shallow Model shell module was retired
+        // with zero in-repo consumers.
         "model_info",
         "models",
         // P20-STORE (task 20.22): store-owned serialized credential

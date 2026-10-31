@@ -9,7 +9,7 @@ use opi_ai::{
     message::{AssistantContent, AssistantMessage, Message, ToolDef},
     provider::{
         CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary,
-        ProviderKind, Request, ThinkingConfig,
+        Request, ThinkingConfig,
     },
     stream::{AssistantStreamEvent, StopReason, Usage},
 };
@@ -353,21 +353,6 @@ async fn provider_trait_id_and_models() {
     let provider = DummyProvider;
     assert_eq!(provider.id(), "dummy");
     assert!(provider.models().is_empty());
-}
-
-// --- ProviderKind tests ---
-
-#[test]
-fn provider_kind_variants() {
-    let kinds = [
-        ProviderKind::OpenAI,
-        ProviderKind::Anthropic,
-        ProviderKind::Google,
-        ProviderKind::Mistral,
-        ProviderKind::Bedrock,
-        ProviderKind::Azure,
-    ];
-    assert_eq!(kinds.len(), 6);
 }
 
 // --- EventStream type alias compiles ---

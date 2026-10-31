@@ -33,6 +33,425 @@ SSO OIDC 与 SignIn ES256 DPoP 流程、单飞来源缓存交换）位于 `auth:
 ADC 来源与全部九种 OAuth 流由 SDK 拥有。coding agent 拥有 keychain backend、
 终端 presenter 与宿主注册策略。
 
+## 安装
+
+```sh
+cargo add opi-ai
+```
+
+下文示例另需 `tokio`（features `macros` 与 `rt-multi-thread`）、`tokio-util`、
+`secrecy` 与 `futures-util`。
+
+## 快速开始
+
+一次完整的普通调用：注册带注入认证的路由、解析调用方持有的模型记录、
+规范化 transcript，并把 neutral 入口驱动到唯一的最终消息。以下为
+`examples/quick_start.rs` 的逐字源码；运行：
+`ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`。
+
+```rust
+//! Complete ordinary quick start: register the Anthropic route with injected
+//! auth, resolve the caller-owned model record, and drive one chat call to
+//! its single final message through the neutral entry.
+//!
+//! Compile: `cargo check -p opi-ai --examples`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`.
+
+use std::sync::Arc;
+
+use opi_ai::anthropic::AnthropicProvider;
+use opi_ai::message::{AssistantContent, InputContent, Message, UserMessage};
+use opi_ai::provider::{CacheRetention, Request, TransportPreference};
+use opi_ai::transcript;
+use opi_ai::{
+    AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, SimpleOptions, StaticAuthResolver,
+};
+use secrecy::SecretString;
+use tokio_util::sync::CancellationToken;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // SDK construction never reads product configuration: auth is injected
+    // per route (AIR-021).
+    let mut models = Models::new();
+    models.register_route(
+        Box::new(AnthropicProvider::new(None)),
+        Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
+        )),
+        AuthProvenanceSource::Environment {
+            name: "ANTHROPIC_API_KEY".into(),
+        },
+        Default::default(),
+    )?;
+
+    // Caller-owned record: provider id, bare model id, and the exact wire
+    // from the registry's model metadata - valid without catalog membership.
+    let info = models
+        .get_model("anthropic", "claude-sonnet-4-5-20250514")
+        .ok_or("claude-sonnet-4-5-20250514 is not in the builtin anthropic catalog")?;
+    let record = ChatModelRecord::new("anthropic", info);
+
+    // Canonical transcript input (AIR-020): the system prompt and tool
+    // declarations fold into one leading system message at normalization.
+    let context = transcript::normalize_context(transcript::Context {
+        system_prompt: Some("You are concise.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "In one short sentence, say hello.".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+    })?;
+
+    let request = Request {
+        transport: TransportPreference::default(),
+        model: "anthropic:claude-sonnet-4-5-20250514".into(),
+        context,
+        max_tokens: Some(1024),
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        callbacks: Default::default(),
+        telemetry_context: None,
+    };
+
+    // Neutral entry: construction freezes the owned call, authentication
+    // starts on the first poll, and `complete_simple` drains to the single
+    // final outcome (`Ok(AssistantMessage)` or one `Err(CallFailure)`).
+    let message = models
+        .complete_simple(record, request, SimpleOptions::default())
+        .await
+        .map_err(|failure| format!("call failed: {:?}", failure.cause()))?;
+
+    for content in &message.content {
+        if let AssistantContent::Text { text, .. } = content {
+            println!("{text}");
+        }
+    }
+    Ok(())
+}
+```
+
+关键契约：SDK 构造从不读取产品配置——认证按路由注入（AIR-021）；
+`ChatModelRecord` 由调用方持有，无需 catalog 成员资格（AIR-045）；
+`normalize_context` 将系统提示与工具声明折入规范时间线（AIR-020）；
+`complete_simple` 返回一个 `Ok(AssistantMessage)` 或一个
+`Err(CallFailure)`。
+
+## 流式与最终结果
+
+`stream_simple` 返回惰性 `ChatCall`——一个
+`Stream<Item = Result<AssistantStreamEvent, CallFailure>>`，终态吸收为
+永久 EOF；`Done` 事件携带最终 `AssistantMessage`。以下为
+`examples/quick_start_stream.rs` 的逐字源码。
+
+```rust
+//! Streaming quick start: iterate the neutral entry's provider-neutral
+//! events as they arrive, then read the terminal event's final message.
+//!
+//! Compile: `cargo check -p opi-ai --examples`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start_stream`.
+
+use std::sync::Arc;
+
+use futures_util::StreamExt;
+use opi_ai::anthropic::AnthropicProvider;
+use opi_ai::message::{InputContent, Message, UserMessage};
+use opi_ai::provider::{CacheRetention, Request, TransportPreference};
+use opi_ai::stream::AssistantStreamEvent;
+use opi_ai::transcript;
+use opi_ai::{
+    AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, SimpleOptions, StaticAuthResolver,
+};
+use secrecy::SecretString;
+use tokio_util::sync::CancellationToken;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut models = Models::new();
+    models.register_route(
+        Box::new(AnthropicProvider::new(None)),
+        Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
+        )),
+        AuthProvenanceSource::Environment {
+            name: "ANTHROPIC_API_KEY".into(),
+        },
+        Default::default(),
+    )?;
+
+    let info = models
+        .get_model("anthropic", "claude-sonnet-4-5-20250514")
+        .ok_or("claude-sonnet-4-5-20250514 is not in the builtin anthropic catalog")?;
+    let record = ChatModelRecord::new("anthropic", info);
+
+    let context = transcript::normalize_context(transcript::Context {
+        system_prompt: Some("You are concise.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "Count from one to five.".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+    })?;
+
+    let request = Request {
+        transport: TransportPreference::default(),
+        model: "anthropic:claude-sonnet-4-5-20250514".into(),
+        context,
+        max_tokens: Some(1024),
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        callbacks: Default::default(),
+        telemetry_context: None,
+    };
+
+    // `stream_simple` returns a lazy `ChatCall`: it is a
+    // `Stream<Item = Result<AssistantStreamEvent, CallFailure>>` whose
+    // terminal absorbs into permanent EOF. `Done` carries the final
+    // `AssistantMessage`; one `Err` item is the single final failure.
+    let mut call = models.stream_simple(record, request, SimpleOptions::default());
+    while let Some(event) = call.next().await {
+        match event.map_err(|failure| format!("call failed: {:?}", failure.cause()))? {
+            AssistantStreamEvent::TextDelta { delta, .. } => print!("{delta}"),
+            AssistantStreamEvent::Done { message, .. } => {
+                println!();
+                eprintln!("-- stop reason: {:?}", message.stop_reason);
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+```
+
+`ChatCall::result(self)`（及 `Models::complete_simple`）主动排空同一
+stream，得到单一最终结果。
+
+## Context、工具与续轮
+
+工具通过 `transcript::Context` 声明并折入首条系统消息；每个续轮重放
+完整规范时间线（含 assistant 工具调用轮与其 `ToolResultMessage` 结果）。
+调用方是可信执行边界：畸形的最终参数文本记录为未执行
+（`ToolNotExecutedReason::NonObjectArguments`），绝不猜测执行
+（AIR-048）。以下为 `examples/tool_loop.rs` 的逐字源码。
+
+```rust
+//! Agent-owned tool loop: declare a tool through the canonical transcript,
+//! execute each admitted tool call, close it with a `ToolResultMessage`, and
+//! continue until the assistant produces final text.
+//!
+//! Compile: `cargo check -p opi-ai --examples`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example tool_loop`.
+
+use std::sync::Arc;
+
+use opi_ai::anthropic::AnthropicProvider;
+use opi_ai::message::{
+    AssistantContent, InputContent, Message, OutputContent, ToolCall, ToolDef,
+    ToolNotExecutedReason, ToolResultMessage, UserMessage,
+};
+use opi_ai::provider::{CacheRetention, Request, TransportPreference};
+use opi_ai::transcript::{self, TranscriptContext};
+use opi_ai::{
+    AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, SimpleOptions, StaticAuthResolver,
+};
+use secrecy::SecretString;
+use tokio_util::sync::CancellationToken;
+
+const MODEL_SPEC: &str = "anthropic:claude-sonnet-4-5-20250514";
+
+struct ToolOutcome {
+    text: String,
+    is_error: bool,
+    not_executed: Option<ToolNotExecutedReason>,
+}
+
+/// The caller is the trusted execution boundary (AIR-048): a malformed final
+/// argument text is recorded as not executed, never guessed into a call.
+fn execute_weather_tool(call: &ToolCall) -> ToolOutcome {
+    if call.arguments_error.is_some() {
+        return ToolOutcome {
+            text: "tool arguments were not a complete JSON object".into(),
+            is_error: true,
+            not_executed: Some(ToolNotExecutedReason::NonObjectArguments),
+        };
+    }
+    let arguments: serde_json::Value =
+        serde_json::from_str(&call.arguments).unwrap_or_else(|_| serde_json::json!({}));
+    let city = arguments.get("city").and_then(|value| value.as_str());
+    let report = match city {
+        Some("Tokyo") => "22 C, clear".to_string(),
+        Some(other) => format!("no data for {other}"),
+        None => "missing required field: city".to_string(),
+    };
+    ToolOutcome {
+        text: report,
+        is_error: city.is_none(),
+        not_executed: None,
+    }
+}
+
+fn request_for(context: TranscriptContext) -> Request {
+    Request {
+        transport: TransportPreference::default(),
+        model: MODEL_SPEC.into(),
+        context,
+        max_tokens: Some(1024),
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        callbacks: Default::default(),
+        telemetry_context: None,
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut models = Models::new();
+    models.register_route(
+        Box::new(AnthropicProvider::new(None)),
+        Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
+        )),
+        AuthProvenanceSource::Environment {
+            name: "ANTHROPIC_API_KEY".into(),
+        },
+        Default::default(),
+    )?;
+
+    let info = models
+        .get_model("anthropic", "claude-sonnet-4-5-20250514")
+        .ok_or("claude-sonnet-4-5-20250514 is not in the builtin anthropic catalog")?;
+    let record = ChatModelRecord::new("anthropic", info);
+
+    // Tools are declared on the transcript context; normalization folds them
+    // into the leading system message (AIR-020).
+    let tools = vec![ToolDef {
+        name: "get_weather".into(),
+        description: "Current weather for one city.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": { "city": { "type": "string" } },
+            "required": ["city"],
+        }),
+        constrained_sampling: None,
+    }];
+
+    let mut history: Vec<Message> = vec![Message::User(UserMessage {
+        content: vec![InputContent::Text {
+            text: "What is the weather in Tokyo? Use the tool.".into(),
+        }],
+        timestamp_ms: 0,
+    })];
+
+    // Continuation: every round replays the full canonical chronology
+    // (assistant tool-call turns and their tool results included).
+    for _round in 0..8 {
+        let context = transcript::normalize_context(transcript::Context {
+            system_prompt: Some("You are a concise assistant.".into()),
+            messages: history.clone(),
+            tools: tools.clone(),
+        })?;
+        let assistant = models
+            .complete_simple(
+                record.clone(),
+                request_for(context),
+                SimpleOptions::default(),
+            )
+            .await
+            .map_err(|failure| format!("call failed: {:?}", failure.cause()))?;
+
+        let tool_calls: Vec<ToolCall> = assistant
+            .content
+            .iter()
+            .filter_map(|content| match content {
+                AssistantContent::ToolCall { tool_call } => Some(tool_call.clone()),
+                _ => None,
+            })
+            .collect();
+
+        if tool_calls.is_empty() {
+            for content in &assistant.content {
+                if let AssistantContent::Text { text, .. } = content {
+                    println!("{text}");
+                }
+            }
+            return Ok(());
+        }
+
+        history.push(Message::Assistant(assistant));
+        for tool_call in tool_calls {
+            let outcome = execute_weather_tool(&tool_call);
+            history.push(Message::ToolResult(ToolResultMessage {
+                tool_call_id: tool_call.id,
+                tool_name: tool_call.name,
+                content: vec![OutputContent::Text { text: outcome.text }],
+                details: None,
+                is_error: outcome.is_error,
+                not_executed: outcome.not_executed,
+                truncated: false,
+                timestamp_ms: 0,
+            }));
+        }
+    }
+
+    Err("tool loop did not converge".into())
+}
+```
+
+## 工厂、Catalog 与认证
+
+- 免手写路由的注册：内置 42-profile 工厂
+  （`providers::builtin_provider_profiles`，任务 20.34）注册完成的适配器
+  与 catalog——见「Builtin Provider Factory Layer: 42 Canonical Profiles」。
+- 模型记录：`Models::get_model` 解析 registry 元数据；离线内置 catalog 与
+  动态 `ModelsStore` 刷新见「Offline Bundled Model Catalog」与
+  「Dynamic Catalog Store and Refresh」。
+- 认证：注入式 `AuthResolver`（如快速开始所示）、`CredentialStore` 持久化、
+  九个 OAuth 家族与独立 AWS 凭据源链位于 `auth` / `auth::aws`；宿主
+  keychain 与终端登录策略保留在 `opi-coding-agent`
+  （「Credentials, Request Enrichment, and Refresh」）。
+
+## 选项、错误、取消与用量
+
+- neutral `SimpleOptions` 覆盖（工具选择、温度、输出上限、超时、停止
+  序列）与各适配器的 typed `NativeOptions<O>`——见「Native and simple
+  options (ONB-03)」。
+- 失败：单一 typed `CallFailure`，其脱敏 `ProviderError` cause 与分类见
+  「Core API」（`ProviderError`、`ProviderErrorCategory`、
+  `ProviderErrorSummary`）。
+- 取消即 `Request::cancel`（`CancellationToken`，区别于
+  `Request::timeout`）；token 用量与成本位于 `Usage` / `CumulativeUsage`。
+
 ## Provider
 
 | 模块 | Provider id | 后端 |
@@ -1700,68 +2119,9 @@ Pi Messages simple 透传自己的白名单。`ModelInfo::input_limits` 仅为�
 
 ## 最小示例
 
-```rust
-// Cargo.toml 依赖：opi-ai、secrecy、tokio（features "macros"、"rt-multi-thread"）、
-// tokio-util、futures-util。
-use std::sync::Arc;
-
-use futures_util::StreamExt;
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
-use opi_ai::{
-    AuthProvenanceSource, AuthScheme, CompatMetadata, Models,
-    StaticAuthResolver,
-};
-use secrecy::SecretString;
-use tokio_util::sync::CancellationToken;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let provider = AnthropicProvider::new(None);
-    let resolver = Arc::new(StaticAuthResolver::new(
-        AuthScheme::ApiKey,
-        SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
-    ));
-    let mut models = Models::new();
-    models.register_route(
-        Box::new(provider),
-        resolver,
-        AuthProvenanceSource::Environment {
-            name: "ANTHROPIC_API_KEY".into(),
-        },
-        CompatMetadata::default(),
-    )?;
-
-    let model = "anthropic:claude-sonnet-4-5-20250514";
-    let request = Request {
-        model: model.into(),
-        system: Some("回答要简洁。".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text { text: "你好".into() }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
-        max_tokens: Some(1024),
-        temperature: None,
-        thinking: ThinkingConfig::default(),
-        stop_sequences: vec![],
-        metadata: None,
-        cancel: CancellationToken::new(),
-        timeout: None,
-        extra_headers: vec![],
-        cache_retention: CacheRetention::None,
-        session_id: None,
-    };
-
-    let prepared = models.prepare_call(model, request).await?;
-    let mut stream = prepared.start_attempt()?;
-    while let Some(event) = stream.next().await {
-        println!("{:?}", event?);
-    }
-    Ok(())
-}
-```
+已并入[快速开始](#快速开始)；三个可编译示例位于 `examples/`
+（`quick_start.rs`、`quick_start_stream.rs`、`tool_loop.rs`），编译命令
+`cargo check -p opi-ai --examples`。
 
 ## 测试分层与 SDK 包
 

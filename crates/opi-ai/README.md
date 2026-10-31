@@ -39,6 +39,433 @@ SignIn ES256 DPoP flows, and the single-flight source cache) lives in
 ADC sources and all nine OAuth flows are SDK-owned. The coding agent owns
 the keychain backend, terminal presenter and host registration policy.
 
+## Installation
+
+```sh
+cargo add opi-ai
+```
+
+The examples below additionally use `tokio` (features `macros` and
+`rt-multi-thread`), `tokio-util`, `secrecy`, and `futures-util`.
+
+## Quick Start
+
+One complete ordinary call: register a route with injected auth, resolve the
+caller-owned model record, normalize the transcript, and drive the neutral
+entry to its single final message. This is the exact source of
+`examples/quick_start.rs`; run it with
+`ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`.
+
+```rust
+//! Complete ordinary quick start: register the Anthropic route with injected
+//! auth, resolve the caller-owned model record, and drive one chat call to
+//! its single final message through the neutral entry.
+//!
+//! Compile: `cargo check -p opi-ai --examples`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`.
+
+use std::sync::Arc;
+
+use opi_ai::anthropic::AnthropicProvider;
+use opi_ai::message::{AssistantContent, InputContent, Message, UserMessage};
+use opi_ai::provider::{CacheRetention, Request, TransportPreference};
+use opi_ai::transcript;
+use opi_ai::{
+    AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, SimpleOptions, StaticAuthResolver,
+};
+use secrecy::SecretString;
+use tokio_util::sync::CancellationToken;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // SDK construction never reads product configuration: auth is injected
+    // per route (AIR-021).
+    let mut models = Models::new();
+    models.register_route(
+        Box::new(AnthropicProvider::new(None)),
+        Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
+        )),
+        AuthProvenanceSource::Environment {
+            name: "ANTHROPIC_API_KEY".into(),
+        },
+        Default::default(),
+    )?;
+
+    // Caller-owned record: provider id, bare model id, and the exact wire
+    // from the registry's model metadata - valid without catalog membership.
+    let info = models
+        .get_model("anthropic", "claude-sonnet-4-5-20250514")
+        .ok_or("claude-sonnet-4-5-20250514 is not in the builtin anthropic catalog")?;
+    let record = ChatModelRecord::new("anthropic", info);
+
+    // Canonical transcript input (AIR-020): the system prompt and tool
+    // declarations fold into one leading system message at normalization.
+    let context = transcript::normalize_context(transcript::Context {
+        system_prompt: Some("You are concise.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "In one short sentence, say hello.".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+    })?;
+
+    let request = Request {
+        transport: TransportPreference::default(),
+        model: "anthropic:claude-sonnet-4-5-20250514".into(),
+        context,
+        max_tokens: Some(1024),
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        callbacks: Default::default(),
+        telemetry_context: None,
+    };
+
+    // Neutral entry: construction freezes the owned call, authentication
+    // starts on the first poll, and `complete_simple` drains to the single
+    // final outcome (`Ok(AssistantMessage)` or one `Err(CallFailure)`).
+    let message = models
+        .complete_simple(record, request, SimpleOptions::default())
+        .await
+        .map_err(|failure| format!("call failed: {:?}", failure.cause()))?;
+
+    for content in &message.content {
+        if let AssistantContent::Text { text, .. } = content {
+            println!("{text}");
+        }
+    }
+    Ok(())
+}
+```
+
+Key contracts: SDK construction never reads product configuration - auth is
+injected per route (AIR-021); `ChatModelRecord` is caller-owned and valid
+without catalog membership (AIR-045); `normalize_context` folds the system
+prompt and tool declarations into the canonical chronology (AIR-020);
+`complete_simple` returns one `Ok(AssistantMessage)` or one
+`Err(CallFailure)`.
+
+## Streaming and the Final Result
+
+`stream_simple` returns a lazy `ChatCall` - a
+`Stream<Item = Result<AssistantStreamEvent, CallFailure>>` whose terminal
+absorbs into permanent EOF. The `Done` event carries the final
+`AssistantMessage`. This is the exact source of
+`examples/quick_start_stream.rs`.
+
+```rust
+//! Streaming quick start: iterate the neutral entry's provider-neutral
+//! events as they arrive, then read the terminal event's final message.
+//!
+//! Compile: `cargo check -p opi-ai --examples`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start_stream`.
+
+use std::sync::Arc;
+
+use futures_util::StreamExt;
+use opi_ai::anthropic::AnthropicProvider;
+use opi_ai::message::{InputContent, Message, UserMessage};
+use opi_ai::provider::{CacheRetention, Request, TransportPreference};
+use opi_ai::stream::AssistantStreamEvent;
+use opi_ai::transcript;
+use opi_ai::{
+    AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, SimpleOptions, StaticAuthResolver,
+};
+use secrecy::SecretString;
+use tokio_util::sync::CancellationToken;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut models = Models::new();
+    models.register_route(
+        Box::new(AnthropicProvider::new(None)),
+        Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
+        )),
+        AuthProvenanceSource::Environment {
+            name: "ANTHROPIC_API_KEY".into(),
+        },
+        Default::default(),
+    )?;
+
+    let info = models
+        .get_model("anthropic", "claude-sonnet-4-5-20250514")
+        .ok_or("claude-sonnet-4-5-20250514 is not in the builtin anthropic catalog")?;
+    let record = ChatModelRecord::new("anthropic", info);
+
+    let context = transcript::normalize_context(transcript::Context {
+        system_prompt: Some("You are concise.".into()),
+        messages: vec![Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "Count from one to five.".into(),
+            }],
+            timestamp_ms: 0,
+        })],
+        tools: vec![],
+    })?;
+
+    let request = Request {
+        transport: TransportPreference::default(),
+        model: "anthropic:claude-sonnet-4-5-20250514".into(),
+        context,
+        max_tokens: Some(1024),
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        callbacks: Default::default(),
+        telemetry_context: None,
+    };
+
+    // `stream_simple` returns a lazy `ChatCall`: it is a
+    // `Stream<Item = Result<AssistantStreamEvent, CallFailure>>` whose
+    // terminal absorbs into permanent EOF. `Done` carries the final
+    // `AssistantMessage`; one `Err` item is the single final failure.
+    let mut call = models.stream_simple(record, request, SimpleOptions::default());
+    while let Some(event) = call.next().await {
+        match event.map_err(|failure| format!("call failed: {:?}", failure.cause()))? {
+            AssistantStreamEvent::TextDelta { delta, .. } => print!("{delta}"),
+            AssistantStreamEvent::Done { message, .. } => {
+                println!();
+                eprintln!("-- stop reason: {:?}", message.stop_reason);
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+```
+
+`ChatCall::result(self)` (and `Models::complete_simple`) actively drains the
+same stream to the single final outcome.
+
+## Context, Tools, and Continuation
+
+Tools are declared on `transcript::Context` and fold into the leading system
+message; every continuation round replays the full canonical chronology with
+assistant tool-call turns and their `ToolResultMessage` results. The caller
+is the trusted execution boundary: a malformed final argument text is
+recorded as not executed (`ToolNotExecutedReason::NonObjectArguments`),
+never guessed into a call (AIR-048). This is the exact source of
+`examples/tool_loop.rs`.
+
+```rust
+//! Agent-owned tool loop: declare a tool through the canonical transcript,
+//! execute each admitted tool call, close it with a `ToolResultMessage`, and
+//! continue until the assistant produces final text.
+//!
+//! Compile: `cargo check -p opi-ai --examples`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example tool_loop`.
+
+use std::sync::Arc;
+
+use opi_ai::anthropic::AnthropicProvider;
+use opi_ai::message::{
+    AssistantContent, InputContent, Message, OutputContent, ToolCall, ToolDef,
+    ToolNotExecutedReason, ToolResultMessage, UserMessage,
+};
+use opi_ai::provider::{CacheRetention, Request, TransportPreference};
+use opi_ai::transcript::{self, TranscriptContext};
+use opi_ai::{
+    AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, SimpleOptions, StaticAuthResolver,
+};
+use secrecy::SecretString;
+use tokio_util::sync::CancellationToken;
+
+const MODEL_SPEC: &str = "anthropic:claude-sonnet-4-5-20250514";
+
+struct ToolOutcome {
+    text: String,
+    is_error: bool,
+    not_executed: Option<ToolNotExecutedReason>,
+}
+
+/// The caller is the trusted execution boundary (AIR-048): a malformed final
+/// argument text is recorded as not executed, never guessed into a call.
+fn execute_weather_tool(call: &ToolCall) -> ToolOutcome {
+    if call.arguments_error.is_some() {
+        return ToolOutcome {
+            text: "tool arguments were not a complete JSON object".into(),
+            is_error: true,
+            not_executed: Some(ToolNotExecutedReason::NonObjectArguments),
+        };
+    }
+    let arguments: serde_json::Value =
+        serde_json::from_str(&call.arguments).unwrap_or_else(|_| serde_json::json!({}));
+    let city = arguments.get("city").and_then(|value| value.as_str());
+    let report = match city {
+        Some("Tokyo") => "22 C, clear".to_string(),
+        Some(other) => format!("no data for {other}"),
+        None => "missing required field: city".to_string(),
+    };
+    ToolOutcome {
+        text: report,
+        is_error: city.is_none(),
+        not_executed: None,
+    }
+}
+
+fn request_for(context: TranscriptContext) -> Request {
+    Request {
+        transport: TransportPreference::default(),
+        model: MODEL_SPEC.into(),
+        context,
+        max_tokens: Some(1024),
+        temperature: None,
+        sampling_params: Default::default(),
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: CancellationToken::new(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: CacheRetention::None,
+        session_id: None,
+        callbacks: Default::default(),
+        telemetry_context: None,
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut models = Models::new();
+    models.register_route(
+        Box::new(AnthropicProvider::new(None)),
+        Arc::new(StaticAuthResolver::new(
+            AuthScheme::ApiKey,
+            SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
+        )),
+        AuthProvenanceSource::Environment {
+            name: "ANTHROPIC_API_KEY".into(),
+        },
+        Default::default(),
+    )?;
+
+    let info = models
+        .get_model("anthropic", "claude-sonnet-4-5-20250514")
+        .ok_or("claude-sonnet-4-5-20250514 is not in the builtin anthropic catalog")?;
+    let record = ChatModelRecord::new("anthropic", info);
+
+    // Tools are declared on the transcript context; normalization folds them
+    // into the leading system message (AIR-020).
+    let tools = vec![ToolDef {
+        name: "get_weather".into(),
+        description: "Current weather for one city.".into(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": { "city": { "type": "string" } },
+            "required": ["city"],
+        }),
+        constrained_sampling: None,
+    }];
+
+    let mut history: Vec<Message> = vec![Message::User(UserMessage {
+        content: vec![InputContent::Text {
+            text: "What is the weather in Tokyo? Use the tool.".into(),
+        }],
+        timestamp_ms: 0,
+    })];
+
+    // Continuation: every round replays the full canonical chronology
+    // (assistant tool-call turns and their tool results included).
+    for _round in 0..8 {
+        let context = transcript::normalize_context(transcript::Context {
+            system_prompt: Some("You are a concise assistant.".into()),
+            messages: history.clone(),
+            tools: tools.clone(),
+        })?;
+        let assistant = models
+            .complete_simple(
+                record.clone(),
+                request_for(context),
+                SimpleOptions::default(),
+            )
+            .await
+            .map_err(|failure| format!("call failed: {:?}", failure.cause()))?;
+
+        let tool_calls: Vec<ToolCall> = assistant
+            .content
+            .iter()
+            .filter_map(|content| match content {
+                AssistantContent::ToolCall { tool_call } => Some(tool_call.clone()),
+                _ => None,
+            })
+            .collect();
+
+        if tool_calls.is_empty() {
+            for content in &assistant.content {
+                if let AssistantContent::Text { text, .. } = content {
+                    println!("{text}");
+                }
+            }
+            return Ok(());
+        }
+
+        history.push(Message::Assistant(assistant));
+        for tool_call in tool_calls {
+            let outcome = execute_weather_tool(&tool_call);
+            history.push(Message::ToolResult(ToolResultMessage {
+                tool_call_id: tool_call.id,
+                tool_name: tool_call.name,
+                content: vec![OutputContent::Text { text: outcome.text }],
+                details: None,
+                is_error: outcome.is_error,
+                not_executed: outcome.not_executed,
+                truncated: false,
+                timestamp_ms: 0,
+            }));
+        }
+    }
+
+    Err("tool loop did not converge".into())
+}
+```
+
+## Factories, Catalog, and Auth
+
+- Registration without hand-written routes: the bundled 42-profile factory
+  (`providers::builtin_provider_profiles`, task 20.34) registers the
+  completed adapters and catalog - see "Builtin Provider Factory Layer:
+  42 Canonical Profiles".
+- Model records: `Models::get_model` resolves registry metadata; the offline
+  bundled catalog and dynamic `ModelsStore` refresh are described in
+  "Offline Bundled Model Catalog" and "Dynamic Catalog Store and Refresh".
+- Auth: injected `AuthResolver`s (as in the quick start), `CredentialStore`
+  persistence, the nine OAuth families, and the standalone AWS
+  credential-source chain live in `auth` / `auth::aws`; host keychain and
+  terminal login policy stay in `opi-coding-agent` ("Credentials, Request
+  Enrichment, and Refresh").
+
+## Options, Errors, Cancellation, and Usage
+
+- Neutral `SimpleOptions` overrides (tool choice, temperature, output limit,
+  timeout, stop sequences) versus typed `NativeOptions<O>` per adapter - see
+  "Native and simple options (ONB-03)".
+- Failures: one typed `CallFailure` whose redacted `ProviderError` cause and
+  taxonomy are described in "Core API" (`ProviderError`,
+  `ProviderErrorCategory`, `ProviderErrorSummary`).
+- Cancellation is `Request::cancel` (a `CancellationToken`, distinct from
+  `Request::timeout`); token usage and cost live on `Usage` /
+  `CumulativeUsage`.
+
 ## Providers
 
 | Module | Provider id | Backend |
@@ -1576,68 +2003,9 @@ behavior:
 
 ## Minimal Example
 
-```rust
-// Cargo.toml deps: opi-ai, secrecy, tokio (features "macros", "rt-multi-thread"),
-// tokio-util, futures-util.
-use std::sync::Arc;
-
-use futures_util::StreamExt;
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
-use opi_ai::{
-    AuthProvenanceSource, AuthScheme, CompatMetadata, Models,
-    StaticAuthResolver,
-};
-use secrecy::SecretString;
-use tokio_util::sync::CancellationToken;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let provider = AnthropicProvider::new(None);
-    let resolver = Arc::new(StaticAuthResolver::new(
-        AuthScheme::ApiKey,
-        SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
-    ));
-    let mut models = Models::new();
-    models.register_route(
-        Box::new(provider),
-        resolver,
-        AuthProvenanceSource::Environment {
-            name: "ANTHROPIC_API_KEY".into(),
-        },
-        CompatMetadata::default(),
-    )?;
-
-    let model = "anthropic:claude-sonnet-4-5-20250514";
-    let request = Request {
-        model: model.into(),
-        system: Some("You are concise.".into()),
-        messages: vec![Message::User(UserMessage {
-            content: vec![InputContent::Text { text: "Hi".into() }],
-            timestamp_ms: 0,
-        })],
-        tools: vec![],
-        max_tokens: Some(1024),
-        temperature: None,
-        thinking: ThinkingConfig::default(),
-        stop_sequences: vec![],
-        metadata: None,
-        cancel: CancellationToken::new(),
-        timeout: None,
-        extra_headers: vec![],
-        cache_retention: CacheRetention::None,
-        session_id: None,
-    };
-
-    let prepared = models.prepare_call(model, request).await?;
-    let mut stream = prepared.start_attempt()?;
-    while let Some(event) = stream.next().await {
-        println!("{:?}", event?);
-    }
-    Ok(())
-}
-```
+Moved into [Quick Start](#quick-start); the three compiling examples live in
+`examples/` (`quick_start.rs`, `quick_start_stream.rs`, `tool_loop.rs`) and
+compile with `cargo check -p opi-ai --examples`.
 
 ## Test layers and SDK packages
 

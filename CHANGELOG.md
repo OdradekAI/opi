@@ -2,6 +2,21 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): retired the shallow SDK shells after slice-by-slice caller
+  migration reached zero in-repo consumers (task 20.56, DEL-13): `Config`,
+  `ProviderConfig`, `config::Error`, `config::Result`, `Model` and
+  `ProviderKind` are removed. The typed replacements (`Models`,
+  `ChatModelRecord`/`ModelInfo`, `ApiKind`, the `ProviderError` taxonomy)
+  already cover every retained capability, and the constructor-only
+  `provider_kind_variants` assertion was deleted with its shell; historical
+  v1 read-only readers and sessionv2 writer facts are unchanged. The
+  bilingual crate README is reorganized onboarding-first (install, quick
+  start, streaming/final result, Context/tools/continuation,
+  factories/catalog/auth, options/errors/cancel/usage) with three new
+  compiling examples (`examples/quick_start.rs`, `quick_start_stream.rs`,
+  `tool_loop.rs`) whose exact sources are embedded in the manual; the stale
+  `Minimal Example` built on retired `Request` fields moved into Quick
+  Start.
 - `opi-ai` (0.x): `PricingTier::input_tokens_above` now uses
   `serde_json::Number`, preserving exact integers and finite negative/fractional
   source thresholds. Integer catalog snapshots remain readable without rounding;

@@ -15,7 +15,6 @@ pub mod cancel;
 pub mod catalog;
 pub mod classifier;
 pub mod codex_resources;
-pub mod config;
 pub mod constrained_sampling;
 pub mod context;
 pub mod credential;
@@ -33,7 +32,6 @@ pub mod identity;
 pub mod images;
 pub mod message;
 pub mod mistral;
-pub mod model;
 pub mod model_info;
 pub mod models;
 pub mod mutation;
@@ -74,12 +72,10 @@ pub use auth::{
 };
 pub use callbacks::{CallbackError, ORDINARY_PAYLOAD_VARIANT, RequestCallbacks};
 pub use catalog::{DynamicCatalogSource, HttpCatalogSource, ModelsStore};
-pub use config::{Config, Error};
 pub use credential::{
     ApiKeyCredential, BoxAuthFuture, Credential, CredentialSource, CredentialStore,
     CredentialStoreError,
 };
-pub use model::Model;
 pub use model_info::{
     ModelCapabilities, ModelInfo, ModelInfoError, ModelPricing, PricingTier, SamplingParams,
     ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping, WireApi, WireCompat,
