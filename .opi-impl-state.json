@@ -10390,6 +10390,16 @@
           "field": "onboarding_acceptance",
           "reason": "Supplement the existing owner with ONB-05 observable acceptance; retain its original scope, dependencies, history and protocol/version contract. No host format migration or Pi 1.4 behavioral adoption. Tests reuse the owning public seam; future targets are not executed evidence.",
           "source": "docs/research/pi-ai-opi-ai-alignment/spec-draft.md#SDK onboarding and parameter acceptance / ONB-05"
+        },
+        {
+          "field": "task_owned_paths",
+          "reason": "User-approved posthoc inventory for committed fifth-node repair e4336ab: append 23 exact files for builtin scoped authentication, catalog fidelity, shared header/transport/credential support and required product/package callers. No new wildcard, task permission, capability or historical delivery claim. See common repair record and retained inventory.",
+          "source": "Existing task 20.34 DoD and ONB-05 integration responsibility; user-confirmed scoped ledger maintenance."
+        },
+        {
+          "field": "verification_inventory",
+          "reason": "Append 8 already-executed integration binaries and concrete current call sites for the same admitted 20.34 acceptance. Existing authoritative library gate, smoke addendum, scenarios and all runtime/evaluator history remain unchanged. Commands are not executed by this maintenance.",
+          "source": "Existing task 20.34 verification and acceptance scenarios; P20-N5-REPAIR-e4336ab retained execution/source binding."
         }
       ],
       "tier": "workspace",
@@ -10420,7 +10430,15 @@
           "crates/opi-ai/tests/gemini_fixtures.rs",
           "crates/opi-ai/tests/vertex_fixtures.rs",
           "crates/opi-ai/tests/openai_chat_fixtures.rs",
-          "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs"
+          "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs",
+          "crates/opi-ai/tests/builtin_auth_ownership.rs",
+          "crates/opi-ai/tests/builtin_native_scoped.rs",
+          "crates/opi-ai/tests/builtin_scoped_env.rs",
+          "crates/opi-ai/tests/catalog_lifecycle.rs",
+          "crates/opi-ai/tests/catalog_operations.rs",
+          "crates/opi-ai/tests/catalog_personalization.rs",
+          "crates/opi-ai/tests/chat_capture_replay.rs",
+          "crates/opi-ai/tests/service_tier_cost.rs"
         ],
         "snapshot_tests": [],
         "smoke_addendum": null
@@ -10740,7 +10758,18 @@
         "opi_ai ModelsStore public restore/refresh/personalize against completed built-in provider profiles (target)",
         "opi_ai transcript projection/real adapter preparation (target)",
         "opi_ai serialized Message roundtrip",
-        "opi_ai completed real adapter producers and next-request replay through Models (target)"
+        "opi_ai completed real adapter producers and next-request replay through Models (target)",
+        "opi_ai::provider_collection::register_builtin",
+        "opi_ai::models::Models::complete_simple",
+        "opi_ai::models::Models::generate_images",
+        "opi_ai::models::Models::classify",
+        "opi_ai::models::Models::refresh",
+        "opi_ai::models::Models::refresh_with",
+        "opi_ai::catalog::ModelsStore::open",
+        "opi_ai::catalog::ModelsStore::invalidate_source",
+        "opi_ai::catalog::personalize_openrouter_catalog",
+        "opi_coding_agent::config::OpiConfig::migrate_legacy_provider_references",
+        "opi_coding_agent::credential_store::KeychainCredentialStore::switch_provider_account"
       ],
       "substrate_only": false,
       "iteration_count": 2,
@@ -10831,7 +10860,30 @@
         "crates/opi-coding-agent/tests/*oauth*",
         "crates/opi-coding-agent/tests/*provider*",
         "crates/opi-coding-agent/tests/*rpc*",
-        "crates/opi-coding-agent/tests/*session*"
+        "crates/opi-coding-agent/tests/*session*",
+        "crates/opi-ai/src/auth.rs",
+        "crates/opi-ai/src/auth/adc/native.rs",
+        "crates/opi-ai/src/auth/anthropic_federation.rs",
+        "crates/opi-ai/src/auth/aws/local.rs",
+        "crates/opi-ai/src/auth/builtin.rs",
+        "crates/opi-ai/src/auth/builtin_aws.rs",
+        "crates/opi-ai/src/auth/builtin_vertex.rs",
+        "crates/opi-ai/src/auth/oauth/copilot.rs",
+        "crates/opi-ai/src/auth/oauth/radius.rs",
+        "crates/opi-ai/src/catalog/http_source.rs",
+        "crates/opi-ai/src/catalog/mod.rs",
+        "crates/opi-ai/src/catalog/openrouter.rs",
+        "crates/opi-ai/src/catalog/store.rs",
+        "crates/opi-ai/src/credential.rs",
+        "crates/opi-ai/src/http.rs",
+        "crates/opi-ai/src/provider_headers.rs",
+        "crates/opi-ai/src/schema/mod.rs",
+        "crates/opi-coding-agent/tests/doctor_cli.rs",
+        "crates/opi-coding-agent/tests/list_models.rs",
+        "scripts/pi-sdk-conformance/consumer-crypto/src/fixtures.rs",
+        "scripts/pi-sdk-conformance/consumer-crypto/src/main.rs",
+        "scripts/pi-sdk-conformance/consumer-http/src/main.rs",
+        "scripts/pi-sdk-conformance/consumer-ws/src/main.rs"
       ],
       "verified_at_commit": "042971336aa474682ad6a5203a34ab0f3aa1eded",
       "evidence": {
@@ -10914,6 +10966,30 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. 42-profile integration now retains all operation catalogs, scoped source/auth ownership, complete metadata, reliable pricing/replay, conflict-first migration and bounded actual package proofs.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.34",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.34",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/provider_collection.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -11679,6 +11755,30 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Native effort/sampling and complete model/header projection reach the real Chat adapter; actual reasoning/opaque capture and replay are retained.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.36",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.36",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/openai_chat_fixtures.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -11952,6 +12052,30 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Responses sampling/grammar, effective versus observed service tiers, exclusive usage and actual capture/replay are connected.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.37",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.37",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/openai_responses_fixtures.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -12175,6 +12299,30 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Azure source Chat and Responses preserve azure identity, complete records and frozen scoped endpoint/version/deployment; Azure billing has no Responses tier multiplier. Source Chat Bearer/API-base routing remains distinct from legacy direct Chat deployment/api-key routing.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.38",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.38",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/azure_openai_fixtures.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -12420,6 +12568,30 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Anthropic native thinking/max/temperature, inline strict variants, OAuth tool-name projection and lazy owner-driven federation are covered; cancelling a waiter cannot restart old token expiry.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.39",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.39",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/anthropic_fixtures.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -12581,7 +12753,7 @@
       "substrate_only": false,
       "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "61e38ccf5ba14510f835b62d0c19d4125440d74f",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -12712,6 +12884,37 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Google thinkingConfig uses the pinned backend generationConfig nesting; complete records/headers and canonical signatures reach actual capture/replay.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.40",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.40",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/gemini_fixtures.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none",
+            "start_commit_recovery": {
+              "previous": null,
+              "restored": "61e38ccf5ba14510f835b62d0c19d4125440d74f",
+              "source_checkpoint": "e53e370561571c0dc271fab7b0b4c4796e4060dc",
+              "source": "Original attempt log preserved in a subsequent ledger checkpoint, not a populated start_commit field in the implementation commit.",
+              "ancestor_checked": true
+            }
           }
         }
       ]
@@ -12930,6 +13133,30 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Vertex Express/ADC reaches actual generation with scoped provenance. Explicit complete-model API bases use collection/version precedence rather than always retaining the project/location prefix.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.41",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.41",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/vertex_fixtures.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -13178,6 +13405,37 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Canonical Bedrock signed replay, actual H2/H1 transport and scoped/explicit AWS source selection are covered.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.42",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.42",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/bedrock_fixtures.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none",
+            "historical_dod_digest_erratum": {
+              "verified_at_commit": "83a3a2cee86138d4e0974eda8e0671a93afbb2d6",
+              "original_footer_digest": "6450146e0e2a52b5675b1ac897a4b4b28e530f3ab9ff195f9105ee84a79ba925",
+              "correct_utf8_digest": "54a5e1c5e705cebb6506cb06ca6f9ca2dab898d80b69ea784c2bcb4a1c398177",
+              "definition_of_done_unchanged_at_original_commit": true,
+              "disposition": "Historical digest calculation error only; original commit/footer/evidence retained, no contract change or new acceptance result."
+            }
+          }
         }
       ]
     },
@@ -13394,6 +13652,37 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Mistral complete-model/native-simple/header values reach its actual endpoint; partial results, raw events and failures are retained.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.43",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.43",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/mistral_fixtures.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none",
+            "historical_dod_digest_erratum": {
+              "verified_at_commit": "6f072c48050c9225d79e397f2010274c7e4c117e",
+              "original_footer_digest": "5dd73ab9a73a547e744157b80217d4420b17b14a6735466f2ea7ad8118061db",
+              "correct_utf8_digest": "d4f3c67929c6551023e07c2712d81ace1b1cbc4682c2d695afbde079f7b49fc6",
+              "definition_of_done_unchanged_at_original_commit": true,
+              "disposition": "Historical digest calculation error only; original commit/footer/evidence retained, no contract change or new acceptance result."
+            }
+          }
         }
       ]
     },
@@ -13601,6 +13890,30 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Pi Messages uses its own envelope, exact option/header projection and typed SSE wire; simple passthrough is retained.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.44",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.44",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/chat_pi_messages.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -13845,6 +14158,30 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Image callback ownership/timing, preauth headers, unknown usage/price and complete record metadata are covered; no new mandatory decoder or rejection policy.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.45",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.45",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/openrouter_fixtures.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -14051,6 +14388,30 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. System One has per-call payload/callback ownership, JSON-before-response observation, retained usage and complete record/header projection.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.46",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.46",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/classifier_contract.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -14254,6 +14615,30 @@
               }
             ]
           }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Cloudflare endpoint/provider identity and scoped authentication compose with the classifier lifecycle contract.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.47",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.47",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/classifier_contract.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
+          }
         }
       ]
     },
@@ -14451,6 +14836,30 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. llama.cpp callbacks remain isolated per question/readout depth; actual multi-request inference and cache isolation remain covered.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.48",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.48",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/classifier_contract.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
           }
         }
       ],
@@ -14693,6 +15102,30 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Four real classifiers share preauth/cancellation/usage/callback conformance; Decisions preserves modality, API-key-only availability and frozen account ownership.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.49",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.49",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/classifier_contract.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
           }
         }
       ],
@@ -14985,6 +15418,30 @@
                 "slim_candidate": null
               }
             ]
+          }
+        },
+        {
+          "timestamp": "2026-10-31T04:20:49.270917+00:00",
+          "attempt": 0,
+          "summary": "Fifth-node repair/revalidation e4336ab; retain original delivery and footer identities. Reopenable consumer fake-clock/fetch-only/ready-only commit, scheduler release and independent cancel-budget evidence is complete for the offline mechanism; no real remote deferred deployment is claimed.",
+          "gate_results": {
+            "record_id": "P20-N5-REPAIR-e4336ab:20.50",
+            "evidence_ref": "P20-N5-REPAIR-e4336ab",
+            "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+            "footer_reference": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json#20.50",
+            "test_disposition_ref": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json#test_disposition",
+            "test_disposition": [
+              {
+                "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+                "action": "update",
+                "test": "crates/opi-ai/tests/deferred_contract.rs",
+                "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ],
+            "verification": "Existing executed proof and exact source/commit reuse are in the common record; no Rust/Cargo task or evaluator was run by maintenance.",
+            "test_impact_this_maintenance": "none"
           }
         }
       ]
@@ -22542,6 +22999,631 @@
           "no production/test/spec edit",
           "no staging/commit/push/publication",
           "no shared cache cleanup, live provider, real account, hydration or download"
+        ]
+      }
+    },
+    {
+      "timestamp": "2026-10-31T04:20:49.270917+00:00",
+      "attempt": 0,
+      "summary": "User-approved fifth-node repair evidence maintenance for e4336ab. Append current source/ownership/test/footers and stable proof references; restore documented 20.40 start and append two historical DoD digest errata. Preserve admitted contracts, original runtime identities and fourth-node source-adjudication boundaries. No task/evaluator/Phase exit execution or fabricated Opi evidence.",
+      "gate_results": {
+        "record_id": "P20-N5-REPAIR-e4336ab",
+        "repair_commit": "e4336ab57952feb6d18372eedca5f25f4ad635e3",
+        "repair_parent": "15ece0654f85921eae508da7fa4506f004a9fd54",
+        "repair_tree": "09b1f593a2791c49aed2920e1a4646fb912f7ac5",
+        "original_node_baseline": "49ffefca5f3ef79a4ff3e0e46d7054f54da755c5",
+        "node_tasks": [
+          "20.34",
+          "20.36",
+          "20.37",
+          "20.38",
+          "20.39",
+          "20.40",
+          "20.41",
+          "20.42",
+          "20.43",
+          "20.44",
+          "20.45",
+          "20.46",
+          "20.47",
+          "20.48",
+          "20.49",
+          "20.50"
+        ],
+        "current_node_verdict": "passing for checkpoint five only; may proceed to task 20.55, whose dependencies are satisfied",
+        "remaining_confirmed_findings_in_node": [],
+        "source_binding": {
+          "path": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-source-binding.json",
+          "sha256": "63ff0244707465d706bdd42476b12275a1ea4b934a688a26a3eba19ad183166f"
+        },
+        "owned_file_inventory": {
+          "path": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/repair-inventory.json",
+          "sha256": "cbe63a2fa2905b8e840e078ab2d3ad552007a2f62f3ffe7f3acd2e80cf202c19"
+        },
+        "authoritative_footer_references": {
+          "path": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/maintenance/authoritative-footers.json",
+          "sha256": "f8d75a8670053d30ca2a0ceb14293fb1f0f77d8afc626b0b2f9d255b69ed4d47"
+        },
+        "runtime_verification_receipt": {
+          "path": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/retained/validation/verification-summary.json",
+          "sha256": "d5b8ea40c16ec05bf0c41182cb928e6888f81adcab102336375217bc2c9192e1"
+        },
+        "commit_receipt": {
+          "path": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/retained/validation/commit-receipt.json",
+          "sha256": "2753122e47e5591bfd665c4e1bf21f4087a51f2418df971d1071447158da8376"
+        },
+        "review_report": {
+          "path": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/retained/validation/node5-reacceptance.md",
+          "sha256": "f514d179a201562bcb1ce1274fe58028f2d07b3a096d86806e4f2f107ed5d560"
+        },
+        "evidence_retention_index": {
+          "path": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/retention-index.json",
+          "sha256": "9ca5042b8131da321eac31bf49dd26f1d4898423820a776b5920a7e37bc16dc1"
+        },
+        "evidence_link_map": {
+          "path": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/link-map.json",
+          "sha256": "ad192273edecf7a443265f8ef75d1297f3394116a594603ddf662f73690fc320"
+        },
+        "verification": {
+          "workspace_all_targets": {
+            "passed": 6194,
+            "failed": 0,
+            "ignored": 5
+          },
+          "doctests": {
+            "passed": 11,
+            "failed": 0,
+            "ignored": 0
+          },
+          "package_ordinary_reports": {
+            "ws": 10,
+            "crypto": 6,
+            "http": 6
+          },
+          "original_final_gate_exits": {
+            "fmt-final": 0,
+            "clippy-complete": 0,
+            "workspace-tests-final": 0,
+            "doctests-final": 0,
+            "rustdoc-final": 0,
+            "doc-check-final": 0,
+            "diff-check-final": 0,
+            "package-resume-final": 0
+          },
+          "precommit_line_ending_only_rerun": {
+            "tests_passed": 9,
+            "receipt": {
+              "path": "E:/opi/acceptance/phase20-node5-e4336ab-20261031/retained/validation/precommit-receipt.json",
+              "sha256": "94076588b3e046f5a1d465d5ef0a5ee4b6594cdaa5cdc6b6918743f6592eb86e"
+            }
+          },
+          "reuse_boundary": "Results were executed during repair and rebound to the committed source using exact byte receipts. This maintenance does not rerun runtime gates or create opi-implement execution/evaluator evidence."
+        },
+        "test_disposition": [
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/anthropic_fixtures.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/api_mapped_provider.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/auth_contracts.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/azure_openai_fixtures.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/bedrock_fixtures.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "add",
+            "test": "crates/opi-ai/tests/builtin_auth_ownership.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "add",
+            "test": "crates/opi-ai/tests/builtin_native_scoped.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "add",
+            "test": "crates/opi-ai/tests/builtin_scoped_env.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "add",
+            "test": "crates/opi-ai/tests/catalog_lifecycle.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "add",
+            "test": "crates/opi-ai/tests/catalog_operations.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "add",
+            "test": "crates/opi-ai/tests/catalog_personalization.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "add",
+            "test": "crates/opi-ai/tests/chat_capture_replay.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/chat_pi_messages.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/classifier_contract.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/codex_native_options.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/codex_telemetry.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/custom_provider_registration.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/deferred_contract.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/gemini_fixtures.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/image_provider_serialization.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/mistral_fixtures.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/model_wire_metadata.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/node4_preparation.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/oauth_flows.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/oauth_wire_shape.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/openai_chat_fixtures.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/openai_codex_responses.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/openai_responses_fixtures.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/openrouter_fixtures.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/per_request_auth.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/provider_collection.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/provider_lifecycle.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/registry.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/resource_cleanup.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "add",
+            "test": "crates/opi-ai/tests/service_tier_cost.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "add",
+            "test": "crates/opi-ai/tests/support/catalog_store.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "add",
+            "test": "crates/opi-ai/tests/support/pending_auth.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/tool_result_wire.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/usage_cost.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-ai/tests/vertex_fixtures.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/anthropic_cache_markers.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/azure_openai_provider_wiring.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/config_tests.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/credential_store.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/custom_provider_map.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/doctor_cli.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/github_copilot_provider.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/list_models.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/oauth_auth.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/provider_factory.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/provider_runtime.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "crates/opi-coding-agent/tests/runtime_failure_recovery.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "scripts/pi-sdk-conformance/consumer-crypto/src/fixtures.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "scripts/pi-sdk-conformance/consumer-crypto/src/main.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "scripts/pi-sdk-conformance/consumer-http/src/main.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Committed fifth-node repair proof or required public-type caller synchronization",
+            "action": "update",
+            "test": "scripts/pi-sdk-conformance/consumer-ws/src/main.rs",
+            "interface": "Public Models/adapter, isolated lifecycle, migration or actual packaged-consumer seam; see committed source and node report",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Retained actual producer/opaque replay proof",
+            "action": "retain",
+            "test": "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs",
+            "interface": "Actual adapter terminal to serialization/reload and next request",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Retained actual producer/opaque replay proof",
+            "action": "retain",
+            "test": "crates/opi-ai/tests/replay_contract.rs",
+            "interface": "Actual adapter terminal to serialization/reload and next request",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Federation and Azure preparation private regressions supplement real public transport tests",
+            "action": "add",
+            "test": "crates/opi-ai/src/auth/anthropic_federation.rs::tests",
+            "interface": "Owner lifetime/fake clock or endpoint preparation only; does not replace actual adapter requests",
+            "replacement": null,
+            "slim_candidate": null
+          },
+          {
+            "subject": "Federation and Azure preparation private regressions supplement real public transport tests",
+            "action": "add",
+            "test": "crates/opi-ai/src/provider_collection.rs::tests::azure_blank_scoped_base_allows_same_scope_resource_before_model_fallback",
+            "interface": "Owner lifetime/fake clock or endpoint preparation only; does not replace actual adapter requests",
+            "replacement": null,
+            "slim_candidate": null
+          }
+        ],
+        "test_impact_this_maintenance": "none",
+        "historical_identity": "Preserve original task statuses, verified_at_commit, evidence/Opi-* values, DoD, dependencies, counters, verify_runs, graph confirmation and registered source hashes. e4336ab is a user-authorized cross-task repair, not a substitute task execution commit with fabricated Opi-* trailers. 20.40 start is restored only from its documented attempt checkpoint.",
+        "historical_summary_qualification": [
+          "Prior 20.34 migration notes describe the old canonical-wins behavior; current conflict-first logic retains both blocks and source references until resolution.",
+          "Prior Azure notes do not describe the current source-wire versus legacy direct-wire endpoint/auth distinction.",
+          "Prior Vertex always-preserve-project-prefix note is historical; current explicit complete-model API bases use the pinned collection scope."
+        ],
+        "retained_source_adjudication": {
+          "predecessor_record": "P20-N4-REPAIR-59d2430",
+          "ids": [
+            "F5",
+            "F6"
+          ],
+          "disposition": "Both remain unresolved source questions, with the universal callback-order/default-strict defect claims withdrawn. Fifth-node repairs do not adjudicate them or replace the fourth-node verdict."
+        },
+        "withdrawn_judgments_retained": [
+          "Default INI availability is not resurrected as a defect.",
+          "OpenAI defaults to Responses; explicit Chat remains a separate actual route.",
+          "No mandatory image decode/status or stricter base64 rejection is added from the source ambiguity.",
+          "API upsert does not clear authoritative independent dynamic catalogs.",
+          "No generic all-wire Azure service-tier multiplier or universal onResponse-error resend claim."
+        ],
+        "later_responsibilities": {
+          "20.55": "Full-operation telemetry propagation and passivity remain unexecuted here.",
+          "20.56": "Final legacy-symbol and user-doc exit remains pending.",
+          "20.57": "The 22 ordinary external checks are bounded transport/crypto/WS integration, not the complete SDK package matrix.",
+          "20.58": "Native platform/MSRV/feature/supply-chain final delivery remains pending.",
+          "20.59 / F.1a": "Independent evidence handoff and Phase exit remain pending; no Phase 20 exit record is created."
+        },
+        "evidence_retention_limits": {
+          "files": 145,
+          "bytes": 66488955,
+          "changed_historical_native_references": 3,
+          "disposition": "Two old static-library paths and one old build output no longer match the historical hashes. Original raw metadata/hashes are preserved, with only currently matching later artifacts copied. Do not impersonate or claim recovery of old artifact bytes; see retention-index gaps. This archival limitation is separate from the executed loopback outcomes and the future complete native matrix."
+        },
+        "human_confirmation": "User agreed to the scoped ledger/evidence maintenance proposal after its read-only findings. Maintenance only, no production/spec/task-graph change, task execution, commit or push.",
+        "not_executed": [
+          "Rust/Cargo/provider/Pi tests in this maintenance",
+          "live provider requests or credentials",
+          "package installation/import/hydration",
+          "plan admission or new graph confirmation",
+          "exec/phase-exit evaluator workflow",
+          "commit, push or release"
         ]
       }
     }
