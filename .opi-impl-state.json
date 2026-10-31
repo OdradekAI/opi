@@ -17959,7 +17959,7 @@
       "definition_of_done": "Audit that each earlier breaking slice already migrated its callers, then remove only remaining source-listed shallow Config/Model/ProviderKind/error/parallel facade exports and equivalent obsolete assertions after passing replacements. Verify old current exports/readers/dual writes/stacked retry reach zero while historical v1/read-only events, sessionv2 writer facts, authority/denial/secret/CRC/SigV4/process tests remain. Synchronize user-visible Unreleased/current schemas/fixtures and bilingual SDK migration docs, no host policy/sessionv3 redesign. Audit removal already completed slice by slice and retain historical readers; this task does not defer known predecessor symbol/caller migrations or authorize a second broad rewrite. Reuse passing replacement assertions; delete only newly proven task-local leftovers. Reorganize the bilingual crate README into purpose/install/complete ordinary quick start, streaming/final result, factories/catalog/auth, Context/tools/continuation, native/simple options and errors/cancel/usage before advanced/contributor detail. Create the three owned example sources and reuse their exact source in the manual, using the actual public Context/Request API without retired fields or manual-only resolver/route/prepare steps. Preserve moved lifecycle/security facts at discoverable owning links. This task compiles examples; the actual external packaged-example proof remains at 20.57.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -18049,7 +18049,7 @@
             "opi_agent live generation/summary/evidence/session readers",
             "opi_coding_agent factory/config/auth/compaction/JSON-RPC assembly"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-20",
@@ -18062,7 +18062,7 @@
             "opi_agent live generation/summary/evidence/session readers",
             "opi_coding_agent factory/config/auth/compaction/JSON-RPC assembly"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-021",
@@ -18075,7 +18075,7 @@
             "opi_agent live generation/summary/evidence/session readers",
             "opi_coding_agent factory/config/auth/compaction/JSON-RPC assembly"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S56",
@@ -18088,7 +18088,7 @@
             "opi_agent live generation/summary/evidence/session readers",
             "opi_coding_agent factory/config/auth/compaction/JSON-RPC assembly"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-EXIT-07",
@@ -18101,7 +18101,7 @@
             "opi_agent live generation/summary/evidence/session readers",
             "opi_coding_agent factory/config/auth/compaction/JSON-RPC assembly"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-13",
@@ -18114,7 +18114,7 @@
             "opi_agent live generation/summary/evidence/session readers",
             "opi_coding_agent factory/config/auth/compaction/JSON-RPC assembly"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-01-20.56",
@@ -18126,7 +18126,7 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -18136,7 +18136,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "5161985d1645b1eede3db4dc57e17b7552f00170",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -18213,8 +18213,14 @@
         "crates/opi-ai/examples/quick_start_stream.rs",
         "crates/opi-ai/examples/tool_loop.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "e80c7f3c66cf1f1d304f287c24ecece0adc68105",
+      "evidence": {
+        "Opi-Task": "20.56",
+        "Opi-DoD-SHA256": "ee59146dc05e775c11a280b78ff425461789f69c5d15b3177e59e63759fdc40a",
+        "Opi-Verification": "workspace; smoke full PASSED (opi-doc-check, cargo fmt --all --check, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets + --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps); scenario cargo test -p opi-ai --test custom_provider_registration --test model_wire_metadata --test provider_collection --test provider_trait all green; cargo check -p opi-ai --examples PASSED; git diff --check clean",
+        "Opi-Evaluator": "passed (manual 7-lens exec audit; two findings handled during audit - deliberate module-set baseline update and an opi-coding-agent oauth_auth PKCE flake under full parallel load that passes standalone, environment-only; exec.workflow.js runtime unavailable in environment, wf_ref=null)",
+        "Opi-Acceptance": "V-10, V-20, AIR-021, P20-S56, P20-EXIT-07, DEL-13, ONB-01-20.56 met - shallow shells retired with zero consumers, module-set baseline updated deliberately, historical readers retained, bilingual README reorganized with three compiling examples embedded verbatim"
+      },
       "blocker": null,
       "session_notes": [
         {
@@ -18227,6 +18233,51 @@
             "evidence_classification": "predecessor handoff only; future task not executed",
             "task_status_preserved": "failing",
             "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-30T16:05:00+00:00",
+          "attempt": 1,
+          "summary": "DEL-13 exit audit delivered in commit e80c7f3c66cf1f1d304f287c24ecece0adc68105. Audit-first: grep proved zero in-repo consumers of the shallow shells before removal (opi_ai::Config/::Error/::Model absent outside lib.rs; crate::config::/crate::model:: absent; ProviderKind referenced only by the dying model.rs shell, two test sites and one raw-string fixture). Removed: src/config.rs (Config, ProviderConfig, Error, Result), src/model.rs (Model), the ProviderKind enum, the lib.rs module/re-export lines, and the constructor-only provider_kind_variants assertion (baseline green run of the four scenario suites preceded deletion). tool_result_wire.rs public module-set guard failed exactly as designed and its Phase 11 baseline was updated deliberately (config/model entries removed with DEL-13 comments). Old current exports verified zero post-removal; historical v1 read-only session readers, sessionv2 writer facts and AssistantStreamEvent legacy Error terminal untouched; no dual write or stacked retry reintroduced (session.rs v1-read-only/v2-writer comments intact; opi-agent retry counters untouched); opi-agent/opi-coding-agent schemas and fixtures audited clean of shell references. ONB-01: bilingual READMEs reorganized onboarding-first (Installation, Quick Start, Streaming and the Final Result, Context/Tools/Continuation, Factories/Catalog/Auth, Options/Errors/Cancellation/Usage before Providers/Core API advanced detail); three new examples (quick_start.rs, quick_start_stream.rs, tool_loop.rs) compile via cargo check -p opi-ai --examples against the actual transcript-based Request API (normalize_context, ChatModelRecord, complete_simple/stream_simple, ToolDef/ToolResultMessage with ToolNotExecutedReason) with byte-exact source embedding in both manuals re-verified after cargo fmt; stale Minimal Example sections now point at Quick Start. CHANGELOG Unreleased Breaking Changes entry added. Environment notes: two WSL OOM interruptions during D.1 (32-job parallel rustc on 15Gi) mitigated with CARGO_BUILD_JOBS=8 and one surgical corrupt-test-binary removal after the OOM; one opi-coding-agent oauth_auth PKCE flake under full parallel load (122/124) passes standalone 124/124 and did not recur in the final passing gate; neither is a code defect.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.sh full on the final tree (opi-doc-check, cargo fmt --all --check, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps); environment mitigations recorded in session note",
+            "d0_scenarios": "PASS: four scenario suites green post-removal and inside the workspace gate; cargo check -p opi-ai --examples PASSED after final fmt; python scripts/opi-doc-check.py PASS; git diff --check clean",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7); two flagged findings handled during audit (deliberate module-set baseline update; environment-only oauth flake), no remaining must-fix; exec.workflow.js runtime unavailable in environment, wf_ref=null per 20.2/20.34/20.50 precedent",
+            "d3_gap_checks": "none beyond D.1: scenario commands deduplicated into the workspace gate; examples check and doc-check run explicitly per ONB-01 verification; no artifact directory produced (refactor plus docs claims)",
+            "test_disposition": [
+              {
+                "subject": "module-set guard",
+                "action": "update",
+                "test": "crates/opi-ai/tests/tool_result_wire.rs::provider_tool_result_error_no_phase12_breadth_guard - Phase 11 baseline loses config and model entries deliberately with DEL-13 comments; guard remains active for future drift",
+                "interface": "opi-ai public module set",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "ProviderKind shell",
+                "action": "delete",
+                "test": "crates/opi-ai/tests/provider_trait.rs::provider_kind_variants (constructor-only variant listing; typed replacements - registry/catalog/provider-trait behavior assertions - were green before deletion and remain green)",
+                "interface": "ProviderKind enum",
+                "replacement": "passing assertions in provider_collection.rs / provider_trait.rs / custom_provider_registration.rs / model_wire_metadata.rs",
+                "slim_candidate": null
+              },
+              {
+                "subject": "four scenario suites",
+                "action": "retain",
+                "test": "custom_provider_registration.rs, model_wire_metadata.rs, provider_collection.rs, provider_trait.rs (all assertions retained and green post-removal)",
+                "interface": "public registration/registry/catalog/trait surface",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "ONB-01 examples",
+                "action": "add",
+                "test": "crates/opi-ai/examples/{quick_start,quick_start_stream,tool_loop}.rs - compile-checked via cargo check -p opi-ai --examples and embedded byte-exact in both READMEs",
+                "interface": "Models public entries over transcript Context/Request",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
           }
         }
       ]
@@ -25050,6 +25101,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-30T14:20:00+00:00",
       "task_id": "20.55",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 0,
+      "ran_at": "2026-10-30T16:05:00+00:00",
+      "task_id": "20.56",
       "criterion_id": null
     }
   ]
