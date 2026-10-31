@@ -18291,7 +18291,7 @@
       "definition_of_done": "Run fresh workspace-external consumer using opi-ai as its sole Opi runtime dependency and ordinary Tokio/Serde/Stream dependencies, with actually packaged offline resources and registry-resolvable controlled dependency closure, no root patch/TEMP paths. Exercise every public workflow, all10 chat/1image/4classifier/42profiles/9flow paths with fake sources/transport and complete model records, two instances/shared store/cleanup/options portability/tool loop/serde. Differential fixed Pi public entrypoints use import-reviewed mock-only runner, isolated HOME/env/no credentials-triggered live/no silent install, exact source/runtime/fixture/RDF/result pins. Public failures/actual allocation/large lawful acceptance/typed policies remain observable, not helper-only proof. Reuse early external-consumer packaging checks from 20.8/12/14 and the private SDK/Codex package proof owned by 20.16, keeping 20.15 independent-package results at their original historical identity, plus predecessor behavioral suites, adding only distinct assembled external-use cases. Own full cross-operation duration AIR-061/V-53 and callbacks AIR-059/V-51 proof including new image/classifier/deferred producers; no second implementation pass. The final opi-ai artifact must include private WS sources/tests/fixtures/helpers and LICENSE/NOTICE. Revalidate the final relevant ordinary/default/C-zlib artifact graphs with separate extracted private protocol tests and real public Models/Codex/Upgrade/private-codec consumers. Upgrade-only or old companion package proof cannot close final assembled SDK acceptance; native platform/MSRV stays with 20.58. Run the exact README/example quick-start, streaming and tool-result-continuation source from a fresh workspace-external consumer of the actual opi-ai .crate. The consumer uses only opi-ai plus documented ordinary runtime/Serde/stream dependencies, with no product config, Agent, manual auth resolver, prepare lifecycle, private path/root patch or persistence implementation. A controlled peer proves the real request/final result/continuation; assert default memory stores, explicit builtins/factories and zero env/store/network during construction/registration/static queries. Empty Models is not advertised as populated. Reuse the package harness and preserve final native/feature-union acceptance.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -18448,7 +18448,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-22",
@@ -18461,7 +18461,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-25",
@@ -18474,7 +18474,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-26",
@@ -18487,7 +18487,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-39",
@@ -18500,7 +18500,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-42",
@@ -18513,7 +18513,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-49",
@@ -18526,7 +18526,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-50",
@@ -18539,7 +18539,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-51",
@@ -18552,7 +18552,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-025",
@@ -18565,7 +18565,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-026",
@@ -18578,7 +18578,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-030",
@@ -18591,7 +18591,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-031",
@@ -18604,7 +18604,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-032",
@@ -18617,7 +18617,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-046",
@@ -18630,7 +18630,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-049",
@@ -18643,7 +18643,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-050",
@@ -18656,7 +18656,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-057",
@@ -18669,7 +18669,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-058",
@@ -18682,7 +18682,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-066",
@@ -18695,7 +18695,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S57",
@@ -18709,7 +18709,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-ACTOR-01",
@@ -18722,7 +18722,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-ACTOR-03",
@@ -18735,7 +18735,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-ACTOR-05",
@@ -18748,7 +18748,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-ACTOR-06",
@@ -18761,7 +18761,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-ACTOR-08",
@@ -18774,7 +18774,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-EXIT-02",
@@ -18787,7 +18787,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-EXIT-03",
@@ -18800,7 +18800,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-EXIT-04",
@@ -18813,7 +18813,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-EXIT-05",
@@ -18826,7 +18826,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-02",
@@ -18839,7 +18839,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-11",
@@ -18852,7 +18852,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-01",
@@ -18865,7 +18865,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-02",
@@ -18878,7 +18878,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-03",
@@ -18891,7 +18891,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-04",
@@ -18904,7 +18904,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-05",
@@ -18917,7 +18917,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-06",
@@ -18930,7 +18930,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-07",
@@ -18943,7 +18943,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-08",
@@ -18956,7 +18956,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-09",
@@ -18969,7 +18969,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-10",
@@ -18982,7 +18982,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-11",
@@ -18995,7 +18995,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-12",
@@ -19008,7 +19008,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-13",
@@ -19021,7 +19021,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-14",
@@ -19034,7 +19034,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-15",
@@ -19047,7 +19047,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-16",
@@ -19060,7 +19060,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-17",
@@ -19073,7 +19073,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-18",
@@ -19086,7 +19086,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-19",
@@ -19099,7 +19099,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-20",
@@ -19112,7 +19112,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-53",
@@ -19125,7 +19125,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-061",
@@ -19138,7 +19138,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-059",
@@ -19151,7 +19151,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-06",
@@ -19164,7 +19164,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-31",
@@ -19177,7 +19177,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-008",
@@ -19190,7 +19190,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-011",
@@ -19203,7 +19203,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-020",
@@ -19216,7 +19216,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-07",
@@ -19229,7 +19229,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-08",
@@ -19242,7 +19242,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-010",
@@ -19255,7 +19255,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-012",
@@ -19268,7 +19268,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-013",
@@ -19281,7 +19281,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-014",
@@ -19294,7 +19294,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-038",
@@ -19307,7 +19307,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-03",
@@ -19320,7 +19320,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-15",
@@ -19333,7 +19333,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-35",
@@ -19346,7 +19346,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-024",
@@ -19359,7 +19359,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-RDF-21",
@@ -19373,7 +19373,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-02-20.57",
@@ -19386,7 +19386,7 @@
             "published-package-shaped opi_ai public consumer (target)",
             "all real opi_ai built-in/direct/custom adapter paths (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -19396,7 +19396,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "ef7c64e776451baa6975db959f699e59c280f69b",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -19407,8 +19407,14 @@
         "crates/opi-ai/tests/external_sdk.rs",
         "scripts/pi-sdk-conformance/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "4565935888a30c69f7d16dc21268f18e77871818",
+      "evidence": {
+        "Opi-Task": "20.57",
+        "Opi-DoD-SHA256": "982aa4552b76110ad8c1f1b5c76dc1ad70886e4a4dd91c578ac60cde21e121a0",
+        "Opi-Verification": "workspace; smoke full PASSED (opi-doc-check, cargo fmt --all --check, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets + --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps); scenario cargo test -p opi-ai --test external_sdk 10/10 green; python -m unittest discover scripts/pi-sdk-conformance 70/70 OK; package_slice.py --family ws --offline PASS on fresh scratch; run_early_package_proof.py PASS on fresh scratch (actual CLI has no --offline flag); run_readme_examples.py --offline PASS on fresh scratch (packaged examples byte-exact, manuals embed them, consumer graph free of other Opi crates)",
+        "Opi-Evaluator": "passed (manual 7-lens exec audit; two flagged findings handled during audit - consumer template initially missing serde_json found by the packaging run and fixed with the README install lists, and the early-proof invocation recorded by its actual command line; exec.workflow.js runtime unavailable in environment, wf_ref=null)",
+        "Opi-Acceptance": "P20-S57, ONB-02-20.57, AIR-031/032/046/049/050/057/058/059/061/066/008/010/011/012/013/014/020/024/038, V-53/06/07/08/15/31/35, DEL-02/03/11/14, P20-ACTOR-01/03/05/06/08, P20-EXIT-02/03/04/05, P20-RDF-01..21 met at the assembled level - ten-wire matrix, classifier/image matrix, options/callback/duration/tool-loop/isolation/zero-IO/large-collection cases green, three packaging proofs recorded; per-item deep semantics retained by predecessor owners per the dedup rule"
+      },
       "blocker": null,
       "session_notes": [
         {
@@ -19508,6 +19514,51 @@
               }
             ],
             "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-30T18:40:00+00:00",
+          "attempt": 1,
+          "summary": "DEL-14 assembled external-use slice delivered in commit 4565935888a30c69f7d16dc21268f18e77871818 (parent ef7c64e). No production runtime code changed: pure assurance plus harness plus docs. crates/opi-ai/tests/external_sdk.rs (10 tests) drives the assembled matrix through consumer-shaped Models instances with local scripted transport and injected auth: all ten published chat wires in ONE instance (builtin 42-profile registration with per-wire wiremock peers for openai-responses, openrouter-completions, azure-responses, google, vertex via scripted ADC token peer, mistral, bedrock via static SigV4, radius pi-messages; explicit register_route real adapters for OAuth-only anthropic and codex), four classifier APIs (typed system-one answers, Cloudflare result.answers envelope, Decisions 504 typed exclusion, llama-server tokenize/apply-template/completion protocol mirrored from classifier_contract harness with citation comment) and the sole openrouter-images API, SimpleOptions tool_choice:none portability with foreign-wire native options failing typed preflight before any wire hit, AIR-059 assembled callbacks (header transform merged once and observed by the peer, once-per-call payload/response/raw counts, protected authorization mutation rejected typed with zero peer requests), AIR-061/V-53 duration measured at adapter activation surviving two serde roundtrips unchanged, manual tool loop continuing after serializing the normalized TranscriptContext (anthropic by-value tool replay means continuation rounds still carry top-level tools, so the peer distinguishes rounds by body content), two instances sharing one InMemoryCredentialStore with zero route leakage and awaited cleanup_session_resources, empty Models zero-I/O construction (no env reads during registration/static queries, default memory stores, empty catalog not advertised), explicit deferred fetch with fetch_count 0 before caller action, and 70 user/assistant turns (>64) reaching the wire as 71 merged messages untruncated. Wire-path realities recorded: base-url overrides collapse /v1 and /api/v1 prefixes per compat rules, google path /models/<id>:streamGenerateContent, bedrock model id colon unencoded. Dedup honored: per-adapter fixture suites, oauth_flows nine_flows_register_and_two_models_share_one_store, telemetry freezing suites and replay projections keep their owners; external_sdk adds only distinct assembled cases. ONB-02: scripts/pi-sdk-conformance/run_readme_examples.py (new) packages opi-ai, proves the three onboarding examples ship in the .crate byte-exact (sha256 recorded) and are embedded verbatim by both manuals, then compiles them as src/bin of a fresh workspace-external consumer (consumer-readme template, path dep on the extracted artifact, tokio/tokio-util/secrecy/futures-util/serde_json only) offline under the controlled environment with the lease held; the resolved lockfile graph is asserted free of opi-agent/opi-coding-agent/opi-protocol/opi-tui; evidence in evidence/readme-examples-proof.json. The consumer template initially missed serde_json (tool_loop uses it) - caught by the packaging run, fixed in template plus both README install lists. Packaging addenda rerun on fresh scratches and PASS: package_slice.py --family ws --offline (three feature graphs, private protocol suites, Models->Codex->Upgrade->private-codec chain, AWS-LC and C-zlib provenance) and run_early_package_proof.py (P20-RDF-21 upstream data profile; actual CLI carries no --offline flag - recorded by its real command line). Harness unit tests 70/70 OK. Bilingual crate README install lists extended with serde_json; harness README documents the new runner, template and evidence file. CHANGELOG Unreleased Added entry added. Native platform/MSRV stays with 20.58 per partition.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.sh full on the final tree",
+            "d0_scenarios": "PASS: cargo test -p opi-ai --test external_sdk 10/10; three packaging proofs PASS on fresh workspace-external scratches with evidence files; harness unittests 70/70",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7); two flagged findings handled during audit (serde_json dependency gap found by packaging run and fixed; early-proof recorded by actual CLI), no remaining must-fix; exec.workflow.js runtime unavailable in environment, wf_ref=null per precedent",
+            "d3_gap_checks": "harness unit tests (unittest discover scripts/pi-sdk-conformance) and the three packaging addenda run explicitly; no artifact directory produced (assurance claims recorded as evidence files)",
+            "test_disposition": [
+              {
+                "subject": "assembled external SDK matrix",
+                "action": "add",
+                "test": "crates/opi-ai/tests/external_sdk.rs (10 tests: ten-wire matrix, classifier+image matrix, options portability+preflight mismatch, callbacks closure+typed guard, duration+serde, manual tool loop+serde continuation, two instances/shared store/cleanup, empty Models zero-IO, >64 lawful collection, deferred explicit resume)",
+                "interface": "published opi-ai public SDK surface",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "ONB-02 packaged example proof",
+                "action": "add",
+                "test": "scripts/pi-sdk-conformance/run_readme_examples.py + consumer-readme template + evidence/readme-examples-proof.json",
+                "interface": "packaged opi-ai artifact plus ordinary external consumer",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "predecessor behavioral suites",
+                "action": "retain",
+                "test": "per-adapter fixture suites, oauth_flows, classifier_contract, telemetry_operations, replay suites unchanged (dedup rule; owners of deep per-item semantics)",
+                "interface": "their owning seams",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "packaging addenda",
+                "action": "retain",
+                "test": "package_slice.py ws family and run_early_package_proof.py rerun on fresh scratches with recorded evidence; code unchanged",
+                "interface": "packaged artifact feature graphs",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
           }
         }
       ]
@@ -25111,6 +25162,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-30T16:05:00+00:00",
       "task_id": "20.56",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 2,
+      "rejected_count": 0,
+      "ran_at": "2026-10-30T18:40:00+00:00",
+      "task_id": "20.57",
       "criterion_id": null
     }
   ]
