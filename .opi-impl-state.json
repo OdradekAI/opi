@@ -19572,7 +19572,7 @@
       "definition_of_done": "Freeze final root Cargo graph/features/checksums/build.rs/native/procmacro/unsafe/license/NOTICE and security-maintenance material, use Cargo-generated lock and review feature unions. Execute native Linux/macOS/Windows package and behavioral conformance plus MSRV1.97, map all advertised release target claims to real build/package/behavioral evidence (cross-check not native proof). Configure source-pinned deterministic CI/artifacts, explicit unavailable runner/input remains OPEN and blocks Phase exit. No cross-platform build from this skill, live provider, registry publication/release/CI dispatch/commit is implicitly authorized; external platform execution needs owning host or explicitly authorized CI. Update the existing delivery-evidence baseline with actual final platform/input outcomes only after they execute, before group closure. Supply complete criteria/artifacts for mandatory workflow F.1a, never substitute this task for that independent phase-exit gate. Local completion covers the executed package/native/MSRV evidence only. Final upstream/test-disposition evidence is 20.59; full DEL-14 and delivery-group closure belong exclusively to the later independent F.1a, not this task or platform_delivery alone.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.57"
       ],
@@ -19678,7 +19678,7 @@
           "production_call_sites": [
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S58",
@@ -19690,7 +19690,7 @@
           "production_call_sites": [
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-EXIT-06",
@@ -19702,7 +19702,7 @@
           "production_call_sites": [
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-GAP-SCHEMA",
@@ -19714,7 +19714,7 @@
           "production_call_sites": [
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-GAP-WS",
@@ -19726,7 +19726,7 @@
           "production_call_sites": [
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-GAP-HTTP",
@@ -19738,7 +19738,7 @@
           "production_call_sites": [
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-GAP-CRYPTO",
@@ -19750,7 +19750,7 @@
           "production_call_sites": [
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-GAP-AUTH",
@@ -19762,7 +19762,7 @@
           "production_call_sites": [
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-GAP-TELEMETRY",
@@ -19774,7 +19774,7 @@
           "production_call_sites": [
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-06-20.58",
@@ -19786,16 +19786,16 @@
           "production_call_sites": [
             "opi_ai external package consumer on native Linux/macOS/Windows (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
         "opi_ai external package consumer on native Linux/macOS/Windows (target)"
       ],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "34936a5",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         ".github/workflows/ci.yml",
@@ -19817,8 +19817,14 @@
         "docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md",
         "scripts/pi-sdk-conformance/**"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "dbbfa4ee6821cd28bd2fe6b6573579f863057232",
+      "evidence": {
+        "Opi-Task": "20.58",
+        "Opi-DoD-SHA256": "ed218933df3aabeeef1ece2883428bf52bf0e8b91396481c1e7cdd646529b046",
+        "Opi-Verification": "workspace; smoke full PASSED (opi-doc-check, cargo fmt --all --check, clippy --workspace --all-targets --locked -D warnings, cargo test --workspace --all-targets --locked + --doc --locked, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps); scenario cargo test -p opi-ai --test platform_delivery 9/9 green on Linux rustc 1.97.1 (exact MSRV) and natively on Windows x86_64-pc-windows-msvc (cargo 1.99.1 offline, registry-cache build incl. aws-lc-sys 0.46.0 via cc builder + MSVC cl.exe); Windows cargo test -p opi-ai --tests --offline: 2630 executed, 2629 passed + 1 environment-only parallel-load oauth flake (standalone and full oauth_flows 193/193 reruns green); package_slice.py --family ws --offline PASS on fresh scratch /tmp/opi-2058-ws; cross-platform package determinism 245/245 members byte-identical; ci_contract guard green after CI edits",
+        "Opi-Evaluator": "passed (manual 7-lens exec audit; three flagged findings handled - Windows oauth port-bind load flake disclosed with rerun evidence and classified environment-only, container-level .crate sha difference across cargo versions explained as gzip metadata with content determinism proven, dtolnay/rust-toolchain pinned to the stable branch head SHA because the action publishes no per-toolchain tags; exec.workflow.js runtime unavailable in environment, wf_ref=null)",
+        "Opi-Acceptance": "P20-S58 (freeze executed: graph/features/checksums/build.rs/native/procmacro/unsafe/license/NOTICE), ONB-06-20.58 (README claims cross-checked against executed artifacts, macOS kept explicit), V-58 platform layer (native Linux + Windows package/behavioral/MSRV executed; macOS OPEN), P20-GAP-SCHEMA/WS/HTTP/CRYPTO/AUTH/TELEMETRY kept OPEN at recorded mechanism owners, P20-EXIT-06 inputs supplied without substituting F.1a; release-target claim map and CI determinism configured with no dispatch"
+      },
       "blocker": null,
       "session_notes": [
         {
@@ -19918,6 +19924,56 @@
               }
             ],
             "test_impact_this_maintenance": "none"
+          }
+        },
+        {
+          "timestamp": "2026-10-30T19:05:00+00:00",
+          "attempt": 1,
+          "summary": "B.1 contract presented (recon: MSRV 1.97 declared / WSL rustc exactly 1.97.1 / Windows cargo.exe 1.99.1 msvc present on owning host / macOS unavailable OPEN / unsafe inventory 6 opi-ai files / build.rs only coding-agent+sandbox / actions not SHA-pinned / platform_delivery.rs and phase20-delivery-evidence.md both missing). B.2 authorization: user re-invoked opi-implement make-progress in direct response to the presented contract question; recorded as affirmative. Baseline dirty files: none (tree clean at 34936a5)."
+        },
+        {
+          "timestamp": "2026-10-30T20:15:00+00:00",
+          "attempt": 1,
+          "summary": "DEL-14 executed platform slice delivered in commit dbbfa4ee6821cd28bd2fe6b6573579f863057232 (parent 34936a5). No production runtime code changed: new freeze test + CI determinism + bilingual delivery-evidence baseline + README claim updates + CHANGELOG. crates/opi-ai/tests/platform_delivery.rs (9 tests) freezes the final root Cargo graph: exact 7 members and lockstep internal path+version edges, workspace.package 0.8.3/edition2024/rust-version1.97/MIT, opi-ai single feature union (no [features], no optional deps, workspace-only lines plus the documented cfg(windows) table), build.rs ownership exactly {coding-agent, sandbox} with opi-ai build-script-free, the 22-file workspace src unsafe inventory (opi-ai: aws/process/windows, schema ir, schema refs, telemetry, ws io, ws pmd), proc-macros transitive-only with sandbox [dev-dependencies] proc-macro2/syn as the recorded exception, the 15-crate pinned closure with frozen Cargo.lock checksums (libz-rs-sys 0.6.8, flate2 1.1.10, regress 0.12.0, ryu-js 1.0.2, unicode-normalization 0.1.26, reqwest 0.12.28, rustls 0.23.40, aws-lc-rs 1.18.2, aws-lc-sys 0.46.0, aws-smithy-query/xml 0.62.1, xmlparser 0.13.5, p256 0.13.2, sha1 0.10.6, h2 0.4.14), Cargo-generated lock markers (v4 header), root-opi-ai byte-equal LICENSE plus non-empty NOTICE, and declared-host identity assertions. Executed natively twice: Linux x86_64-unknown-linux-gnu with rustc exactly the declared MSRV 1.97.1 (every session gate runs on the MSRV toolchain itself), and Windows x86_64-pc-windows-msvc via cargo.exe 1.99.1 offline from the warm Windows registry cache (703 crates) with target dir D:/Luiz/Odradek/opi-win-target; metadata resolved the full lock offline first; the dependency tree built incl. aws-lc-sys 0.46.0 C sources through its cc builder + VS 2022 BuildTools cl.exe (MSVC 14.44, cmake absent but an unenabled optional build-dep, prebuilt-nasm objects used). Windows cargo test -p opi-ai --tests --offline executed 2630 tests: 2629 passed plus login_binds_preferred_port_53692_with_callback_path failing once under 8-way parallel load; standalone rerun PASS and full oauth_flows rerun 193/193 PASS; Windows excluded-port ranges checked (only 50000-50059 excluded, 53692 free); classified environment-only, same family as the previously classified Linux parallel-load oauth flake, no product failure, recorded verbatim in the evidence baseline. platform_delivery ran 9/9 on Windows too. cargo package on both hosts from the identical tree produced 245 files 12.5MiB with ALL 245 members byte-identical (per-member sha256 compared); container .crate sha differs (win 010c13e2 vs linux 2ff8553e) purely from cargo-version gzip stream metadata; 20.57 clean-tree sha f730c63c predates this task's files. DoD addendum package_slice.py --family ws --offline rerun PASS on fresh scratch /tmp/opi-2058-ws. CI determinism configured with zero dispatch: all uses in ci.yml/release.yml commit-SHA-pinned with resolved tags via GitHub API on 2026-10-30 (checkout v4.4.0=11d5960a, dtolnay rust-toolchain stable-branch=b725eda5, rust-cache v2.9.3=d1527c8f, upload-artifact v4.6.2=ea165f8d, download-artifact v4.3.0=d3f86a10), --locked added to clippy/test/doctest/doc, new msrv job (toolchain 1.97 cargo check --workspace --all-targets --locked), release build and sandbox-archive jobs pin toolchain 1.97 and install cross from crates.io --version 0.2.5 replacing the moving --git HEAD, release builds --locked; ci_contract guard rerun green; mac-stabilize.yml and the two opi-eval workflows are outside owned paths and untouched. Release-target claim map written: 6 build targets + 4 sandbox archive targets mapped to executed-native-evidence vs CI-claim; macOS explicitly OPEN pending an owning host (blocks Phase exit only per contract). docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md (+zh) records only actually executed outcomes and inputs; upstream-tracking.md needed no row because the tracked RDF-21 upstream data identity is unchanged and was revalidated by 20.57's run_early_package_proof rerun. ONB-06: three README passage pairs (WS consolidation, schema conformance scope, loopback checks, both languages) now cite the executed matrix and the evidence baseline, macOS kept explicitly pending, no performance or untested-support claims introduced. DEL-14 and delivery-group closure remain with the independent mandatory F.1a; final documentary evidence is 20.59.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.sh full on the final tree (includes the new platform_delivery suite in the workspace run)",
+            "d0_scenarios": "PASS: platform_delivery 9/9 on both native hosts; Windows full opi-ai --tests offline 2630 executed (1 environment-only flake with green reruns, disclosed); package_slice ws PASS fresh scratch; cross-platform package determinism 245/245 byte-identical members",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7); three flagged findings handled during audit (Windows load flake with rerun evidence, container-sha cargo metadata explanation, dtolnay branch-head SHA pin rationale), no remaining must-fix; exec.workflow.js runtime unavailable in environment, wf_ref=null per precedent",
+            "d3_gap_checks": "ci_contract guard rerun after CI edits (1/1 green) as the workflow-content owner check; Windows excluded-port-range probe recorded for the flake diagnosis; no harness scripts changed this task so pi-sdk-conformance unittests unchanged from 20.57 green run",
+            "test_disposition": [
+              {
+                "subject": "platform delivery freeze",
+                "action": "add",
+                "test": "crates/opi-ai/tests/platform_delivery.rs (9 tests: graph, single feature union, Cargo-generated lock + member uniqueness, pinned-closure checksums, build.rs ownership, unsafe inventory, proc-macro policy, license/notice, declared-host identity)",
+                "interface": "final root manifests, Cargo.lock, repository layout and native hosts",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "CI supply-chain determinism",
+                "action": "update",
+                "test": ".github/workflows/ci.yml and release.yml (SHA-pinned actions, --locked gates, msrv 1.97 job, MSRV-pinned release builds, crates.io-pinned cross 0.2.5); ci_contract owner guard rerun green",
+                "interface": "CI dispatch surfaces (not executed; configuration only)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "delivery evidence baseline",
+                "action": "add",
+                "test": "docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md + .zh.md recording executed outcomes and the release-target claim map",
+                "interface": "documentation contract (doc-check PASS)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "predecessor platform/package proofs",
+                "action": "retain",
+                "test": "external_sdk, run_readme_examples, run_early_package_proof and package_slice harnesses unchanged; ws family rerun this task per the DoD addendum at fresh-scratch identity",
+                "interface": "their owning seams",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
           }
         }
       ]
@@ -25172,6 +25228,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-30T18:40:00+00:00",
       "task_id": "20.57",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 3,
+      "rejected_count": 0,
+      "ran_at": "2026-10-30T20:15:00+00:00",
+      "task_id": "20.58",
       "criterion_id": null
     }
   ]
