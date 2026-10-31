@@ -34,6 +34,18 @@ There is no registry publication or live model call.
   local-registry results. Those describe the retired implementation, are not
   current passing proof and cannot be replayed with this harness alone: the
   vendor input archive, generation and local-registry tools have been retired.
+- `run_readme_examples.py` (task 20.57, ONB-02) packages `opi-ai`, proves the
+  three onboarding examples ship inside the `.crate` byte-exactly as both
+  manuals embed them, and compiles them as the binaries of a fresh
+  workspace-external consumer against only `opi-ai` plus ordinary
+  Tokio/Serde/stream dependencies, offline under an isolated controlled
+  environment. The controlled-peer execution of the same flows lives in
+  `crates/opi-ai/tests/external_sdk.rs`.
+- `consumer-readme/` is that consumer's template; its `src/bin/*.rs` are
+  injected by the runner from the extracted package, never authored here.
+- `evidence/readme-examples-proof.json` records each executed run: package
+  hash, per-example hashes, manual containment and the consumer's resolved
+  dependency names.
 - `test_package_proof.py` covers scratch/cache safety, package extraction,
   metadata/feature validation, failure evidence, lease release and the CLI
   negative path.

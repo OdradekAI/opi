@@ -40,7 +40,7 @@ cargo add opi-ai
 ```
 
 下文示例另需 `tokio`（features `macros` 与 `rt-multi-thread`）、`tokio-util`、
-`secrecy` 与 `futures-util`。
+`secrecy`、`futures-util` 与 `serde_json`。
 
 ## 快速开始
 

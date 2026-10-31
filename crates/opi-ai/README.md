@@ -46,7 +46,8 @@ cargo add opi-ai
 ```
 
 The examples below additionally use `tokio` (features `macros` and
-`rt-multi-thread`), `tokio-util`, `secrecy`, and `futures-util`.
+`rt-multi-thread`), `tokio-util`, `secrecy`, `futures-util`, and
+`serde_json`.
 
 ## Quick Start
 

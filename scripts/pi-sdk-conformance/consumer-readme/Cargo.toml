@@ -1,0 +1,16 @@
+[package]
+name = "consumer-readme"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# Only the actual extracted SDK artifact supplies production code; the
+# compiled example sources come from the same package (injected by the
+# runner as src/bin/*.rs), never from this template.
+opi-ai = { path = "@PACKAGE@" }
+tokio = { version = "=1.52.3", features = ["rt-multi-thread", "macros"] }
+tokio-util = "=0.7.18"
+secrecy = "=0.10.3"
+futures-util = "=0.3.32"
+serde_json = "=1.0.149"

@@ -772,6 +772,24 @@
   unchanged.
 ### Added
 
+- `opi-ai`: final assembled external SDK acceptance (task 20.57, DEL-14):
+  a new `external_sdk` behavioral suite drives all ten published chat wires
+  (Anthropic, OpenAI responses, OpenRouter, Azure, Google, Vertex, Mistral,
+  Codex, pi-messages and Bedrock) through one consumer-shaped `Models`
+  instance with the full 42-profile builtin registration against local
+  scripted transport, plus the four classifier APIs and the sole image API,
+  cross-wire `SimpleOptions` portability with typed native-options preflight
+  mismatch, assembled request-callback closure (once-per-call observation and
+  typed protected-header rejection before the wire), duration measurement
+  surviving serialization, a manual tool loop continuing after a serde
+  transcript roundtrip, two-instance route isolation over a shared
+  credential store with awaited cleanup, empty-instance zero-I/O
+  construction and >64-message lawful collections. A new
+  `run_readme_examples.py` packaging proof shows the three onboarding
+  examples ship byte-exactly inside the `.crate` (embedded verbatim in both
+  manuals) and compile as binaries of a fresh workspace-external consumer
+  whose dependency graph contains no other Opi crate.
+
 - `opi-ai`: assembled telemetry conformance closure (task 20.55, DEL-12).
   `tests/telemetry_operations.rs` freezes a caller parent Span plus source
   Dispatch under a recording subscriber while a different dispatch is
