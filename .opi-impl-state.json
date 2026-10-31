@@ -17646,7 +17646,7 @@
       "definition_of_done": "Freeze explicit parent+Dispatch through all four chat entries/direct/advanced/retry/strict variants and image/classifier/deferred submit/fetch/cancel including producers and drop. Default/noop observes no ambient root and does business once. Public recorder tests prove original Result/send/poll/callback/usage unchanged, process-local context excluded from every serialization/wire/header and secret canaries absent. Keep domain status/exporter/flush/evidence ACK with host, no automatic SDK spans or telemetry crate. This is assembled conformance closure over propagation already delivered in every operation task. Reuse the carrier and real producer wiring; repair only demonstrated cross-operation gaps, not a second propagation implementation or copied adapter suites.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.2",
         "20.3",
@@ -17742,7 +17742,7 @@
             "opi_ai all Models/direct/advanced/chat/image/classifier/deferred paths (target)",
             "opi_ai actual producer handoff (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-47",
@@ -17755,7 +17755,7 @@
             "opi_ai all Models/direct/advanced/chat/image/classifier/deferred paths (target)",
             "opi_ai actual producer handoff (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "V-48",
@@ -17768,7 +17768,7 @@
             "opi_ai all Models/direct/advanced/chat/image/classifier/deferred paths (target)",
             "opi_ai actual producer handoff (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-054",
@@ -17781,7 +17781,7 @@
             "opi_ai all Models/direct/advanced/chat/image/classifier/deferred paths (target)",
             "opi_ai actual producer handoff (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-055",
@@ -17794,7 +17794,7 @@
             "opi_ai all Models/direct/advanced/chat/image/classifier/deferred paths (target)",
             "opi_ai actual producer handoff (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-056",
@@ -17807,7 +17807,7 @@
             "opi_ai all Models/direct/advanced/chat/image/classifier/deferred paths (target)",
             "opi_ai actual producer handoff (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S55",
@@ -17820,7 +17820,7 @@
             "opi_ai all Models/direct/advanced/chat/image/classifier/deferred paths (target)",
             "opi_ai actual producer handoff (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-ACTOR-09",
@@ -17833,7 +17833,7 @@
             "opi_ai all Models/direct/advanced/chat/image/classifier/deferred paths (target)",
             "opi_ai actual producer handoff (target)"
           ],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-12",
@@ -17846,7 +17846,7 @@
             "opi_ai all Models/direct/advanced/chat/image/classifier/deferred paths (target)",
             "opi_ai actual producer handoff (target)"
           ],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [
@@ -17856,7 +17856,7 @@
       "substrate_only": false,
       "iteration_count": 0,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "869cfbcbc59cb916dfb1a3ab1d6182afa40d96e4",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "CHANGELOG.md",
@@ -17872,8 +17872,14 @@
         "crates/opi-ai/src/telemetry.rs",
         "crates/opi-ai/tests/telemetry_operations.rs"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "2d6b001d096cda758a50dfbb95571d148d069c0e",
+      "evidence": {
+        "Opi-Task": "20.55",
+        "Opi-DoD-SHA256": "23252b97941d6227a8df6b7c3f9be3143e4f9c0381d9e2069651a071eadc061b",
+        "Opi-Verification": "workspace; smoke full PASSED (opi-doc-check, cargo fmt --all --check, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets + --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps); scenario cargo test -p opi-ai --test telemetry_operations 7 passed",
+        "Opi-Evaluator": "passed (manual 7-lens exec audit; fixed one tautological second-instance assertion during audit; exec.workflow.js runtime unavailable in environment, wf_ref=null)",
+        "Opi-Acceptance": "V-46, V-47, V-48, AIR-054, AIR-055, AIR-056, P20-S55, P20-ACTOR-09, DEL-12 met via telemetry_operations.rs at the public Models seam (real anthropic/OpenRouter-Images/Typesafe-System-One producers plus custom chat/deferred adapters); payload-observer ambient-routing gap repaired in openrouter_images/system_one"
+      },
       "blocker": null,
       "session_notes": [
         {
@@ -17890,6 +17896,51 @@
                 "subject": "Ledger-only evidence handoff",
                 "action": "none",
                 "test": "none",
+                "interface": "not-applicable",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        },
+        {
+          "timestamp": "2026-10-30T14:20:00+00:00",
+          "attempt": 1,
+          "summary": "DEL-12 assembled telemetry conformance closure delivered in commit 2d6b001d096cda758a50dfbb95571d148d069c0e: new tests/telemetry_operations.rs (7 tests) freezes a caller parent Span plus source Dispatch under recording subscriber A with a different ambient dispatch B at poll time and proves the frozen pair through every public operation family - native/simple/direct chat entries (custom ChatApi markers with scoped poll/drop sections), the advanced prepare_call path with acquisition retry plus strict-variant rebuild on the real anthropic wire (payload variants x2, acquired response, 3 sends, context-free twin identical), image generation on the real OpenRouter Images adapter and classifier calls on the real Typesafe System One adapter through payload/response observers (ordinary + native entries, wire bodies/headers clean, twins identical), deferred submit/fetch/cancel through a custom DeferredApi backend (handle/message serde key-set exact, cancel marker, abandoned-fetch drop marker), default/omitted and noop passivity (no SDK spans, business exactly once, markers silenced), second same-ApiId Models instance isolation, and prompt/secret canary absence across all recordings. Demonstrated cross-operation gap repaired: openrouter_images.rs and system_one.rs applied their payload observers outside context.instrument(attempt), routing observation to poll-time ambient dispatch; payload freeze now runs inside the frozen telemetry section like the wire attempt. Bilingual README telemetry sections and CHANGELOG Unreleased updated. No automatic SDK spans, exporter, telemetry crate, global subscriber; domain status/exporter/flush/evidence remain host-owned.",
+          "gate_results": {
+            "d1_workspace": "PASS: opi-impl-smoke.sh full on the final tree (opi-doc-check, cargo fmt --all --check, clippy --workspace --all-targets -D warnings, cargo test --workspace --all-targets, cargo test --workspace --doc, RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps)",
+            "d0_scenarios": "PASS: cargo test -p opi-ai --test telemetry_operations -> 7 passed (included in the D.1 workspace run; not rerun separately)",
+            "d2_evaluator": "manual 7-lens exec audit (L-D1..L-D7); one medium finding (tautological second-instance assertion) fixed during audit and affected checks rerun; no remaining must-fix; exec.workflow.js runtime unavailable in environment, wf_ref=null per 20.2/20.34 precedent",
+            "d3_gap_checks": "none beyond D.1: scenario command deduplicated into the workspace gate; no CLI/session/export artifact directory produced (SDK library claims; provider wire captures asserted in-test by wiremock within the deterministic suite)",
+            "test_disposition": [
+              {
+                "subject": "P20-TELEMETRY/DEL-12",
+                "action": "add",
+                "test": "crates/opi-ai/tests/telemetry_operations.rs (7 tests: four-entry attribution+isolation, default/noop passivity, abandoned poll/drop scoping, advanced retry+strict variant, image, classifier, deferred submit/fetch/cancel)",
+                "interface": "Models public entries (stream/complete/stream_simple/complete_simple/stream_direct/complete_direct/prepare_call_with_policy/start_attempt, generate_images[_native], classify[_native], fetch_deferred/cancel_deferred/stream_deferred) over Request::telemetry_context / ImagesCall / ClassifierCall / DeferredFetchCall / DeferredCancelCall",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "P20-TELEMETRY",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/telemetry_carrier.rs (carrier substrate semantics: from_span freeze, scoped poll/drop, cross-thread, noop shadowing)",
+                "interface": "TelemetryContext carrier",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "V-46 real Codex producer",
+                "action": "retain",
+                "test": "crates/opi-ai/tests/codex_telemetry.rs (single real Codex producer with async callbacks across B-poll/Pending and wire exclusion)",
+                "interface": "Models::stream_simple over the real Codex wire",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "20.55",
+                "action": "none",
+                "test": "none deleted",
                 "interface": "not-applicable",
                 "replacement": null,
                 "slim_candidate": null
@@ -24989,6 +25040,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-30T13:53:14+00:00",
       "task_id": "20.50",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 1,
+      "rejected_count": 0,
+      "ran_at": "2026-10-30T14:20:00+00:00",
+      "task_id": "20.55",
       "criterion_id": null
     }
   ]
