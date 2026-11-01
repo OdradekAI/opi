@@ -1,6 +1,20 @@
 {
-  "aggregate_verdict": "PASS-WITH-FINDINGS",
+  "aggregate_verdict": "FAIL",
   "members": [
+    {
+      "artifact_stem": "audit.codex.gpt61",
+      "audit_head": "703d8bd8f5033e5ecc89fc1950fc6b7615b64068",
+      "audit_run_id": "phase20-codex-gpt61-703d8bd-20261101t181806z",
+      "digests": {
+        "findings_sha256": "1c60c2f6c88d4d5318822c7412fb4a3fd5d48287253bc661d36ba91e7c2a62ef",
+        "meta_sha256": "2e3f257a65a5b9a4215bfb54bfadc9ed9014c51742851781ce579a6e6bf4a6cc",
+        "report_sha256": "11950b30586154137615d09446c5895bdfb27765ab24d0972ece41dc049ac8ac",
+        "requirements_sha256": "688dcd613cb65eec466fd4aa3583369b26a29bfc2a14c772159f503211b2f177"
+      },
+      "model_id": "gpt61",
+      "reviewer_id": "codex",
+      "verdict": "FAIL"
+    },
     {
       "artifact_stem": "audit.pi.glm53",
       "audit_head": "6adacc379df15ff2e5fa66ddb2afd3abeef5bb89",
@@ -17,6 +31,6 @@
     }
   ],
   "phase": 20,
-  "revision": 2,
+  "revision": 4,
   "schema_version": 2
 }
