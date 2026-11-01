@@ -318,12 +318,12 @@ async fn cancelling_executable_supplier_reaps_its_descendants() {
         dir.path(),
         "descendant",
         &format!(
-            "printf started > '{}'\nsleep 2\nprintf survived > '{}'",
+            "printf started > '{}'\nsleep 8\nprintf survived > '{}'",
             started.display(),
             survived.display()
         ),
         &format!(
-            "Set-Content -LiteralPath '{}' -Value started\nStart-Sleep -Seconds 2\nSet-Content -LiteralPath '{}' -Value survived",
+            "Set-Content -LiteralPath '{}' -Value started\nStart-Sleep -Seconds 8\nSet-Content -LiteralPath '{}' -Value survived",
             started.display(),
             survived.display()
         ),
@@ -341,7 +341,9 @@ async fn cancelling_executable_supplier_reaps_its_descendants() {
     let command = helper(dir.path(), "parent", &parent, &parent);
     let (owner, transport) = owner(dir.path(), "parent", command, 30_000);
     let worker = tokio::spawn(async move { owner.resolve_token().await });
-    tokio::time::timeout(Duration::from_secs(10), async {
+    // A cold CI runner can spend most of this window in PowerShell startup
+    // (parent plus descendant) before the descendant script runs at all.
+    tokio::time::timeout(Duration::from_secs(45), async {
         while !started.exists() {
             assert!(
                 !worker.is_finished(),
@@ -354,7 +356,10 @@ async fn cancelling_executable_supplier_reaps_its_descendants() {
     .expect("descendant started");
     worker.abort();
     assert!(worker.await.unwrap_err().is_cancelled());
-    tokio::time::sleep(Duration::from_millis(2500)).await;
+    // The descendant lives for 8s after signalling `started`; checking at
+    // 8.5s still catches a descendant that was never reaped while tolerating
+    // multi-second tree-kill latency on a loaded cold runner.
+    tokio::time::sleep(Duration::from_millis(8500)).await;
     assert!(
         !survived.exists(),
         "descendant survived supplier cancellation"
@@ -375,7 +380,7 @@ fn windows_probe_status(dir: &Path, script: &str) -> Option<std::process::ExitSt
         .stderr(Stdio::inherit())
         .spawn()
         .ok()?;
-    let end = std::time::Instant::now() + Duration::from_secs(5);
+    let end = std::time::Instant::now() + Duration::from_secs(30);
     loop {
         match process.try_wait() {
             Ok(Some(status)) => return Some(status),
@@ -466,7 +471,10 @@ async fn executable_timeout_reaps_a_descendant_after_its_parent_has_exited() {
     );
     let (owner, transport) = owner(dir.path(), "exiting-parent", command, 5_000);
     let worker = tokio::spawn(async move { owner.resolve_token().await });
-    tokio::time::timeout(Duration::from_secs(10), async {
+    // Two chained PowerShell startups (parent script, then the spawned child)
+    // on a cold CI runner can exceed the old 10s window before any marker
+    // file appears.
+    tokio::time::timeout(Duration::from_secs(45), async {
         while !ready.exists() || !child_pid_file.exists() || !parent_pid_file.exists() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }

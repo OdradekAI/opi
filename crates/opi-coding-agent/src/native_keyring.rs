@@ -380,12 +380,15 @@ mod tests {
     fn last_lease_restores_preexisting_foreign_default_store() {
         let _serial = super::KEYRING_TEST_LOCK.lock().expect("keyring test lock");
         keyring_core::unset_default_store();
-        let foreign_ts = mock_store_timestamp_secs_f64();
         let foreign: Arc<keyring_core::CredentialStore> =
             keyring_core::mock::Store::new().expect("foreign mock store");
         let foreign_id = foreign.id();
         keyring_core::set_default_store(foreign);
-        advance_mock_store_clock(foreign_ts);
+        // Snapshot the clock AFTER `foreign` exists. Advancing from a
+        // pre-creation sample can leave both stores in the same clock tick
+        // when the clock moved between the capture and the foreign store's
+        // creation (observed as identical ids on macOS CI runners).
+        advance_mock_store_clock(mock_store_timestamp_secs_f64());
         let opi: Arc<keyring_core::CredentialStore> =
             keyring_core::mock::Store::new().expect("opi mock store");
 
