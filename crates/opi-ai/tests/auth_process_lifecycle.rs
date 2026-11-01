@@ -447,7 +447,7 @@ async fn executable_timeout_reaps_a_descendant_after_its_parent_has_exited() {
         "orphan-child",
         "",
         &format!(
-            "Set-Content -LiteralPath '{}' -Value $PID\nWrite-Output 'held-by-child'\nStart-Sleep -Seconds 20",
+            "Set-Content -LiteralPath '{}' -Value $PID\nWrite-Output 'held-by-child'\nStart-Sleep -Seconds 90",
             ready.display(),
         ),
     );
@@ -469,7 +469,11 @@ async fn executable_timeout_reaps_a_descendant_after_its_parent_has_exited() {
             child_pid_file.display(),
         ),
     );
-    let (owner, transport) = owner(dir.path(), "exiting-parent", command, 5_000);
+    // The deadline must exceed two chained PowerShell cold starts on a CI
+    // runner (parent bootstrap, then the spawned child writing `ready`);
+    // with the old 5s budget the deadline reaped the parent before it wrote
+    // any marker file, so readiness could never succeed.
+    let (owner, transport) = owner(dir.path(), "exiting-parent", command, 45_000);
     let worker = tokio::spawn(async move { owner.resolve_token().await });
     // Two chained PowerShell startups (parent script, then the spawned child)
     // on a cold CI runner can exceed the old 10s window before any marker
@@ -502,9 +506,9 @@ async fn executable_timeout_reaps_a_descendant_after_its_parent_has_exited() {
     .success();
     assert!(parent_exited, "fixture parent has not exited");
     eprintln!("parent_exited=true parent_pid={parent_pid} child_pid={child_pid}");
-    // The five-second supplier deadline must already have elapsed. A child
+    // The 45s supplier deadline must already have elapsed by now. A child
     // holding stdout keeps the supplier pending until cleanup really kills it.
-    tokio::time::sleep(Duration::from_secs(6)).await;
+    tokio::time::sleep(Duration::from_secs(50)).await;
     let child_alive_after_timeout = windows_probe_status(
         dir.path(),
         &format!("$p = Get-Process -Id {child_pid} -ErrorAction SilentlyContinue; if ($p) {{ Write-Output \"owned_child_has_exited=$($p.HasExited)\" }}; if ($p -and !$p.HasExited) {{ exit 0 }} else {{ exit 1 }}"),
@@ -515,7 +519,7 @@ async fn executable_timeout_reaps_a_descendant_after_its_parent_has_exited() {
     // Cleanup precedes the assertion, including on the expected failing
     // branch. Drop repeats this exact-owned-PID cleanup after early failures.
     guard.cleanup();
-    let result = tokio::time::timeout(Duration::from_secs(5), worker)
+    let result = tokio::time::timeout(Duration::from_secs(30), worker)
         .await
         .expect("supplier settles after the probe has reclaimed its child")
         .unwrap();
