@@ -764,7 +764,7 @@ inventories.
 | Workspace topology and release state | [`Cargo.toml`](../Cargo.toml), crate manifests, and [CHANGELOG.md](../CHANGELOG.md) | Current version, dependencies, and release history. |
 | Wire and schema contracts | Source constants, schemas, fixtures, and `opi-protocol` documentation | Exact current versions and payloads. |
 | Completed delivery history | [`docs/snapshots/`](snapshots/) and the implementation ledger | Historical completion and acceptance evidence. |
-| pi alignment | Pinned source identities in [`docs/realign/`](realign/) and [the SDK alignment index](research/pi-ai-opi-ai-alignment/README.md) | Inward evidence; historical inputs retain their original scope. |
+| pi alignment | Pinned source identities in [the SDK alignment index](research/pi-ai-opi-ai-alignment/README.md) | Inward evidence; historical inputs retain their original scope. |
 | Phase delivery sources | [The `opi-implement` source registry](../.agents/skills/opi-implement/SKILL.md#reviewed-supplemental-sources) | Explicit source sets for planning; registration is not task-graph approval or delivery evidence. |
 | External capability research | [`docs/research/`](research/) | Non-normative outward evidence. |
 | Independent Eval direction | Official benchmark/trajectory references | Evidence for Chapter 6 and strategic priority. |

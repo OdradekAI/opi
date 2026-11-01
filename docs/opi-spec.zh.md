@@ -485,7 +485,7 @@ Phase 是由本规范派生出的有限交付单元。它不是阶梯、路线�
 | Workspace 拓扑与发布状态 | [`Cargo.toml`](../Cargo.toml)、crate manifest 和 [CHANGELOG.md](../CHANGELOG.md) | 当前版本、依赖和发布历史。 |
 | wire 与 schema 契约 | 源代码常量、schema、fixture 和 `opi-protocol` 文档 | 当前精确版本和 payload。 |
 | 已完成的交付历史 | [`docs/snapshots/`](snapshots/) 和实现台账 | 历史完成情况与验收证据。 |
-| pi 对齐 | [`docs/realign/`](realign/) 和 [SDK 对齐索引](research/pi-ai-opi-ai-alignment/README.md) 中固定的来源身份 | 向内证据；历史输入保留原有范围。 |
+| pi 对齐 | [SDK 对齐索引](research/pi-ai-opi-ai-alignment/README.md) 中固定的来源身份 | 向内证据；历史输入保留原有范围。 |
 | Phase 交付来源 | [`opi-implement` 来源注册表](../.agents/skills/opi-implement/SKILL.md#reviewed-supplemental-sources) | 显式的规划来源集合；注册不等于任务图批准或交付证明。 |
 | 外部能力研究 | [`docs/research/`](research/) | 非规范性外部证据。 |
 | 独立 Eval 方向 | 官方基准测试/轨迹参考资料 | 第 6 章和战略优先级的 Evidence。 |
