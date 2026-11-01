@@ -19,8 +19,8 @@
     "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md"
   ],
   "spec_files_sha256": {
-    "docs/opi-spec.md": "7979f349811d5e8da8ed4b60adb0fa41175c76462a78e449fd326dd4c19cf9e1",
-    "docs/opi-spec.zh.md": "6a199822c5f4233ab7c13942db87f7986ac8b0e74a68075402371476f431c005",
+    "docs/opi-spec.md": "b698133fbc2c0347726447159259c18effa8a1091796aae559c4bb04cb5612f3",
+    "docs/opi-spec.zh.md": "e9da7696be0772e2ca72f74943c0b3fbba398850abc751d58726d31068cbb13c",
     "docs/research/pi-ai-opi-ai-alignment/spec-draft.md": "8c6cd66f7771e026210f06e49d037da54029c74258a1d45925cdbddd710f5f21",
     "docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md": "a841575a91ab4a3895648c1c66ce2c6c7d9afd4685fb1d408e550d39b3f62415",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "9e3d6ef690c3a794bc9c47ddc2dce04840f98d8881649be1ab2e8db0df287fd5",
@@ -36,7 +36,7 @@
     "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
     "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c"
   },
-  "task_graph_confirmed_at": "2026-10-25T07:50:28.672233+00:00",
+  "task_graph_confirmed_at": "2026-11-01T05:28:40.216676+00:00",
   "current_phase": 20,
   "tasks": [
     {
