@@ -1,0 +1,22 @@
+{
+  "aggregate_verdict": "PASS-WITH-FINDINGS",
+  "members": [
+    {
+      "artifact_stem": "audit.pi.glm53",
+      "audit_head": "6adacc379df15ff2e5fa66ddb2afd3abeef5bb89",
+      "audit_run_id": "phase20-pi-glm53-6adacc37-20261101t164203z",
+      "digests": {
+        "findings_sha256": "fd1c6180b3c1951fa82efc2bdf2244af006ea8db1feca261c90267c59a881e1a",
+        "meta_sha256": "7d449f0419ad10484a993b43822e7aa0b9c015a172b1e1134e0e31dcdfb67a4a",
+        "report_sha256": "233f1d52d075bd463036d20e1d2b6e55cce83dbffab6bad8fc125178ab6d3781",
+        "requirements_sha256": "3f790100e39e3164bc8248d20b84d273640e41978d66dcc81875f81705898b5d"
+      },
+      "model_id": "glm53",
+      "reviewer_id": "pi",
+      "verdict": "PASS-WITH-FINDINGS"
+    }
+  ],
+  "phase": 20,
+  "revision": 2,
+  "schema_version": 2
+}
