@@ -669,10 +669,16 @@ mod tests {
             cwd: Some(dir.path().to_path_buf()),
             env: ProcessEnv::Exact(env),
         };
-        let parsed = SpawnedCredentialProcess::default()
-            .run(&spec)
-            .await
-            .expect("frozen cwd/env run");
+        // This test exercises the frozen cwd/env contract, not the default
+        // 10s budget (the dedicated timeout test owns that). A cold CI
+        // windows runner can spend more than 10s in Defender-scanned
+        // PowerShell startup under the near-empty Exact environment, so
+        // inject the caller-policy seam with an inflated startup budget.
+        let runner = SpawnedCredentialProcess::with_policy(CredentialProcessPolicy {
+            timeout: Duration::from_secs(60),
+            max_stdout: 64 * 1024,
+        });
+        let parsed = runner.run(&spec).await.expect("frozen cwd/env run");
         assert_eq!(parsed.access_key_id.expose_secret(), "PROC_AKID");
     }
 
