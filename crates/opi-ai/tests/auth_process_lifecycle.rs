@@ -110,6 +110,39 @@ fn helper(dir: &Path, name: &str, unix: &str, windows: &str) -> String {
     )
 }
 
+/// Backslash-separator PowerShell path for .NET `ProcessStartInfo.FileName`
+/// and `Start-Process -FilePath`: Win32 `lpApplicationName` does not normalize
+/// forward slashes, so a `System32/...` path makes the spawned child die
+/// before running any script line (observed both on CI runners and locally).
+/// Fixture descendants must stay PowerShell: they hold the supplier's stdout
+/// pipe write-end, which is the behavior under test.
+#[cfg(windows)]
+fn powershell_exe() -> PathBuf {
+    let system = std::env::var_os("SystemRoot").expect("Windows system root");
+    let mut path = PathBuf::from(&system);
+    path.push("System32");
+    path.push("WindowsPowerShell");
+    path.push("v1.0");
+    path.push("powershell.exe");
+    path
+}
+
+/// Pay the runner's PowerShell cold-start cost (Defender scan, .NET init)
+/// once before a fixture chain relies on bounded spawn latency. Warm hosts
+/// return in well under a second; the budget only covers a cold CI runner.
+#[cfg(windows)]
+fn warm_powershell() {
+    let ok = std::process::Command::new(powershell_exe())
+        .args(["-NoProfile", "-NonInteractive", "-Command", "exit 0"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    assert!(ok, "PowerShell warm-up spawn failed");
+}
+
 fn owner(
     dir: &Path,
     name: &str,
@@ -314,30 +347,40 @@ async fn cancelling_executable_supplier_reaps_its_descendants() {
     let dir = tempfile::tempdir().unwrap();
     let started = dir.path().join("started");
     let survived = dir.path().join("survived");
-    let child = helper(
-        dir.path(),
-        "descendant",
-        &format!(
-            "printf started > '{}'\nsleep 8\nprintf survived > '{}'",
-            started.display(),
-            survived.display()
-        ),
-        &format!(
-            "Set-Content -LiteralPath '{}' -Value started\nStart-Sleep -Seconds 8\nSet-Content -LiteralPath '{}' -Value survived",
-            started.display(),
-            survived.display()
-        ),
-    );
+    #[cfg(unix)]
+    let parent = {
+        let child = helper(
+            dir.path(),
+            "descendant",
+            &format!(
+                "printf started > '{}'\nsleep 8\nprintf survived > '{}'",
+                started.display(),
+                survived.display()
+            ),
+            "",
+        );
+        format!("{child} & wait")
+    };
     #[cfg(windows)]
     let parent = {
+        warm_powershell();
+        let child = helper(
+            dir.path(),
+            "descendant",
+            "",
+            &format!(
+                "Set-Content -LiteralPath '{}' -Value started\nStart-Sleep -Seconds 8\nSet-Content -LiteralPath '{}' -Value survived",
+                started.display(),
+                survived.display()
+            ),
+        );
         let argv = opi_ai::auth::adc::executable::parse_command(&child).unwrap();
         format!(
             "$child = Start-Process -FilePath '{}' -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-File','\"{}\"'); Wait-Process -Id $child.Id",
-            argv[0], argv[3]
+            powershell_exe().display(),
+            argv[3]
         )
     };
-    #[cfg(unix)]
-    let parent = format!("{child} & wait");
     let command = helper(dir.path(), "parent", &parent, &parent);
     let (owner, transport) = owner(dir.path(), "parent", command, 30_000);
     let worker = tokio::spawn(async move { owner.resolve_token().await });
@@ -442,6 +485,13 @@ async fn executable_timeout_reaps_a_descendant_after_its_parent_has_exited() {
     let child_pid_file = dir.path().join("child-pid");
     let parent_pid_file = dir.path().join("parent-pid");
     let ready = dir.path().join("child-ready");
+    warm_powershell();
+    // The descendant is PowerShell spawned through .NET ProcessStartInfo: it
+    // inherits and holds the supplier's stdout pipe while sleeping, which is
+    // exactly the condition the timeout-reap contract covers. The .NET
+    // FileName must use backslash separators (see powershell_exe). A spawned
+    // child powershell on a cold CI runner can spend tens of seconds in
+    // startup, hence the warm-up and the wide windows below.
     let child = helper(
         dir.path(),
         "orphan-child",
@@ -464,27 +514,48 @@ async fn executable_timeout_reaps_a_descendant_after_its_parent_has_exited() {
         &format!(
             "Set-Content -LiteralPath '{}' -Value $PID\n$i = New-Object System.Diagnostics.ProcessStartInfo\n$i.FileName = '{}'\n$i.Arguments = '-NoProfile -File \"{}\"'\n$i.UseShellExecute = $false\n$i.CreateNoWindow = $true\n$p = [System.Diagnostics.Process]::Start($i)\nSet-Content -LiteralPath '{}' -Value \"$($p.Id),$($p.StartTime.ToUniversalTime().Ticks)\"\nexit 0",
             parent_pid_file.display(),
-            shell_path().display(),
+            powershell_exe().display(),
             child_script.display(),
             child_pid_file.display(),
         ),
     );
-    // The deadline must exceed two chained PowerShell cold starts on a CI
-    // runner (parent bootstrap, then the spawned child writing `ready`);
-    // with the old 5s budget the deadline reaped the parent before it wrote
-    // any marker file, so readiness could never succeed.
+    // The deadline must exceed the parent's single PowerShell cold start on
+    // a CI runner; with the old 5s budget the deadline reaped the parent
+    // before it wrote any marker file, so readiness could never succeed.
     let (owner, transport) = owner(dir.path(), "exiting-parent", command, 45_000);
     let worker = tokio::spawn(async move { owner.resolve_token().await });
-    // Two chained PowerShell startups (parent script, then the spawned child)
-    // on a cold CI runner can exceed the old 10s window before any marker
-    // file appears.
-    tokio::time::timeout(Duration::from_secs(45), async {
+    // Covers the parent PowerShell cold start plus the batch child's
+    // immediate marker writes.
+    let readiness = tokio::time::timeout(Duration::from_secs(45), async {
         while !ready.exists() || !child_pid_file.exists() || !parent_pid_file.exists() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
-    .await
-    .expect("the synthetic child must start");
+    .await;
+    if readiness.is_err() {
+        eprintln!(
+            "readiness markers: ready={} child_pid={} parent_pid={} worker_finished={}",
+            ready.exists(),
+            child_pid_file.exists(),
+            parent_pid_file.exists(),
+            worker.is_finished()
+        );
+        if let Ok(content) = std::fs::read_to_string(&child_pid_file) {
+            let pid = content.trim().split_once(',').map(|x| x.0).unwrap_or("?");
+            eprintln!("child pid file: {content}");
+            let probe = format!(
+                "$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ Write-Output \"child_alive=$($p.Id) cpu=$($p.CPU) threads=$($p.Threads.Count)\"; $wmi = Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\"; Write-Output \"cmdline=$($wmi.CommandLine)\" }} else {{ Write-Output 'child_not_found' }}"
+            );
+            let _ = windows_probe_status(dir.path(), &probe);
+        }
+        if let Ok(script) = std::fs::read_to_string(dir.path().join("exiting-parent.ps1")) {
+            eprintln!("parent script:\n{script}");
+        }
+        if let Ok(batch) = std::fs::read_to_string(dir.path().join("orphan-child.ps1")) {
+            eprintln!("child script:\n{batch}");
+        }
+    }
+    readiness.expect("the synthetic child must start");
     let child_pid = std::fs::read_to_string(&child_pid_file)
         .unwrap()
         .trim()
