@@ -47,6 +47,30 @@ async fn occupy_anthropic_preferred_port() -> TcpListener {
     .expect("other fixtures must release the preferred port")
 }
 
+/// Poll until a fixed loopback port is bindable. The opi-ai oauth suite is a
+/// parallel test binary exercising the same fixed ports (53692, 1455), and on
+/// Windows two listeners can even share 1455 without SO_EXCLUSIVEADDRUSE,
+/// which routes a callback probe to the foreign listener. Same retry model as
+/// the occupier above.
+async fn wait_loopback_port_free(port: u16) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match TcpListener::bind(("127.0.0.1", port)).await {
+                Ok(listener) => {
+                    drop(listener);
+                    return;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                Err(error) => panic!("probe loopback port {port}: {error}"),
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("parallel fixtures must release port {port}"));
+}
+
 use common::{
     MockLoginPresenter, extract_callback_path, extract_query_param, extract_redirect_port,
 };
@@ -1386,6 +1410,15 @@ async fn pkce_loopback_callback_rejections_are_fixed_and_redacted_for_both_provi
             "duplicate state",
         ] {
             let server = MockServer::start().await;
+            // The flow binds its provider's fixed port (53692 for Anthropic,
+            // 1455 for Codex); wait out any brief hold by the parallel opi-ai
+            // oauth binary so the callback GET below lands on this login's
+            // own listener.
+            wait_loopback_port_free(match provider_kind {
+                BrowserPkceProvider::Anthropic => 53692,
+                BrowserPkceProvider::Codex => 1455,
+            })
+            .await;
             mount_token_stub(
                 &server,
                 200,

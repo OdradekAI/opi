@@ -355,6 +355,47 @@ impl CredentialStore for FakeStore {
 /// across the awaited login bodies.
 static PREFERRED_PORT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// The coding-agent oauth suite (a parallel test binary) exercises the same
+/// preferred port 53692, so an intra-binary guard alone cannot make exact-port
+/// assertions safe. Poll until the port is bindable, mirroring the retry
+/// occupier that suite already uses for the same race.
+async fn wait_preferred_port_free() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match TcpListener::bind("127.0.0.1:53692") {
+                Ok(listener) => {
+                    drop(listener);
+                    return;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                Err(error) => panic!("probe preferred-port fixture: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("parallel fixtures must release the preferred port");
+}
+
+/// Occupy the preferred port for fallback tests, tolerating a brief hold by
+/// the parallel coding-agent oauth binary instead of failing on first bind.
+async fn occupy_preferred_port_retrying() -> TcpListener {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match TcpListener::bind("127.0.0.1:53692") {
+                Ok(listener) => return listener,
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                Err(error) => panic!("occupy preferred-port fixture: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("parallel fixtures must release the preferred port")
+}
+
 fn anthropic_flow(token_url: String) -> AnthropicOAuthProvider {
     let scheme = "https";
     AnthropicOAuthProvider::new(
@@ -499,6 +540,7 @@ async fn authorize_url_carries_pkce_state_scopes_and_callback() {
 #[tokio::test]
 async fn login_binds_preferred_port_53692_with_callback_path() {
     let _port_guard = PREFERRED_PORT_LOCK.lock().await;
+    wait_preferred_port_free().await;
     let server = MockServer::start().await;
     mount_token_success(&server).await;
     let flow = anthropic_flow(format!("{}/token", server.uri()));
@@ -538,7 +580,7 @@ async fn login_binds_preferred_port_53692_with_callback_path() {
 #[tokio::test]
 async fn login_falls_back_to_free_loopback_when_53692_is_busy() {
     let _port_guard = PREFERRED_PORT_LOCK.lock().await;
-    let _occupier = TcpListener::bind("127.0.0.1:53692").expect("occupy 53692");
+    let _occupier = occupy_preferred_port_retrying().await;
     let server = MockServer::start().await;
     mount_token_success(&server).await;
     let flow = anthropic_flow(format!("{}/token", server.uri()));
@@ -647,6 +689,7 @@ async fn copy_code_state_mismatch_is_typed_and_sends_zero_token_requests() {
 #[tokio::test]
 async fn callback_state_mismatch_answers_secret_free_400_and_never_exchanges() {
     let _port_guard = PREFERRED_PORT_LOCK.lock().await;
+    wait_preferred_port_free().await;
     let server = MockServer::start().await;
     let flow = anthropic_flow(format!("{}/token", server.uri()));
     let presenter = Arc::new(ScriptedPresenter::default());
@@ -1555,7 +1598,7 @@ async fn codex_busy_1455_falls_back_to_manual_paste_with_fixed_redirect() {
     let server = MockServer::start().await;
     // Hold the CLI-shared port so the SDK must fall back paste-back only —
     // never to a free loopback port (pi `.catch(() => undefined)`).
-    let _occupier = TcpListener::bind(("127.0.0.1", 1455)).expect("hold 1455");
+    let _occupier = occupy_1455_retrying().await;
     let access = codex_jwt(Some("acct-123"));
     mount_codex_token_success(&server, &access).await;
     let flow = codex_flow(&server, Duration::from_secs(30), Duration::from_secs(30));
@@ -1873,6 +1916,25 @@ async fn loopback_1455_guard() -> tokio::sync::MutexGuard<'static, ()> {
     LOOPBACK_1455_LOCK.lock().await
 }
 
+/// Occupy the CLI-shared fixed port 1455, retrying while the parallel
+/// coding-agent oauth binary briefly holds it (same cross-binary race as the
+/// 53692 fixtures).
+async fn occupy_1455_retrying() -> TcpListener {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match TcpListener::bind("127.0.0.1:1455") {
+                Ok(listener) => return listener,
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                Err(error) => panic!("occupy 1455 fixture: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("parallel fixtures must release port 1455")
+}
+
 const CHATGPT_DEVICE_UUID: &str = "0F0E8D9A-1111-4222-8333-444455556666";
 const CHATGPT_REDIRECT: &str = "http://127.0.0.1:1455/auth/callback";
 
@@ -2101,7 +2163,7 @@ async fn chatgpt_busy_1455_is_typed_terminal_without_interaction() {
     let presenter = Arc::new(ScriptedPresenter::default());
     let flow = chatgpt_flow(&server, Some(CHATGPT_DEVICE_UUID), Duration::from_secs(30));
     // Hold the CLI-shared port like another pending login would.
-    let holder = TcpListener::bind("127.0.0.1:1455").expect("hold 1455");
+    let holder = occupy_1455_retrying().await;
 
     let error = flow
         .login(presenter.as_ref())
