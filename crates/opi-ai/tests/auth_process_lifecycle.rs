@@ -28,6 +28,19 @@ fn helper_environment(cwd: &Path) -> std::collections::BTreeMap<String, String> 
         env.insert("SystemRoot".to_owned(), system.clone());
         env.insert("WINDIR".to_owned(), system.clone());
         env.insert("USERPROFILE".to_owned(), cwd.to_string_lossy().into_owned());
+        // A spawned PowerShell on Windows Server burns its whole budget in
+        // module-analysis/cache path resolution when these ordinary system
+        // variables are missing from an Exact environment; any real Windows
+        // credential process inherits them.
+        env.insert(
+            "LOCALAPPDATA".to_owned(),
+            cwd.to_string_lossy().into_owned(),
+        );
+        env.insert(
+            "PSModulePath".to_owned(),
+            format!("{system}\\System32\\WindowsPowerShell\\v1.0\\Modules"),
+        );
+        env.insert("ComSpec".to_owned(), format!("{system}\\System32\\cmd.exe"));
         env.insert(
             "PATH".to_owned(),
             format!("{system}\\System32;{system}\\System32\\WindowsPowerShell\\v1.0"),
@@ -376,7 +389,7 @@ async fn cancelling_executable_supplier_reaps_its_descendants() {
         );
         let argv = opi_ai::auth::adc::executable::parse_command(&child).unwrap();
         format!(
-            "$child = Start-Process -FilePath '{}' -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-File','\"{}\"'); Wait-Process -Id $child.Id",
+            "$child = Start-Process -FilePath '{}' -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','\"{}\"'); Wait-Process -Id $child.Id",
             powershell_exe().display(),
             argv[3]
         )
@@ -512,7 +525,7 @@ async fn executable_timeout_reaps_a_descendant_after_its_parent_has_exited() {
         "exiting-parent",
         "",
         &format!(
-            "Set-Content -LiteralPath '{}' -Value $PID\n$i = New-Object System.Diagnostics.ProcessStartInfo\n$i.FileName = '{}'\n$i.Arguments = '-NoProfile -File \"{}\"'\n$i.UseShellExecute = $false\n$i.CreateNoWindow = $true\n$p = [System.Diagnostics.Process]::Start($i)\nSet-Content -LiteralPath '{}' -Value \"$($p.Id),$($p.StartTime.ToUniversalTime().Ticks)\"\nexit 0",
+            "Set-Content -LiteralPath '{}' -Value $PID\n$i = New-Object System.Diagnostics.ProcessStartInfo\n$i.FileName = '{}'\n$i.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\"'\n$i.UseShellExecute = $false\n$i.CreateNoWindow = $true\n$p = [System.Diagnostics.Process]::Start($i)\nSet-Content -LiteralPath '{}' -Value \"$($p.Id),$($p.StartTime.ToUniversalTime().Ticks)\"\nexit 0",
             parent_pid_file.display(),
             powershell_exe().display(),
             child_script.display(),
