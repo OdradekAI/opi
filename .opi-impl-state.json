@@ -20625,6 +20625,76 @@
           "verified_at_commit": "4bf5fc0b64c3e93aee5726713670ffa34196038d"
         }
       ]
+    },
+    "20": {
+      "exit_criteria_met": false,
+      "criteria_trace": [
+        {
+          "id": "P20-AC-001",
+          "status": "met",
+          "evidence": "All 57 active SDK AIR requirements have public-entry/adapter/consumer evidence: 62 delivered owner tasks (82 opi-ai test binaries); independently verified public Models surface at HEAD 7dd3974 (stream/complete/stream_simple/complete_simple + direct, prepare_call/start_attempt, classify/generate_images, deferred submit/fetch/cancel, check_auth/get_available/get_auth/refresh/login/logout/mutation_barrier, cleanup_session_resources), 42 builtin profiles in crates/opi-ai/src/providers/mod.rs, 9 OAuth flow modules, 10 chat wires through one Models instance in tests/external_sdk.rs; smoke full PASS on rustc 1.97.1 (declared MSRV). Source: spec-draft.md#phase-delivery-contract Success/exit."
+        },
+        {
+          "id": "P20-AC-002",
+          "status": "met",
+          "evidence": "All 54 active SDK V groups have executed acceptance evidence recorded with actual commands/counts: external_sdk 10/10, platform_delivery 9/9 dual-host, Windows 2630 executed/2629 passed + 1 classified environment-only flake with green reruns, package_slice ws three feature graphs (acceptance-matrix.md#2026-10-30-v-59-交付执行证据补核; upstream-tracking.md 2026-10-30 补核). V-17/18/19/33 host-impact and retired V-52 excluded by identity rules (phase20-delivery-inputs.md §7). Mechanism/platform completeness gaps are owned separately by P20-AC-003/P20-AC-007, not by this criterion."
+        },
+        {
+          "id": "P20-AC-003",
+          "status": "not-met",
+          "evidence": "Six mechanism coverage groups (SCHEMA/WS/HTTP/CRYPTO/AUTH/TELEMETRY) are recorded OPEN at registered owners (upstream-tracking 2026-10-30; acceptance-matrix V-59 addendum 保留 OPEN); their closing criteria include the V-58 native Linux/macOS/Windows dimension and Cargo/platform/catalog requires 三平台 native build/run (pi-1.3.0-design-readiness.md#七组的设计决定和产品覆盖). macOS has no owning-host execution (phase20-delivery-evidence.md macOS — OPEN). No current-source passage defers macOS, so deferred-by-updated-design is unavailable."
+        },
+        {
+          "id": "P20-AC-004",
+          "status": "met",
+          "evidence": "Necessary workspace callers compile: smoke full green at HEAD 7dd3974 (fmt; clippy --workspace --all-targets -D warnings; cargo test --workspace --all-targets; --doc; rustdoc -D warnings); retired shells scanned absent (Config/ProviderConfig/Model+ProviderKind shells, CompletedRequest, dual provider/transport Error track). Source: spec-draft.md#acceptance-dependencies-and-completion item 7."
+        },
+        {
+          "id": "P20-AC-005",
+          "status": "met",
+          "evidence": "Replacement and test dispositions close: spec-draft.md#replacement-and-exit-requirements rows verified by repo-wide symbol scans (AssistantMessageFrame, CompletedRequest, ProviderKind absent); 20.56 exit audit passed; V-59 final dispositions recorded (add external_sdk 10 + platform_delivery 9 + 3 examples + owner suites; update bilingual README/CI; delete 0; retain all predecessor regressions; 41 integration + 7 src-test dispositions from 20.1)."
+        },
+        {
+          "id": "P20-AC-006",
+          "status": "met",
+          "evidence": "External package/resources verified: 20.57 external_sdk 10/10 through the real .crate artifact f730c63c…; run_readme_examples.py / run_early_package_proof.py / package_slice.py --family ws PASS on fresh workspace-external scratches; 245/245 packaged file members byte-identical across Linux/Windows hosts (2026-10-30 cross-check)."
+        },
+        {
+          "id": "P20-AC-007",
+          "status": "not-met",
+          "evidence": "Claimed platforms/MSRV only partially verified. Executed: Linux rustc 1.97.1 (= declared MSRV; full smoke + packaging) and Windows x86_64-pc-windows-msvc cargo 1.99.1 offline (tests, package, conformance). Missing: macOS x86_64/aarch64-apple-darwin native (no owning host; phase20-delivery-evidence.md records macOS — OPEN and blocks Phase exit until a runner executes), aarch64-linux native, and actual CI dispatch (workflows configured deterministic but never dispatched). Platform scope forbids cross-checks proving other native runtimes."
+        },
+        {
+          "id": "P20-AC-008",
+          "status": "met",
+          "evidence": "Upstream evidence current: upstream-tracking.md 2026-10-30 补核 — Pi pinned 1.3.0 tree 08a98ac… unchanged, no upstream revision this round; .repo/pi-1.3.0 present; identity dispositions frozen in phase20-delivery-inputs.md §6–§8."
+        },
+        {
+          "id": "P20-AC-009",
+          "status": "met",
+          "evidence": "Host-only and retired rows stay outside SDK exit: 9 host-only AIR (009/015–019/037/039/041) and 4 host-only V (17/18/19/33) excluded from SDK completion by matrix identity rules; AIR-060/V-52 retired; AssistantMessageFrame absent from the repository (grep)."
+        },
+        {
+          "id": "P20-AC-010",
+          "status": "met",
+          "evidence": "Non-goals remain excluded and document checks pass: workspace remains 7 members (no opi-telemetry/opi-ws crate); telemetry module depends only on tracing/tracing-core (no exporter/OTel/sentry); sessionless SDK — no session v3 writer, child migration, compaction or tool_search in opi-ai src; tools remain declarations; opi-doc-check.py and git diff --check PASS (in smoke full at HEAD)."
+        },
+        {
+          "id": "P20-AC-011",
+          "status": "met",
+          "evidence": "ONB-01..07 delivered by owners 20.56/57/58/59: bilingual READMEs reorganized (e80c7f3) with examples byte-stable through 20.57 packaging; ONB-06 README claims match the executed matrix with macOS explicitly pending; ONB-07 handoff separates executed / reproducible-prior / missing evidence (phase20-delivery-evidence.md DEL-14 handoff)."
+        }
+      ],
+      "evaluator_summary": "9/11 met; P20-AC-003 and P20-AC-007 not-met: six mechanism coverage groups and platform claims lack macOS native execution (plus aarch64 native and CI dispatch); archive refused per F.1b.",
+      "completed_at": null,
+      "snapshot_path": null,
+      "task_summary": [],
+      "audit_notes": [
+        "Phase-exit gates at 7dd3974: opi-impl-smoke.sh full PASSED (doc-check, fmt, clippy -D warnings, workspace all-target tests + doc tests, rustdoc -D warnings) on Linux rustc 1.97.1 = declared MSRV; git diff --check clean; no artifact directory present to audit.",
+        "Degraded independence: Workflow runtime (bounded agents) unavailable in this session; six lens charters L-F1..L-F6 run sequentially by a single fresh reviewer per verify-engine dispatch fallback; both blocking findings adversarially verified and accepted.",
+        "Flagged (non-blocking): P20-AC-002 'met' relies on recorded cross-host evidence (Windows 2026-10-30 identity-anchored runs) not re-executed in this window; only Linux evidence was re-verified live. CI determinism configured but never dispatched.",
+        "Six P20-GAP ledger scenarios marked 'met' are task-local duty closures (platform_delivery executed, gaps preserved); no evidence claims the full product coverage groups closed — consistent with L-F5."
+      ]
     }
   },
   "session_notes": [
@@ -25307,6 +25377,26 @@
       "ran_at": "2026-10-30T21:10:00+00:00",
       "task_id": "20.59",
       "criterion_id": null
+    },
+    {
+      "stage": "phase-exit",
+      "wf_ref": null,
+      "folded_count": 1,
+      "flagged_count": 3,
+      "rejected_count": 0,
+      "ran_at": "2026-11-01T01:58:19.406717+00:00",
+      "task_id": null,
+      "criterion_id": "P20-AC-003"
+    },
+    {
+      "stage": "phase-exit",
+      "wf_ref": null,
+      "folded_count": 1,
+      "flagged_count": 3,
+      "rejected_count": 0,
+      "ran_at": "2026-11-01T01:58:19.406717+00:00",
+      "task_id": null,
+      "criterion_id": "P20-AC-007"
     }
   ]
 }
