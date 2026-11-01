@@ -145,3 +145,33 @@ aarch64-linux 与 darwin×2 为 CI 声明；Windows job 是记载的不支持 sa
 
 矩阵补核造成的注册源漂移由 plan 调和门（P.0/P.2 重跑 + P.4 人工确认）在本
 任务标记 passing 之前处理；未发生任何仅改 hash 的刷新。
+
+## 2026-11-01 CI 矩阵执行（首次 dispatch 前的修复系列）
+
+在 Phase 20 树上首次 dispatch 钉扎 CI 暴露了一批被本地宿主掩盖的测试基础设施
+缺陷；下列修复全部仅涉测试／文档／账本（无产品行为变更；native_keyring 改动位于
+其 `#[cfg(test)]` 模块内）：`8548ddd` 删除 `docs/realign/` 死链（docs_contract，
+根因 `5e5282e`）；`00b62db` 补入被 `*.pem`/`*.key` 秘密规则误忽略的合成
+adc-external mTLS 夹具；`024f5b9` 安装经 P.4 人工确认的 spec 哈希调和；
+`17b4a43`/`4eb6617`/`5535135`/`8d52c5c`/`351e6ca`/`9e8d915` 将 windows
+进程生命周期夹具重建于原生 Win32 句柄语义（Exact 环境补 PATHEXT、
+CreateProcessW bInheritHandles 持有者、同步 `cmd /c` 链；.NET
+`Process.Start` 与 `start /b` 均丢失供应商管道句柄，且派生 PowerShell 在
+Windows Server runner 上引擎初始化死循环）；`5c8c488` 为 oauth 回环 suites
+加入跨二进制固定端口重试（53692/1452 争用，含 Windows 共享端口行为）。
+
+**Run `41300159581` @ `9e8d915`（2026-11-01 11:03–11:55 UTC），GitHub 托管
+runner，全绿：**
+
+| Job | 结果 |
+|---|---|
+| test（ubuntu-latest / windows-latest / macos-latest） | 全工作区 `cargo test --workspace --all-targets --locked` PASS ×3 |
+| Target check（x86_64-unknown-linux-gnu；aarch64-unknown-linux-gnu 经 cross gcc；x86_64-apple-darwin 与 aarch64-apple-darwin 于 macos 宿主；x86_64-pc-windows-msvc；aarch64-pc-windows-msvc） | PASS ×6 |
+| clippy ×3 OS；fmt；docs_contract；doctest；doc；msrv 1.97 | PASS |
+| execution_acceptance ×3 OS；Phase 17 acceptance ×3 OS；opi-sandbox package（ubuntu、macos） | PASS |
+
+就 SDK phase-exit 平台判据而言，此前 OPEN 的 macOS 维度就此闭合：macos-latest
+（aarch64-apple-darwin）执行完整行为套件，两个 darwin 目标在自有宿主通过
+target check，"实际 CI dispatch" 由配置声明变为已执行证据。仍开放 —— 归显式
+`opi-release <version>` 所有的发布期声明，不属于 phase exit：跨目标发布二进制
+构建、tag 产物与 crates.io 发布。

@@ -16,6 +16,7 @@
 | 2026-10-16；同一1.2.0参数／新增拒绝复核 | 已提交c5ab42a；撤回无来源固定预算、总deadline与blanket拒绝，Schema/WS等仍OPEN；此前通过仅对冻结输入 | [参数审计](pi-1.2.0-parameter-audit.md)、[独立复审](pi-1.2.0-parameter-revision-review.md) |
 | 2026-10-16；Pi1.2.0→1.3.0 | Opi输入c5ab42a；新Pi tree08a98ac282590eeb8255dd326e566b8b456212b4018a6d59cce44caf7f62e9d2。AI新增4/修改41/删除2、telemetry仅2 metadata；67 AIR/59 V身份中各退役1项，57/54 active SDK；所有backend gaps继续OPEN | [逐项升级与清理](pi-1.3.0-upgrade-review.md)、[来源](pi-1.3.0-source-evidence.json)、[复审](pi-1.3.0-revision-review.md)、[唯一矩阵](acceptance-matrix.md) |
 | 2026-10-30；Phase 20 交付执行补核（Pi 无新版本） | Pi 固定 1.3.0、tree 08a98ac…不变，本轮无上游版本可比对；Opi 执行链 d09d2ab←dbbfa4e←34936a5；实际交付身份 Linux rustc/cargo 1.97.1（恰为声明 MSRV）、Windows cargo 1.99.1 msvc 离线 registry 构建；最终身份/测试处置/实际计数见新增小节 | [交付证据](phase20-delivery-evidence.md)、[矩阵 V-59 补核](acceptance-matrix.md#2026-10-30-v-59-交付执行证据补核) |
+| 2026-11-01；Phase 20 CI 矩阵首次执行（Pi 无新版本） | Pi 固定 1.3.0、tree 08a98ac…不变；Opi 链 9e8d915←…←c0792e9，含八项测试/文档/账本级修复（无产品行为变更）；GitHub run 41300159581 全绿：三平台全工作区测试（macos-latest=arm64 darwin 完整行为套件）、六个 release 目标 Target check、msrv 1.97 job、clippy/acceptance ×3 OS；macOS 维度与“实际 CI dispatch”由 OPEN 转已执行；发布期声明（release 二进制/tag/crates.io）仍归 opi-release | [交付证据 2026-11-01 节](phase20-delivery-evidence.md#2026-11-01-ci-matrix-execution-repair-series-for-the-first-dispatch) |
 
 本表的“暂不核准”是研究候选结论，不是线上故障或产品实施进度。旧 Pi 1.0.0 源码当前不在工作区；[历史报告恢复关系](../pi-1.2.0/evidence/pi-1.0.0/README.md)不能替代源码恢复。上游网页按访问日记录；本地快照按 manifest/hash 固定，两种身份不混用。
 

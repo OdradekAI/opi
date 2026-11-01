@@ -154,3 +154,39 @@ remain with the independent mandatory F.1a review.
 The registered-source drift caused by the matrix addendum is handled by the
 plan reconciliation gate (P.0/P.2 rerun + P.4 human confirmation) before this
 task is marked passing; no hash-only refresh occurred.
+
+## 2026-11-01 CI matrix execution (repair series for the first dispatch)
+
+Enabling the first dispatch of the pinned CI on the Phase 20 tree exposed
+test-infrastructure defects that local hosts had masked; every fix below is
+test/docs/ledger-only (no production behavior change; the native_keyring edit
+sits inside its `#[cfg(test)]` module): `8548ddd` docs(spec) dropped the
+dangling `docs/realign/` links (docs_contract, root-caused to `5e5282e`);
+`00b62db` tracked the synthetic adc-external mTLS fixtures ignored by the
+blanket `*.pem`/`*.key` secrets rules; `024f5b9` installed the P.4-confirmed
+spec-hash reconciliation; `17b4a43`/`4eb6617`/`5535135`/`8d52c5c`/`351e6ca`
+/`9e8d915` rebuilt the windows process-lifecycle fixtures on native Win32
+handle semantics (PATHEXT in the Exact environment, a CreateProcessW
+bInheritHandles holder, a synchronous `cmd /c` chain; .NET `Process.Start`
+and `start /b` both lose the supplier's pipe handles, and a spawned
+PowerShell spins in engine init on Windows Server runners);
+`5c8c488` added cross-binary fixed-port retry helpers to the oauth loopback
+suites (53692/1455 contention, including Windows' shared-port behavior).
+
+**Run `41300159581` at `9e8d915` (2026-11-01 11:03–11:55 UTC), GitHub-hosted
+runners, all green:**
+
+| Job | Result |
+|---|---|
+| test (ubuntu-latest / windows-latest / macos-latest) | full workspace `cargo test --workspace --all-targets --locked` PASS ×3 |
+| Target check (x86_64-unknown-linux-gnu; aarch64-unknown-linux-gnu via cross gcc; x86_64-apple-darwin and aarch64-apple-darwin on the macos host; x86_64-pc-windows-msvc; aarch64-pc-windows-msvc) | PASS ×6 |
+| clippy ×3 OS; fmt; docs_contract; doctest; doc; msrv 1.97 | PASS |
+| execution_acceptance ×3 OS; Phase 17 acceptance ×3 OS; opi-sandbox package (ubuntu, macos) | PASS |
+
+This closes, for the SDK phase-exit platform criterion, the previously OPEN
+macOS dimension: macos-latest (aarch64-apple-darwin) executes the complete
+behavioral suite, both darwin targets pass their owning-host target checks,
+and "actual CI dispatch" is now executed evidence rather than a configured
+claim. Still open — release-time claims owned by explicit
+`opi-release <version>`, not by phase exit: cross-target release binary
+builds, tag artifacts and crates.io publication.
