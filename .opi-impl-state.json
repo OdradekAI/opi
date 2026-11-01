@@ -26,7 +26,7 @@
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "9e3d6ef690c3a794bc9c47ddc2dce04840f98d8881649be1ab2e8db0df287fd5",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "411d2f6d262b1afc22e84c73213dffd0eb890ed70e210dfa497d2a5d021cd31d",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "acb7f5f798b3384c63d36ad9af844b580755e2ea792ce3e2d32d9d3af2f15e81",
-    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "0e6b282522532a40540cd05e855733613d74d652b2cab265353420b34fd5ff65",
+    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "0c05c6a7fbc2a15bf1c727687af35848032e48ca3969588066c6a6777ff267e0",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "b74c0b09afd31bc06cf8d5d1df834a6af9d53f2d08c3653aa492ed36396c4eba",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md": "878d15231e734dc03772e1f1bd48cb8ffe2252a2818748e4b8630af43a2e8a76",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md": "61547ccfc0549018d2fd4042ade8edac3547599b412e12ea2479821b40f67a8f",
@@ -19987,7 +19987,7 @@
       "definition_of_done": "After 20.58, record actual final Pi/Opi/runtime/dependency/catalog/platform identities and source-to-Rust add/update/delete/retain dispositions, commands, executed/skip/missing counts and gaps in the existing tracking/evidence locations with bilingual README/evidence handoff. In acceptance-matrix.md append only evidence/version/result links and factual counts required by V-59; do not edit AIR/V identities, requirements, accepted scope, original observations or historical 70/probe results. This exact registered-source evidence update intentionally causes hash drift: before this task is marked passing or F.1a runs, stop automatic task completion, enter the existing plan drift reconciliation, preserve runtime history and passing evidence, repeat P.0/P.2 and show P.4 for human confirmation. Only that confirmed reconciliation may install refreshed source hashes; never patch hashes alone or treat this task as phase exit. Resume this same task under the reconciled contract and complete its documentation gate/checkpoint. Assemble the DEL-14/delivery-group handoff from the existing 20.57/20.58 public runtime, package, native and MSRV proof plus final upstream/test dispositions, checking exact input identities, artifact references and unresolved gaps without rerunning unchanged runtime evidence. Task completion acknowledges only this documentary handoff. After every task is passing, mandatory workflow F.1a independently rebuilds and judges the complete DEL-14 criterion and delivery coverage group; no documentation check closes runtime acceptance or substitutes for F.1a. Reconcile the final bilingual README/example/evidence handoff against actual 20.56/57/58 results, with exact inputs, commands and test dispositions. Distinguish current execution, reproducible prior evidence and missing proof. Preserve the registered matrix drift P.0/P.2/P.4 confirmation and independent F.1a; no host configuration, Pi 1.4 protocol adoption or runtime self-certification.",
       "definition_source": "inferred",
       "replaces": null,
-      "status": "failing",
+      "status": "passing",
       "depends_on": [
         "20.58"
       ],
@@ -20070,7 +20070,7 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "AIR-067",
@@ -20081,7 +20081,7 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-S59",
@@ -20092,7 +20092,7 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-ACTOR-10",
@@ -20103,7 +20103,7 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-EXIT-08",
@@ -20114,7 +20114,7 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "P20-GAP-DELIVERY",
@@ -20125,7 +20125,7 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "DEL-14",
@@ -20136,7 +20136,7 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         },
         {
           "id": "ONB-07-20.59",
@@ -20147,14 +20147,14 @@
             "git diff --check"
           ],
           "production_call_sites": [],
-          "status": "open"
+          "status": "met"
         }
       ],
       "production_call_sites": [],
       "substrate_only": false,
-      "iteration_count": 0,
+      "iteration_count": 1,
       "max_iterations": 5,
-      "start_commit": null,
+      "start_commit": "d09d2ab",
       "baseline_dirty_files": [],
       "task_owned_paths": [
         "crates/opi-ai/README.md",
@@ -20164,10 +20164,68 @@
         "docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.zh.md",
         "docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md"
       ],
-      "verified_at_commit": null,
-      "evidence": null,
+      "verified_at_commit": "c61626e3373d958eb9e3b747d349c34028db5052",
+      "evidence": {
+        "Opi-Task": "20.59",
+        "Opi-DoD-SHA256": "10a6cdd65a4952b3f7a9911c8888a2a34248381b38c2869bf844fc3e70cec335",
+        "Opi-Verification": "documentation; python scripts/opi-doc-check.py PASS; git diff --check clean; drift reconciliation P.0/P.2 revalidated (1/16 registered files drifted, acceptance-matrix.md only; diff purely additive +32/-0; no AIR/V identity/requirement/scope/observation or historical baseline touched; spec_files set unchanged) with P.4 human confirmation recorded before hash installation; anchor cross-checks resolve (#2026-10-30-v-59-交付执行证据补核, #2026-10-30-phase-20-交付执行补核v-59air-067); ONB-07 reconciliation verified READMEs carry no stale execution claims (examples unchanged since e80c7f3, only one grep hit remaining and it is protocol prose)",
+        "Opi-Evaluator": "passed (documentation tier; manual 7-lens audit in the documentation variant: DoD match, additivity, identity agreement, claim honesty distinguishing executed/reproducible/missing, non-goal adherence, bilingual sync, stewardship; exec.workflow.js runtime unavailable in environment, wf_ref=null)",
+        "Opi-Acceptance": "V-59 (evidence/version/result links + factual counts appended to the sole acceptance index), AIR-067 (upstream follow-up recorded at fixed identities with dispositions), P20-S59 (append-only matrix update + drift protocol honored end-to-end), P20-ACTOR-10 (static review vs executed acceptance distinct), P20-EXIT-08 (bilingual/current-annex/unique-matrix/source-ID agreement verified), P20-GAP-DELIVERY (documentary handoff assembled, full coverage group stays OPEN at F.1a), DEL-14 (handoff-only closure per partition), ONB-07-20.59 (README/example/evidence reconciliation with exact inputs and dispositions); no runtime self-certification, no F.1a substitution"
+      },
       "blocker": null,
-      "session_notes": []
+      "session_notes": [
+        {
+          "timestamp": "2026-10-30T20:40:00+00:00",
+          "attempt": 1,
+          "summary": "B.2 authorized. Began documentation-tier execution. Baseline worktree clean at d09d2ab (parent 20.58 checkpoint). Plan C-1..C-7: upstream identities, matrix append-only V-59 evidence, DEL-14 handoff assembly, ONB-07 README reconciliation, doc gates, then the mandatory registered-source drift reconciliation checkpoint (P.0/P.2 rerun + P.4 human confirmation) before passing/checkpoint commits.",
+          "gate_results": {}
+        },
+        {
+          "timestamp": "2026-10-30T21:10:00+00:00",
+          "attempt": 1,
+          "summary": "DEL-14 documentary handoff delivered in commit c61626e3373d958eb9e3b747d349c34028db5052 (parent d09d2ab). Four files, purely additive: upstream-tracking.md gained the 2026-10-30 review-table row (Pi fixed 1.3.0 tree 08a98ac unchanged, no upstream revision this round; Opi chain d09d2ab<-dbbfa4e<-34936a5) and the dated follow-up section recording final identities (Linux rustc/cargo 1.97.1 exactly at declared MSRV; Windows cargo 1.99.1 msvc offline from the 703-crate cache with aws-lc-sys 0.46.0 via cc + MSVC cl.exe), the frozen 15-crate closure, add/update/delete=0/retain dispositions, and executed/skip/missing counts with named gaps (macOS+aarch64 native, CI dispatch, release artifacts, live). acceptance-matrix.md received ONLY the append-only '## 2026-10-30 V-59 交付执行证据补核' section (+32/-0 verified by git diff -U0): executed-command-to-result table (platform_delivery 9/9 both hosts; external_sdk 10/10; packaging proofs incl. package_slice ws fresh scratch /tmp/opi-2058-ws; Windows 2630 executed/2629 passed with the single parallel-load oauth flake disclosed alongside standalone+193/193 green reruns; 245/245 cross-host byte-identical package members; CI determinism configured with zero dispatch), final dispositions, preserved OPEN register (six P20-GAP groups, P20-GAP-DELIVERY at F.1a, V-17/18/19/33 host-impact) and the catalog/hydrate/offline source-workflow facts. No AIR/V identity, requirement, scope, observation or historical 70/probe baseline touched. phase20-delivery-evidence.md + .zh.md gained the DEL-14/delivery-group handoff table: exact inputs, 20.44-20.56/20.57/20.58 references reused unchanged (zero runtime rerun), V-59 dispositions, AIR-067 follow-up, ONB-07 README reconciliation result (examples byte-stable since e80c7f3 so 20.57 byte-exactness evidence remains valid; install lists carry serde_json; three claim classes distinct; grep found no stale execution claims - the single remaining hit is protocol prose about /responses path appendix), unresolved-gap register and anchor cross-check. ONB-07 note: READMEs themselves needed no edit this task because 20.58 already reconciled their platform passages; the reconciliation act and its result are recorded in the evidence baseline. Registered-source drift handled by the contract's mandatory protocol: P.0 re-admission (1/16 drifted, matrix only; change exactly the evidence-only exception authorized by this task's owned paths; no new sources; frozen snapshots untouched), P.2 revalidation (purely additive diff proves no identity/requirement/scope/observation changes; no other task's evidence invalidated; graph unchanged), P.4 human confirmation obtained in-session before hash installation; the confirmed reconciliation installed spec_files_sha256[acceptance-matrix.md] = 0c05c6a7fbc2a15bf1c727687af35848032e48ca3969588066c6a6777ff267e0 (re-verified against file bytes at close time; other 15 hashes unchanged); no hash-only refresh occurred. Gates: opi-doc-check PASS, git diff --check clean. Task completion acknowledges the documentary handoff only; complete DEL-14 criterion, delivery coverage group and Phase 20 exit remain with the independent mandatory F.1a review. Phase 20 now has all tasks passing.",
+          "gate_results": {
+            "d1_workspace": "PASS (documentation tier): python scripts/opi-doc-check.py PASS + git diff --check clean on the final tree",
+            "d0_scenarios": "PASS: all 8 scenarios verified against the executed appends; handoff reuses unchanged 20.57/20.58 runtime evidence with exact identities and zero rerun",
+            "d2_evaluator": "documentation-variant manual 7-lens audit (DoD match, additivity via git diff -U0, bilingual identity agreement, claim honesty across executed/reproducible/missing classes, non-goal adherence incl. no F.1a substitution, bilingual sync of the handoff section, stewardship of frozen history); exec.workflow.js runtime unavailable in environment, wf_ref=null",
+            "d3_gap_checks": "drift reconciliation P.0/P.2 executed with evidence (1/16 drift, +32/-0 additivity) and P.4 human confirmation in-session; anchor resolution cross-check for both new dated sections; README stale-claim grep with single benign protocol-prose hit",
+            "test_disposition": [
+              {
+                "subject": "final upstream/test dispositions",
+                "action": "add",
+                "test": "upstream-tracking.md dated row + follow-up section and acceptance-matrix.md V-59 append-only evidence addendum recording identities, commands, executed/skip/missing counts and dispositions",
+                "interface": "documentation contract (doc-check PASS)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "DEL-14 documentary handoff",
+                "action": "add",
+                "test": "phase20-delivery-evidence.md + .zh.md handoff table assembling 20.56/20.57/20.58 references, ONB-07 reconciliation and gap register with zero runtime rerun",
+                "interface": "documentation contract (doc-check PASS)",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "registered-source hash reconciliation",
+                "action": "update",
+                "test": "spec_files_sha256[acceptance-matrix.md] refreshed to 0c05c6a7fbc2a15bf1c727687af35848032e48ca3969588066c6a6777ff267e0 only after confirmed P.0/P.2/P.4; no other hash changed",
+                "interface": "ledger spec-drift gate",
+                "replacement": null,
+                "slim_candidate": null
+              },
+              {
+                "subject": "all runtime evidence",
+                "action": "retain",
+                "test": "external_sdk, platform_delivery, packaging harnesses, smoke full and their recorded identities unchanged and not rerun for the assembly",
+                "interface": "their owning seams",
+                "replacement": null,
+                "slim_candidate": null
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "phase_exit": {
@@ -25238,6 +25296,16 @@
       "rejected_count": 0,
       "ran_at": "2026-10-30T20:15:00+00:00",
       "task_id": "20.58",
+      "criterion_id": null
+    },
+    {
+      "stage": "exec",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 0,
+      "rejected_count": 0,
+      "ran_at": "2026-10-30T21:10:00+00:00",
+      "task_id": "20.59",
       "criterion_id": null
     }
   ]
