@@ -554,3 +554,35 @@ cargo test --offline --locked -p opi-ai --test gemini_lifecycle --test provider_
 当前 crypto 验收引用以 RDF-23 为准；本页历史研究表中的 ring/EVP 选择及观察不重写。测试处置计划：add 真 public/package/provider/owner 正反例，update 仅被 RDF-23 取代的算法期望，retain wire/trust/identity/取消/资源回归，delete 仅正式退役的本地 FFI/fork/namespace 专属未来门禁。本轮产品测试影响 none，未执行产品测试。
 
 WS验收按RDF-24和WS§8协调，不新增AIR/V。补充真实Connection接口的Send迁移/非Sync、peer/local/simultaneous Close与bytes-written/flush取消、缺结果/提前EOF/唯一终态/完整partial/usage、active+idle取消、本地释放和工作量公平反例；primitive窗口映射须源码/独立wire和真实Upgrade共同证明。迁入opi-ai的私有单测由root fmt/clippy/all-targets/doctest/rustdoc覆盖，不再要求不存在的standalone companion门禁；普通/default/C-union、实际SDK产物内单测与真实公共链外部consumer仍额外必须。包内私有单测及fixture/helper须来自实际opi-ai artifact，明确不是外部公共consumer；外部consumer不得以测试feature/doc-hidden pub/#[path]生产文件访问codec。保留真实__internal-api与native来源检查，C-union中AWS-LC/libz-sys两者均须实际编译证明。20.15原独立包合同与计数保留历史身份；保留framing/storage/window/authority安全覆盖，只退役patch-apply/source-rewrite/namespace及迁移后独立companion专属未来门禁。原artifact摘要/运行不能冒充新状态；本次计划产品test none、历史研究retain、产品delete=0，未新增Rust/包/供应商运行；P20-GAP-WS、完整DEL-07/14与20.11/34/57/58不提前验收。
+
+## 2026-10-30 V-59 交付执行证据补核
+
+本节为 V-59 的**追加式**证据补核：仅记录证据/版本/结果链接与实际计数，不改
+上方任何 AIR/V 身份、要求、验收行、原始观察或历史 70/probe 结果；静态文件数
+不作 pass。上游 Pi 仍固定 1.3.0（tree `08a98ac…`），本轮无版本增量；Opi 执行
+链 `d09d2ab`←`dbbfa4e`←`34936a5`。详细事实固定于
+[phase20-delivery-evidence](phase20-delivery-evidence.md)（双语）与
+[upstream-tracking 补核小节](upstream-tracking.md#2026-10-30-phase-20-交付执行补核v-59air-067)。
+
+**实际执行（命令 → 结果）**：
+
+| 证据项 | 实际命令 | 实际结果 |
+|---|---|---|
+| 冻结图/平台身份（20.58） | `cargo test -p opi-ai --test platform_delivery` | 9/9 双宿主绿：Linux rustc **1.97.1**（恰为声明 MSRV）、Windows cargo 1.99.1 msvc（`--offline`，703-crate 缓存，aws-lc-sys 0.46.0 经 cc+MSVC cl 编译） |
+| 外部 SDK 包消费（20.57） | `cargo test -p opi-ai --test external_sdk` | 10/10（`.crate` `f730c63c…`，三示例字节一致 sha `78b49a65…`/`c42d5031…`/`ba4d8ee2…`） |
+| 打包证明（20.57/20.58） | `run_readme_examples.py`；`run_early_package_proof.py`；`package_slice.py --family ws --offline`（fresh scratch `/tmp/opi-2058-ws`） | 全 PASS（早期证明实际 CLI 无 `--offline` 旗标，按真实命令行记录） |
+| Windows 全套（20.58） | `cargo test -p opi-ai --tests --offline`（target dir `D:/Luiz/Odradek/opi-win-target`） | **执行 2630、通过 2629、1 个并行负载 oauth 端口时序偶发**；独立重跑 PASS + `--test oauth_flows` 193/193 → 环境级归类，非产品故障，已披露 |
+| 跨平台打包确定性（20.58） | 双宿主 `cargo package -p opi-ai --offline --allow-dirty --no-verify` + 逐成员 sha256 对比 | **245/245 文件成员逐字节一致**；容器 sha `010c13e2…`(win)/`2ff8553e…`(linux) 差异为 cargo 版本 gzip 流元数据，如实记录 |
+| 全工作区门（20.57/20.58 D.1） | `opi-impl-smoke.sh full`（doc-check/fmt/clippy `-D warnings`/workspace tests+doctest/rustdoc `-D warnings`） | PASS ×2 |
+| CI 确定性（20.58，零 dispatch） | 配置审阅 + `ci_contract` 守护重跑 | `ci.yml`/`release.yml` 全部 `uses:` commit-SHA 钉扎（checkout `v4.4.0=11d5960a` 等 5 项，2026-10-30 API 解析）、`--locked` 门、新增 msrv 1.97 job、release 构建钉 1.97、cross 改 crates.io `0.2.5`；未执行任何 CI dispatch |
+
+**测试处置（V-59 终值，Phase 20 交付组）**：add = external_sdk 10、
+platform_delivery 9、示例 3 及各 owner 任务 suites；update = README 平台段
+（双语）+ CI 确定性；delete = 0；retain = 全部前驱回归。**执行/skip/缺失**：
+上述主机上无 skip；缺失（未执行、未声称）= macOS 与 aarch64 native、CI
+dispatch 实际运行、cross-target 发布产物、crates.io 发布、live provider。
+**保留 OPEN**：六个 P20-GAP 机制组（登记归属不变）、P20-GAP-DELIVERY 完整
+产品覆盖组（归独立 F.1a）、V-17/18/19/33 host-impact。catalog 最低 Pi 1.2.1、
+发布 hydrate/build:offline、内部 exact pin 检查仍仅为 source 工作流事实。
+本节及任务 20.59 完成仅承认 documentary 交接，不是 runtime 验收、不代 F.1a、
+不触发 hash 单独刷新（注册源漂移走 P.0/P.2/P.4 人工确认）。

@@ -123,3 +123,25 @@ aarch64-linux 与 darwin×2 为 CI 声明；Windows job 是记载的不支持 sa
   （RDF-23 姿态）。
 - 任何记录的命令或产物中不含凭据、token 或用户运行时数据；Windows 证据
   仅使用离线 registry 缓存与仓库树。
+
+## DEL-14／delivery-group documentary 交接（任务 20.59）
+
+本节组装 DEL-14 与 P20-GAP-DELIVERY 要求的最终 documentary 交接。复用上文未变
+更的 runtime 证据 — 组装过程零重跑 — 仅新增最终处置、身份核对与缺口登记。
+任务 20.59 的完成仅承认本交接；完整 DEL-14 判据与 delivery 覆盖组仍归独立
+强制 F.1a 审查。
+
+| 交接项 | 来源身份 | 状态 |
+|---|---|---|
+| 固定输入 | Pi 1.3.0、tree `08a98ac…`（自 2026-10-16 未变）；Opi 链 `d09d2ab`←`dbbfa4e`←`34936a5` | 对照 ledger + upstream-tracking 核实 |
+| 公开 SDK runtime（20.44–20.56） | 逐任务记录于 `.opi-impl-state.json` 证据与本目录 suites；20.56 示例自 `e80c7f3` 字节稳定 | 既有证据，未变更，未重跑 |
+| 组装 SDK 包（20.57） | `external_sdk` 10/10；`.crate` `f730c63c…` 含字节一致示例；`run_readme_examples.py`／`run_early_package_proof.py`／`package_slice.py --family ws` PASS | 既有证据，未变更 |
+| Native/MSRV/平台/供应链（20.58） | `platform_delivery` 9/9 双宿主；Windows 2630 执行/2629 通过 + 1 环境级偶发（重跑绿）；跨宿主 245/245 成员逐字节一致；CI 源钉扎、`--locked`、msrv job、cross 0.2.5 — 零 dispatch | 既有证据，未变更 |
+| 最终测试处置（V-59） | add：external_sdk 10 + platform_delivery 9 + 示例 3 + 各 owner suites；update：双语 README 平台段 + CI 确定性；delete：0；retain：全部前驱回归 | 记录于矩阵 V-59 补核与 upstream-tracking |
+| 上游跟进（AIR-067） | upstream-tracking.md 2026-10-30 补核行 + 小节：本轮无 Pi 修订；身份、处置、执行/skip/缺失计数 | 已记录 |
+| README/示例交接（ONB-07） | README 声明对照 20.56/57/58 实际复核：示例自 `e80c7f3` 未变（20.57 字节一致性仍有效）；安装列表含 `serde_json`；平台段引用已执行证据；三类声明（当前已执行/可复现历史证据/缺失证明）分明 | 本任务核实；无遗留陈旧执行声明 |
+| 未决缺口 | macOS native（无 owning host）— 按合同阻塞 F.1a；aarch64 目标与实际 CI dispatch 未执行；六个 P20-GAP 机制组按登记归属 OPEN；V-17/18/19/33 host-impact 不计 SDK 完成 | 保留为缺口，未闭合 |
+| 身份交叉核对 | 矩阵补核锚点：`#2026-10-30-v-59-交付执行证据补核`；tracking 锚点：`#2026-10-30-phase-20-交付执行补核v-59air-067` | 两者均可解析 |
+
+矩阵补核造成的注册源漂移由 plan 调和门（P.0/P.2 重跑 + P.4 人工确认）在本
+任务标记 passing 之前处理；未发生任何仅改 hash 的刷新。

@@ -129,3 +129,28 @@ performance was introduced.
 - No credentials, tokens or user runtime data appear in any recorded command
   or artifact; Windows evidence used only the offline registry cache and the
   repository tree.
+
+## DEL-14 / delivery-group documentary handoff (task 20.59)
+
+This section assembles the final documentary handoff required by DEL-14 and
+P20-GAP-DELIVERY. It reuses the unchanged runtime evidence recorded above —
+nothing was rerun for this assembly — and adds only the final dispositions,
+identity cross-checks and gap register. Task 20.59 completion acknowledges
+only this handoff; the complete DEL-14 criterion and delivery coverage group
+remain with the independent mandatory F.1a review.
+
+| Handoff item | Source identity | Status |
+|---|---|---|
+| Fixed inputs | Pi 1.3.0, tree `08a98ac…` (unchanged since 2026-10-16); Opi chain `d09d2ab`←`dbbfa4e`←`34936a5` | verified against ledger + upstream-tracking |
+| Public SDK runtime (20.44–20.56) | recorded per-task in `.opi-impl-state.json` evidence and this directory's suites; 20.56 examples byte-stable since `e80c7f3` | prior evidence, unchanged, not rerun |
+| Assembled SDK package (20.57) | `external_sdk` 10/10; `.crate` `f730c63c…` with byte-exact examples; `run_readme_examples.py` / `run_early_package_proof.py` / `package_slice.py --family ws` PASS | prior evidence, unchanged |
+| Native/MSRV/platform/supply chain (20.58) | `platform_delivery` 9/9 on both hosts; Windows 2630 executed/2629 passed + 1 environment-only flake with green reruns; 245/245 byte-identical members across hosts; CI source-pinned, `--locked`, msrv job, cross 0.2.5 — no dispatch | prior evidence, unchanged |
+| Final test dispositions (V-59) | add: external_sdk 10 + platform_delivery 9 + 3 examples + owner suites; update: bilingual README platform passages + CI determinism; delete: 0; retain: all predecessor regressions | recorded in the matrix V-59 addendum and upstream-tracking |
+| Upstream follow-up (AIR-067) | 2026-10-30 补核 row + section in `upstream-tracking.md`: no Pi revision this round; identities, dispositions, executed/skip/missing counts | recorded |
+| README/example handoff (ONB-07) | README claims re-checked against 20.56/57/58 actuals: examples unchanged since `e80c7f3` (20.57 byte-exactness still valid); install lists carry `serde_json`; platform passages cite executed evidence; three claim classes (executed now / reproducible prior evidence / missing proof) distinct | verified this task; no stale execution claims remain |
+| Unresolved gaps | macOS native (no owning host) — blocks F.1a per contract; aarch64 targets and actual CI dispatch unexecuted; six P20-GAP mechanism groups OPEN at registered owners; V-17/18/19/33 host-impact excluded from SDK completion | preserved as gaps, not closed |
+| Identity cross-check | matrix addendum anchors: `#2026-10-30-v-59-交付执行证据补核`; tracking anchors: `#2026-10-30-phase-20-交付执行补核v-59air-067` | both resolve |
+
+The registered-source drift caused by the matrix addendum is handled by the
+plan reconciliation gate (P.0/P.2 rerun + P.4 human confirmation) before this
+task is marked passing; no hash-only refresh occurred.
