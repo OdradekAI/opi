@@ -41,6 +41,12 @@ fn helper_environment(cwd: &Path) -> std::collections::BTreeMap<String, String> 
             format!("{system}\\System32\\WindowsPowerShell\\v1.0\\Modules"),
         );
         env.insert("ComSpec".to_owned(), format!("{system}\\System32\\cmd.exe"));
+        // PowerShell command discovery cannot resolve a bare `cmd`/`ping`
+        // without the standard executable-extension list.
+        env.insert(
+            "PATHEXT".to_owned(),
+            ".COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS".to_owned(),
+        );
         env.insert(
             "PATH".to_owned(),
             format!("{system}\\System32;{system}\\System32\\WindowsPowerShell\\v1.0"),
@@ -123,37 +129,108 @@ fn helper(dir: &Path, name: &str, unix: &str, windows: &str) -> String {
     )
 }
 
-/// Backslash-separator PowerShell path for .NET `ProcessStartInfo.FileName`
-/// and `Start-Process -FilePath`: Win32 `lpApplicationName` does not normalize
-/// forward slashes, so a `System32/...` path makes the spawned child die
-/// before running any script line (observed both on CI runners and locally).
-/// Fixture descendants must stay PowerShell: they hold the supplier's stdout
-/// pipe write-end, which is the behavior under test.
+/// Backslash-separator cmd.exe path: Win32 `lpApplicationName` does not
+/// normalize forward slashes, so a `System32/...` path makes a spawned
+/// child die before running any script line (observed on CI and locally).
+/// Fixture descendants are cmd.exe batch files rather than PowerShell: a
+/// spawned powershell on a Windows Server CI runner can burn tens of seconds
+/// of CPU before executing its first script line, while cmd starts in
+/// milliseconds and both kinds of child provably inherit and hold the
+/// supplier's stdout pipe write-end, which is the behavior under test.
 #[cfg(windows)]
-fn powershell_exe() -> PathBuf {
+fn cmd_exe() -> PathBuf {
     let system = std::env::var_os("SystemRoot").expect("Windows system root");
     let mut path = PathBuf::from(&system);
     path.push("System32");
-    path.push("WindowsPowerShell");
-    path.push("v1.0");
-    path.push("powershell.exe");
+    path.push("cmd.exe");
     path
 }
 
-/// Pay the runner's PowerShell cold-start cost (Defender scan, .NET init)
-/// once before a fixture chain relies on bounded spawn latency. Warm hosts
-/// return in well under a second; the budget only covers a cold CI runner.
 #[cfg(windows)]
-fn warm_powershell() {
-    let ok = std::process::Command::new(powershell_exe())
-        .args(["-NoProfile", "-NonInteractive", "-Command", "exit 0"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
-    assert!(ok, "PowerShell warm-up spawn failed");
+fn cmd_helper(dir: &Path, name: &str, body: &str) -> PathBuf {
+    let path = dir.join(format!("{name}.cmd"));
+    std::fs::write(&path, body).unwrap();
+    path
+}
+
+/// Run one PowerShell probe and capture its stdout (the status-based variant
+/// above is for pure side effects).
+#[cfg(windows)]
+fn windows_probe_output(dir: &Path, script: &str) -> Option<String> {
+    use std::process::{Command, Stdio};
+    let mut process = Command::new(shell_path())
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .env_clear()
+        .envs(helper_environment(dir))
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let end = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        match process.try_wait() {
+            Ok(Some(_)) => {
+                let mut out = String::new();
+                use std::io::Read;
+                process.stdout.take()?.read_to_string(&mut out).ok()?;
+                return Some(out);
+            }
+            Ok(None) if std::time::Instant::now() < end => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            _ => {
+                let _ = process.kill();
+                let _ = process.wait();
+                return None;
+            }
+        }
+    }
+}
+
+/// Resolve the PIDs of this test's `ping -n <count>` descendant holder. The
+/// fixture embeds a per-test ping count so concurrent tests never match each
+/// other's holders.
+#[cfg(windows)]
+fn descendant_pids(dir: &Path, ping_count: u16) -> Vec<u32> {
+    let script = format!(
+        "Get-CimInstance Win32_Process -Filter \"Name='PING.EXE'\" | Where-Object {{ $_.CommandLine -like '*-n {ping_count}*' }} | ForEach-Object {{ Write-Output $_.ProcessId }}"
+    );
+    windows_probe_output(dir, &script)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| line.trim().parse::<u32>().ok())
+        .collect()
+}
+
+/// Force-kill any straggler holder left by an early test failure so it cannot
+/// hold a pipe or survive into later tests.
+#[cfg(windows)]
+fn cleanup_stragglers(dir: &Path, ping_count: u16) {
+    let taskkill = cmd_exe().with_file_name("taskkill.exe");
+    for pid in descendant_pids(dir, ping_count) {
+        let _ = std::process::Command::new(&taskkill)
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+}
+
+/// Drop guard that always cleans this test's stragglers.
+#[cfg(windows)]
+struct StragglerGuard {
+    dir: PathBuf,
+    ping_count: u16,
+}
+
+#[cfg(windows)]
+impl Drop for StragglerGuard {
+    fn drop(&mut self) {
+        cleanup_stragglers(&self.dir, self.ping_count);
+    }
 }
 
 fn owner(
@@ -376,40 +453,48 @@ async fn cancelling_executable_supplier_reaps_its_descendants() {
     };
     #[cfg(windows)]
     let parent = {
-        warm_powershell();
-        let child = helper(
+        // Synchronous console chain (no .NET spawn and no `start /b`: neither
+        // passes the supplier's pipe handles to the child): the parent waits
+        // on the batch, so the descendant stays alive exactly until the
+        // supplier is aborted and the job kill reaps the whole chain.
+        let batch = cmd_helper(
             dir.path(),
             "descendant",
-            "",
             &format!(
-                "Set-Content -LiteralPath '{}' -Value started\nStart-Sleep -Seconds 8\nSet-Content -LiteralPath '{}' -Value survived",
+                "@echo off\r\necho started> \"{}\"\r\nping -n 9 127.0.0.1 >nul\r\necho survived> \"{}\"",
                 started.display(),
                 survived.display()
             ),
         );
-        let argv = opi_ai::auth::adc::executable::parse_command(&child).unwrap();
         format!(
-            "$child = Start-Process -FilePath '{}' -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','\"{}\"'); Wait-Process -Id $child.Id",
-            powershell_exe().display(),
-            argv[3]
+            "$ErrorActionPreference='Stop'\ntry {{ cmd /c \"{}\" 2> \"{}\" }} catch {{ Set-Content -LiteralPath \"{}\" $_.Exception.Message; throw }}",
+            batch.display(),
+            dir.path().join("cmderr.txt").display(),
+            dir.path().join("pserr.txt").display()
         )
     };
     let command = helper(dir.path(), "parent", &parent, &parent);
     let (owner, transport) = owner(dir.path(), "parent", command, 30_000);
-    let worker = tokio::spawn(async move { owner.resolve_token().await });
+    let mut worker = Some(tokio::spawn(async move { owner.resolve_token().await }));
     // A cold CI runner can spend most of this window in PowerShell startup
     // (parent plus descendant) before the descendant script runs at all.
     tokio::time::timeout(Duration::from_secs(45), async {
         while !started.exists() {
-            assert!(
-                !worker.is_finished(),
-                "helper failed before descendant startup"
-            );
+            if let Some(handle) = worker.as_mut().filter(|h| h.is_finished()) {
+                let result = handle.await.expect("join helper worker");
+                for name in ["cmderr.txt", "pserr.txt", "parent.ps1"] {
+                    if let Ok(content) = std::fs::read_to_string(dir.path().join(name)) {
+                        eprintln!("{name}:\n{content}");
+                    }
+                }
+                panic!("helper failed before descendant startup: {result:?}");
+            }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
     .expect("descendant started");
+    let worker = worker.take().expect("worker still alive");
     worker.abort();
     assert!(worker.await.unwrap_err().is_cancelled());
     // The descendant lives for 8s after signalling `started`; checking at
@@ -453,130 +538,96 @@ fn windows_probe_status(dir: &Path, script: &str) -> Option<std::process::ExitSt
 }
 
 #[cfg(windows)]
-struct OwnedWindowsProbe {
-    dir: PathBuf,
-    pid_file: PathBuf,
-}
-
-#[cfg(windows)]
-impl OwnedWindowsProbe {
-    fn cleanup(&self) {
-        let Some((pid, started)) = std::fs::read_to_string(&self.pid_file)
-            .ok()
-            .and_then(|value| {
-                let (pid, started) = value.trim().split_once(',')?;
-                Some((pid.parse::<u32>().ok()?, started.parse::<u64>().ok()?))
-            })
-            .filter(|(pid, _)| *pid > 4)
-        else {
-            return;
-        };
-        let taskkill =
-            PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32/taskkill.exe");
-        // Check only the probe's exact PID and creation time. Holding the
-        // process handle prevents PID reuse between the check and termination.
-        let script = format!(
-            "$ErrorActionPreference = 'Stop'; Write-Output 'cleanup_expected={pid},{started}'; $p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ $null = $p.Handle; $actual = $p.StartTime.ToUniversalTime().Ticks; Write-Output \"cleanup_actual={pid},$actual\"; if ($actual -eq {started}) {{ & '{}' /PID {pid} /T /F; Write-Output \"taskkill_exit=$LASTEXITCODE\"; Write-Output \"child_exited=$($p.WaitForExit(2000))\" }} else {{ Write-Output 'cleanup_identity_mismatch'; exit 2 }} }} else {{ Write-Output 'child_already_exited' }}",
-            taskkill.display(),
-        );
-        let status = windows_probe_status(&self.dir, &script);
-        eprintln!("cleanup_status={status:?}");
-    }
-}
-
-#[cfg(windows)]
-impl Drop for OwnedWindowsProbe {
-    fn drop(&mut self) {
-        self.cleanup();
-    }
-}
-
-#[cfg(windows)]
 #[tokio::test]
 async fn executable_timeout_reaps_a_descendant_after_its_parent_has_exited() {
+    const HOLDER_PINGS: u16 = 91;
     let dir = tempfile::tempdir().unwrap();
-    let child_pid_file = dir.path().join("child-pid");
     let parent_pid_file = dir.path().join("parent-pid");
     let ready = dir.path().join("child-ready");
-    warm_powershell();
-    // The descendant is PowerShell spawned through .NET ProcessStartInfo: it
-    // inherits and holds the supplier's stdout pipe while sleeping, which is
-    // exactly the condition the timeout-reap contract covers. The .NET
-    // FileName must use backslash separators (see powershell_exe). A spawned
-    // child powershell on a cold CI runner can spend tens of seconds in
-    // startup, hence the warm-up and the wide windows below.
-    let child = helper(
-        dir.path(),
-        "orphan-child",
-        "",
-        &format!(
-            "Set-Content -LiteralPath '{}' -Value $PID\nWrite-Output 'held-by-child'\nStart-Sleep -Seconds 90",
-            ready.display(),
-        ),
-    );
-    let argv = opi_ai::auth::adc::executable::parse_command(&child).unwrap();
-    let child_script = PathBuf::from(&argv[3]);
-    let guard = OwnedWindowsProbe {
+    let _stragglers = StragglerGuard {
         dir: dir.path().to_path_buf(),
-        pid_file: child_pid_file.clone(),
+        ping_count: HOLDER_PINGS,
     };
-    let command = helper(
-        dir.path(),
-        "exiting-parent",
-        "",
-        &format!(
-            "Set-Content -LiteralPath '{}' -Value $PID\n$i = New-Object System.Diagnostics.ProcessStartInfo\n$i.FileName = '{}'\n$i.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\"'\n$i.UseShellExecute = $false\n$i.CreateNoWindow = $true\n$p = [System.Diagnostics.Process]::Start($i)\nSet-Content -LiteralPath '{}' -Value \"$($p.Id),$($p.StartTime.ToUniversalTime().Ticks)\"\nexit 0",
-            parent_pid_file.display(),
-            powershell_exe().display(),
-            child_script.display(),
-            child_pid_file.display(),
-        ),
+    // Console chain with one detached holder: every higher-level spawn
+    // mechanism on Windows loses the supplier's pipe handles (.NET
+    // Process.Start either spins PowerShell engine init on Server runners or
+    // drops the write-end; `start /b` hands the child console handles), so
+    // the parent script itself P/Invokes CreateProcessW with
+    // bInheritHandles and STARTF_USESTDHANDLES — the same native semantics
+    // the supplier uses — to launch a long ping that keeps the stdout
+    // write-end alive after the parent exits. The WMI probes below find the
+    // holder by its per-test ping count.
+    let parent_script = r#"Set-Content -LiteralPath '<PARENT_PID>' -Value $PID
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class DetachedHolder {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct STARTUPINFO { public int cb; public string lpReserved, lpDesktop, lpTitle; public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags; public short wShowWindow, cbReserved2; public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct PROCESS_INFORMATION { public IntPtr hProcess, hThread; public int dwProcessId, dwThreadId; }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool CreateProcess(string app, string cmd, IntPtr pa, IntPtr ta, bool inherit, uint flags, IntPtr env, string cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
+    [DllImport("kernel32.dll")]
+    static extern IntPtr GetStdHandle(int which);
+    [DllImport("kernel32.dll")]
+    static extern bool CloseHandle(IntPtr h);
+    public static void Start(string commandLine) {
+        var si = new STARTUPINFO();
+        si.cb = Marshal.SizeOf(typeof(STARTUPINFO));
+        si.dwFlags = 0x100; // STARTF_USESTDHANDLES
+        si.hStdInput = GetStdHandle(-10);
+        si.hStdOutput = GetStdHandle(-11);
+        si.hStdError = GetStdHandle(-12);
+        PROCESS_INFORMATION pi;
+        if (!CreateProcess(null, commandLine, IntPtr.Zero, IntPtr.Zero, true, 0x08000000u, IntPtr.Zero, null, ref si, out pi)) {
+            throw new Exception("CreateProcess failed: " + Marshal.GetLastWin32Error());
+        }
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+}
+'@
+[DetachedHolder]::Start('ping -n <PINGS> 127.0.0.1')
+Set-Content -LiteralPath '<READY>' -Value ok
+exit 0
+"#
+    .replace("<PARENT_PID>", &parent_pid_file.display().to_string())
+    .replace("<PINGS>", &HOLDER_PINGS.to_string())
+    .replace("<READY>", &ready.display().to_string());
+    let parent_script_path = dir.path().join("exiting-parent.ps1");
+    std::fs::write(&parent_script_path, parent_script).unwrap();
+    let command = format!(
+        "\"{}\" -NoProfile -File \"{}\"",
+        shell_path().display(),
+        parent_script_path.display()
     );
     // The deadline must exceed the parent's single PowerShell cold start on
     // a CI runner; with the old 5s budget the deadline reaped the parent
     // before it wrote any marker file, so readiness could never succeed.
     let (owner, transport) = owner(dir.path(), "exiting-parent", command, 45_000);
     let worker = tokio::spawn(async move { owner.resolve_token().await });
-    // Covers the parent PowerShell cold start plus the batch child's
-    // immediate marker writes.
+    // Covers the parent PowerShell cold start plus the wrapper's immediate
+    // holder launch.
     let readiness = tokio::time::timeout(Duration::from_secs(45), async {
-        while !ready.exists() || !child_pid_file.exists() || !parent_pid_file.exists() {
+        while !ready.exists() || !parent_pid_file.exists() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await;
     if readiness.is_err() {
         eprintln!(
-            "readiness markers: ready={} child_pid={} parent_pid={} worker_finished={}",
+            "readiness markers: ready={} parent_pid={} worker_finished={} holder_pids={:?}",
             ready.exists(),
-            child_pid_file.exists(),
             parent_pid_file.exists(),
-            worker.is_finished()
+            worker.is_finished(),
+            descendant_pids(dir.path(), HOLDER_PINGS),
         );
-        if let Ok(content) = std::fs::read_to_string(&child_pid_file) {
-            let pid = content.trim().split_once(',').map(|x| x.0).unwrap_or("?");
-            eprintln!("child pid file: {content}");
-            let probe = format!(
-                "$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ Write-Output \"child_alive=$($p.Id) cpu=$($p.CPU) threads=$($p.Threads.Count)\"; $wmi = Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\"; Write-Output \"cmdline=$($wmi.CommandLine)\" }} else {{ Write-Output 'child_not_found' }}"
-            );
-            let _ = windows_probe_status(dir.path(), &probe);
-        }
         if let Ok(script) = std::fs::read_to_string(dir.path().join("exiting-parent.ps1")) {
             eprintln!("parent script:\n{script}");
         }
-        if let Ok(batch) = std::fs::read_to_string(dir.path().join("orphan-child.ps1")) {
-            eprintln!("child script:\n{batch}");
-        }
     }
-    readiness.expect("the synthetic child must start");
-    let child_pid = std::fs::read_to_string(&child_pid_file)
-        .unwrap()
-        .trim()
-        .split_once(',')
-        .unwrap()
-        .0
-        .parse::<u32>()
-        .unwrap();
+    readiness.expect("the synthetic holder must start");
     let parent_pid = std::fs::read_to_string(&parent_pid_file)
         .unwrap()
         .trim()
@@ -589,28 +640,28 @@ async fn executable_timeout_reaps_a_descendant_after_its_parent_has_exited() {
     .expect("inspect only the probe parent PID")
     .success();
     assert!(parent_exited, "fixture parent has not exited");
-    eprintln!("parent_exited=true parent_pid={parent_pid} child_pid={child_pid}");
-    // The 45s supplier deadline must already have elapsed by now. A child
-    // holding stdout keeps the supplier pending until cleanup really kills it.
+    eprintln!(
+        "parent_exited=true parent_pid={parent_pid} holder_pids={:?}",
+        descendant_pids(dir.path(), HOLDER_PINGS)
+    );
+    // The 45s supplier deadline must already have elapsed by now. A holder
+    // with the stdout write-end keeps the supplier pending until cleanup
+    // really kills it.
     tokio::time::sleep(Duration::from_secs(50)).await;
-    let child_alive_after_timeout = windows_probe_status(
-        dir.path(),
-        &format!("$p = Get-Process -Id {child_pid} -ErrorAction SilentlyContinue; if ($p) {{ Write-Output \"owned_child_has_exited=$($p.HasExited)\" }}; if ($p -and !$p.HasExited) {{ exit 0 }} else {{ exit 1 }}"),
-    )
-    .expect("inspect only the owned child PID")
-    .success();
+    let child_alive_after_timeout = !descendant_pids(dir.path(), HOLDER_PINGS).is_empty();
     eprintln!("owned_child_alive_after_source_timeout={child_alive_after_timeout}");
     // Cleanup precedes the assertion, including on the expected failing
-    // branch. Drop repeats this exact-owned-PID cleanup after early failures.
-    guard.cleanup();
+    // branch; the Drop guard repeats it after early failures.
+    cleanup_stragglers(dir.path(), HOLDER_PINGS);
     let result = tokio::time::timeout(Duration::from_secs(30), worker)
         .await
         .expect("supplier settles after the probe has reclaimed its child")
         .unwrap();
+    eprintln!("supplier result: {result:?}");
     assert!(matches!(result, Err(AdcResolutionError::ExecutableTimeout)));
     assert_eq!(transport.sends.load(Ordering::SeqCst), 0);
     assert!(
         !child_alive_after_timeout,
-        "owned descendant PID {child_pid} survived timeout after parent PID {parent_pid} exited"
+        "descendant holder survived timeout after parent PID {parent_pid} exited"
     );
 }
