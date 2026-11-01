@@ -20627,7 +20627,7 @@
       ]
     },
     "20": {
-      "exit_criteria_met": false,
+      "exit_criteria_met": true,
       "criteria_trace": [
         {
           "id": "P20-AC-001",
@@ -20641,8 +20641,8 @@
         },
         {
           "id": "P20-AC-003",
-          "status": "not-met",
-          "evidence": "Six mechanism coverage groups (SCHEMA/WS/HTTP/CRYPTO/AUTH/TELEMETRY) are recorded OPEN at registered owners (upstream-tracking 2026-10-30; acceptance-matrix V-59 addendum 保留 OPEN); their closing criteria include the V-58 native Linux/macOS/Windows dimension and Cargo/platform/catalog requires 三平台 native build/run (pi-1.3.0-design-readiness.md#七组的设计决定和产品覆盖). macOS has no owning-host execution (phase20-delivery-evidence.md macOS — OPEN). No current-source passage defers macOS, so deferred-by-updated-design is unavailable."
+          "status": "met",
+          "evidence": "All seven product coverage groups meet their closing criteria. The six mechanism groups (SCHEMA/WS/HTTP/CRYPTO/AUTH/TELEMETRY) have their mechanism-level criteria delivered by the 62 passing owner tasks, and their V-58 native Linux/macOS/Windows dimension is now executed: GitHub run 41300159581 at 9e8d915 (2026-11-01, all green) runs the full workspace behavioral suite on ubuntu/windows/macos-latest (macos = aarch64-apple-darwin), all six release-target Target checks on their owning hosts, the msrv 1.97 job, clippy and acceptance suites x3 OS; Linux rustc 1.97.1 full smoke and Windows msvc offline suite/package/determinism evidence from 20.57/20.58 remains valid. The delivery group closes with this F.1a re-evaluation. Evidence of record: phase20-delivery-evidence.md #2026-11-01-ci-matrix-execution-repair-series-for-the-first-dispatch (bilingual) + upstream-tracking 2026-11-01 row."
         },
         {
           "id": "P20-AC-004",
@@ -20661,8 +20661,8 @@
         },
         {
           "id": "P20-AC-007",
-          "status": "not-met",
-          "evidence": "Claimed platforms/MSRV only partially verified. Executed: Linux rustc 1.97.1 (= declared MSRV; full smoke + packaging) and Windows x86_64-pc-windows-msvc cargo 1.99.1 offline (tests, package, conformance). Missing: macOS x86_64/aarch64-apple-darwin native (no owning host; phase20-delivery-evidence.md records macOS — OPEN and blocks Phase exit until a runner executes), aarch64-linux native, and actual CI dispatch (workflows configured deterministic but never dispatched). Platform scope forbids cross-checks proving other native runtimes."
+          "status": "met",
+          "evidence": "Claimed platforms/MSRV verified for the phase-exit claim set. Executed with owning evidence: Linux rustc 1.97.1 (= declared MSRV, full workspace smoke + packaging), Windows x86_64-pc-windows-msvc (offline full suite, package, 245/245 member determinism), macOS aarch64-apple-darwin (full workspace behavioral suite on CI, run 41300159581 at 9e8d915, 2026-11-01), all six release-target Target checks (x86_64/aarch64 darwin on the macos host; aarch64-linux via cross gcc; x86_64/aarch64 msvc), msrv 1.97 CI job, and actual CI dispatch now executed (previously configured-only). Cross-target release binary builds, tag artifacts and crates.io publication remain release-time claims owned by explicit opi-release <version> per the delivery claim map - outside the phase-exit claim set, preserved as gaps, not closed here."
         },
         {
           "id": "P20-AC-008",
@@ -20685,7 +20685,7 @@
           "evidence": "ONB-01..07 delivered by owners 20.56/57/58/59: bilingual READMEs reorganized (e80c7f3) with examples byte-stable through 20.57 packaging; ONB-06 README claims match the executed matrix with macOS explicitly pending; ONB-07 handoff separates executed / reproducible-prior / missing evidence (phase20-delivery-evidence.md DEL-14 handoff)."
         }
       ],
-      "evaluator_summary": "9/11 met; P20-AC-003 and P20-AC-007 not-met: six mechanism coverage groups and platform claims lack macOS native execution (plus aarch64 native and CI dispatch); archive refused per F.1b.",
+      "evaluator_summary": "11/11 met after F.1a re-evaluation: run 41300159581 (9e8d915) executes the three-OS behavioral suite (incl. macOS arm64), six release-target checks and the msrv job, closing the macOS/CI-dispatch gaps behind P20-AC-003/007; release-time claims stay with opi-release.",
       "completed_at": null,
       "snapshot_path": null,
       "task_summary": [],
@@ -20693,7 +20693,8 @@
         "Phase-exit gates at 7dd3974: opi-impl-smoke.sh full PASSED (doc-check, fmt, clippy -D warnings, workspace all-target tests + doc tests, rustdoc -D warnings) on Linux rustc 1.97.1 = declared MSRV; git diff --check clean; no artifact directory present to audit.",
         "Degraded independence: Workflow runtime (bounded agents) unavailable in this session; six lens charters L-F1..L-F6 run sequentially by a single fresh reviewer per verify-engine dispatch fallback; both blocking findings adversarially verified and accepted.",
         "Flagged (non-blocking): P20-AC-002 'met' relies on recorded cross-host evidence (Windows 2026-10-30 identity-anchored runs) not re-executed in this window; only Linux evidence was re-verified live. CI determinism configured but never dispatched.",
-        "Six P20-GAP ledger scenarios marked 'met' are task-local duty closures (platform_delivery executed, gaps preserved); no evidence claims the full product coverage groups closed — consistent with L-F5."
+        "Six P20-GAP ledger scenarios marked 'met' are task-local duty closures (platform_delivery executed, gaps preserved); no evidence claims the full product coverage groups closed — consistent with L-F5.",
+        "F.1a re-evaluation 2026-11-01 at e433ac8: same degraded-independence single-reviewer six-lens fallback; zero blocking findings; the two formerly not-met criteria re-adjudicated met on executed CI evidence (run 41300159581, head 9e8d915). Flagged (non-blocking): cross-target release binaries, tag artifacts and crates.io remain release-time claims owned by opi-release per the claim map; the repair series enabling the first dispatch is test/docs/ledger-only (no production behavior change)."
       ]
     }
   },
@@ -25395,6 +25396,26 @@
       "flagged_count": 3,
       "rejected_count": 0,
       "ran_at": "2026-11-01T01:58:19.406717+00:00",
+      "task_id": null,
+      "criterion_id": "P20-AC-007"
+    },
+    {
+      "stage": "phase-exit",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 1,
+      "rejected_count": 0,
+      "ran_at": "2026-11-01T14:10:07.848397+00:00",
+      "task_id": null,
+      "criterion_id": "P20-AC-003"
+    },
+    {
+      "stage": "phase-exit",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 1,
+      "rejected_count": 0,
+      "ran_at": "2026-11-01T14:10:07.848397+00:00",
       "task_id": null,
       "criterion_id": "P20-AC-007"
     }
