@@ -51,6 +51,10 @@ __pycache__
 *.p12
 *.pfx
 credentials.toml
+# Exception: synthetic loopback test PKI (CN=opi-adc-external-test-*) for the
+# ADC external-account mTLS contract tests; a fresh checkout must have them.
+!crates/opi-ai/tests/fixtures/adc-external/*.pem
+!crates/opi-ai/tests/fixtures/adc-external/*.key
 
 # Local project config (may contain provider base_url, model overrides)
 .opi/config.toml
