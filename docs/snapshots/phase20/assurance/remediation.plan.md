@@ -4,7 +4,7 @@
 **Audit index SHA-256**: `fb22a4ff86318a1f322cfbcf9bf107d748d65bbaa7c1ccb1037f6496d69db3ce`
 **Remediation head**: `8010ed2af97cd5deeb1f7240097436fdf32b8d54`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
-**Dirty-worktree baseline**: worktree-only; original staged=[]; unstaged=[]; untracked=[]. Continuation carried in the two task-owned fixed plan files; user explicitly requested their advancement. committed=none-for-this-task in the shared worktree.
+**Dirty-worktree baseline**: worktree-only review revision at HEAD `eaff5722ec85581ec358d47d4d4d9f600bea6436`; staged=[]; unstaged=[]; untracked=[]. That existing commit contains only this Phase's fixed plan pair above the unchanged remediation source head. The user confirmed the four review corrections; only the fixed plan pair is edited in this revision. committed=none-for-this-task.
 **Unresolved decisions**: none
 
 All24 current source keys remain separate:22 planned fixes and2 no-action dispositions. Source severities and original audit states are retained. This plan selects repairs and their future green tests; it does not claim repairs are applied, rewrite requirements or declare the Phase conformant. No partial apply is admitted.
@@ -117,14 +117,14 @@ none
 
 | Former item | Determined closure decision and evidence |
 |---|---|
-| D1 | Complete the existing explicit work-stack throughout SDK-owned schema admission/normalization/clone/destruction; three independent corrected deep-phase reds already observed. No new public seam, cap, leak or larger stack. |
+| D1 | Complete the existing explicit work-stack throughout SDK-owned schema admission/normalization/clone/destruction; three independent corrected deep-phase reds plus the review deep-$ref search red already observed. Include from_value local/remote search and preserve its current-node priority/last-child-match semantics. No new public seam, cap, leak or larger stack. |
 | D2 | One frozen request projection policy and typed prepared/partial/terminal projection facts; actual successful lossy Chat wire currently serializes no facts. Real behavioral red, no missing-symbol compiler assertion. |
 | D3 | Complete38-field source map(27Chat+11Responses),8 matching pinned source files,15 new actual wire negatives plus earlier maximum/cache case. Per-wire Azure/Codex exceptions, false/omission/null/zero and nested routing precedence fixed. |
 | D4 | One instance-owned provider/operation inventory. A real image-only registration is absent from current provider_ids; new management/selected-refresh behavior is fully specified, including captured revisions/shared-store ACK ownership. |
 | D5 | Default process policyNone; explicit with_policySome and policy()->Option. Coding-agent explicitly keeps its intentional10s/64KiB. Actual current lawful>64KiB default failure red retained. |
-| D6 | Use existing builtins/factories, complete packaged examples and loopback peer1/1/2flows. Current real harness reports PASS with0 executions after actual artifact/embedding controls; controlled executor is disclosed, not package runtime proof. |
+| D6 | Use existing builtins/factories, complete packaged examples and loopback peer1/1/2flows. Current real harness reports PASS with0 executions after actual artifact/embedding controls; controlled executor is disclosed, not package runtime proof. Final runner evidence moves to validated external scratch/evidence.json with tracked-proof preservation and harness README ownership. |
 | D7 | Private pinned Stream wrapper around actual native ResourceApiStream/shared PreparedAttempt owner/deferred returned stream. Current public plain adapter leaks Pending/drop observations to ambientB;1executed1failed and exact business counts. |
-| D8 | New current catalog material seal/packer validation; original cited3OS/MSRV CI logs; newly executed actual-package matrices with native graphs/materials. Only applicable original executed artifacts close proof availability. |
+| D8 | Current catalog material and original3OS/MSRV native/package proofs remain sealed. The review recheck adapter authenticates the original verifier and all5513 inventory files while admitting only fixed-plan commits;9 real-Git/CLI boundary tests and full Windows/macOS/Linux-MSRV recheck pass. Only applicable original executed artifacts close proof availability; repaired inputs need their own refreshed evidence. |
 | D9 | Append factual >=1 constructor-assertion deletion correction. P.0/P.2/P.4 is the determined later ledger/hash/task/Phase handoff boundary; no ledger mutation or new source meaning is authorized. |
 
 All new probes use fixed exported production/rLib inputs, positive/negative controls and bounded local peers/subprocesses; no live provider/credentials-triggered work. Original constructor/compiler/archive-symlink failures and CI setup failures are not behavioral reds. New runtime red aggregate17executed/17failed/0ignored/8filtered; existing8behavior reds retained. New telemetry1failed and onboarding Python harness1failed have independently logged controls/limitations. The earlier corrected auth/deep/duplicate/prelude evidence remains bound in the reproducible evidence appendix.
@@ -138,6 +138,7 @@ Complete the existing explicit work-stack model across every schema-depth-depend
 
 - refs.rs: replace register_resource_anchors and unregister_resource_anchors recursion by explicit preorder worklists. Retain root=true handling, nested-$id pruning, dynamic-anchor push/pop order, source js_keys enumeration and array order. Push children in reverse onto LIFO to retain current visit order.
 - refs.rs: replace find_dynamic_anchor and find_base recursion by explicit worklists. Retain first-match order, equality-before-$id transition in find_base, branch-local base URL propagation, invalid-join branch failure and sibling search. This preserves lexical/resource/dynamic/recursive authority; do not build a global ID table.
+- refs.rs: replace from_value recursion, reached by both local and remote resolve_reference searches, with explicit continuation frames. Preserve current-node match before descent (a matched node prunes that subtree), last nonempty child match in source js_keys/array order, const/enum subtree exclusion, and branch-local $id/base propagation (invalid joins retain the prior base as today). Do not substitute first-match preorder search or a global ID table. Deep resolved and unresolved fragment searches must finish on the same ordinary stack; unresolved references retain existing compile/check semantics.
 - normalize.rs: replace schema-dependent recursive optional-null/coercion helpers by private continuation frames. Own the current Value in each frame; retain source allOf sequential fold, union original-first then clone-per-arm selection, object/additionalProperties and tuple/single-items order, independent SubValidators compiles, and final validation against original schema. Return child results through owned frames with mem::take and safe reinsertion; no raw mutable pointers or public traits.
 - Provide a private iterative JSON clone for SubValidators::get(schema) instead of serde_json Value::clone on deeply nested schema. Keep the cache and independently compiled child schema semantics. Share the private value traversal utility with owned destruction only where both consumers need it; no public export.
 - ir.rs: implement safe iterative Compiled destruction by replacing/detaching its Box<Value> root with Null and draining owned Array/Object descendants onto a Vec before their containers drop. Preserve the existing Box allocation and node-pointer identity throughout all live evaluation. Initialize this owner before any fallible admission so every compile-error path uses the same drop guard. Arc clone/last-owner semantics remain unchanged.
@@ -235,6 +236,7 @@ Use existing public Models::new, provider_collection::register_builtin, BuiltinO
 - Controlled Anthropic /v1/messages peer emits canned valid SSE: quick_start -> final text in1request; streaming -> event sequence and same final text in1request; tool_loop -> get_weather(Tokyo) tool_use then require its returned tool_result text "22 C, clear" in second request before final text. Assert exact request counts1/1/2, canonical model id, synthetic auth identity, expected output and successful exit; reject extra/unexpected endpoint/body/requests. Persist raw requests, outputs, exits and counts. No live provider path or registry publication.
 - A minimal additional external consumer probe uses a counting AuthContext and the same explicit register_builtin assembly to assert Models::new empty, registration/model queries env/file/store/source-send counters0; then selected first call uses only the controlled Anthropic key. Retain existing two-instance/default-memory isolation proofs; do not substitute this probe for the three same-source binary flows.
 - Add test_readme_examples.py that exercises the real runner main with controlled subprocess executor and valid package fixture. Require three run records/counts before PASS, reject missing example/final/tool continuation/failed binary and prove no execution follows refused artifact/embedding/graph validation. Retain offline/environment/path/config/lease controls.
+- Write the success/failure summary to the already validated workspace-external scratch/evidence.json alongside its raw logs; do not rewrite scripts/pi-sdk-conformance/evidence/readme-examples-proof.json. Before scratch admission, refuse without creating output. Update scripts/pi-sdk-conformance/README.md to document actual execution and the external output path, and label the tracked prior record as historical. Add success/failure/early-refusal tests proving the tracked record is byte-identical and the repository gains no unowned output. This harness README has no Chinese counterpart; both SDK README embeddings remain synchronized.
 
 ### Design for P20-AUD-019
 Add private InstrumentedStream<S: Stream> in telemetry.rs, matching current Instrumented<F> ownership: TelemetryContext plus Option<Pin<Box<S>>>; poll_next executes exactly one inner poll under context.in_scope; Drop takes and destroys inner under same scope, even unpolled. No public telemetry API, new trait, unsafe, global subscriber, exporter, business span or extra poll. Disabled carrier uses existing scoped no-op dispatch. Preserve returned Pending/item/EOF exactly.
@@ -510,9 +512,9 @@ Each source key owns exactly one batch with one root change and predicate. Depen
 
 ### Batch B6: schema.owned-lifecycle.stack-safety
 
-**Closure predicate**: On an ordinary explicitly 2MiB Rust thread stack, a 10000-level lawful allOf schema, including root $id, can compile, check a scalar, normalize that scalar through validate_tool_arguments, and release the last CompiledSchema Arc normally; typed compile errors release their owned input normally; exact resolver/normalizer semantics remain unchanged and no schema depth cap, leaked owner or enlarged thread stack is used.
+**Closure predicate**: On an ordinary explicitly 2MiB Rust thread stack, a 10000-level lawful allOf schema, including root $id, can compile, check a scalar, normalize that scalar through validate_tool_arguments, and release the last CompiledSchema Arc normally. Deep local and remote from_value reference searches, both resolved and unresolved, preserve existing results without stack overflow; typed compile errors release their owned input normally. Preserve exact resolver/normalizer semantics with no schema depth cap, leaked owner or enlarged thread stack.
 **Dependencies**: []
-**Verification union**: Rerun the exact current-session three-phase public probe with the same source, depth, 2MiB stack, memory and process timeout; each must exit0 with successful expected phase and actual normal drop (remove only intentionally isolated leak used to identify baseline normalization failure).; cargo test --offline --locked -p opi-ai --test schema_engine; cargo test --offline --locked -p opi-ai --test schema_public; cargo test --offline --locked -p opi-ai --lib schema::; shared union below.
+**Verification union**: Run the additional schema_ref_replay.py --mode green five-case matrix and execute new deep_local_ref_search/deep_remote_ref_search cases in the owning schema suites. Rerun the exact current-session three-phase public probe with the same source, depth, 2MiB stack, memory and process timeout; each must exit0 with successful expected phase and actual normal drop (remove only intentionally isolated leak used to identify baseline normalization failure).; cargo test --offline --locked -p opi-ai --test schema_engine; cargo test --offline --locked -p opi-ai --test schema_public; cargo test --offline --locked -p opi-ai --lib schema::; shared union below.
 
 #### Fix B6.1: schema.owned-lifecycle.stack-safety
 
@@ -522,10 +524,10 @@ Each source key owns exactly one batch with one root change and predicate. Depen
 - **File(s)**: `crates/opi-ai/src/schema/refs.rs`, `crates/opi-ai/src/schema/normalize.rs`, `crates/opi-ai/src/schema/ir.rs`, `crates/opi-ai/src/schema/mod.rs`, `crates/opi-ai/tests/schema_engine.rs`, `crates/opi-ai/tests/schema_public.rs`, `CHANGELOG.md`
 - **Change kind**: behavioral
 - **Change**: Complete the existing explicit work-stack model across every schema-depth-dependent stage of the SDK-owned compiled-schema lifecycle. This is one bounded schema-owner repair, without a new public seam, schema rejection policy, or dependency.
-- **Closure predicate**: On an ordinary explicitly 2MiB Rust thread stack, a 10000-level lawful allOf schema, including root $id, can compile, check a scalar, normalize that scalar through validate_tool_arguments, and release the last CompiledSchema Arc normally; typed compile errors release their owned input normally; exact resolver/normalizer semantics remain unchanged and no schema depth cap, leaked owner or enlarged thread stack is used.
-- **Red-before**: {"command": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs\\auth-schema-public-probe.exe deep-id C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs; C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs\\auth-schema-public-probe.exe deep-normalize C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs; C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs\\auth-schema-public-probe.exe deep-drop C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs", "expected": "Valid deep phases complete; shallow control succeeds.", "observed": "FAIL: all3 corrected10000-depth probes on2MiB stack abort3221225725. deep-id after START; normalization/drop after COMPILE ok and CHECK true. Shallow32 exits0."}
-- **Green-after**: `python "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-hvrszrbs\replay_probe.py" --source-root "D:\Luiz\Odradek\opi" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958" --suite auth --case deep-id ; python "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-hvrszrbs\replay_probe.py" --source-root "D:\Luiz\Odradek\opi" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958" --suite auth --case deep-normalize ; python "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-hvrszrbs\replay_probe.py" --source-root "D:\Luiz\Odradek\opi" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958" --suite auth --case deep-drop`; Each isolated2MiB/10000-depth phase exits0; remove only red-isolation forget for final combined lifecycle test, require normal last-owner and compile-error cleanup.
-- **Test impact**: {"update": ["schema_engine::deep_schemas_do_not_exhaust_the_rust_stack: remove mem::forget and assert full normal release"], "add": ["isolated subprocess probes for root-$id admission / normalization / last-Arc drop on 2MiB stacks", "compile failure cleanup with an invalid selected leaf at depth, plus deep dynamic-anchor/FindBase traversal preserving existing first-match semantics"], "retain": ["productive-child and unchanged-instance NoProgress tests", "resolver source-order/dynamic/recursive/duplicate-ID corpus", "normalizer order/raw-preservation/union-arm fixtures"]}
+- **Closure predicate**: On an ordinary explicitly 2MiB Rust thread stack, a 10000-level lawful allOf schema, including root $id, can compile, check a scalar, normalize that scalar through validate_tool_arguments, and release the last CompiledSchema Arc normally. Deep local and remote from_value reference searches, both resolved and unresolved, preserve existing results without stack overflow; typed compile errors release their owned input normally. Preserve exact resolver/normalizer semantics with no schema depth cap, leaked owner or enlarged thread stack.
+- **Red-before**: {"command": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs\\auth-schema-public-probe.exe deep-id C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs; C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs\\auth-schema-public-probe.exe deep-normalize C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs; C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs\\auth-schema-public-probe.exe deep-drop C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs ; python \"C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-plan-b6-deep-ref-df9_md4t\\schema_ref_replay.py\" --source-root \"C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-ready-w8p6zu1s\\source\" --target-dir \"E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\" --mode red-isolated", "expected": "Valid deep phases complete; shallow control succeeds. Deep resolved/unresolved reference searches preserve existing compile/check results without stack overflow.", "observed": "FAIL: all3 corrected10000-depth probes on2MiB stack abort3221225725. deep-id after START; normalization/drop after COMPILE ok and CHECK true. Shallow32 exits0. Review extension: fresh offline build/relink from the pristine export executes5 reference cases; shallow missing/target and10000-depth no-ref controls pass, both10000-depth missing/target references abort3221225725 during compile. Baseline-only forget isolates the separately known Drop bug; it is not eligible green.124 source/manifests/lock inputs match the same remediation head."}
+- **Green-after**: `python "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-hvrszrbs\replay_probe.py" --source-root "D:\Luiz\Odradek\opi" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958" --suite auth --case deep-id ; python "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-hvrszrbs\replay_probe.py" --source-root "D:\Luiz\Odradek\opi" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958" --suite auth --case deep-normalize ; python "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-hvrszrbs\replay_probe.py" --source-root "D:\Luiz\Odradek\opi" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958" --suite auth --case deep-drop ; python "C:\Users\Luiz\AppData\Local\Temp\opi-plan-b6-deep-ref-df9_md4t\schema_ref_replay.py" --source-root "D:\Luiz\Odradek\opi" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958" --mode green`; Each isolated2MiB/10000-depth phase exits0; remove only red-isolation forget for final combined lifecycle test, require normal last-owner and compile-error cleanup. Additional reference replay must use --mode green:5 executed/5pass with normal DROP ok, missing refs checkfalse and target/no-ref checktrue. Add deep local/remote resolver cases preserving current-node priority, last-child match, const/enum exclusions, base propagation and invalid-id join fallback.
+- **Test impact**: {"update": ["schema_engine::deep_schemas_do_not_exhaust_the_rust_stack: remove mem::forget and assert full normal release"], "add": ["isolated subprocess probes for root-$id admission / normalization / last-Arc drop on 2MiB stacks", "compile failure cleanup with an invalid selected leaf at depth, plus deep dynamic-anchor/FindBase traversal preserving existing first-match semantics", "deep_local_ref_search and deep_remote_ref_search: resolved/unresolved deep targets, shallow/no-ref controls, normal owner release, current-node priority/last-child-match and const/enum/base propagation"], "retain": ["productive-child and unchanged-instance NoProgress tests", "resolver source-order/dynamic/recursive/duplicate-ID corpus", "normalizer order/raw-preservation/union-arm fixtures"]}
 
 ### Batch B7: adc.checked-expiration
 
@@ -567,22 +569,22 @@ Each source key owns exactly one batch with one root change and predicate. Depen
 
 ### Batch B9: duration.first-response-poll
 
-**Closure predicate**: Duration begins immediately before first response-body stream poll, includes Pending body/backpressure waits through terminal, excludes Models auth/loading and handle pre-poll time, and preserves supplied/older deferred values.
+**Closure predicate**: OpenAI Chat, ordinary Responses and Azure Responses each begin duration immediately before their own first response-body stream poll, include Pending body/backpressure waits through terminal, exclude Models auth/loading and handle pre-poll time, and preserve supplied/older deferred values. Azure owns its activation timestamp independently of the shared Responses stamping helper.
 **Dependencies**: ["B3"]
-**Verification union**: matching relinked current probe and owning focused suites; shared union below.
+**Verification union**: Both relinked Chat and Azure probes must each execute1/pass1/ignore0. Run cargo test --offline --locked -p opi-ai --test openai_chat_fixtures; cargo test --offline --locked -p opi-ai --test openai_responses_lifecycle; cargo test --offline --locked -p opi-ai --test azure_openai_fixtures, including the new azure_duration_includes_pending_first_body_poll regression and retained Azure route/auth control; shared union below.
 
 #### Fix B9.1: duration.first-response-poll
 
 - **Finding source(s)**: `phase20-codex-gpt61-703d8bd-20261101t181806z` + `1c60c2f6c88d4d5318822c7412fb4a3fd5d48287253bc661d36ba91e7c2a62ef` + P20-AUD-009
 - **Decision**: fix:duration.first-response-poll
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/tests/openai_chat_fixtures.rs`, `crates/opi-ai/tests/openai_responses_lifecycle.rs`, `CHANGELOG.md`
+- **File(s)**: `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/azure_openai.rs`, `crates/opi-ai/tests/openai_chat_fixtures.rs`, `crates/opi-ai/tests/openai_responses_lifecycle.rs`, `crates/opi-ai/tests/azure_openai_fixtures.rs`, `CHANGELOG.md`
 - **Change kind**: behavioral
-- **Change**: Move owning response activation timestamp to first poll/activation before the body await, preserving setup failure unknownness.
-- **Closure predicate**: Duration begins immediately before first response-body stream poll, includes Pending body/backpressure waits through terminal, excludes Models auth/loading and handle pre-poll time, and preserves supplied/older deferred values.
-- **Red-before**: {"command": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs\\runtime_public_probe.exe --exact duration_includes_pending_first_body_poll --nocapture --test-threads=1", "expected": "exit 101, failed required-behavior assertion after controls succeed", "observed": "FAIL: Public direct Chat: elapsed356.96ms with350ms body delay after successful headers; terminal duration_ms=Some(0); assertion >=300ms fails exit101. Chat and Responses both initialize Instant after ready body chunk."}
-- **Green-after**: `python "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-hvrszrbs\replay_probe.py" --source-root "D:\Luiz\Odradek\opi" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958" --suite runtime --case duration_includes_pending_first_body_poll`; exit 0; 1 executed, 1 passed, 0 ignored; preserving the same controls Rebuild/relink repaired source, never run a stale static baseline binary.
-- **Test impact**: "add/update focused regressions; delete none; retain owning security/lifecycle/source controls."
+- **Change**: Move each Chat/Responses/Azure owning response activation timestamp to first poll/activation before its body await, preserving setup failure unknownness. The Azure loop must be changed directly; changing the shared Responses stamping helper alone cannot move its independently owned timestamp.
+- **Closure predicate**: OpenAI Chat, ordinary Responses and Azure Responses each begin duration immediately before their own first response-body stream poll, include Pending body/backpressure waits through terminal, exclude Models auth/loading and handle pre-poll time, and preserve supplied/older deferred values. Azure owns its activation timestamp independently of the shared Responses stamping helper.
+- **Red-before**: {"command": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs\\runtime_public_probe.exe --exact duration_includes_pending_first_body_poll --nocapture --test-threads=1 ; & \"C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-plan-review-azure-0a285702b9\\ready_azure_duration_probe.exe\" --exact azure_duration_includes_pending_first_body_poll --nocapture --test-threads=1", "expected": "exit 101, failed required-behavior assertion after controls succeed", "observed": "FAIL: Public direct Chat: elapsed356.96ms with350ms body delay after successful headers; terminal duration_ms=Some(0); assertion >=300ms fails exit101. Chat and Responses both initialize Instant after ready body chunk. Azure review probe separately executes1/1failed/0ignored after exact route/api-key/Stop/usage/content controls pass:350ms post-header body delay yields elapsed352.697ms but duration_ms=Some(0), failing only>=300ms.124 build inputs match the same remediation head; initial wrong-base fixture failure is excluded."}
+- **Green-after**: `python "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-hvrszrbs\replay_probe.py" --source-root "D:\Luiz\Odradek\opi" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958" --suite runtime --case duration_includes_pending_first_body_poll ; python "C:\Users\Luiz\AppData\Local\Temp\opi-plan-review-azure-0a285702b9\replay_azure_duration.py" --source-root "D:\Luiz\Odradek\opi" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958"`; exit 0; 1 executed, 1 passed, 0 ignored; preserving the same controls Rebuild/relink repaired source, never run a stale static baseline binary. Also rebuild/relink the Azure probe: exact1executed/1pass/0ignored with all route/auth/terminal/usage/content controls and the unchanged>=300ms duration assertion after350ms body delay. Retain setup-failure unknownness and pre-poll/auth exclusion controls.
+- **Test impact**: {"add":"Azure delayed-first-body duration regression with exact route/api-key/terminal/usage/content controls", "update":"Chat/Responses first-poll regressions", "delete":"none", "retain":"owning security/lifecycle/source and setup/pre-poll controls"}
 
 ### Batch B10: projection.public-fidelity-and-facts
 
@@ -738,7 +740,7 @@ Each source key owns exactly one batch with one root change and predicate. Depen
 
 ### Batch B18: onboarding.same-source-package-execution
 
-**Closure predicate**: Actual extracted-package consumer executes all three byte-identical README/example sources using ordinary explicit builtins and synthetic loopback auth;1/1/2 real request counts plus final outcome/tool-result continuation, default-memory/lazy-construction facts and exact artifact/consumer/source identities are recorded. PASS impossible when executions absent.
+**Closure predicate**: Actual extracted-package consumer executes all three byte-identical README/example sources using ordinary explicit builtins and synthetic loopback auth;1/1/2 real request counts plus final outcome/tool-result continuation, default-memory/lazy-construction facts and exact artifact/consumer/source identities are recorded. PASS impossible when executions absent. Success/failure evidence is written only to validated external scratch/evidence.json; the tracked historical proof stays byte-identical and no unowned repository output is produced.
 **Dependencies**: ["B10"]
 **Verification union**: python scripts/pi-sdk-conformance/test_readme_examples.py; python scripts/pi-sdk-conformance/run_readme_examples.py --offline --scratch <fresh-external-scratch> --target-dir E:\opi\cargo-targets\opi-72fa37a0fa044958; cargo test --locked --offline -p opi-ai --test external_sdk; python scripts/opi-doc-check.py; git diff --check; shared union below.
 
@@ -747,13 +749,13 @@ Each source key owns exactly one batch with one root change and predicate. Depen
 - **Finding source(s)**: `phase20-codex-gpt61-703d8bd-20261101t181806z` + `1c60c2f6c88d4d5318822c7412fb4a3fd5d48287253bc661d36ba91e7c2a62ef` + P20-AUD-018
 - **Decision**: fix:execute-same-source-packaged-onboarding-with-builtins
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-ai/examples/quick_start.rs`, `crates/opi-ai/examples/quick_start_stream.rs`, `crates/opi-ai/examples/tool_loop.rs`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `scripts/pi-sdk-conformance/run_readme_examples.py`, `scripts/pi-sdk-conformance/consumer-readme/Cargo.toml`, `scripts/pi-sdk-conformance/test_readme_examples.py`, `CHANGELOG.md`
+- **File(s)**: `crates/opi-ai/examples/quick_start.rs`, `crates/opi-ai/examples/quick_start_stream.rs`, `crates/opi-ai/examples/tool_loop.rs`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `scripts/pi-sdk-conformance/run_readme_examples.py`, `scripts/pi-sdk-conformance/consumer-readme/Cargo.toml`, `scripts/pi-sdk-conformance/test_readme_examples.py`, `scripts/pi-sdk-conformance/README.md`, `CHANGELOG.md`
 - **Change kind**: behavioral
 - **Change**: Use existing public Models::new, provider_collection::register_builtin, BuiltinOverrides.base_urls, auth::AmbientAuthContext and HttpClient::new; no new SDK method, route/resolver abstraction, config key, feature or manual auth assembly.
-- **Closure predicate**: Actual extracted-package consumer executes all three byte-identical README/example sources using ordinary explicit builtins and synthetic loopback auth;1/1/2 real request counts plus final outcome/tool-result continuation, default-memory/lazy-construction facts and exact artifact/consumer/source identities are recorded. PASS impossible when executions absent.
+- **Closure predicate**: Actual extracted-package consumer executes all three byte-identical README/example sources using ordinary explicit builtins and synthetic loopback auth;1/1/2 real request counts plus final outcome/tool-result continuation, default-memory/lazy-construction facts and exact artifact/consumer/source identities are recorded. PASS impossible when executions absent. Success/failure evidence is written only to validated external scratch/evidence.json; the tracked historical proof stays byte-identical and no unowned repository output is produced.
 - **Red-before**: {"command": "D:\\Users\\Luiz\\anaconda3\\python.exe C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-phase20-remediate-hvrszrbs\\ready_onboarding_harness_probe.py", "expected": "Runner cannot report PASS without three actual example executions after package/embedding controls.", "observed": "FAIL exit1: unittest1 executed1failure; current harness returns PASS after real package/example embedding checks, execution_count0 rather than required3; subprocesses mocked, no Cargo build or live call"}
-- **Green-after**: `python scripts/pi-sdk-conformance/run_readme_examples.py --offline --scratch "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-ready-w8p6zu1s\apply-readme-package" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958"`; Actual extracted-package consumer executes all three byte-identical README/example sources using ordinary explicit builtins and synthetic loopback auth;1/1/2 real request counts plus final outcome/tool-result continuation, default-memory/lazy-construction facts and exact artifact/consumer/source identities are recorded. PASS impossible when executions absent.
-- **Test impact**: {"add": "runner subprocess acceptance/negative cases and three actual same-source controlled-peer executions plus lazy-default probe", "update": "examples, bilingual exact embeddings, consumer dependency list", "delete": "only newly unused manual resolver/import dependencies in example harness; no retained behavior tests", "retain": "existing SDK all-wire and packaging/env/lease/source controls"}
+- **Green-after**: `python scripts/pi-sdk-conformance/run_readme_examples.py --offline --scratch "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-ready-w8p6zu1s\apply-readme-package" --target-dir "E:\opi\cargo-targets\opi-72fa37a0fa044958"`; Actual extracted-package consumer executes all three byte-identical README/example sources using ordinary explicit builtins and synthetic loopback auth;1/1/2 real request counts plus final outcome/tool-result continuation, default-memory/lazy-construction facts and exact artifact/consumer/source identities are recorded. PASS impossible when executions absent. Success/failure evidence is written only to validated external scratch/evidence.json; the tracked historical proof stays byte-identical and no unowned repository output is produced.
+- **Test impact**: {"add": "runner subprocess acceptance/negative cases, external evidence output and tracked-proof preservation controls, three actual same-source controlled-peer executions plus lazy-default probe", "update": "examples, bilingual exact embeddings, consumer dependency list and harness README output/execution contract", "delete": "only newly unused manual resolver/import dependencies in example harness; no retained behavior tests", "retain": "existing SDK all-wire and packaging/env/lease/source controls"}
 
 ### Batch B19: telemetry.stream-poll-drop-context
 
@@ -843,7 +845,7 @@ Execute each created/modified focused test/filter and every same-predicate relin
     python scripts/opi-doc-check.py
     git diff --check
 
-Workflow/checker changes additionally run exact Python units plus representative subprocess invalid input/refusal. B21/cardinality uses `run_early_package_proof.py --scratch <fresh> --target-dir <existing-cache>` with no invented --offline CLI flag; both internal Cargo profiles are offline/locked and report exactly77. B18/onboarding runs actual exact package sources through controlled peers and refuses PASS with absent executions. Private/public package/native protocol gates and source/material input proofs must be refreshed when relevant changed source invalidates them; phase-wide native acceptance and F.1a remain under their existing owner after materialization.
+Workflow/checker changes additionally run exact Python units plus representative subprocess invalid input/refusal. B21/cardinality uses `run_early_package_proof.py --scratch <fresh> --target-dir <existing-cache>` with no invented --offline CLI flag; both internal Cargo profiles are offline/locked and report exactly77. B18/onboarding runs actual exact package sources through controlled peers, refuses PASS with absent executions, and verifies external scratch/evidence.json output while the tracked historical proof remains byte-identical. Private/public package/native protocol gates and source/material input proofs must be refreshed when relevant changed source invalidates them; phase-wide native acceptance and F.1a remain under their existing owner after materialization.
 
 Read complete current Unreleased before editing; all scoped0.x public behavior changes have owning bullets and synchronized current callers/docs/schemas/fixtures. Keep English/Chinese SDK README embeddings equal. Existing historical schema3/sessionv2 omission fixtures do not gain fabricated known facts or a new format. The fixed assurance artifacts have no Chinese counterpart. No ledger, source hash, task status or Phase status is written by remediation.
 
@@ -3024,6 +3026,631 @@ SHA-256 `8662825dc24f6077edd850cef25b5a0992f18d831653437e754aa45b1aa365b7`
   "execution_count": 0,
   "boundary": "Real unchanged runner main and real fresh .crate source/embedding checks; Cargo/lease subprocesses are a controlled test executor. This proves false PASS on zero execution, not successful package-graph execution."
 }
+```
+
+## Review correction evidence
+
+The user confirmed four plan-review corrections. They refine the existing B6/B9/B18 and two no-action dispositions; the24 current source keys,22 closure batches, source severities, indexed criteria and original remediation head are unchanged. No product repair or Phase verdict is claimed. The fixed assurance files have no Chinese counterpart.
+
+| Correction | Resolved plan change | Current evidence and required future green |
+|---|---|---|
+| B6 reference search | Include iterative from_value for local/remote searches, current-node pruning, last matching child, source enumeration, const/enum exclusion and branch-local base including invalid-join fallback. | New public five-case replay at2MiB/512MiB/45s: shallow missing/target and deep no-ref controls pass; both10000-depth missing/target references stack-overflow during compile. The repaired green runs all5 with normal destruction, expected missing=false/target=true/no-ref=true checks, plus owning deep local/remote resolver semantics cases. |
+| B9 Azure owner | Add azure_openai.rs and azure_openai_fixtures.rs to both ownership inventories; move Azure's own first-body activation timestamp before its await. | Exact public Azure route/api-key/no-Authorization/Stop/usage/content controls pass.350ms post-header body delay takes352.697ms but duration_ms=Some(0);1 executed/1failed. Rebuilt replay repeats the behavior red; absent filter is refused with runner exit2 despite Rust exit0. Future green requires both Chat and Azure predicates. |
+| No-action recheck entry | Replace the original verifier's overly strict current-HEAD equality with the authenticated read-only adapter below. |9 real-Git/CLI tests pass, including every merge-parent diff, source changes later reverted, other-Phase plans, non-ancestor/missing baseline, active-index drift and --seal refusal. Full recheck exits0 in19.859s across5513 inventory files and Windows/macOS/Linux-MSRV proofs. |
+| B18 output ownership | Write future runner success/failure summaries to validated external scratch/evidence.json; preserve the tracked historical proof and synchronize the harness README. | Current run_readme_examples.py:174-175 unconditionally writes the tracked file. This output decision removes that unowned write; future subprocess acceptance covers success/failure/early-refusal output placement and byte-identical historical proof. The historical file is not a repair path. |
+
+B6 and Azure inputs were independently matched to the pristine export already named above:124 source/manifests/lock inputs match `8010ed2af97cd5deeb1f7240097436fdf32b8d54`. The actual rlib SHA is `eca060db12691903af4c504de8664f6371637983d3343457ac1f44dc04214c0c`; it is the later pristine-export build, not a relabeling of the earlier `ae11d9...` artifact. Both new replay entries were exercised with explicit offline/locked build inputs and fresh linking; compiler/setup failures are excluded from behavioral red. B6 red-isolated intentionally forgets only after successful check to isolate the independently known Drop defect; it cannot satisfy green, which requires DROP ok. The original three-phase B6 probes and their lifecycle checks remain required.
+
+The recheck adapter authenticates the original verifier SHA `84f393df1923523516b1a1e19a8889889324a5c2c8ea223c255a344587b3b836`; each narrow adaptation must match exactly once. It retains the original evidence root, index/member/export/package/native/log checks and original baseline identities. It accepts only this Phase's fixed plan-pair commits after the remediation head, examining every intervening commit and merge-parent diff. Missing retained evidence and --seal are refused rather than writing files. The original verifier, summary, inventory and workflow hashes are identical before and after the full recheck. This proves original baseline proof availability, not repaired-source conformance; relevant apply changes still require fresh package/native evidence under Final Verification. The source-proof protocol separately owns uncommitted apply inputs and final tested-source binding.
+
+Both no-action records use this exact future recheck command (their plan-stage green_after.observed remains not-run):
+
+    python -B "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-proof-recheck-sh2fdjvs\recheck_ready_proofs.py"
+
+The new helper boundary test command is `python -B "C:\Users\Luiz\AppData\Local\Temp\opi-phase20-proof-recheck-sh2fdjvs\test_recheck_ready_proofs.py"`;9 tests passed. B6 replay and Azure replay future commands are in their batch records. Test impact for this revision: add external bounded probes/replay and proof-admission checks; update planned regression/ownership descriptions; delete none; retain existing runtime suites and sealed proof. Repository runtime tests are unchanged.
+
+### Review evidence inventory
+
+Hashes bind original file bytes. The source blocks below note their original line endings so extraction can preserve those bytes. These files are proof inputs, not alternative plan or result artifacts.
+
+| File | SHA-256 |
+|---|---|
+| `C:\Users\Luiz\AppData\Local\Temp\opi-plan-b6-deep-ref-df9_md4t\source-binding.json` | `74bcdc0d59ac84922da2a2eac10addf646484ccaf4f18a341f48157094574be4` |
+| `C:\Users\Luiz\AppData\Local\Temp\opi-plan-b6-deep-ref-df9_md4t\replay-owojojgw\evidence.json` | `2c135da3042747a87ff665e41dfc93284226c49a6521eb689d55649231d667db` |
+| `C:\Users\Luiz\AppData\Local\Temp\opi-plan-review-azure-0a285702b9\evidence.json` | `dbc5eec93db5f431d838ef2c304b4fc16ba2f6066507dc18c1663d3e5060bf2e` |
+| `C:\Users\Luiz\AppData\Local\Temp\opi-plan-review-azure-0a285702b9\run.log` | `a7babe8475e0b049ef5f4bfddeabf988f14ad8e7e00d23a2df03aa4e142ac9ed` |
+| `C:\Users\Luiz\AppData\Local\Temp\opi-plan-review-azure-0a285702b9\replay-validation.json` | `ad0a8fa910e5560f674e4955be93f7c11eba5b0413efbbb138b5010b4f6859e1` |
+| `C:\Users\Luiz\AppData\Local\Temp\opi-plan-review-azure-0a285702b9\azure-duration-replay-kqyvan4c\record.json` | `1f38c9021a8704f32ca2d2c4785ccf8e1205744e3df266417b96e91a3f55985b` |
+| `C:\Users\Luiz\AppData\Local\Temp\opi-plan-review-azure-0a285702b9\azure-duration-replay-sv22u5yk\record.json` | `c14c3284bdbb2111627036786a58431b014d05f023b5c5bdd3d822f5508e1457` |
+| `C:\Users\Luiz\AppData\Local\Temp\opi-phase20-proof-recheck-sh2fdjvs\test_recheck_ready_proofs.py` | `fec612184b81f0eb69c7180484deb1379e3619494bf4678e7603ed60412c1e8b` |
+| `C:\Users\Luiz\AppData\Local\Temp\opi-phase20-proof-recheck-sh2fdjvs\boundary-tests.log` | `dd681eba9adc2342ac5e2b9f74d3b9f02038a8c2cc77e9b41ba12c8d73b2bf95` |
+| `C:\Users\Luiz\AppData\Local\Temp\opi-phase20-proof-recheck-sh2fdjvs\full-recheck.record.json` | `8e4089d0c7cfb096d0e840a5969bcbfc7b950194c02099fa4167999f9b9511ce` |
+| `C:\Users\Luiz\AppData\Local\Temp\opi-phase20-proof-recheck-sh2fdjvs\full-recheck.stdout` | `8c05ac78c34cd12717b924745c37642b5866dd7c66a39083f16c2dafde0d7be0` |
+
+### Review executable source: schema_ref_probe.rs
+
+Original path: `C:\Users\Luiz\AppData\Local\Temp\opi-plan-b6-deep-ref-df9_md4t\schema_ref_probe.rs`; SHA-256 `013e16f574ff3cabbc6608ff2f1beec21f05d79fa8665bb01797ce7a4ada88b9`; line endings: CRLF; final newline: true.
+
+```rust
+use serde_json::{Map, Value};
+use std::io;
+
+fn main() {
+    // The runner installs process limits before releasing this gate.
+    let mut gate = String::new();
+    io::stdin().read_line(&mut gate).unwrap();
+    assert_eq!(gate.trim(), "go");
+    let args: Vec<String> = std::env::args().collect();
+    let depth: usize = args[1].parse().unwrap();
+    let reference = args[2].clone();
+    let isolated_red = args[3] == "red-isolated";
+    assert!(matches!(reference.as_str(), "none" | "missing" | "target"));
+    assert!(matches!(args[3].as_str(), "green" | "red-isolated"));
+    std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || {
+            let mut leaf = Map::new();
+            leaf.insert("type".into(), Value::String("integer".into()));
+            // A real leaf anchor provides a resolved-reference positive control.
+            leaf.insert("$anchor".into(), Value::String("target".into()));
+            let mut schema = Value::Object(leaf);
+            for _ in 0..depth {
+                let mut wrapper = Map::new();
+                wrapper.insert("allOf".into(), Value::Array(vec![schema]));
+                schema = Value::Object(wrapper);
+            }
+            if reference != "none" {
+                schema.as_object_mut().unwrap().insert(
+                    "$ref".into(), Value::String(format!("#{reference}")),
+                );
+            }
+            eprintln!("COMPILE start depth={depth} reference={reference}");
+            let compiled = opi_ai::schema::compile(schema).unwrap();
+            eprintln!("COMPILE ok depth={depth} reference={reference}");
+            let expected = reference != "missing";
+            assert_eq!(compiled.check(&Value::Number(1.into())).unwrap(), expected);
+            eprintln!("CHECK ok expected={expected}");
+            if isolated_red {
+                // Baseline-only isolation of the independently known Drop bug.
+                // Green runs must execute normal destruction below.
+                std::mem::forget(compiled);
+                eprintln!("ISOLATED_RED owner intentionally forgotten");
+            } else {
+                drop(compiled);
+                eprintln!("DROP ok");
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+```
+
+### Review executable source: schema_ref_replay.py
+
+Original path: `C:\Users\Luiz\AppData\Local\Temp\opi-plan-b6-deep-ref-df9_md4t\schema_ref_replay.py`; SHA-256 `51add3cc62dfdc2ddfdf8310cf085bae12b447d07e741cc47b68a07298838445`; line endings: CRLF; final newline: true.
+
+```python
+"""Rebuild and relink the public deep-reference probe against explicit SDK source."""
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import tempfile
+
+CASES = [
+    ("shallow-unresolved", 32, "missing"),
+    ("shallow-resolved", 32, "target"),
+    ("deep-plain", 10000, "none"),
+    ("deep-unresolved", 10000, "missing"),
+    ("deep-resolved", 10000, "target"),
+]
+MEMORY_LIMIT = 512 * 1024 * 1024
+TIMEOUT = 45
+
+def digest(path):
+    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+
+def windows_job():
+    from ctypes import wintypes as w
+    class Basic(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_longlong),
+                    ("PerJobUserTimeLimit", ctypes.c_longlong),
+                    ("LimitFlags", w.DWORD),
+                    ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t),
+                    ("ActiveProcessLimit", w.DWORD), ("Affinity", ctypes.c_size_t),
+                    ("PriorityClass", w.DWORD), ("SchedulingClass", w.DWORD)]
+    class Io(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_ulonglong) for name in
+                    ["ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                     "ReadTransferCount", "WriteTransferCount", "OtherTransferCount"]]
+    class Extended(ctypes.Structure):
+        _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", Io),
+                    ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                    ("PeakJobMemoryUsed", ctypes.c_size_t)]
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, w.LPCWSTR]
+    kernel.CreateJobObjectW.restype = w.HANDLE
+    kernel.SetInformationJobObject.argtypes = [w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD]
+    kernel.SetInformationJobObject.restype = w.BOOL
+    kernel.AssignProcessToJobObject.argtypes = [w.HANDLE, w.HANDLE]
+    kernel.AssignProcessToJobObject.restype = w.BOOL
+    kernel.CloseHandle.argtypes = [w.HANDLE]
+    kernel.CloseHandle.restype = w.BOOL
+    job = kernel.CreateJobObjectW(None, None)
+    if not job:
+        raise ctypes.WinError(ctypes.get_last_error())
+    info = Extended()
+    info.BasicLimitInformation.LimitFlags = 0x100 | 0x2000
+    info.ProcessMemoryLimit = MEMORY_LIMIT
+    if not kernel.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+        error = ctypes.WinError(ctypes.get_last_error())
+        kernel.CloseHandle(job)
+        raise error
+    return kernel, job
+
+def posix_limits():
+    import resource
+    resource.setrlimit(resource.RLIMIT_AS, (MEMORY_LIMIT, MEMORY_LIMIT))
+
+def run_cases(binary, mode, out):
+    records = []
+    for name, depth, reference in CASES:
+        command = [str(binary), str(depth), reference, mode]
+        kwargs = {"stdin": subprocess.PIPE, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE}
+        job = None
+        if os.name == "nt":
+            kernel, job = windows_job()
+            kwargs["creationflags"] = 0x08000000
+        else:
+            kwargs["preexec_fn"] = posix_limits
+        proc = None
+        timed_out = False
+        try:
+            proc = subprocess.Popen(command, **kwargs)
+            if job and not kernel.AssignProcessToJobObject(job, int(proc._handle)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            try:
+                stdout, stderr = proc.communicate(b"go\n", timeout=TIMEOUT)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                proc.kill()
+                stdout, stderr = proc.communicate()
+        except BaseException:
+            if proc is not None and proc.poll() is None:
+                proc.kill()
+                proc.communicate()
+            raise
+        finally:
+            if job:
+                kernel.CloseHandle(job)
+        log = stdout + stderr
+        log_path = out / (name + ".log")
+        log_path.write_bytes(log)
+        decoded = log.decode("utf-8", errors="replace")
+        required = "DROP ok" if mode == "green" else "ISOLATED_RED owner intentionally forgotten"
+        passed = proc.returncode == 0 and not timed_out and "COMPILE ok" in decoded and "CHECK ok" in decoded and required in decoded
+        record = {"case": name, "depth": depth, "reference": reference, "command": command,
+                  "exit": proc.returncode, "timed_out": timed_out, "passed": passed,
+                  "log": str(log_path), "log_sha256": digest(log_path), "observation": decoded,
+                  "stack_bytes": 2 * 1024 * 1024, "memory_limit_bytes": MEMORY_LIMIT,
+                  "timeout_seconds": TIMEOUT, "mode": mode}
+        records.append(record)
+        print(json.dumps(record), flush=True)
+    return records
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source-root", required=True)
+    parser.add_argument("--target-dir", required=True)
+    parser.add_argument("--mode", choices=["green", "red-isolated"], default="green")
+    args = parser.parse_args()
+    source = pathlib.Path(args.source_root).resolve()
+    target = pathlib.Path(args.target_dir).resolve()
+    root = pathlib.Path(__file__).resolve().parent
+    probe = root / "schema_ref_probe.rs"
+    out = pathlib.Path(tempfile.mkdtemp(prefix="replay-", dir=root))
+    print("EVIDENCE=" + str(out), flush=True)
+    env = dict(os.environ, CARGO_TARGET_DIR=str(target), CARGO_INCREMENTAL="1")
+    build_command = ["cargo", "build", "--offline", "--locked", "-p", "opi-ai", "--message-format=json"]
+    build = subprocess.run(build_command, cwd=source, env=env, capture_output=True, timeout=600)
+    (out / "build.jsonl").write_bytes(build.stdout)
+    (out / "build.stderr.log").write_bytes(build.stderr)
+    if build.returncode:
+        print(build.stderr.decode(errors="replace"))
+        return build.returncode
+    rows = [json.loads(line) for line in build.stdout.decode("utf-8").splitlines() if line.strip()]
+    artifacts = {row["target"]["name"]: row for row in rows if row.get("reason") == "compiler-artifact"}
+    libs = {name: next(path for path in artifacts[name]["filenames"] if path.endswith(".rlib"))
+            for name in ["opi_ai", "serde_json"]}
+    binary = out / ("schema_ref_probe.exe" if os.name == "nt" else "schema_ref_probe")
+    command = ["rustc", "--edition=2024", str(probe), "-L", "dependency=" + str(target / "debug" / "deps")]
+    for name, path in libs.items():
+        command += ["--extern", name + "=" + path]
+    for row in rows:
+        if row.get("reason") == "build-script-executed":
+            for path in row.get("linked_paths", []):
+                command += ["-L", path]
+    command += ["-o", str(binary)]
+    compile_result = subprocess.run(command, cwd=source, capture_output=True, timeout=120)
+    (out / "compile.log").write_bytes(compile_result.stdout + compile_result.stderr)
+    if compile_result.returncode:
+        print((compile_result.stdout + compile_result.stderr).decode(errors="replace"))
+        return compile_result.returncode
+    records = run_cases(binary, args.mode, out)
+    evidence = {"source_root": str(source), "mode": args.mode, "build_command": build_command,
+                "build_stdout_sha256": digest(out / "build.jsonl"), "compile_command": command,
+                "probe_sha256": digest(probe), "runner_sha256": digest(__file__),
+                "artifact_sha256": {name: digest(path) for name, path in libs.items()},
+                "binary_sha256": digest(binary), "executed": len(records),
+                "passed": sum(record["passed"] for record in records), "cases": records,
+                "green_eligible": args.mode == "green"}
+    (out / "evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+    return 0 if len(records) == len(CASES) and all(record["passed"] for record in records) else 1
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+### Review executable source: ready_azure_duration_probe.rs
+
+Original path: `C:\Users\Luiz\AppData\Local\Temp\opi-plan-review-azure-0a285702b9\ready_azure_duration_probe.rs`; SHA-256 `6b03614fe5f61687dae80e3fc12c949bc53d74004433f423c1bb0a05f875be39`; line endings: CRLF; final newline: false.
+
+```rust
+use std::time::Duration;
+use opi_ai::{ModelInfo, WireApi};
+use opi_ai::azure_openai::AzureOpenAIProvider;
+use opi_ai::provider::{Request, Provider, CacheRetention};
+use opi_ai::message::{Message, UserMessage, InputContent, AssistantMessage};
+use opi_ai::auth::{AuthScheme, ResolvedAuth};
+use opi_ai::stream::{ChatStream, StopReason};
+use tokio_util::sync::CancellationToken;
+
+fn request() -> Request {
+    Request { transport:Default::default(), model:"azure:my-gpt4o".into(),
+        context:opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt:None, messages:vec![Message::User(UserMessage {
+                content:vec![InputContent::Text{text:"Hello".into()}], timestamp_ms:0})], tools:vec![]
+        }).unwrap(), max_tokens:None, temperature:None, sampling_params:Default::default(),
+        thinking:Default::default(), stop_sequences:vec![], metadata:None,
+        cancel:CancellationToken::new(), timeout:Some(Duration::from_secs(5)), extra_headers:vec![],
+        cache_retention:CacheRetention::None, session_id:None, telemetry_context:None, callbacks:Default::default() }
+}
+
+async fn azure_on_peer(body_delay: Duration) -> (AssistantMessage, Duration) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address=listener.local_addr().unwrap();
+    let task=tokio::spawn(async move {
+        let (mut socket,_)=listener.accept().await.unwrap();
+        let mut request=Vec::new();
+        let mut buf=[0u8;4096];
+        loop {
+            let read=socket.read(&mut buf).await.unwrap();
+            assert!(read>0,"request terminated before complete body");
+            request.extend_from_slice(&buf[..read]);
+            if let Some(end)=request.windows(4).position(|bytes|bytes==b"\r\n\r\n") {
+                let head=String::from_utf8(request[..end].to_vec()).unwrap().to_ascii_lowercase();
+                let length=head.lines().find_map(|line|line.strip_prefix("content-length:")
+                    .map(|value|value.trim().parse::<usize>().unwrap())).unwrap();
+                if request.len()>=end+4+length {
+                    assert!(head.starts_with("post /openai/v1/responses?api-version=v1 http/1.1"));
+                    assert!(head.contains("\r\napi-key: synthetic-azure-key"));
+                    assert!(!head.contains("\r\nauthorization:"));
+                    break;
+                }
+            }
+        }
+        socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await.unwrap();
+        socket.flush().await.unwrap();
+        tokio::time::sleep(body_delay).await;
+        let body=concat!(
+            "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_az\",\"status\":\"in_progress\",\"model\":\"my-gpt4o\",\"output\":[]}}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_az\",\"status\":\"completed\",\"model\":\"my-gpt4o\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hi\"}]}],\"usage\":{\"input_tokens\":7,\"output_tokens\":3}}}\n\n");
+        socket.write_all(format!("{:x}\r\n{}\r\n0\r\n\r\n",body.len(),body).as_bytes()).await.unwrap();
+        socket.flush().await.unwrap();
+    });
+    let model=ModelInfo::new("my-gpt4o","my-gpt4o",WireApi::AzureOpenAiResponses,
+        opi_ai::registry::ModelCapabilities::new(200_000,100_000).with_streaming(true));
+    let provider=AzureOpenAIProvider::for_records(Some(format!("http://{address}/openai/v1")),vec![model],None).unwrap();
+    let auth=ResolvedAuth { env:Default::default(), scheme:AuthScheme::ApiKey,
+        secret:secrecy::SecretString::from("synthetic-azure-key"), base_url:None,
+        account_id:None, provenance:Default::default() };
+    let at=std::time::Instant::now();
+    let result=ChatStream::new(provider.stream_prepared(request(),auth)).result().await.unwrap();
+    let elapsed=at.elapsed();
+    task.await.unwrap();
+    assert_eq!(result.stop_reason,StopReason::Stop);
+    assert_eq!(result.usage.input_tokens,7);
+    assert_eq!(result.usage.output_tokens,3);
+    assert!(result.duration_ms.is_some());
+    (result,elapsed)
+}
+
+#[test]
+fn azure_duration_includes_pending_first_body_poll() {
+    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+        let (control,control_elapsed)=azure_on_peer(Duration::ZERO).await;
+        eprintln!("CONTROL Azure exact route/api-key/terminal/usage success elapsed={control_elapsed:?} duration_ms={:?}",control.duration_ms);
+        let (delayed,elapsed)=azure_on_peer(Duration::from_millis(350)).await;
+        assert_eq!(delayed.content,control.content);
+        assert!(elapsed>=Duration::from_millis(300));
+        eprintln!("OBSERVED Azure post-header body delay=350ms elapsed={elapsed:?} duration_ms={:?}",delayed.duration_ms);
+        assert!(delayed.duration_ms.unwrap()>=300,"Azure first Pending body wait belongs to response duration");
+    });
+}
+```
+
+### Review executable source: replay_azure_duration.py
+
+Original path: `C:\Users\Luiz\AppData\Local\Temp\opi-plan-review-azure-0a285702b9\replay_azure_duration.py`; SHA-256 `3b273cca32d874eb389f033d5d5f4b473bfc6b055d41565708a9f93d3c7f22c1`; line endings: LF; final newline: false.
+
+```python
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import re
+import subprocess
+import tempfile
+
+
+def digest(path):
+    return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--source-root', required=True)
+    parser.add_argument('--target-dir', required=True)
+    parser.add_argument('--case', default='azure_duration_includes_pending_first_body_poll')
+    args = parser.parse_args()
+    owner = pathlib.Path(__file__).resolve().parent
+    source = pathlib.Path(args.source_root).resolve()
+    target = pathlib.Path(args.target_dir).resolve()
+    out = pathlib.Path(tempfile.mkdtemp(prefix='azure-duration-replay-', dir=owner))
+    record = {
+        'source_root': str(source), 'target_dir': str(target),
+        'runner_sha256': digest(__file__), 'requested_case': args.case,
+    }
+
+    def finish(code):
+        record['runner_exit'] = code
+        (out / 'record.json').write_text(json.dumps(record, indent=2), encoding='utf-8')
+        print('EVIDENCE=' + str(out))
+        return code
+
+    env = dict(os.environ, CARGO_TARGET_DIR=str(target), CARGO_INCREMENTAL='1')
+    build = ['cargo', 'build', '--offline', '--locked', '-p', 'opi-ai', '--message-format=json']
+    record['build_command'] = build
+    result = subprocess.run(build, cwd=source, env=env, capture_output=True, timeout=600)
+    (out / 'build.jsonl').write_bytes(result.stdout)
+    (out / 'build.stderr.log').write_bytes(result.stderr)
+    record['build_exit'] = result.returncode
+    if result.returncode:
+        print(result.stderr.decode(errors='replace'))
+        return finish(result.returncode)
+    rows = [json.loads(line) for line in result.stdout.decode('utf-8').splitlines() if line.strip()]
+    needed = ['opi_ai', 'tokio', 'tokio_util', 'secrecy']
+    artifacts = {}
+    for name in needed:
+        candidates = [row for row in rows if row.get('reason') == 'compiler-artifact'
+                      and row['target']['name'] == name
+                      and not row['profile']['test']
+                      and any(path.endswith('.rlib') for path in row['filenames'])]
+        if len(candidates) != 1:
+            record['refusal'] = f'expected one current Cargo rlib artifact for {name}, got {len(candidates)}'
+            print('REFUSED: ' + record['refusal'])
+            return finish(2)
+        artifacts[name] = next(path for path in candidates[0]['filenames'] if path.endswith('.rlib'))
+    record['artifacts'] = {name: {'path': path, 'sha256': digest(path)}
+                           for name, path in artifacts.items()}
+    original = owner / 'ready_azure_duration_probe.rs'
+    original_bytes = original.read_bytes()
+    text = original_bytes.decode('utf-8')
+    provider = (source / 'crates/opi-ai/src/provider.rs').read_text(encoding='utf-8')
+    migrations = 0
+    if re.search(r'pub\s+projection\s*:', provider):
+        text, migrations = re.subn(r'\bRequest\s*\{\s*(?=transport\s*:)',
+                                  lambda match: match[0] + 'projection: Default::default(),', text)
+    probe = out / original.name
+    probe.write_bytes(text.encode('utf-8') if migrations else original_bytes)
+    record.update(original_probe_sha256=digest(original), probe_sha256=digest(probe),
+                  request_default_migrations=migrations)
+    binary = out / ('probe.exe' if os.name == 'nt' else 'probe')
+    compile_command = ['rustc', '--edition=2024', '--test', str(probe),
+                       '-L', 'dependency=' + str(target / 'debug/deps')]
+    for name, path in artifacts.items():
+        compile_command += ['--extern', name + '=' + path]
+    for path in dict.fromkeys(path for row in rows if row.get('reason') == 'build-script-executed'
+                              for path in row.get('linked_paths', [])):
+        compile_command += ['-L', path]
+    compile_command += ['-o', str(binary)]
+    record['compile_command'] = compile_command
+    compiled = subprocess.run(compile_command, capture_output=True, timeout=120)
+    (out / 'compile.log').write_bytes(compiled.stdout + compiled.stderr)
+    record['compile_exit'] = compiled.returncode
+    if compiled.returncode:
+        print((compiled.stdout + compiled.stderr).decode(errors='replace'))
+        return finish(compiled.returncode)
+    record['binary_sha256'] = digest(binary)
+    run_command = [str(binary), '--exact', args.case, '--nocapture', '--test-threads=1']
+    record['run_command'] = run_command
+    result = subprocess.run(run_command, capture_output=True, timeout=20)
+    log = result.stdout + result.stderr
+    (out / 'run.log').write_bytes(log)
+    text = log.decode('utf-8', errors='replace')
+    print(text)
+    record.update(probe_exit=result.returncode, log_sha256=digest(out / 'run.log'))
+    matches = re.findall(r'test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed; '
+                         r'(\d+) ignored; (\d+) measured; (\d+) filtered out;', text)
+    if len(matches) != 1:
+        record['refusal'] = 'expected exactly one Rust test-result record'
+        print('REFUSED: ' + record['refusal'])
+        return finish(2)
+    passed, failed, ignored, measured, filtered = map(int, matches[0])
+    record.update(executed=passed + failed, passed=passed, failed=failed,
+                  ignored=ignored, measured=measured, filtered_out=filtered)
+    if passed + failed != 1 or ignored != 0 or measured != 0 or filtered != 0:
+        record['refusal'] = 'expected exactly one executed test, zero ignored/measured/filtered tests'
+        print('REFUSED: ' + record['refusal'])
+        return finish(2)
+    unchanged = all(digest(path) == record['artifacts'][name]['sha256']
+                    for name, path in artifacts.items())
+    record['artifacts_unchanged_after_run'] = unchanged
+    if not unchanged:
+        record['refusal'] = 'compiled artifact changed during replay'
+        print('REFUSED: ' + record['refusal'])
+        return finish(2)
+    return finish(result.returncode)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
+```
+
+### Review executable source: recheck_ready_proofs.py
+
+Original path: `C:\Users\Luiz\AppData\Local\Temp\opi-phase20-proof-recheck-sh2fdjvs\recheck_ready_proofs.py`; SHA-256 `47cfb520108d011b775b0ba7b2170a14fc93c46fbd2ff0b346fff0f3c8e8bd75`; line endings: LF; final newline: true.
+
+```python
+"""Read-only replay of the sealed Phase 20 proof after fixed-plan-only commits.
+
+This adapter authenticates the original verifier, preserves its evidence root,
+source baseline, identities, inventory and all evidence checks, and admits only
+the source-boundary exception in the remediation disposition contract. It does
+not prove repaired source or replace apply-stage native/package revalidation.
+"""
+from __future__ import annotations
+
+import hashlib
+import pathlib
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+ORIGINAL = pathlib.Path(
+    r"C:/Users/Luiz/AppData/Local/Temp/opi-phase20-ready-w8p6zu1s/verify_ready_proofs.py"
+)
+ORIGINAL_SHA256 = "84f393df1923523516b1a1e19a8889889324a5c2c8ea223c255a344587b3b836"
+PLAN_PATHS = frozenset({
+    "docs/snapshots/phase20/assurance/remediation.plan.md",
+    "docs/snapshots/phase20/assurance/remediation.plan.dispositions.jsonl",
+})
+
+
+class BoundaryError(ValueError):
+    pass
+
+
+def git(repo: pathlib.Path, *args: str) -> bytes:
+    result = subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, check=False
+    )
+    if result.returncode:
+        raise BoundaryError("Git source-boundary check failed: " + " ".join(args))
+    return result.stdout
+
+
+def verify_plan_only_boundary(repo: pathlib.Path, baseline: str) -> str:
+    """Check every intervening commit and every merge-parent diff, not net diff."""
+    head = git(repo, "rev-parse", "HEAD").decode("ascii").strip()
+    if git(repo, "rev-parse", "--verify", baseline + "^{commit}").decode("ascii").strip() != baseline:
+        raise BoundaryError("Remediation head is not an exact committed identity")
+    git(repo, "merge-base", "--is-ancestor", baseline, head)
+    allowed = {path.encode("utf-8") for path in PLAN_PATHS}
+    for commit in git(repo, "rev-list", f"{baseline}..{head}").decode("ascii").splitlines():
+        paths = git(
+            repo, "diff-tree", "--root", "--no-commit-id", "--name-only",
+            "--no-renames", "-r", "-m", "-z", commit,
+        )
+        extra = set(paths.split(b"\0")) - allowed - {b""}
+        if extra:
+            names = ", ".join(sorted(path.decode("utf-8", errors="backslashreplace") for path in extra))
+            raise BoundaryError(f"Non-plan source drift after remediation head in {commit}: {names}")
+    if git(repo, "rev-parse", "HEAD").decode("ascii").strip() != head:
+        raise BoundaryError("HEAD changed during proof admission")
+    return head
+
+
+def replace_once(source: str, before: str, after: str) -> str:
+    if source.count(before) != 1:
+        raise BoundaryError("Original verifier adaptation site is not unique: " + before)
+    return source.replace(before, after, 1)
+
+
+def load_original() -> dict:
+    original = ORIGINAL.read_bytes()
+    if hashlib.sha256(original).hexdigest() != ORIGINAL_SHA256:
+        raise BoundaryError("Original sealed verifier digest changed")
+    source = original.decode("utf-8")
+    source = replace_once(
+        source,
+        "require(subprocess.check_output(['git','-C',str(REPO),'rev-parse','HEAD'],text=True).strip()==H,'Original HEAD drift')",
+        "_verify_plan_only_boundary(REPO, H)",
+    )
+    # All existing digest/content checks remain. Missing retained artifacts fail
+    # instead of being copied or regenerated inside the immutable proof roots.
+    source = replace_once(
+        source,
+        "dest=E/'retained-windows-native'/folder.name/(profile+'-'+basename(original));dest.parent.mkdir(parents=True,exist_ok=True)",
+        "dest=E/'retained-windows-native'/folder.name/(profile+'-'+basename(original))",
+    )
+    source = replace_once(
+        source,
+        "if not dest.exists():shutil.copyfile(local,dest)",
+        "require(dest.is_file(),'Missing sealed retained native archive: '+str(dest))",
+    )
+    source = replace_once(
+        source,
+        "dest=E/'retained-windows-native'/folder.name/(last['name']+'-'+current.name);dest.parent.mkdir(parents=True,exist_ok=True)",
+        "dest=E/'retained-windows-native'/folder.name/(last['name']+'-'+current.name)",
+    )
+    source = replace_once(
+        source,
+        "if not dest.exists():shutil.copyfile(current,dest)",
+        "require(dest.is_file(),'Missing sealed retained executable: '+str(dest))",
+    )
+    source = replace_once(
+        source,
+        "if not sealed.exists():sealed.write_bytes(workflow)",
+        "require(sealed.is_file(),'Missing sealed CI workflow: '+str(sealed))",
+    )
+    source = replace_once(
+        source,
+        "parser.add_argument('--seal',action='store_true');args=parser.parse_args()",
+        "parser.add_argument('--seal',action='store_true');args=parser.parse_args();require(not args.seal,'Historical proof is immutable; --seal is refused')",
+    )
+    namespace = {
+        "__name__": "_sealed_phase20_proof",
+        "__file__": str(ORIGINAL),
+        "_verify_plan_only_boundary": verify_plan_only_boundary,
+    }
+    exec(compile(source, str(ORIGINAL), "exec"), namespace)
+    return namespace
+
+
+def main() -> int:
+    if len(sys.argv) != 1:
+        raise BoundaryError("This read-only adapter accepts no arguments; --seal is refused")
+    verifier = load_original()
+    return verifier["main"]()
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print("ready-proof-recheck: INCOMPLETE " + str(exc), file=sys.stderr)
+        raise SystemExit(2)
 ```
 
 ## Materialization and approval boundary
