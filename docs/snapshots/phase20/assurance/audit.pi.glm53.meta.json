@@ -1,10 +1,10 @@
 {
   "schema_version": 3,
-  "audit_run_id": "phase20-pi-glm53-6adacc37-20261101t164203z",
+  "audit_run_id": "phase20-pi-glm53-44374ec-20261103t160703z",
   "phase": 20,
-  "audit_head": "6adacc379df15ff2e5fa66ddb2afd3abeef5bb89",
+  "audit_head": "44374ec3c70b82125a183757dde2017b46299c45",
   "reviewer_id": "pi",
-  "reviewer_identity": "pi coding agent harness (operator-named reviewer)",
+  "reviewer_identity": "pi coding agent harness, fresh independent session",
   "model_id": "glm53",
   "reviewer_model_id": "glm53",
   "model_identity_source": "operator-declared",
@@ -49,7 +49,7 @@
     },
     {
       "path": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md",
-      "sha256": "0c05c6a7fbc2a15bf1c727687af35848032e48ca3969588066c6a6777ff267e0"
+      "sha256": "c831586339910f9496a64e6b3c9390a0b7a2a366d37230222874a5f399099a5d"
     },
     {
       "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md",
@@ -84,7 +84,7 @@
       "sha256": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c"
     }
   ],
-  "requirements_sha256": "3f790100e39e3164bc8248d20b84d273640e41978d66dcc81875f81705898b5d",
-  "findings_sha256": "fd1c6180b3c1951fa82efc2bdf2244af006ea8db1feca261c90267c59a881e1a",
-  "verdict": "PASS-WITH-FINDINGS"
+  "requirements_sha256": "4ffa18d273639122681a2285fe29d51cc2022b5330d54ddd9ac9bbab79bb7bf8",
+  "findings_sha256": "f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990",
+  "verdict": "FAIL"
 }
