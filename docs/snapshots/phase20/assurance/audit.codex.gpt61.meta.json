@@ -1,14 +1,14 @@
 {
-  "audit_run_id": "phase20-codex-gpt61-703d8bd-20261101t181806z",
+  "schema_version": 3,
+  "audit_run_id": "phase20-codex-gpt61-b3f1810-20261103t142820z",
   "phase": 20,
-  "audit_head": "703d8bd8f5033e5ecc89fc1950fc6b7615b64068",
+  "audit_head": "b3f1810801195d4e4746d9c9f0ac63d39da57313",
   "reviewer_id": "codex",
   "reviewer_identity": "Codex",
   "model_id": "gpt61",
   "reviewer_model_id": "gpt61",
   "model_identity_source": "operator-declared",
   "independence": "fresh-context-same-family",
-  "schema_version": 3,
   "baseline_policy": "latest-committed-spec",
   "baseline_sources": [
     {
@@ -49,7 +49,7 @@
     },
     {
       "path": "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md",
-      "sha256": "0c05c6a7fbc2a15bf1c727687af35848032e48ca3969588066c6a6777ff267e0"
+      "sha256": "c831586339910f9496a64e6b3c9390a0b7a2a366d37230222874a5f399099a5d"
     },
     {
       "path": "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md",
@@ -84,7 +84,7 @@
       "sha256": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c"
     }
   ],
-  "requirements_sha256": "688dcd613cb65eec466fd4aa3583369b26a29bfc2a14c772159f503211b2f177",
-  "findings_sha256": "1c60c2f6c88d4d5318822c7412fb4a3fd5d48287253bc661d36ba91e7c2a62ef",
+  "requirements_sha256": "c2600889ab81ce63688c346e9d7d3bf2a1e0fdbfc09daeba2b08f42b50c69898",
+  "findings_sha256": "4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6",
   "verdict": "FAIL"
 }

@@ -3,13 +3,13 @@
   "members": [
     {
       "artifact_stem": "audit.codex.gpt61",
-      "audit_head": "703d8bd8f5033e5ecc89fc1950fc6b7615b64068",
-      "audit_run_id": "phase20-codex-gpt61-703d8bd-20261101t181806z",
+      "audit_head": "b3f1810801195d4e4746d9c9f0ac63d39da57313",
+      "audit_run_id": "phase20-codex-gpt61-b3f1810-20261103t142820z",
       "digests": {
-        "findings_sha256": "1c60c2f6c88d4d5318822c7412fb4a3fd5d48287253bc661d36ba91e7c2a62ef",
-        "meta_sha256": "2e3f257a65a5b9a4215bfb54bfadc9ed9014c51742851781ce579a6e6bf4a6cc",
-        "report_sha256": "11950b30586154137615d09446c5895bdfb27765ab24d0972ece41dc049ac8ac",
-        "requirements_sha256": "688dcd613cb65eec466fd4aa3583369b26a29bfc2a14c772159f503211b2f177"
+        "findings_sha256": "4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6",
+        "meta_sha256": "c32046ece08058e59e274ddd2bb37276edc21ca9e296355f8908d505ba51a5e4",
+        "report_sha256": "47e99f283f5883a9856e957f3e43ab4be3bf93f375bcca036673d54dab787ca0",
+        "requirements_sha256": "c2600889ab81ce63688c346e9d7d3bf2a1e0fdbfc09daeba2b08f42b50c69898"
       },
       "model_id": "gpt61",
       "reviewer_id": "codex",
@@ -31,6 +31,6 @@
     }
   ],
   "phase": 20,
-  "revision": 4,
+  "revision": 6,
   "schema_version": 2
 }
