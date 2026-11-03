@@ -481,8 +481,14 @@ class OperatorTests(unittest.TestCase):
         artifact = self.root / "compiler-binary"
         artifact.write_text("new compiled executable")
         calls = []
+        lease_calls = []
+        status_calls = []
         def command(argv, cwd, **kwargs):
             argv = [str(value) for value in argv]
+            if len(argv) > 3 and argv[2] == "lease":
+                lease_calls.append(argv[3])
+            if len(argv) > 3 and argv[2] == "status":
+                status_calls.append(argv[3:])
             if argv[:2] == ["git", "ls-files"]:
                 stdout = "Cargo.lock\0Cargo.toml\0crates/sample/src/main.rs\0"
             elif argv[:2] == ["git", "rev-parse"]:
@@ -503,6 +509,8 @@ class OperatorTests(unittest.TestCase):
         with patch.object(commands, "run", side_effect=command), patch("operator_flow.cargo_build", side_effect=compiler), patch.dict(os.environ, {"CARGO_TARGET_DIR":str(self.root / "shared-cargo")}):
             identity = build(commands, operation, "opi", repo=repo)
         self.assertEqual(calls, ["opi-eval", "opi"])
+        self.assertEqual(lease_calls, ["start", "end"])
+        self.assertEqual(status_calls, [["--target", str(self.root / "shared-cargo"), "--quick", "--json"]])
         self.assertEqual((operation / "builds/source/crates/sample/src/main.rs").read_text(), "current dirty source")
         self.assertEqual(identity["opi"]["sha256"], sha(artifact))
         self.assertTrue(json.loads((operation / "builds/source-before.json").read_text())["dirty"])
@@ -513,6 +521,7 @@ class OperatorTests(unittest.TestCase):
             with self.assertRaises(OperatorError):
                 build(failed_commands, failed, "opi", repo=repo)
         self.assertFalse((failed / "cache/agents/opi/opi").exists())
+        self.assertEqual(lease_calls, ["start", "end", "start", "end"])
         changed = self.root / "changed-build"
         (changed / "cache").mkdir(parents=True)
         changed_commands = Commands(changed / "commands")
@@ -523,6 +532,28 @@ class OperatorTests(unittest.TestCase):
             with self.assertRaises(OperatorError):
                 build(changed_commands, changed, "opi", repo=repo)
         self.assertFalse((changed / "builds/identity.json").exists())
+        self.assertEqual(lease_calls, ["start", "end"] * 3)
+
+    def test_cargo_build_uses_observation_wrapper_and_preserves_executable_message(self):
+        from operator_flow import cargo_build
+        from operator_process import Commands
+        artifact = self.root / "opi-eval"
+        artifact.write_bytes(b"synthetic executable")
+        messages = "\n".join(json.dumps(message) for message in [
+            {"reason": "compiler-artifact", "target": {"name": "opi-eval"},
+             "executable": str(artifact), "fresh": True},
+            {"reason": "build-finished", "success": True}])
+        commands = Commands(self.root / "commands")
+        target = str(self.root / "configured-cargo-target")
+        with patch.object(commands, "run", return_value=subprocess.CompletedProcess([], 0, messages, "")) as run:
+            result = cargo_build(commands, REPO, "opi-eval", "opi-eval",
+                                 {"CARGO_TARGET_DIR": target}, "x86_64-unknown-linux-musl")
+        self.assertEqual(result, artifact.resolve())
+        argv = [str(value) for value in run.call_args.args[0]]
+        self.assertEqual(argv[:7], [sys.executable, str(REPO / "scripts/opi-cargo-cache.py"),
+                                    "run", "--target", target, "--", "build"])
+        self.assertIn("--locked", argv)
+        self.assertEqual(argv[-2:], ["--target", "x86_64-unknown-linux-musl"])
 
     def test_source_links_are_internal_frozen_and_order_independent(self):
         from operator_flow import build

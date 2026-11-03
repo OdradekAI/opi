@@ -95,7 +95,7 @@ def gate_sequence(branch: str) -> list[str]:
     """
     sequence: list[str] = []
     for raw in branch.splitlines():
-        line = raw.strip().split(" 2>&1 ", 1)[0].strip()
+        line = raw.strip().split(" 2>&1 ", 1)[0].strip().replace("'--'", "--")
         # bash inline env prefix folds into the rustdoc gate line.
         if line == SH_RUSTDOC_INLINE:
             sequence.append("rustdoc")
@@ -151,18 +151,21 @@ class SmokeWrapperOrder(unittest.TestCase):
 
 
 class SmokeWrapperCachePaths(unittest.TestCase):
-    def assert_cache_calls(self, calls: list[list[str]], target: str) -> None:
+    def assert_cache_calls(self, calls: list[list[str]], target: str, preset: bool = False) -> None:
         """An invalid mode acquires and releases only the canonical cache lease."""
-        self.assertEqual(calls[0], [str(CACHE_TOOL), "resolve"])
-        self.assertEqual(len(calls), 3)
-        self.assertEqual(calls[1][:6], [
+        if not preset:
+            self.assertEqual(calls.pop(0), [str(CACHE_TOOL), "resolve"])
+        self.assertGreaterEqual(len(calls), 3)
+        self.assertEqual(calls.pop(0), [str(CACHE_TOOL), "status", "--target", target, "--quick"])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][:6], [
             str(CACHE_TOOL), "lease", "start", "--target", target, "--pid",
         ])
-        self.assertEqual(calls[2][:6], [
+        self.assertEqual(calls[1][:6], [
             str(CACHE_TOOL), "lease", "end", "--target", target, "--pid",
         ])
-        self.assertEqual(len(calls[1]), 7)
-        self.assertEqual(calls[1][-1], calls[2][-1])
+        self.assertEqual(len(calls[0]), 7)
+        self.assertEqual(calls[0][-1], calls[1][-1])
 
     def test_ps1_cache_path_and_caller_target(self) -> None:
         powershell = shutil.which("powershell") or shutil.which("pwsh")
@@ -210,10 +213,7 @@ class SmokeWrapperCachePaths(unittest.TestCase):
                                   result.stdout + result.stderr)
                     calls = [json.loads(line) for line in
                              log.read_text(encoding="utf-8-sig").splitlines()]
-                    if preset:
-                        self.assertEqual(calls, [])
-                    else:
-                        self.assert_cache_calls(calls, target)
+                    self.assert_cache_calls(calls, target, preset)
 
     @unittest.skipIf(os.name == "nt", "run bash checks on a POSIX host")
     def test_sh_cache_path_and_caller_target(self) -> None:
@@ -259,10 +259,86 @@ class SmokeWrapperCachePaths(unittest.TestCase):
                                   result.stdout + result.stderr)
                     calls = [line.split("\t") for line in
                              log.read_text(encoding="utf-8").splitlines()]
-                    if preset:
-                        self.assertEqual(calls, [])
-                    else:
-                        self.assert_cache_calls(calls, target)
+                    self.assert_cache_calls(calls, target, preset)
+
+    def test_ps1_boot_observes_clippy_and_releases_on_failure(self) -> None:
+        powershell = shutil.which("pwsh") or shutil.which("powershell")
+        if not powershell:
+            self.skipTest("PowerShell is not installed on this host")
+        with tempfile.TemporaryDirectory(prefix="opi-smoke-") as temp:
+            scratch = Path(temp)
+            log = scratch / "calls.jsonl"
+            launcher = scratch / "boot.ps1"
+            launcher.write_text(
+                "function rustc { $global:LASTEXITCODE = 0 }\n"
+                "function cargo {\n"
+                "  if ($args[0] -notin @('--version', 'fmt')) { throw 'unobserved build' }\n"
+                "  $global:LASTEXITCODE = 0\n"
+                "}\n"
+                "function python {\n"
+                "  ConvertTo-Json -InputObject @($args) -Compress |\n"
+                "    Add-Content -LiteralPath $env:SMOKE_LOG -Encoding UTF8\n"
+                "  $global:LASTEXITCODE = 0\n"
+                "  if ($args[1] -eq 'run') { $global:LASTEXITCODE = [int]$env:SMOKE_RUN_EXIT }\n"
+                "}\n"
+                "& $env:SMOKE_WRAPPER boot\n", encoding="utf-8")
+            for exit_code in (0, 23):
+                with self.subTest(exit_code=exit_code):
+                    log.write_text("", encoding="utf-8")
+                    target = str(scratch / "configured-target")
+                    env = dict(os.environ, CARGO_TARGET_DIR=target,
+                               SMOKE_WRAPPER=str(PS1), SMOKE_LOG=str(log),
+                               SMOKE_RUN_EXIT=str(exit_code))
+                    result = subprocess.run(
+                        [powershell, "-NoProfile", "-NonInteractive", "-File", str(launcher)],
+                        cwd=scratch, env=env, capture_output=True, text=True,
+                        encoding="utf-8", errors="replace", timeout=30)
+                    self.assertEqual(result.returncode == 0, exit_code == 0, result.stdout + result.stderr)
+                    calls = [json.loads(line) for line in log.read_text(encoding="utf-8-sig").splitlines()]
+                    builds = [call for call in calls if call[1] == "run"]
+                    self.assertEqual(builds, [[str(CACHE_TOOL), "run", "--target", target,
+                                              "--", "clippy", "--workspace", "--lib", "--bins", "--", "-D", "warnings"]])
+                    self.assertEqual(calls[-1][1:3], ["lease", "end"])
+
+    @unittest.skipIf(os.name == "nt", "run bash checks on a POSIX host")
+    def test_sh_boot_observes_clippy_and_releases_on_failure(self) -> None:
+        bash = shutil.which("bash")
+        if not bash:
+            self.skipTest("bash is not installed on this host")
+        with tempfile.TemporaryDirectory(prefix="opi-smoke-") as temp:
+            scratch = Path(temp)
+            log = scratch / "calls.tsv"
+            native_cargo = scratch / "cargo"
+            native_cargo.write_text('#!/bin/sh\n[ "$1" = fmt ] || exit 99\n', encoding="utf-8")
+            native_cargo.chmod(0o755)
+            launcher = scratch / "boot.sh"
+            launcher.write_text(
+                'rustc() { return 0; }\n'
+                'cargo() { [ "$1" = --version ]; }\n'
+                'python() {\n'
+                '  printf "%s" "$1" >> "$SMOKE_LOG"\n'
+                '  shift\n'
+                '  printf "\\t%s" "$@" >> "$SMOKE_LOG"\n'
+                '  printf "\\n" >> "$SMOKE_LOG"\n'
+                '  if [ "$1" = run ]; then return "$SMOKE_RUN_EXIT"; fi\n'
+                '  return 0\n'
+                '}\n'
+                'export -f rustc cargo python\n'
+                'exec bash "$SMOKE_WRAPPER" boot\n', encoding="utf-8")
+            for exit_code in (0, 23):
+                with self.subTest(exit_code=exit_code):
+                    log.write_text("", encoding="utf-8")
+                    target = str(scratch / "configured-target")
+                    env = dict(os.environ, CARGO_TARGET_DIR=target, PATH=str(scratch) + os.pathsep + os.environ["PATH"],
+                               SMOKE_WRAPPER=str(SH), SMOKE_LOG=str(log), SMOKE_RUN_EXIT=str(exit_code))
+                    result = subprocess.run([bash, str(launcher)], cwd=scratch, env=env,
+                                            capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode == 0, exit_code == 0, result.stdout + result.stderr)
+                    calls = [line.split("\t") for line in log.read_text(encoding="utf-8").splitlines()]
+                    self.assertEqual([call for call in calls if call[1] == "run"],
+                                     [[str(CACHE_TOOL), "run", "--target", target, "--", "clippy",
+                                       "--workspace", "--lib", "--bins", "--", "-D", "warnings"]])
+                    self.assertEqual(calls[-1][1:3], ["lease", "end"])
 
 
 if __name__ == "__main__":

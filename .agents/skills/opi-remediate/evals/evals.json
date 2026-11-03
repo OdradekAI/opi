@@ -243,6 +243,26 @@
         "Does not mutate an approved plan and reuse the old plan_sha256.",
         "Preserves the exact active-index binding and global unresolved gate."
       ]
+    },
+    {
+      "id": 23,
+      "prompt": "A current finding requires a native observation to resolve. The verifier process fails before producing that observation, no other applicable proof exists, and the upstream Workflow lists the claim under rejected. Can the disposition be Refuted and the plan READY?",
+      "expected_output": "No. Use Cannot confirm and record the missing required native proof in remaining_obligations. Keep the plan DRAFT-UNRESOLVED; execution failure and an upstream rejected list are not counter-evidence or permission to repair an unconfirmed claim.",
+      "files": [],
+      "expectations": [
+        "Preserves the current finding identity and the distinction between Cannot confirm and Refuted.",
+        "Keeps remaining proof obligations explicit and blocks READY without inventing a defect."
+      ]
+    },
+    {
+      "id": 24,
+      "prompt": "A current finding is disproved by sufficient current production-path evidence of its required class. An optional diagnostic probe then crashes. Must the disposition become Cannot confirm solely because that probe failed?",
+      "expected_output": "No. Record the optional probe failure and retain the evidence-backed Refuted disposition if all applicable obligations remain satisfied. Do not claim that the failed probe succeeded or replace required native evidence with static evidence.",
+      "files": [],
+      "expectations": [
+        "Assesses evidence sufficiency rather than treating every tool failure as uncertainty.",
+        "Preserves exact proof class, original execution facts and residual obligations."
+      ]
     }
   ]
 }

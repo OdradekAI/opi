@@ -209,6 +209,10 @@ Commit-staging gates (every non-documentation tier, unchanged):
    were not modified by the task remain as-is.
 6. Commit message includes `Opi-*` evidence footers.
 
+Enforce these content and identity checks using [task completion proof](task-completion.md)
+at E's index/commit/checkpoint boundaries. Its receipts prove source association;
+the required commands, actual execution and assertions remain separate evidence.
+
 ### `--resume-from-manual`
 
 Skip commit creation only if:
@@ -301,8 +305,9 @@ call-site traces, and current source-spec success/exit criteria. It answers:
 6. Is evidence footer truthful and sufficient, including `Opi-Acceptance` when
    scenarios are closed?
 
-If evaluator fails → back to Phase C with findings as input. Generator may NOT
-self-approve the finding away.
+Confirmed must-fix findings return to Phase C. Generator may NOT self-approve
+the finding away. A failed invocation or invalid output leaves evaluation
+incomplete; it supplies neither a confirmed finding nor a passing result.
 
 ### Verify engine exec stage (Phase D.2)
 

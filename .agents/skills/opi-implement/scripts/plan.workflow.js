@@ -119,9 +119,53 @@ const LENSES = [
   },
 ]
 
+// The runtime's schema support is not a completion signal: required outputs
+// are checked again before any verdict or empty blocking list is returned.
+function requireReview(condition, detail) {
+  if (!condition) throw new Error('REVIEW-INCOMPLETE: ' + detail)
+}
+function matchesSchema(value, schema) {
+  const kind = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value
+  const types = Array.isArray(schema.type) ? schema.type : [schema.type]
+  if (schema.type && !types.includes(kind)) return false
+  if (schema.enum && !schema.enum.includes(value)) return false
+  if (schema.pattern && !new RegExp(schema.pattern).test(value)) return false
+  if (kind === 'array' && schema.items) return Array.from(value).every((item) => matchesSchema(item, schema.items))
+  if (kind === 'object' && schema.properties) {
+    if ((schema.required || []).some((key) => !Object.hasOwn(value, key))) return false
+    if (schema.additionalProperties === false && Object.keys(value).some((key) => !Object.hasOwn(schema.properties, key))) return false
+    return Object.entries(schema.properties).every(([key, field]) => !Object.hasOwn(value, key) || matchesSchema(value[key], field))
+  }
+  return true
+}
+async function reviewAgent(prompt, options) {
+  let result
+  try { result = await agent(prompt, options) }
+  catch (cause) { throw new Error('REVIEW-INCOMPLETE: ' + options.label + ' execution failed', { cause }) }
+  requireReview(matchesSchema(result, options.schema), options.label + ' returned invalid output')
+  if (Object.hasOwn(result, 'accepted')) requireReview(result.reason.trim().length > 0, options.label + ' returned no judgment reason')
+  if (Object.hasOwn(result, 'findings')) {
+    const lens = options.label.replace(/^(plan|lens):/, '')
+    requireReview(result.findings.every((finding) => finding.lens === lens), options.label + ' returned a different lens')
+  }
+  return result
+}
+async function reviewParallel(operations) {
+  let results
+  try { results = await parallel(operations) }
+  catch (cause) { throw new Error('REVIEW-INCOMPLETE: parallel execution failed', { cause }) }
+  requireReview(Array.isArray(results) && results.length === operations.length && Array.from(results).every((result) => result !== null && result !== undefined), 'missing parallel result')
+  return results
+}
+
+const canonical = (value) => JSON.stringify(value, function (_key, item) {
+  return item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]])) : item
+})
+
 phase('Lens audit')
-const lensResults = await parallel(LENSES.map((lens) => () =>
-  agent(
+const lensResults = await reviewParallel(LENSES.map((lens) => () =>
+  reviewAgent(
     'You are an adversarial opi-implement plan-admission reviewer.\n' +
     'Read the registered source design at ' + sourcePath + ' in full.\n' +
     'Review phase ' + activePhase + ' using axis ' + lens.axis + ' and lens ' + lens.key + '.\n' +
@@ -136,7 +180,8 @@ const lensResults = await parallel(LENSES.map((lens) => () =>
     { label: 'plan:' + lens.key, phase: 'Lens audit', schema: FINDINGS_SCHEMA },
   )
 ))
-const allFindings = lensResults.filter(Boolean).flatMap((result) => result.findings)
+const allFindings = lensResults.flatMap((result) => result.findings)
+requireReview(Array.isArray(draft) && allFindings.every((finding) => finding.task_id === null || draft.some((task) => task.id === finding.task_id)), 'lens returned an unknown task')
 const blocking = allFindings.filter((finding) => finding.blocking)
 const nonBlocking = allFindings.filter((finding) => !finding.blocking)
 
@@ -144,8 +189,8 @@ phase('Verify')
 const verified = []
 for (let offset = 0; offset < blocking.length; offset += VERIFY_BATCH_SIZE) {
   const batch = blocking.slice(offset, offset + VERIFY_BATCH_SIZE)
-  const batchResults = await parallel(batch.map((finding) => () =>
-    agent(
+  const batchResults = await reviewParallel(batch.map((finding) => () =>
+    reviewAgent(
       'Try to REJECT this proposed plan-admission finding.\n' +
       'Source design: ' + sourcePath + '\n' +
       'Original draft graph: ' + JSON.stringify(draft) + '\n' +
@@ -154,13 +199,7 @@ for (let offset = 0; offset < blocking.length; offset += VERIFY_BATCH_SIZE) {
       'Do not propose or apply edits. Do not invoke another reviewer or spawn agents.',
       { label: 'verify:' + finding.lens + ':' + (finding.task_id || 'source'), phase: 'Verify', schema: VERDICT_SCHEMA },
     )
-      .then((verdict) => ({
-        finding,
-        verdict: verdict && typeof verdict.accepted === 'boolean' && typeof verdict.reason === 'string'
-          ? verdict
-          : { accepted: false, reason: 'verify-agent-error' },
-      }))
-      .catch(() => ({ finding, verdict: { accepted: false, reason: 'verify-agent-error' } }))
+      .then((verdict) => ({ finding, verdict }))
   ))
   verified.push(...batchResults)
 }
@@ -178,11 +217,9 @@ const resourceSummary = {
 }
 
 const surviving = verified
-  .filter(Boolean)
   .filter((item) => item.verdict.accepted)
   .map((item) => item.finding)
 const rejected = verified
-  .filter(Boolean)
   .filter((item) => !item.verdict.accepted)
   .map((item) => ({ finding: item.finding, reason: item.verdict.reason }))
 
@@ -199,7 +236,7 @@ if (surviving.some((finding) => finding.route === 'RESEARCH_REQUIRED')) {
 }
 
 phase('Synthesize')
-const report = await agent(
+const report = await reviewAgent(
   'Write the bounded opi-implement plan-admission report without changing the deterministic verdict.\n' +
   'Verdict: ' + verdict + '\n' +
   'Independence: ' + independence + '\n' +
@@ -210,6 +247,8 @@ const report = await agent(
   'Return the supplied lists without reranking or applying them.',
   { label: 'plan-admission-report', phase: 'Synthesize', schema: REPORT_SCHEMA },
 )
+
+requireReview(report.verdict === verdict && report.independence === independence && canonical(report.design_findings) === canonical(designFindings) && canonical(report.graph_findings) === canonical(graphFindings) && canonical(report.flagged_for_human) === canonical(nonBlocking) && canonical(report.rejected) === canonical(rejected), 'synthesis changed the supplied verdict or findings')
 
 return {
   verdict,

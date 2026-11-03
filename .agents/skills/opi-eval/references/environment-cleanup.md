@@ -22,6 +22,11 @@ inventory, ownership, leases and references against the same count policy and
 protections. Shared images, materials and persistent build caches remain outside
 these operations.
 
+For Cargo observation or an explicitly requested separate cache maintenance,
+read the shared [Cargo cache lifecycle](../../_shared/references/cargo-cache-lifecycle.md).
+Evaluation cleanup and rolling retention release owned leases and retain shared
+cache bytes; they never apply Cargo maintenance plans or retire frozen binaries.
+
 Archive restore preserves original bytes at the original canonical location;
 never rewrite paths in sealed claims. A missing runtime/material/image dependency
 is an offline capability gap. Pinning, retirement, archive and tombstone receipts

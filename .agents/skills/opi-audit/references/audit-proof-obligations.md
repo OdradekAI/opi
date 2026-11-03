@@ -49,6 +49,16 @@ materials. Neither `evidence_root` nor missing proof authorizes paid/live calls.
 Store paths, hashes, applicability and limitations in existing `test_evidence`
 and `checks` fields; do not add a new ledger or sidecar schema.
 
+An upstream review receipt binds inputs, not successful execution or product
+conformance. A verifier exception or invalid output cannot establish completed
+review merely because its blocking-findings list is empty. Inspect selected raw
+execution facts through the existing preflight; do not import upstream review
+conclusions or raw ledger `gate_results` into the independent core. Assess a
+workflow violation under its governing criterion separately from product
+behavior. Missing formal review proof does not prove that no human inspected
+the code, or that the missing review caused a product defect. Preserve original
+identities; a later run cannot supply a historical Workflow ID.
+
 ## Review axes
 
 Apply these lenses to the complete current surfaces named by the records:

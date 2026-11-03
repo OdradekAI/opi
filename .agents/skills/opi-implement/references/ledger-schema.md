@@ -277,6 +277,15 @@ These values are copied into `tasks[].evidence` after the task commit. The
 resulting canonical ledger is then committed separately. Git footers remain the
 authoritative recovery source if a checkpoint is lost or conflicted.
 
+`Opi-DoD-SHA256` is the lowercase SHA-256 of the complete decoded
+`definition_of_done` string encoded as UTF-8, without trimming, adding a newline,
+or normalizing existing line endings. Use [task completion proof](task-completion.md)
+for E's index, actual-commit and proposed-checkpoint checks before recording
+`passing`. The ledger byte/atomic-write guard does not perform these Git checks.
+Record proof receipt paths/digests in the existing `session_notes[].gate_results`.
+Historical mistakes require an attributed append-only correction by the ledger
+owner; preserve original task/start commits, footers and frozen snapshots.
+
 Tasks with non-empty `acceptance_scenarios` also include:
 
 ```text

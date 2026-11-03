@@ -15,7 +15,10 @@ engine. Translate Windows paths once, record the Linux cwd, and use Linux
 executables. Windows compilation or an installed Docker client does not prove
 task feasibility. Keep evaluation storage outside the source checkout.
 
-Use the runtime's subject adapters and build-cache coordination. Record the
+Use the runtime's subject adapters and build-cache coordination under the shared
+[Cargo cache lifecycle](../../_shared/references/cargo-cache-lifecycle.md).
+The runtime owns build commands, quick selected-target inspection and leases;
+preserve executable freezing and existing command evidence. Record the
 Companion's package version, source/dirty identity, locked dependencies,
 toolchain, target, features and executable digest separately from each subject.
 Respect configured persistent Cargo caches and release only invocation-owned

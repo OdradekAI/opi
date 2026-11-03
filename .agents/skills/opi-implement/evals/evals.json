@@ -51,6 +51,36 @@
         "Names explicit opi-slim-tests handoff",
         "Emits separate six-field test_disposition entries for the new and retained tests"
       ]
+    },
+    {
+      "id": 5,
+      "prompt": "D.2 has one high finding. The adversarial verifier throws, and no completed judgment exists. May exec return an empty must_fix list as a completed review?",
+      "expected_output": "No. Report REVIEW-INCOMPLETE, retain the failure evidence, and stop before E. A valid completed accepted=false judgment remains allowed, but an exception cannot be fabricated into one.",
+      "files": [],
+      "expectations": [
+        "Distinguishes failed execution from an uncertain but completed judgment.",
+        "Does not manufacture a Workflow ID or use an undocumented exec fallback."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Before E.1, HEAD is start_commit and its only changed file is the previous task's ledger checkpoint. This task has unstaged code and an untracked production adapter. What must D.2 review?",
+      "expected_output": "Capture and bind the task's current worktree candidate, including nonignored untracked files, source identities, preserved verification records and proposed footers. The baseline commit is not the implementation. Verify the same candidate after review and at index/commit completion; drift invalidates the corresponding evidence.",
+      "files": [],
+      "expectations": [
+        "Uses the worktree candidate rather than git show of start_commit as the implementation.",
+        "Keeps manual-commit recovery as a separate committed-candidate mode."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "D.0's named integration scenario only runs a helper test. A genuine adapter log is also available, but it was captured before relevant source or client bytes changed. Can the scenario be met because both logs exited 0?",
+      "expected_output": "No. Trace the public entry through the actual production adapter and inspect a discriminating assertion. The helper does not prove integration, and the old log needs current applicability proof or an authorized rerun. Preserve its original source identity and keep the scenario open until the required proof exists.",
+      "files": [],
+      "expectations": [
+        "Rejects helper-only and stale proof without adding a duplicate protocol matrix.",
+        "Uses existing scenario evidence and gate_results to identify the unmet production behavior."
+      ]
     }
   ]
 }

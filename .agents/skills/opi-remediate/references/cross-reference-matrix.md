@@ -37,6 +37,14 @@ reviewer/model runs remain separate evidence. Coverage is descriptive, never a
 vote. Schedule a shared repair at the highest source severity while retaining
 every original severity and rationale.
 
+A reviewer or proof-tool execution failure is not counter-evidence. When it
+prevents necessary verification and no sufficient applicable evidence remains,
+use `Cannot confirm` and name the missing proof in `remaining_obligations`;
+the plan stays draft. Failure of an optional probe does not invalidate other
+sufficient evidence of the required class. An upstream Workflow's `rejected`
+list can include unconfirmed claims and never substitutes for this contract's
+evidence-backed `Refuted` disposition.
+
 When current claims conflict, keep them separate until current code, tests,
 specifications, or runtime evidence resolves the conflict. `Refuted` and final
 severity changes require that independent evidence; another reviewer's

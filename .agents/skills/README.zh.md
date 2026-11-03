@@ -129,6 +129,11 @@ records/events/imports，不使用数据库或持久查询缓存。完成后的�
 
 ### 发现与独立审阅
 
+`opi-implement` 通过[任务完成证明](opi-implement/references/task-completion.md)
+把 D.2 绑定到实际工作树候选或人工提交，并在 E 核对最终暂存区、提交 footer 与拟写
+账本镜像。必要 Workflow 运行失败时，评审保持未完成。源码回执和原始执行事实可以
+在预检后提供审计证明；上游结论不能替代独立合规判断。
+
 ```text
 $opi-audit phase=<N> reviewer=<reviewer-id> model=<model-id> evidence_root=<脱敏原始证据目录>
 ```
@@ -183,6 +188,14 @@ audit set 进入 remediation。各报告地位平等，分别持有已提交的 
 工作流专用辅助脚本及其测试放在所属技能的 `scripts/`，共享保障脚本与测试放在
 `_shared/scripts/`。Companion 的运行代码和测试归属于它的 crate。仓库级文档检查、
 Cargo 缓存协调及 release 制品审计保留在根目录 `scripts/`。
+
+构建观测、checkpoint/Phase 缓存检查或显式缓存维护时，读取共享
+[Cargo 缓存生命周期（英文）](_shared/references/cargo-cache-lifecycle.md)。它是单一共享参考，
+不是新技能或台账。工作流只检查、观测和提出计划；删除须通过单独显式维护，
+使用已审阅的精确计划。
+两个独立分支分别处理已观测输出的替代淘汰，以及已验证可重建增量缓存逐出，后者包括
+已知缓存归属但 freshness 未知的旧缓存。逐出以复用性能换容量，保留实际 sealed
+证据/重放依赖，不宣称整个 target 过时。
 
 共享不变量只保留在其所属契约中；正确性依赖精确命令或 schema 时保留这些细节。
 条件性流程放在有明确模式/决策入口的 references 中。description 只说明实际工作，

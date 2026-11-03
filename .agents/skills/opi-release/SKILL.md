@@ -59,6 +59,12 @@ on disagreement.
 
 ## Phase 1: pre-flight
 
+Before local Cargo builds, read the shared
+[Cargo cache lifecycle](../_shared/references/cargo-cache-lifecycle.md) for
+quick selected-target inspection and coordinated observation. Preserve release
+artifacts and failure evidence through finalization; cache maintenance remains
+a separate explicit action and never substitutes for release evidence.
+
 Run from a clean `main` whose `HEAD` exists on `origin/main` and whose required
 CI checks for that exact SHA succeeded.
 

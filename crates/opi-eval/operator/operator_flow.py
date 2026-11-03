@@ -86,8 +86,9 @@ def freeze_source_file(source, target, expected, commands):
 
 
 def cargo_build(commands, repo, package, binary, env, target=None):
-    argv = ["cargo", "build", "--locked", "--release", "-p", package, "--bin", binary,
-            "--message-format=json-render-diagnostics"]
+    argv = [sys.executable, repo / "scripts/opi-cargo-cache.py", "run",
+            "--target", env["CARGO_TARGET_DIR"], "--",
+            "build", "--locked", "--release", "-p", package, "--bin", binary]
     if target:
         argv += ["--target", target]
     result = commands.run(argv, repo, env=env)
@@ -131,12 +132,12 @@ def build(commands, root, product, companion=None, repo=REPO):
         target.symlink_to(os.path.relpath(frozen_target, target.parent))
     env = clean_environment()
     cache_helper = repo / "scripts/opi-cargo-cache.py"
-    leased = False
     if not env.get("CARGO_TARGET_DIR"):
         result = commands.run([sys.executable, cache_helper, "resolve", "--workspace", repo], repo)
         env["CARGO_TARGET_DIR"] = result.stdout.strip()
-        commands.run([sys.executable, cache_helper, "lease", "start", "--target", env["CARGO_TARGET_DIR"], "--pid", os.getpid()], repo)
-        leased = True
+    commands.run([sys.executable, cache_helper, "status", "--target", env["CARGO_TARGET_DIR"],
+                  "--quick", "--json"], repo, require=False)
+    commands.run([sys.executable, cache_helper, "lease", "start", "--target", env["CARGO_TARGET_DIR"], "--pid", os.getpid()], repo)
     env["CARGO_INCREMENTAL"] = "1"
     try:
         toolchain = commands.run(["rustc", "-Vv"], repo, env=env).stdout
@@ -168,8 +169,7 @@ def build(commands, root, product, companion=None, repo=REPO):
         write_json(root / "builds/identity.json", identity)
         return identity
     finally:
-        if leased:
-            commands.run([sys.executable, cache_helper, "lease", "end", "--target", env["CARGO_TARGET_DIR"], "--pid", os.getpid()], repo)
+        commands.run([sys.executable, cache_helper, "lease", "end", "--target", env["CARGO_TARGET_DIR"], "--pid", os.getpid()], repo)
 
 
 def stage_cache(profile, root, product, repo=REPO):

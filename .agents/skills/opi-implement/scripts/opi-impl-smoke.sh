@@ -25,15 +25,26 @@ cache_leased=0
 cache_tool="$(cd "$(dirname "$0")/../../../.." && pwd)/scripts/opi-cargo-cache.py"
 if [ -z "${CARGO_TARGET_DIR:-}" ]; then
   export CARGO_TARGET_DIR="$(python "$cache_tool" resolve)"
-  python "$cache_tool" lease start --target "$CARGO_TARGET_DIR" --pid "$$"
-  cache_leased=1
 fi
+python "$cache_tool" status --target "$CARGO_TARGET_DIR" --quick || \
+  echo "Cargo cache inspection incomplete; no cleanup is authorized" >&2
+python "$cache_tool" lease start --target "$CARGO_TARGET_DIR" --pid "$$"
+cache_leased=1
 release_cache_lease() {
   if [ "$cache_leased" -eq 1 ]; then
     python "$cache_tool" lease end --target "$CARGO_TARGET_DIR" --pid "$$" >/dev/null 2>&1 || true
   fi
 }
 trap release_cache_lease EXIT
+
+# Observe compilation outputs without changing the authoritative gate sequence.
+cargo() {
+  case "${1:-}" in
+    build|check|clippy|test)
+      python "$cache_tool" run --target "$CARGO_TARGET_DIR" -- "$@" ;;
+    *) command cargo "$@" ;;
+  esac
+}
 
 case "$mode" in
   boot)

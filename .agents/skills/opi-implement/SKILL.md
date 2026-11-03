@@ -237,11 +237,10 @@ for workspace D.1, and `scoped --crate <crate> [--test <name>...]` for focused R
 D.1. Read [verification-tiers.md](references/verification-tiers.md) for the
 selected tier and applicable addenda.
 
-Respect `CARGO_TARGET_DIR`; if unset use
-`python scripts/opi-cargo-cache.py resolve`. Smoke wrappers hold Cargo process
-leases. Reuse the persistent worktree/toolchain cache, keep incremental
-compilation enabled, and leave cache reclamation to separate maintenance.
-Inspect with `python scripts/opi-cargo-cache.py status`.
+Before runtime bootstrap, read the shared
+[Cargo cache lifecycle](../_shared/references/cargo-cache-lifecycle.md).
+It owns quick inspection, persistent-target coordination, observed outputs and
+separate maintenance; smoke wrappers own the selected gate commands.
 
 For `spec_files_sha256`, hash file bytes after CRLF→LF normalization. Historical
 snapshot hashes are never resynced. Toolchain/MSRV requirements come from the

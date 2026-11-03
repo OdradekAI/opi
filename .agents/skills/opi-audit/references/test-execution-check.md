@@ -9,7 +9,10 @@ exit 0 for PASS or exit 2 for FAIL. It does not run commands or modify files.
 
 In the sealed source export, select one `--test <target>` or `--lib` target,
 using identical package/features/toolchain for all three commands. Follow
-repository Cargo cache/lease rules. Capture stdout and stderr, the exact
+the shared [Cargo cache lifecycle](../../_shared/references/cargo-cache-lifecycle.md)
+for a quick selected-target check and coordinated observed Cargo commands.
+Independent audit context receives only physical coordination metadata, never
+implementation ledger, task history or prior assessment conclusions. Capture stdout and stderr, the exact
 commands and original process exits. Use the default named test output;
 `--quiet`, `--skip`, benchmarks, doctests, and multiple targets are unsupported.
 

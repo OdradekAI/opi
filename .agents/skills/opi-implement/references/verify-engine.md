@@ -19,7 +19,8 @@ adversarial-verification conventions, but their authority differs.
 
 - **plan** — registered source paths, the original draft task array, current
   phase, and reported reviewer independence;
-- **exec** — task object, HEAD commit, and registered phase source;
+- **exec** — task object, registered phase source, and a content-bound worktree
+  or manual-commit candidate from [task completion proof](task-completion.md);
 - **phase-exit** — F.1a `criteria_trace[]`, completed phase tasks, registered
   phase source, and phase.
 
@@ -73,7 +74,14 @@ Plan findings additionally carry:
 `source_citation` must match `<file>#<heading>` or `<file> §<section>`, and the
 emitting reviewer verifies that the cited heading exists. An adversarial
 verifier tries to reject each blocking or must-fix finding. Uncertain verifier
-results are rejected rather than used to mutate or block state.
+results are rejected rather than used to mutate or block state. This means a
+completed judgment with `accepted=false`, not a failed invocation. A required
+lens, verifier or synthesis failure, missing result, malformed output or
+mismatched subject makes the Workflow `REVIEW-INCOMPLETE`; callers stop before
+admission, task completion or phase archive. Preserve the failure and rerun
+only against the still-bound inputs. Never convert a runtime error into a
+rejected finding or a clean report. `rejected` means unaccepted, not the
+evidence-backed `Refuted` disposition used by remediation.
 
 Use `decision_id` only for a declared `shared_decision`; ordinary findings use
 `null`. Accepted exec decision findings are copied into the task attempt's
@@ -207,11 +215,25 @@ Deep-path protocol:
 
 ```text
 scriptPath: .claude/skills/opi-implement/scripts/exec.workflow.js
-args: { task, sourceDesignPath, commit }
-result: { must_fix, flagged_for_human, rejected, report }
+args: { task, sourceDesignPath, candidate, review_sha256 }
+result: { must_fix, flagged_for_human, rejected, report, candidate_sha256, review_sha256, reviewed_input }
 ```
 
-Store the run id in `verify_runs[].wf_ref` when available.
+Prepare `candidate` and `review_sha256` using [task completion
+proof](task-completion.md). The candidate includes the frozen task, source
+identities, changed file contents' identities, raw verification references and
+proposed footers. Every lens and verifier receives this same candidate. Review
+the worktree changes for `mode=worktree`, or the exact task commit for
+`mode=commit`; `start_commit` is the baseline, not the implementation.
+
+Save the successful Workflow result with its actual runtime `wf_ref`, and
+verify both returned digests, the complete `reviewed_input` and the current
+candidate before consuming it. Digest labels alone cannot establish that the
+reviewer received the corresponding content.
+Record that run id in `verify_runs[].wf_ref`. An unavailable required exec
+Workflow leaves review incomplete; the plan-only fallback does not apply.
+A real defect remains a finding even when its proposed fix is wrong; verify
+the defect independently and assess repair design in Phase C.
 
 After an accepted finding with non-null `decision_id`, append that ID and the
 finding summary to the current attempt's `gate_results`. If an accepted finding

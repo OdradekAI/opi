@@ -29,6 +29,12 @@ Use the configured persistent external `CARGO_TARGET_DIR`; resolve it with
 `cargo clean` to prepare the measurement and never create a disposable target
 directory merely to prove isolation.
 
+Before Cargo measurements/verification, read the shared
+[Cargo cache lifecycle](../_shared/references/cargo-cache-lifecycle.md) for
+quick selected-target inspection and coordinated observation. Removed test
+targets alone do not authorize deleting cached binaries; retain evidence and
+leave any exact maintenance plan to separate explicit maintenance.
+
 ## 2. Classify from full bodies
 
 Read

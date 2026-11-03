@@ -151,6 +151,13 @@ Ready evidence does not automatically complete an implementation task or Phase.
 
 ### Findings and independent review
 
+`opi-implement` binds D.2 to the actual worktree or manual-commit candidate using
+[task completion proof](opi-implement/references/task-completion.md), then checks
+the final index, commit footers and proposed ledger mirror at E. Required
+Workflow failures leave review incomplete. These source receipts and original
+execution facts can supply audit proof after preflight; upstream conclusions
+never replace independent conformance checks.
+
 ```text
 $opi-audit phase=<N> reviewer=<reviewer-id> model=<model-id> evidence_root=<redacted-raw-directory>
 ```
@@ -214,6 +221,15 @@ Keep workflow-specific helpers and their tests in the owning skill's `scripts/`,
 and shared assurance helpers and tests in `_shared/scripts/`. Companion runtime
 and tests belong to its crate. Repository-wide documentation checks, Cargo
 cache coordination and release artifact auditing stay in root `scripts/`.
+
+For build observation, checkpoint/Phase cache inspection or explicit cache
+maintenance, read the shared [Cargo cache lifecycle](_shared/references/cargo-cache-lifecycle.md).
+It is one shared reference, not a new skill or ledger. Workflows inspect/observe/propose;
+deletion requires separate explicit maintenance with an exact reviewed plan.
+Two independent branches cover observed-output supersession and verified
+rebuildable incremental eviction, including known legacy caches with unknown
+freshness. Eviction trades reuse for capacity while preserving actual sealed
+evidence/replay dependencies; it never declares a whole target stale.
 
 Keep shared invariants in their owning contract; retain exact commands/schemas
 where correctness depends on them. Put conditional procedures behind explicit

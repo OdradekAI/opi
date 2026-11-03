@@ -123,8 +123,10 @@ unresolved evidence gaps.
   directories; serialize environment mutations. Tests must not require paid
   providers/live credentials or activate live calls because credentials exist.
 - Keep incremental compilation and the external Cargo cache workflow. Inspect
-  with `python scripts/opi-cargo-cache.py status`; no `cargo clean`, per-session
-  targets or cache deletion as cleanup.
+  the selected target before builds under the shared
+  [Cargo cache lifecycle](.agents/skills/_shared/references/cargo-cache-lifecycle.md);
+  it also owns explicit maintenance. No `cargo clean`, per-session targets or
+  cache deletion as workflow cleanup.
 
 ## Git and release safety
 

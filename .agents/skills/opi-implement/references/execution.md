@@ -12,7 +12,9 @@ checkpoint-commit authorization.
    - A.3 Record `HEAD`, branch, and baseline dirty files. Handle interrupted
      tasks through [ledger-schema.md](ledger-schema.md#interrupt-recovery).
    - A.4 Select the task and validate dependencies. For Rust/runtime tasks,
-     run smoke `boot` (format + production lib/bin clippy); documentation tasks
+     perform the shared [cache lifecycle](../../_shared/references/cargo-cache-lifecycle.md)
+     quick selected-target check, then run smoke `boot` (format + production
+     lib/bin clippy); documentation tasks
      need no Cargo bootstrap. Status and plan modes never run task smoke.
 
 2. **Phase B: Plan-the-task**
@@ -37,7 +39,9 @@ checkpoint-commit authorization.
      and separate ledger-checkpoint commit after verification. Existing
      authorization for this exact task and both commits satisfies the gate;
      graph confirmation alone does not.
-   - B.3 If confirmed: mark `in_progress`, record `start_commit`, write ledger
+   - B.3 If confirmed: mark `in_progress`, record `start_commit`, write ledger.
+     Capture the external baseline under [task completion proof](task-completion.md)
+     before implementation; this receipt grants no commit authorization.
 
 3. **Phase C: Implement**
    - C.1 For a code task, use Matt `tdd`. Before the first test for a runtime task,
@@ -60,10 +64,17 @@ checkpoint-commit authorization.
    - C.3 At `max_iterations` (default 5), apply the failure decision gate.
 
 4. **Phase D: Verify**
+   Capture the candidate source input under [task completion proof](task-completion.md)
+   before the final verification union. Preserve commands, original exits and
+   raw output against that input; later source drift invalidates affected proof.
    - D.0 Product acceptance checks:
      - Run every `acceptance_scenarios` verification owned by the task.
      - For runtime/startup/CLI claims, prove the production call site exists and
        is exercised by the scenario. A direct helper/unit test is not enough.
+       In the existing evidence table and `gate_results`, link each closed
+       scenario to its public entry, actual consumer/adapter, discriminating
+       assertion and source-applicable raw proof. Shared proof can cover more
+       than one scenario; a test name or prompt alone proves none.
      - If the scenario cannot be exercised yet, the task may pass only as
        substrate coverage and must leave the scenario open on a later vertical
        slice task.
@@ -87,12 +98,17 @@ checkpoint-commit authorization.
      full`; focused Rust tiers use `smoke scoped --crate <crate> --test
      <name>...`; documentation uses `python scripts/opi-doc-check.py` plus diff
      checks. Phase addenda extend this command set without rerunning it.
+     Keep Cargo observation in the wrappers under the shared cache lifecycle;
+     its metadata does not replace source-bound verification proof.
    - D.2 Run the task-level risk evaluator only when
      `evaluator_required = true`. It invokes
      `.claude/skills/opi-implement/scripts/exec.workflow.js` (full 7-lens deep).
      Deterministic documentation, skill, test-only, mechanical, and
      behavior-preserving internal-refactor tasks skip D.2. Must-fix findings
      block Phase D and route to Phase C (incrementing `iteration_count`).
+     Pass the bound candidate and review digest, then verify the returned
+     digests and preserved source state. `REVIEW-INCOMPLETE` leaves D.2 unmet;
+     an empty findings list from failed execution does not pass this gate.
      Accepted findings with a non-null `decision_id` are appended to the current
      attempt's gate results. If that ID already appears in an accepted finding
      anywhere in the active phase task notes, stop local repair and return to
@@ -101,17 +117,30 @@ checkpoint-commit authorization.
      authoritative-platform checks still missing after D.0/D.1. Record the
      union of commands; never rerun D.1 under a second label. Then apply the
      commit-staging rules in [verification-tiers.md](verification-tiers.md).
+     Bind any additional proof into a new review receipt. If D.2 is required,
+     review that final receipt before E; do not attach its new digest to an old
+     review result. Collect known verification requirements before D.2 to avoid
+     unnecessary repeat reviews.
    - D.4 If any fail -> back to Phase C within the iteration cap. After a fix,
      rerun affected checks and retain still-valid evidence for unchanged state.
      Never run `cargo clean` during or after a task.
 
 5. **Phase E: Task Commit & Ledger Checkpoint**
    - E.1 Commit only task-owned implementation files with `Opi-*` evidence
-     footers; never stage the dirty canonical ledger in this commit
+     footers; never stage the dirty canonical ledger in this commit. Before
+     committing, run task completion proof at `--stage index` against the
+     final review receipt and required Workflow result.
    - E.2 Capture the task commit SHA + evidence, flip status to `passing`, and
-     append the session note through the atomic ledger protocol
+     append the session note through the atomic ledger protocol. First verify
+     `--stage commit`; then validate the proposed ledger with `--stage checkpoint`
+     before installing its passing state. These checks bind actual Git footers,
+     exact DoD digest, start/commit identity and the evidence mirror. A mismatch
+     leaves the checkpoint incomplete and preserves the original evidence.
    - E.3 Validate and commit only `.opi-impl-state.json` with message
      `chore(opi-implement): checkpoint task <id> ledger`
+     After checkpoint completion, follow the shared cache lifecycle's optional
+     candidate/pressure plan hook. Report cache state separately from passing
+     evidence; this hook neither deletes files nor writes ledger fields.
    - E.4 No push (push is separate human action)
 
 6. **Phase F: Phase-Exit Check**
@@ -126,10 +155,14 @@ checkpoint-commit authorization.
      `criteria_trace[C].status = not-met`, and F.1b REFUSEs archive.
    - F.1b REFUSE phase archive when any criterion is `not-met`, or when
      `deferred-by-updated-design` lacks an exact source citation from the
-     current spec/plan.
+     current spec/plan. A required phase-exit Workflow that is incomplete also
+     prevents archive; its missing findings are not a clean review.
    - F.2 Print phase-complete report; no auto-release
    - F.3 Else -> print "next unblocked: X.Y" hint
    - F.4 If F.1 passed, run the archive gate:
+     - Capture one full physical cache inventory under the shared cache
+       lifecycle before archive; protected/non-actionable state leaves the
+       archive and ledger criteria unchanged. Maintenance stays separate.
      - F.4a User gate: "Archive phase `<N>` ledger to
        `docs/snapshots/phase<N>/opi-impl-state.json` as a phase-local snapshot
        and compact `tasks` array into `phase_exit[<N>].task_summary`?"

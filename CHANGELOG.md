@@ -854,6 +854,27 @@
   unchanged.
 ### Added
 
+- workflows: `opi-implement` task completion binds review to the exact candidate,
+  source versions, verification logs and proposed commit footers, then checks
+  the staged files, committed result and ledger mirror before completion.
+  Required review execution failures remain incomplete. Admitted documentation
+  tasks may update their explicitly owned sources while later source drift
+  invalidates the captured proof; wrapped Cargo tests require execution evidence.
+
+- tooling: Cargo cache lifecycle now records coordinated build outputs and
+  inventories unmarked caches. Existing workflows inspect and propose exact
+  maintenance plans. Separate explicit maintenance supports observed-output
+  supersession and verified rebuildable incremental payload eviction, including
+  legacy sessions without observation receipts. `plan-eviction` binds selected
+  packages, evidence protections and exact `.bin`/`.o` files; digest-bound apply
+  revalidates identities and writer/session locks while preserving metadata,
+  locks, sealed evidence/replay dependencies and release artifacts. Eviction
+  trades compile reuse for space without declaring the cache stale. Legacy
+  `prune --execute` refuses broad deletion; exact reviewed plans are required.
+  Windows maintenance uses attribute-only metadata queries and bounded parallel
+  header reads to reduce large-cache inspection cost while retaining complete
+  preflight validation and session-lock ownership.
+
 - workspace: native platform/MSRV and supply-chain delivery acceptance
   (task 20.58, DEL-14): a new `platform_delivery` suite freezes the final
   root Cargo graph (7 members, lockstep internal edges, single `opi-ai`

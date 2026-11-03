@@ -200,6 +200,17 @@
         "Accepts positive execution identity/count evidence while separately checking assertions, provenance and native conditions.",
         "Keeps acceptance scoped to proven criteria and avoids redundant broad reruns."
       ]
+    },
+    {
+      "id": 19,
+      "prompt": "A sealed mandatory workflow criterion requires a completed formal review. Selected operator raw proof records a verifier process error, while a committed footer claims passed. No applicable successful review proof is available. What can the audit conclude?",
+      "expected_output": "Record the mandatory review-proof gap with a reciprocal finding. Assess product behavior independently from current code and required behavioral proof; neither the footer nor an empty blocking list proves completed review. Do not infer absence of human inspection or the cause of a product defect, and never invent a historical Workflow ID.",
+      "files": [],
+      "expectations": [
+        "Distinguishes execution failure from a completed negative finding judgment.",
+        "Keeps process conformance separate from product behavior and historical causation.",
+        "Uses preflight-filtered raw proof without loading prior reviewer conclusions or raw ledger gate_results."
+      ]
     }
   ]
 }

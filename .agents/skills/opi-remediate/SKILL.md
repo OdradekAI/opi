@@ -129,6 +129,10 @@ there is no partial-apply branch.
 Load `references/execution-protocol.md` only for apply. It owns admission,
 closure batches, incidental repairs, actual-source proof, result validation,
 materialization and the ledger-owner handoff.
+Before a closure batch starts Cargo verification, read the shared
+[Cargo cache lifecycle](../_shared/references/cargo-cache-lifecycle.md) for
+the quick selected-target check and coordinated observation. Cache reports and
+maintenance proposals remain separate from closure proof and the ledger handoff.
 Proceed through the approved batches without renewed permission inside that
 scope. Changed index/member bytes, plan digest, source drift after the remediation
 head or overlapping unowned paths fail admission before production edits. The
