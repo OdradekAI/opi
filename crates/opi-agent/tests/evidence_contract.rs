@@ -1574,6 +1574,7 @@ fn noop_and_in_memory_satisfy_one_lifecycle_conformance_contract() {
 #[test]
 fn provider_facts_preserve_the_full_redacted_fallback_decision() {
     let route = opi_ai::PreparedRoute {
+        projection: empty_route_projection_facts(),
         provider_id: "mock".to_owned(),
         model_id: "model".to_owned(),
         wire_api: WireApi::OpenAiResponses,
@@ -1703,6 +1704,7 @@ fn provider_facts_reject_contradictory_auth_fallback_provenance() {
 #[test]
 fn provider_facts_reject_malformed_requested_routes() {
     let route = opi_ai::PreparedRoute {
+        projection: empty_route_projection_facts(),
         provider_id: "mock".to_owned(),
         model_id: "model".to_owned(),
         wire_api: WireApi::OpenAiResponses,
@@ -2010,4 +2012,101 @@ fn in_memory_abandon_withholds_manifest_and_closes_lifecycle() {
         sink.emit(&record),
         Err(EvidenceError::Emission { .. })
     ));
+}
+
+fn forwarding_projection_facts() -> opi_ai::transcript::ProjectionFacts {
+    use opi_ai::transcript::{
+        MessageRange, ProjectionFacts, ProjectionMode, SourcePrefix, TemporalProjectionFacts,
+    };
+    ProjectionFacts {
+        source_prefix: SourcePrefix {
+            message_count: 4,
+            sha256: "07".repeat(32),
+        },
+        temporal: TemporalProjectionFacts {
+            mode: ProjectionMode::Collapse,
+            affected_ranges: vec![MessageRange { start: 0, end: 3 }],
+        },
+        replay: opi_ai::replay::ReplayFacts {
+            losses: vec![opi_ai::replay::ReplayLoss::DroppedThinkingBlocks { count: 1 }],
+        },
+    }
+}
+
+#[test]
+fn evidence_projection_facts_preserve_event_association_without_prompt_payload() {
+    use opi_agent::event::AgentEvent;
+    use opi_agent::message::AgentMessage;
+    use opi_ai::message::Message;
+    use opi_ai::transcript::ProjectionFacts;
+    let facts = forwarding_projection_facts();
+    let sink = InMemoryEvidenceSink::new();
+    let binding =
+        RuntimeInputBinding::direct(digest("projection-observation"), assembly("opi.embedder"));
+    sink.setup(&binding).unwrap();
+    let mut alloc = IdentityAllocator::new();
+    let mut expected = Vec::new();
+    for projection in [Some(facts.clone()), None] {
+        let mut assistant = opi_ai::test_support::base_assistant();
+        assistant.projection = projection.clone();
+        let event = AgentEvent::MessageEnd {
+            message: AgentMessage::Llm(Message::Assistant(assistant)),
+        };
+        let public = opi_agent::sdk::agent_event_to_value(&event.redacted_for_public());
+        let mut observation =
+            serde_json::json!({"event_type": public["type"], "prompt":"projection-prompt-canary"});
+        if let Some(known) = public["message"].get("projection") {
+            observation["projection"] = known.clone();
+        }
+        let record = fresh_record(
+            &mut alloc,
+            CallKind::Diagnostic,
+            EvidencePayload::Structured(RedactedValue::redacted(
+                observation,
+                RedactionMode::Summary,
+            )),
+        );
+        expected.push((record.call, record.sequence, projection));
+        sink.emit(&record).unwrap();
+    }
+    let stored = sink.records();
+    assert_eq!(stored.len(), 2);
+    for (record, (call, sequence, expected_projection)) in stored.iter().zip(expected) {
+        assert_eq!(record.call, call);
+        assert_eq!(record.sequence, sequence);
+        let EvidencePayload::Structured(value) = &record.payload else {
+            panic!("structured observation")
+        };
+        assert_eq!(value.as_value()["event_type"], "MessageEnd");
+        let restored = value
+            .as_value()
+            .get("projection")
+            .cloned()
+            .map(serde_json::from_value::<ProjectionFacts>)
+            .transpose()
+            .unwrap();
+        assert_eq!(restored, expected_projection);
+        assert!(
+            !serde_json::to_string(record)
+                .unwrap()
+                .contains("projection-prompt-canary")
+        );
+    }
+}
+
+fn empty_route_projection_facts() -> opi_ai::transcript::ProjectionFacts {
+    use opi_ai::transcript::{
+        ProjectionFacts, ProjectionMode, SourcePrefix, TemporalProjectionFacts,
+    };
+    ProjectionFacts {
+        source_prefix: SourcePrefix {
+            message_count: 0,
+            sha256: "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945".into(),
+        },
+        temporal: TemporalProjectionFacts {
+            mode: ProjectionMode::Lossless,
+            affected_ranges: vec![],
+        },
+        replay: opi_ai::replay::ReplayFacts { losses: vec![] },
+    }
 }

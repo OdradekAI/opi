@@ -263,182 +263,191 @@ impl Provider for VertexProvider {
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
     ) -> EventStream {
-        request.callbacks = request.callbacks.ensure_call_scope();
-        // Google exposes parsed raw chunks but has no HTTP response hook.
-        if request.callbacks.has_response_observer() {
-            return Box::pin(stream::iter(vec![Err(
-                ProviderError::UnsupportedCapability(ProviderErrorSummary::attested_static(
-                    "Google wires do not support response callbacks",
-                )),
-            )]));
-        }
-        // Two pinned wire modes: an API key selects Express (x-goog-api-key,
-        // collection URL); a Bearer token rides the ADC/project/location URL
-        // plus the ADC file's quota project header when present.
-        let auth_mode = match auth.scheme {
-            crate::auth::AuthScheme::Bearer => VertexAuthMode::Bearer {
-                token: auth.secret.expose_secret().to_string(),
-                quota_project: quota_project_of(&auth).map(str::to_owned),
-            },
-            crate::auth::AuthScheme::ApiKey => VertexAuthMode::Express {
-                api_key: auth.secret.expose_secret().to_string(),
-            },
-            crate::auth::AuthScheme::AwsSigV4(_) | crate::auth::AuthScheme::AnthropicFederation => {
+        let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::GoogleVertex) {
+            Ok(facts) => facts,
+            Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
+        };
+        let event_projection = projection.clone();
+        crate::stream::project_call(event_projection, || -> EventStream {
+            request.callbacks = request.callbacks.ensure_call_scope();
+            // Google exposes parsed raw chunks but has no HTTP response hook.
+            if request.callbacks.has_response_observer() {
+                return Box::pin(stream::iter(vec![Err(
+                    ProviderError::UnsupportedCapability(ProviderErrorSummary::attested_static(
+                        "Google wires do not support response callbacks",
+                    )),
+                )]));
+            }
+            // Two pinned wire modes: an API key selects Express (x-goog-api-key,
+            // collection URL); a Bearer token rides the ADC/project/location URL
+            // plus the ADC file's quota project header when present.
+            let auth_mode = match auth.scheme {
+                crate::auth::AuthScheme::Bearer => VertexAuthMode::Bearer {
+                    token: auth.secret.expose_secret().to_string(),
+                    quota_project: quota_project_of(&auth).map(str::to_owned),
+                },
+                crate::auth::AuthScheme::ApiKey => VertexAuthMode::Express {
+                    api_key: auth.secret.expose_secret().to_string(),
+                },
+                crate::auth::AuthScheme::AwsSigV4(_)
+                | crate::auth::AuthScheme::AnthropicFederation => {
+                    return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                        ProviderErrorSummary::attested_static(
+                            "Vertex accepts Bearer or API-key authentication",
+                        ),
+                    ))]));
+                }
+            };
+            // ADC routing owns the project/location resource prefix: a Bearer
+            // dispatch without either is a typed setup failure, never a silently
+            // degraded URL (pi resolveProject/resolveLocation throw).
+            if !self.express
+                && auth.base_url.is_none()
+                && matches!(auth_mode, VertexAuthMode::Bearer { .. })
+                && self.project.trim().is_empty()
+            {
                 return Box::pin(stream::iter(vec![Err(ProviderError::Config(
                     ProviderErrorSummary::attested_static(
-                        "Vertex accepts Bearer or API-key authentication",
+                        "Vertex AI requires a project ID for ADC routing; pass one in the native options or configure the provider",
                     ),
                 ))]));
             }
-        };
-        // ADC routing owns the project/location resource prefix: a Bearer
-        // dispatch without either is a typed setup failure, never a silently
-        // degraded URL (pi resolveProject/resolveLocation throw).
-        if !self.express
-            && auth.base_url.is_none()
-            && matches!(auth_mode, VertexAuthMode::Bearer { .. })
-            && self.project.trim().is_empty()
-        {
-            return Box::pin(stream::iter(vec![Err(ProviderError::Config(
-                ProviderErrorSummary::attested_static(
-                    "Vertex AI requires a project ID for ADC routing; pass one in the native options or configure the provider",
-                ),
-            ))]));
-        }
-        if !self.express
-            && auth.base_url.is_none()
-            && matches!(auth_mode, VertexAuthMode::Bearer { .. })
-            && self.location.trim().is_empty()
-        {
-            return Box::pin(stream::iter(vec![Err(ProviderError::Config(
-                ProviderErrorSummary::attested_static(
-                    "Vertex AI requires a location for ADC routing; pass one in the native options or configure the provider",
-                ),
-            ))]));
-        }
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model)
-            .to_string();
-
-        // An explicit complete model base owns the collection scope. The
-        // catalog's location template remains an instruction to use the
-        // resolved Express/ADC endpoint instead.
-        let model_base = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.as_deref())
-            .map(str::trim)
-            .filter(|base| !base.is_empty() && !base.contains("{location}"));
-        let url = if let Some(base) = model_base {
-            let version = if vertex_base_has_api_version(base) {
-                ""
-            } else {
-                "/v1"
-            };
-            format!(
-                "{}{version}/publishers/google/models/{model_id}:streamGenerateContent?alt=sse",
-                base.strip_suffix('/').unwrap_or(base)
-            )
-        } else if let Some(collection) = auth.base_url.as_deref() {
-            format!(
-                "{}/{model_id}:streamGenerateContent?alt=sse",
-                collection.trim_end_matches('/')
-            )
-        } else if self.express {
-            self.build_vertex_url(&model_id)
-        } else {
-            match &auth_mode {
-                VertexAuthMode::Express { .. } => format!(
-                    "{base}/v1/publishers/google/models/{model}:streamGenerateContent?alt=sse",
-                    base = self.base_url,
-                    model = model_id,
-                ),
-                VertexAuthMode::Bearer { .. } => self.build_vertex_url(&model_id),
+            if !self.express
+                && auth.base_url.is_none()
+                && matches!(auth_mode, VertexAuthMode::Bearer { .. })
+                && self.location.trim().is_empty()
+            {
+                return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                    ProviderErrorSummary::attested_static(
+                        "Vertex AI requires a location for ADC routing; pass one in the native options or configure the provider",
+                    ),
+                ))]));
             }
-        };
-        let requested_model = model_id;
-        let body = match self.inner.build_request_body(&request) {
-            Ok(body) => body,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        let callbacks = request.callbacks.clone();
-        let cancel = request.cancel;
-        let timeout = request.timeout;
-        let model_headers = self
-            .models
-            .iter()
-            .find(|model| model.id == requested_model)
-            .map(|model| model.headers.clone())
-            .unwrap_or_default();
-        let extra_headers = request.extra_headers;
-        let http_client = self.client.client().clone();
-        let provider_identity = self.provider_identity.clone();
+            let model_id = request
+                .model
+                .split_once(':')
+                .map(|(_, id)| id)
+                .unwrap_or(&request.model)
+                .to_string();
 
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        snapshot.record(&crate::gemini::empty_assistant_message(
-            &provider_identity,
-            crate::model_info::WireApi::GoogleVertex,
-            &requested_model,
-        ));
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let producer_cancel = cancel.clone();
-        // Explicit frozen telemetry context (task 20.41, 20.54/AIR-055): the
-        // producer task runs under the captured parent/Dispatch when
-        // provided; omission observes nothing.
-        let telemetry = request.telemetry_context.clone();
-
-        let tx_closed = tx.clone();
-        let producer = async move {
-            let run = async {
-                let result = async {
-                    let body = callbacks
-                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-                        .await?;
-                    stream_vertex_http(
-                        http_client,
-                        provider_identity,
-                        auth_mode,
-                        &url,
-                        requested_model,
-                        &body,
-                        producer_cancel.clone(),
-                        timeout,
-                        model_headers,
-                        extra_headers,
-                        callbacks,
-                        producer_snapshot,
-                        &tx,
-                    )
-                    .await
+            // An explicit complete model base owns the collection scope. The
+            // catalog's location template remains an instruction to use the
+            // resolved Express/ADC endpoint instead.
+            let model_base = self
+                .models
+                .iter()
+                .find(|model| model.id == model_id)
+                .and_then(|model| model.base_url.as_deref())
+                .map(str::trim)
+                .filter(|base| !base.is_empty() && !base.contains("{location}"));
+            let url = if let Some(base) = model_base {
+                let version = if vertex_base_has_api_version(base) {
+                    ""
+                } else {
+                    "/v1"
+                };
+                format!(
+                    "{}{version}/publishers/google/models/{model_id}:streamGenerateContent?alt=sse",
+                    base.strip_suffix('/').unwrap_or(base)
+                )
+            } else if let Some(collection) = auth.base_url.as_deref() {
+                format!(
+                    "{}/{model_id}:streamGenerateContent?alt=sse",
+                    collection.trim_end_matches('/')
+                )
+            } else if self.express {
+                self.build_vertex_url(&model_id)
+            } else {
+                match &auth_mode {
+                    VertexAuthMode::Express { .. } => format!(
+                        "{base}/v1/publishers/google/models/{model}:streamGenerateContent?alt=sse",
+                        base = self.base_url,
+                        model = model_id,
+                    ),
+                    VertexAuthMode::Bearer { .. } => self.build_vertex_url(&model_id),
                 }
-                .await;
-                match result {
-                    Ok(()) | Err(ProviderError::Cancelled) => {}
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+            };
+            let requested_model = model_id;
+            let body = match self.inner.build_request_body(&request) {
+                Ok(body) => body,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
+
+            let callbacks = request.callbacks.clone();
+            let cancel = request.cancel;
+            let timeout = request.timeout;
+            let model_headers = self
+                .models
+                .iter()
+                .find(|model| model.id == requested_model)
+                .map(|model| model.headers.clone())
+                .unwrap_or_default();
+            let extra_headers = request.extra_headers;
+            let http_client = self.client.client().clone();
+            let provider_identity = self.provider_identity.clone();
+
+            let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            snapshot.record(&crate::gemini::empty_assistant_message(
+                &provider_identity,
+                crate::model_info::WireApi::GoogleVertex,
+                &requested_model,
+            ));
+            let producer_snapshot = snapshot.clone();
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+            let producer_cancel = cancel.clone();
+            // Explicit frozen telemetry context (task 20.41, 20.54/AIR-055): the
+            // producer task runs under the captured parent/Dispatch when
+            // provided; omission observes nothing.
+            let telemetry = request.telemetry_context.clone();
+
+            let tx_closed = tx.clone();
+            let producer = async move {
+                let run = async {
+                    let result = async {
+                        let body = callbacks
+                            .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                            .await?;
+                        stream_vertex_http(
+                            http_client,
+                            provider_identity,
+                            auth_mode,
+                            &url,
+                            requested_model,
+                            &body,
+                            producer_cancel.clone(),
+                            timeout,
+                            model_headers,
+                            extra_headers,
+                            callbacks,
+                            producer_snapshot,
+                            &tx,
+                        )
+                        .await
                     }
+                    .await;
+                    match result {
+                        Ok(()) | Err(ProviderError::Cancelled) => {}
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                        }
+                    }
+                };
+                tokio::select! {
+                    biased;
+                    _ = producer_cancel.cancelled() => (),
+                    _ = tx_closed.closed() => (),
+                    _ = run => (),
                 }
             };
-            tokio::select! {
-                biased;
-                _ = producer_cancel.cancelled() => (),
-                _ = tx_closed.closed() => (),
-                _ = run => (),
-            }
-        };
-        let producer = async move {
-            if let Some(context) = telemetry {
-                context.instrument(producer).await;
-            } else {
-                producer.await;
-            }
-        };
-        crate::gemini::google_response_stream(producer, rx, cancel, snapshot)
+            let producer = async move {
+                if let Some(context) = telemetry {
+                    context.instrument(producer).await;
+                } else {
+                    producer.await;
+                }
+            };
+            crate::gemini::google_response_stream(producer, rx, cancel, snapshot)
+        })
     }
 }
 

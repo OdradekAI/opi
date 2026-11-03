@@ -11,8 +11,8 @@
 //! acknowledged — to memory.
 //!
 //! Opening a store restores the last-known revision from disk before any
-//! network work is attempted; `refresh(false)` on a [`crate::Models`]
-//! collection restores without touching any provider. The SDK never attaches
+//! network work is attempted; an offline `refresh` on a [`crate::Models`]
+//! collection restores without fetching provider catalogs. The SDK never attaches
 //! a store or fetches a remote catalog by default: there is no pi.dev or
 //! default startup policy here.
 //!

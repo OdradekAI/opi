@@ -407,143 +407,151 @@ impl AzureOpenAIProvider {
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
     ) -> EventStream {
-        request.callbacks = request.callbacks.ensure_call_scope();
-        let secret = auth.secret.expose_secret().to_string();
-        let api_key = match auth.scheme {
-            crate::auth::AuthScheme::ApiKey => secret,
-            crate::auth::AuthScheme::Bearer
-            | crate::auth::AuthScheme::AwsSigV4(_)
-            | crate::auth::AuthScheme::AnthropicFederation => {
-                return Box::pin(stream::once(async move {
-                    Err(ProviderError::Config(
-                        ProviderErrorSummary::attested_static(
-                            "Azure OpenAI requires prepared API-key authentication",
-                        ),
-                    ))
-                }));
-            }
+        let projection = /* frozen call */ match crate::transcript::compile_request_projection(&request, "azure", Some(&record), record.wire_api).map(|projection| projection.facts) {
+            Ok(facts) => facts,
+            Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
         };
-        let requested_model = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model)
-            .to_owned();
-        let native = self.azure_native.clone().unwrap_or_default();
-        let deployment = native
-            .azure_deployment_name
-            .clone()
-            .or_else(|| {
-                parse_deployment_map(self.deployment_map.as_deref())
-                    .get(&requested_model)
-                    .cloned()
-            })
-            .unwrap_or_else(|| requested_model.clone());
-        let endpoint = match resolve_azure_base_url(
-            native.azure_base_url.as_deref(),
-            native.azure_resource_name.as_deref(),
-            record.base_url.as_deref().or(Some(self.endpoint.as_str())),
-        ) {
-            Ok(endpoint) => endpoint,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        let api_version = native
-            .azure_api_version
-            .clone()
-            .unwrap_or_else(|| self.api_version.clone());
-        let url = responses_url(&endpoint, &api_version);
-
-        // Shared 20.37 parameter assembly under the azure identity: the
-        // record keeps its own wire so same-identity replay works
-        // end-to-end; service_tier stays absent (source omission).
-        let inner = OpenAiResponsesProvider::for_route(
-            None,
-            "azure".into(),
-            ProviderHeaders::default(),
-            vec![record.clone()],
-            self.client.clone(),
-        )
-        .dispatch_configured(
-            record.clone(),
-            OpenAiResponsesOptions {
-                tool_choice: native.tool_choice,
-                reasoning_effort: native.reasoning_effort,
-                reasoning_summary: native.reasoning_summary,
-                service_tier: None,
-                simple: native.simple,
-            },
-        );
-        let (body, wire_facts, effort_stamp) = match inner.compile_request_body(&request) {
-            Ok(compiled) => compiled,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        let body = {
-            let mut body = body;
-            body["model"] = serde_json::Value::String(deployment.clone());
-            body
-        };
-
-        let cancel = request.cancel;
-        let timeout = request.timeout;
-        let extra_headers = match ProviderHeaders::default().merge_model_request(
-            &record.headers,
-            &[],
-            &request.extra_headers,
-        ) {
-            Ok(headers) => headers,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        let callbacks = request.callbacks;
-        // Explicit frozen telemetry context (task 20.54/AIR-055): the
-        // producer task runs under the captured parent/Dispatch when
-        // provided; omission observes nothing.
-        let telemetry = request.telemetry_context.clone();
-        let http_client = self.client.client().clone();
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let tx_closed = tx.clone();
-        let producer_cancel = cancel.clone();
-
-        let producer = async move {
-            let work = async {
-                if let Err(error) = stream_azure_responses_http(
-                    http_client,
-                    api_key,
-                    &url,
-                    requested_model,
-                    wire_facts,
-                    effort_stamp,
-                    &body,
-                    producer_cancel.clone(),
-                    timeout,
-                    extra_headers,
-                    callbacks,
-                    producer_snapshot,
-                    &tx,
-                )
-                .await
-                {
-                    let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+        let event_projection = projection.clone();
+        crate::stream::project_call(event_projection, || -> EventStream {
+            request.callbacks = request.callbacks.ensure_call_scope();
+            let secret = auth.secret.expose_secret().to_string();
+            let api_key = match auth.scheme {
+                crate::auth::AuthScheme::ApiKey => secret,
+                crate::auth::AuthScheme::Bearer
+                | crate::auth::AuthScheme::AwsSigV4(_)
+                | crate::auth::AuthScheme::AnthropicFederation => {
+                    return Box::pin(stream::once(async move {
+                        Err(ProviderError::Config(
+                            ProviderErrorSummary::attested_static(
+                                "Azure OpenAI requires prepared API-key authentication",
+                            ),
+                        ))
+                    }));
                 }
             };
+            let requested_model = request
+                .model
+                .split_once(':')
+                .map(|(_, id)| id)
+                .unwrap_or(&request.model)
+                .to_owned();
+            let native = self.azure_native.clone().unwrap_or_default();
+            let deployment = native
+                .azure_deployment_name
+                .clone()
+                .or_else(|| {
+                    parse_deployment_map(self.deployment_map.as_deref())
+                        .get(&requested_model)
+                        .cloned()
+                })
+                .unwrap_or_else(|| requested_model.clone());
+            let endpoint = match resolve_azure_base_url(
+                native.azure_base_url.as_deref(),
+                native.azure_resource_name.as_deref(),
+                record.base_url.as_deref().or(Some(self.endpoint.as_str())),
+            ) {
+                Ok(endpoint) => endpoint,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
+            let api_version = native
+                .azure_api_version
+                .clone()
+                .unwrap_or_else(|| self.api_version.clone());
+            let url = responses_url(&endpoint, &api_version);
 
-            tokio::select! {
-                biased;
-                _ = producer_cancel.cancelled() => (),
-                _ = tx_closed.closed() => (),
-                _ = work => {},
+            // Shared 20.37 parameter assembly under the azure identity: the
+            // record keeps its own wire so same-identity replay works
+            // end-to-end; service_tier stays absent (source omission).
+            let inner = OpenAiResponsesProvider::for_route(
+                None,
+                "azure".into(),
+                ProviderHeaders::default(),
+                vec![record.clone()],
+                self.client.clone(),
+            )
+            .dispatch_configured(
+                record.clone(),
+                OpenAiResponsesOptions {
+                    tool_choice: native.tool_choice,
+                    reasoning_effort: native.reasoning_effort,
+                    reasoning_summary: native.reasoning_summary,
+                    service_tier: None,
+                    simple: native.simple,
+                },
+            );
+            let (body, wire_facts, effort_stamp) = match inner.compile_request_body(&request) {
+                Ok(compiled) => compiled,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
+
+            let body = {
+                let mut body = body;
+                body["model"] = serde_json::Value::String(deployment.clone());
+                body
+            };
+
+            let cancel = request.cancel;
+            let timeout = request.timeout;
+            let extra_headers = match ProviderHeaders::default().merge_model_request(
+                &record.headers,
+                &[],
+                &request.extra_headers,
+            ) {
+                Ok(headers) => headers,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
+            let callbacks = request.callbacks;
+            // Explicit frozen telemetry context (task 20.54/AIR-055): the
+            // producer task runs under the captured parent/Dispatch when
+            // provided; omission observes nothing.
+            let telemetry = request.telemetry_context.clone();
+            let http_client = self.client.client().clone();
+            let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            let producer_snapshot = snapshot.clone();
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+            let tx_closed = tx.clone();
+            let producer_cancel = cancel.clone();
+
+            let producer = async move {
+                let work = async {
+                    if let Err(error) = stream_azure_responses_http(
+                        http_client,
+                        api_key,
+                        &url,
+                        requested_model,
+                        wire_facts,
+                        effort_stamp,
+                        &body,
+                        producer_cancel.clone(),
+                        timeout,
+                        extra_headers,
+                        callbacks,
+                        producer_snapshot,
+                        &tx,
+                    )
+                    .await
+                    {
+                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                    }
+                };
+
+                tokio::select! {
+                    biased;
+                    _ = producer_cancel.cancelled() => (),
+                    _ = tx_closed.closed() => (),
+                    _ = work => {},
+                }
+            };
+            if let Some(context) = telemetry {
+                tokio::spawn(context.instrument(producer));
+            } else {
+                tokio::spawn(producer);
             }
-        };
-        if let Some(context) = telemetry {
-            tokio::spawn(context.instrument(producer));
-        } else {
-            tokio::spawn(producer);
-        }
 
-        Box::pin(CancelAwareReceiverStream::with_snapshot(
-            rx, cancel, snapshot,
-        ))
+            Box::pin(CancelAwareReceiverStream::with_snapshot(
+                rx, cancel, snapshot,
+            ))
+        })
     }
 
     /// Build the request body (delegates to inner OpenAI chat provider).
@@ -551,7 +559,10 @@ impl AzureOpenAIProvider {
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
-        self.inner.build_request_body(request)
+        self.inner
+            .clone()
+            .with_wire(crate::WireApi::AzureOpenAiCompletions)
+            .build_request_body(request)
     }
 
     /// Stream events from a raw SSE response body (for testing).
@@ -648,124 +659,137 @@ impl Provider for AzureOpenAIProvider {
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
     ) -> EventStream {
-        request.callbacks = request.callbacks.ensure_call_scope();
-        let secret = auth.secret.expose_secret();
-        let api_key = match auth.scheme {
-            crate::auth::AuthScheme::ApiKey => secret.to_string(),
-            crate::auth::AuthScheme::Bearer
-            | crate::auth::AuthScheme::AwsSigV4(_)
-            | crate::auth::AuthScheme::AnthropicFederation => {
-                return Box::pin(stream::iter(vec![Err(ProviderError::Config(
-                    ProviderErrorSummary::attested_static(
-                        "Azure OpenAI requires prepared API-key authentication",
-                    ),
-                ))]));
-            }
+        let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::AzureOpenAiCompletions) {
+            Ok(facts) => facts,
+            Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
         };
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model)
-            .to_string();
-
-        // Typed dual-wire dispatch (task 20.38): the bound record (adapter
-        // path) or the listed record for this model selects the wire; a
-        // responses-wire record routes through the Responses transport,
-        // every other record keeps the legacy chat transport.
-        if let Some(record) = self
-            .active_record
-            .clone()
-            .or_else(|| {
-                self.models
-                    .iter()
-                    .find(|model| model.id == model_id)
-                    .cloned()
-            })
-            .filter(|record| record.wire_api == WireApi::AzureOpenAiResponses)
-        {
-            return self.stream_responses_prepared(record, request, auth);
-        }
-
-        let url = self.build_azure_url(&model_id);
-        let requested_model = model_id.clone();
-        let body = match self.inner.build_request_body(&request) {
-            Ok(body) => body,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        let cancel = request.cancel;
-        let timeout = request.timeout;
-        let model_headers = self
-            .active_record
-            .as_ref()
-            .or_else(|| self.models.iter().find(|model| model.id == model_id))
-            .map(|model| model.headers.as_slice())
-            .unwrap_or_default();
-        let extra_headers = match ProviderHeaders::default().merge_model_request(
-            model_headers,
-            &[],
-            &request.extra_headers,
-        ) {
-            Ok(headers) => headers,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        let callbacks = request.callbacks;
-        // Explicit frozen telemetry context (task 20.54/AIR-055): the chat
-        // producer runs under the captured parent/Dispatch when provided.
-        let telemetry = request.telemetry_context.clone();
-        let http_client = self.client.client().clone();
-
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let producer_cancel = cancel.clone();
-
-        let tx_closed = tx.clone();
-        let producer = async move {
-            let run = async {
-                let result = async {
-                    let body = callbacks
-                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-                        .await?;
-                    stream_azure_http(
-                        http_client,
-                        api_key,
-                        &url,
-                        requested_model,
-                        &body,
-                        producer_cancel.clone(),
-                        timeout,
-                        extra_headers,
-                        callbacks,
-                        producer_snapshot,
-                        &tx,
-                    )
-                    .await
-                }
-                .await;
-                match result {
-                    Ok(()) | Err(ProviderError::Cancelled) => {}
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                    }
+        let event_projection = projection.clone();
+        crate::stream::project_call(event_projection, || -> EventStream {
+            request.callbacks = request.callbacks.ensure_call_scope();
+            let secret = auth.secret.expose_secret();
+            let api_key = match auth.scheme {
+                crate::auth::AuthScheme::ApiKey => secret.to_string(),
+                crate::auth::AuthScheme::Bearer
+                | crate::auth::AuthScheme::AwsSigV4(_)
+                | crate::auth::AuthScheme::AnthropicFederation => {
+                    return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                        ProviderErrorSummary::attested_static(
+                            "Azure OpenAI requires prepared API-key authentication",
+                        ),
+                    ))]));
                 }
             };
-            tokio::select! {
-                biased;
-                _ = producer_cancel.cancelled() => (),
-                _ = tx_closed.closed() => (),
-                _ = run => (),
-            }
-        };
-        if let Some(context) = telemetry {
-            tokio::spawn(context.instrument(producer));
-        } else {
-            tokio::spawn(producer);
-        }
+            let model_id = request
+                .model
+                .split_once(':')
+                .map(|(_, id)| id)
+                .unwrap_or(&request.model)
+                .to_string();
 
-        Box::pin(CancelAwareReceiverStream::with_snapshot(
-            rx, cancel, snapshot,
-        ))
+            // Typed dual-wire dispatch (task 20.38): the bound record (adapter
+            // path) or the listed record for this model selects the wire; a
+            // responses-wire record routes through the Responses transport,
+            // every other record keeps the legacy chat transport.
+            if let Some(record) = self
+                .active_record
+                .clone()
+                .or_else(|| {
+                    self.models
+                        .iter()
+                        .find(|model| model.id == model_id)
+                        .cloned()
+                })
+                .filter(|record| record.wire_api == WireApi::AzureOpenAiResponses)
+            {
+                return self.stream_responses_prepared(record, request, auth);
+            }
+
+            let url = self.build_azure_url(&model_id);
+            let requested_model = model_id.clone();
+            let body = match self
+                .inner
+                .clone()
+                .with_wire(crate::WireApi::AzureOpenAiCompletions)
+                .build_request_body(&request)
+            {
+                Ok(body) => body,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
+
+            let cancel = request.cancel;
+            let timeout = request.timeout;
+            let model_headers = self
+                .active_record
+                .as_ref()
+                .or_else(|| self.models.iter().find(|model| model.id == model_id))
+                .map(|model| model.headers.as_slice())
+                .unwrap_or_default();
+            let extra_headers = match ProviderHeaders::default().merge_model_request(
+                model_headers,
+                &[],
+                &request.extra_headers,
+            ) {
+                Ok(headers) => headers,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
+            let callbacks = request.callbacks;
+            // Explicit frozen telemetry context (task 20.54/AIR-055): the chat
+            // producer runs under the captured parent/Dispatch when provided.
+            let telemetry = request.telemetry_context.clone();
+            let http_client = self.client.client().clone();
+
+            let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            let producer_snapshot = snapshot.clone();
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+            let producer_cancel = cancel.clone();
+
+            let tx_closed = tx.clone();
+            let producer = async move {
+                let run = async {
+                    let result = async {
+                        let body = callbacks
+                            .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                            .await?;
+                        stream_azure_http(
+                            http_client,
+                            api_key,
+                            &url,
+                            requested_model,
+                            &body,
+                            producer_cancel.clone(),
+                            timeout,
+                            extra_headers,
+                            callbacks,
+                            producer_snapshot,
+                            &tx,
+                        )
+                        .await
+                    }
+                    .await;
+                    match result {
+                        Ok(()) | Err(ProviderError::Cancelled) => {}
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                        }
+                    }
+                };
+                tokio::select! {
+                    biased;
+                    _ = producer_cancel.cancelled() => (),
+                    _ = tx_closed.closed() => (),
+                    _ = run => (),
+                }
+            };
+            if let Some(context) = telemetry {
+                tokio::spawn(context.instrument(producer));
+            } else {
+                tokio::spawn(producer);
+            }
+
+            Box::pin(CancelAwareReceiverStream::with_snapshot(
+                rx, cancel, snapshot,
+            ))
+        })
     }
 }
 
@@ -1098,7 +1122,10 @@ async fn stream_azure_responses_http(
                 _ = cancel.cancelled() => {
                     return Err(mapper.failure(ProviderError::Cancelled));
                 }
-                chunk = byte_stream.next() => {
+                chunk = async {
+                    response_activated_at.get_or_insert_with(std::time::Instant::now);
+                    byte_stream.next().await
+                } => {
                     match chunk {
                         Some(c) => c,
                         None => break,
@@ -1114,9 +1141,6 @@ async fn stream_azure_responses_http(
                 }
             })?;
             buffer.push_str(&decoder.push(&chunk));
-            if response_activated_at.is_none() {
-                response_activated_at = Some(std::time::Instant::now());
-            }
             for frame in drain_sse_frames(&mut buffer) {
                 // Raw observer (task 20.51): parsed wire JSON before
                 // normalization; failure preserves the partial.

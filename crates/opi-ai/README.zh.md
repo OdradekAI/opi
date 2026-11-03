@@ -107,6 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     let request = Request {
+        projection: Default::default(),
         transport: TransportPreference::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context,
@@ -208,6 +209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     let request = Request {
+        projection: Default::default(),
         transport: TransportPreference::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context,
@@ -314,6 +316,7 @@ fn execute_weather_tool(call: &ToolCall) -> ToolOutcome {
 
 fn request_for(context: TranscriptContext) -> Request {
     Request {
+        projection: Default::default(),
         transport: TransportPreference::default(),
         model: MODEL_SPEC.into(),
         context,
@@ -732,7 +735,7 @@ HTTP 响应的 `model` 保留请求模型，`response_model` 保存服务端报�
 | `usage_in_stream` | 请求 `stream_options.include_usage`；推断基线启用，显式 `Some(false)` 关闭。 |
 | `max_tokens_field` | 输出上限字段名覆盖（标准端点 `max_completion_tokens`，冻结的 legacy 兼容集 `max_tokens`）。 |
 | `tool_result_name_field` | 在工具结果消息上回显工具名。 |
-| `strict_tool_schema` | 发出 strict JSON-schema 工具定义。 |
+| `strict_tool_schema` | 声明 strict 能力；Require/Prefer 工具使用共享 strict 转换器，无约束工具在支持的 wire 上发送 `strict: false`。 |
 | `cache_key` | 发送 provider 的 prompt-cache key（cache-affinity 提示）。 |
 | `send_session_affinity_headers` | 把请求 `session_id` 映射为兼容的会话亲和 header（OpenRouter 推断启用）。 |
 | `require_assistant_after_tool_result` | 在工具结果与下一条 user 消息之间插入固定 assistant 桥接；assistant 工具调用轮次用 `content: ""` 而非 `null`。 |
@@ -742,6 +745,27 @@ HTTP 响应的 `model` 保留请求模型，`response_model` 保存服务端报�
 | `thinking_token_budget_field` / `supports_thinking_token_budget` | 顶层 reasoning 预算字段（vLLM `thinking_token_budget`、Qwen/DashScope/SGLang `thinking_budget`、llama.cpp `thinking_budget_tokens`；alias 选择 vLLM 字段）。 |
 | `chat_template_kwargs` / `chat_template_args` | `$var` 模板值（`thinking.enabled`、`thinking.effort`、`thinking.budget`；无 effort 时 `omit_when_off` 丢弃该键）。 |
 | `chat_completions_path` | 非默认路径覆盖 suffix。显式 model API base 追加 `/chat/completions`，仅构造器提供的 root 追加 `/v1/chat/completions`。 |
+
+Chat compat 还提供 `supports_finish_reason`、`supports_grammar_tools`、
+`open_router_routing`、`vercel_gateway_routing`、`cache_control_format`、
+`session_affinity_format` 与 `supports_long_cache_retention`。路由值保留显式
+空数组/对象、零价格及 sort partition 的显式 null。`vllm_priority` 为
+`Option<serde_json::Number>`；模板映射为 `Option<BTreeMap<...>>`，`None`
+继承，`Some(empty)` 清空。catalog codec 通过完整 `x-opi.compat` 快照保留
+这些值。`supports_finish_reason: Some(false)` 允许合法流 EOF 关闭已积累的
+文本/工具调用，推断结束原因但不编造原始原因。grammar 能力选择 custom 工具
+声明、流式输入与回放。Anthropic 缓存标记及长期保留遵循选定能力；亲和 header
+独立于 prompt 缓存并使用完整 session ID。
+
+`OpenAiResponsesSourceCompat` 是普通 Responses、Azure Responses 与 Codex
+Responses 唯一的 presence-aware 来源控制所有者。存储元数据中缺失的可选项
+保留 `None`，具体 wire 自行解析默认值。普通 Responses 的 strict 默认 false，
+Azure/Codex 默认 true；Codex 无约束工具保留 `strict: null`。developer role
+默认 true，grammar、时序工具 additions/search、显式缓存与对话中 effort 默认
+false。仅普通 Responses 消费 max-output 能力、显式缓存模式与对话中 effort；
+其长期缓存能力默认 true。Azure 保留原生最大 token 行为，Codex 省略该字段。
+精确匹配的 OpenAI direct signin 调用在准备时冻结来源限定的 auth 分类，
+并抑制普通 Responses 的 max/temperature/cache/effort 分支。
 
 已退役键 `system_role_override`、`supports_store`、`supports_developer_role`
 与静态 `reasoning_effort` 字符串在每个配置位置（catalog `x-opi.compat`、产品
@@ -1094,6 +1118,14 @@ loopback 回归捕获真实 Anthropic 与 Codex 终态输出，序列化／重�
 是 `.repo/pi-1.3.0/packages/ai/src/utils/transcript.ts`；上游已废弃的
 `hasToolRedefinitions` 不移植）。
 
+`Request.projection` 通过 `transcript::ProjectionOptions` 选择时间顺序与 replay
+保真度；两者默认均为 `NativeOrCollapse`，选择 `Strict` 会在 auth 之前拒绝
+无法原生表达的时间顺序变更或 replay 损失。`PreparedRoute.projection` 冻结本次
+调用的源前缀、时间顺序模式、受影响消息范围及类型化 replay 损失。新生成的
+assistant 消息通过 `AssistantMessage.projection` 携带这些事实；旧消息或合成
+消息保留 `None`（未知）。前缀 SHA-256 只把事实关联到原始规范消息，不赋予
+权限，也不能据此重建 prompt 内容。
+
 ## 私有上游 Crypto Profile
 
 私有 `crypto` 模块（不属于公开 API）基于未修改的 crates.io crypto 基线
@@ -1225,7 +1257,7 @@ revision：`try_install` 完整校验候选后原子换入，因此篡改、过�
 
 
 `ModelsStore::invalidate_source(id)` 显式撤下该来源发布的记录并持久化失效标记。
-旧 guard 此后不能发布；`refresh(false)` 无需认证或网络即可观察已附加共享 store
+旧 guard 此后不能发布；离线 `refresh` 无需认证或网络即可观察已附加共享 store
 的后续 revision。该来源新的成功发布清除标记；SDK 不默认安装按 HTTP 状态失效的政策。
 
 `catalog::personalize_openrouter_catalog` 接收 owned 目录记录、显式 base URL/key、
@@ -1266,21 +1298,37 @@ base 与 thinking 等级的 sampling 映射、精确 thinking 映射、含 stric
 wire compat 载荷）经显式 `x-opi` 扩展往返，纯 v1 文档
 以封闭默认值解码。
 
-`Models::refresh(allow_network)` 是唯一刷新入口：`refresh(false)` 不做
-任何 OAuth/网络工作，仅恢复 store 缓存（`RefreshStatus::OfflineRestored`）；
-`refresh(true)` 按确定性排序顺序抓取已注册 provider，再按注册顺序抓取
-已注册 catalog source。结果按 provider 隔离：成功者发布，失败者保留
-该 provider 的旧数据并以脱敏错误上报（`RefreshReport` 中的
-`RefreshOutcome::{Published,Failed,Restored}`），不会抹掉其他 provider 的
-catalog。未注册显式 catalog source 时，native provider 的 `Ok(None)` 恢复其内置
-catalog；存在显式 source 时，该 native 未发布结果保留最后已知 source catalog。
-权威的 `Ok(Some([]))` 仍会将其替换为空 catalog。`refresh_with` 观察
-`CancellationToken`——提交前观察到取消即保留先前发布，包括 source 在观察取消的
-同次 poll 中返回成功的情况。无 store 时，最终 token 检查是同步内存提交的起点。
-已 prepare 的调用在刷新后保持冻结绑定。`DynamicCatalogSource` 是
-宿主自定义 catalog source 的公开接缝；`HttpCatalogSource` 经池化连接
-抓取单份 distribution-schema-v1 文档，失败全部脱敏。SDK 不注册任何
-source、不附加任何 store、没有 pi.dev/默认启动抓取策略。
+`Models::provider_ids` 返回已注册 chat、image、classifier 和 deferred owner
+的有序并集。`delete_provider` 和 `clear_providers` 仅移除当前模型 provider 的绑定；
+共享凭据／catalog store 和独立注册的纯认证 flow 保持原有调用方所有权。
+已捕获的调用保留原 adapter 修订，显式资源清理仍能访问退役的 resource owner。
+`get_models` 仍只列 chat；`get_model_of_type`、`get_models_of_type` 和
+`get_all_models` 使用封闭的 `CatalogOperation`／`CatalogRecord`，不探测凭据。
+异步 `get_available_of_type` 和 `get_all_available` 检查各 operation 已有的
+注册配置与账户限制，不解析 builtin generation 认证。
+
+`Models::refresh(ModelsRefreshOptions)` 是唯一刷新入口。默认允许全部当前
+provider 的网络工作，不指定强制刷新。`allow_network: false` 仅恢复选中的缓存，
+不做 OAuth／网络工作（`RefreshStatus::OfflineRestored`）。`providers: None`
+选择全部当前 owner；`Some(empty_set)` 和未知 ID 不执行 source 工作。
+`force: None`、`Some(false)`、`Some(true)` 仅在网络阶段原样传给选中的 source，
+其新鲜度含义由 source 决定。native provider 按 ID 排序执行，catalog source
+随后按注册顺序执行。`Provider::refresh_models` 接收 `CatalogRefreshContext`；
+每个 `DynamicCatalogSource` 声明 `provider_ids`，只接收当前选中 owner 的交集。
+返回未声明 provider 会使该 source 失败；声明范围内但未选中的记录不能改变其现有发布。
+`HttpCatalogSource::new(url, provider_ids)` 声明所有权而不抓取；网络调用仅抓取
+一次固定文档，不虚构 force header 或 query 参数。
+
+结果仍按 provider 隔离（`RefreshReport` 中的
+`RefreshOutcome::{Published,Failed,Restored}`）：成功者发布，失败者保留旧数据。
+native `Ok(None)` 恢复内置回退，除非该 provider 注册的显式 source 仍拥有其
+最后已知 catalog；权威空发布保持为空。子集刷新基于完整共享 store 快照合并，
+保留未选中的持久化 owner 与 publisher，仅向当前实例应用选中的已确认记录。
+即使先前子集已观察到同一 store revision，后续离线子集仍会恢复其缓存。
+删除 owner 后不能暴露缓存；显式重新注册允许恢复兼容记录。
+`refresh_with(options, &token)` 保持取消检查、store ACK 和旧 revision guard。
+被取代或取消的工作不能迟到发布；source 失效不能从未选中的旧内存复活数据。
+SDK 不注册任何 source、不附加任何 store、没有 pi.dev／默认启动抓取策略。
 
 ## Telemetry 载体：冻结 parent Span 与 Dispatch（任务 20.54，DEL-12）
 
@@ -2497,6 +2545,11 @@ token 选择的 HTTPS 端点。Radius 覆盖到 gateway 绑定的登录/刷新�
 `RpcRunner::new_with_runtime_packages_and_auth` 在 `auth_resolver` 后接收
 可选 keychain store。生产与 resolver、AWS 来源缓存、ADC owner 使用同一个
 store；`None` 用于无 store 的测试组装。
+
+SDK 的默认 `SpawnedCredentialProcess` 不选择超时或 stdout 大小限制。
+`with_policy(CredentialProcessPolicy::default())` 显式选择现有的 10 秒/64-KiB
+界限；`policy()` 返回 `None` 或已选择的策略。Coding 产品仍显式保留这些界限。
+无论是否选择策略，取消都会终止并回收所拥有的 helper 进程树。
 
 AWS 嵌套 role profile 保留完整 static pair 优先，再沿现有
 web-identity/process/SSO/login 来源链，从内到外 AssumeRole。SSO cache

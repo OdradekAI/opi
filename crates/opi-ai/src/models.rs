@@ -35,7 +35,7 @@
 //! changes may occur between minor versions without a major version bump.
 
 use std::any::{Any, TypeId};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -406,6 +406,38 @@ pub enum ModelsError {
     CatalogStore(#[from] crate::catalog::ModelsStoreError),
 }
 
+impl ModelsError {
+    /// Whether the logical call's own cancellation interrupted preparation or
+    /// forbids another attempt. Authentication resolvers returning a cancellation
+    /// error independently do not establish this call-cancellation origin.
+    pub fn is_call_cancelled(&self) -> bool {
+        matches!(self, Self::CallCancelled)
+            || matches!(self, Self::Provider(error) if error.is_call_cancelled())
+    }
+}
+
+/// Caller selection and source policy for an explicit model refresh.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelsRefreshOptions {
+    /// Permit source network work after restoring selected cached records.
+    pub allow_network: bool,
+    /// Selected provider IDs; `None` selects all active owners and an empty
+    /// set selects none. Unknown IDs perform no source work.
+    pub providers: Option<BTreeSet<String>>,
+    /// Optional source-specific forced refresh, forwarded only with network work.
+    pub force: Option<bool>,
+}
+
+impl Default for ModelsRefreshOptions {
+    fn default() -> Self {
+        Self {
+            allow_network: true,
+            providers: None,
+            force: None,
+        }
+    }
+}
+
 /// Outcome of one refresh round, reported per provider or source id.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -559,16 +591,16 @@ pub struct Models {
     /// remote catalog by default.
     models_store: Option<crate::catalog::ModelsStore>,
     /// Explicitly registered dynamic-catalog sources, fetched only during
-    /// `refresh(true)` rounds in registration order.
+    /// network-enabled refresh rounds in registration order.
     catalog_sources: Vec<std::sync::Arc<dyn crate::catalog::DynamicCatalogSource>>,
     /// Publisher ownership from the same acknowledged revision as each
     /// dynamic catalog; unrelated sources cannot retain a native snapshot.
     catalog_publishers: HashMap<String, crate::catalog::store::CatalogPublisher>,
     /// Acknowledged catalogs for all three operations; chat is projected into the registry.
     dynamic_catalogs: HashMap<String, crate::catalog::ModelsStoreEntry>,
-    /// Last attached-store revision restored into the registry. Shared-store
-    /// changes are observed by the next refresh, including offline refresh.
-    store_revision: Option<u64>,
+    /// Identity of this instance's current registration/publication owner.
+    /// Captured older identities cannot publish into a replacement owner.
+    publication_generation: Arc<()>,
 }
 
 impl Models {
@@ -600,7 +632,7 @@ impl Models {
             catalog_sources: Vec::new(),
             catalog_publishers: HashMap::new(),
             dynamic_catalogs: HashMap::new(),
-            store_revision: None,
+            publication_generation: Arc::new(()),
         }
     }
 
@@ -651,7 +683,7 @@ impl Models {
             catalog_sources: Vec::new(),
             catalog_publishers: HashMap::new(),
             dynamic_catalogs: HashMap::new(),
-            store_revision: None,
+            publication_generation: Arc::new(()),
         }
     }
 
@@ -726,7 +758,8 @@ impl Models {
     /// Register one typed custom chat adapter (AIR-045).
     ///
     /// The adapter is keyed by its exact [`ApiId`] with its fixed options type
-    /// `O`. Registration installs a **catalog-invisible** provider route (the
+    /// `O`; empty and whitespace identities remain distinct valid keys.
+    /// Registration installs a **catalog-invisible** provider route (the
     /// adapter's complete record never appears in `get_model`/`all_models`)
     /// plus the route's [`AuthResolver`], so every entry — native, simple,
     /// direct — reaches the same frozen binding and collector. Registering
@@ -736,7 +769,6 @@ impl Models {
     ///
     /// # Errors
     ///
-    /// - [`RegistrationError::EmptyApiId`] if the ApiId is empty.
     /// - [`RegistrationError::EmptyProviderId`] if the provider id is empty.
     pub fn register_chat_api<O: Send + 'static>(
         &mut self,
@@ -745,9 +777,6 @@ impl Models {
         source: AuthProvenanceSource,
     ) -> Result<ChatApiHandle<O>, RegistrationError> {
         let api_id = api.api_id().clone();
-        if api_id.as_str().trim().is_empty() {
-            return Err(RegistrationError::EmptyApiId);
-        }
         let provider_id = api.provider_id().to_owned();
         if provider_id.trim().is_empty() {
             return Err(RegistrationError::EmptyProviderId);
@@ -798,15 +827,13 @@ impl Models {
         source: AuthProvenanceSource,
     ) -> Result<ImageApiHandle<O>, RegistrationError> {
         let api_id = api.api_id().clone();
-        if api_id.as_str().trim().is_empty() {
-            return Err(RegistrationError::EmptyApiId);
-        }
         let provider_id = api.provider_id().to_owned();
         if provider_id.trim().is_empty() {
             return Err(RegistrationError::EmptyProviderId);
         }
         let record = api.complete_record().clone();
         self.sources.insert(provider_id.clone(), source);
+        self.publication_generation = Arc::new(());
         self.image_apis.insert(
             (provider_id.clone(), api_id.clone()),
             ImageApiRegistration {
@@ -863,15 +890,13 @@ impl Models {
         source: AuthProvenanceSource,
     ) -> Result<ClassifierApiHandle<O>, RegistrationError> {
         let api_id = api.api_id().clone();
-        if api_id.as_str().trim().is_empty() {
-            return Err(RegistrationError::EmptyApiId);
-        }
         let provider_id = api.provider_id().to_owned();
         if provider_id.trim().is_empty() {
             return Err(RegistrationError::EmptyProviderId);
         }
         let record = api.complete_record().clone();
         self.sources.insert(provider_id.clone(), source);
+        self.publication_generation = Arc::new(());
         self.classifier_apis.insert(
             (provider_id.clone(), api_id.clone()),
             ClassifierApiRegistration {
@@ -937,15 +962,13 @@ impl Models {
         source: AuthProvenanceSource,
     ) -> Result<DeferredApiHandle<O>, RegistrationError> {
         let api_id = api.api_id().clone();
-        if api_id.as_str().trim().is_empty() {
-            return Err(RegistrationError::EmptyApiId);
-        }
         let provider_id = api.provider_id().to_owned();
         if provider_id.trim().is_empty() {
             return Err(RegistrationError::EmptyProviderId);
         }
         let model_id = api.model_id().to_owned();
         self.sources.insert(provider_id.clone(), source);
+        self.publication_generation = Arc::new(());
         self.deferred_apis.insert(
             api_id.clone(),
             DeferredApiRegistration {
@@ -1095,8 +1118,18 @@ impl Models {
                 registration.api_id.as_str(),
             )
             .map_err(DeferredError::into_provider_error)?;
+        if call.cancel.is_cancelled() {
+            return Err(ProviderError::Cancelled);
+        }
         let options = registration.dispatch.default_options_erased();
-        let auth = registration.resolver.resolve().await?;
+        let auth = tokio::select! {
+            biased;
+            _ = call.cancel.cancelled() => return Err(ProviderError::Cancelled),
+            auth = registration.resolver.resolve() => auth?,
+        };
+        if call.cancel.is_cancelled() {
+            return Err(ProviderError::Cancelled);
+        }
         registration
             .dispatch
             .cancel_erased(handle, options.as_ref(), auth, call)
@@ -1781,7 +1814,6 @@ impl Models {
             });
         }
         compile_prepared_request(&provider_id, model, &mut request)?;
-
         let resolver = self
             .resolvers
             .get(&provider_id)
@@ -1789,24 +1821,43 @@ impl Models {
                 provider: provider_id.clone(),
             })?
             .clone();
-        let source = self
-            .sources
-            .get(&provider_id)
-            .cloned()
-            .unwrap_or(AuthProvenanceSource::Static);
-
-        let mut auth = resolve_route_auth(&resolver, source, &request.cancel).await?;
         let provider = self
             .registry
             .get_provider_arc(&provider_id)
             .ok_or_else(|| {
                 ModelsError::Registry(RegistryError::UnknownProvider(provider_id.clone()))
             })?;
+        let source = self
+            .sources
+            .get(&provider_id)
+            .cloned()
+            .unwrap_or(AuthProvenanceSource::Static);
+        let projection = crate::transcript::compile_request_projection(
+            &request,
+            &provider_id,
+            Some(model),
+            model.wire_api,
+        )?
+        .facts;
+
+        let mut auth = resolve_route_auth(&resolver, source, &request.cancel)
+            .await
+            .map_err(|error| {
+                let call_cancelled = matches!(error, ModelsError::CallCancelled);
+                let cause = models_error_cause(error).with_projection(&projection);
+                ModelsError::Provider(if call_cancelled {
+                    cause.with_call_cancellation()
+                } else {
+                    cause
+                })
+            })?;
         let mut selected_model = model.clone();
         let provider = provider
-            .prepare_model_call(&mut selected_model, &mut auth)?
+            .prepare_model_call(&mut selected_model, &mut auth)
+            .map_err(|error| ModelsError::Provider(error.with_projection(&projection)))?
             .unwrap_or(provider);
         let route = PreparedRoute {
+            projection,
             provider_id,
             model_id,
             wire_api,
@@ -1833,7 +1884,264 @@ impl Models {
 
     /// Return sorted registered provider ids.
     pub fn provider_ids(&self) -> Vec<&str> {
-        self.registry.provider_ids()
+        let mut ids: BTreeSet<&str> = self.registry.provider_ids().into_iter().collect();
+        ids.extend(
+            self.chat_apis
+                .values()
+                .map(|entry| entry.provider_id.as_str()),
+        );
+        ids.extend(
+            self.image_apis
+                .values()
+                .map(|entry| entry.provider_id.as_str()),
+        );
+        ids.extend(
+            self.classifier_apis
+                .values()
+                .map(|entry| entry.provider_id.as_str()),
+        );
+        ids.extend(
+            self.deferred_apis
+                .values()
+                .map(|entry| entry.provider_id.as_str()),
+        );
+        ids.into_iter().collect()
+    }
+
+    /// Remove one live model-provider's registrations without touching shared
+    /// stores or cancelling calls that already captured an adapter revision.
+    /// Unknown IDs leave every binding unchanged, including auth-only flows.
+    pub fn delete_provider(&mut self, provider: &str) -> bool {
+        if !self.provider_ids().contains(&provider) {
+            return false;
+        }
+        self.registry.remove_provider(provider);
+        self.clear_catalog_entry(provider);
+        self.resource_owners.remove(provider);
+        self.auth.remove(provider);
+        self.compat.remove(provider);
+        self.probed.remove(provider);
+        self.resolvers.remove(provider);
+        self.sources.remove(provider);
+        self.oauth_routes.remove(provider);
+        self.oauth_flows.remove(provider);
+        self.builtin_auth_factories.remove(provider);
+        self.builtin_auth_checks.remove(provider);
+        self.builtin_default_auth.remove(provider);
+        self.chat_apis
+            .retain(|_, entry| entry.provider_id != provider);
+        self.image_apis
+            .retain(|_, entry| entry.provider_id != provider);
+        self.classifier_apis
+            .retain(|_, entry| entry.provider_id != provider);
+        self.deferred_apis
+            .retain(|_, entry| entry.provider_id != provider);
+        true
+    }
+
+    /// Remove all live model-provider registrations. Auth-only flows, shared
+    /// stores and captured calls retain their existing ownership.
+    pub fn clear_providers(&mut self) {
+        let ids: Vec<_> = self.provider_ids().into_iter().map(str::to_owned).collect();
+        for id in ids {
+            self.delete_provider(&id);
+        }
+    }
+
+    /// Last-known chat records for the selected active provider, or all active
+    /// providers. This performs no authentication or source work.
+    pub fn get_models(&self, provider: Option<&str>) -> Vec<ModelInfo> {
+        self.registry
+            .all_models()
+            .into_iter()
+            .filter(|(owner, _)| {
+                provider.is_none_or(|wanted| wanted == *owner)
+                    && self.registry.get_provider(owner).is_some()
+            })
+            .map(|(_, model)| model.clone())
+            .collect()
+    }
+
+    /// Read one last-known record of exactly the requested operation.
+    pub fn get_model_of_type(
+        &self,
+        operation: crate::catalog::CatalogOperation,
+        provider: &str,
+        id: &str,
+    ) -> Option<crate::catalog::CatalogRecord> {
+        self.get_models_of_type(operation, Some(provider))
+            .into_iter()
+            .find(|record| record.id() == id)
+    }
+
+    /// Read last-known operation-qualified records without source work. A
+    /// present empty dynamic catalog is authoritative and suppresses fallback.
+    pub fn get_models_of_type(
+        &self,
+        operation: crate::catalog::CatalogOperation,
+        provider: Option<&str>,
+    ) -> Vec<crate::catalog::CatalogRecord> {
+        use crate::catalog::{CatalogOperation, CatalogRecord};
+        if operation == CatalogOperation::Chat {
+            return self
+                .get_models(provider)
+                .into_iter()
+                .map(CatalogRecord::from)
+                .collect();
+        }
+        let mut records = Vec::new();
+        for owner in self
+            .provider_ids()
+            .into_iter()
+            .filter(|owner| provider.is_none_or(|wanted| wanted == *owner))
+        {
+            if let Some(entry) = self.dynamic_catalogs.get(owner) {
+                records.extend(
+                    entry
+                        .models
+                        .iter()
+                        .filter(|record| {
+                            record.operation() == operation
+                                && self.catalog_record_registered(owner, record)
+                        })
+                        .cloned(),
+                );
+            } else {
+                match operation {
+                    CatalogOperation::Image => {
+                        for ((id, api), registration) in &self.image_apis {
+                            if id == owner {
+                                records.extend(
+                                    registration
+                                        .records
+                                        .iter()
+                                        .filter(|record| {
+                                            record.provider_id == owner && &record.api == api
+                                        })
+                                        .cloned()
+                                        .map(CatalogRecord::Image),
+                                );
+                            }
+                        }
+                    }
+                    CatalogOperation::Classifier => {
+                        for ((id, api), registration) in &self.classifier_apis {
+                            if id == owner {
+                                records.extend(
+                                    registration
+                                        .records
+                                        .iter()
+                                        .filter(|record| {
+                                            record.provider_id == owner && &record.api == api
+                                        })
+                                        .cloned()
+                                        .map(CatalogRecord::Classifier),
+                                );
+                            }
+                        }
+                    }
+                    CatalogOperation::Chat => unreachable!(),
+                }
+            }
+        }
+        records
+    }
+
+    /// Read all three operation kinds; equal bare IDs in different operations
+    /// remain separate records.
+    pub fn get_all_models(&self, provider: Option<&str>) -> Vec<crate::catalog::CatalogRecord> {
+        use crate::catalog::CatalogOperation;
+        [
+            CatalogOperation::Chat,
+            CatalogOperation::Image,
+            CatalogOperation::Classifier,
+        ]
+        .into_iter()
+        .flat_map(|operation| self.get_models_of_type(operation, provider))
+        .collect()
+    }
+
+    /// Check configuration for the requested operation without resolving
+    /// generation credentials or refreshing builtin sources.
+    pub async fn get_available_of_type(
+        &self,
+        operation: crate::catalog::CatalogOperation,
+        provider: Option<&str>,
+    ) -> Result<Vec<crate::catalog::CatalogRecord>, ModelsError> {
+        use crate::catalog::{CatalogOperation, CatalogRecord};
+        match operation {
+            CatalogOperation::Chat => Ok(self
+                .get_available(provider)
+                .await?
+                .into_iter()
+                .map(|(_, model)| CatalogRecord::from(model))
+                .collect()),
+            CatalogOperation::Classifier => Ok(self
+                .get_available_classifiers(provider)
+                .await?
+                .into_iter()
+                .map(CatalogRecord::Classifier)
+                .collect()),
+            CatalogOperation::Image => {
+                let mut records = Vec::new();
+                let mut builtin_status = HashMap::new();
+                for ((owner, api), registration) in &self.image_apis {
+                    if provider.is_some_and(|wanted| wanted != owner) {
+                        continue;
+                    }
+                    let available = if let Some(check) = registration
+                        .builtin_auth
+                        .then(|| self.builtin_auth_checks.get(owner))
+                        .flatten()
+                    {
+                        if let Some(available) = builtin_status.get(owner) {
+                            *available
+                        } else {
+                            let available = check()
+                                .await
+                                .map_err(|error| ModelsError::AuthResolution {
+                                    provider: owner.clone(),
+                                    error: Box::new(error),
+                                })?
+                                .is_some_and(|status| !status.responses_only);
+                            builtin_status.insert(owner.clone(), available);
+                            available
+                        }
+                    } else {
+                        match registration.resolver.check_configuration() {
+                            Some(check) => {
+                                check.await.map_err(|error| ModelsError::AuthResolution {
+                                    provider: owner.clone(),
+                                    error: Box::new(error),
+                                })?
+                            }
+                            None => true,
+                        }
+                    };
+                    if available {
+                        records.extend(self.get_models_of_type(CatalogOperation::Image, Some(owner)).into_iter().filter(|record| matches!(record, CatalogRecord::Image(model) if &model.api == api)));
+                    }
+                }
+                Ok(records)
+            }
+        }
+    }
+
+    /// Check all operation-specific registration configurations.
+    pub async fn get_all_available(
+        &self,
+        provider: Option<&str>,
+    ) -> Result<Vec<crate::catalog::CatalogRecord>, ModelsError> {
+        use crate::catalog::CatalogOperation;
+        let mut records = Vec::new();
+        for operation in [
+            CatalogOperation::Chat,
+            CatalogOperation::Image,
+            CatalogOperation::Classifier,
+        ] {
+            records.extend(self.get_available_of_type(operation, provider).await?);
+        }
+        Ok(records)
     }
 
     /// Resolve a `provider:model` spec into provider reference + model info.
@@ -2668,109 +2976,105 @@ impl Models {
         self.compat.get(provider_id)
     }
 
-    /// Refresh provider-side model catalogs.
-    ///
-    /// Refresh provider-side model catalogs.
-    ///
-    /// `allow_network` selects the two refresh modes:
-    ///
-    /// - `false` performs **no OAuth/network work at all**: an attached
-    ///   [`crate::catalog::ModelsStore`] is restored into the registry and
-    ///   the report carries [`RefreshOutcome::Restored`] entries with status
-    ///   [`RefreshStatus::OfflineRestored`].
-    /// - `true` first restores any pending store snapshot, then fetches every
-    ///   registered provider (deterministic sorted id order) and every
-    ///   registered catalog source (registration order). Outcomes are
-    ///   **per-provider**: successes publish, failures retain that
-    ///   provider's prior data and report a redacted error without erasing
-    ///   other providers' catalogs. `Ok(None)` clears that provider's dynamic
-    ///   snapshot back to its built-in models.
-    ///
-    /// When a store is attached, publication goes through the store's single
-    /// revision-commit owner: the committed snapshot is persisted first and
-    /// exactly the acknowledged map is applied to memory, so a superseded or
-    /// cancelled refresh can never publish late. Already-prepared calls keep
-    /// their frozen bindings across refreshes.
-    ///
-    /// The SDK registers no source and attaches no store by default: there
-    /// is no pi.dev or default startup fetch policy here.
-    pub async fn refresh(&mut self, allow_network: bool) -> Result<RefreshReport, ModelsError> {
-        self.refresh_with(allow_network, &tokio_util::sync::CancellationToken::new())
-            .await
+    /// Refresh selected active provider owners, restoring their cached records
+    /// before optional source work. `force` is interpreted only by each source.
+    /// Successes publish through the existing store ACK; failed owners retain
+    /// their prior records. Captured calls retain their frozen revisions.
+    pub async fn refresh(
+        &mut self,
+        options: ModelsRefreshOptions,
+    ) -> Result<RefreshReport, ModelsError> {
+        self.refresh_with(options, &CancellationToken::new()).await
     }
 
-    /// [`refresh`](Self::refresh) observing `token`: cancellation observed
-    /// before publication stops fetching and leaves the current publication
-    /// intact, with report status [`RefreshStatus::Cancelled`]. Without a
-    /// store, the final token check begins the synchronous memory commit;
-    /// later cancellation cannot roll back that completed publication.
+    /// Refresh with cancellation. Selected cached records restore before source
+    /// work; cancellation or supersession prevents a later fetched publication.
     pub async fn refresh_with(
         &mut self,
-        allow_network: bool,
-        token: &tokio_util::sync::CancellationToken,
+        options: ModelsRefreshOptions,
+        token: &CancellationToken,
     ) -> Result<RefreshReport, ModelsError> {
-        let mut report = RefreshReport {
-            status: RefreshStatus::Published,
-            entries: Vec::new(),
-        };
-
-        // Capture the publication and its commit guard under one store lock.
-        // A later invalidation cannot be merged with stale in-memory records.
-        let guard = if let Some(store) = &self.models_store {
+        let mut report = RefreshReport::default();
+        let selected: BTreeSet<String> = self
+            .provider_ids()
+            .into_iter()
+            .filter(|id| {
+                options
+                    .providers
+                    .as_ref()
+                    .is_none_or(|wanted| wanted.contains(*id))
+            })
+            .map(str::to_owned)
+            .collect();
+        if token.is_cancelled() {
+            report.status = RefreshStatus::Cancelled;
+            return Ok(report);
+        }
+        if selected.is_empty() {
+            if !options.allow_network {
+                report.status = RefreshStatus::OfflineRestored;
+            }
+            return Ok(report);
+        }
+        let generation = self.publication_generation.clone();
+        // The complete persisted map remains the merge base even when this
+        // instance restores only a subset or knows only some of its owners.
+        let (guard, mut merged, mut publishers) = if let Some(store) = &self.models_store {
             let (guard, snapshot, publishers) = store.begin_snapshot(Some(token.clone()));
-            if self.store_revision != Some(snapshot.revision) {
-                for (id, models) in &snapshot.catalogs {
+            self.apply_selected_catalog_entries(&selected, &snapshot.catalogs, &publishers);
+            for id in &selected {
+                if let Some(entry) = self.dynamic_catalogs.get(id) {
                     report.entries.push(RefreshReportEntry {
                         id: id.clone(),
                         outcome: RefreshOutcome::Restored {
-                            models: models.models.len(),
+                            models: entry.models.len(),
                         },
                     });
                 }
-                self.store_revision = Some(snapshot.revision);
-                self.apply_catalog_entries(snapshot.catalogs);
-                self.catalog_publishers = publishers;
             }
-            Some(guard)
+            (Some(guard), snapshot.catalogs, publishers)
         } else {
-            None
+            (
+                None,
+                self.dynamic_catalogs.clone(),
+                self.catalog_publishers.clone(),
+            )
         };
-        if !allow_network {
+        if !options.allow_network {
             report.status = RefreshStatus::OfflineRestored;
             return Ok(report);
         }
-
-        // Merge over the current publication: failures retain prior data.
-        let mut merged = self.dynamic_catalogs.clone();
-        let mut publishers = self.catalog_publishers.clone();
         publishers.retain(|provider, _| merged.contains_key(provider));
-        let mut cancelled = false;
-
-        let mut ids: Vec<String> = self
-            .registry
-            .provider_ids()
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
-        ids.sort();
-        for id in ids {
-            let Some(provider) = self.registry.get_provider(&id) else {
+        for id in &selected {
+            let Some(provider) = self.registry.get_provider(id) else {
                 continue;
             };
-            let outcome = tokio::select! {
-                biased;
-                _ = token.cancelled() => None,
-                result = provider.refresh_models() => Some(result),
+            let context = crate::catalog::CatalogRefreshContext {
+                allow_network: true,
+                force: options.force,
+                providers: BTreeSet::from([id.clone()]),
+                cancel: token.clone(),
             };
-            let result = match outcome {
-                Some(result) => result,
-                None => {
-                    cancelled = true;
-                    break;
-                }
+            let result = tokio::select! {
+                biased;
+                _ = token.cancelled() => { report.status = RefreshStatus::Cancelled; return Ok(report); },
+                result = provider.refresh_models(context) => result,
             };
             match result {
-                Ok(Some(models)) => match validate_dynamic_catalog(&id, &models) {
+                Ok(Some(models)) => match validate_dynamic_catalog(id, &models).and_then(|()| {
+                    if models
+                        .iter()
+                        .all(|model| self.chat_model_admitted(id, model))
+                    {
+                        Ok(())
+                    } else {
+                        Err(ProviderError::Config(
+                            ProviderErrorSummary::attested_static(
+                                "native catalog contains a model without a registered chat route",
+                            ),
+                        ))
+                    }
+                }) {
                     Ok(()) => {
                         report.entries.push(RefreshReportEntry {
                             id: id.clone(),
@@ -2781,7 +3085,7 @@ impl Models {
                         publishers
                             .insert(id.clone(), crate::catalog::store::CatalogPublisher::Native);
                         merged.insert(
-                            id,
+                            id.clone(),
                             crate::catalog::ModelsStoreEntry {
                                 models: models
                                     .into_iter()
@@ -2797,20 +3101,18 @@ impl Models {
                     }),
                 },
                 Ok(None) => {
-                    // Native absence cannot erase a confirmed source-owned
-                    // publication while that source remains registered. A
-                    // different provider's source confers no such ownership.
-                    let source_owned = matches!(publishers.get(&id),
-                        Some(crate::catalog::store::CatalogPublisher::Source { id: source_id })
-                        if self.catalog_sources.iter().any(|source| source.id() == source_id));
+                    // A source's ownership is limited to its declared provider
+                    // scope; unrelated sources cannot retain this snapshot.
+                    let source_owned = matches!(publishers.get(id), Some(crate::catalog::store::CatalogPublisher::Source {id:source_id})
+                        if self.catalog_sources.iter().any(|source| source.id() == source_id && source.provider_ids().contains(id)));
                     if !source_owned {
-                        merged.remove(&id);
-                        publishers.remove(&id);
+                        merged.remove(id);
+                        publishers.remove(id);
                     }
                     report.entries.push(RefreshReportEntry {
                         id: id.clone(),
                         outcome: RefreshOutcome::Published {
-                            models: merged.get(&id).map_or(0, |entry| entry.models.len()),
+                            models: merged.get(id).map_or(0, |entry| entry.models.len()),
                         },
                     });
                 }
@@ -2820,94 +3122,111 @@ impl Models {
                 }),
             }
         }
-
-        if !cancelled {
-            for source in &self.catalog_sources {
-                let outcome = tokio::select! {
-                    biased;
-                    _ = token.cancelled() => None,
-                    result = source.fetch(token.clone()) => Some(result),
-                };
-                let result = match outcome {
-                    Some(result) => result,
-                    None => {
-                        cancelled = true;
-                        break;
+        for source in &self.catalog_sources {
+            let source_selected: BTreeSet<String> = source
+                .provider_ids()
+                .iter()
+                .filter(|id| selected.contains(*id))
+                .cloned()
+                .collect();
+            if source_selected.is_empty() {
+                continue;
+            }
+            let context = crate::catalog::CatalogRefreshContext {
+                allow_network: true,
+                force: options.force,
+                providers: source_selected.clone(),
+                cancel: token.clone(),
+            };
+            let result = tokio::select! {
+                biased;
+                _ = token.cancelled() => { report.status = RefreshStatus::Cancelled; return Ok(report); },
+                result = source.fetch(context) => result,
+            };
+            match result {
+                Ok(catalogs) => {
+                    let error = catalogs
+                        .keys()
+                        .find(|id| !source.provider_ids().contains(id))
+                        .map(|_| {
+                            ProviderError::Config(ProviderErrorSummary::attested_static(
+                                "catalog source returned an undeclared provider",
+                            ))
+                        })
+                        .or_else(|| {
+                            catalogs
+                                .iter()
+                                .filter(|(id, _)| source_selected.contains(*id))
+                                .find_map(|(id, entry)| {
+                                    self.validate_catalog_entry(id, entry).err()
+                                })
+                        });
+                    if let Some(error) = error {
+                        report.entries.push(RefreshReportEntry {
+                            id: source.id().to_owned(),
+                            outcome: RefreshOutcome::Failed(error),
+                        });
+                        continue;
                     }
-                };
-                match result {
-                    Ok(catalogs) => {
-                        let mut published = 0_usize;
-                        let mut source_error = None;
-                        for (provider_id, models) in catalogs {
-                            match self.validate_catalog_entry(&provider_id, &models) {
-                                Ok(()) => {
-                                    published += models.models.len();
-                                    publishers.insert(
-                                        provider_id.clone(),
-                                        crate::catalog::store::CatalogPublisher::Source {
-                                            id: source.id().to_owned(),
-                                        },
-                                    );
-                                    merged.insert(provider_id, models);
-                                }
-                                Err(error) => {
-                                    source_error.get_or_insert(error);
-                                }
-                            }
-                        }
-                        match source_error {
-                            None => report.entries.push(RefreshReportEntry {
+                    let mut published = 0;
+                    for (id, entry) in catalogs
+                        .into_iter()
+                        .filter(|(id, _)| source_selected.contains(id))
+                    {
+                        published += entry.models.len();
+                        publishers.insert(
+                            id.clone(),
+                            crate::catalog::store::CatalogPublisher::Source {
                                 id: source.id().to_owned(),
-                                outcome: RefreshOutcome::Published { models: published },
-                            }),
-                            Some(error) => report.entries.push(RefreshReportEntry {
-                                id: source.id().to_owned(),
-                                outcome: RefreshOutcome::Failed(error),
-                            }),
-                        }
+                            },
+                        );
+                        merged.insert(id, entry);
                     }
-                    Err(error) => report.entries.push(RefreshReportEntry {
+                    report.entries.push(RefreshReportEntry {
                         id: source.id().to_owned(),
-                        outcome: RefreshOutcome::Failed(error),
-                    }),
+                        outcome: RefreshOutcome::Published { models: published },
+                    });
                 }
+                Err(error) => report.entries.push(RefreshReportEntry {
+                    id: source.id().to_owned(),
+                    outcome: RefreshOutcome::Failed(error),
+                }),
             }
         }
-
-        if cancelled {
+        if token.is_cancelled() {
             report.status = RefreshStatus::Cancelled;
             return Ok(report);
         }
-
+        if !Arc::ptr_eq(&generation, &self.publication_generation) {
+            report.status = RefreshStatus::Superseded;
+            return Ok(report);
+        }
         match guard {
             Some(guard) => match guard.commit_with_publishers(merged, publishers).await {
                 Ok((commit, publishers)) => {
-                    self.store_revision = Some(commit.revision);
-                    self.apply_catalog_entries(commit.catalogs);
-                    self.catalog_publishers = publishers;
+                    if token.is_cancelled() {
+                        report.status = RefreshStatus::Cancelled;
+                    } else if !Arc::ptr_eq(&generation, &self.publication_generation) {
+                        report.status = RefreshStatus::Superseded;
+                    } else {
+                        self.apply_selected_catalog_entries(
+                            &selected,
+                            &commit.catalogs,
+                            &publishers,
+                        );
+                    }
                 }
                 Err(crate::catalog::StoreCommitError::Superseded { .. }) => {
-                    report.status = RefreshStatus::Superseded;
+                    report.status = RefreshStatus::Superseded
                 }
                 Err(crate::catalog::StoreCommitError::Cancelled) => {
-                    report.status = RefreshStatus::Cancelled;
+                    report.status = RefreshStatus::Cancelled
                 }
                 Err(crate::catalog::StoreCommitError::Store(error)) => {
                     return Err(ModelsError::CatalogStore(error));
                 }
             },
-            None => {
-                // A fetch can return success in the same poll that an external
-                // caller cancels. Recheck at the synchronous memory commit
-                // boundary, after every fetch and before replacing any state.
-                if token.is_cancelled() {
-                    report.status = RefreshStatus::Cancelled;
-                    return Ok(report);
-                }
-                self.apply_catalog_entries(merged);
-                self.catalog_publishers = publishers;
-            }
+            None => self.apply_selected_catalog_entries(&selected, &merged, &publishers),
         }
         Ok(report)
     }
@@ -2915,17 +3234,96 @@ impl Models {
     fn clear_catalog_entry(&mut self, provider: &str) {
         self.dynamic_catalogs.remove(provider);
         self.catalog_publishers.remove(provider);
+        self.publication_generation = Arc::new(());
     }
 
-    fn apply_catalog_entries(
+    fn catalog_record_registered(
+        &self,
+        provider: &str,
+        record: &crate::catalog::CatalogRecord,
+    ) -> bool {
+        match record {
+            crate::catalog::CatalogRecord::Chat(_) => {
+                self.registry.get_provider(provider).is_some()
+            }
+            crate::catalog::CatalogRecord::Image(model) => {
+                model.provider_id == provider
+                    && self
+                        .image_apis
+                        .contains_key(&(provider.into(), model.api.clone()))
+            }
+            crate::catalog::CatalogRecord::Classifier(model) => {
+                model.provider_id == provider
+                    && self
+                        .classifier_apis
+                        .contains_key(&(provider.into(), model.api.clone()))
+            }
+        }
+    }
+
+    fn catalog_record_admitted(
+        &self,
+        provider: &str,
+        record: &crate::catalog::CatalogRecord,
+    ) -> bool {
+        if !self.catalog_record_registered(provider, record) {
+            return false;
+        }
+        match record {
+            crate::catalog::CatalogRecord::Chat(model) => self.chat_model_admitted(provider, model),
+            _ => true,
+        }
+    }
+
+    fn chat_model_admitted(&self, provider: &str, model: &ModelInfo) -> bool {
+        self.registry.get_provider(provider).is_some_and(|owner| {
+            // This existing pre-auth gate checks the real mapped route graph
+            // without credentials or seed-model membership.
+            owner
+                .validate_simple_options(model, &SimpleOptions::default())
+                .is_ok()
+        })
+    }
+
+    fn apply_selected_catalog_entries(
         &mut self,
-        entries: HashMap<String, crate::catalog::ModelsStoreEntry>,
+        selected: &BTreeSet<String>,
+        entries: &HashMap<String, crate::catalog::ModelsStoreEntry>,
+        publishers: &HashMap<String, crate::catalog::store::CatalogPublisher>,
     ) {
-        let chat = entries
+        for id in selected {
+            if let Some(entry) = entries.get(id) {
+                let mut entry = entry.clone();
+                let acknowledged_empty = entry.models.is_empty();
+                entry
+                    .models
+                    .retain(|record| self.catalog_record_admitted(id, record));
+                if !acknowledged_empty && entry.models.is_empty() {
+                    // A stale nonempty catalog for retired API owners is not an
+                    // authoritative empty publication by the replacement owner.
+                    self.dynamic_catalogs.remove(id);
+                    self.catalog_publishers.remove(id);
+                    continue;
+                }
+                self.dynamic_catalogs.insert(id.clone(), entry);
+                if let Some(publisher) = publishers.get(id) {
+                    self.catalog_publishers
+                        .insert(id.clone(), publisher.clone());
+                } else {
+                    self.catalog_publishers.remove(id);
+                }
+            } else {
+                self.dynamic_catalogs.remove(id);
+                self.catalog_publishers.remove(id);
+            }
+        }
+        let chat = self
+            .dynamic_catalogs
             .iter()
-            .map(|(provider, entry)| {
+            .filter(|(id, _)| self.registry.get_provider(id).is_some())
+            .map(|(id, entry)| {
                 (
-                    provider.clone(),
+                    id.clone(),
                     entry
                         .models
                         .iter()
@@ -2940,7 +3338,6 @@ impl Models {
             })
             .collect();
         self.registry.replace_all_dynamic_catalogs(chat);
-        self.dynamic_catalogs = entries;
     }
 
     fn validate_catalog_entry(
@@ -2963,18 +3360,7 @@ impl Models {
             )));
         }
         for record in &entry.models {
-            let registered = match record {
-                crate::catalog::CatalogRecord::Chat(_) => {
-                    self.registry.get_provider(provider).is_some()
-                }
-                crate::catalog::CatalogRecord::Image(model) => self
-                    .image_apis
-                    .contains_key(&(provider.into(), model.api.clone())),
-                crate::catalog::CatalogRecord::Classifier(model) => self
-                    .classifier_apis
-                    .contains_key(&(provider.into(), model.api.clone())),
-            };
-            if !registered {
+            if !self.catalog_record_admitted(provider, record) {
                 return Err(invalid(format!(
                     "catalog model '{}:{}' has no registered {} route",
                     provider,
@@ -2990,16 +3376,17 @@ impl Models {
     /// refresh round; nothing is fetched or written here.
     pub fn set_models_store(&mut self, store: crate::catalog::ModelsStore) {
         self.models_store = Some(store);
-        self.store_revision = None;
+        self.publication_generation = Arc::new(());
     }
 
-    /// Register a dynamic-catalog source fetched during `refresh(true)`
+    /// Register a dynamic-catalog source fetched during network-enabled refresh
     /// rounds. Registered explicitly; the SDK installs no default source.
     pub fn register_catalog_source(
         &mut self,
         source: std::sync::Arc<dyn crate::catalog::DynamicCatalogSource>,
     ) {
         self.catalog_sources.push(source);
+        self.publication_generation = Arc::new(());
     }
 }
 
@@ -3064,6 +3451,8 @@ pub async fn drain_to_completion(
 /// provenance both stay private to [`PreparedProviderCall`].
 #[derive(Debug, Clone)]
 pub struct PreparedRoute {
+    /// Projection accepted for the frozen canonical input before authentication.
+    pub projection: crate::transcript::ProjectionFacts,
     /// Canonical provider id of the resolved route.
     pub provider_id: String,
     /// Canonical model id of the resolved route.
@@ -3155,14 +3544,23 @@ impl Stream for AttemptStream {
         let item = this.inner.as_mut().poll_next(cx);
         match &item {
             Poll::Ready(Some(Err(cause))) => {
+                // Projection metadata preserves the underlying typed failure.
+                // A response handoff still seals acquisition; pre-handoff
+                // failures retain strict-variant and credential classification.
+                let classified = match cause {
+                    ProviderError::StreamFailure(failure) if !cause.response_received() => {
+                        failure.cause()
+                    }
+                    _ => cause,
+                };
                 if matches!(
-                    cause,
+                    classified,
                     ProviderError::CredentialNeeded { .. }
                         | ProviderError::CredentialRevoked { .. }
                 ) {
                     this.credential_terminal.store(true, Ordering::Release);
                 }
-                this.acquisition.note_failure(cause);
+                this.acquisition.note_failure(classified);
             }
             Poll::Ready(Some(Ok(_))) => {
                 // The first delivered stream item is the streaming-response
@@ -3347,15 +3745,18 @@ impl PreparedProviderCall {
             })
             .flatten(),
         );
-        Ok(Box::pin(AttemptStream {
-            inner: stream,
-            cancel: self.request.cancel.clone(),
-            credential_terminal: self.credential_terminal.clone(),
-            acquisition: self.acquisition.clone(),
-            released: false,
-            polled: false,
-            _resource_owner: self.resource_owner.clone(),
-        }))
+        Ok(crate::stream::with_projection(
+            Box::pin(AttemptStream {
+                inner: stream,
+                cancel: self.request.cancel.clone(),
+                credential_terminal: self.credential_terminal.clone(),
+                acquisition: self.acquisition.clone(),
+                released: false,
+                polled: false,
+                _resource_owner: self.resource_owner.clone(),
+            }),
+            self.route.projection.clone(),
+        ))
     }
 }
 
@@ -3406,7 +3807,26 @@ fn drive_resolved_call_registered(
     request.cancel = resources
         .as_ref()
         .map_or_else(|| request.cancel.child_token(), |lease| lease.token());
+    let record = selected_model.as_ref().or_else(|| {
+        provider.models().iter().find(|model| {
+            model.id
+                == request
+                    .model
+                    .split_once(':')
+                    .map_or(request.model.as_str(), |(_, id)| id)
+        })
+    });
+    let projection = match crate::transcript::compile_request_projection(
+        &request,
+        provider.id(),
+        record,
+        record.map_or(crate::WireApi::OpenAiCompletions, |model| model.wire_api),
+    ) {
+        Ok(projection) => projection.facts,
+        Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
+    };
     let route = PreparedRoute {
+        projection,
         provider_id: provider.id().to_owned(),
         model_id: request
             .model
@@ -4628,7 +5048,7 @@ async fn materialize_chat_call(
         return Err(CallFailure::from_partial(None, ProviderError::Cancelled));
     }
 
-    let event_stream = match binding.route {
+    let (event_stream, projection) = match binding.route {
         FrozenRoute::ChatApi { api_id, entry } => {
             let Some(entry) = entry else {
                 return Err(setup_failure(format!(
@@ -4662,7 +5082,17 @@ async fn materialize_chat_call(
                 .dispatch
                 .validate_native_erased(binding.record.info(), &request, value.as_ref())
                 .map_err(|error| CallFailure::from_partial(None, error))?;
-            let auth = resolve_binding_auth(&binding.auth_plan, &request.cancel).await?;
+            let projection = crate::transcript::compile_request_projection(
+                &request,
+                binding.record.provider_id(),
+                Some(binding.record.info()),
+                binding.record.wire_api(),
+            )
+            .map_err(|error| CallFailure::from_partial(None, error))?
+            .facts;
+            let auth = resolve_binding_auth(&binding.auth_plan, &request.cancel)
+                .await
+                .map_err(|failure| failure.with_projection(&projection))?;
             let retained_resources = resources.clone();
             let stream = entry.dispatch.stream_prepared_erased(
                 binding.record.info().clone(),
@@ -4671,11 +5101,14 @@ async fn materialize_chat_call(
                 auth,
                 resources,
             );
-            Box::pin(ResourceApiStream {
-                inner: stream,
-                _resources: retained_resources,
-                _owner: binding.resource_owner,
-            }) as EventStream
+            (
+                Box::pin(ResourceApiStream {
+                    inner: stream,
+                    _resources: retained_resources,
+                    _owner: binding.resource_owner,
+                }) as EventStream,
+                projection,
+            )
         }
         FrozenRoute::Provider {
             provider_id,
@@ -4696,24 +5129,42 @@ async fn materialize_chat_call(
                 &mut request,
             )
             .map_err(|error| CallFailure::from_partial(None, error))?;
-            let mut auth = resolve_binding_auth(&binding.auth_plan, &request.cancel).await?;
+            let projection = crate::transcript::compile_request_projection(
+                &request,
+                binding.record.provider_id(),
+                Some(binding.record.info()),
+                binding.record.wire_api(),
+            )
+            .map_err(|error| CallFailure::from_partial(None, error))?
+            .facts;
+            let mut auth = resolve_binding_auth(&binding.auth_plan, &request.cancel)
+                .await
+                .map_err(|failure| failure.with_projection(&projection))?;
             let mut selected_model = binding.record.info().clone();
             let provider = provider
                 .prepare_model_call(&mut selected_model, &mut auth)
-                .map_err(|error| CallFailure::from_partial(None, error))?
+                .map_err(|error| {
+                    CallFailure::from_partial(None, error).with_projection(&projection)
+                })?
                 .unwrap_or(provider);
-            drive_resolved_call_registered(
-                provider,
-                request,
-                auth,
-                resources,
-                binding.resource_owner,
-                Some(selected_model),
-                simple_options,
+            (
+                drive_resolved_call_registered(
+                    provider,
+                    request,
+                    auth,
+                    resources,
+                    binding.resource_owner,
+                    Some(selected_model),
+                    simple_options,
+                ),
+                projection,
             )
         }
     };
-    Ok(ChatStream::new(event_stream))
+    Ok(ChatStream::new(crate::stream::with_projection(
+        event_stream,
+        projection,
+    )))
 }
 
 async fn resolve_binding_auth(

@@ -111,11 +111,15 @@ pub(crate) fn validate_full_uri(uri: &str) -> Result<(), EcsError> {
     let Ok(parsed) = url::Url::parse(uri) else {
         return Err(EcsError::InvalidEndpoint);
     };
-    let host = parsed.host_str().unwrap_or_default();
+    let Some(host) = parsed.host() else {
+        return Err(EcsError::InvalidEndpoint);
+    };
     match parsed.scheme() {
         "https" => Ok(()),
         "http" => {
-            if is_loopback_host(host) || host.starts_with("169.254.") {
+            if is_loopback_host(&host)
+                || matches!(host, url::Host::Ipv4(address) if address.is_link_local())
+            {
                 Ok(())
             } else {
                 Err(EcsError::InvalidEndpoint)
@@ -125,12 +129,17 @@ pub(crate) fn validate_full_uri(uri: &str) -> Result<(), EcsError> {
     }
 }
 
-fn is_loopback_host(host: &str) -> bool {
-    host == "localhost" || host.starts_with("127.") || host == "[::1]"
+fn is_loopback_host(host: &url::Host<&str>) -> bool {
+    match host {
+        url::Host::Domain(name) => *name == "localhost",
+        url::Host::Ipv4(address) => address.is_loopback(),
+        url::Host::Ipv6(address) => address.is_loopback(),
+    }
 }
 
-fn is_legacy_host(host: &str) -> bool {
-    host == ECS_HOST || host == "169.254.170.23" || is_loopback_host(host)
+fn is_legacy_host(host: &url::Host<&str>) -> bool {
+    is_loopback_host(host)
+        || matches!(host, url::Host::Ipv4(address) if matches!(address.octets(), [169, 254, 170, 2 | 23]))
 }
 
 /// One metadata credentials payload.
@@ -249,8 +258,8 @@ pub(crate) async fn resolve_ecs(
             // full URIs.
             validate_full_uri(&endpoint)?;
             let parsed = url::Url::parse(&endpoint).map_err(|_| EcsError::InvalidEndpoint)?;
-            let host = parsed.host_str().unwrap_or_default();
-            if !is_legacy_host(host) && parsed.scheme() != "https" {
+            let host = parsed.host().ok_or(EcsError::InvalidEndpoint)?;
+            if !is_legacy_host(&host) && parsed.scheme() != "https" {
                 return Err(EcsError::InvalidEndpoint);
             }
             endpoint.clone()

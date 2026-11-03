@@ -15,8 +15,37 @@ use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+fn accepted_failure_cause<'a>(error: &'a ProviderError, request: &Request) -> &'a ProviderError {
+    use sha2::Digest as _;
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let facts = failure
+        .message()
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+    failure.cause()
+}
+
 fn make_request(cancel: CancellationToken) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic:claude-sonnet-4".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -244,13 +273,15 @@ async fn stream_http_401_maps_to_auth_failed() {
         .await;
 
     let provider = AnthropicProvider::new(Some(server.uri()));
-    let mut stream = provider.stream_prepared(
-        make_request(CancellationToken::new()),
-        opi_ai::test_support::resolved_auth(),
-    );
+    let request = make_request(CancellationToken::new());
+    let mut stream =
+        provider.stream_prepared(request.clone(), opi_ai::test_support::resolved_auth());
 
     let result = stream.next().await.expect("should have event");
-    match result {
+    match result
+        .as_ref()
+        .map_err(|error| accepted_failure_cause(error, &request))
+    {
         Err(ProviderError::AuthFailed(msg)) => {
             assert!(
                 msg.contains("provider rejected credentials"),
@@ -259,6 +290,8 @@ async fn stream_http_401_maps_to_auth_failed() {
         }
         other => panic!("expected AuthFailed, got: {other:?}"),
     }
+    assert!(stream.next().await.is_none(), "failure must be terminal");
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -273,16 +306,24 @@ async fn stream_http_429_maps_to_rate_limited() {
         .await;
 
     let provider = AnthropicProvider::new(Some(server.uri()));
-    let mut stream = provider.stream_prepared(
-        make_request(CancellationToken::new()),
-        opi_ai::test_support::resolved_auth(),
-    );
+    let request = make_request(CancellationToken::new());
+    let mut stream =
+        provider.stream_prepared(request.clone(), opi_ai::test_support::resolved_auth());
 
     let result = stream.next().await.expect("should have event");
     assert!(
-        matches!(result, Err(ProviderError::RateLimited { .. })),
+        matches!(
+            result
+                .as_ref()
+                .map_err(|error| accepted_failure_cause(error, &request)),
+            Err(ProviderError::RateLimited {
+                retry_after_ms: None
+            })
+        ),
         "expected RateLimited, got: {result:?}"
     );
+    assert!(stream.next().await.is_none(), "failure must be terminal");
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -297,18 +338,22 @@ async fn stream_http_500_maps_to_provider_side() {
         .await;
 
     let provider = AnthropicProvider::new(Some(server.uri()));
-    let mut stream = provider.stream_prepared(
-        make_request(CancellationToken::new()),
-        opi_ai::test_support::resolved_auth(),
-    );
+    let request = make_request(CancellationToken::new());
+    let mut stream =
+        provider.stream_prepared(request.clone(), opi_ai::test_support::resolved_auth());
 
     let result = stream.next().await.expect("should have event");
-    match result {
+    match result
+        .as_ref()
+        .map_err(|error| accepted_failure_cause(error, &request))
+    {
         Err(ProviderError::ProviderSide(msg)) => {
             assert!(msg.contains("HTTP 500"), "should mention status: {msg}");
         }
         other => panic!("expected ProviderSide, got: {other:?}"),
     }
+    assert!(stream.next().await.is_none(), "failure must be terminal");
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 // ---------------------------------------------------------------------------

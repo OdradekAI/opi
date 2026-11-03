@@ -2263,7 +2263,7 @@ async fn resolve_bedrock_auth(
     use opi_ai::auth::aws::local::{
         AwsAuthSelection, AwsLocalChainInput, ScopedAwsEnv, resolve_local_aws_auth,
     };
-    use opi_ai::auth::aws::process::SpawnedCredentialProcess;
+    use opi_ai::auth::aws::process::{CredentialProcessPolicy, SpawnedCredentialProcess};
 
     // The configured pair is a selected typed source: attempted-but-incomplete
     // fails closed and never falls through to ambient sources.
@@ -2322,7 +2322,7 @@ async fn resolve_bedrock_auth(
     let ambient = AmbientAuthContext;
     let credentials_file = aws_credentials_path();
     let config_file = aws_config_path();
-    let process = SpawnedCredentialProcess::default();
+    let process = SpawnedCredentialProcess::with_policy(CredentialProcessPolicy::default());
     let sso_cache_dir = aws_sso_cache_dir();
     let login_cache_dir = aws_login_cache_dir();
     // Real auth-source HTTP transport: STS/web-identity/ECS/IMDS/SSO/SignIn

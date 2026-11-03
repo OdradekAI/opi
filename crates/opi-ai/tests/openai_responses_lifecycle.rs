@@ -15,6 +15,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn make_request(cancel: CancellationToken) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -204,9 +205,13 @@ async fn stream_auth_error() {
         opi_ai::test_support::resolved_bearer_auth(),
     );
 
-    let result = stream.next().await.expect("should have event");
-    match result {
-        Err(ProviderError::AuthFailed(msg)) => {
+    let error = stream.next().await.expect("should have event").unwrap_err();
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection retains facts")
+    };
+    assert!(failure.message().projection.is_some());
+    match failure.cause() {
+        ProviderError::AuthFailed(msg) => {
             assert!(
                 msg.contains("provider rejected credentials"),
                 "should mention auth failure: {msg}"
@@ -214,6 +219,8 @@ async fn stream_auth_error() {
         }
         other => panic!("expected AuthFailed, got: {other:?}"),
     }
+    assert!(stream.next().await.is_none());
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -239,15 +246,21 @@ async fn stream_rate_limited() {
         opi_ai::test_support::resolved_bearer_auth(),
     );
 
-    let result = stream.next().await.expect("should have event");
-    match result {
-        Err(ProviderError::RateLimited { retry_after_ms }) => {
+    let error = stream.next().await.expect("should have event").unwrap_err();
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection retains facts")
+    };
+    assert!(failure.message().projection.is_some());
+    match failure.cause() {
+        ProviderError::RateLimited { retry_after_ms } => {
             assert!(retry_after_ms.is_some(), "should parse retry-after header");
             // 5 seconds -> 5000 ms
             assert_eq!(retry_after_ms.unwrap(), 5000);
         }
         other => panic!("expected RateLimited, got: {other:?}"),
     }
+    assert!(stream.next().await.is_none());
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -479,4 +492,157 @@ async fn responses_final_tool_arguments_non_object_keeps_raw_and_marks_error() {
     let tool_call = responses_final_tool_call("\"text\"").await;
     assert_eq!(tool_call.arguments, "\"text\"");
     assert!(tool_call.arguments_error.is_some());
+}
+
+async fn responses_duration_on_peer(
+    body_delay: std::time::Duration,
+    setup_delay: std::time::Duration,
+) -> (opi_ai::message::AssistantMessage, std::time::Duration) {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut bytes = [0; 4096];
+        loop {
+            let read = socket.read(&mut bytes).await.unwrap();
+            assert!(read > 0, "request terminated before its full body");
+            request.extend_from_slice(&bytes[..read]);
+            if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                let length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.strip_prefix("content-length:")
+                            .map(|value| value.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap();
+                if request.len() >= end + 4 + length {
+                    assert!(
+                        headers.starts_with("post /v1/responses http/1.1"),
+                        "{headers}"
+                    );
+                    assert!(headers.contains("\r\nauthorization: bearer test-key"));
+                    let body: serde_json::Value =
+                        serde_json::from_slice(&request[end + 4..end + 4 + length]).unwrap();
+                    assert_eq!(body["model"], "gpt-4o");
+                    break;
+                }
+            }
+        }
+        tokio::time::sleep(setup_delay).await;
+        socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await.unwrap();
+        socket.flush().await.unwrap();
+        tokio::time::sleep(body_delay).await;
+        let body = text_sse_fixture();
+        socket
+            .write_all(format!("{:x}\r\n{}\r\n0\r\n\r\n", body.len(), body).as_bytes())
+            .await
+            .unwrap();
+        socket.flush().await.unwrap();
+    });
+
+    struct DelayedAuth {
+        delay: std::time::Duration,
+        calls: Arc<AtomicUsize>,
+    }
+    impl opi_ai::auth::AuthResolver for DelayedAuth {
+        fn resolve(
+            &self,
+        ) -> opi_ai::credential::BoxAuthFuture<'_, Result<opi_ai::ResolvedAuth, ProviderError>>
+        {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move {
+                tokio::time::sleep(self.delay).await;
+                Ok(opi_ai::test_support::resolved_bearer_auth())
+            })
+        }
+    }
+    let provider = OpenAiResponsesProvider::new(Some(format!("http://{address}")));
+    let model = provider
+        .models()
+        .iter()
+        .find(|model| model.id == "gpt-4o")
+        .unwrap()
+        .clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut models = opi_ai::Models::new();
+    models
+        .register_route(
+            Box::new(provider),
+            Arc::new(DelayedAuth {
+                delay: setup_delay,
+                calls: calls.clone(),
+            }),
+            opi_ai::AuthProvenanceSource::Static,
+            Default::default(),
+        )
+        .unwrap();
+    let mut request = make_request(CancellationToken::new());
+    request.callbacks = opi_ai::callbacks::RequestCallbacks::new().with_async_on_response(
+        move |status, _| async move {
+            assert_eq!(status, 200);
+            tokio::time::sleep(setup_delay).await;
+            Ok(())
+        },
+    );
+    let started = std::time::Instant::now();
+    let call = models.stream_simple(
+        opi_ai::ChatModelRecord::new("openai-responses", model),
+        request,
+        Default::default(),
+    );
+    tokio::time::sleep(setup_delay).await;
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "an unpolled handle starts no auth"
+    );
+    let message = call
+        .result()
+        .await
+        .expect("controlled real adapter succeeds");
+    let elapsed = started.elapsed();
+    peer.await.unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(message.stop_reason, opi_ai::stream::StopReason::Stop);
+    assert_eq!(message.usage.input_tokens, 10);
+    assert_eq!(message.usage.output_tokens, 5);
+    (message, elapsed)
+}
+
+#[tokio::test]
+async fn responses_duration_includes_pending_first_body_poll() {
+    use std::time::Duration;
+    let (control, _) = responses_duration_on_peer(Duration::ZERO, Duration::ZERO).await;
+    let (delayed, elapsed) =
+        responses_duration_on_peer(Duration::from_millis(350), Duration::ZERO).await;
+    assert_eq!(delayed.content, control.content);
+    assert!(!delayed.content.is_empty());
+    assert_eq!(delayed.usage, control.usage);
+    assert!(elapsed >= Duration::from_millis(300));
+    assert!(
+        delayed.duration_ms.unwrap() >= 300,
+        "first Pending body poll belongs to response duration: {:?}",
+        delayed.duration_ms
+    );
+}
+
+#[tokio::test]
+async fn responses_duration_excludes_auth_setup_callback_and_unpolled_time() {
+    use std::time::Duration;
+    // Four independent150ms setup intervals: unpolled handle, resolver,
+    // response headers and response callback. None belongs to body polling.
+    let (message, elapsed) =
+        responses_duration_on_peer(Duration::ZERO, Duration::from_millis(150)).await;
+    let measured = Duration::from_millis(message.duration_ms.unwrap());
+    assert!(
+        elapsed.saturating_sub(measured) >= Duration::from_millis(500),
+        "duration included setup: measured={measured:?}, elapsed={elapsed:?}"
+    );
 }

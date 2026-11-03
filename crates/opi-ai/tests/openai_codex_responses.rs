@@ -48,6 +48,7 @@ fn model(base_url: Option<String>) -> ModelInfo {
 
 fn request() -> Request {
     Request {
+        projection: Default::default(),
         transport: opi_ai::provider::TransportPreference::Sse,
         model: "openai-codex:gpt-5.4".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -96,7 +97,7 @@ async fn drain(
         match result {
             Ok(event) if event.is_terminal() => return None,
             Ok(_) => {}
-            Err(error) => return Some(error),
+            Err(error) => return Some(direct_error_cause(&error).clone()),
         }
     }
     None
@@ -654,17 +655,24 @@ async fn dedicated_codex_requires_non_empty_account_id_before_http() {
             Arc::new(HttpClient::new()),
         );
         let auth = auth("sentinel-access", Some(server.uri()), account_id);
-        let error = drain(&provider, request(), auth)
+        let request = request();
+        let mut stream = provider.stream_prepared(request.clone(), auth);
+        let error = stream
+            .next()
             .await
-            .expect("missing account id");
-        assert!(
-            matches!(
-                error,
-                ProviderError::AccountIdMissing { ref provider_id }
-                    if provider_id == "openai-codex"
-            ),
-            "{error:?}"
+            .expect("one refusal")
+            .expect_err("missing account id");
+        let ProviderError::StreamFailure(failure) = &error else {
+            panic!("accepted projection must retain its failure carrier")
+        };
+        assert_eq!(
+            failure.cause(),
+            &ProviderError::AccountIdMissing {
+                provider_id: "openai-codex".into()
+            }
         );
+        assert_direct_projection_prefix(failure.message(), &request);
+        assert!(stream.next().await.is_none());
         assert!(!error.is_retryable());
     }
     assert!(server.received_requests().await.unwrap().is_empty());
@@ -921,7 +929,8 @@ async fn codex_transform_touching_managed_headers_fails_typed_before_http() {
     let mut stream = provider.stream_prepared(request, auth);
     let mut typed = false;
     while let Some(item) = stream.next().await {
-        if matches!(item, Err(ProviderError::CallbackPhase(_))) {
+        if matches!(item, Err(ref error) if matches!(direct_error_cause(error), ProviderError::CallbackPhase(_)))
+        {
             typed = true;
             break;
         }
@@ -4086,5 +4095,145 @@ mod ws_protocol_regressions {
             1,
             "a busy-overflow connection is temporary and must complete Close"
         );
+    }
+}
+
+fn direct_error_cause(error: &ProviderError) -> &ProviderError {
+    match error {
+        ProviderError::StreamFailure(failure) => failure.cause(),
+        other => other,
+    }
+}
+
+fn assert_direct_projection_prefix(
+    message: &opi_ai::message::AssistantMessage,
+    request: &opi_ai::provider::Request,
+) {
+    use sha2::Digest as _;
+    let facts = message
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+}
+
+#[tokio::test]
+async fn codex_source_developer_default_and_ordinary_only_flags_reach_actual_wire() {
+    use opi_ai::model_info::{
+        OpenAiCodexResponsesCompat, OpenAiResponsesSourceCompat, SessionAffinityFormat, WireCompat,
+    };
+    for flag in [None, Some(false), Some(true)] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(200)
+            .insert_header("content-type", "text/event-stream")
+            .set_body_string("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"codex-source\",\"model\":\"gpt-5.4\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"))
+            .expect(1).mount(&server).await;
+        let source = OpenAiResponsesSourceCompat {
+            supports_developer_role: flag,
+            supports_strict_mode: flag,
+            supports_mid_convo_system_messages: Some(true),
+            supports_max_output_tokens: Some(true),
+            supports_long_cache_retention: Some(true),
+            supports_explicit_prompt_cache_mode: Some(true),
+            supports_mid_convo_effort: Some(true),
+            session_affinity_format: Some(SessionAffinityFormat::OpenRouter),
+            ..Default::default()
+        };
+        let record = model(Some(server.uri()))
+            .with_compat(WireCompat::OpenAiCodexResponses(
+                OpenAiCodexResponsesCompat {
+                    source,
+                    ..Default::default()
+                },
+            ))
+            .unwrap();
+        let provider =
+            OpenAiCodexResponsesProvider::new(None, vec![record], Arc::new(HttpClient::new()));
+        let mut request = request();
+        let mut context = opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: request.context.messages().to_vec(),
+            tools: vec![],
+        };
+        context
+            .messages
+            .push(Message::System(opi_ai::transcript::SystemMessage {
+                content: "later instruction".into(),
+                sections: vec![],
+                tools_added: vec![],
+                tools_removed: vec![],
+                timestamp_ms: 1,
+            }));
+        request.context = opi_ai::transcript::normalize_context(context).unwrap();
+        request.cache_retention = CacheRetention::Long;
+        let message = typed_terminal(
+            &provider,
+            request,
+            auth("offline-key", None, Some("account".into())),
+        )
+        .await;
+        assert!(message.projection.is_some());
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 1);
+        let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+        let later = body["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["content"] == "later instruction")
+            .unwrap();
+        assert_eq!(
+            later["role"],
+            if flag == Some(false) {
+                "system"
+            } else {
+                "developer"
+            }
+        );
+        assert_eq!(
+            body["tools"][0].get("strict"),
+            (flag != Some(false)).then_some(&serde_json::Value::Null),
+            "Codex keeps its unconstrained strict:null default only when capability is enabled"
+        );
+        assert_eq!(body["instructions"], "system prompt");
+        assert!(
+            !body["input"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["content"] == "system prompt")
+        );
+        assert!(body.get("max_output_tokens").is_none());
+        assert!(body.get("prompt_cache_options").is_none());
+        assert!(body.get("prompt_cache_retention").is_none());
+        assert!(
+            !body["input"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["type"] == "configuration_update")
+        );
+        assert!(
+            !sent[0].headers.contains_key("x-session-id"),
+            "ordinary affinity format stays inert on Codex"
+        );
+        assert_eq!(body["tool_choice"], "auto");
+        assert_eq!(body["text"], serde_json::json!({"verbosity":"low"}));
+        assert_eq!(body["parallel_tool_calls"], true);
+        server.verify().await;
     }
 }

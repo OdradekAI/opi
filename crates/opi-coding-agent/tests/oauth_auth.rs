@@ -4540,6 +4540,7 @@ async fn tui_login_presenter_print_only_methods_succeed_without_panic() {
 
 fn factory_request(model: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -5412,7 +5413,7 @@ async fn anthropic_oauth_revoked_stops_turn_without_retry_or_relogin() {
         Err(opi_ai::ModelsError::Provider(p)) => p,
         other => panic!("expected ModelsError::Provider(CredentialRevoked), got {other:?}"),
     };
-    match &err_provider {
+    match accepted_projection_cause(&err_provider) {
         AiProviderError::CredentialRevoked { provider_id } => {
             assert_eq!(provider_id, "anthropic");
         }
@@ -5496,7 +5497,7 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
             Err(opi_ai::ModelsError::Provider(p)) => p,
             other => panic!("{provider_id} expected CredentialNeeded, got {other:?}"),
         };
-        match first {
+        match accepted_projection_cause(&first) {
             AiProviderError::CredentialNeeded {
                 provider_id: actual,
             } => assert_eq!(actual, provider_id),
@@ -5544,7 +5545,7 @@ async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
                 Some(p) => p,
                 None => panic!("{provider_id} routed prepare_call unexpectedly succeeded"),
             };
-        match routed_error {
+        match accepted_projection_cause(&routed_error) {
             AiProviderError::CredentialNeeded {
                 provider_id: actual,
             } => assert_eq!(actual, provider_id),
@@ -5904,4 +5905,14 @@ async fn login_oauth_forwards_enterprise_input_and_progress_before_acknowledged_
     );
     assert!(presenter.succeeded.load(Ordering::SeqCst));
     assert!(store.read("enterprise-input-test").await.unwrap().is_some());
+}
+
+fn accepted_projection_cause(
+    error: &opi_ai::provider::ProviderError,
+) -> &opi_ai::provider::ProviderError {
+    let opi_ai::provider::ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection retains its cause and facts: {error:?}");
+    };
+    assert!(failure.message().projection.is_some());
+    failure.cause()
 }

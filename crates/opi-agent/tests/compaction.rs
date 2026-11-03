@@ -33,6 +33,7 @@ fn assistant_text(id: &str, text: &str) -> Entry {
     Entry {
         id: id.into(),
         message: AgentMessage::Llm(Message::Assistant(AssistantMessage {
+            projection: None,
             content: vec![AssistantContent::Text {
                 text: text.into(),
                 signature: None,

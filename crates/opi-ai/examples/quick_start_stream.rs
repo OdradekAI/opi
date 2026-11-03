@@ -50,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     let request = Request {
+        projection: Default::default(),
         transport: TransportPreference::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context,

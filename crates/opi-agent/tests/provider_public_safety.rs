@@ -101,6 +101,7 @@ impl Provider for CanaryProvider {
 
 fn request(model: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.to_owned(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

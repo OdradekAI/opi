@@ -638,6 +638,25 @@ pub(crate) struct ResponsesWireTools {
     pub diagnostics: Vec<crate::stream::AssistantDiagnostic>,
 }
 
+/// Compile request-local tool metadata independently of wire placement.
+/// Native additions remain inline; replay and response mapping still need
+/// their grammar properties, strict wire-null normalization metadata and fallback diagnostics.
+pub(crate) fn compile_projected_response_tools(
+    messages: &[crate::message::Message],
+    request_tools: &[crate::message::ToolDef],
+    options: ResponsesToolOptions,
+) -> Result<Option<ResponsesWireTools>, ProviderError> {
+    let current_tools = crate::transcript::get_current_tools(messages);
+    if current_tools.is_empty() {
+        return Ok(None);
+    }
+    let mut wire = convert_responses_tools(&current_tools, options)?;
+    if current_tools.as_slice() != request_tools {
+        wire.tools = convert_responses_tools(request_tools, options)?.tools;
+    }
+    Ok(Some(wire))
+}
+
 /// Convert the current tool declarations onto the Responses wire (pinned
 /// pi 1.3.0 `convertResponsesTools` semantics).
 ///
@@ -1620,6 +1639,7 @@ fn empty_assistant_message(
     model: &str,
 ) -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: Vec::new(),
         api: crate::ApiKind::OpenAi,
         provider: provider.into(),
@@ -1684,12 +1704,33 @@ fn split_packed_call_id(id: &str) -> (&str, Option<&str>) {
 /// inserted before each earlier same-identity assistant turn that recorded
 /// a level, and a final item with this effort closes the list; earlier
 /// input bytes never change between turns.
+// The continuation owner converts only its freshly completed assistant turn;
+// it has no temporal tool declarations and retains the existing internal seam.
 pub(crate) fn convert_messages(
     messages: &[crate::message::Message],
     route: &crate::replay::ReplayRoute,
     grammar_input_properties: &std::collections::HashMap<String, String>,
-    configuration_update_effort: Option<&str>,
+    effort: Option<&str>,
 ) -> Vec<serde_json::Value> {
+    convert_projected_messages(
+        messages,
+        route,
+        grammar_input_properties,
+        effort,
+        &Default::default(),
+        "system",
+    )
+    .expect("assistant continuation has no fallible tool declarations")
+}
+
+pub(crate) fn convert_projected_messages(
+    messages: &[crate::message::Message],
+    route: &crate::replay::ReplayRoute,
+    grammar_input_properties: &std::collections::HashMap<String, String>,
+    configuration_update_effort: Option<&str>,
+    source: &crate::model_info::OpenAiResponsesSourceCompat,
+    instruction_role: &str,
+) -> Result<Vec<serde_json::Value>, ProviderError> {
     let mut input = Vec::new();
     let configuration_item = |effort: &str| {
         serde_json::json!({
@@ -1697,7 +1738,7 @@ pub(crate) fn convert_messages(
             "reasoning": {"effort": effort},
         })
     };
-    for message in messages {
+    for (message_index, message) in messages.iter().enumerate() {
         match message {
             crate::message::Message::User(user) => {
                 let content: Vec<serde_json::Value> = user
@@ -1821,9 +1862,54 @@ pub(crate) fn convert_messages(
                     }
                 }
             }
-            crate::message::Message::System(_) => {
-                // Unreachable after collapse + without_initial_system_message.
-                unreachable!("system messages are projected out of the input list")
+            crate::message::Message::System(system) => {
+                if !system.tools_added.is_empty()
+                    && (source.supports_additional_tools.unwrap_or(false)
+                        || source.supports_tool_search.unwrap_or(false))
+                {
+                    let strict = source.supports_strict_mode.unwrap_or(matches!(
+                        route.wire,
+                        crate::WireApi::OpenAiCodexResponses | crate::WireApi::AzureOpenAiResponses
+                    ));
+                    let mut tools = convert_responses_tools(
+                        &system.tools_added,
+                        ResponsesToolOptions {
+                            default_strict: if route.wire == crate::WireApi::OpenAiCodexResponses {
+                                None
+                            } else {
+                                Some(false)
+                            },
+                            supports_strict_mode: strict,
+                            supports_grammar_tools: source.supports_grammar_tools.unwrap_or(false),
+                        },
+                    )?
+                    .tools;
+                    if source.supports_additional_tools.unwrap_or(false) {
+                        input.push(serde_json::json!({"type":"additional_tools","role":"developer","tools":tools}));
+                    } else {
+                        let names: Vec<_> = system
+                            .tools_added
+                            .iter()
+                            .map(|tool| tool.name.as_str())
+                            .collect();
+                        let call_id = format!(
+                            "pi_tool_load_{}",
+                            crate::identity::short_hash(&format!(
+                                "system:{message_index}:{}",
+                                names.join(",")
+                            ))
+                        );
+                        for tool in &mut tools {
+                            tool["defer_loading"] = serde_json::json!(true);
+                        }
+                        input.push(serde_json::json!({"type":"tool_search_call","call_id":call_id,"execution":"client","status":"completed","arguments":{"query":names.join(" "),"limit":names.len()}}));
+                        input.push(serde_json::json!({"type":"tool_search_output","call_id":call_id,"execution":"client","status":"completed","tools":tools}));
+                    }
+                }
+                let text = crate::transcript::render_system_message_update(system);
+                if !text.is_empty() {
+                    input.push(serde_json::json!({"role":instruction_role,"content":text}));
+                }
             }
             crate::message::Message::ToolResult(result) => {
                 let content: String = result
@@ -1858,13 +1944,25 @@ pub(crate) fn convert_messages(
     if let Some(effort) = configuration_update_effort {
         input.push(configuration_item(effort));
     }
-    input
+    Ok(input)
 }
 
 /// Drain complete SSE frames while retaining an incomplete trailing frame.
 pub(crate) fn drain_sse_frames(buffer: &mut String) -> Vec<SseFrame> {
     if buffer.contains('\r') {
+        // A trailing CR after data may be the first half of a split CRLF.
+        // A CR ending a blank line already completes a frame; a later LF is
+        // only an empty delimiter and cannot split that frame's data lines.
+        let pending_cr = buffer
+            .strip_suffix('\r')
+            .is_some_and(|prefix| !prefix.ends_with(['\r', '\n']));
+        if pending_cr {
+            buffer.pop();
+        }
         *buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
+        if pending_cr {
+            buffer.push('\r');
+        }
     }
     let mut frames = Vec::new();
     while let Some(index) = buffer.find("\n\n") {
@@ -1894,5 +1992,51 @@ mod tests {
             r#"{"type":"response.output_text.delta","delta":"Hello"}"#
         );
         assert!(buffer.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod fragmented_sse_tests {
+    use super::*;
+
+    #[test]
+    fn multiline_frames_survive_every_line_ending_split() {
+        for newline in ["\n", "\r\n", "\r"] {
+            let wire = format!(
+                "event: response.output_text.delta{newline}data: {{\"type\":\"response.output_text.delta\",{newline}data: \"delta\":\"hello\"}}{newline}{newline}"
+            );
+            let mut expected =
+                vec![serde_json::json!({"type":"response.output_text.delta","delta":"hello"})];
+            let expected_second =
+                serde_json::from_str(&expected[0].to_string().replace("hello", "world")).unwrap();
+            expected.push(expected_second);
+            let wire = format!("{wire}{}", wire.replace("hello", "world"));
+            for split in 0..=wire.len() {
+                let mut buffer = wire[..split].to_owned();
+                let mut actual = drain(&mut buffer);
+                buffer.push_str(&wire[split..]);
+                actual.extend(drain(&mut buffer));
+                assert_eq!(actual, expected, "newline={newline:?}, split={split}");
+            }
+            for width in [1, 2, 3, 5, 7] {
+                let mut buffer = String::new();
+                let mut actual = Vec::new();
+                for chunk in wire.as_bytes().chunks(width) {
+                    buffer.push_str(std::str::from_utf8(chunk).unwrap());
+                    actual.extend(drain(&mut buffer));
+                }
+                assert_eq!(actual, expected, "newline={newline:?}, width={width}");
+            }
+        }
+    }
+
+    fn drain(buffer: &mut String) -> Vec<serde_json::Value> {
+        drain_sse_frames(buffer)
+            .into_iter()
+            .map(|frame| {
+                assert_eq!(frame.event, "response.output_text.delta");
+                serde_json::from_str(&frame.data).unwrap()
+            })
+            .collect()
     }
 }

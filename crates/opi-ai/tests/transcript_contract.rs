@@ -251,7 +251,7 @@ fn projection_is_native_or_collapse_and_never_rewrites_canonical() {
     // Native capability keeps the canonical value by reference.
     let native =
         resolve_transcript(&transcript, true, TranscriptProjection::NativeOrCollapse).unwrap();
-    assert!(matches!(native, std::borrow::Cow::Borrowed(_)));
+    assert!(matches!(native.context, std::borrow::Cow::Borrowed(_)));
 
     // Collapse rebuilds a single head and drops later system messages,
     // leaving the canonical transcript untouched.
@@ -349,6 +349,7 @@ fn adapters_consume_only_the_normalized_transcript() {
         Arc::new(HttpClient::new()),
     );
     let request = opi_ai::provider::Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: normalize_context(Context {

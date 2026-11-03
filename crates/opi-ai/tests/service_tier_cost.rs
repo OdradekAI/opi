@@ -53,6 +53,7 @@ fn pricing() -> ModelPricing {
 
 fn request(model: &str) -> Request {
     Request {
+        projection: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

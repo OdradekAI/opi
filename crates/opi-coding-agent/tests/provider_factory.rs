@@ -170,6 +170,7 @@ where
 
 fn minimal_request(model: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

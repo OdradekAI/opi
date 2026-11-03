@@ -341,27 +341,14 @@ impl MistralConversationsProvider {
         let supports_images = model.capabilities.supports_images;
         let options = self.native_options.as_ref();
 
-        let resolved = crate::transcript::resolve_transcript(
-            &request.context,
-            false,
-            crate::transcript::TranscriptProjection::NativeOrCollapse,
-        )
-        .map_err(|error| {
-            ProviderError::Config(crate::provider::ProviderErrorSummary::sanitized(
-                error.to_string(),
-            ))
-        })?;
-        let replay_route = crate::replay::ReplayRoute {
-            wire: crate::model_info::WireApi::MistralConversations,
-            provider: "mistral".into(),
-            model: model.id.clone(),
-            supports_images,
-        };
-        let replay = crate::replay::project_replay(
-            resolved.messages(),
-            &replay_route,
-            crate::replay::ReplayProjection::NativeOrCollapse,
+        let projection = crate::transcript::compile_request_projection(
+            request,
+            "mistral",
+            Some(model),
+            crate::WireApi::MistralConversations,
         )?;
+        let resolved = projection.transcript.as_ref();
+        let replay = &projection.replay;
         let mut normalizer = MistralToolCallIdNormalizer::default();
         let messages = to_chat_messages(&replay.messages, supports_images, &mut normalizer);
 
@@ -793,125 +780,134 @@ impl crate::provider::Provider for MistralConversationsProvider {
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
     ) -> EventStream {
-        request.callbacks = request.callbacks.ensure_call_scope();
-        let bearer = match auth.scheme {
-            crate::auth::AuthScheme::Bearer => {
-                format!("Bearer {}", auth.secret.expose_secret())
-            }
-            crate::auth::AuthScheme::ApiKey
-            | crate::auth::AuthScheme::AwsSigV4(_)
-            | crate::auth::AuthScheme::AnthropicFederation => {
-                return Box::pin(futures_util::stream::iter(vec![Err(
-                    ProviderError::Config(crate::provider::ProviderErrorSummary::attested_static(
-                        "Mistral accepts only Bearer authentication",
-                    )),
-                )]));
-            }
+        let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::MistralConversations) {
+            Ok(facts) => facts,
+            Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
         };
-        let model = match self.resolve_model(&request.model).cloned() {
-            Some(model) => model,
-            None => {
-                let error = self.unknown_model_error(&request.model);
-                return Box::pin(futures_util::stream::iter(vec![Err(error)]));
-            }
-        };
-        let body = match self.build_request_body(&request) {
-            Ok(body) => body,
-            Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
-        };
-        let url = crate::endpoint::join_endpoint(
-            model.base_url.as_deref().unwrap_or(&self.base_url),
-            "v1/chat/completions",
-        );
-        let caching = use_prompt_caching(&request);
-        let has_explicit_affinity = model
-            .headers
-            .iter()
-            .any(|(name, _)| name.eq_ignore_ascii_case("x-affinity"))
-            || request
-                .extra_headers
-                .iter()
-                .any(|(name, _)| name.eq_ignore_ascii_case("x-affinity"));
-        let req = self.client.client().post(&url);
-        let mut route_headers = vec![
-            ("authorization".to_owned(), bearer),
-            ("accept".to_owned(), "text/event-stream".to_owned()),
-            ("content-type".to_owned(), "application/json".to_owned()),
-        ];
-        if caching
-            && !has_explicit_affinity
-            && let Some(session) = &request.session_id
-        {
-            route_headers.push(("x-affinity".to_owned(), session.clone()));
-        }
-        let headers = match crate::provider_headers::ProviderHeaders::default().merge_model_request(
-            &model.headers,
-            &route_headers,
-            &request.extra_headers,
-        ) {
-            Ok(headers) => headers,
-            Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
-        };
-
-        let requested_model = model.id.clone();
-        let callbacks = request.callbacks.clone();
-        let cancel = request.cancel;
-        let header_timeout = request.timeout.unwrap_or(DEFAULT_HEADER_TIMEOUT);
-        let telemetry = request.telemetry_context.clone();
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let producer_cancel = cancel.clone();
-
-        let tx_closed = tx.clone();
-        let producer = async move {
-            let run = async {
-                let result = async {
-                    let headers = callbacks.apply_header_transform_async(&headers).await?;
-                    let mut req = req;
-                    for (name, value) in headers {
-                        req = req.header(name, value);
-                    }
-                    let body = callbacks
-                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-                        .await?;
-                    stream_mistral_http(
-                        req,
-                        body,
-                        header_timeout,
-                        &requested_model,
-                        producer_cancel.clone(),
-                        callbacks,
-                        producer_snapshot.clone(),
-                        &tx,
-                    )
-                    .await
-                    .map_err(|error| producer_snapshot.failure(error))
+        let event_projection = projection.clone();
+        crate::stream::project_call(event_projection, || -> EventStream {
+            request.callbacks = request.callbacks.ensure_call_scope();
+            let bearer = match auth.scheme {
+                crate::auth::AuthScheme::Bearer => {
+                    format!("Bearer {}", auth.secret.expose_secret())
                 }
-                .await;
-                match result {
-                    Ok(()) | Err(ProviderError::Cancelled) => {}
-                    Err(error) => {
-                        let _ =
-                            crate::stream::send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                    }
+                crate::auth::AuthScheme::ApiKey
+                | crate::auth::AuthScheme::AwsSigV4(_)
+                | crate::auth::AuthScheme::AnthropicFederation => {
+                    return Box::pin(futures_util::stream::iter(vec![Err(
+                        ProviderError::Config(
+                            crate::provider::ProviderErrorSummary::attested_static(
+                                "Mistral accepts only Bearer authentication",
+                            ),
+                        ),
+                    )]));
                 }
             };
-            tokio::select! {
-                biased;
-                _ = producer_cancel.cancelled() => (),
-                _ = tx_closed.closed() => (),
-                _ = run => (),
+            let model = match self.resolve_model(&request.model).cloned() {
+                Some(model) => model,
+                None => {
+                    let error = self.unknown_model_error(&request.model);
+                    return Box::pin(futures_util::stream::iter(vec![Err(error)]));
+                }
+            };
+            let body = match self.build_request_body(&request) {
+                Ok(body) => body,
+                Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
+            };
+
+            let url = crate::endpoint::join_endpoint(
+                model.base_url.as_deref().unwrap_or(&self.base_url),
+                "v1/chat/completions",
+            );
+            let caching = use_prompt_caching(&request);
+            let has_explicit_affinity = model
+                .headers
+                .iter()
+                .any(|(name, _)| name.eq_ignore_ascii_case("x-affinity"))
+                || request
+                    .extra_headers
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case("x-affinity"));
+            let req = self.client.client().post(&url);
+            let mut route_headers = vec![
+                ("authorization".to_owned(), bearer),
+                ("accept".to_owned(), "text/event-stream".to_owned()),
+                ("content-type".to_owned(), "application/json".to_owned()),
+            ];
+            if caching
+                && !has_explicit_affinity
+                && let Some(session) = &request.session_id
+            {
+                route_headers.push(("x-affinity".to_owned(), session.clone()));
             }
-        };
-        if let Some(context) = telemetry {
-            tokio::spawn(context.instrument(producer));
-        } else {
-            tokio::spawn(producer);
-        }
-        Box::pin(crate::stream::CancelAwareReceiverStream::with_snapshot(
-            rx, cancel, snapshot,
-        ))
+            let headers = match crate::provider_headers::ProviderHeaders::default()
+                .merge_model_request(&model.headers, &route_headers, &request.extra_headers)
+            {
+                Ok(headers) => headers,
+                Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
+            };
+
+            let requested_model = model.id.clone();
+            let callbacks = request.callbacks.clone();
+            let cancel = request.cancel;
+            let header_timeout = request.timeout.unwrap_or(DEFAULT_HEADER_TIMEOUT);
+            let telemetry = request.telemetry_context.clone();
+            let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            let producer_snapshot = snapshot.clone();
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+            let producer_cancel = cancel.clone();
+
+            let tx_closed = tx.clone();
+            let producer = async move {
+                let run = async {
+                    let result = async {
+                        let headers = callbacks.apply_header_transform_async(&headers).await?;
+                        let mut req = req;
+                        for (name, value) in headers {
+                            req = req.header(name, value);
+                        }
+                        let body = callbacks
+                            .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                            .await?;
+                        stream_mistral_http(
+                            req,
+                            body,
+                            header_timeout,
+                            &requested_model,
+                            producer_cancel.clone(),
+                            callbacks,
+                            producer_snapshot.clone(),
+                            &tx,
+                        )
+                        .await
+                        .map_err(|error| producer_snapshot.failure(error))
+                    }
+                    .await;
+                    match result {
+                        Ok(()) | Err(ProviderError::Cancelled) => {}
+                        Err(error) => {
+                            let _ =
+                                crate::stream::send_or_cancel(&producer_cancel, &tx, Err(error))
+                                    .await;
+                        }
+                    }
+                };
+                tokio::select! {
+                    biased;
+                    _ = producer_cancel.cancelled() => (),
+                    _ = tx_closed.closed() => (),
+                    _ = run => (),
+                }
+            };
+            if let Some(context) = telemetry {
+                tokio::spawn(context.instrument(producer));
+            } else {
+                tokio::spawn(producer);
+            }
+            Box::pin(crate::stream::CancelAwareReceiverStream::with_snapshot(
+                rx, cancel, snapshot,
+            ))
+        })
     }
 }
 
@@ -1151,6 +1147,7 @@ struct MistralSseMapper {
 impl MistralSseMapper {
     fn new(requested_model: &str) -> Self {
         let message = crate::message::AssistantMessage {
+            projection: None,
             content: Vec::new(),
             api: crate::ApiKind::Mistral,
             provider: "mistral".into(),

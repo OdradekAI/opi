@@ -212,9 +212,15 @@ pub enum TranscriptError {
 
 impl From<TranscriptError> for crate::provider::ProviderError {
     fn from(error: TranscriptError) -> Self {
-        Self::Config(crate::provider::ProviderErrorSummary::sanitized(
-            error.to_string(),
-        ))
+        let summary = match error {
+            TranscriptError::UnsupportedTemporalFidelity {
+                mid_convo_system_messages,
+            } => crate::provider::ProviderErrorSummary::unsupported_temporal(
+                mid_convo_system_messages,
+            ),
+            other => crate::provider::ProviderErrorSummary::sanitized(other.to_string()),
+        };
+        Self::Config(summary)
     }
 }
 
@@ -426,41 +432,381 @@ pub fn collapse_system_messages(context: &TranscriptContext) -> TranscriptContex
 }
 
 /// Requested projection fidelity for [`resolve_transcript`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TranscriptProjection {
     /// Keep later system messages in place when the transport accepts them;
     /// otherwise collapse to the replayed head. The default.
+    #[default]
     NativeOrCollapse,
     /// Reject a transcript whose temporal placement the transport cannot
     /// honor, before any request is built (before auth or network).
     Strict,
 }
 
-/// Keep later system messages in place when the model accepts them;
-/// otherwise collapse them. Strict projection returns
-/// [`TranscriptError::UnsupportedTemporalFidelity`] instead of silently
-/// degrading. Native-capable transports keep the canonical value by
-/// reference; collapse always returns an owned projection.
-pub fn resolve_transcript<'a>(
-    context: &'a TranscriptContext,
+/// Fidelity selected once for the complete request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ProjectionOptions {
+    pub temporal: TranscriptProjection,
+    pub replay: crate::replay::ReplayProjection,
+}
+
+/// Original canonical prefix associated with a projection, never a proof of
+/// dispatch or permission to reconstruct its contents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourcePrefix {
+    pub message_count: usize,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectionMode {
+    Lossless,
+    Native,
+    Collapse,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemporalProjectionFacts {
+    pub mode: ProjectionMode,
+    pub affected_ranges: Vec<MessageRange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectionFacts {
+    pub source_prefix: SourcePrefix,
+    pub temporal: TemporalProjectionFacts,
+    pub replay: crate::replay::ReplayFacts,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TranscriptProjectionOutput<'a> {
+    pub context: Cow<'a, TranscriptContext>,
+    pub facts: TemporalProjectionFacts,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NativeTools {
+    None,
+    AddOnly,
+    Full,
+}
+#[derive(Clone, Copy)]
+struct TemporalCapabilities {
+    body: bool,
+    sections: bool,
+    tools: NativeTools,
+}
+
+/// Resolve temporal fidelity and record its effect in original canonical
+/// message coordinates. The input is never mutated; Strict rejects effective
+/// changes that the selected transport cannot represent.
+pub fn resolve_transcript(
+    context: &TranscriptContext,
     supports_mid_convo_system_messages: bool,
     projection: TranscriptProjection,
-) -> Result<Cow<'a, TranscriptContext>, TranscriptError> {
-    let mid_convo = context
-        .messages()
-        .iter()
-        .skip(1)
-        .filter(|message| matches!(message, Message::System(_)))
-        .count();
-    if supports_mid_convo_system_messages {
-        return Ok(Cow::Borrowed(context));
+) -> Result<TranscriptProjectionOutput<'_>, TranscriptError> {
+    resolve_temporal(
+        context,
+        TemporalCapabilities {
+            body: supports_mid_convo_system_messages,
+            sections: supports_mid_convo_system_messages,
+            tools: if supports_mid_convo_system_messages {
+                NativeTools::Full
+            } else {
+                NativeTools::None
+            },
+        },
+        projection,
+    )
+}
+
+fn resolve_temporal(
+    context: &TranscriptContext,
+    capabilities: TemporalCapabilities,
+    projection: TranscriptProjection,
+) -> Result<TranscriptProjectionOutput<'_>, TranscriptError> {
+    // Equal state adds no redundant declaration (AIR-008). Keep the public
+    // raw-history helper unchanged; only this request-local compiler removes
+    // ineffective deltas before applying an addition-only wire contract.
+    let mut changes = Vec::new();
+    for (index, message) in context.messages().iter().enumerate().skip(1) {
+        if !matches!(message, Message::System(_)) {
+            continue;
+        }
+        let before = get_current_system_message(&context.messages()[..index]).unwrap_or_default();
+        let after = get_current_system_message(&context.messages()[..=index]).unwrap_or_default();
+        let tools = get_tool_state_changes(&before.tools_added, &after.tools_added);
+        changes.push((
+            index,
+            before.content != after.content,
+            before.sections != after.sections,
+            tools,
+        ));
     }
-    if mid_convo > 0 && projection == TranscriptProjection::Strict {
+    let native_tools = capabilities.tools == NativeTools::Full
+        || (capabilities.tools == NativeTools::AddOnly
+            && changes
+                .iter()
+                .all(|(_, _, _, tools)| tools.tools_removed.is_empty()));
+    let mut changed = false;
+    let mut unsupported = 0;
+    let mut affected_end = 0;
+    for (index, body, sections, tools) in &changes {
+        changed |= *body || *sections || !tools.is_empty();
+        if (*body && !capabilities.body)
+            || (*sections && !capabilities.sections)
+            || (!tools.is_empty() && !native_tools)
+        {
+            unsupported += 1;
+            affected_end = index + 1;
+        }
+    }
+    if unsupported > 0 && projection == TranscriptProjection::Strict {
         return Err(TranscriptError::UnsupportedTemporalFidelity {
-            mid_convo_system_messages: mid_convo,
+            mid_convo_system_messages: unsupported,
         });
     }
-    Ok(Cow::Owned(collapse_system_messages(context)))
+    let facts = TemporalProjectionFacts {
+        mode: if unsupported > 0 {
+            ProjectionMode::Collapse
+        } else if changed {
+            ProjectionMode::Native
+        } else {
+            ProjectionMode::Lossless
+        },
+        affected_ranges: if unsupported > 0 {
+            vec![MessageRange {
+                start: 0,
+                end: affected_end,
+            }]
+        } else {
+            Vec::new()
+        },
+    };
+    let needs_projection = context
+        .messages()
+        .iter()
+        .enumerate()
+        .skip(1)
+        .any(|(index, message)| match message {
+            Message::System(system) => {
+                (!capabilities.body && !system.content.is_empty())
+                    || (!capabilities.sections && !system.sections.is_empty())
+                    || (!native_tools
+                        && (!system.tools_added.is_empty() || !system.tools_removed.is_empty()))
+                    || (capabilities.tools == NativeTools::AddOnly
+                        && changes
+                            .iter()
+                            .find(|(at, _, _, _)| *at == index)
+                            .is_some_and(|(_, _, _, tools)| {
+                                tools.tools_added != system.tools_added
+                                    || tools.tools_removed != system.tools_removed
+                            }))
+            }
+            _ => false,
+        });
+    if !needs_projection {
+        return Ok(TranscriptProjectionOutput {
+            context: Cow::Borrowed(context),
+            facts,
+        });
+    }
+    let final_head = get_current_system_message(context.messages()).unwrap_or_default();
+    let mut head = get_initial_system_message(context.messages())
+        .cloned()
+        .unwrap_or_default();
+    if !capabilities.body {
+        head.content = final_head.content;
+    }
+    if !capabilities.sections {
+        head.sections = final_head.sections;
+    }
+    if !native_tools {
+        head.tools_added = final_head.tools_added;
+        head.tools_removed.clear();
+    }
+    let mut messages = vec![Message::System(head)];
+    for (index, message) in context.messages().iter().enumerate() {
+        if index == 0 && matches!(message, Message::System(_)) {
+            continue;
+        }
+        match message {
+            Message::System(system) => {
+                let mut system = system.clone();
+                if !capabilities.body {
+                    system.content.clear();
+                }
+                if !capabilities.sections {
+                    system.sections.clear();
+                }
+                if !native_tools {
+                    system.tools_added.clear();
+                    system.tools_removed.clear();
+                } else if capabilities.tools == NativeTools::AddOnly
+                    && let Some((_, _, _, tools)) =
+                        changes.iter().find(|(at, _, _, _)| *at == index)
+                {
+                    system.tools_added = tools.tools_added.clone();
+                    system.tools_removed = tools.tools_removed.clone();
+                }
+                if !system.content.is_empty()
+                    || !system.sections.is_empty()
+                    || !system.tools_added.is_empty()
+                    || !system.tools_removed.is_empty()
+                {
+                    messages.push(Message::System(system));
+                }
+            }
+            other => messages.push(other.clone()),
+        }
+    }
+    Ok(TranscriptProjectionOutput {
+        context: Cow::Owned(TranscriptContext { messages }),
+        facts,
+    })
+}
+
+pub(crate) struct RequestProjection<'a> {
+    pub transcript: Cow<'a, TranscriptContext>,
+    pub replay: crate::replay::ReplayOutput,
+    pub facts: ProjectionFacts,
+    pub tools: TranscriptTools,
+}
+
+/// The shared pure preauth/payload compiler. Auth-derived headers and endpoints
+/// never participate in selecting canonical temporal or replay meaning.
+pub(crate) fn compile_request_projection<'a>(
+    request: &'a crate::provider::Request,
+    provider: &str,
+    model: Option<&crate::ModelInfo>,
+    wire: crate::WireApi,
+) -> Result<RequestProjection<'a>, crate::provider::ProviderError> {
+    use crate::model_info::WireCompat;
+    let caps = match model.map(|model| &model.compat) {
+        Some(WireCompat::AnthropicMessages(compat)) => TemporalCapabilities {
+            body: compat.supports_mid_convo_system_messages,
+            sections: compat.supports_mid_convo_system_messages,
+            tools: if compat.supports_mid_convo_system_messages
+                && compat.supports_mid_convo_tool_changes
+                && get_initial_system_message(request.context.messages())
+                    .is_some_and(|head| !head.tools_added.is_empty())
+            {
+                NativeTools::Full
+            } else {
+                NativeTools::None
+            },
+        },
+        Some(WireCompat::OpenAiCompletions(compat)) => {
+            let native = compat.supports_mid_convo_system_messages.unwrap_or(false);
+            TemporalCapabilities {
+                body: native,
+                sections: native,
+                tools: if native && compat.supports_mid_convo_tool_additions.unwrap_or(false) {
+                    NativeTools::AddOnly
+                } else {
+                    NativeTools::None
+                },
+            }
+        }
+        Some(WireCompat::OpenAiResponses(compat) | WireCompat::AzureOpenAiResponses(compat)) => {
+            responses_temporal(&compat.source)
+        }
+        Some(WireCompat::OpenAiCodexResponses(compat)) => responses_temporal(&compat.source),
+        _ if wire == crate::WireApi::PiMessages => TemporalCapabilities {
+            body: true,
+            sections: true,
+            tools: NativeTools::Full,
+        },
+        _ => TemporalCapabilities {
+            body: false,
+            sections: false,
+            tools: NativeTools::None,
+        },
+    };
+    let temporal = resolve_temporal(&request.context, caps, request.projection.temporal)?;
+    let tools =
+        resolve_transcript_tools(temporal.context.messages(), caps.tools != NativeTools::None);
+    let replay = if wire == crate::WireApi::PiMessages {
+        crate::replay::ReplayOutput {
+            messages: temporal.context.messages().to_vec(),
+            facts: Default::default(),
+        }
+    } else {
+        let messages = if wire == crate::WireApi::MistralConversations {
+            temporal.context.messages().to_vec()
+        } else {
+            without_initial_system_message(temporal.context.messages())
+        };
+        crate::replay::project_replay(
+            &messages,
+            &crate::replay::ReplayRoute {
+                wire,
+                provider: provider.to_owned(),
+                model: model.map_or_else(
+                    || {
+                        request
+                            .model
+                            .split_once(':')
+                            .map_or(request.model.as_str(), |(_, id)| id)
+                            .to_owned()
+                    },
+                    |model| model.id.clone(),
+                ),
+                supports_images: model.is_none_or(|model| model.capabilities.supports_images),
+            },
+            request.projection.replay,
+        )?
+    };
+    use sha2::Digest as _;
+    let bytes = serde_json::to_vec(request.context.messages()).map_err(|_| {
+        crate::provider::ProviderError::Config(
+            crate::provider::ProviderErrorSummary::attested_static(
+                "canonical transcript could not be serialized",
+            ),
+        )
+    })?;
+    let facts = ProjectionFacts {
+        source_prefix: SourcePrefix {
+            message_count: request.context.messages().len(),
+            sha256: format!("{:x}", sha2::Sha256::digest(bytes)),
+        },
+        temporal: temporal.facts,
+        replay: replay.facts.clone(),
+    };
+    Ok(RequestProjection {
+        transcript: temporal.context,
+        replay,
+        facts,
+        tools,
+    })
+}
+
+fn responses_temporal(
+    source: &crate::model_info::OpenAiResponsesSourceCompat,
+) -> TemporalCapabilities {
+    let native = source.supports_mid_convo_system_messages.unwrap_or(false);
+    TemporalCapabilities {
+        body: native,
+        sections: native,
+        tools: if source.supports_additional_tools.unwrap_or(false)
+            || source.supports_tool_search.unwrap_or(false)
+        {
+            NativeTools::AddOnly
+        } else {
+            NativeTools::None
+        },
+    }
 }
 
 /// Strip executable and display-only fields from a tool before transcript
@@ -901,11 +1247,11 @@ mod tests {
         );
         // Native capability keeps the canonical value by reference.
         let native = resolve_transcript(&transcript, true, TranscriptProjection::Strict).unwrap();
-        assert!(matches!(native, Cow::Borrowed(_)));
+        assert!(matches!(native.context, Cow::Borrowed(_)));
         // Default projection collapses instead of failing.
         let collapsed =
             resolve_transcript(&transcript, false, TranscriptProjection::NativeOrCollapse).unwrap();
-        assert!(matches!(collapsed, Cow::Owned(_)));
+        assert!(matches!(collapsed.context, Cow::Owned(_)));
     }
 
     #[test]

@@ -144,6 +144,7 @@ fn openrouter_unknown_model_returns_error() {
 fn openrouter_request_body_strips_provider_prefix() {
     let provider = openrouter_provider();
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openrouter:openai/gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -367,6 +368,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
     let provider = opi_ai::openrouter::openrouter_provider(Some(server.uri()));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openrouter:openai/gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -445,6 +447,7 @@ fn openrouter_profile_inherits_shared_compat_flags() {
         vec![],
     );
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openrouter:openai/gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -506,6 +509,7 @@ async fn stream_cancellation_aborts_before_completion() {
     let cancel = CancellationToken::new();
     let provider = opi_ai::openrouter::openrouter_provider(Some(server));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openrouter:openai/gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -622,6 +626,42 @@ fn image_models(record: &ImageModelRecord) -> Models {
         )
         .expect("register image api");
     models
+}
+
+#[test]
+fn image_registration_preserves_arbitrary_exact_api_ids_without_auth() {
+    for id in ["normal", "", " \t", "api/β\0id"] {
+        let mut models = Models::new();
+        let resolver = std::sync::Arc::new(pending_auth::PendingAuth::default());
+        let mut record = image_record("http://127.0.0.1:1".into(), vec![]);
+        record.api = ApiId::new(id);
+        let handle = models
+            .register_image_api(
+                std::sync::Arc::new(OpenRouterImagesApi::new(HttpClient::new(), record.clone())),
+                resolver.clone(),
+                AuthProvenanceSource::Static,
+            )
+            .expect("ApiId has no nonempty or whitespace grammar");
+        assert_eq!(handle.api_id().as_str(), id);
+        assert_eq!(
+            models
+                .image_model("openrouter", &record.id)
+                .unwrap()
+                .api
+                .as_str(),
+            id
+        );
+        record.provider_id = " \t".into();
+        assert!(matches!(
+            models.register_image_api(
+                std::sync::Arc::new(OpenRouterImagesApi::new(HttpClient::new(), record)),
+                resolver.clone(),
+                AuthProvenanceSource::Static,
+            ),
+            Err(opi_ai::registry::RegistrationError::EmptyProviderId)
+        ));
+        assert_eq!(resolver.calls.load(AtomicOrdering::SeqCst), 0);
+    }
 }
 
 fn images_call() -> ImagesCall {
@@ -2026,6 +2066,7 @@ async fn custom_chat_replacement_keeps_its_resolver_after_store_attachment() {
     let store = Arc::new(Store(AtomicU32::new(0)));
     models.set_credential_store(store.clone());
     let request = Request {
+        projection: Default::default(),
         model: "openrouter:custom".into(),
         context: opi_ai::transcript::normalize_context(Default::default()).unwrap(),
         max_tokens: None,

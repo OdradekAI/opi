@@ -8,6 +8,10 @@ use opi_ai::auth::adc::native::{
 };
 use opi_ai::credential::BoxAuthFuture;
 
+#[allow(dead_code)]
+#[path = "../src/crypto/fixtures.rs"]
+mod adc_keys;
+
 struct Transport {
     requests: Mutex<Vec<AdcSourceRequest>>,
     replies: Mutex<VecDeque<&'static str>>,
@@ -469,4 +473,260 @@ async fn adc_configuration_check_propagates_the_selected_file_probe_failure() {
     );
     assert_eq!(context.probes.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert!(transport.requests.lock().unwrap().is_empty());
+}
+
+struct NoSourceEnv;
+
+impl opi_ai::auth::AuthContext for NoSourceEnv {
+    fn env(&self, _: &str) -> Result<Option<String>, opi_ai::auth::AuthContextError> {
+        Ok(None)
+    }
+
+    fn file_exists(&self, _: &str) -> Result<bool, opi_ai::auth::AuthContextError> {
+        panic!("an explicitly selected source must not probe another file")
+    }
+}
+
+struct ExpiryResponse {
+    body: Vec<u8>,
+    requests: Mutex<Vec<AdcSourceRequest>>,
+}
+
+impl AdcSourceTransport for ExpiryResponse {
+    fn send(
+        &self,
+        request: AdcSourceRequest,
+    ) -> BoxAuthFuture<'_, Result<AdcSourceResponse, AdcSourceHttpError>> {
+        self.requests.lock().unwrap().push(request);
+        let body = self.body.clone();
+        Box::pin(async move {
+            Ok(AdcSourceResponse {
+                status: 200,
+                headers: vec![("Metadata-Flavor".into(), "Google".into())],
+                body,
+            })
+        })
+    }
+}
+
+async fn check_source_expiry(family: Option<&str>) {
+    use opi_ai::auth::adc::native::{
+        AdcNativeInput, AdcResolutionError, ScopedAdcEnv, resolve_adc_native,
+    };
+    use serde_json::json;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("selected.json");
+    let selection = if let Some(family) = family {
+        let file = match family {
+            "service_account" => json!({
+                "type": family,
+                "client_email": "fixture@example.invalid",
+                "private_key": adc_keys::RSA_2048_E65537_PKCS8_PEM,
+            }),
+            "authorized_user" | "external_account_authorized_user" => json!({
+                "type": family,
+                "client_id": "fixture-client", "client_secret": "fixture-secret",
+                "refresh_token": "fixture-refresh",
+            }),
+            _ => unreachable!("selected test family"),
+        };
+        std::fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+        AdcAuthSelection::CredentialsFile(path)
+    } else {
+        AdcAuthSelection::DirectMetadata {
+            residency: Some(false),
+        }
+    };
+    let now = time::OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+    let clock = FixedAdcClock::new(now);
+    let scoped = ScopedAdcEnv::default();
+    for seconds in [Some(3600), None, Some(0), Some(-1), Some(i64::MAX)] {
+        let mut body =
+            json!({"access_token": "fixture-access", "refresh_token": "fixture-rotation"});
+        if let Some(seconds) = seconds {
+            body["expires_in"] = seconds.into();
+        }
+        let transport = ExpiryResponse {
+            body: serde_json::to_vec(&body).unwrap(),
+            requests: Mutex::new(Vec::new()),
+        };
+        let input =
+            AdcNativeInput::new(selection.clone(), &scoped, &NoSourceEnv, &transport, &clock);
+        let result = resolve_adc_native(&input).await;
+        assert_eq!(
+            transport.requests.lock().unwrap().len(),
+            1,
+            "{family:?}/{seconds:?}"
+        );
+        if seconds == Some(i64::MAX) {
+            assert!(
+                matches!(result, Err(AdcResolutionError::InvalidTokenResponse)),
+                "unrepresentable positive expiry must fail the selected source: {result:?}"
+            );
+        } else {
+            let token = result.unwrap().expect("selected source token");
+            let expected = seconds
+                .filter(|seconds| *seconds > 0)
+                .map(|seconds| now + time::Duration::seconds(seconds));
+            assert_eq!(token.expires_at, expected, "{family:?}/{seconds:?}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn metadata_checked_expiry() {
+    check_source_expiry(None).await;
+}
+
+#[tokio::test]
+async fn service_account_checked_expiry() {
+    check_source_expiry(Some("service_account")).await;
+}
+
+#[tokio::test]
+async fn authorized_user_checked_expiry() {
+    check_source_expiry(Some("authorized_user")).await;
+}
+
+#[tokio::test]
+async fn external_authorized_user_checked_expiry() {
+    check_source_expiry(Some("external_account_authorized_user")).await;
+}
+
+#[tokio::test]
+async fn aws_subject_region_suffix_and_environment_precedence() {
+    use opi_ai::auth::adc::native::{
+        AdcNativeInput, AdcResolutionError, ScopedAdcEnv, resolve_adc_native,
+    };
+    use opi_ai::auth::{AuthContext, AuthContextError};
+    use serde_json::json;
+
+    struct Ambient {
+        region: Option<&'static str>,
+        default_region: Option<&'static str>,
+    }
+    impl AuthContext for Ambient {
+        fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
+            Ok(match name {
+                "AWS_REGION" => self.region,
+                "AWS_DEFAULT_REGION" => self.default_region,
+                "AWS_ACCESS_KEY_ID" => Some("fixture-access"),
+                "AWS_SECRET_ACCESS_KEY" => Some("fixture-secret"),
+                _ => None,
+            }
+            .map(str::to_owned))
+        }
+        fn file_exists(&self, _: &str) -> Result<bool, AuthContextError> {
+            panic!("the explicit AWS subject source must not probe another file")
+        }
+    }
+    struct Source {
+        zone: &'static str,
+        requests: Mutex<Vec<AdcSourceRequest>>,
+    }
+    impl AdcSourceTransport for Source {
+        fn send(
+            &self,
+            request: AdcSourceRequest,
+        ) -> BoxAuthFuture<'_, Result<AdcSourceResponse, AdcSourceHttpError>> {
+            let body = if request.url == "http://metadata.invalid/region" {
+                self.zone.as_bytes().to_vec()
+            } else {
+                assert_eq!(request.url, "https://sts.googleapis.com/v1/token");
+                br#"{"access_token":"fixture-token","expires_in":3600}"#.to_vec()
+            };
+            self.requests.lock().unwrap().push(request);
+            Box::pin(async move {
+                Ok(AdcSourceResponse {
+                    status: 200,
+                    headers: vec![],
+                    body,
+                })
+            })
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("aws.json");
+    std::fs::write(&path, serde_json::to_vec(&json!({
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/providers/a",
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "token_url": "https://sts.googleapis.com/v1/token",
+        "credential_source": {
+            "environment_id": "aws1",
+            "region_url": "http://metadata.invalid/region",
+            "url": "http://metadata.invalid/credentials",
+            "regional_cred_verification_url": "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+        }
+    })).unwrap()).unwrap();
+    let clock =
+        FixedAdcClock::new(time::OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap());
+    let scoped = ScopedAdcEnv::default();
+    for (zone, region, default_region, expected) in [
+        ("us-east-1a", None, None, Some("us-east-1")),
+        ("us-east-1界", None, None, Some("us-east-1")),
+        ("", None, None, None),
+        ("us-east-1😀", None, None, None),
+        ("", Some("eu-west-1"), Some("us-west-2"), Some("eu-west-1")),
+        ("", None, Some("us-west-2"), Some("us-west-2")),
+    ] {
+        let ambient = Ambient {
+            region,
+            default_region,
+        };
+        let source = Source {
+            zone,
+            requests: Mutex::new(Vec::new()),
+        };
+        let input = AdcNativeInput::new(
+            AdcAuthSelection::CredentialsFile(path.clone()),
+            &scoped,
+            &ambient,
+            &source,
+            &clock,
+        );
+        let result = resolve_adc_native(&input).await;
+        let requests = source.requests.lock().unwrap();
+        let metadata_count = requests
+            .iter()
+            .filter(|r| r.url == "http://metadata.invalid/region")
+            .count();
+        assert_eq!(
+            metadata_count,
+            usize::from(region.is_none() && default_region.is_none())
+        );
+        if let Some(expected) = expected {
+            assert!(result.unwrap().is_some(), "zone={zone:?}");
+            assert_eq!(requests.len(), metadata_count + 1);
+            let request = requests.last().unwrap();
+            let subject = url::form_urlencoded::parse(request.body.as_ref().unwrap().as_bytes())
+                .find(|(name, _)| name == "subject_token")
+                .unwrap()
+                .1
+                .into_owned();
+            let wrapped = format!("value={subject}");
+            let decoded = url::form_urlencoded::parse(wrapped.as_bytes())
+                .next()
+                .unwrap()
+                .1
+                .into_owned();
+            let subject: serde_json::Value = serde_json::from_str(&decoded).unwrap();
+            assert_eq!(
+                subject["url"],
+                format!(
+                    "https://sts.{expected}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"
+                )
+            );
+        } else {
+            assert!(
+                matches!(
+                    result,
+                    Err(AdcResolutionError::AwsSubjectUnavailable { .. })
+                ),
+                "zone={zone:?}: {result:?}"
+            );
+            assert_eq!(requests.len(), 1, "invalid region must not send to STS");
+        }
+    }
 }

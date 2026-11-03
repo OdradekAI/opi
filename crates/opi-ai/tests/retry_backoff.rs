@@ -162,6 +162,7 @@ async fn mock_provider_returns_error_response() {
         ],
     );
     let request = opi_ai::provider::Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -407,6 +408,7 @@ mod acquisition {
 
     fn chat_request() -> opi_ai::provider::Request {
         opi_ai::provider::Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "openai:gpt-4o".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -807,15 +809,41 @@ mod acquisition {
         let request = mock_request();
         let cancel = request.cancel.clone();
         let call = models
-            .prepare_call("mock:mock-model", request)
+            .prepare_call("mock:mock-model", request.clone())
             .await
             .unwrap();
         let mut attempt = call.start_attempt().unwrap();
         cancel.cancel();
-        assert!(matches!(
-            attempt.next().await,
-            Some(Err(ProviderError::Cancelled))
-        ));
+        let error = attempt
+            .next()
+            .await
+            .expect("one cancellation")
+            .expect_err("cancelled lease must fail closed");
+        let ProviderError::StreamFailure(failure) = &error else {
+            panic!("accepted projection must retain its failure carrier: {error:?}");
+        };
+        assert_eq!(failure.cause(), &ProviderError::Cancelled);
+        let facts = failure
+            .message()
+            .projection
+            .as_ref()
+            .expect("accepted projection is known");
+        use sha2::Digest as _;
+        let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+        assert_eq!(
+            facts.source_prefix.message_count,
+            request.context.messages().len()
+        );
+        assert_eq!(
+            facts.source_prefix.sha256,
+            format!("{:x}", sha2::Sha256::digest(bytes))
+        );
+        assert_eq!(
+            facts.temporal.mode,
+            opi_ai::transcript::ProjectionMode::Lossless
+        );
+        assert!(facts.temporal.affected_ranges.is_empty());
+        assert!(facts.replay.losses.is_empty());
         assert!(attempt.next().await.is_none());
         assert!(log.lock().unwrap().is_empty());
         assert!(matches!(

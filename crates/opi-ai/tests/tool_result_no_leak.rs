@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 fn request_with_truncated_tool_result() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "m".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -31,6 +32,7 @@ fn request_with_truncated_tool_result() -> Request {
                     timestamp_ms: 0,
                 }),
                 Message::Assistant(AssistantMessage {
+                    projection: None,
                     content: vec![AssistantContent::ToolCall {
                         tool_call: ToolCall {
                             id: "tc-1".into(),

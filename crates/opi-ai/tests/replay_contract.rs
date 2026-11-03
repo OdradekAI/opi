@@ -38,6 +38,7 @@ fn user(text: &str) -> Message {
 
 fn assistant(content: Vec<AssistantContent>, stop_reason: StopReason) -> Message {
     Message::Assistant(AssistantMessage {
+        projection: None,
         content,
         api: opi_ai::ApiKind::Anthropic,
         provider: "anthropic".into(),
@@ -94,6 +95,7 @@ fn not_executed_result(id: &str, name: &str, reason: ToolNotExecutedReason) -> M
 
 fn request(model: &str, messages: Vec<Message>) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -853,6 +855,7 @@ fn chat_keeps_turn_text_alongside_tool_calls() {
 
 fn assistant_with_openai_identity(content: Vec<AssistantContent>) -> Message {
     Message::Assistant(AssistantMessage {
+        projection: None,
         content,
         api: opi_ai::ApiKind::OpenAi,
         provider: "openai".into(),
@@ -1227,7 +1230,10 @@ mod grammar_replay_tests {
         let provider = OpenAiResponsesProvider::new_with_config(
             None,
             ResponsesConfig {
-                supports_grammar_tools: true,
+                source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                    supports_grammar_tools: Some(true),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         );

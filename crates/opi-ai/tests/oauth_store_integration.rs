@@ -94,6 +94,7 @@ fn models(store: Arc<dyn CredentialStore>, flow: Arc<Flow>, endpoint: String) ->
 }
 fn request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

@@ -302,6 +302,7 @@ async fn factory_provider(
 
 fn request(model: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: format!("github-copilot:{model}"),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -504,10 +505,13 @@ async fn github_copilot_headers_match_reviewed_static_contract() {
         overridden
             .extra_headers
             .push((name.into(), "malicious-override".into()));
+        let error = drain(&collection, overridden)
+            .await
+            .expect("managed header refusal");
         assert!(
             matches!(
-                drain(&collection, overridden).await,
-                Some(ProviderError::RequestFailed(_))
+                accepted_projection_cause(&error),
+                ProviderError::RequestFailed(_)
             ),
             "{name} must remain provider-managed"
         );
@@ -517,6 +521,7 @@ async fn github_copilot_headers_match_reviewed_static_contract() {
 
 fn call_assistant(id: &str, name: &str) -> Message {
     Message::Assistant(opi_ai::message::AssistantMessage {
+        projection: None,
         content: vec![AssistantContent::ToolCall {
             tool_call: ToolCall {
                 id: id.into(),
@@ -783,8 +788,8 @@ async fn github_copilot_401_and_403_are_revoked_on_every_wire() {
                 .expect("auth-invalid response");
             assert!(
                 matches!(
-                    error,
-                    ProviderError::CredentialRevoked { ref provider_id }
+                    accepted_projection_cause(&error),
+                    ProviderError::CredentialRevoked { provider_id }
                         if provider_id == "github-copilot"
                 ),
                 "{model} status {status}: {error:?}"
@@ -797,4 +802,14 @@ async fn github_copilot_401_and_403_are_revoked_on_every_wire() {
             );
         }
     }
+}
+
+fn accepted_projection_cause(
+    error: &opi_ai::provider::ProviderError,
+) -> &opi_ai::provider::ProviderError {
+    let opi_ai::provider::ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection retains its cause and facts: {error:?}");
+    };
+    assert!(failure.message().projection.is_some());
+    failure.cause()
 }

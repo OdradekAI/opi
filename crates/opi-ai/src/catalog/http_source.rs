@@ -7,7 +7,7 @@
 //! [`HttpCatalogSource`], which fetches one distribution-schema-v1 document
 //! over HTTP and is the reference real-network implementation.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use futures_util::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
@@ -17,6 +17,20 @@ use crate::http::HttpClient;
 use crate::provider::{ProviderError, ProviderErrorSummary};
 
 use super::wire;
+
+/// The selected owners and caller policy for one explicit catalog refresh.
+/// Sources own freshness interpretation; the SDK forwards `force` unchanged.
+#[derive(Clone, Debug)]
+pub struct CatalogRefreshContext {
+    /// Whether the caller permits source network work.
+    pub allow_network: bool,
+    /// An optional source-specific forced-refresh choice.
+    pub force: Option<bool>,
+    /// Active provider owners selected for this source invocation.
+    pub providers: BTreeSet<String>,
+    /// Cancellation of this refresh, including its publication.
+    pub cancel: CancellationToken,
+}
 
 /// Typed failure decoding a distribution-schema-v1 catalog document.
 #[derive(Debug, thiserror::Error)]
@@ -31,21 +45,27 @@ pub enum CatalogDocumentError {
 }
 
 /// A source of complete dynamic catalogs, queried during an explicit
-/// `refresh(true)` round.
+/// network-enabled refresh round.
 ///
 /// Implementations must be cheap to clone or wrapped in an `Arc` when
-/// registered; fetches observe the refresh cancellation token and must
-/// return without publishing when it fires.
+/// registered. The context selects active declared provider owners and forwards
+/// optional source-specific freshness policy. Fetches observe cancellation;
+/// only Models publishes their acknowledged selected records. Undeclared
+/// provider output is rejected, while declared unselected output is ignored.
 pub trait DynamicCatalogSource: Send + Sync {
     /// Stable identifier reported in refresh outcomes.
     fn id(&self) -> &str;
+
+    /// Provider owners whose records this source may return. Construction and
+    /// this declaration perform no source work.
+    fn provider_ids(&self) -> &[String];
 
     /// Fetch the complete dynamic catalogs this source publishes, keyed by
     /// provider id. An error fails only this source: the refresh report
     /// records it and prior data for its providers is retained.
     fn fetch(
         &self,
-        token: CancellationToken,
+        context: CatalogRefreshContext,
     ) -> BoxFuture<'static, Result<HashMap<String, ModelsStoreEntry>, ProviderError>>;
 }
 
@@ -59,16 +79,19 @@ pub trait DynamicCatalogSource: Send + Sync {
 pub struct HttpCatalogSource {
     id: String,
     url: String,
+    provider_ids: Vec<String>,
     client: HttpClient,
 }
 
 impl HttpCatalogSource {
-    /// Create a source that GETs `url`. The reported source id is
+    /// Declare provider ownership for a source that GETs `url` on refresh.
+    /// Construction performs no source work. The reported source id is
     /// `"http-catalog"`.
-    pub fn new(url: impl Into<String>) -> Self {
+    pub fn new(url: impl Into<String>, provider_ids: impl IntoIterator<Item = String>) -> Self {
         Self {
             id: "http-catalog".to_owned(),
             url: url.into(),
+            provider_ids: provider_ids.into_iter().collect(),
             client: HttpClient::new(),
         }
     }
@@ -100,13 +123,21 @@ impl DynamicCatalogSource for HttpCatalogSource {
         &self.id
     }
 
+    fn provider_ids(&self) -> &[String] {
+        &self.provider_ids
+    }
+
     fn fetch(
         &self,
-        token: CancellationToken,
+        context: CatalogRefreshContext,
     ) -> BoxFuture<'static, Result<HashMap<String, ModelsStoreEntry>, ProviderError>> {
         let url = self.url.clone();
         let client = self.client.client().clone();
         Box::pin(async move {
+            if !context.allow_network || context.providers.is_empty() {
+                return Ok(HashMap::new());
+            }
+            let token = context.cancel;
             let request = client
                 .get(&url)
                 .timeout(std::time::Duration::from_secs(30))

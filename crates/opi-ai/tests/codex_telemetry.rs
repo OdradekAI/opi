@@ -107,6 +107,7 @@ fn model() -> ModelInfo {
 
 fn request(context: TelemetryContext, callbacks: RequestCallbacks) -> Request {
     Request {
+        projection: Default::default(),
         model: "openai-codex:gpt-5.4".into(),
         context: normalize_context(Context {
             system_prompt: None,

@@ -496,6 +496,7 @@ fn diagnostic_message(
     usage: Usage,
 ) -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: vec![],
         api: ApiKind::Anthropic,
         provider: provider.to_owned(),
@@ -696,6 +697,30 @@ fn is_recoverable_length_matches_source_comparison() {
     // Unknown usage never converts to zero tokens.
     let unknown = diagnostic_message("openai", StopReason::Length, None, Usage::unknown());
     assert!(!is_recoverable_length(&unknown, 100));
+}
+
+#[test]
+fn context_overflow_length_stop_handles_full_u64_window_range() {
+    let full = diagnostic_message(
+        "mimo",
+        StopReason::Length,
+        None,
+        known_usage(u32::MAX, u32::MAX, 0),
+    );
+    // 8_589_934_590 input tokens fill at least 99% through this last window.
+    assert!(is_context_overflow(&full, Some(8_676_701_606)));
+    assert!(!is_context_overflow(&full, Some(8_676_701_607)));
+    for window in [
+        u64::MAX / 100,
+        u64::MAX / 100 + 1,
+        u64::MAX / 99,
+        u64::MAX / 99 + 1,
+        186_330_748_219_288_401,
+        u64::MAX - 1,
+        u64::MAX,
+    ] {
+        assert!(!is_context_overflow(&full, Some(window)), "window={window}");
+    }
 }
 
 #[test]
@@ -1150,6 +1175,7 @@ mod grammar_property_names {
 
     fn request(tool: ToolDef) -> Request {
         Request {
+            projection: Default::default(),
             model: "openai-responses:gpt-4o".to_owned(),
             context: normalize_context(Context {
                 system_prompt: None,
@@ -1178,7 +1204,10 @@ mod grammar_property_names {
         OpenAiResponsesProvider::new_with_config(
             None,
             ResponsesConfig {
-                supports_grammar_tools: true,
+                source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                    supports_grammar_tools: Some(true),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         )

@@ -208,6 +208,73 @@ fn schema_allows_null(schema: &Value) -> bool {
         .is_some_and(|variants| variants.iter().any(schema_allows_null))
 }
 
+fn required_names(schema: &Value) -> Result<Vec<String>, ConstrainedSamplingError> {
+    let entries = match schema.get("required") {
+        None => return Ok(Vec::new()),
+        Some(Value::Array(entries)) if entries.iter().all(Value::is_string) => entries,
+        Some(_) => {
+            return Err(ConstrainedSamplingError::new(
+                "object required must be a string array",
+            ));
+        }
+    };
+    let properties = schema.get("properties").and_then(Value::as_object);
+    let names: Vec<String> = entries
+        .iter()
+        .map(|entry| entry.as_str().expect("checked above").to_owned())
+        .collect();
+    if names
+        .iter()
+        .any(|name| properties.is_none_or(|properties| !properties.contains_key(name)))
+    {
+        return Err(ConstrainedSamplingError::new(
+            "required contains an unknown property",
+        ));
+    }
+    Ok(names)
+}
+
+/// Check only strict-required shape before authentication. The caller supplies
+/// declarations surviving wire projection, including native inline history.
+pub(crate) fn validate_required_shapes<'a>(
+    tools: impl IntoIterator<Item = &'a ToolDef>,
+) -> Result<(), ConstrainedSamplingError> {
+    for tool in tools {
+        if !matches!(
+            tool.constrained_sampling,
+            Some(ConstrainedSampling::JsonSchema {
+                strict: StrictPreference::Require
+            })
+        ) {
+            continue;
+        }
+        let mut pending = vec![&tool.input_schema];
+        while let Some(schema) = pending.pop() {
+            if schema.get("type").and_then(Value::as_str) == Some("object") {
+                required_names(schema).map_err(|error| {
+                    ConstrainedSamplingError::new(format!(
+                        "tool {:?} requires JSON-schema constrained sampling, but {}",
+                        tool.name,
+                        error.detail(),
+                    ))
+                })?;
+                if let Some(properties) = schema.get("properties").and_then(Value::as_object) {
+                    pending.extend(properties.values());
+                }
+            }
+            if let Some(variants) = schema.get("anyOf").and_then(Value::as_array) {
+                pending.extend(variants);
+            }
+            if let Some(items) = schema.get("items")
+                && !items.is_array()
+            {
+                pending.push(items);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn make_strict_node(
     schema: &mut Value,
     admission: &dyn StrictKeywordAdmission,
@@ -282,53 +349,46 @@ fn make_strict_node(
     // Extract the validated facts before borrowing the property map
     // mutably: property names, the required set, and each property's
     // original null-admission.
-    let (property_names, _required, allows_null): (Vec<String>, Vec<String>, Vec<bool>) =
-        match schema.get("properties") {
-            None => (Vec::new(), Vec::new(), Vec::new()),
-            Some(properties) => {
-                if !is_json_schema_object(properties) {
-                    *error = "object properties must be a schema map".into();
-                    return;
-                }
-                if let Some(Value::Array(entries)) = schema.get("required")
-                    && !entries.iter().all(Value::is_string)
-                {
-                    *error = "object required must be a string array".into();
-                    return;
-                }
-                let required: Vec<String> = schema
-                    .get("required")
-                    .and_then(Value::as_array)
-                    .map(|entries| {
-                        entries
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .map(String::from)
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let names: Vec<String> = properties
+    let (property_names, allows_null): (Vec<String>, Vec<bool>) = {
+        let properties = match schema.get("properties") {
+            None => None,
+            Some(properties) if is_json_schema_object(properties) => Some(properties),
+            Some(_) => {
+                *error = "object properties must be a schema map".into();
+                return;
+            }
+        };
+        let names: Vec<String> = properties
+            .map(|properties| {
+                properties
                     .as_object()
                     .expect("checked above")
                     .keys()
                     .cloned()
-                    .collect();
-                if required.iter().any(|key| !names.contains(key)) {
-                    *error = "required contains an unknown property".into();
-                    return;
-                }
-                let allows_null: Vec<bool> = names
-                    .iter()
-                    .map(|name| {
-                        required.contains(name)
-                            || schema_allows_null(
-                                properties.get(name).expect("name came from the map"),
-                            )
-                    })
-                    .collect();
-                (names, required, allows_null)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let required = match required_names(schema) {
+            Ok(required) => required,
+            Err(detail) => {
+                *error = detail.detail().to_owned();
+                return;
             }
         };
+        let allows_null = names
+            .iter()
+            .map(|name| {
+                required.contains(name)
+                    || schema_allows_null(
+                        properties
+                            .expect("names came from properties")
+                            .get(name)
+                            .expect("name came from the map"),
+                    )
+            })
+            .collect();
+        (names, allows_null)
+    };
     if schema.get("properties").is_none() {
         // No properties: an empty object schema converts vacuously.
         finalize_object(schema, &property_names);

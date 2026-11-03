@@ -419,24 +419,78 @@ fn unchanged_instance_self_recursion_is_a_typed_failure() {
     ));
 }
 
-#[test]
-fn deep_schemas_do_not_exhaust_the_rust_stack() {
-    // 10_000 nested allOf wrappers evaluate through the explicit work stack.
-    // The compiled schema is intentionally leaked afterwards: dropping a
-    // 10_000-deep serde_json value recurses on the (small) test-thread stack,
-    // which is a property of the value type, not of the evaluator.
-    // Built with map/array constructors (moving the previous schema) rather
-    // than the json! macro, whose expression values go through the recursive
-    // `to_value` serializer.
-    let mut schema = serde_json::Value::Bool(true);
+fn ordinary_stack_subprocess(name: &str, test: fn()) {
+    if std::env::var("OPI_SCHEMA_LIFECYCLE_CHILD").as_deref() == Ok(name) {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(test)
+            .unwrap()
+            .join()
+            .unwrap();
+        return;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--nocapture", "--test-threads=1"])
+        .env("OPI_SCHEMA_LIFECYCLE_CHILD", name)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{name}: {:?}\n{}\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn nested_all_of(mut schema: Value) -> Value {
     for _ in 0..10_000 {
         let mut map = serde_json::Map::new();
-        map.insert("allOf".into(), serde_json::Value::Array(vec![schema]));
-        schema = serde_json::Value::Object(map);
+        map.insert("allOf".into(), Value::Array(vec![schema]));
+        schema = Value::Object(map);
     }
-    let compiled = compile(schema).expect("compiles");
-    assert_eq!(compiled.check(&json!(1)), Ok(true));
-    std::mem::forget(compiled);
+    schema
+}
+
+#[test]
+fn deep_schemas_do_not_exhaust_the_rust_stack() {
+    ordinary_stack_subprocess("deep_schemas_do_not_exhaust_the_rust_stack", || {
+        let mut schema = nested_all_of(json!({"type":"integer"}));
+        schema
+            .as_object_mut()
+            .unwrap()
+            .insert("$id".into(), json!("https://offline.invalid/root"));
+        let compiled = compile(schema).expect("compiles");
+        assert_eq!(compiled.check(&json!(1)), Ok(true));
+        let last_owner = compiled.clone();
+        drop(compiled);
+        assert_eq!(last_owner.check(&json!("bad")), Ok(false));
+        drop(last_owner);
+    });
+}
+
+#[test]
+fn deep_local_ref_search() {
+    ordinary_stack_subprocess("deep_local_ref_search", || {
+        for reference in ["#target", "#missing"] {
+            let mut schema = nested_all_of(json!({"$anchor":"target", "type":"integer"}));
+            schema
+                .as_object_mut()
+                .unwrap()
+                .insert("$ref".into(), json!(reference));
+            let compiled = compile(schema).unwrap();
+            assert_eq!(compiled.check(&json!(1)), Ok(reference == "#target"));
+            drop(compiled);
+        }
+    });
+}
+
+#[test]
+fn deep_compile_error_releases_owned_schema() {
+    ordinary_stack_subprocess("deep_compile_error_releases_owned_schema", || {
+        let schema = nested_all_of(json!({"pattern":"["}));
+        assert!(matches!(compile(schema), Err(SchemaError::Regex { .. })));
+    });
 }
 
 #[test]

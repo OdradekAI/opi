@@ -28,6 +28,14 @@ use crate::message::AgentMessage;
 use crate::tool::{ExecutionMode, ToolDiagnostic, ToolResult};
 use crate::validation;
 
+fn preparation_error(error: ModelsError) -> AgentError {
+    if error.is_call_cancelled() {
+        AgentError::Cancelled
+    } else {
+        AgentError::from(error)
+    }
+}
+
 /// Run the agent loop until completion or cancellation.
 ///
 /// The loop operates on one complete [`NextTurnState`] (context, canonical
@@ -499,6 +507,7 @@ async fn run_operation(
             Err(error) => fail_before_dispatch!(AgentError::from(ProviderError::from(error))),
         };
         let request = Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: state.model_selection.to_spec(),
             context: normalized_context,
@@ -536,7 +545,7 @@ async fn run_operation(
         {
             Ok(prepared) => prepared,
             Err(e) => {
-                let err = AgentError::from(e);
+                let err = preparation_error(e);
                 if matches!(&err, AgentError::Cancelled) {
                     observe(&diagnostic_sink, cancelled_diagnostic("during_prepare"));
                     fail_before_dispatch!(err);
@@ -1715,7 +1724,7 @@ impl PreparationEvidence<'_> {
         let prepared = collection
             .prepare_call(&requested_spec, request)
             .await
-            .map_err(AgentError::from)?;
+            .map_err(preparation_error)?;
         let facts = crate::evidence::ProviderEvidenceFacts::from_prepared(
             &requested_spec,
             prepared.route(),

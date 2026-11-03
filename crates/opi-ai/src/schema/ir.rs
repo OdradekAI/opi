@@ -113,6 +113,14 @@ pub(crate) struct Compiled {
 unsafe impl Send for Compiled {}
 unsafe impl Sync for Compiled {}
 
+impl Drop for Compiled {
+    fn drop(&mut self) {
+        // Node identities remain pinned for the whole live generation. Detach
+        // only during destruction, leaving an empty root for Box's own drop.
+        super::drop_value(std::mem::take(self.schema.as_mut()));
+    }
+}
+
 impl Compiled {
     pub(crate) fn schema_for_plan(&self, plan: PlanId) -> Result<&Value, SchemaError> {
         let location = self

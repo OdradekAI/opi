@@ -19,6 +19,84 @@ use secrecy::SecretString;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
+#[path = "support/pending_auth.rs"]
+mod registration_pending_auth;
+
+#[test]
+fn deferred_registration_preserves_arbitrary_exact_api_ids_without_auth() {
+    use opi_ai::deferred::{DeferredApi, DeferredCancelCall};
+    use opi_ai::models::ApiId;
+    use opi_ai::provider::{EventStream, ProviderError};
+    use std::sync::Arc;
+
+    struct RegistrationOnlyApi {
+        api: ApiId,
+        provider: &'static str,
+    }
+    impl DeferredApi<()> for RegistrationOnlyApi {
+        fn api_id(&self) -> &ApiId {
+            &self.api
+        }
+        fn provider_id(&self) -> &str {
+            self.provider
+        }
+        fn model_id(&self) -> &str {
+            "mock-model"
+        }
+        fn default_options(&self) {
+            panic!("registration must not prepare a call")
+        }
+        fn fetch_prepared(
+            &self,
+            _: &DeferredHandle,
+            _: &(),
+            _: ResolvedAuth,
+            _: DeferredFetchCall,
+        ) -> EventStream {
+            panic!("registration must not dispatch")
+        }
+        fn cancel_prepared<'a>(
+            &'a self,
+            _: &'a DeferredHandle,
+            _: &'a (),
+            _: ResolvedAuth,
+            _: DeferredCancelCall,
+        ) -> futures_util::future::BoxFuture<'a, Result<(), ProviderError>> {
+            panic!("registration must not dispatch")
+        }
+    }
+    for id in ["normal", "", " \t", "api/β\0id"] {
+        let mut models = Models::new();
+        let resolver = Arc::new(registration_pending_auth::PendingAuth::default());
+        let handle = models
+            .register_deferred_api(
+                Arc::new(RegistrationOnlyApi {
+                    api: ApiId::new(id),
+                    provider: "test",
+                }),
+                resolver.clone(),
+                AuthProvenanceSource::Static,
+            )
+            .expect("ApiId has no nonempty or whitespace grammar");
+        assert_eq!(handle.api_id.as_str(), id);
+        let mut pending = pending_handle();
+        pending.api = id.into();
+        models.validate_deferred_handle(&pending, None).unwrap();
+        assert!(matches!(
+            models.register_deferred_api(
+                Arc::new(RegistrationOnlyApi {
+                    api: ApiId::new(id),
+                    provider: " \t"
+                }),
+                resolver.clone(),
+                AuthProvenanceSource::Static,
+            ),
+            Err(opi_ai::registry::RegistrationError::EmptyProviderId)
+        ));
+        assert_eq!(resolver.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+}
+
 fn pending_handle() -> DeferredHandle {
     DeferredHandle {
         provider: "test".into(),
@@ -109,6 +187,7 @@ fn deferred_handle_expiry_is_typed_against_injected_clock() {
 
 fn chat_request() -> opi_ai::provider::Request {
     opi_ai::provider::Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -490,6 +569,103 @@ async fn explicit_cancel_is_recorded_and_best_effort() {
         .await
         .unwrap_err();
     assert!(error.to_string().contains("does not support deferred"));
+}
+
+#[tokio::test]
+async fn remote_cancel_observes_caller_abort_before_and_during_auth() {
+    use opi_ai::auth::AuthResolver;
+    use opi_ai::credential::BoxAuthFuture;
+    use opi_ai::provider::ProviderError;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use std::time::Duration;
+
+    #[derive(Default)]
+    struct Auth {
+        calls: AtomicUsize,
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+    }
+    impl AuthResolver for Auth {
+        fn resolve(&self) -> BoxAuthFuture<'_, Result<ResolvedAuth, ProviderError>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {
+                self.entered.notify_one();
+                self.release.notified().await;
+                Ok(opi_ai::test_support::resolved_bearer_auth())
+            })
+        }
+    }
+    let auth = Arc::new(Auth::default());
+    let backend = Arc::new(ScriptedDeferredBackend::new("test", "mock-model"));
+    let handle = backend.submit(test_support::text_response("late"), 3, None);
+    let mut collection = Models::new();
+    collection
+        .register_deferred_api(
+            backend.clone() as Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+            auth.clone(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let collection = Arc::new(collection);
+
+    let call = opi_ai::deferred::DeferredCancelCall::default();
+    call.cancel.cancel();
+    let mut wrong_model = handle.clone();
+    wrong_model.model_id = "wrong".into();
+    let error = collection
+        .cancel_deferred(&wrong_model, call.clone())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, ProviderError::Config(_)),
+        "identity validation precedes abort"
+    );
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 0);
+    let error = tokio::time::timeout(
+        Duration::from_millis(100),
+        collection.cancel_deferred(&handle, call),
+    )
+    .await
+    .expect("preaborted cancel must not await auth")
+    .unwrap_err();
+    assert!(matches!(error, ProviderError::Cancelled));
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 0);
+    assert!(backend.cancelled_handles().is_empty());
+
+    let call = opi_ai::deferred::DeferredCancelCall::default();
+    let abort = call.cancel.clone();
+    let pending = tokio::spawn({
+        let collection = collection.clone();
+        let handle = handle.clone();
+        async move { collection.cancel_deferred(&handle, call).await }
+    });
+    tokio::time::timeout(Duration::from_secs(1), auth.entered.notified())
+        .await
+        .unwrap();
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
+    abort.cancel();
+    let error = tokio::time::timeout(Duration::from_millis(100), pending)
+        .await
+        .expect("abort must end caller auth wait")
+        .unwrap()
+        .unwrap_err();
+    assert!(matches!(error, ProviderError::Cancelled));
+    auth.release.notify_one();
+    tokio::task::yield_now().await;
+    assert!(
+        backend.cancelled_handles().is_empty(),
+        "late auth must not dispatch cancel"
+    );
+
+    collection
+        .cancel_deferred(&handle, Default::default())
+        .await
+        .unwrap();
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(backend.cancelled_handles(), vec![handle]);
 }
 
 // ---------------------------------------------------------------------------

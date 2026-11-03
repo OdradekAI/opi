@@ -560,6 +560,7 @@ impl AgentHooks for ProbeHooks {
 
 fn base_msg() -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: vec![],
         api: opi_ai::ApiKind::Anthropic,
         provider: "scripted".into(),

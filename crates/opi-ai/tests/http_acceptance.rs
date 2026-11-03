@@ -77,6 +77,7 @@ struct RecordedRequest {
     target: String,
     authorization: Option<String>,
     content_length: usize,
+    body: Vec<u8>,
 }
 
 /// A scripted response to write back.
@@ -196,20 +197,22 @@ async fn read_request(stream: &mut TcpStream) -> std::io::Result<Option<Recorded
             _ => {}
         }
     }
-    // Drain exactly the declared body.
-    let mut taken = buf.len() - head_end;
-    while taken < content_length {
+    let mut body = buf[head_end..].to_vec();
+    body.truncate(content_length);
+    while body.len() < content_length {
         let n = stream.read(&mut scratch).await?;
         if n == 0 {
             return Err(std::io::Error::other("request body truncated"));
         }
-        taken += n;
+        let remaining = content_length - body.len();
+        body.extend_from_slice(&scratch[..n.min(remaining)]);
     }
     Ok(Some(RecordedRequest {
         method,
         target,
         authorization,
         content_length,
+        body,
     }))
 }
 
@@ -383,6 +386,7 @@ fn redirect_response(status: u16, location: &str) -> Vec<u8> {
 
 fn chat_request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: transcript::normalize_context(transcript::Context {
@@ -452,13 +456,19 @@ async fn chat_call(
 /// Drive one call until its first error terminal and return it.
 async fn chat_error(server_url: &str, client: Arc<HttpClient>) -> ProviderError {
     let models = registered_models(client, server_url);
+    let request = chat_request();
     let prepared = models
-        .prepare_call("openai:gpt-4o", chat_request())
+        .prepare_call("openai:gpt-4o", request.clone())
         .await
         .expect("call preparation");
     let mut stream: EventStream = prepared.start_attempt().expect("attempt start");
     while let Some(item) = stream.next().await {
         if let Err(error) = item {
+            accepted_failure_cause(&error, &request);
+            assert!(
+                stream.next().await.is_none(),
+                "negative call has one terminal failure"
+            );
             return error;
         }
     }
@@ -475,10 +485,9 @@ fn plain_client(policy: RedirectPolicy) -> Arc<HttpClient> {
     )
 }
 
-/// Post-acceptance stream failures surface through the adapter's
-/// `StreamFailure` envelope (partial assistant state plus the typed
-/// `StreamError` cause); before any content is accepted the bare
-/// `StreamError` variant is produced.
+/// Stream failures after successful projection compilation retain known
+/// projection facts in `StreamFailure`, including before content arrives.
+/// Collector-returned causes can also be classified directly.
 fn is_post_acceptance_stream_failure(error: &ProviderError) -> bool {
     match error {
         ProviderError::StreamFailure(failure) => {
@@ -498,14 +507,14 @@ fn bearer_of(request: &RecordedRequest) -> Option<&str> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn redirect_policy_defaults_to_limited_ten_and_is_configurable() {
+fn redirect_policy_defaults_to_limited_twenty_and_is_configurable() {
     assert_eq!(
         HttpClient::new().redirect_policy(),
-        RedirectPolicy::Limited(10)
+        RedirectPolicy::Limited(20)
     );
     assert_eq!(
         RedirectPolicy::default(),
-        RedirectPolicy::Limited(10),
+        RedirectPolicy::Limited(20),
         "the source-qualified default must not silently track the backend"
     );
     let client = HttpClientBuilder::new()
@@ -518,6 +527,73 @@ fn redirect_policy_defaults_to_limited_ten_and_is_configurable() {
         .build()
         .unwrap();
     assert_eq!(client.redirect_policy(), RedirectPolicy::Limited(2));
+}
+
+#[tokio::test]
+async fn source_qualified_default_redirect_budget_has_exact_twenty_hop_boundary() {
+    // The explicit source budget controls distinguish peer/fixture failures
+    // from the default client selecting a different redirect policy.
+    for explicit in [true, false] {
+        for hops in [20, 21] {
+            let server = start_raw(Arc::new(move |index: usize, _: &RecordedRequest| {
+                if index < hops {
+                    Script::coalesced(redirect_response(307, &format!("/hop{}", index + 1)))
+                } else {
+                    Script::coalesced(sse_chunked_response())
+                }
+            }))
+            .await;
+            let client = if explicit {
+                plain_client(RedirectPolicy::Limited(20))
+            } else {
+                Arc::new(HttpClient::new())
+            };
+            if hops == 20 {
+                let message = tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    chat_call(&server.url, client),
+                )
+                .await
+                .expect("finite redirect chain must settle")
+                .unwrap_or_else(|error| {
+                    panic!("20 redirects must succeed; explicit={explicit}: {error:?}")
+                });
+                assert_eq!(message.response_id.as_deref(), Some("chatcmpl-acc"));
+            } else {
+                let error = tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    chat_error(&server.url, client),
+                )
+                .await
+                .expect("redirect budget must terminate the chain");
+                let ProviderError::Network(summary) =
+                    accepted_failure_cause(&error, &chat_request())
+                else {
+                    panic!("redirect refusal must preserve its typed cause: {error:?}")
+                };
+                assert_eq!(summary.as_str(), "too many redirects");
+            }
+            let requests = server.stats.requests();
+            assert_eq!(requests.len(), 21, "hops={hops}, explicit={explicit}");
+            let body = &requests[0].body;
+            assert!(!body.is_empty());
+            let parsed: serde_json::Value = serde_json::from_slice(body).unwrap();
+            assert_eq!(parsed["model"], "gpt-4o");
+            for (index, request) in requests.iter().enumerate() {
+                assert_eq!(request.method, "POST");
+                assert_eq!(request.content_length, body.len());
+                assert_eq!(&request.body, body, "307 must retain exact body bytes");
+                assert_eq!(bearer_of(request), Some("Bearer acceptance-contract-key"));
+                let target = if index == 0 {
+                    "/v1/chat/completions".into()
+                } else {
+                    format!("/hop{index}")
+                };
+                assert_eq!(request.target, target);
+            }
+            server.stop().await;
+        }
+    }
 }
 
 #[tokio::test]
@@ -621,7 +697,7 @@ async fn redirect_limit_enforced_with_exact_lawful_sends_and_typed_cause() {
     )
     .await
     .expect("redirect loop terminates");
-    match error {
+    match accepted_failure_cause(&error, &chat_request()) {
         ProviderError::Network(summary) => {
             assert_eq!(
                 summary.as_str(),
@@ -652,7 +728,7 @@ async fn redirect_none_returns_status_to_caller_with_single_send() {
     )
     .await
     .expect("no-redirect policy returns the status");
-    match error {
+    match accepted_failure_cause(&error, &chat_request()) {
         ProviderError::ProviderSide(summary) => {
             let text = summary.as_str();
             assert!(
@@ -688,7 +764,10 @@ async fn acquisition_failure_before_any_request_is_typed_network() {
     .await
     .expect("acquisition failure terminates");
     assert!(
-        matches!(error, ProviderError::Network(_)),
+        matches!(
+            accepted_failure_cause(&error, &chat_request()),
+            ProviderError::Network(_)
+        ),
         "acquisition-stage failure must stay typed Network: {error:?}"
     );
 }
@@ -959,7 +1038,13 @@ async fn malformed_content_lengths_and_chunk_extension_never_succeed() {
             .await
             .unwrap();
             if acquisition {
-                assert!(matches!(error, ProviderError::Network(_)), "{error:?}");
+                assert!(
+                    matches!(
+                        accepted_failure_cause(&error, &chat_request()),
+                        ProviderError::Network(_)
+                    ),
+                    "{error:?}"
+                );
             } else {
                 assert!(is_post_acceptance_stream_failure(&error), "{error:?}");
             }
@@ -1326,19 +1411,22 @@ async fn read_request_tls(
             _ => {}
         }
     }
-    let mut taken = buf.len() - head_end;
-    while taken < content_length {
+    let mut body = buf[head_end..].to_vec();
+    body.truncate(content_length);
+    while body.len() < content_length {
         let n = tls.read(&mut scratch).await?;
         if n == 0 {
             return Err(std::io::Error::other("request body truncated"));
         }
-        taken += n;
+        let remaining = content_length - body.len();
+        body.extend_from_slice(&scratch[..n.min(remaining)]);
     }
     Ok(Some(RecordedRequest {
         method,
         target,
         authorization,
         content_length,
+        body,
     }))
 }
 
@@ -1479,4 +1567,36 @@ async fn scoped_no_proxy_bypasses_the_https_proxy() {
     let _ = proxy_task.await;
     let _ = target_stop.send(());
     let _ = target_task.await;
+}
+
+fn accepted_failure_cause<'a>(
+    error: &'a opi_ai::provider::ProviderError,
+    request: &opi_ai::provider::Request,
+) -> &'a opi_ai::provider::ProviderError {
+    use opi_ai::provider::ProviderError;
+    use sha2::Digest as _;
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let facts = failure
+        .message()
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+    failure.cause()
 }

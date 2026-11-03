@@ -493,6 +493,24 @@ pub enum AssistantStreamEvent {
 }
 
 impl AssistantStreamEvent {
+    pub(crate) fn set_projection(&mut self, facts: &crate::transcript::ProjectionFacts) {
+        match self {
+            Self::Start { partial }
+            | Self::TextStart { partial, .. }
+            | Self::TextDelta { partial, .. }
+            | Self::TextEnd { partial, .. }
+            | Self::ThinkingStart { partial, .. }
+            | Self::ThinkingDelta { partial, .. }
+            | Self::ThinkingEnd { partial, .. }
+            | Self::ToolCallStart { partial, .. }
+            | Self::ToolCallDelta { partial, .. }
+            | Self::ToolCallEnd { partial, .. } => partial.projection = Some(facts.clone()),
+            Self::Done { message, .. } | Self::Error { message, .. } => {
+                message.projection = Some(facts.clone())
+            }
+        }
+    }
+
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Done { .. } | Self::Error { .. })
     }
@@ -542,6 +560,11 @@ pub struct CallFailure {
 }
 
 impl CallFailure {
+    pub(crate) fn with_projection(mut self, facts: &crate::transcript::ProjectionFacts) -> Self {
+        self.message.projection = Some(facts.clone());
+        self
+    }
+
     /// The canonical partial/terminal assistant message for the failed call.
     pub fn message(&self) -> &crate::message::AssistantMessage {
         &self.message
@@ -617,8 +640,9 @@ impl CallFailure {
 /// The empty canonical message for a setup failure: no generated content,
 /// unknown usage, and no provider classification to report (the failure
 /// preceded any delivered event).
-fn setup_failure_message(cause: &ProviderError) -> crate::message::AssistantMessage {
+pub(crate) fn setup_failure_message(cause: &ProviderError) -> crate::message::AssistantMessage {
     crate::message::AssistantMessage {
+        projection: None,
         content: Vec::new(),
         api: crate::ApiKind::Anthropic,
         provider: String::new(),
@@ -675,6 +699,82 @@ pub struct ChatStream {
     inner: Option<crate::provider::EventStream>,
     partial: Option<crate::message::AssistantMessage>,
     terminal: Option<Result<crate::message::AssistantMessage, CallFailure>>,
+}
+
+struct ProjectionStream {
+    inner: Option<crate::provider::EventStream>,
+    facts: crate::transcript::ProjectionFacts,
+    terminal: bool,
+    partial: Option<crate::message::AssistantMessage>,
+}
+impl Stream for ProjectionStream {
+    type Item = Result<AssistantStreamEvent, ProviderError>;
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if this.terminal {
+            return Poll::Ready(None);
+        }
+        match this
+            .inner
+            .as_mut()
+            .expect("active projection stream")
+            .as_mut()
+            .poll_next(cx)
+        {
+            Poll::Ready(Some(Ok(mut event))) => {
+                event.set_projection(&this.facts);
+                this.partial = event.latest_partial().cloned();
+                if event.is_terminal() {
+                    this.terminal = true;
+                    this.inner.take();
+                }
+                Poll::Ready(Some(Ok(event)))
+            }
+            Poll::Ready(Some(Err(cause))) => {
+                this.terminal = true;
+                this.inner.take();
+                let cause = match &this.partial {
+                    Some(partial) => cause.with_partial(partial.clone()),
+                    None => cause,
+                };
+                Poll::Ready(Some(Err(cause.with_projection(&this.facts))))
+            }
+            Poll::Ready(None) => {
+                this.terminal = true;
+                this.inner.take();
+                let cause = ProviderError::StreamError(
+                    crate::provider::ProviderErrorSummary::attested_static(
+                        "stream ended without a terminal event",
+                    ),
+                );
+                let cause = match &this.partial {
+                    Some(partial) => cause.with_partial(partial.clone()),
+                    None => cause,
+                };
+                Poll::Ready(Some(Err(cause.with_projection(&this.facts))))
+            }
+            other => other,
+        }
+    }
+}
+
+pub(crate) fn project_call(
+    facts: crate::transcript::ProjectionFacts,
+    prepare: impl FnOnce() -> crate::provider::EventStream,
+) -> crate::provider::EventStream {
+    with_projection(prepare(), facts)
+}
+
+pub(crate) fn with_projection(
+    stream: crate::provider::EventStream,
+    facts: crate::transcript::ProjectionFacts,
+) -> crate::provider::EventStream {
+    Box::pin(ProjectionStream {
+        inner: Some(stream),
+        facts,
+        terminal: false,
+        partial: None,
+    })
 }
 
 impl ChatStream {
@@ -795,12 +895,25 @@ pub(crate) struct ProducerSnapshot(std::sync::Arc<std::sync::Mutex<ProducerState
 
 #[derive(Default)]
 struct ProducerState {
+    projection: Option<crate::transcript::ProjectionFacts>,
     message: Option<crate::message::AssistantMessage>,
     response_received: bool,
     terminal_delivered: bool,
 }
 
 impl ProducerSnapshot {
+    pub(crate) fn with_projection(facts: crate::transcript::ProjectionFacts) -> Self {
+        Self(std::sync::Arc::new(std::sync::Mutex::new(ProducerState {
+            projection: Some(facts),
+            ..Default::default()
+        })))
+    }
+    fn project_event(&self, event: &mut AssistantStreamEvent) {
+        if let Some(facts) = &self.0.lock().expect("producer snapshot lock").projection {
+            event.set_projection(facts);
+        }
+    }
+
     pub(crate) fn terminal_delivered(&self) -> bool {
         self.0
             .lock()
@@ -808,7 +921,12 @@ impl ProducerSnapshot {
             .terminal_delivered
     }
     pub(crate) fn record(&self, message: &crate::message::AssistantMessage) {
-        self.0.lock().expect("producer snapshot lock").message = Some(message.clone());
+        let mut state = self.0.lock().expect("producer snapshot lock");
+        let mut message = message.clone();
+        if let Some(facts) = &state.projection {
+            message.projection = Some(facts.clone());
+        }
+        state.message = Some(message);
     }
 
     /// Freeze successful transport acquisition before reading response data.
@@ -825,6 +943,11 @@ impl ProducerSnapshot {
             Some(message) => cause.with_partial(message.clone()),
             None => cause,
         };
+        let cause = if let Some(facts) = &state.projection {
+            cause.with_projection(facts)
+        } else {
+            cause
+        };
         if state.response_received {
             cause.after_response()
         } else {
@@ -838,7 +961,6 @@ impl ProducerSnapshot {
 pub(crate) struct CancelAwareReceiverStream {
     rx: Option<tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>>,
     cancelled: Pin<Box<WaitForCancellationFutureOwned>>,
-    yielded_cancelled: bool,
     snapshot: ProducerSnapshot,
 }
 
@@ -859,7 +981,6 @@ impl CancelAwareReceiverStream {
         Self {
             rx: Some(rx),
             cancelled: Box::pin(cancel.cancelled_owned()),
-            yielded_cancelled: false,
             snapshot,
         }
     }
@@ -870,26 +991,68 @@ impl Stream for CancelAwareReceiverStream {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-        if !this.yielded_cancelled && this.cancelled.as_mut().poll(cx).is_ready() {
+        if this.rx.is_none() {
+            return Poll::Ready(None);
+        }
+        if this.snapshot.terminal_delivered() {
             this.rx.take();
-            this.yielded_cancelled = true;
+            return Poll::Ready(None);
+        }
+        if this.cancelled.as_mut().poll(cx).is_ready() {
+            this.snapshot
+                .0
+                .lock()
+                .expect("producer snapshot lock")
+                .terminal_delivered = true;
+            this.rx.take();
             return Poll::Ready(Some(Err(this.snapshot.failure(ProviderError::Cancelled))));
         }
 
-        match this.rx.as_mut() {
-            Some(rx) => {
-                let item = rx.poll_recv(cx);
-                if matches!(&item, Poll::Ready(Some(Ok(event))) if event.is_terminal()) {
-                    this.snapshot
-                        .0
-                        .lock()
-                        .expect("producer snapshot lock")
-                        .terminal_delivered = true;
-                }
-                item
-            }
-            None => Poll::Ready(None),
+        let mut item = this
+            .rx
+            .as_mut()
+            .expect("active receiver stream")
+            .poll_recv(cx);
+        if let Poll::Ready(Some(Ok(event))) = &mut item {
+            this.snapshot.project_event(event);
         }
+        if let Poll::Ready(Some(Err(error))) = &mut item {
+            *error = this
+                .snapshot
+                .failure(std::mem::replace(error, ProviderError::Cancelled));
+        }
+        if matches!(item, Poll::Ready(None)) {
+            let mut state = this.snapshot.0.lock().expect("producer snapshot lock");
+            let premature = state.projection.is_some() && !state.terminal_delivered;
+            if premature {
+                state.terminal_delivered = true;
+            }
+            drop(state);
+            this.rx.take();
+            return if premature {
+                Poll::Ready(Some(Err(this.snapshot.failure(
+                    ProviderError::StreamError(
+                        crate::provider::ProviderErrorSummary::attested_static(
+                            "stream ended without a terminal event",
+                        ),
+                    ),
+                ))))
+            } else {
+                Poll::Ready(None)
+            };
+        }
+        if matches!(&item, Poll::Ready(Some(Ok(event))) if event.is_terminal())
+            || matches!(&item, Poll::Ready(Some(Err(_))))
+        {
+            // Resource owners observe delivery while the receiver closes.
+            this.snapshot
+                .0
+                .lock()
+                .expect("producer snapshot lock")
+                .terminal_delivered = true;
+            this.rx.take();
+        }
+        item
     }
 }
 
@@ -1078,5 +1241,251 @@ mod cancellation_tests {
             .expect("consumer task did not panic");
         assert!(matches!(first, Some(Err(ProviderError::Cancelled))));
         assert!(second.is_none());
+    }
+}
+
+#[cfg(test)]
+mod projection_tests {
+    use super::*;
+    use futures_util::StreamExt as _;
+    #[tokio::test]
+    async fn richer_producer_projection_envelope_retains_usage_and_handoff() {
+        let facts = crate::transcript::ProjectionFacts {
+            source_prefix: crate::transcript::SourcePrefix {
+                message_count: 0,
+                sha256: "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945".into(),
+            },
+            temporal: crate::transcript::TemporalProjectionFacts {
+                mode: crate::transcript::ProjectionMode::Lossless,
+                affected_ranges: vec![],
+            },
+            replay: Default::default(),
+        };
+        let delivered = crate::test_support::base_assistant();
+        let mut richer = delivered.clone();
+        richer.usage.output_tokens = 9;
+        richer.duration_ms = Some(23);
+        richer.content = vec![crate::message::AssistantContent::Text {
+            text: "producer-only tail".into(),
+            signature: None,
+        }];
+        let cause = ProviderError::StreamError(crate::provider::ProviderErrorSummary::sanitized(
+            "synthetic",
+        ))
+        .with_partial(richer.clone())
+        .after_response();
+        let mut stream = with_projection(
+            Box::pin(futures_util::stream::iter(vec![
+                Ok(AssistantStreamEvent::Start { partial: delivered }),
+                Err(cause),
+            ])),
+            facts.clone(),
+        );
+        assert!(stream.next().await.unwrap().is_ok());
+        let cause = stream.next().await.unwrap().unwrap_err();
+        assert!(cause.response_received());
+        let (partial, cause) = cause.into_stream_parts();
+        let partial = partial.unwrap();
+        assert_eq!(partial.content, richer.content);
+        assert_eq!(partial.usage, richer.usage);
+        assert_eq!(partial.duration_ms, richer.duration_ms);
+        assert_eq!(partial.projection, Some(facts));
+        assert!(matches!(cause, ProviderError::StreamError(_)));
+    }
+
+    fn terminal_facts() -> crate::transcript::ProjectionFacts {
+        crate::transcript::ProjectionFacts {
+            source_prefix: crate::transcript::SourcePrefix {
+                message_count: 0,
+                sha256: "original-prefix".into(),
+            },
+            temporal: crate::transcript::TemporalProjectionFacts {
+                mode: crate::transcript::ProjectionMode::Lossless,
+                affected_ranges: vec![],
+            },
+            replay: Default::default(),
+        }
+    }
+
+    async fn terminal_receiver(
+        queued_tail: bool,
+    ) -> (
+        CancelAwareReceiverStream,
+        tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::channel(2);
+        tx.send(Err(ProviderError::StreamError(
+            crate::provider::ProviderErrorSummary::sanitized("first failure"),
+        )))
+        .await
+        .unwrap();
+        if queued_tail {
+            tx.send(Ok(AssistantStreamEvent::Start {
+                partial: crate::test_support::base_assistant(),
+            }))
+            .await
+            .unwrap();
+        }
+        (
+            CancelAwareReceiverStream::with_snapshot(
+                rx,
+                tokio_util::sync::CancellationToken::new(),
+                ProducerSnapshot::with_projection(terminal_facts()),
+            ),
+            tx,
+        )
+    }
+
+    #[tokio::test]
+    async fn receiver_error_closes_a_live_sender_and_becomes_permanent_eof() {
+        let (mut stream, tx) = terminal_receiver(false).await;
+        let error = stream.next().await.unwrap().unwrap_err();
+        let (partial, cause) = error.into_stream_parts();
+        assert!(matches!(cause, ProviderError::StreamError(_)));
+        assert_eq!(partial.unwrap().projection, Some(terminal_facts()));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), stream.next())
+                .await
+                .expect("terminal is immediate EOF")
+                .is_none()
+        );
+        assert!(tx.is_closed());
+    }
+
+    #[tokio::test]
+    async fn receiver_error_discards_queued_tail_before_closing_delivery() {
+        let (mut stream, tx) = terminal_receiver(true).await;
+        assert!(stream.next().await.unwrap().is_err());
+        assert!(
+            stream.next().await.is_none(),
+            "queued tail must not survive terminal failure"
+        );
+        assert!(tx.is_closed());
+    }
+
+    #[tokio::test]
+    async fn receiver_cancellation_cannot_replace_a_delivered_error_eof_or_done() {
+        for kind in 0..3 {
+            let (tx, rx) = tokio::sync::mpsc::channel(2);
+            let cancel = tokio_util::sync::CancellationToken::new();
+            if kind == 0 {
+                tx.send(Err(ProviderError::StreamError(
+                    crate::provider::ProviderErrorSummary::sanitized("first failure"),
+                )))
+                .await
+                .unwrap();
+            }
+            if kind == 2 {
+                tx.send(Ok(AssistantStreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message: crate::test_support::base_assistant(),
+                }))
+                .await
+                .unwrap();
+            }
+            if kind == 1 {
+                drop(tx);
+            }
+            let snapshot = ProducerSnapshot::with_projection(terminal_facts());
+            let mut stream =
+                CancelAwareReceiverStream::with_snapshot(rx, cancel.clone(), snapshot.clone());
+            let first = stream.next().await.unwrap();
+            if kind == 2 {
+                assert!(first.unwrap().is_terminal());
+            } else {
+                let error = first.unwrap_err();
+                let (partial, cause) = error.into_stream_parts();
+                assert!(matches!(cause, ProviderError::StreamError(_)));
+                assert_eq!(partial.unwrap().projection, Some(terminal_facts()));
+            }
+            assert!(snapshot.terminal_delivered());
+            cancel.cancel();
+            assert!(
+                stream.next().await.is_none(),
+                "no cancellation after terminal kind {kind}"
+            );
+            assert!(stream.next().await.is_none());
+        }
+    }
+
+    struct CountedProjectionStream {
+        items: std::collections::VecDeque<Result<AssistantStreamEvent, ProviderError>>,
+        polls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        drops: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl Stream for CountedProjectionStream {
+        type Item = Result<AssistantStreamEvent, ProviderError>;
+        fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let this = self.get_mut();
+            this.polls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Poll::Ready(this.items.pop_front())
+        }
+    }
+    impl Drop for CountedProjectionStream {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    #[tokio::test]
+    async fn projection_terminal_releases_inner_without_another_poll() {
+        for kind in 0..3 {
+            let polls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let drops = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let mut message = crate::test_support::base_assistant();
+            message.usage.output_tokens = 7;
+            let mut items = std::collections::VecDeque::new();
+            if kind == 0 {
+                items.push_back(Err(ProviderError::StreamError(
+                    crate::provider::ProviderErrorSummary::sanitized("first failure"),
+                )
+                .with_partial(message.clone())));
+            }
+            if kind == 2 {
+                items.push_back(Ok(AssistantStreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message: message.clone(),
+                }));
+            }
+            if kind != 1 {
+                items.push_back(Ok(AssistantStreamEvent::Start {
+                    partial: crate::test_support::base_assistant(),
+                }));
+            }
+            let inner = CountedProjectionStream {
+                items,
+                polls: polls.clone(),
+                drops: drops.clone(),
+            };
+            let mut stream = with_projection(Box::pin(inner), terminal_facts());
+            let first = stream.next().await.unwrap();
+            if kind == 2 {
+                let event = first.unwrap();
+                assert_eq!(event.latest_partial().unwrap().usage.output_tokens, 7);
+                assert_eq!(
+                    event.latest_partial().unwrap().projection,
+                    Some(terminal_facts())
+                );
+            } else {
+                let (partial, cause) = first.unwrap_err().into_stream_parts();
+                assert!(matches!(cause, ProviderError::StreamError(_)));
+                let partial = partial.unwrap();
+                assert_eq!(partial.projection, Some(terminal_facts()));
+                if kind == 0 {
+                    assert_eq!(partial.usage.output_tokens, 7);
+                }
+            }
+            assert_eq!(
+                drops.load(std::sync::atomic::Ordering::SeqCst),
+                1,
+                "terminal releases ownership immediately"
+            );
+            assert!(stream.next().await.is_none());
+            assert!(stream.next().await.is_none());
+            assert_eq!(
+                polls.load(std::sync::atomic::Ordering::SeqCst),
+                1,
+                "no inner polls after terminal"
+            );
+        }
     }
 }

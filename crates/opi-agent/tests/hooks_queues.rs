@@ -311,6 +311,7 @@ impl AgentHooks for ReplacingHooks {
 
 fn base_assistant() -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: vec![],
         api: opi_ai::ApiKind::Anthropic,
         provider: "recording".into(),

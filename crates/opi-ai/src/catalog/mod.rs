@@ -24,7 +24,9 @@ pub use openrouter::personalize_openrouter_catalog;
 pub mod store;
 pub(crate) mod wire;
 
-pub use http_source::{CatalogDocumentError, DynamicCatalogSource, HttpCatalogSource};
+pub use http_source::{
+    CatalogDocumentError, CatalogRefreshContext, DynamicCatalogSource, HttpCatalogSource,
+};
 pub use store::{
     ModelsStore, ModelsStoreError, RefreshGuard, StoreCommit, StoreCommitError, StoreSnapshot,
 };

@@ -17,6 +17,7 @@ mod openai_chat_profile {
 
     fn make_request(cancel: CancellationToken) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "openai:gpt-4o".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -144,13 +145,17 @@ mod openai_chat_profile {
             .await;
 
         let provider = OpenAiChatProvider::new(Some(server.uri()));
+        let request = make_request(CancellationToken::new());
         let mut stream = provider.stream_prepared(
-            make_request(CancellationToken::new()),
+            request.clone(),
             opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
-        match result {
+        match result
+            .as_ref()
+            .map_err(|error| super::accepted_failure_cause(error, &request))
+        {
             Err(ProviderError::AuthFailed(msg)) => {
                 assert!(
                     msg.contains("provider rejected credentials"),
@@ -159,6 +164,8 @@ mod openai_chat_profile {
             }
             other => panic!("expected AuthFailed, got: {other:?}"),
         }
+        assert!(stream.next().await.is_none(), "failure must be terminal");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     // ---------------------------------------------------------------------------
@@ -179,19 +186,25 @@ mod openai_chat_profile {
             .await;
 
         let provider = OpenAiChatProvider::new(Some(server.uri()));
+        let request = make_request(CancellationToken::new());
         let mut stream = provider.stream_prepared(
-            make_request(CancellationToken::new()),
+            request.clone(),
             opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
-        match result {
+        match result
+            .as_ref()
+            .map_err(|error| super::accepted_failure_cause(error, &request))
+        {
             Err(ProviderError::RateLimited { retry_after_ms }) => {
                 assert!(retry_after_ms.is_some(), "should parse retry-after header");
                 assert_eq!(retry_after_ms.unwrap(), 5000);
             }
             other => panic!("expected RateLimited, got: {other:?}"),
         }
+        assert!(stream.next().await.is_none(), "failure must be terminal");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     // ---------------------------------------------------------------------------
@@ -329,6 +342,7 @@ mod mistral_profile {
 
     fn make_request(cancel: CancellationToken) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "mistral:mistral-large-latest".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -461,13 +475,17 @@ mod mistral_profile {
             .await;
 
         let provider = make_provider(server.uri());
+        let request = make_request(CancellationToken::new());
         let mut stream = provider.stream_prepared(
-            make_request(CancellationToken::new()),
+            request.clone(),
             opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
-        match result {
+        match result
+            .as_ref()
+            .map_err(|error| super::accepted_failure_cause(error, &request))
+        {
             Err(ProviderError::AuthFailed(msg)) => {
                 assert!(
                     msg.contains("provider rejected credentials"),
@@ -476,6 +494,8 @@ mod mistral_profile {
             }
             other => panic!("expected AuthFailed, got: {other:?}"),
         }
+        assert!(stream.next().await.is_none(), "failure must be terminal");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     // ---------------------------------------------------------------------------
@@ -496,19 +516,25 @@ mod mistral_profile {
             .await;
 
         let provider = make_provider(server.uri());
+        let request = make_request(CancellationToken::new());
         let mut stream = provider.stream_prepared(
-            make_request(CancellationToken::new()),
+            request.clone(),
             opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
-        match result {
+        match result
+            .as_ref()
+            .map_err(|error| super::accepted_failure_cause(error, &request))
+        {
             Err(ProviderError::RateLimited { retry_after_ms }) => {
                 assert!(retry_after_ms.is_some(), "should parse retry-after header");
                 assert_eq!(retry_after_ms.unwrap(), 5000);
             }
             other => panic!("expected RateLimited, got: {other:?}"),
         }
+        assert!(stream.next().await.is_none(), "failure must be terminal");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     // ---------------------------------------------------------------------------
@@ -572,6 +598,7 @@ mod openrouter_profile {
 
     fn make_request(cancel: CancellationToken) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "openrouter:gpt-4o".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -713,13 +740,17 @@ mod openrouter_profile {
             .await;
 
         let provider = make_provider(server.uri());
+        let request = make_request(CancellationToken::new());
         let mut stream = provider.stream_prepared(
-            make_request(CancellationToken::new()),
+            request.clone(),
             opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
-        match result {
+        match result
+            .as_ref()
+            .map_err(|error| super::accepted_failure_cause(error, &request))
+        {
             Err(ProviderError::AuthFailed(msg)) => {
                 assert!(
                     msg.contains("provider rejected credentials"),
@@ -728,6 +759,8 @@ mod openrouter_profile {
             }
             other => panic!("expected AuthFailed, got: {other:?}"),
         }
+        assert!(stream.next().await.is_none(), "failure must be terminal");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     // ---------------------------------------------------------------------------
@@ -748,19 +781,25 @@ mod openrouter_profile {
             .await;
 
         let provider = make_provider(server.uri());
+        let request = make_request(CancellationToken::new());
         let mut stream = provider.stream_prepared(
-            make_request(CancellationToken::new()),
+            request.clone(),
             opi_ai::test_support::resolved_bearer_auth(),
         );
 
         let result = stream.next().await.expect("should have event");
-        match result {
+        match result
+            .as_ref()
+            .map_err(|error| super::accepted_failure_cause(error, &request))
+        {
             Err(ProviderError::RateLimited { retry_after_ms }) => {
                 assert!(retry_after_ms.is_some(), "should parse retry-after header");
                 assert_eq!(retry_after_ms.unwrap(), 5000);
             }
             other => panic!("expected RateLimited, got: {other:?}"),
         }
+        assert!(stream.next().await.is_none(), "failure must be terminal");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     // ---------------------------------------------------------------------------
@@ -859,4 +898,36 @@ mod openrouter_profile {
             "should have Done event, confirming extra headers were accepted by the mock"
         );
     }
+}
+
+fn accepted_failure_cause<'a>(
+    error: &'a opi_ai::provider::ProviderError,
+    request: &opi_ai::provider::Request,
+) -> &'a opi_ai::provider::ProviderError {
+    use opi_ai::provider::ProviderError;
+    use sha2::Digest as _;
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let facts = failure
+        .message()
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+    failure.cause()
 }

@@ -880,6 +880,7 @@ fn map_stop_reason(raw: Option<&str>) -> StopReason {
 
 fn empty_assistant_message(provider_id: &str) -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: Vec::new(),
         api: crate::ApiKind::Anthropic,
         provider: provider_id.into(),
@@ -1299,17 +1300,14 @@ impl AnthropicProvider {
             serde_json::json!({"type": "ephemeral"})
         };
 
-        // Canonical transcript consumption (AIR-020): the prompt and tool
-        // declarations live in the transcript's system messages. Models
-        // with the mid-convo compat keep later system messages native
-        // (task 20.39); everything else projects by collapse.
-        let transcript = crate::transcript::resolve_transcript(
-            &request.context,
-            compat.supports_mid_convo_system_messages,
-            crate::transcript::TranscriptProjection::NativeOrCollapse,
-        )
-        .expect("native-or-collapse projection never fails");
-        let transcript = transcript.as_ref();
+        let selected_model = self.models.iter().find(|model| model.id == model_id);
+        let projection = crate::transcript::compile_request_projection(
+            request,
+            &self.provider_id,
+            selected_model,
+            crate::WireApi::AnthropicMessages,
+        )?;
+        let transcript = projection.transcript.as_ref();
         let system_prompt = crate::transcript::get_initial_system_message(transcript.messages())
             .map(crate::transcript::system_message_text)
             .unwrap_or_default();
@@ -1330,16 +1328,7 @@ impl AnthropicProvider {
         // validated and lossy transforms applied before the body is
         // built; association failures fail typed with zero
         // authorization/network use.
-        let replay = crate::replay::project_replay(
-            &crate::transcript::without_initial_system_message(transcript.messages()),
-            &crate::replay::ReplayRoute {
-                wire: crate::model_info::WireApi::AnthropicMessages,
-                provider: self.provider_id.clone(),
-                model: model_id.to_owned(),
-                supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
-            },
-            crate::replay::ReplayProjection::NativeOrCollapse,
-        )?;
+        let replay = &projection.replay;
         let request_level_tools = if native_tool_changes {
             &initial_tools
         } else {
@@ -1597,283 +1586,296 @@ impl AnthropicProvider {
         mut resolved: crate::auth::ResolvedAuth,
         variant: crate::provider::PayloadVariant,
     ) -> EventStream {
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model);
-        let selected_base = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.as_deref())
-            .unwrap_or(&self.default_base_url);
-        let effective_base =
-            crate::auth::builtin::effective_base_url(&self.provider_id, selected_base, &resolved);
-        if effective_base != selected_base {
-            let mut configured = self.clone();
-            if let Some(model) = configured
-                .models
-                .iter_mut()
-                .find(|model| model.id == model_id)
-            {
-                model.base_url = Some(effective_base);
-            } else {
-                configured.default_base_url = effective_base;
-            }
-            return configured.stream_dispatch(request, resolved, variant);
-        }
-        request.callbacks = request.callbacks.ensure_call_scope();
-        // Same as `stream` but skips per-call auth resolution: the collection
-        // resolved and froze authentication once for the logical call.
-        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
-            return Box::pin(stream::once(async move { Err(error) }));
-        }
-        let default_base_url = self.default_base_url.clone();
-        let provider_id = self.provider_id.clone();
-        let auth_invalid_policy = self.auth_invalid_policy;
-        let header_owned = matches!(&resolved.provenance.source,
-            crate::auth::AuthProvenanceSource::Environment { name } if name == "ANTHROPIC_AUTH_TOKEN");
-        let direct_oauth_beta = !header_owned
-            && !self.copilot_headers
-            && self.provider_id != "cloudflare-ai-gateway"
-            && ((matches!(resolved.scheme, AuthScheme::ApiKey)
-                && resolved.secret.expose_secret().contains("sk-ant-oat"))
-                || (self.direct_oauth_beta && matches!(resolved.scheme, AuthScheme::Bearer)));
-        if direct_oauth_beta {
-            resolved.scheme = AuthScheme::Bearer;
-        }
-        let oauth_tool_names = if direct_oauth_beta {
-            crate::transcript::get_current_tools(request.context.messages())
-                .into_iter()
-                .map(|tool| tool.name)
-                .collect()
-        } else {
-            Vec::new()
+        let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::AnthropicMessages) {
+            Ok(facts) => facts,
+            Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
         };
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, model_id)| model_id)
-            .unwrap_or(&request.model);
-        let model_base_url = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.clone());
-        let disable_preferred_strict =
-            variant == crate::provider::PayloadVariant::AnthropicStrictDowngrade;
-        let CompiledAnthropicRequest {
-            body,
-            preferred_strict_names,
-            strict_tools,
-        } = match self.build_request_body_variant(
-            &request,
-            disable_preferred_strict,
-            direct_oauth_beta,
-        ) {
-            Ok(compiled) => compiled,
-            Err(error) => {
+        let event_projection = projection.clone();
+        crate::stream::project_call(event_projection, || -> EventStream {
+            let model_id = request
+                .model
+                .split_once(':')
+                .map(|(_, id)| id)
+                .unwrap_or(&request.model);
+            let selected_base = self
+                .models
+                .iter()
+                .find(|model| model.id == model_id)
+                .and_then(|model| model.base_url.as_deref())
+                .unwrap_or(&self.default_base_url);
+            let effective_base = crate::auth::builtin::effective_base_url(
+                &self.provider_id,
+                selected_base,
+                &resolved,
+            );
+            if effective_base != selected_base {
+                let mut configured = self.clone();
+                if let Some(model) = configured
+                    .models
+                    .iter_mut()
+                    .find(|model| model.id == model_id)
+                {
+                    model.base_url = Some(effective_base);
+                } else {
+                    configured.default_base_url = effective_base;
+                }
+                return configured.stream_dispatch(request, resolved, variant);
+            }
+            request.callbacks = request.callbacks.ensure_call_scope();
+            // Same as `stream` but skips per-call auth resolution: the collection
+            // resolved and froze authentication once for the logical call.
+            if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
                 return Box::pin(stream::once(async move { Err(error) }));
             }
-        };
-        let cancel = request.cancel.clone();
-        let timeout = request.timeout;
-        let copilot_headers = if self.copilot_headers {
-            match github_copilot_route_headers(&request) {
-                Ok(mut headers) => {
-                    let initiator = github_copilot_initiator(&request);
-                    headers.push(("X-Initiator".into(), initiator.into()));
-                    Ok(headers)
-                }
-                Err(error) => Err(error),
-            }
-        } else {
-            Ok(Vec::new())
-        };
-        let extra_headers = copilot_headers.and_then(|mut route_headers| {
+            let default_base_url = self.default_base_url.clone();
+            let provider_id = self.provider_id.clone();
+            let auth_invalid_policy = self.auth_invalid_policy;
+            let header_owned = matches!(&resolved.provenance.source,
+            crate::auth::AuthProvenanceSource::Environment { name } if name == "ANTHROPIC_AUTH_TOKEN");
+            let direct_oauth_beta = !header_owned
+                && !self.copilot_headers
+                && self.provider_id != "cloudflare-ai-gateway"
+                && ((matches!(resolved.scheme, AuthScheme::ApiKey)
+                    && resolved.secret.expose_secret().contains("sk-ant-oat"))
+                    || (self.direct_oauth_beta && matches!(resolved.scheme, AuthScheme::Bearer)));
             if direct_oauth_beta {
-                route_headers.extend([
-                    ("accept".into(), "application/json".into()),
-                    (
-                        "anthropic-dangerous-direct-browser-access".into(),
-                        "true".into(),
-                    ),
-                    ("user-agent".into(), "claude-cli/2.1.280".into()),
-                    ("x-app".into(), "cli".into()),
-                ]);
+                resolved.scheme = AuthScheme::Bearer;
             }
-            self.headers.merge_model_request(
-                self.models
-                    .iter()
-                    .find(|model| model.id == model_id)
-                    .map(|model| model.headers.as_slice())
-                    .unwrap_or_default(),
-                &route_headers,
-                &request.extra_headers,
-            )
-        });
-        let callbacks = request.callbacks.clone();
-        let http_client = self.client.client().clone();
-        let federation = self.federation.clone();
-        let federation_client = self.client.clone();
-        // The downgrade diagnostic rides the rebuilt variant's message from
-        // Start through the terminal (V-34: one recorded downgrade).
-        let diagnostics_seed =
-            if variant == crate::provider::PayloadVariant::AnthropicStrictDowngrade {
-                vec![crate::stream::AssistantDiagnostic {
-                    kind: "anthropic_strict_tools_fallback".into(),
-                    reason: "strict_tool_limits_exceeded".into(),
-                    detail: None,
-                }]
+            let oauth_tool_names = if direct_oauth_beta {
+                crate::transcript::get_current_tools(request.context.messages())
+                    .into_iter()
+                    .map(|tool| tool.name)
+                    .collect()
             } else {
                 Vec::new()
             };
+            let model_id = request
+                .model
+                .split_once(':')
+                .map(|(_, model_id)| model_id)
+                .unwrap_or(&request.model);
+            let model_base_url = self
+                .models
+                .iter()
+                .find(|model| model.id == model_id)
+                .and_then(|model| model.base_url.clone());
+            let disable_preferred_strict =
+                variant == crate::provider::PayloadVariant::AnthropicStrictDowngrade;
+            let CompiledAnthropicRequest {
+                body,
+                preferred_strict_names,
+                strict_tools,
+            } = match self.build_request_body_variant(
+                &request,
+                disable_preferred_strict,
+                direct_oauth_beta,
+            ) {
+                Ok(compiled) => compiled,
+                Err(error) => {
+                    return Box::pin(stream::once(async move { Err(error) }));
+                }
+            };
 
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let tx_closed = tx.clone();
-        let producer_cancel = cancel.clone();
-        let stream_cancel = cancel.clone();
-        // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
-        // task runs under the captured parent/Dispatch when provided;
-        // omission observes nothing.
-        let telemetry = request.telemetry_context.clone();
-
-        let producer = async move {
-            let work = async {
-                let extra_headers = match extra_headers {
-                    Ok(headers) => headers,
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                        return;
+            let cancel = request.cancel.clone();
+            let timeout = request.timeout;
+            let copilot_headers = if self.copilot_headers {
+                match github_copilot_route_headers(&request) {
+                    Ok(mut headers) => {
+                        let initiator = github_copilot_initiator(&request);
+                        headers.push(("X-Initiator".into(), initiator.into()));
+                        Ok(headers)
                     }
+                    Err(error) => Err(error),
+                }
+            } else {
+                Ok(Vec::new())
+            };
+            let extra_headers = copilot_headers.and_then(|mut route_headers| {
+                if direct_oauth_beta {
+                    route_headers.extend([
+                        ("accept".into(), "application/json".into()),
+                        (
+                            "anthropic-dangerous-direct-browser-access".into(),
+                            "true".into(),
+                        ),
+                        ("user-agent".into(), "claude-cli/2.1.280".into()),
+                        ("x-app".into(), "cli".into()),
+                    ]);
+                }
+                self.headers.merge_model_request(
+                    self.models
+                        .iter()
+                        .find(|model| model.id == model_id)
+                        .map(|model| model.headers.as_slice())
+                        .unwrap_or_default(),
+                    &route_headers,
+                    &request.extra_headers,
+                )
+            });
+            let callbacks = request.callbacks.clone();
+            let http_client = self.client.client().clone();
+            let federation = self.federation.clone();
+            let federation_client = self.client.clone();
+            // The downgrade diagnostic rides the rebuilt variant's message from
+            // Start through the terminal (V-34: one recorded downgrade).
+            let diagnostics_seed =
+                if variant == crate::provider::PayloadVariant::AnthropicStrictDowngrade {
+                    vec![crate::stream::AssistantDiagnostic {
+                        kind: "anthropic_strict_tools_fallback".into(),
+                        reason: "strict_tool_limits_exceeded".into(),
+                        detail: None,
+                    }]
+                } else {
+                    Vec::new()
                 };
-                let extra_headers =
-                    match callbacks.apply_header_transform_async(&extra_headers).await {
+
+            let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            let producer_snapshot = snapshot.clone();
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+            let tx_closed = tx.clone();
+            let producer_cancel = cancel.clone();
+            let stream_cancel = cancel.clone();
+            // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
+            // task runs under the captured parent/Dispatch when provided;
+            // omission observes nothing.
+            let telemetry = request.telemetry_context.clone();
+
+            let producer = async move {
+                let work = async {
+                    let extra_headers = match extra_headers {
                         Ok(headers) => headers,
                         Err(error) => {
                             let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
                             return;
                         }
                     };
-                let body = match callbacks.apply_payload_async(variant.label(), body).await {
-                    Ok(body) => body,
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                        return;
-                    }
-                };
-                let request_tools = body
-                    .get("tools")
-                    .and_then(serde_json::Value::as_array)
-                    .into_iter()
-                    .flatten();
-                let inline_tools = body
-                    .get("messages")
-                    .and_then(serde_json::Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .flat_map(|message| {
-                        message
-                            .get("content")
-                            .and_then(serde_json::Value::as_array)
-                            .into_iter()
-                            .flatten()
-                    })
-                    .filter(|block| block["type"] == "tool_addition")
-                    .filter_map(|block| block.get("tool").and_then(|tool| tool.get("definition")));
-                let has_preferred_strict = !preferred_strict_names.is_empty()
-                    && request_tools.chain(inline_tools).any(|tool| {
-                        tool.get("strict").and_then(serde_json::Value::as_bool) == Some(true)
-                            && tool
-                                .get("name")
-                                .and_then(serde_json::Value::as_str)
-                                .is_some_and(|name| {
-                                    preferred_strict_names
-                                        .iter()
-                                        .any(|preferred| preferred == name)
-                                })
-                    });
-                let base_url = crate::auth::builtin::effective_base_url(
-                    &provider_id,
-                    &model_base_url.unwrap_or(default_base_url),
-                    &resolved,
-                );
-                let federation = if matches!(resolved.scheme, AuthScheme::AnthropicFederation) {
-                    let result = if provider_id == "anthropic" {
-                        federation.bind(&base_url, &resolved, &federation_client)
-                    } else {
-                        Err(ProviderError::Config(
-                            ProviderErrorSummary::attested_static(
-                                "Federation is only supported by the anthropic provider",
-                            ),
-                        ))
-                    };
-                    match result {
-                        Ok(entry) => match entry.token().await {
-                            Ok(token) => {
-                                resolved.secret = token;
-                                Some(entry)
+                    let extra_headers =
+                        match callbacks.apply_header_transform_async(&extra_headers).await {
+                            Ok(headers) => headers,
+                            Err(error) => {
+                                let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                                return;
                             }
+                        };
+                    let body = match callbacks.apply_payload_async(variant.label(), body).await {
+                        Ok(body) => body,
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                            return;
+                        }
+                    };
+                    let request_tools = body
+                        .get("tools")
+                        .and_then(serde_json::Value::as_array)
+                        .into_iter()
+                        .flatten();
+                    let inline_tools = body
+                        .get("messages")
+                        .and_then(serde_json::Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .flat_map(|message| {
+                            message
+                                .get("content")
+                                .and_then(serde_json::Value::as_array)
+                                .into_iter()
+                                .flatten()
+                        })
+                        .filter(|block| block["type"] == "tool_addition")
+                        .filter_map(|block| {
+                            block.get("tool").and_then(|tool| tool.get("definition"))
+                        });
+                    let has_preferred_strict = !preferred_strict_names.is_empty()
+                        && request_tools.chain(inline_tools).any(|tool| {
+                            tool.get("strict").and_then(serde_json::Value::as_bool) == Some(true)
+                                && tool
+                                    .get("name")
+                                    .and_then(serde_json::Value::as_str)
+                                    .is_some_and(|name| {
+                                        preferred_strict_names
+                                            .iter()
+                                            .any(|preferred| preferred == name)
+                                    })
+                        });
+                    let base_url = crate::auth::builtin::effective_base_url(
+                        &provider_id,
+                        &model_base_url.unwrap_or(default_base_url),
+                        &resolved,
+                    );
+                    let federation = if matches!(resolved.scheme, AuthScheme::AnthropicFederation) {
+                        let result = if provider_id == "anthropic" {
+                            federation.bind(&base_url, &resolved, &federation_client)
+                        } else {
+                            Err(ProviderError::Config(
+                                ProviderErrorSummary::attested_static(
+                                    "Federation is only supported by the anthropic provider",
+                                ),
+                            ))
+                        };
+                        match result {
+                            Ok(entry) => match entry.token().await {
+                                Ok(token) => {
+                                    resolved.secret = token;
+                                    Some(entry)
+                                }
+                                Err(error) => {
+                                    let _ = tx.send(Err(error)).await;
+                                    return;
+                                }
+                            },
                             Err(error) => {
                                 let _ = tx.send(Err(error)).await;
                                 return;
                             }
-                        },
-                        Err(error) => {
-                            let _ = tx.send(Err(error)).await;
-                            return;
                         }
+                    } else {
+                        None
+                    };
+                    if let Err(e) = Self::stream_http(
+                        http_client,
+                        resolved,
+                        base_url,
+                        provider_id,
+                        auth_invalid_policy,
+                        direct_oauth_beta,
+                        has_preferred_strict,
+                        strict_tools,
+                        oauth_tool_names,
+                        diagnostics_seed,
+                        &body,
+                        cancel,
+                        timeout,
+                        extra_headers,
+                        callbacks,
+                        producer_snapshot,
+                        federation,
+                        &tx,
+                    )
+                    .await
+                    {
+                        let _ = tx.send(Err(e)).await;
                     }
-                } else {
-                    None
                 };
-                if let Err(e) = Self::stream_http(
-                    http_client,
-                    resolved,
-                    base_url,
-                    provider_id,
-                    auth_invalid_policy,
-                    direct_oauth_beta,
-                    has_preferred_strict,
-                    strict_tools,
-                    oauth_tool_names,
-                    diagnostics_seed,
-                    &body,
-                    cancel,
-                    timeout,
-                    extra_headers,
-                    callbacks,
-                    producer_snapshot,
-                    federation,
-                    &tx,
-                )
-                .await
-                {
-                    let _ = tx.send(Err(e)).await;
+
+                tokio::select! {
+                    biased;
+                    _ = producer_cancel.cancelled() => (),
+                    _ = tx_closed.closed() => (),
+                    _ = work => {},
                 }
             };
-
-            tokio::select! {
-                biased;
-                _ = producer_cancel.cancelled() => (),
-                _ = tx_closed.closed() => (),
-                _ = work => {},
+            if let Some(context) = telemetry {
+                tokio::spawn(context.instrument(producer));
+            } else {
+                tokio::spawn(producer);
             }
-        };
-        if let Some(context) = telemetry {
-            tokio::spawn(context.instrument(producer));
-        } else {
-            tokio::spawn(producer);
-        }
 
-        Box::pin(CancelAwareReceiverStream::with_snapshot(
-            rx,
-            stream_cancel,
-            snapshot,
-        ))
+            Box::pin(CancelAwareReceiverStream::with_snapshot(
+                rx,
+                stream_cancel,
+                snapshot,
+            ))
+        })
     }
 
     /// Real HTTP streaming: POST to Anthropic Messages API and parse SSE from the byte stream.
@@ -2788,6 +2790,7 @@ mod tests {
 
     fn test_assistant_msg(content: Vec<AssistantContent>) -> Message {
         Message::Assistant(AssistantMessage {
+            projection: None,
             content,
             api: crate::ApiKind::Anthropic,
             provider: "anthropic".into(),
@@ -2957,6 +2960,7 @@ mod tests {
 
     fn make_request(cache_retention: CacheRetention) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "anthropic:claude-sonnet-4-5-20250514".into(),
             context: crate::transcript::normalize_context(crate::transcript::Context {
@@ -2969,6 +2973,7 @@ mod tests {
                         timestamp_ms: 0,
                     }),
                     Message::Assistant(AssistantMessage {
+                        projection: None,
                         content: vec![AssistantContent::Text {
                             text: "Hi there!".into(),
                             signature: None,

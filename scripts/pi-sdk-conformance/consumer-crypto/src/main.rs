@@ -30,7 +30,7 @@ use std::{
 use http_body_util::{BodyExt, Full};
 use hyper::{Request as HyperRequest, Response, body::Incoming, service::service_fn};
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use opi_ai::auth::{AuthScheme, AuthProvenanceSource, StaticAuthResolver};
+use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
 use opi_ai::http::{HttpClient, HttpClientBuilder, TlsOptions};
 use opi_ai::models::Models;
 use opi_ai::openai_chat::OpenAiChatProvider;
@@ -60,9 +60,7 @@ fn check(report: &mut Vec<serde_json::Value>, name: &str, passed: bool, detail: 
 }
 
 fn server_provider() -> Arc<CryptoProvider> {
-    use rustls::crypto::aws_lc_rs::kx_group::{
-        SECP256R1, SECP384R1, X25519, X25519MLKEM768,
-    };
+    use rustls::crypto::aws_lc_rs::kx_group::{SECP256R1, SECP384R1, X25519, X25519MLKEM768};
     let mut provider = rustls::crypto::aws_lc_rs::default_provider();
     provider.kx_groups = vec![X25519MLKEM768, X25519, SECP256R1, SECP384R1];
     Arc::new(provider)
@@ -74,11 +72,7 @@ struct Server {
     accepts: Arc<AtomicUsize>,
 }
 
-async fn start_server(
-    tls13: bool,
-    h2: bool,
-    require_client_cert: bool,
-) -> Result<Server, String> {
+async fn start_server(tls13: bool, h2: bool, require_client_cert: bool) -> Result<Server, String> {
     let cert = CertificateDer::from_pem_slice(fixtures::SERVER_CERT_PEM.as_bytes())
         .map_err(|_| "server cert".to_owned())?;
     let key = PrivateKeyDer::from_pem_slice(fixtures::SERVER_KEY_PEM.as_bytes())
@@ -97,12 +91,10 @@ async fn start_server(
         let ca = CertificateDer::from_pem_slice(fixtures::CA_PEM.as_bytes())
             .map_err(|_| "ca".to_owned())?;
         roots.add(ca).map_err(|_| "ca root".to_owned())?;
-        let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
-            Arc::new(roots),
-            provider,
-        )
-        .build()
-        .map_err(|_| "verifier".to_owned())?;
+        let verifier =
+            rustls::server::WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider)
+                .build()
+                .map_err(|_| "verifier".to_owned())?;
         builder.with_client_cert_verifier(verifier)
     } else {
         builder.with_no_client_auth()
@@ -110,10 +102,16 @@ async fn start_server(
     let mut config = builder
         .with_single_cert(vec![cert], key)
         .map_err(|_| "identity".to_owned())?;
-    config.alpn_protocols = vec![if h2 { b"h2".to_vec() } else { b"http/1.1".to_vec() }];
+    config.alpn_protocols = vec![if h2 {
+        b"h2".to_vec()
+    } else {
+        b"http/1.1".to_vec()
+    }];
     let acceptor = TlsAcceptor::from(Arc::new(config));
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|_| "bind".to_owned())?;
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|_| "bind".to_owned())?;
     let addr = listener.local_addr().map_err(|_| "address".to_owned())?;
     let http = Arc::new(AtomicUsize::new(0));
     let accepts = Arc::new(AtomicUsize::new(0));
@@ -121,22 +119,28 @@ async fn start_server(
     let a = accepts.clone();
     tokio::spawn(async move {
         loop {
-            let Ok((tcp, _)) = listener.accept().await else { break };
+            let Ok((tcp, _)) = listener.accept().await else {
+                break;
+            };
             a.fetch_add(1, Ordering::SeqCst);
             let acceptor = acceptor.clone();
             let h = h.clone();
             tokio::spawn(async move {
-                let Ok(tls) = acceptor.accept(tcp).await else { return };
+                let Ok(tls) = acceptor.accept(tcp).await else {
+                    return;
+                };
                 let service = service_fn(move |req: HyperRequest<Incoming>| {
                     let h = h.clone();
                     async move {
                         h.fetch_add(1, Ordering::SeqCst);
                         let _ = req.into_body().collect().await;
-                        Ok::<_, Infallible>(Response::builder()
-                            .status(200)
-                            .header("content-type", "text/event-stream")
-                            .body(Full::new(SSE_BODY.as_bytes()))
-                            .unwrap())
+                        Ok::<_, Infallible>(
+                            Response::builder()
+                                .status(200)
+                                .header("content-type", "text/event-stream")
+                                .body(Full::new(SSE_BODY.as_bytes()))
+                                .unwrap(),
+                        )
                     }
                 });
                 if h2 {
@@ -183,6 +187,7 @@ fn tls_client(identity: bool, http1_only: bool) -> Result<HttpClient, String> {
 
 fn chat_request() -> Request {
     Request {
+        projection: Default::default(),
         model: "openai:gpt-4o".into(),
         context: transcript::normalize_context(transcript::Context {
             system_prompt: None,
@@ -207,10 +212,7 @@ fn chat_request() -> Request {
     }
 }
 
-async fn chat_call(
-    server_url: &str,
-    client: Arc<HttpClient>,
-) -> Result<String, ProviderError> {
+async fn chat_call(server_url: &str, client: Arc<HttpClient>) -> Result<String, ProviderError> {
     let provider = OpenAiChatProvider::with_client(
         Some(server_url.to_owned()),
         "openai".to_owned(),
@@ -231,11 +233,19 @@ async fn chat_call(
                 profile: None,
             },
         )
-        .map_err(|e| ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(format!("{e}"))))?;
+        .map_err(|e| {
+            ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+                format!("{e}"),
+            ))
+        })?;
     let prepared = models
         .prepare_call("openai:gpt-4o", chat_request())
         .await
-        .map_err(|e| ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(format!("{e:?}"))))?;
+        .map_err(|e| {
+            ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
+                format!("{e:?}"),
+            ))
+        })?;
     let stream = prepared.start_attempt().map_err(|e| {
         ProviderError::Config(opi_ai::provider::ProviderErrorSummary::from_untrusted(
             format!("{e:?}"),
@@ -327,7 +337,10 @@ async fn main() {
         &mut report,
         "untrusted-roots-zero-business-http",
         bad_outcome.is_err() && bad.http.load(Ordering::SeqCst) == 0,
-        format!("error={bad_outcome:?} http={}", bad.http.load(Ordering::SeqCst)),
+        format!(
+            "error={bad_outcome:?} http={}",
+            bad.http.load(Ordering::SeqCst)
+        ),
     );
 
     // Admission/assembly negative: an RSA client certificate paired with
@@ -369,7 +382,11 @@ async fn main() {
     );
 
     let failed = report.iter().filter(|c| c["passed"] != true).count();
-    let verdict = if failed == 0 && report.len() == EXPECTED_CHECKS { "PASS" } else { "FAIL" };
+    let verdict = if failed == 0 && report.len() == EXPECTED_CHECKS {
+        "PASS"
+    } else {
+        "FAIL"
+    };
     println!(
         "{}",
         serde_json::json!({

@@ -65,6 +65,7 @@ fn test_store() -> (TempDir, Arc<KeychainCredentialStore>) {
 
 fn assistant(texts: &[&str]) -> Message {
     Message::Assistant(AssistantMessage {
+        projection: None,
         content: texts
             .iter()
             .map(|text| AssistantContent::Text {
@@ -105,6 +106,7 @@ fn user(texts: &[&str]) -> Message {
 
 fn request(model: &str, cache_retention: CacheRetention) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

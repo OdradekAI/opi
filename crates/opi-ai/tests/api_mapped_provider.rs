@@ -108,6 +108,7 @@ impl Provider for RecordingRoute {
             Ok(AssistantStreamEvent::Error {
                 reason: opi_ai::stream::StopReason::Error,
                 message: opi_ai::message::AssistantMessage {
+                    projection: None,
                     content: vec![],
                     api: opi_ai::ApiKind::OpenAi,
                     provider: "acme".into(),
@@ -194,6 +195,7 @@ fn model(id: &str, wire: WireApi) -> ModelInfo {
 
 fn request(model: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -450,7 +452,18 @@ fn detached_default_model_capabilities_remain_constructible() {
 #[tokio::test]
 async fn mapped_provider_refresh_is_static_none() {
     let (provider, _, _) = mapped_fixture();
-    assert!(provider.refresh_models().await.unwrap().is_none());
+    assert!(
+        provider
+            .refresh_models(opi_ai::catalog::CatalogRefreshContext {
+                allow_network: true,
+                force: None,
+                providers: [provider.id().to_owned()].into(),
+                cancel: tokio_util::sync::CancellationToken::new(),
+            })
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -734,13 +747,14 @@ async fn concrete_custom_route_ignores_credential_base_url_and_uses_model_base_u
         account_id: None,
         provenance: opi_ai::AuthProvenance::default(),
     };
-    let error = provider
-        .stream_prepared(request("acme:claude"), resolved)
-        .next()
-        .await
-        .unwrap()
-        .unwrap_err();
-    assert!(matches!(error, ProviderError::AuthFailed(_)));
+    let request = request("acme:claude");
+    let mut stream = provider.stream_prepared(request.clone(), resolved);
+    let error = stream.next().await.unwrap().unwrap_err();
+    assert!(matches!(
+        accepted_failure_cause(&error, &request),
+        ProviderError::AuthFailed(_)
+    ));
+    assert!(stream.next().await.is_none(), "failure must be terminal");
     let rendered = format!("{error:?} {error}");
     assert!(!rendered.contains("echoed-key-canary-must-not-surface"));
     assert!(auth_server.received_requests().await.unwrap().is_empty());
@@ -871,4 +885,36 @@ mod capability_and_catalog_dispatch {
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert!(mapped.models().iter().any(|model| model.id == "added"));
     }
+}
+
+fn accepted_failure_cause<'a>(
+    error: &'a opi_ai::provider::ProviderError,
+    request: &opi_ai::provider::Request,
+) -> &'a opi_ai::provider::ProviderError {
+    use opi_ai::provider::ProviderError;
+    use sha2::Digest as _;
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let facts = failure
+        .message()
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+    failure.cause()
 }

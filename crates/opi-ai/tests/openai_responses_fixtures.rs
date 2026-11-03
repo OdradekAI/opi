@@ -199,6 +199,7 @@ fn responses_unknown_model_returns_error() {
 fn responses_request_body_uses_input_field() {
     let provider = responses_provider();
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -241,14 +242,10 @@ fn responses_request_body_uses_input_field() {
     );
     // Model should be stripped of prefix
     assert_eq!(body["model"], "gpt-4o");
-    // System prompt uses top-level "instructions" field, not in input array
-    assert_eq!(body["instructions"], "You are helpful.");
-    let input = body["input"].as_array().unwrap();
-    assert!(
-        !input
-            .iter()
-            .any(|m| m.get("role").map(|r| r == "system").unwrap_or(false)),
-        "system message should NOT appear in input array"
+    assert!(body.get("instructions").is_none());
+    assert_eq!(
+        body["input"][0],
+        serde_json::json!({"role":"system","content":"You are helpful."})
     );
 }
 
@@ -256,6 +253,7 @@ fn responses_request_body_uses_input_field() {
 fn responses_request_body_strips_provider_prefix() {
     let provider = responses_provider();
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai-responses:o3".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -293,6 +291,7 @@ fn responses_request_body_strips_provider_prefix() {
 
 fn responses_tool_request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -350,12 +349,15 @@ fn responses_config_represents_store_reasoning_strict() {
     let config = ResponsesConfig {
         store: Some(true),
         reasoning_effort: Some("high".into()),
-        strict_tools: true,
+        source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+            supports_strict_mode: Some(true),
+            ..Default::default()
+        },
         ..Default::default()
     };
     assert_eq!(config.store, Some(true));
     assert_eq!(config.reasoning_effort.as_deref(), Some("high"));
-    assert!(config.strict_tools);
+    assert_eq!(config.source.supports_strict_mode, Some(true));
 }
 
 #[test]
@@ -501,7 +503,10 @@ fn responses_request_body_strict_tools_emitted_when_configured() {
     let provider = OpenAiResponsesProvider::new_with_config(
         None,
         ResponsesConfig {
-            strict_tools: true,
+            source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                supports_strict_mode: Some(true),
+                ..Default::default()
+            },
             ..Default::default()
         },
     );
@@ -510,8 +515,8 @@ fn responses_request_body_strict_tools_emitted_when_configured() {
         .unwrap();
     let tools = body["tools"].as_array().expect("tools array present");
     assert!(
-        tools[0]["strict"] == true,
-        "strict must be emitted on function tools when configured: {tools:?}"
+        tools[0]["strict"] == false,
+        "strict capability keeps unconstrained function tools explicitly non-strict: {tools:?}"
     );
 }
 
@@ -1347,7 +1352,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         .and(body_partial_json(serde_json::json!({
             "model": "gpt-4o",
             "max_output_tokens": 1024,
-            "instructions": "You are helpful."
+            "input": [{"role":"system","content":"You are helpful."}]
         })))
         .respond_with(
             ResponseTemplate::new(200)
@@ -1360,6 +1365,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
     let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1406,7 +1412,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
     assert!(saw_done, "text fixture must produce a terminal Done event");
 
     // verify() confirms the production request carried the Responses body
-    // (model + max_output_tokens + instructions), the Bearer auth header, and
+    // (model + max_output_tokens + instruction input), the Bearer auth header, and
     // the /v1/responses path.
     server.verify().await;
 }
@@ -1442,6 +1448,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
     let cancel = CancellationToken::new();
     let provider = OpenAiResponsesProvider::new(Some(server.uri()));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1500,6 +1507,7 @@ use opi_ai::callbacks::RequestCallbacks;
 
 fn responses_text_request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai-responses:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1706,7 +1714,7 @@ mod responses_constrained_tests {
             .await;
         let mut model = o3_responses_model();
         if let opi_ai::model_info::WireCompat::OpenAiResponses(compat) = &mut model.compat {
-            compat.supports_grammar = true;
+            compat.source.supports_grammar_tools = Some(true);
         } else {
             panic!("Responses compat");
         }
@@ -1735,7 +1743,10 @@ mod responses_constrained_tests {
         let provider = OpenAiResponsesProvider::new_with_config(
             None,
             ResponsesConfig {
-                supports_grammar_tools: true,
+                source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                    supports_grammar_tools: Some(true),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         );
@@ -1771,7 +1782,10 @@ mod responses_constrained_tests {
         let provider = OpenAiResponsesProvider::new_with_config(
             None,
             ResponsesConfig {
-                supports_grammar_tools: true,
+                source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                    supports_grammar_tools: Some(true),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         );
@@ -1812,7 +1826,10 @@ mod responses_constrained_tests {
         let provider = OpenAiResponsesProvider::new_with_config(
             None,
             ResponsesConfig {
-                strict_tools: true,
+                source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                    supports_strict_mode: Some(true),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         );
@@ -1836,6 +1853,150 @@ mod responses_constrained_tests {
             serde_json::json!({"anyOf": [{"type": "number"}, {"type": "null"}]}),
             "optional properties wrap nullable"
         );
+    }
+
+    #[test]
+    fn malformed_required_is_typed_and_preserves_the_trusted_schema() {
+        let provider = OpenAiResponsesProvider::new_with_config(
+            None,
+            ResponsesConfig {
+                source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                    supports_strict_mode: Some(true),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        for required in [
+            serde_json::Value::Null,
+            serde_json::json!("path"),
+            serde_json::json!(1),
+            serde_json::json!(false),
+            serde_json::json!({"path": true}),
+            serde_json::json!([1]),
+            serde_json::json!(["unknown"]),
+        ] {
+            for properties in [None, Some(serde_json::json!({"path": {"type": "string"}}))] {
+                let mut tool = json_schema_tool(StrictPreference::Require);
+                tool.input_schema = serde_json::json!({"type": "object", "required": required});
+                if let Some(properties) = properties {
+                    tool.input_schema["properties"] = properties;
+                }
+                let request = request_with(vec![tool]);
+                let canonical = request.context.clone();
+                let error = provider.build_request_body(&request).unwrap_err();
+                assert_eq!(request.context, canonical);
+                let ProviderError::Config(summary) = error else {
+                    panic!("required admission must fail typed: {error:?}")
+                };
+                assert!(summary.as_str().contains("required"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_required_fails_before_native_authentication_and_dispatch() {
+        use opi_ai::model_info::{
+            ModelCapabilities, ModelInfo, OpenAiResponsesCompat, OpenAiResponsesSourceCompat,
+            WireApi, WireCompat,
+        };
+        use opi_ai::models::{ChatModelRecord, Models};
+        use opi_ai::openai_responses::OpenAiResponsesChatApi;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        struct CountingAuth(Arc<AtomicUsize>);
+        impl opi_ai::auth::AuthResolver for CountingAuth {
+            fn resolve(
+                &self,
+            ) -> opi_ai::BoxAuthFuture<'_, Result<opi_ai::auth::ResolvedAuth, ProviderError>>
+            {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(opi_ai::test_support::resolved_bearer_auth()) })
+            }
+        }
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(responses_sse_ok()),
+            )
+            .mount(&server)
+            .await;
+        let model = ModelInfo::new(
+            "required-probe",
+            "Required probe",
+            WireApi::OpenAiResponses,
+            ModelCapabilities::new(100_000, 4_096),
+        )
+        .with_base_url(server.uri())
+        .with_compat(WireCompat::OpenAiResponses(OpenAiResponsesCompat {
+            source: OpenAiResponsesSourceCompat {
+                supports_strict_mode: Some(true),
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
+        .unwrap();
+        let api = OpenAiResponsesChatApi::new(
+            Arc::new(OpenAiResponsesProvider::new(Some(server.uri()))),
+            model.clone(),
+        )
+        .unwrap();
+        let mut models = Models::new();
+        let count = Arc::new(AtomicUsize::new(0));
+        let handle = models
+            .register_chat_api(
+                Arc::new(api),
+                Arc::new(CountingAuth(count.clone())),
+                opi_ai::AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        let record = ChatModelRecord::new("openai-responses", model);
+        models
+            .complete(
+                record.clone(),
+                request_with(vec![json_schema_tool(StrictPreference::Require)]),
+                handle.options(Default::default()),
+            )
+            .await
+            .expect("valid strict control must authenticate and dispatch");
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        for required in [
+            serde_json::Value::Null,
+            serde_json::json!("path"),
+            serde_json::json!(1),
+        ] {
+            for properties in [None, Some(serde_json::json!({"path": {"type": "string"}}))] {
+                let mut tool = json_schema_tool(StrictPreference::Require);
+                tool.input_schema = serde_json::json!({"type": "object", "required": required});
+                if let Some(properties) = properties {
+                    tool.input_schema["properties"] = properties;
+                }
+                let failure = models
+                    .complete(
+                        record.clone(),
+                        request_with(vec![tool]),
+                        handle.options(Default::default()),
+                    )
+                    .await
+                    .expect_err("malformed required must be rejected before auth");
+                let cause = match failure.cause() {
+                    ProviderError::StreamFailure(frame) => frame.cause(),
+                    cause => cause,
+                };
+                let ProviderError::Config(summary) = cause else {
+                    panic!("typed required failure: {cause:?}")
+                };
+                assert!(summary.as_str().contains("required"));
+                assert_eq!(count.load(Ordering::SeqCst), 1);
+                assert_eq!(server.received_requests().await.unwrap().len(), 1);
+            }
+        }
     }
 
     fn custom_tool_call_sse() -> String {
@@ -1871,7 +2032,10 @@ mod responses_constrained_tests {
         let provider = OpenAiResponsesProvider::new_with_config(
             Some(server.uri()),
             ResponsesConfig {
-                supports_grammar_tools: true,
+                source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                    supports_grammar_tools: Some(true),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         );
@@ -1932,7 +2096,10 @@ mod responses_constrained_tests {
         let provider = OpenAiResponsesProvider::new_with_config(
             Some(server.uri()),
             ResponsesConfig {
-                supports_grammar_tools: true,
+                source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                    supports_grammar_tools: Some(true),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         );
@@ -1992,7 +2159,10 @@ mod responses_constrained_tests {
             let provider = OpenAiResponsesProvider::new_with_config(
                 Some(server.uri()),
                 ResponsesConfig {
-                    supports_grammar_tools: true,
+                    source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                        supports_grammar_tools: Some(true),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
             );
@@ -2040,7 +2210,10 @@ mod responses_constrained_tests {
         let provider = OpenAiResponsesProvider::new_with_config(
             Some(server.uri()),
             ResponsesConfig {
-                supports_grammar_tools: true,
+                source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                    supports_grammar_tools: Some(true),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         );
@@ -2109,7 +2282,10 @@ mod responses_constrained_tests {
         let provider = OpenAiResponsesProvider::new_with_config(
             Some(server.uri()),
             ResponsesConfig {
-                supports_grammar_tools: true,
+                source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                    supports_grammar_tools: Some(true),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         );
@@ -2758,6 +2934,7 @@ fn history_assistant_message(
     provider_thinking_level: Option<String>,
 ) -> opi_ai::message::AssistantMessage {
     opi_ai::message::AssistantMessage {
+        projection: None,
         content,
         api: opi_ai::ApiKind::OpenAi,
         provider: "openai-responses".into(),
@@ -2795,7 +2972,10 @@ async fn responses_mid_convo_effort_stamps_configuration_updates() {
     use opi_ai::model_info::{OpenAiResponsesCompat, WireCompat};
     let model = o3_responses_model()
         .with_compat(WireCompat::OpenAiResponses(OpenAiResponsesCompat {
-            supports_mid_convo_effort: true,
+            source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                supports_mid_convo_effort: Some(true),
+                ..Default::default()
+            },
             ..Default::default()
         }))
         .expect("compat");
@@ -3036,4 +3216,917 @@ async fn native_known_invalid_input_and_endpoint_fail_before_authentication() {
         .await
         .unwrap();
     assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn multiline_sse_line_endings_survive_http_chunk_splits() {
+    async fn run(body: String, split: Option<usize>) -> Vec<AssistantStreamEvent> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = vec![0; 65536];
+            let received = socket.read(&mut request).await.unwrap();
+            assert!(
+                received > 0,
+                "client sent request bytes before the response"
+            );
+            socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).as_bytes()).await.unwrap();
+            if let Some(split) = split {
+                socket.write_all(&body.as_bytes()[..split]).await.unwrap();
+                socket.flush().await.unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+                socket.write_all(&body.as_bytes()[split..]).await.unwrap();
+            } else {
+                socket.write_all(body.as_bytes()).await.unwrap();
+            }
+            socket.shutdown().await.unwrap();
+        });
+        let provider = OpenAiResponsesProvider::new(Some(format!("http://{address}")));
+        let results: Vec<_> = provider
+            .stream_prepared(
+                responses_text_request(),
+                opi_ai::test_support::resolved_bearer_auth(),
+            )
+            .collect()
+            .await;
+        peer.await.unwrap();
+        results
+            .into_iter()
+            .map(|event| event.expect("legal complete multiline event"))
+            .collect()
+    }
+
+    let body = [
+        serde_json::json!({"type":"response.created","response":{"id":"resp_1","status":"in_progress","model":"gpt-4o","output":[]}}),
+        serde_json::json!({"type":"response.output_item.added","output_index":0,"item":{"type":"message","status":"in_progress","role":"assistant","content":[]}}),
+        serde_json::json!({"type":"response.content_part.added","output_index":0,"content_index":0,"part":{"type":"output_text","text":""}}),
+        serde_json::json!({"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"hello"}),
+        serde_json::json!({"type":"response.output_text.done","output_index":0,"content_index":0,"text":"hello"}),
+        serde_json::json!({"type":"response.output_item.done","output_index":0,"item":{"type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hello"}]}}),
+        serde_json::json!({"type":"response.completed","response":{"id":"resp_1","status":"completed","model":"gpt-4o","output":[{"type":"message","content":[{"type":"output_text","text":"hello"}]}],"usage":{"input_tokens":10,"output_tokens":5}}}),
+    ].iter().map(|value| format!("data: {value}\n\n")).collect::<String>();
+    for newline in ["\n", "\r\n", "\r"] {
+        let multiline = body
+            .lines()
+            .map(|line| {
+                if line.starts_with("data: {") {
+                    line.replacen(',', &format!(",{newline}data: "), 1)
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(newline)
+            + newline;
+        let split = multiline.find(&format!("{newline}data: ")).unwrap() + 1;
+        let whole = run(multiline.clone(), None).await;
+        let split = run(multiline, Some(split)).await;
+        let kinds = |events: &[AssistantStreamEvent]| {
+            events
+                .iter()
+                .map(|event| serde_json::to_value(event).unwrap()["type"].clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(kinds(&split), kinds(&whole), "newline={newline:?}");
+        let final_message = |events: Vec<AssistantStreamEvent>| {
+            events
+                .into_iter()
+                .find_map(|event| match event {
+                    AssistantStreamEvent::Done { message, .. } => Some(message),
+                    _ => None,
+                })
+                .expect("terminal outcome")
+        };
+        let whole = final_message(whole);
+        let split = final_message(split);
+        assert_eq!(split.content, whole.content);
+        assert_eq!(split.stop_reason, whole.stop_reason);
+        assert_eq!(split.usage, whole.usage);
+        assert!(!split.content.is_empty());
+    }
+}
+
+mod source_compat_controls {
+    use super::*;
+    use opi_ai::model_info::{
+        OpenAiResponsesCompat, OpenAiResponsesSourceCompat, SessionAffinityFormat, WireCompat,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    fn source_model(base: Option<String>, source: OpenAiResponsesSourceCompat) -> ModelInfo {
+        let mut model = o3_responses_model()
+            .with_compat(WireCompat::OpenAiResponses(OpenAiResponsesCompat {
+                source,
+                ..Default::default()
+            }))
+            .unwrap();
+        model.base_url = base;
+        model
+    }
+
+    fn provider(base: String, provider_id: &str, model: ModelInfo) -> OpenAiResponsesProvider {
+        OpenAiResponsesProvider::for_route(
+            Some(base),
+            provider_id.into(),
+            Default::default(),
+            vec![model],
+            Arc::new(opi_ai::http::HttpClient::new()),
+        )
+        .with_affinity_policy(opi_ai::openai_responses::ResponsesAffinityPolicy::Direct)
+    }
+
+    fn request(provider_id: &str, retention: CacheRetention) -> Request {
+        let mut request = responses_public_request("o3", Some(ThinkingLevel::High));
+        request.model = format!("{provider_id}:o3");
+        let mut context = responses_tool_context();
+        context
+            .messages
+            .push(Message::System(opi_ai::transcript::SystemMessage {
+                content: "later instruction".into(),
+                sections: vec![],
+                tools_added: vec![],
+                tools_removed: vec![],
+                timestamp_ms: 1,
+            }));
+        request.context = opi_ai::transcript::normalize_context(context).unwrap();
+        request.max_tokens = Some(7);
+        request.temperature = Some(0.25);
+        request.session_id = Some("raw-session-id".into());
+        request.cache_retention = retention;
+        request
+    }
+
+    #[test]
+    fn responses_initial_instruction_uses_the_selected_input_role() {
+        for flag in [None, Some(false), Some(true)] {
+            for reasoning in [false, true] {
+                let source = OpenAiResponsesSourceCompat {
+                    supports_developer_role: flag,
+                    supports_mid_convo_system_messages: Some(true),
+                    ..Default::default()
+                };
+                let mut model = source_model(None, source);
+                model.capabilities.supports_thinking = reasoning;
+                let provider = provider("http://127.0.0.1:1".into(), "openai-responses", model);
+                let request = request("openai-responses", CacheRetention::Short);
+                let canonical = request.context.clone();
+                let body = provider.build_request_body(&request).unwrap();
+                assert_eq!(
+                    body["input"][0]["role"],
+                    if reasoning && flag != Some(false) {
+                        "developer"
+                    } else {
+                        "system"
+                    }
+                );
+                assert_eq!(body["input"][0]["content"], "You are helpful.");
+                assert!(
+                    body.get("instructions").is_none(),
+                    "ordinary Responses carries the initial instruction once in input"
+                );
+                assert_eq!(request.context, canonical);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn responses_source_defaults_false_and_true_reach_actual_http() {
+        for flag in [None, Some(false), Some(true)] {
+            for retention in [
+                CacheRetention::Disabled,
+                CacheRetention::Short,
+                CacheRetention::Long,
+            ] {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .respond_with(
+                        ResponseTemplate::new(200)
+                            .insert_header("content-type", "text/event-stream")
+                            .set_body_string(responses_sse_ok()),
+                    )
+                    .expect(1)
+                    .mount(&server)
+                    .await;
+                let source = OpenAiResponsesSourceCompat {
+                    supports_developer_role: flag,
+                    supports_max_output_tokens: flag,
+                    supports_long_cache_retention: flag,
+                    supports_explicit_prompt_cache_mode: flag,
+                    supports_strict_mode: flag,
+                    supports_mid_convo_system_messages: Some(true),
+                    ..Default::default()
+                };
+                let provider =
+                    provider(server.uri(), "openai-responses", source_model(None, source));
+                let request = request("openai-responses", retention);
+                let canonical = request.context.clone();
+                let message = opi_ai::stream::ChatStream::new(provider.stream_prepared(
+                    request.clone(),
+                    opi_ai::test_support::resolved_bearer_auth(),
+                ))
+                .result()
+                .await
+                .unwrap();
+                assert!(message.projection.is_some());
+                assert_eq!(request.context, canonical);
+                let sent = server.received_requests().await.unwrap();
+                assert_eq!(sent.len(), 1);
+                let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+                let instruction = body["input"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|item| item["content"] == "later instruction")
+                    .unwrap();
+                assert_eq!(
+                    instruction["role"],
+                    if flag == Some(false) {
+                        "system"
+                    } else {
+                        "developer"
+                    }
+                );
+                assert_eq!(
+                    body.get("max_output_tokens").cloned(),
+                    (flag != Some(false)).then(|| serde_json::json!(16))
+                );
+                let strict = body["tools"][0].get("strict");
+                assert_eq!(
+                    strict,
+                    (flag == Some(true)).then_some(&serde_json::Value::Bool(false))
+                );
+                let expected_options = if flag == Some(true) {
+                    match retention {
+                        CacheRetention::Disabled => Some(serde_json::json!({"mode":"explicit"})),
+                        CacheRetention::Long => Some(serde_json::json!({"ttl":"30m"})),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+                assert_eq!(body.get("prompt_cache_options"), expected_options.as_ref());
+                let legacy = retention == CacheRetention::Long && flag.is_none();
+                assert_eq!(
+                    body.get("prompt_cache_retention")
+                        .and_then(serde_json::Value::as_str),
+                    legacy.then_some("24h")
+                );
+                assert_eq!(
+                    body.get("prompt_cache_key").is_some(),
+                    retention != CacheRetention::Disabled
+                );
+                assert_eq!(sent[0].headers["session_id"], "raw-session-id");
+                assert_eq!(sent[0].headers["x-client-request-id"], "raw-session-id");
+                server.verify().await;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn responses_strict_capability_preserves_unconstrained_initial_and_inline_schemas() {
+        use opi_ai::constrained_sampling::{ConstrainedSampling, StrictPreference};
+        for preference in [
+            None,
+            Some(StrictPreference::Prefer),
+            Some(StrictPreference::Require),
+        ] {
+            for native in [false, true] {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .respond_with(
+                        ResponseTemplate::new(200)
+                            .insert_header("content-type", "text/event-stream")
+                            .set_body_string(responses_sse_ok()),
+                    )
+                    .expect(1)
+                    .mount(&server)
+                    .await;
+                let schema =
+                    serde_json::json!({"type":"object","properties":{"path":{"type":"string"}}});
+                let tool = |name: &str| ToolDef {
+                    name: name.into(),
+                    description: name.into(),
+                    input_schema: schema.clone(),
+                    constrained_sampling: preference
+                        .map(|strict| ConstrainedSampling::JsonSchema { strict }),
+                };
+                let source = OpenAiResponsesSourceCompat {
+                    supports_strict_mode: Some(true),
+                    supports_mid_convo_system_messages: Some(true),
+                    supports_additional_tools: Some(true),
+                    ..Default::default()
+                };
+                let model = source_model(None, source);
+                let mut request = request("openai-responses", CacheRetention::Disabled);
+                request.context =
+                    opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                        system_prompt: Some("leading".into()),
+                        tools: vec![tool("initial")],
+                        messages: vec![
+                            Message::User(UserMessage {
+                                content: vec![InputContent::Text {
+                                    text: "before".into(),
+                                }],
+                                timestamp_ms: 0,
+                            }),
+                            Message::System(opi_ai::transcript::SystemMessage {
+                                tools_added: vec![tool("inline")],
+                                ..Default::default()
+                            }),
+                            Message::User(UserMessage {
+                                content: vec![InputContent::Text {
+                                    text: "after".into(),
+                                }],
+                                timestamp_ms: 1,
+                            }),
+                        ],
+                    })
+                    .unwrap();
+                let canonical = request.context.clone();
+                let message = if native {
+                    let (models, handle) =
+                        registered_responses_models(server.uri(), model.clone()).await;
+                    models
+                        .complete(
+                            ChatModelRecord::new("openai-responses", model),
+                            request.clone(),
+                            handle.options(Default::default()),
+                        )
+                        .await
+                        .unwrap()
+                } else {
+                    let provider = provider(server.uri(), "openai-responses", model);
+                    opi_ai::stream::ChatStream::new(provider.stream_prepared(
+                        request.clone(),
+                        opi_ai::test_support::resolved_bearer_auth(),
+                    ))
+                    .result()
+                    .await
+                    .unwrap()
+                };
+                assert!(message.projection.is_some());
+                assert_eq!(request.context, canonical);
+                let sent = server.received_requests().await.unwrap();
+                assert_eq!(sent.len(), 1);
+                let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+                let inline = body["input"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|item| item["type"] == "additional_tools")
+                    .unwrap();
+                for declaration in [&body["tools"][0], &inline["tools"][0]] {
+                    assert_eq!(
+                        declaration["strict"],
+                        preference.is_some(),
+                        "native={native}, preference={preference:?}"
+                    );
+                    if preference.is_none() {
+                        assert_eq!(
+                            declaration["parameters"], schema,
+                            "capability alone never rewrites trusted optional properties"
+                        );
+                    } else {
+                        assert_eq!(declaration["parameters"]["additionalProperties"], false);
+                        assert_eq!(
+                            declaration["parameters"]["required"],
+                            serde_json::json!(["path"])
+                        );
+                    }
+                }
+                server.verify().await;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn responses_cache_controls_are_independent_of_max_role_and_each_other() {
+        for (explicit, long, retention, expected_options, expected_legacy) in [
+            (
+                Some(true),
+                Some(false),
+                CacheRetention::Disabled,
+                Some(serde_json::json!({"mode":"explicit"})),
+                false,
+            ),
+            (Some(true), Some(false), CacheRetention::Long, None, false),
+            (
+                Some(true),
+                None,
+                CacheRetention::Long,
+                Some(serde_json::json!({"ttl":"30m"})),
+                false,
+            ),
+            (Some(true), Some(true), CacheRetention::Short, None, false),
+            (Some(false), Some(true), CacheRetention::Long, None, true),
+            (None, Some(false), CacheRetention::Long, None, false),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(responses_sse_ok()),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let source = OpenAiResponsesSourceCompat {
+                supports_explicit_prompt_cache_mode: explicit,
+                supports_long_cache_retention: long,
+                supports_mid_convo_system_messages: Some(true),
+                ..Default::default()
+            };
+            let provider = provider(server.uri(), "openai-responses", source_model(None, source));
+            let mut request = request("openai-responses", retention);
+            request.session_id = None;
+            opi_ai::stream::ChatStream::new(
+                provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
+            )
+            .result()
+            .await
+            .unwrap();
+            let sent = server.received_requests().await.unwrap();
+            assert_eq!(sent.len(), 1);
+            let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+            assert_eq!(body.get("prompt_cache_options"), expected_options.as_ref());
+            assert_eq!(
+                body.get("prompt_cache_retention")
+                    .and_then(serde_json::Value::as_str),
+                expected_legacy.then_some("24h")
+            );
+            assert!(
+                body.get("prompt_cache_key").is_none(),
+                "cache mode and retention do not require a session/cache key"
+            );
+            assert_eq!(body["max_output_tokens"], 16);
+            assert!(body["tools"][0].get("strict").is_none());
+            assert!(
+                body["input"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|item| item["role"] == "developer"
+                        && item["content"] == "later instruction")
+            );
+            server.verify().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn native_and_advanced_signin_use_prepared_auth_once_and_keep_known_failure_facts() {
+        struct CountingAuth(Arc<AtomicUsize>);
+        impl opi_ai::auth::AuthResolver for CountingAuth {
+            fn resolve(
+                &self,
+            ) -> opi_ai::credential::BoxAuthFuture<
+                '_,
+                Result<opi_ai::auth::ResolvedAuth, ProviderError>,
+            > {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async {
+                    let mut auth = opi_ai::test_support::resolved_bearer_auth();
+                    auth.secret = secrecy::SecretString::from("offline-signin-key");
+                    Ok(auth)
+                })
+            }
+        }
+        for native in [false, true] {
+            let fallback = MockServer::start().await;
+            let source = OpenAiResponsesSourceCompat {
+                supports_mid_convo_system_messages: Some(true),
+                supports_mid_convo_effort: Some(true),
+                supports_explicit_prompt_cache_mode: Some(true),
+                ..Default::default()
+            };
+            let model = source_model(Some("https://api.openai.com/v1".into()), source);
+            let provider = provider(fallback.uri(), "openai", model.clone());
+            let auth_calls = Arc::new(AtomicUsize::new(0));
+            let auth = Arc::new(CountingAuth(auth_calls.clone()));
+            let bodies = Arc::new(Mutex::new(Vec::new()));
+            let recorder = bodies.clone();
+            let mut request = request("openai", CacheRetention::Long);
+            request.callbacks =
+                opi_ai::callbacks::RequestCallbacks::new().with_on_payload(Arc::new(move |body| {
+                    recorder.lock().unwrap().push(body.clone());
+                    Err(opi_ai::callbacks::CallbackError::new(
+                        "intentional prepared capture sentinel",
+                    ))
+                }));
+            let mut models = Models::new();
+            let failure = if native {
+                let api = OpenAiResponsesChatApi::new(Arc::new(provider), model.clone()).unwrap();
+                let handle = models
+                    .register_chat_api(Arc::new(api), auth, opi_ai::AuthProvenanceSource::Static)
+                    .unwrap();
+                let mut options = OpenAiResponsesOptions::default();
+                options.reasoning_effort = Some(ThinkingLevel::High);
+                models
+                    .complete(
+                        ChatModelRecord::new("openai", model),
+                        request,
+                        handle.options(options),
+                    )
+                    .await
+                    .unwrap_err()
+            } else {
+                models
+                    .register_route(
+                        Box::new(provider),
+                        auth,
+                        opi_ai::AuthProvenanceSource::Static,
+                        Default::default(),
+                    )
+                    .unwrap();
+                let call = models
+                    .prepare_call_with_policy(
+                        "openai:o3",
+                        request,
+                        opi_ai::retry::AcquisitionPolicy::with_max_retries(1),
+                    )
+                    .await
+                    .unwrap();
+                let failure = opi_ai::stream::ChatStream::new(call.start_attempt().unwrap())
+                    .result()
+                    .await
+                    .unwrap_err();
+                assert!(
+                    call.retry_admission().is_none(),
+                    "callback refusal does not authorize transport retry"
+                );
+                failure
+            };
+            assert!(matches!(failure.cause(), ProviderError::CallbackPhase(_)));
+            assert!(failure.message().projection.is_some());
+            assert_eq!(auth_calls.load(Ordering::SeqCst), 1);
+            let bodies = bodies.lock().unwrap().clone();
+            assert_eq!(bodies.len(), 1);
+            let body = &bodies[0];
+            for field in [
+                "max_output_tokens",
+                "temperature",
+                "prompt_cache_options",
+                "prompt_cache_retention",
+            ] {
+                assert!(body.get(field).is_none(), "{field}, native={native}");
+            }
+            assert!(
+                !body["input"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|item| item["type"] == "configuration_update")
+            );
+            assert!(fallback.received_requests().await.unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn responses_affinity_formats_are_independent_of_disabled_cache() {
+        for format in [
+            SessionAffinityFormat::OpenAi,
+            SessionAffinityFormat::OpenAiNoSession,
+            SessionAffinityFormat::OpenRouter,
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(responses_sse_ok()),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let source = OpenAiResponsesSourceCompat {
+                session_affinity_format: Some(format),
+                supports_mid_convo_system_messages: Some(true),
+                ..Default::default()
+            };
+            let provider = provider(server.uri(), "openai-responses", source_model(None, source));
+            let mut request = request("openai-responses", CacheRetention::Disabled);
+            let full_id = "full-sdk-session-id-".repeat(8);
+            request.session_id = Some(full_id.clone());
+            opi_ai::stream::ChatStream::new(
+                provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
+            )
+            .result()
+            .await
+            .unwrap();
+            let sent = server.received_requests().await.unwrap();
+            let headers = &sent[0].headers;
+            assert_eq!(
+                headers.contains_key("session_id"),
+                format == SessionAffinityFormat::OpenAi
+            );
+            assert_eq!(
+                headers.contains_key("x-client-request-id"),
+                format != SessionAffinityFormat::OpenRouter
+            );
+            assert_eq!(
+                headers.contains_key("x-session-id"),
+                format == SessionAffinityFormat::OpenRouter
+            );
+            if let Some(value) = headers.get(if format == SessionAffinityFormat::OpenRouter {
+                "x-session-id"
+            } else {
+                "session_id"
+            }) {
+                assert_eq!(value.to_str().unwrap(), full_id);
+            }
+            if let Some(value) = headers.get("x-client-request-id") {
+                assert_eq!(value.to_str().unwrap(), full_id);
+            }
+            let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+            assert!(body.get("prompt_cache_key").is_none());
+            server.verify().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn responses_affinity_overrides_are_merged_before_transform_and_http() {
+        for (mode, expected, before_transform) in [
+            ("default", Some("raw-session-id"), Some("raw-session-id")),
+            ("caller", Some("caller-value"), Some("caller-value")),
+            ("model", Some("model-value"), Some("model-value")),
+            ("remove", None, None),
+            (
+                "transform",
+                Some("transformed-value"),
+                Some("raw-session-id"),
+            ),
+            ("route", Some("route-value"), Some("route-value")),
+            (
+                "configured",
+                Some("configured-value"),
+                Some("configured-value"),
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(responses_sse_ok()),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let source = OpenAiResponsesSourceCompat {
+                session_affinity_format: Some(SessionAffinityFormat::OpenRouter),
+                supports_mid_convo_system_messages: Some(true),
+                ..Default::default()
+            };
+            let mut model = source_model(None, source.clone());
+            if mode == "model" {
+                model
+                    .headers
+                    .push(("X-Session-Id".into(), Some("model-value".into())));
+            }
+            if mode == "remove" {
+                model.headers.push(("x-session-id".into(), None));
+            }
+            let provider = if mode == "route" {
+                OpenAiResponsesProvider::with_auth_extra(
+                    Some(server.uri()),
+                    ResponsesConfig {
+                        source,
+                        ..Default::default()
+                    },
+                    "openai-responses".into(),
+                    vec![("X-Session-Id".into(), "route-value".into())],
+                    Arc::new(opi_ai::http::HttpClient::new()),
+                )
+                .with_affinity_policy(opi_ai::openai_responses::ResponsesAffinityPolicy::Direct)
+            } else {
+                let configured = if mode == "configured" {
+                    vec![("X-Session-Id".into(), "configured-value".into())]
+                } else {
+                    vec![]
+                };
+                OpenAiResponsesProvider::for_route(
+                    Some(server.uri()),
+                    "openai-responses".into(),
+                    opi_ai::provider_headers::ProviderHeaders::try_new(configured).unwrap(),
+                    vec![model],
+                    Arc::new(opi_ai::http::HttpClient::new()),
+                )
+                .with_affinity_policy(opi_ai::openai_responses::ResponsesAffinityPolicy::Direct)
+            };
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let recorder = seen.clone();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let counter = calls.clone();
+            let mut request = request("openai-responses", CacheRetention::Disabled);
+            if mode == "caller" {
+                request
+                    .extra_headers
+                    .push(("X-Session-Id".into(), "caller-value".into()));
+            }
+            request.callbacks = opi_ai::callbacks::RequestCallbacks::new()
+                .with_async_header_transform(move |mut headers| {
+                    let recorder = recorder.clone();
+                    let counter = counter.clone();
+                    async move {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        *recorder.lock().unwrap() = headers.clone();
+                        if mode == "transform" {
+                            headers.retain(|(name, _)| !name.eq_ignore_ascii_case("x-session-id"));
+                            headers.push(("x-session-id".into(), "transformed-value".into()));
+                        }
+                        Ok(headers)
+                    }
+                });
+            let message = opi_ai::stream::ChatStream::new(
+                provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
+            )
+            .result()
+            .await
+            .unwrap();
+            assert!(message.projection.is_some());
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            let seen = seen.lock().unwrap().clone();
+            let observed: Vec<_> = seen
+                .iter()
+                .filter(|(name, _)| name.eq_ignore_ascii_case("x-session-id"))
+                .map(|(_, value)| value.as_str())
+                .collect();
+            assert_eq!(
+                observed,
+                before_transform.into_iter().collect::<Vec<_>>(),
+                "mode={mode}: transform sees the merged generated default"
+            );
+            let sent = server.received_requests().await.unwrap();
+            assert_eq!(sent.len(), 1);
+            let values: Vec<_> = sent[0]
+                .headers
+                .get_all("x-session-id")
+                .iter()
+                .map(|value| value.to_str().unwrap())
+                .collect();
+            assert_eq!(
+                values,
+                expected.into_iter().collect::<Vec<_>>(),
+                "mode={mode}: one effective ordinary header survives"
+            );
+            server.verify().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn responses_affinity_inference_uses_the_source_url_rule_and_explicit_override() {
+        for (provider_id, path, format, router) in [
+            ("proxy", "/openrouter.ai", None, true),
+            (
+                "proxy",
+                "/openrouter.ai",
+                Some(SessionAffinityFormat::OpenAiNoSession),
+                false,
+            ),
+            ("openrouter", "/ordinary", None, true),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(responses_sse_ok()),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let source = OpenAiResponsesSourceCompat {
+                session_affinity_format: format,
+                supports_mid_convo_system_messages: Some(true),
+                ..Default::default()
+            };
+            let provider = provider(
+                server.uri(),
+                provider_id,
+                source_model(Some(format!("{}{path}", server.uri())), source),
+            );
+            let request = request(provider_id, CacheRetention::Disabled);
+            opi_ai::stream::ChatStream::new(
+                provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
+            )
+            .result()
+            .await
+            .unwrap();
+            let sent = server.received_requests().await.unwrap();
+            assert_eq!(sent.len(), 1);
+            assert_eq!(sent[0].headers.contains_key("x-session-id"), router);
+            assert_eq!(sent[0].headers.contains_key("x-client-request-id"), !router);
+            assert!(!sent[0].headers.contains_key("session_id"));
+            assert_eq!(
+                sent[0].headers[if router {
+                    "x-session-id"
+                } else {
+                    "x-client-request-id"
+                }],
+                "raw-session-id"
+            );
+            server.verify().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn exact_prepared_signin_suppresses_only_source_qualified_branches_without_sends() {
+        for (provider_id, base, key, signin) in [
+            ("openai", "https://api.openai.com/v1", "oauth-access", true),
+            ("openai", "https://api.openai.com/v1", "", true),
+            (
+                "openai",
+                "https://api.openai.com/v1",
+                "sk-project-key",
+                false,
+            ),
+            (
+                "openai-responses",
+                "https://api.openai.com/v1",
+                "oauth-access",
+                false,
+            ),
+            ("openai", "https://api.openai.com", "oauth-access", false),
+            (
+                "openai",
+                "https://api.openai.com/v1/",
+                "oauth-access",
+                false,
+            ),
+            (
+                "openai",
+                "https://api.openai.com.evil.invalid/v1",
+                "oauth-access",
+                false,
+            ),
+        ] {
+            let fallback = MockServer::start().await;
+            let source = OpenAiResponsesSourceCompat {
+                supports_mid_convo_system_messages: Some(true),
+                supports_mid_convo_effort: Some(true),
+                supports_explicit_prompt_cache_mode: Some(true),
+                ..Default::default()
+            };
+            let provider = provider(
+                fallback.uri(),
+                provider_id,
+                source_model(Some(base.into()), source),
+            );
+            let mut request = request(provider_id, CacheRetention::Long);
+            let absent_auth_body = provider.build_request_body(&request).unwrap();
+            assert!(
+                absent_auth_body.get("max_output_tokens").is_some(),
+                "no prepared key means no signin classification"
+            );
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let recorder = seen.clone();
+            let response_calls = Arc::new(AtomicUsize::new(0));
+            let response_counter = response_calls.clone();
+            request.callbacks = opi_ai::callbacks::RequestCallbacks::new()
+                .with_on_payload(Arc::new(move |body| {
+                    recorder.lock().unwrap().push(body.clone());
+                    Err(opi_ai::callbacks::CallbackError::new(
+                        "intentional post-auth capture sentinel",
+                    ))
+                }))
+                .with_on_response(Arc::new(move |_, _| {
+                    response_counter.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }));
+            let mut auth = opi_ai::test_support::resolved_bearer_auth();
+            auth.secret = secrecy::SecretString::from(key);
+            let failure = opi_ai::stream::ChatStream::new(provider.stream_prepared(request, auth))
+                .result()
+                .await
+                .unwrap_err();
+            assert!(matches!(failure.cause(), ProviderError::CallbackPhase(_)));
+            assert!(failure.message().projection.is_some());
+            let bodies = seen.lock().unwrap().clone();
+            assert_eq!(bodies.len(), 1);
+            let body = &bodies[0];
+            assert_eq!(
+                body.get("max_output_tokens").is_none(),
+                signin,
+                "{provider_id} {base}"
+            );
+            assert_eq!(body.get("temperature").is_none(), signin);
+            assert_eq!(body.get("prompt_cache_options").is_none(), signin);
+            assert!(body.get("prompt_cache_retention").is_none());
+            let updates = body["input"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|item| item["type"] == "configuration_update")
+                .count();
+            assert_eq!(updates, usize::from(!signin));
+            assert_eq!(response_calls.load(Ordering::SeqCst), 0);
+            assert!(
+                fallback.received_requests().await.unwrap().is_empty(),
+                "capture sentinel precedes every transport send, including canonical external host"
+            );
+        }
+    }
 }

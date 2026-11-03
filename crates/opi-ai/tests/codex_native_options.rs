@@ -66,6 +66,7 @@ fn model(thinking: bool) -> ModelInfo {
 
 fn request() -> Request {
     Request {
+        projection: Default::default(),
         model: "openai-codex:gpt-5.4".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,

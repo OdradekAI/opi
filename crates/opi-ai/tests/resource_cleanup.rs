@@ -25,6 +25,7 @@ fn model() -> ModelInfo {
 
 fn request() -> Request {
     Request {
+        projection: Default::default(),
         model: "openai-codex:gpt-5.4".into(),
         context: normalize_context(Context {
             system_prompt: None,
@@ -221,8 +222,9 @@ async fn retained_native_api_keeps_its_namespace_after_provider_route_replacemen
 async fn cleanup_cancels_registered_prepared_call_without_waiting_for_its_handle_drop() {
     let server = peer(std::time::Duration::ZERO).await;
     let models = models(&server, None, Arc::new(AtomicUsize::new(0)));
+    let request = request();
     let prepared = models
-        .prepare_call("openai-codex:gpt-5.4", request())
+        .prepare_call("openai-codex:gpt-5.4", request.clone())
         .await
         .unwrap();
     let mut unpolled = prepared.start_attempt().unwrap();
@@ -234,10 +236,19 @@ async fn cleanup_cancels_registered_prepared_call_without_waiting_for_its_handle
     .expect("no producer is running, so cleanup cannot wait on a caller-owned PreparedCall")
     .unwrap();
     assert!(report.cancelled_generations >= 1);
-    assert!(matches!(
-        unpolled.next().await.unwrap().unwrap_err(),
-        ProviderError::Cancelled
-    ));
+    let error = unpolled
+        .next()
+        .await
+        .expect("one cancellation")
+        .expect_err("cleanup cancels the lease");
+    assert_eq!(
+        accepted_failure_cause(&error, &request),
+        &ProviderError::Cancelled
+    );
+    assert!(
+        unpolled.next().await.is_none(),
+        "cancelled lease must end permanently"
+    );
     assert!(prepared.start_attempt().is_err());
     assert!(server.received_requests().await.unwrap().is_empty());
 }
@@ -321,7 +332,8 @@ async fn cleanup_does_not_wait_for_a_dormant_advanced_prepare_to_be_repolled() {
     let entered = Arc::new(AtomicUsize::new(0));
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
     let models = models(&server, Some(gate), entered.clone());
-    let mut retained = Box::pin(models.prepare_call("openai-codex:gpt-5.4", request()));
+    let request = request();
+    let mut retained = Box::pin(models.prepare_call("openai-codex:gpt-5.4", request.clone()));
     assert!(poll!(retained.as_mut()).is_pending());
     assert_eq!(entered.load(Ordering::SeqCst), 1);
     let report = tokio::time::timeout(
@@ -332,10 +344,17 @@ async fn cleanup_does_not_wait_for_a_dormant_advanced_prepare_to_be_repolled() {
     .expect("a dormant caller-owned prepare future is not a live producer")
     .unwrap();
     assert_eq!(report.cancelled_generations, 1);
-    assert!(matches!(
-        retained.await,
-        Err(opi_ai::models::ModelsError::CallCancelled)
-    ));
+    let error = retained
+        .await
+        .expect_err("cleanup cancels pending preparation");
+    assert!(
+        error.is_call_cancelled(),
+        "logical-call cancellation origin remains known"
+    );
+    assert_eq!(
+        accepted_models_failure_cause(&error, &request),
+        &ProviderError::Cancelled
+    );
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
@@ -777,4 +796,46 @@ fn unpolled_owned_call_does_not_retain_unrelated_namespaces_after_models_drop() 
     );
     drop(owned);
     assert_eq!(Arc::strong_count(&selected), 1);
+}
+
+fn accepted_failure_cause<'a>(
+    error: &'a opi_ai::provider::ProviderError,
+    request: &opi_ai::provider::Request,
+) -> &'a opi_ai::provider::ProviderError {
+    use opi_ai::provider::ProviderError;
+    use sha2::Digest as _;
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let facts = failure
+        .message()
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+    failure.cause()
+}
+
+fn accepted_models_failure_cause<'a>(
+    error: &'a opi_ai::ModelsError,
+    request: &opi_ai::provider::Request,
+) -> &'a opi_ai::provider::ProviderError {
+    let opi_ai::ModelsError::Provider(error) = error else {
+        panic!("accepted projection must retain its provider failure: {error:?}");
+    };
+    accepted_failure_cause(error, request)
 }

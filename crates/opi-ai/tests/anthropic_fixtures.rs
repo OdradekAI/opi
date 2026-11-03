@@ -466,6 +466,7 @@ async fn cache_1h_malformed_subset_stops_production_stream_with_non_retryable_er
 
     let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -930,6 +931,7 @@ fn thinking_fixture_usage_tracked() {
 fn build_request_body_includes_thinking_when_enabled() {
     let provider = AnthropicProvider::new(None);
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -975,6 +977,7 @@ fn build_request_body_includes_thinking_when_enabled() {
 fn build_request_body_uses_default_budget_when_none() {
     let provider = AnthropicProvider::new(None);
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1024,6 +1027,7 @@ fn build_request_body_uses_default_budget_when_none() {
 fn build_request_body_omits_thinking_when_disabled() {
     let provider = AnthropicProvider::new(None);
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1496,6 +1500,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
     let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1570,6 +1575,7 @@ async fn stream_cancellation_drains_without_hang_after_cancel() {
     let cancel = CancellationToken::new();
     let provider = AnthropicProvider::new(Some(server.uri()));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1633,6 +1639,7 @@ mod request_compatibility {
 
     fn request(model: &str) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: model.into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1686,7 +1693,12 @@ mod request_compatibility {
             .expect("preflight result")
             .expect_err("unsupported thinking must fail");
 
-        assert!(matches!(error, ProviderError::UnsupportedCapability { .. }));
+        let ProviderError::StreamFailure(failure) = &error else {
+            panic!("accepted projection retains its failure carrier: {error:?}")
+        };
+        assert!(failure.message().projection.is_some());
+        let cause = failure.cause();
+        assert!(matches!(cause, ProviderError::UnsupportedCapability { .. }));
     }
     #[test]
     fn anthropic_request_honors_adaptive_thinking_and_temperature_compat() {
@@ -1762,6 +1774,7 @@ use opi_ai::callbacks::RequestCallbacks;
 
 fn callbacks_request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -2055,12 +2068,13 @@ async fn stream_prepared_and_drain(provider: &AnthropicProvider, request: Reques
 
 mod constrained_sampling_tests {
     use opi_ai::constrained_sampling::{
-        AnthropicStrictKeywordAdmission, ConstrainedSampling, GrammarInputBuffer, StrictPreference,
+        AnthropicStrictKeywordAdmission, ConstrainedSampling, GrammarInputBuffer,
+        NoRejectedKeywords, StrictKeywordAdmission, StrictPreference,
         append_grammar_tool_input_delta, make_strict_json_schema, normalize_wire_arguments_nulls,
         resolve_grammar_constrained_sampling, resolve_json_schema_strict_sampling,
     };
     use opi_ai::message::ToolDef;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     fn object_schema() -> serde_json::Value {
         json!({
@@ -2135,6 +2149,55 @@ mod constrained_sampling_tests {
                 "schema {schema} must be rejected for strict wire projection"
             );
         }
+    }
+
+    #[test]
+    fn strict_required_shape_is_validated_with_or_without_properties() {
+        for properties in [None, Some(json!({"path": {"type": "string"}}))] {
+            for required in [
+                Value::Null,
+                json!("path"),
+                json!(1),
+                json!(true),
+                json!({"path": true}),
+                json!([1]),
+                json!(["path", false]),
+                json!(["unknown"]),
+            ] {
+                let mut schema = json!({"type": "object", "required": required});
+                if let Some(properties) = &properties {
+                    schema["properties"] = properties.clone();
+                }
+                let original = schema.clone();
+                for admission in [
+                    &AnthropicStrictKeywordAdmission as &dyn StrictKeywordAdmission,
+                    &NoRejectedKeywords,
+                ] {
+                    let error = make_strict_json_schema(&schema, admission)
+                        .expect_err("present required must be a string array of known properties");
+                    assert!(error.to_string().contains("required"));
+                    assert_eq!(
+                        schema, original,
+                        "failed conversion must preserve the input"
+                    );
+                }
+            }
+        }
+        for schema in [
+            json!({"type": "object"}),
+            json!({"type": "object", "required": []}),
+            json!({"type": "object", "properties": {"path": {"type": "string"}}}),
+            json!({"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
+            json!({"type": "object", "properties": {"child": {"type": "object", "required": []}}}),
+            // The pinned source keeps object-only keywords inert on scalar nodes.
+            json!({"type": "object", "properties": {"scalar": {"type": "string", "required": 1}}}),
+        ] {
+            let original = schema.clone();
+            assert!(make_strict_json_schema(&schema, &AnthropicStrictKeywordAdmission).is_ok());
+            assert_eq!(schema, original);
+        }
+        let nested = json!({"type": "object", "properties": {"child": {"type": "object", "required": null}}});
+        assert!(make_strict_json_schema(&nested, &AnthropicStrictKeywordAdmission).is_err());
     }
 
     #[test]
@@ -2403,6 +2466,7 @@ mod anthropic_strict_wire_tests {
 
     fn request_with_tools(tools: Vec<ToolDef>) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "test:strict-model".into(),
             context: opi_ai::transcript::normalize_context(Context {
@@ -2525,6 +2589,143 @@ mod anthropic_strict_wire_tests {
     }
 
     #[test]
+    fn malformed_required_prefer_preserves_raw_schema_on_the_wire() {
+        let provider = strict_capable_provider(None, true);
+        for required in [
+            serde_json::Value::Null,
+            serde_json::json!("path"),
+            serde_json::json!(1),
+            serde_json::json!(false),
+            serde_json::json!({"path": true}),
+            serde_json::json!([1]),
+            serde_json::json!(["unknown"]),
+        ] {
+            for properties in [None, Some(serde_json::json!({"path": {"type": "string"}}))] {
+                let mut schema = serde_json::json!({"type": "object", "required": required});
+                if let Some(properties) = properties {
+                    schema["properties"] = properties;
+                }
+                let request = request_with_tools(vec![strict_tool(
+                    "prefer",
+                    StrictPreference::Prefer,
+                    schema.clone(),
+                )]);
+                let canonical = request.context.clone();
+                let body = provider.build_request_body(&request).unwrap();
+                assert!(body["tools"][0].get("strict").is_none());
+                assert_eq!(body["tools"][0]["input_schema"], schema);
+                assert_eq!(request.context, canonical);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn required_preauth_checks_native_history_but_excludes_collapsed_declarations() {
+        use opi_ai::auth::{AuthResolver, ResolvedAuth};
+        use opi_ai::models::{ChatModelRecord, Models, SimpleOptions};
+        use opi_ai::transcript::{SystemMessage, ToolReference};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct CountingAuth(Arc<AtomicUsize>);
+        impl AuthResolver for CountingAuth {
+            fn resolve(&self) -> opi_ai::BoxAuthFuture<'_, Result<ResolvedAuth, ProviderError>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(opi_ai::test_support::resolved_auth()) })
+            }
+        }
+        for inline in [false, true] {
+            for native in [true, false] {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .respond_with(
+                        ResponseTemplate::new(200)
+                            .insert_header("content-type", "text/event-stream")
+                            .set_body_string(text_fixture()),
+                    )
+                    .mount(&server)
+                    .await;
+                let mut provider = strict_capable_provider(Some(server.uri()), true);
+                let mut model = provider.models()[0].clone();
+                model.capabilities = ModelCapabilities::new(100_000, 1_000);
+                let WireCompat::AnthropicMessages(compat) = &mut model.compat else {
+                    unreachable!()
+                };
+                compat.supports_mid_convo_system_messages = native;
+                compat.supports_mid_convo_tool_changes = native;
+                provider.replace_model_catalog(vec![model.clone()]).unwrap();
+                let malformed = strict_tool(
+                    "retired",
+                    StrictPreference::Require,
+                    serde_json::json!({"type": "object", "required": null}),
+                );
+                let initial = if inline {
+                    strict_tool("seed", StrictPreference::Require, plain_schema())
+                } else {
+                    malformed.clone()
+                };
+                let mut request = request_with_tools(vec![initial]);
+                if inline {
+                    request
+                        .context
+                        .append_system_change(SystemMessage {
+                            tools_added: vec![malformed],
+                            ..Default::default()
+                        })
+                        .unwrap();
+                }
+                request
+                    .context
+                    .append_system_change(SystemMessage {
+                        tools_removed: vec![ToolReference {
+                            name: "retired".into(),
+                        }],
+                        ..Default::default()
+                    })
+                    .unwrap();
+                let canonical = request.context.clone();
+                let direct = provider.build_request_body(&request);
+                if native {
+                    assert!(direct.unwrap_err().to_string().contains("required"));
+                } else {
+                    assert!(
+                        direct.is_ok(),
+                        "collapse must exclude the retired declaration"
+                    );
+                }
+                let count = Arc::new(AtomicUsize::new(0));
+                let mut models = Models::new();
+                models
+                    .register_route(
+                        Box::new(provider),
+                        Arc::new(CountingAuth(count.clone())),
+                        opi_ai::AuthProvenanceSource::Static,
+                        Default::default(),
+                    )
+                    .unwrap();
+                let result = models
+                    .complete_simple(
+                        ChatModelRecord::new("test", model),
+                        request.clone(),
+                        SimpleOptions::default(),
+                    )
+                    .await;
+                if native {
+                    let failure =
+                        result.expect_err("native history still transmits the declaration");
+                    assert!(failure.cause().to_string().contains("required"));
+                    assert_eq!(count.load(Ordering::SeqCst), 0);
+                    assert!(server.received_requests().await.unwrap().is_empty());
+                } else {
+                    assert_eq!(result.unwrap().stop_reason, StopReason::Stop);
+                    assert_eq!(count.load(Ordering::SeqCst), 1);
+                    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+                }
+                assert_eq!(request.context, canonical);
+            }
+        }
+    }
+
+    #[test]
     fn strict_require_fails_typed_before_any_dispatch_when_unconvertible() {
         let provider = strict_capable_provider(None, true);
         let unconvertible = serde_json::json!({
@@ -2561,8 +2762,13 @@ mod anthropic_strict_wire_tests {
             .await
             .expect("result")
             .expect_err("require on a strict-unsupported wire fails");
+        let ProviderError::StreamFailure(failure) = &error else {
+            panic!("accepted projection retains its failure carrier: {error:?}")
+        };
+        assert!(failure.message().projection.is_some());
+        let cause = failure.cause();
         assert!(
-            matches!(error, ProviderError::Config(_)),
+            matches!(cause, ProviderError::Config(_)),
             "typed pre-dispatch failure, got {error:?}"
         );
         assert!(
@@ -2678,6 +2884,7 @@ mod anthropic_strict_variant_tests {
 
     fn variant_request(tools: Vec<ToolDef>, callbacks: RequestCallbacks) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "test:strict-model".into(),
             context: opi_ai::transcript::normalize_context(Context {
@@ -3341,6 +3548,7 @@ fn request_39(thinking: ThinkingConfig) -> Request {
 
 fn request_39_for(model: &str, thinking: ThinkingConfig) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -3723,6 +3931,7 @@ fn error_tool_result_images_follow_all_results_in_one_user_message() {
             timestamp_ms: 0,
         }),
         Message::Assistant(opi_ai::message::AssistantMessage {
+            projection: None,
             content: vec![
                 opi_ai::message::AssistantContent::ToolCall {
                     tool_call: opi_ai::message::ToolCall {
@@ -3855,6 +4064,7 @@ fn consecutive_success_tool_results_group_into_one_user_message() {
             timestamp_ms: 0,
         }),
         Message::Assistant(opi_ai::message::AssistantMessage {
+            projection: None,
             content: vec![
                 opi_ai::message::AssistantContent::ToolCall {
                     tool_call: opi_ai::message::ToolCall {
@@ -4246,6 +4456,7 @@ async fn anthropic_direct_adapter_replays_same_identity_signed_thinking() {
         .expect("register");
 
     let history = Message::Assistant(opi_ai::message::AssistantMessage {
+        projection: None,
         content: vec![opi_ai::message::AssistantContent::Thinking {
             thinking: "prior".into(),
             signature: Some("sig-1".into()),
@@ -4429,10 +4640,17 @@ async fn direct_unknown_model_without_max_tokens_fails_typed_before_send() {
     request.model = "anthropic:unknown-model".into();
     request.max_tokens = None;
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
-    assert!(matches!(
-        stream.next().await,
-        Some(Err(ProviderError::Config(_)))
-    ));
+    let error = stream
+        .next()
+        .await
+        .expect("preflight result")
+        .expect_err("unknown output limit");
+    let ProviderError::StreamFailure(failure) = &error else {
+        panic!("accepted projection retains its failure carrier: {error:?}")
+    };
+    assert!(failure.message().projection.is_some());
+    let cause = failure.cause();
+    assert!(matches!(cause, ProviderError::Config(_)));
     assert!(stream.next().await.is_none());
     assert!(server.received_requests().await.unwrap().is_empty());
 }

@@ -29,6 +29,7 @@ const SECRET: &str = "sk-proj-1234567890abcdefghijklmnopqrstuv";
 
 fn text_request(model: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -174,4 +175,56 @@ async fn vertex_500_classifies_as_provider_with_bodyless_summary() {
         Some(server.uri()),
     ));
     assert_provider_side_bodyless(provider, "vertex:gemini-2.5-flash", true).await;
+}
+
+#[test]
+fn temporal_error_source_preserves_string_serialization_formatting_equality_and_hash() {
+    use opi_ai::provider::{ProviderError, ProviderErrorSummary};
+    use std::error::Error as _;
+    use std::hash::{Hash, Hasher};
+    let error = ProviderError::from(
+        opi_ai::transcript::TranscriptError::UnsupportedTemporalFidelity {
+            mid_convo_system_messages: 2,
+        },
+    );
+    let ProviderError::Config(summary) = &error else {
+        panic!("existing Config representation")
+    };
+    let ordinary = ProviderErrorSummary::sanitized(summary.as_str());
+    assert_eq!(*summary, ordinary);
+    assert_eq!(summary.to_string(), ordinary.to_string());
+    assert_eq!(format!("{summary:?}"), format!("{ordinary:?}"));
+    assert_eq!(
+        serde_json::to_value(summary).unwrap(),
+        serde_json::Value::String(summary.as_str().into())
+    );
+    assert_eq!(
+        serde_json::to_value(summary).unwrap(),
+        serde_json::to_value(&ordinary).unwrap()
+    );
+    let mut typed_hash = std::collections::hash_map::DefaultHasher::new();
+    summary.hash(&mut typed_hash);
+    let mut text_hash = std::collections::hash_map::DefaultHasher::new();
+    ordinary.hash(&mut text_hash);
+    assert_eq!(typed_hash.finish(), text_hash.finish());
+    assert!(matches!(
+        summary
+            .source()
+            .unwrap()
+            .downcast_ref::<opi_ai::transcript::TranscriptError>(),
+        Some(
+            opi_ai::transcript::TranscriptError::UnsupportedTemporalFidelity {
+                mid_convo_system_messages: 2
+            }
+        )
+    ));
+    for plain in [
+        ordinary,
+        ProviderErrorSummary::redacted(),
+        ProviderErrorSummary::authentication_rejected(),
+        ProviderErrorSummary::from_untrusted("do-not-retain"),
+        ProviderErrorSummary::sanitized("closed local context"),
+    ] {
+        assert!(plain.source().is_none());
+    }
 }

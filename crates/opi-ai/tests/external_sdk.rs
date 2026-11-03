@@ -80,6 +80,7 @@ impl AuthContext for OwnedRecordingContext {
 
 fn base_request(model: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.to_owned(),
         context: normalize_context(ShorthandContext::default()).unwrap(),

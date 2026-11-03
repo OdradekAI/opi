@@ -14,6 +14,7 @@ fn user(text: &str, timestamp_ms: i64) -> Message {
 
 fn assistant(timestamp_ms: i64) -> Message {
     Message::Assistant(AssistantMessage {
+        projection: None,
         content: vec![AssistantContent::Text {
             text: "done".into(),
             signature: None,
@@ -158,16 +159,19 @@ fn anchor_supersedes_full_text_lower_bound() {
 }
 
 #[test]
-fn reported_total_differs_from_bucket_sum() {
+fn independently_reported_total_wins_with_known_or_unknown_parent_buckets() {
     // An independently reported positive total wins over the bucket sum.
-    let messages = vec![
-        assistant_with_total(2, Some(999), true),
-        user("abcdefgh", 3),
-    ];
-    let estimate = estimate_context_tokens(None, &messages, &[]);
-    assert_eq!(estimate.usage_tokens, 999);
-    assert_eq!(estimate.trailing_tokens, 3);
-    assert_eq!(estimate.tokens, 1_002);
+    for reported in [true, false] {
+        let messages = vec![
+            assistant_with_total(2, Some(999), reported),
+            user("abcdefgh", 3),
+        ];
+        let estimate = estimate_context_tokens(None, &messages, &[]);
+        assert_eq!(estimate.usage_tokens, 999, "reported={reported}");
+        assert_eq!(estimate.trailing_tokens, 3);
+        assert_eq!(estimate.tokens, 1_002);
+        assert_eq!(estimate.last_usage_index, Some(0));
+    }
 }
 
 #[test]
@@ -179,13 +183,38 @@ fn explicit_zero_total_falls_back_to_fully_known_positive_sum() {
     assert_eq!(estimate.usage_tokens, 670);
     assert_eq!(estimate.tokens, 673);
 
-    let unreported = vec![
-        assistant_with_total(2, Some(999), false),
-        user("abcdefgh", 3),
-    ];
-    let estimate = estimate_context_tokens(None, &unreported, &[]);
+    for total in [None, Some(0)] {
+        let unreported = vec![assistant_with_total(2, total, false), user("abcdefgh", 3)];
+        let estimate = estimate_context_tokens(None, &unreported, &[]);
+        assert_eq!(estimate.usage_tokens, 0);
+        assert_eq!(estimate.tokens, 2 + 3);
+        assert_eq!(estimate.last_usage_index, None);
+    }
+}
+
+#[test]
+fn independent_total_still_requires_a_successful_timely_response() {
+    for reason in [StopReason::Error, StopReason::Aborted] {
+        let mut response = assistant_with_total(2, Some(999), false);
+        if let Message::Assistant(message) = &mut response {
+            message.stop_reason = reason;
+        }
+        let estimate = estimate_context_tokens(None, &[user("task", 1), response], &[]);
+        assert_eq!(estimate.usage_tokens, 0);
+        assert_eq!(estimate.last_usage_index, None);
+        assert_eq!(estimate.tokens, 4);
+    }
+    let estimate = estimate_context_tokens(
+        None,
+        &[
+            user("summary!", 10),
+            assistant_with_total(2, Some(999), false),
+        ],
+        &[],
+    );
     assert_eq!(estimate.usage_tokens, 0);
-    assert_eq!(estimate.tokens, 2 + 3);
+    assert_eq!(estimate.last_usage_index, None);
+    assert_eq!(estimate.tokens, 5);
 }
 
 #[test]
@@ -202,6 +231,7 @@ fn message_granularity_rounding_aggregates_before_ceil() {
     assert_eq!(estimate_message_tokens(&two_blocks), 1);
 
     let three_blocks = Message::Assistant(AssistantMessage {
+        projection: None,
         content: vec![
             AssistantContent::Text {
                 text: "a".into(),

@@ -199,11 +199,15 @@ impl PiMessagesProvider {
             .ok_or_else(|| self.unknown_model_error(&request.model))?;
         let options = self.native_options.as_ref();
 
-        // pi-messages natively understands pi's chronology: the transcript
-        // rides as-is, mid-conversation system messages included.
-        let context: Vec<serde_json::Value> = request
-            .context
-            .messages()
+        let projection = crate::transcript::compile_request_projection(
+            request,
+            self.id(),
+            Some(model),
+            crate::WireApi::PiMessages,
+        )?;
+        let context: Vec<serde_json::Value> = projection
+            .replay
+            .messages
             .iter()
             .map(to_pi_wire_message)
             .collect();
@@ -590,112 +594,121 @@ impl Provider for PiMessagesProvider {
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
     ) -> EventStream {
-        request.callbacks = request.callbacks.ensure_call_scope();
-        let bearer = match auth.scheme {
-            crate::auth::AuthScheme::Bearer => {
-                format!("Bearer {}", auth.secret.expose_secret())
-            }
-            crate::auth::AuthScheme::ApiKey
-            | crate::auth::AuthScheme::AwsSigV4(_)
-            | crate::auth::AuthScheme::AnthropicFederation => {
-                return Box::pin(futures_util::stream::iter(vec![Err(
-                    ProviderError::Config(ProviderErrorSummary::attested_static(
-                        "pi-messages accepts only Bearer authentication",
-                    )),
-                )]));
-            }
+        let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::PiMessages) {
+            Ok(facts) => facts,
+            Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
         };
-        let model = match self.resolve_model(&request.model).cloned() {
-            Some(model) => model,
-            None => {
-                let error = self.unknown_model_error(&request.model);
-                return Box::pin(futures_util::stream::iter(vec![Err(error)]));
-            }
-        };
-        let body = match self.build_request_body(&request) {
-            Ok(body) => body,
-            Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
-        };
-
-        let base = model
-            .base_url
-            .as_deref()
-            .unwrap_or(&self.base_url)
-            .trim_end_matches('/');
-        let path = if self.uses_debug() {
-            format!("{base}/messages?debug=1")
-        } else {
-            format!("{base}/messages")
-        };
-        let headers = match crate::provider_headers::ProviderHeaders::default().merge_model_request(
-            &model.headers,
-            &[
-                ("authorization".into(), bearer),
-                ("accept".into(), "text/event-stream".into()),
-                ("content-type".into(), "application/json".into()),
-            ],
-            &request.extra_headers,
-        ) {
-            Ok(headers) => headers,
-            Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
-        };
-        let mut req = self.client.client().post(&path);
-        for (name, value) in &headers {
-            req = req.header(name.as_str(), value.as_str());
-        }
-
-        let requested_model = model.id.clone();
-        let callbacks = request.callbacks.clone();
-        let cancel = request.cancel;
-        let telemetry = request.telemetry_context.clone();
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let producer_cancel = cancel.clone();
-
-        let tx_closed = tx.clone();
-        let producer = async move {
-            let run = async {
-                let result = async {
-                    let body = callbacks
-                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-                        .await?;
-                    stream_pi_messages_http(
-                        req,
-                        body,
-                        &requested_model,
-                        producer_cancel.clone(),
-                        callbacks,
-                        producer_snapshot.clone(),
-                        &tx,
-                    )
-                    .await
-                    .map_err(|error| producer_snapshot.failure(error))
+        let event_projection = projection.clone();
+        crate::stream::project_call(event_projection, || -> EventStream {
+            request.callbacks = request.callbacks.ensure_call_scope();
+            let bearer = match auth.scheme {
+                crate::auth::AuthScheme::Bearer => {
+                    format!("Bearer {}", auth.secret.expose_secret())
                 }
-                .await;
-                match result {
-                    Ok(()) | Err(ProviderError::Cancelled) => {}
-                    Err(error) => {
-                        let _ =
-                            crate::stream::send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                    }
+                crate::auth::AuthScheme::ApiKey
+                | crate::auth::AuthScheme::AwsSigV4(_)
+                | crate::auth::AuthScheme::AnthropicFederation => {
+                    return Box::pin(futures_util::stream::iter(vec![Err(
+                        ProviderError::Config(ProviderErrorSummary::attested_static(
+                            "pi-messages accepts only Bearer authentication",
+                        )),
+                    )]));
                 }
             };
-            tokio::select! {
-                biased;
-                _ = producer_cancel.cancelled() => (),
-                _ = tx_closed.closed() => (),
-                _ = run => (),
+            let model = match self.resolve_model(&request.model).cloned() {
+                Some(model) => model,
+                None => {
+                    let error = self.unknown_model_error(&request.model);
+                    return Box::pin(futures_util::stream::iter(vec![Err(error)]));
+                }
+            };
+            let body = match self.build_request_body(&request) {
+                Ok(body) => body,
+                Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
+            };
+
+            let base = model
+                .base_url
+                .as_deref()
+                .unwrap_or(&self.base_url)
+                .trim_end_matches('/');
+            let path = if self.uses_debug() {
+                format!("{base}/messages?debug=1")
+            } else {
+                format!("{base}/messages")
+            };
+            let headers = match crate::provider_headers::ProviderHeaders::default()
+                .merge_model_request(
+                    &model.headers,
+                    &[
+                        ("authorization".into(), bearer),
+                        ("accept".into(), "text/event-stream".into()),
+                        ("content-type".into(), "application/json".into()),
+                    ],
+                    &request.extra_headers,
+                ) {
+                Ok(headers) => headers,
+                Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
+            };
+            let mut req = self.client.client().post(&path);
+            for (name, value) in &headers {
+                req = req.header(name.as_str(), value.as_str());
             }
-        };
-        if let Some(context) = telemetry {
-            tokio::spawn(context.instrument(producer));
-        } else {
-            tokio::spawn(producer);
-        }
-        Box::pin(crate::stream::CancelAwareReceiverStream::with_snapshot(
-            rx, cancel, snapshot,
-        ))
+
+            let requested_model = model.id.clone();
+            let callbacks = request.callbacks.clone();
+            let cancel = request.cancel;
+            let telemetry = request.telemetry_context.clone();
+            let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            let producer_snapshot = snapshot.clone();
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+            let producer_cancel = cancel.clone();
+
+            let tx_closed = tx.clone();
+            let producer = async move {
+                let run = async {
+                    let result = async {
+                        let body = callbacks
+                            .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                            .await?;
+                        stream_pi_messages_http(
+                            req,
+                            body,
+                            &requested_model,
+                            producer_cancel.clone(),
+                            callbacks,
+                            producer_snapshot.clone(),
+                            &tx,
+                        )
+                        .await
+                        .map_err(|error| producer_snapshot.failure(error))
+                    }
+                    .await;
+                    match result {
+                        Ok(()) | Err(ProviderError::Cancelled) => {}
+                        Err(error) => {
+                            let _ =
+                                crate::stream::send_or_cancel(&producer_cancel, &tx, Err(error))
+                                    .await;
+                        }
+                    }
+                };
+                tokio::select! {
+                    biased;
+                    _ = producer_cancel.cancelled() => (),
+                    _ = tx_closed.closed() => (),
+                    _ = run => (),
+                }
+            };
+            if let Some(context) = telemetry {
+                tokio::spawn(context.instrument(producer));
+            } else {
+                tokio::spawn(producer);
+            }
+            Box::pin(crate::stream::CancelAwareReceiverStream::with_snapshot(
+                rx, cancel, snapshot,
+            ))
+        })
     }
 }
 
@@ -914,6 +927,7 @@ struct PiMessagesSseMapper {
 impl PiMessagesSseMapper {
     fn new(requested_model: &str) -> Self {
         let message = crate::message::AssistantMessage {
+            projection: None,
             content: Vec::new(),
             api: crate::ApiKind::OpenAi,
             provider: "radius".to_owned(),

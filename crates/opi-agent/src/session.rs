@@ -284,6 +284,10 @@ pub struct BranchSummaryEntry {
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Inline canonical message entries preserve public construction and matching without a per-entry allocation"
+)]
 pub enum SessionEntry {
     Message(MessageEntry),
     Compaction(CompactionEntry),

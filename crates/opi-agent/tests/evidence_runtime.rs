@@ -556,6 +556,7 @@ impl Tool for SequentialCountingTool {
 
 fn two_tool_response() -> Vec<AssistantStreamEvent> {
     let mut message = AssistantMessage {
+        projection: None,
         content: vec![],
         api: opi_ai::ApiKind::OpenAi,
         provider: "mock".into(),
@@ -2411,6 +2412,7 @@ async fn in_band_stream_error_terminal_fails_the_run_without_retry() {
     let sink = Arc::new(InMemoryEvidenceSink::new());
     // Partial assistant payload delivered before the in-band error terminal.
     let mut partial = AssistantMessage {
+        projection: None,
         content: vec![],
         api: opi_ai::ApiKind::OpenAi,
         provider: "mock".to_owned(),

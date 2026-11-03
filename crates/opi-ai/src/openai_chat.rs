@@ -169,6 +169,13 @@ struct RawToolCall {
     #[allow(dead_code)]
     r#type: Option<String>,
     function: Option<RawFunction>,
+    custom: Option<RawCustom>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCustom {
+    name: Option<String>,
+    input: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -396,10 +403,18 @@ impl OpenAiChatEvent {
                 }
                 if let Some(tool_calls) = delta.tool_calls {
                     for tc in tool_calls {
-                        let func = tc.function.unwrap_or(RawFunction {
-                            name: None,
-                            arguments: None,
-                        });
+                        let func = tc
+                            .function
+                            .or_else(|| {
+                                tc.custom.map(|custom| RawFunction {
+                                    name: custom.name,
+                                    arguments: custom.input,
+                                })
+                            })
+                            .unwrap_or(RawFunction {
+                                name: None,
+                                arguments: None,
+                            });
                         if let Some(id) = tc.id {
                             events.push(OpenAiChatEvent::ToolCallStart {
                                 index: tc.index,
@@ -515,12 +530,16 @@ pub struct OpenAiChatMapper {
     thinking_ended: bool,
     reasoning_details: Vec<serde_json::Value>,
     pending_stop_reason: Option<StopReason>,
+    inferred_finish: bool,
+    grammar_input_properties: HashMap<String, String>,
+    strict_tools: HashMap<String, crate::message::ToolDef>,
 }
 
 struct ToolCallState {
     id: String,
     name: String,
     arguments: String,
+    custom_input: Option<crate::constrained_sampling::GrammarInputBuffer>,
 }
 
 impl OpenAiChatMapper {
@@ -561,7 +580,54 @@ impl OpenAiChatMapper {
             thinking_ended: false,
             reasoning_details: Vec::new(),
             pending_stop_reason: None,
+            inferred_finish: false,
+            grammar_input_properties: HashMap::new(),
+            strict_tools: HashMap::new(),
         }
+    }
+
+    fn set_tool_metadata(
+        &mut self,
+        tools: Option<crate::openai_responses_shared::ResponsesWireTools>,
+    ) {
+        if let Some(tools) = tools {
+            self.grammar_input_properties = tools.grammar_input_properties;
+            self.strict_tools = tools
+                .strict_tools
+                .into_iter()
+                .map(|tool| (tool.name.clone(), tool))
+                .collect();
+            self.partial.diagnostics.extend(tools.diagnostics);
+        }
+    }
+
+    fn finish_eof(
+        &mut self,
+        supports_finish_reason: bool,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        if let Some(done) = self.flush_pending_done() {
+            return vec![Ok(done)];
+        }
+        if self.saw_done || supports_finish_reason {
+            return Vec::new();
+        }
+        self.inferred_finish = true;
+        let reason = if self.tool_calls.iter().any(|tool| !tool.id.is_empty()) {
+            "tool_calls"
+        } else {
+            "stop"
+        };
+        let mut events = self.process(OpenAiChatEvent::Finish {
+            finish_reason: reason.into(),
+            id: None,
+            model: None,
+            usage: None,
+        });
+        if let Some(done) = self.flush_pending_done() {
+            events.push(Ok(done));
+        }
+        self.snapshot.record(&self.partial);
+        events
     }
 
     fn update_metadata(&mut self, id: Option<String>, model: Option<String>, usage: Option<Usage>) {
@@ -748,6 +814,7 @@ impl OpenAiChatMapper {
                         id: String::new(),
                         name: String::new(),
                         arguments: String::new(),
+                        custom_input: None,
                     });
                 }
 
@@ -756,6 +823,12 @@ impl OpenAiChatMapper {
                     id: id.clone(),
                     name: name.clone(),
                     arguments: String::new(),
+                    custom_input: self.grammar_input_properties.get(&name).map(|property| {
+                        crate::constrained_sampling::GrammarInputBuffer::new(
+                            property.clone(),
+                            String::new(),
+                        )
+                    }),
                 };
                 self.partial.content.push(AssistantContent::ToolCall {
                     tool_call: ToolCall {
@@ -784,7 +857,23 @@ impl OpenAiChatMapper {
                 if arguments.is_empty() || index >= self.tool_calls.len() {
                     return Vec::new();
                 }
-                self.tool_calls[index].arguments.push_str(&arguments);
+                let state = &mut self.tool_calls[index];
+                let arguments = if let Some(buffer) = &mut state.custom_input {
+                    let next = format!("{}{}", buffer.input(), arguments);
+                    match crate::constrained_sampling::append_grammar_tool_input_delta(
+                        buffer, &next, false,
+                    ) {
+                        Ok(delta) => delta.unwrap_or_default(),
+                        Err(error) => {
+                            return vec![Err(self.failure(ProviderError::StreamError(
+                                ProviderErrorSummary::sanitized(error.detail()),
+                            )))];
+                        }
+                    }
+                } else {
+                    arguments
+                };
+                state.arguments.push_str(&arguments);
                 // Map tool_calls index to content index (skip non-tool-call entries)
                 let mut tool_count = 0;
                 let tool_content_index = self
@@ -820,7 +909,7 @@ impl OpenAiChatMapper {
             } => {
                 let has_usage = usage.is_some();
                 let is_metadata_only = finish_reason.is_empty();
-                if !is_metadata_only {
+                if !is_metadata_only && !self.inferred_finish {
                     self.partial.raw_stop_reason = Some(finish_reason.clone());
                 }
                 self.update_metadata(id, model, usage);
@@ -860,7 +949,7 @@ impl OpenAiChatMapper {
 
                 // Close any open tool calls
                 if !is_metadata_only && self.pending_stop_reason.is_none() {
-                    for (tc_idx, tc_state) in self.tool_calls.iter().enumerate() {
+                    for (tc_idx, tc_state) in self.tool_calls.iter_mut().enumerate() {
                         // Skip placeholder entries from reserved indices
                         if tc_state.id.is_empty() {
                             continue;
@@ -884,8 +973,42 @@ impl OpenAiChatMapper {
                         // Final textual arguments are parsed once at finish
                         // (AIR-048); Mistral/Azure/OpenRouter inherit this
                         // site through the shared Chat mapper.
-                        let (arguments, arguments_error) =
-                            ToolCall::finalize_text_arguments(tc_state.arguments.clone());
+                        if let Some(buffer) = &mut tc_state.custom_input {
+                            let input = buffer.input().to_owned();
+                            if let Ok(Some(delta)) =
+                                crate::constrained_sampling::append_grammar_tool_input_delta(
+                                    buffer, &input, true,
+                                )
+                            {
+                                tc_state.arguments.push_str(&delta);
+                                if let Some(AssistantContent::ToolCall { tool_call }) =
+                                    self.partial.content.get_mut(tool_content_index)
+                                {
+                                    tool_call.arguments.push_str(&delta);
+                                }
+                                events.push(Ok(AssistantStreamEvent::ToolCallDelta {
+                                    content_index: tool_content_index,
+                                    delta,
+                                    partial: self.partial.clone(),
+                                }));
+                            }
+                        }
+                        let (mut arguments, arguments_error) = if tc_state.custom_input.is_some() {
+                            (tc_state.arguments.clone(), None)
+                        } else {
+                            ToolCall::finalize_text_arguments(tc_state.arguments.clone())
+                        };
+                        if arguments_error.is_none()
+                            && let Some(tool) = self.strict_tools.get(&tc_state.name)
+                            && let Ok(mut parsed) =
+                                serde_json::from_str::<serde_json::Value>(&arguments)
+                        {
+                            crate::constrained_sampling::normalize_wire_arguments_nulls(
+                                &tool.input_schema,
+                                &mut parsed,
+                            );
+                            arguments = parsed.to_string();
+                        }
                         if let Some(AssistantContent::ToolCall { tool_call }) =
                             self.partial.content.get_mut(tool_content_index)
                         {
@@ -910,8 +1033,6 @@ impl OpenAiChatMapper {
                 if is_metadata_only {
                     if let Some(done) = self.flush_pending_done() {
                         events.push(Ok(done));
-                    } else {
-                        events.push(Ok(self.emit_done(map_stop_reason(&finish_reason))));
                     }
                     return events;
                 }
@@ -957,6 +1078,7 @@ fn empty_assistant_message(
     model: &str,
 ) -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: Vec::new(),
         api,
         provider: provider.into(),
@@ -998,7 +1120,8 @@ const OPENAI_CHAT_STREAM_ERROR: &str = "openai chat stream error";
 /// - `max_tokens_field`: output-limit field name override
 /// - `tool_result_name_field`: tool results carry a `name` field
 /// - `usage_in_stream`: `stream_options.include_usage` policy
-/// - `strict_tool_schema`: emit `"strict": true` on function tools
+/// - `strict_tool_schema`: admit strict conversion for requested tool intents;
+///   unconstrained tools carry `strict: false` on a capable wire
 /// - `cache_key`: emit `prompt_cache_key` for OpenAI prompt-cache affinity
 /// - `send_session_affinity_headers`: session-affinity header policy
 /// - `require_assistant_after_tool_result`: legacy wire bridge projection
@@ -1036,11 +1159,38 @@ pub struct ModelCompatOverride {
     pub max_tokens_field: Option<String>,
 }
 
-/// Apply every explicit (non-`None`) field of `explicit` over `base`.
-fn overlay_explicit(
+/// Apply optional model values without erasing inherited policy on `None`.
+fn overlay_optional(
     base: &mut crate::model_info::OpenAiCompletionsCompat,
     explicit: &crate::model_info::OpenAiCompletionsCompat,
 ) {
+    if explicit.supports_mid_convo_system_messages.is_some() {
+        base.supports_mid_convo_system_messages = explicit.supports_mid_convo_system_messages;
+    }
+    if explicit.supports_mid_convo_tool_additions.is_some() {
+        base.supports_mid_convo_tool_additions = explicit.supports_mid_convo_tool_additions;
+    }
+    if explicit.supports_finish_reason.is_some() {
+        base.supports_finish_reason = explicit.supports_finish_reason;
+    }
+    if explicit.supports_grammar_tools.is_some() {
+        base.supports_grammar_tools = explicit.supports_grammar_tools;
+    }
+    if explicit.open_router_routing.is_some() {
+        base.open_router_routing = explicit.open_router_routing.clone();
+    }
+    if explicit.vercel_gateway_routing.is_some() {
+        base.vercel_gateway_routing = explicit.vercel_gateway_routing.clone();
+    }
+    if explicit.cache_control_format.is_some() {
+        base.cache_control_format = explicit.cache_control_format;
+    }
+    if explicit.session_affinity_format.is_some() {
+        base.session_affinity_format = explicit.session_affinity_format;
+    }
+    if explicit.supports_long_cache_retention.is_some() {
+        base.supports_long_cache_retention = explicit.supports_long_cache_retention;
+    }
     if explicit.store.is_some() {
         base.store = explicit.store.clone();
     }
@@ -1069,21 +1219,32 @@ fn overlay_explicit(
     if explicit.send_session_affinity_headers.is_some() {
         base.send_session_affinity_headers = explicit.send_session_affinity_headers;
     }
+    if explicit.vllm_priority.is_some() {
+        base.vllm_priority = explicit.vllm_priority.clone();
+    }
+    if explicit.chat_template_kwargs.is_some() {
+        base.chat_template_kwargs = explicit.chat_template_kwargs.clone();
+    }
+    if explicit.chat_template_args.is_some() {
+        base.chat_template_args = explicit.chat_template_args.clone();
+    }
+    if explicit.cache_key.is_some() {
+        base.cache_key = explicit.cache_key.clone();
+    }
+    if explicit.thinking_token_budget_field.is_some() {
+        base.thinking_token_budget_field = explicit.thinking_token_budget_field.clone();
+    }
+}
+
+/// A provider profile or complete catalog record also owns concrete values.
+fn overlay_explicit(base: &mut CompatConfig, explicit: &CompatConfig) {
+    overlay_optional(base, explicit);
     base.tool_result_name_field = explicit.tool_result_name_field;
     base.strict_tool_schema = explicit.strict_tool_schema;
-    base.cache_key = explicit.cache_key.clone();
     base.require_assistant_after_tool_result = explicit.require_assistant_after_tool_result;
     base.requires_thinking_as_text = explicit.requires_thinking_as_text;
     base.zai_tool_stream = explicit.zai_tool_stream;
-    base.vllm_priority = explicit.vllm_priority;
-    base.thinking_token_budget_field = explicit.thinking_token_budget_field.clone();
     base.supports_thinking_token_budget = explicit.supports_thinking_token_budget;
-    if !explicit.chat_template_kwargs.is_empty() {
-        base.chat_template_kwargs = explicit.chat_template_kwargs.clone();
-    }
-    if !explicit.chat_template_args.is_empty() {
-        base.chat_template_args = explicit.chat_template_args.clone();
-    }
     if !explicit.chat_completions_path.is_empty() {
         base.chat_completions_path = explicit.chat_completions_path.clone();
     }
@@ -1101,6 +1262,7 @@ struct ChatProviderClass {
     deep_seek: bool,
     thinking_format: crate::model_info::ChatThinkingFormat,
     sends_effort_field: bool,
+    long_cache_retention: bool,
 }
 
 fn classify_chat_provider(provider_id: &str, base_url: &str, model_id: &str) -> ChatProviderClass {
@@ -1183,6 +1345,11 @@ fn classify_chat_provider(provider_id: &str, base_url: &str, model_id: &str) -> 
         deep_seek,
         thinking_format,
         sends_effort_field,
+        long_cache_retention: !(together
+            || cloudflare_workers_ai
+            || cloudflare_ai_gateway
+            || nvidia
+            || ant_ling),
     }
 }
 
@@ -1211,6 +1378,15 @@ fn detect_chat_baseline(
         thinking_format: Some(class.thinking_format),
         supports_reasoning_effort: Some(class.sends_effort_field),
         usage_in_stream: Some(true),
+        supports_finish_reason: Some(true),
+        supports_long_cache_retention: Some(class.long_cache_retention),
+        cache_control_format: (provider_id == "openrouter" && model_id.starts_with("anthropic/"))
+            .then_some(crate::model_info::CacheControlFormat::Anthropic),
+        session_affinity_format: Some(if class.open_router {
+            crate::model_info::SessionAffinityFormat::OpenRouter
+        } else {
+            crate::model_info::SessionAffinityFormat::OpenAi
+        }),
         max_tokens_field: Some(
             if class.legacy_max_tokens {
                 "max_tokens"
@@ -1232,6 +1408,7 @@ fn detect_chat_baseline(
 /// Concrete OpenAI Chat Completions API provider.
 #[derive(Clone)]
 pub struct OpenAiChatProvider {
+    wire: crate::WireApi,
     base_url: String,
     models: Vec<ModelInfo>,
     compat: CompatConfig,
@@ -1338,9 +1515,23 @@ impl OpenAiChatProvider {
         client: Arc<HttpClient>,
     ) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
-        let models = model_catalog();
+        let models = model_catalog()
+            .into_iter()
+            .map(|mut model| {
+                if let crate::WireCompat::OpenAiCompletions(source) = &mut model.compat {
+                    source.supports_mid_convo_system_messages = source
+                        .supports_mid_convo_system_messages
+                        .or(compat.supports_mid_convo_system_messages);
+                    source.supports_mid_convo_tool_additions = source
+                        .supports_mid_convo_tool_additions
+                        .or(compat.supports_mid_convo_tool_additions);
+                }
+                model
+            })
+            .collect();
         let direct_prompt_cache_key = provider_id == "openai";
         Self {
+            wire: crate::WireApi::OpenAiCompletions,
             base_url,
             models,
             compat,
@@ -1366,7 +1557,22 @@ impl OpenAiChatProvider {
         extra_headers: Vec<(String, String)>,
         models: Vec<ModelInfo>,
     ) -> Self {
+        let models = models
+            .into_iter()
+            .map(|mut model| {
+                if let crate::WireCompat::OpenAiCompletions(source) = &mut model.compat {
+                    source.supports_mid_convo_system_messages = source
+                        .supports_mid_convo_system_messages
+                        .or(compat.supports_mid_convo_system_messages);
+                    source.supports_mid_convo_tool_additions = source
+                        .supports_mid_convo_tool_additions
+                        .or(compat.supports_mid_convo_tool_additions);
+                }
+                model
+            })
+            .collect();
         Self {
+            wire: crate::WireApi::OpenAiCompletions,
             base_url,
             models,
             compat,
@@ -1393,6 +1599,7 @@ impl OpenAiChatProvider {
         client: Arc<HttpClient>,
     ) -> Self {
         Self {
+            wire: crate::WireApi::OpenAiCompletions,
             base_url: default_base_url.unwrap_or_else(|| "https://api.openai.com".into()),
             models,
             compat: CompatConfig::default(),
@@ -1455,16 +1662,19 @@ impl OpenAiChatProvider {
             .and_then(|model| model.base_url.as_deref())
             .unwrap_or(self.base_url.as_str());
         let mut resolved = detect_chat_baseline(&self.provider_id, inference_base_url, model_id);
-        // The provider profile's explicit values win per field.
-        if self.catalog_compat
-            && let Some(crate::provider::ModelInfo {
-                compat: crate::model_info::WireCompat::OpenAiCompletions(compat),
-                ..
-            }) = model
+        overlay_explicit(&mut resolved, &self.compat);
+        if let Some(crate::provider::ModelInfo {
+            compat: crate::model_info::WireCompat::OpenAiCompletions(compat),
+            ..
+        }) = model
         {
-            overlay_explicit(&mut resolved, compat);
-        } else {
-            overlay_explicit(&mut resolved, &self.compat);
+            if self.catalog_compat {
+                overlay_explicit(&mut resolved, compat);
+            } else {
+                // Profile routes retain their concrete policies; optional model
+                // values and the explicit overrides below refine that profile.
+                overlay_optional(&mut resolved, compat);
+            }
         }
         if let Some(ov) = self.model_overrides.get(model_id) {
             if let Some(role) = &ov.instruction_role {
@@ -1486,6 +1696,31 @@ impl OpenAiChatProvider {
             resolved.chat_completions_path = "/chat/completions".into();
         }
         resolved
+    }
+
+    fn validate_tool_projection(
+        &self,
+        model: &ModelInfo,
+        request: &Request,
+    ) -> Result<(), ProviderError> {
+        let compat = self.resolve_compat_for(&model.id, Some(model));
+        let projection = crate::transcript::compile_request_projection(
+            request,
+            &self.provider_id,
+            Some(model),
+            self.wire,
+        )?;
+        compile_chat_tools(
+            projection.transcript.messages(),
+            &projection.tools.request_tools,
+            &compat,
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn with_wire(mut self, wire: crate::WireApi) -> Self {
+        self.wire = wire;
+        self
     }
 
     /// Access the shared HTTP client (for testing client reuse).
@@ -1525,39 +1760,26 @@ impl OpenAiChatProvider {
             }
         };
 
-        // Canonical transcript consumption (AIR-020); this wire currently
-        // projects by collapse.
-        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
-        let transcript = crate::transcript::resolve_transcript(
-            &request.context,
-            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
-            crate::transcript::TranscriptProjection::NativeOrCollapse,
-        )
-        .expect("native-or-collapse projection never fails");
-        let transcript = transcript.as_ref();
-        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
-        let current_tools = crate::transcript::get_current_tools(transcript.messages());
-        // Task 20.11 (AIR-040, fail-closed): a require intent on a wire
-        // without strict projection fails typed before dispatch.
-        crate::constrained_sampling::assert_supported_constraints(&current_tools, false).map_err(
-            |error| {
-                crate::provider::ProviderError::Config(
-                    crate::provider::ProviderErrorSummary::sanitized(error.detail()),
-                )
-            },
+        let selected_model = self.models.iter().find(|model| model.id == model_id);
+        let projection = crate::transcript::compile_request_projection(
+            request,
+            &self.provider_id,
+            selected_model,
+            self.wire,
         )?;
+        let transcript = projection.transcript.as_ref();
+        let system_prompt = crate::transcript::get_initial_system_message(transcript.messages())
+            .map(crate::transcript::system_message_text)
+            .unwrap_or_default();
+        let current_tools = projection.tools.request_tools.clone();
+        let wire_tools = compile_chat_tools(transcript.messages(), &current_tools, &compat)?;
+        let grammar_properties = wire_tools
+            .as_ref()
+            .map(|tools| tools.grammar_input_properties.clone())
+            .unwrap_or_default();
 
         // Canonical replay projection (task 20.7) before body building.
-        let replay = crate::replay::project_replay(
-            &crate::transcript::without_initial_system_message(transcript.messages()),
-            &crate::replay::ReplayRoute {
-                wire: crate::model_info::WireApi::OpenAiCompletions,
-                provider: self.provider_id.clone(),
-                model: model_id.to_owned(),
-                supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
-            },
-            crate::replay::ReplayProjection::NativeOrCollapse,
-        )?;
+        let replay = &projection.replay;
         let mut body = serde_json::json!({
             "model": self.wire_model_override.as_deref().unwrap_or(model_id),
             "stream": true,
@@ -1568,7 +1790,8 @@ impl OpenAiChatProvider {
                 instruction_role,
                 &compat,
                 model_reasoning,
-            ),
+                &grammar_properties,
+            )?,
         });
 
         if compat.usage_in_stream.unwrap_or(true) {
@@ -1584,7 +1807,9 @@ impl OpenAiChatProvider {
             body["store"] = serde_json::Value::Bool(false);
         }
 
-        if let Some(max_tokens) = request.max_tokens {
+        if let Some(max_tokens) = request.max_tokens
+            && max_tokens != 0
+        {
             let field = compat
                 .max_tokens_field
                 .as_deref()
@@ -1596,26 +1821,10 @@ impl OpenAiChatProvider {
         {
             body["temperature"] = serde_json::Value::Number(n);
         }
-        if !current_tools.is_empty() {
-            body["tools"] = serde_json::Value::Array(
-                current_tools
-                    .iter()
-                    .map(|t| {
-                        let mut function = serde_json::json!({
-                            "name": t.name,
-                            "description": t.description,
-                            "parameters": t.input_schema,
-                        });
-                        if compat.strict_tool_schema {
-                            function["strict"] = serde_json::Value::Bool(true);
-                        }
-                        serde_json::json!({
-                            "type": "function",
-                            "function": function,
-                        })
-                    })
-                    .collect(),
-            );
+        if let Some(tools) = wire_tools
+            && !tools.tools.is_empty()
+        {
+            body["tools"] = serde_json::Value::Array(tools.tools);
         }
         if !request.stop_sequences.is_empty() {
             body["stop"] = serde_json::Value::Array(
@@ -1662,13 +1871,34 @@ impl OpenAiChatProvider {
             {
                 body["prompt_cache_key"] = serde_json::Value::String(cache_key.clone());
             }
-            if self.direct_prompt_cache_key
+            let long_cache = request.cache_retention == CacheRetention::Long
+                && compat.supports_long_cache_retention.unwrap_or(true);
+            if (self.direct_prompt_cache_key || long_cache)
                 && let Some(session_id) = request.session_id.as_deref()
                 && !session_id.is_empty()
             {
                 body["prompt_cache_key"] =
                     serde_json::Value::String(session_id.chars().take(64).collect());
             }
+            if long_cache {
+                body["prompt_cache_retention"] = serde_json::json!("24h");
+            }
+            if compat.cache_control_format == Some(crate::model_info::CacheControlFormat::Anthropic)
+            {
+                let mut marker = serde_json::json!({"type":"ephemeral"});
+                if long_cache {
+                    marker["ttl"] = serde_json::json!("1h");
+                }
+                apply_chat_cache_control(&mut body, &marker);
+            }
+        }
+        if let Some(routing) = &compat.open_router_routing {
+            body["provider"] = serde_json::to_value(routing).expect("typed routing serializes");
+        }
+        if let Some(routing) = &compat.vercel_gateway_routing
+            && (routing.only.is_some() || routing.order.is_some())
+        {
+            body["providerOptions"] = serde_json::json!({"gateway":routing});
         }
         // Last so model and request sampling parameters override named
         // request fields (model base < effective level < request, per key).
@@ -1756,6 +1986,8 @@ impl OpenAiChatProvider {
         auth_invalid_policy: AuthInvalidPolicy,
         chat_completions_path: String,
         requested_model: String,
+        compat: CompatConfig,
+        tool_metadata: Option<crate::openai_responses_shared::ResponsesWireTools>,
         extra_headers: Vec<(String, String)>,
         body: &serde_json::Value,
         cancel: CancellationToken,
@@ -1850,7 +2082,7 @@ impl OpenAiChatProvider {
         let mut buffer = String::new();
         let mut decoder = crate::text_decode::StreamTextDecoder::new();
         // AIR-061: monotonic duration from response-stream activation (first
-        // body bytes) to terminal; setup time before activation stays untimed.
+        // body poll) to terminal; setup time before activation stays untimed.
         let mut response_activated_at: Option<std::time::Instant> = None;
         let mut mapper = OpenAiChatMapper::new(
             crate::ApiKind::OpenAi,
@@ -1859,6 +2091,7 @@ impl OpenAiChatProvider {
             &requested_model,
         );
 
+        mapper.set_tool_metadata(tool_metadata);
         mapper.set_snapshot(snapshot);
         callbacks
             .notify_response_async(status.as_u16(), &observed_headers)
@@ -1870,7 +2103,10 @@ impl OpenAiChatProvider {
                     _ = cancel.cancelled() => {
                         return Err(mapper.failure(ProviderError::Cancelled));
                     }
-                    chunk = byte_stream.next() => {
+                    chunk = async {
+                        response_activated_at.get_or_insert_with(std::time::Instant::now);
+                        byte_stream.next().await
+                    } => {
                         match chunk {
                             Some(c) => c,
                             None => break,
@@ -1887,9 +2123,6 @@ impl OpenAiChatProvider {
                         ProviderError::StreamError(ProviderErrorSummary::sanitized(e.to_string()))
                     }
                 })?;
-                if response_activated_at.is_none() {
-                    response_activated_at = Some(std::time::Instant::now());
-                }
                 buffer.push_str(&decoder.push(&chunk));
 
                 for (parsed, raw) in drain_sse_events(&mut buffer) {
@@ -1928,11 +2161,13 @@ impl OpenAiChatProvider {
 
             let eof_tail = decoder.finish();
             buffer.push_str(&eof_tail);
-            if let Some(done) = mapper.flush_pending_done() {
-                if let Ok(done) = Self::stamp_chat_done_duration(Ok(done), response_activated_at) {
-                    let _ = send_or_cancel(&cancel, tx, Ok(done)).await;
+            for item in mapper.finish_eof(compat.supports_finish_reason.unwrap_or(true)) {
+                let item = Self::stamp_chat_done_duration(item, response_activated_at);
+                if !send_or_cancel(&cancel, tx, item).await? {
+                    return Ok(());
                 }
-            } else if !mapper.saw_done {
+            }
+            if !mapper.saw_done {
                 let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
                     "stream ended without a terminal event",
                 ));
@@ -1952,7 +2187,19 @@ impl OpenAiChatProvider {
 
 fn drain_sse_events(buffer: &mut String) -> Vec<(ParsedEvent, Option<serde_json::Value>)> {
     if buffer.contains('\r') {
+        // A trailing CR after data may be the first half of a split CRLF.
+        // A CR ending a blank line already completes a frame; a later LF is
+        // only an empty delimiter and cannot split that frame's data lines.
+        let pending_cr = buffer
+            .strip_suffix('\r')
+            .is_some_and(|prefix| !prefix.ends_with(['\r', '\n']));
+        if pending_cr {
+            buffer.pop();
+        }
         *buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
+        if pending_cr {
+            buffer.push('\r');
+        }
     }
 
     let mut events = Vec::new();
@@ -2083,7 +2330,7 @@ fn apply_chat_thinking_projection(
         }
         Format::ChatTemplate if model_reasoning => {
             let values = resolve_chat_template_values(
-                &compat.chat_template_kwargs,
+                compat.chat_template_kwargs.as_ref(),
                 effort,
                 mapped,
                 thinking_budget,
@@ -2094,7 +2341,7 @@ fn apply_chat_thinking_projection(
         }
         Format::Baseten if model_reasoning => {
             let values = resolve_chat_template_values(
-                &compat.chat_template_args,
+                compat.chat_template_args.as_ref(),
                 effort,
                 mapped,
                 thinking_budget,
@@ -2199,22 +2446,22 @@ fn apply_chat_thinking_projection(
     if compat.zai_tool_stream && has_tools {
         body["tool_stream"] = serde_json::Value::Bool(true);
     }
-    if let Some(priority) = compat.vllm_priority {
-        body["priority"] = serde_json::Value::Number(priority.into());
+    if let Some(priority) = &compat.vllm_priority {
+        body["priority"] = serde_json::Value::Number(priority.clone());
     }
 }
 
 /// Resolve `chat_template_kwargs`/`args` values against the request intent;
 /// unset resolutions (for example a missing budget) drop the key entirely.
 fn resolve_chat_template_values(
-    values: &std::collections::BTreeMap<String, crate::model_info::ChatTemplateKwargValue>,
+    values: Option<&std::collections::BTreeMap<String, crate::model_info::ChatTemplateKwargValue>>,
     effort: Option<crate::model_info::ThinkingLevel>,
     mapped: impl Fn(crate::model_info::ThinkingLevel) -> Option<String>,
     thinking_budget: Option<u64>,
 ) -> serde_json::Map<String, serde_json::Value> {
     use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
     let mut resolved = serde_json::Map::new();
-    for (key, value) in values {
+    for (key, value) in values.into_iter().flatten() {
         let resolved_value = match value {
             ChatTemplateKwargValue::Literal(literal) => Some(literal.clone()),
             ChatTemplateKwargValue::Var { var, omit_when_off } => {
@@ -2254,7 +2501,8 @@ fn serialize_messages(
     instruction_role: &str,
     compat: &CompatConfig,
     model_reasoning: bool,
-) -> serde_json::Value {
+    grammar_properties: &HashMap<String, String>,
+) -> Result<serde_json::Value, ProviderError> {
     let mut result = Vec::new();
 
     let bridge_wire = compat.require_assistant_after_tool_result;
@@ -2355,6 +2603,23 @@ fn serialize_messages(
                             // replayed proposals ride their original text
                             // (malformed ones included), never a re-encoded
                             // or fabricated substitute (RP-08).
+                            if let Some(property) = grammar_properties.get(&tool_call.name) {
+                                let input =
+                                    serde_json::from_str::<serde_json::Value>(&tool_call.arguments)
+                                        .ok()
+                                        .and_then(|arguments| {
+                                            arguments
+                                                .get(property)
+                                                .and_then(serde_json::Value::as_str)
+                                                .map(str::to_owned)
+                                        })
+                                        .unwrap_or_default();
+                                tool_calls_json.push(serde_json::json!({
+                                    "id":tool_call.id,"type":"custom",
+                                    "custom":{"name":tool_call.name,"input":input}
+                                }));
+                                continue;
+                            }
                             tool_calls_json.push(serde_json::json!({
                                 "id": tool_call.id,
                                 "type": "function",
@@ -2396,7 +2661,6 @@ fn serialize_messages(
                 } else {
                     serde_json::Value::Null
                 };
-                let mut reasoning_field_sent = false;
                 if !thinking_blocks.is_empty() && thinking_as_text {
                     // Convert thinking to plain text (no tags, so the model
                     // does not mimic markup).
@@ -2421,7 +2685,7 @@ fn serialize_messages(
                     assistant_msg["content"] = serde_json::Value::String(assistant_text.clone());
                 }
 
-                if !thinking_blocks.is_empty() && reasoning_details.is_none() {
+                if !thinking_as_text && !thinking_blocks.is_empty() && reasoning_details.is_none() {
                     let joined = thinking_blocks
                         .iter()
                         .map(|(thinking, _)| *thinking)
@@ -2435,29 +2699,20 @@ fn serialize_messages(
                         )
                     {
                         assistant_msg[signature] = serde_json::Value::String(joined);
-                        reasoning_field_sent = true;
                     }
                 }
                 if let Some(details) = reasoning_details {
                     // Structured replay data can be the only contents of a
                     // signed thinking block; it does not require visible text.
                     assistant_msg["reasoning_details"] = details;
-                    reasoning_field_sent = true;
                 }
 
                 if !tool_calls_json.is_empty() {
                     assistant_msg["tool_calls"] = serde_json::Value::Array(tool_calls_json);
-                    // Text produced in the same turn stays visible alongside
-                    // its tool calls (AIR-012/RP-03 representable-order rule).
-                    if !assistant_text.is_empty() {
-                        assistant_msg["content"] =
-                            serde_json::Value::String(assistant_text.clone());
-                    }
                 }
 
                 if reasoning_content_assistant
                     && model_reasoning
-                    && !reasoning_field_sent
                     && assistant_msg.get("reasoning_content").is_none()
                 {
                     assistant_msg["reasoning_content"] = serde_json::Value::String(String::new());
@@ -2477,9 +2732,17 @@ fn serialize_messages(
                 result.push(assistant_msg);
                 last_role = Some("assistant");
             }
-            crate::message::Message::System(_) => {
-                // Unreachable after collapse + without_initial_system_message.
-                unreachable!("system messages are projected out of the body list")
+            crate::message::Message::System(system) => {
+                if compat.supports_mid_convo_tool_additions.unwrap_or(false)
+                    && !system.tools_added.is_empty()
+                {
+                    let tools = convert_chat_tools(&system.tools_added, compat)?.tools;
+                    result.push(serde_json::json!({"role":"system","tools":tools}));
+                }
+                let text = crate::transcript::render_system_message_update(system);
+                if !text.is_empty() {
+                    result.push(serde_json::json!({"role":instruction_role,"content":text}));
+                }
             }
             crate::message::Message::ToolResult(_) => {
                 // Consecutive tool results serialize as one run: each keeps a
@@ -2561,7 +2824,98 @@ fn serialize_messages(
         index += 1;
     }
 
-    serde_json::Value::Array(result)
+    Ok(serde_json::Value::Array(result))
+}
+
+fn nest_chat_tool(mut tool: serde_json::Value) -> serde_json::Value {
+    let kind = tool["type"].as_str().unwrap_or("function").to_owned();
+    tool.as_object_mut()
+        .expect("compiled tool object")
+        .remove("type");
+    let key = if kind == "custom" {
+        "custom"
+    } else {
+        "function"
+    };
+    serde_json::json!({"type":kind,key:tool})
+}
+
+fn chat_tool_options(
+    compat: &CompatConfig,
+) -> crate::openai_responses_shared::ResponsesToolOptions {
+    crate::openai_responses_shared::ResponsesToolOptions {
+        default_strict: Some(false),
+        supports_strict_mode: compat.strict_tool_schema,
+        supports_grammar_tools: compat.supports_grammar_tools.unwrap_or(false),
+    }
+}
+
+fn convert_chat_tools(
+    tools: &[crate::message::ToolDef],
+    compat: &CompatConfig,
+) -> Result<crate::openai_responses_shared::ResponsesWireTools, ProviderError> {
+    let mut compiled =
+        crate::openai_responses_shared::convert_responses_tools(tools, chat_tool_options(compat))?;
+    compiled.tools = compiled.tools.into_iter().map(nest_chat_tool).collect();
+    Ok(compiled)
+}
+
+fn compile_chat_tools(
+    messages: &[crate::message::Message],
+    request_tools: &[crate::message::ToolDef],
+    compat: &CompatConfig,
+) -> Result<Option<crate::openai_responses_shared::ResponsesWireTools>, ProviderError> {
+    let compiled = crate::openai_responses_shared::compile_projected_response_tools(
+        messages,
+        request_tools,
+        chat_tool_options(compat),
+    )?;
+    Ok(compiled.map(|mut tools| {
+        tools.tools = tools.tools.into_iter().map(nest_chat_tool).collect();
+        tools
+    }))
+}
+
+fn apply_chat_cache_control(body: &mut serde_json::Value, marker: &serde_json::Value) {
+    fn mark_text(message: &mut serde_json::Value, marker: &serde_json::Value) -> bool {
+        if let Some(text) = message["content"].as_str() {
+            if text.is_empty() {
+                return false;
+            }
+            message["content"] =
+                serde_json::json!([{"type":"text","text":text,"cache_control":marker}]);
+            return true;
+        }
+        if let Some(parts) = message["content"].as_array_mut()
+            && let Some(part) = parts.iter_mut().rev().find(|part| part["type"] == "text")
+        {
+            part["cache_control"] = marker.clone();
+            return true;
+        }
+        false
+    }
+    if let Some(tools) = body["tools"].as_array_mut()
+        && let Some(last) = tools.last_mut()
+    {
+        last["cache_control"] = marker.clone();
+    }
+    if let Some(messages) = body["messages"].as_array_mut() {
+        if let Some(first) = messages
+            .iter_mut()
+            .find(|message| matches!(message["role"].as_str(), Some("system" | "developer")))
+        {
+            mark_text(first, marker);
+        }
+        for message in messages.iter_mut().rev() {
+            if matches!(
+                message["role"].as_str(),
+                Some("user" | "assistant" | "tool")
+            ) && mark_text(message, marker)
+            {
+                break;
+            }
+        }
+    }
 }
 
 impl Provider for OpenAiChatProvider {
@@ -2584,6 +2938,7 @@ impl Provider for OpenAiChatProvider {
     ) -> EventStream {
         let mut configured = self.clone();
         configured.models = vec![model];
+        configured.catalog_compat = true;
         configured.native_options = Some(OpenAiCompletionsOptions::from_simple(&options));
 
         configured.stream_resource_attempt(request, auth, attempt, resources)
@@ -2594,200 +2949,241 @@ impl Provider for OpenAiChatProvider {
         mut request: Request,
         resolved: crate::auth::ResolvedAuth,
     ) -> EventStream {
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model);
-        let selected_base = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.as_deref())
-            .unwrap_or(&self.base_url);
-        let effective_base =
-            crate::auth::builtin::effective_base_url(&self.provider_id, selected_base, &resolved);
-        if effective_base != selected_base {
-            let mut configured = self.clone();
-            if let Some(model) = configured
+        let projection = /* frozen call */ match crate::provider::request_projection(self, &request, self.wire) {
+            Ok(facts) => facts,
+            Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
+        };
+        let event_projection = projection.clone();
+        crate::stream::project_call(event_projection, || -> EventStream {
+            let model_id = request
+                .model
+                .split_once(':')
+                .map(|(_, id)| id)
+                .unwrap_or(&request.model);
+            let selected_base = self
                 .models
-                .iter_mut()
+                .iter()
                 .find(|model| model.id == model_id)
-            {
-                model.base_url = Some(effective_base);
-            } else {
-                configured.base_url = effective_base;
-            }
-            return configured.stream_prepared(request, resolved);
-        }
-        request.callbacks = request.callbacks.ensure_call_scope();
-        // Same as `stream` but skips per-call auth resolution: the collection
-        // resolved and froze authentication once for the logical call.
-        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
-            return Box::pin(stream::once(async move { Err(error) }));
-        }
-        let default_base_url = self.base_url.clone();
-        let provider_id = self.provider_id.clone();
-        let auth_invalid_policy = self.auth_invalid_policy;
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, model_id)| model_id)
-            .unwrap_or(&request.model);
-        let model = self.models.iter().find(|model| model.id == model_id);
-        let model_base_url = model.and_then(|model| model.base_url.clone());
-        let chat_completions_path = self.resolve_compat(model_id).chat_completions_path;
-        let mut extra_headers = self.route_headers.clone();
-        let copilot_headers = if self.copilot_initiator {
-            match github_copilot_route_headers(&request) {
-                Ok(mut extra_headers) => {
-                    let initiator = github_copilot_initiator(&request);
-                    extra_headers.push(("X-Initiator".into(), initiator.into()));
-                    Ok(extra_headers)
-                }
-                Err(error) => Err(error),
-            }
-        } else {
-            Ok(Vec::new())
-        };
-        if self
-            .resolve_compat(model_id)
-            .send_session_affinity_headers
-            .unwrap_or(false)
-            && request.cache_retention != CacheRetention::Disabled
-            && let Some(session_id) = request.session_id.as_deref()
-            && !session_id.is_empty()
-        {
-            const AFFINITY_HEADERS: [&str; 3] =
-                ["session_id", "x-client-request-id", "x-session-affinity"];
-            extra_headers.retain(|(name, _)| {
-                !AFFINITY_HEADERS
-                    .iter()
-                    .any(|managed| name.eq_ignore_ascii_case(managed))
-            });
-            let clamped: String = session_id.chars().take(64).collect();
-            extra_headers.extend(
-                AFFINITY_HEADERS
-                    .into_iter()
-                    .map(|name| (name.into(), clamped.clone())),
+                .and_then(|model| model.base_url.as_deref())
+                .unwrap_or(&self.base_url);
+            let effective_base = crate::auth::builtin::effective_base_url(
+                &self.provider_id,
+                selected_base,
+                &resolved,
             );
-        }
-        let extra_headers = copilot_headers.and_then(|copilot_headers| {
-            extra_headers.extend(copilot_headers);
-            self.headers.merge_model_request(
-                self.models
-                    .iter()
+            if effective_base != selected_base {
+                let mut configured = self.clone();
+                if let Some(model) = configured
+                    .models
+                    .iter_mut()
                     .find(|model| model.id == model_id)
-                    .map(|model| model.headers.as_slice())
-                    .unwrap_or_default(),
-                &extra_headers,
-                &request.extra_headers,
+                {
+                    model.base_url = Some(effective_base);
+                } else {
+                    configured.base_url = effective_base;
+                }
+                return configured.stream_prepared(request, resolved);
+            }
+            request.callbacks = request.callbacks.ensure_call_scope();
+            // Same as `stream` but skips per-call auth resolution: the collection
+            // resolved and froze authentication once for the logical call.
+            if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+                return Box::pin(stream::once(async move { Err(error) }));
+            }
+            let default_base_url = self.base_url.clone();
+            let provider_id = self.provider_id.clone();
+            let auth_invalid_policy = self.auth_invalid_policy;
+            let model_id = request
+                .model
+                .split_once(':')
+                .map(|(_, model_id)| model_id)
+                .unwrap_or(&request.model);
+            let model = self.models.iter().find(|model| model.id == model_id);
+            let model_base_url = model.and_then(|model| model.base_url.clone());
+            let compat = self.resolve_compat(model_id);
+            let chat_completions_path = compat.chat_completions_path.clone();
+            let tool_metadata = match crate::transcript::compile_request_projection(
+                &request,
+                &self.provider_id,
+                model,
+                self.wire,
             )
-        });
-        let timeout = request.timeout;
-        let body = match self.build_request_body(&request) {
-            Ok(body) => body,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        let callbacks = request.callbacks.clone();
-        let requested_model = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model)
-            .to_owned();
-        let cancel = request.cancel.clone();
-        // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
-        // task runs under the captured parent/Dispatch when provided; omission
-        // observes nothing. Full cross-path proof closes in 20.55.
-        let telemetry = request.telemetry_context.clone();
-        let http_client = self.client.client().clone();
-
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let tx_closed = tx.clone();
-        let producer_cancel = cancel.clone();
-        let stream_cancel = cancel.clone();
-
-        let producer = async move {
-            let work = async {
-                let extra_headers = match extra_headers {
-                    Ok(headers) => headers,
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                        return;
+            .and_then(|compiled| {
+                compile_chat_tools(
+                    compiled.transcript.messages(),
+                    &compiled.tools.request_tools,
+                    &compat,
+                )
+            }) {
+                Ok(tools) => tools,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
+            let mut extra_headers = self.route_headers.clone();
+            let copilot_headers = if self.copilot_initiator {
+                match github_copilot_route_headers(&request) {
+                    Ok(mut extra_headers) => {
+                        let initiator = github_copilot_initiator(&request);
+                        extra_headers.push(("X-Initiator".into(), initiator.into()));
+                        Ok(extra_headers)
                     }
+                    Err(error) => Err(error),
+                }
+            } else {
+                Ok(Vec::new())
+            };
+            if compat.send_session_affinity_headers.unwrap_or(false)
+                && let Some(session_id) = request.session_id.as_deref()
+                && !session_id.is_empty()
+            {
+                const AFFINITY_HEADERS: [&str; 4] = [
+                    "session_id",
+                    "x-client-request-id",
+                    "x-session-affinity",
+                    "x-session-id",
+                ];
+                extra_headers.retain(|(name, _)| {
+                    !AFFINITY_HEADERS
+                        .iter()
+                        .any(|managed| name.eq_ignore_ascii_case(managed))
+                });
+                let selected: &[&str] = match compat
+                    .session_affinity_format
+                    .unwrap_or(crate::model_info::SessionAffinityFormat::OpenAi)
+                {
+                    crate::model_info::SessionAffinityFormat::OpenAi => {
+                        &["session_id", "x-client-request-id", "x-session-affinity"]
+                    }
+                    crate::model_info::SessionAffinityFormat::OpenAiNoSession => {
+                        &["x-client-request-id", "x-session-affinity"]
+                    }
+                    crate::model_info::SessionAffinityFormat::OpenRouter => &["x-session-id"],
                 };
-                let extra_headers =
-                    match callbacks.apply_header_transform_async(&extra_headers).await {
+                extra_headers.extend(
+                    selected
+                        .iter()
+                        .map(|name| ((*name).into(), session_id.to_owned())),
+                );
+            }
+            let extra_headers = copilot_headers.and_then(|copilot_headers| {
+                extra_headers.extend(copilot_headers);
+                self.headers.merge_model_request(
+                    self.models
+                        .iter()
+                        .find(|model| model.id == model_id)
+                        .map(|model| model.headers.as_slice())
+                        .unwrap_or_default(),
+                    &extra_headers,
+                    &request.extra_headers,
+                )
+            });
+            let timeout = request.timeout;
+            let body = match self.build_request_body(&request) {
+                Ok(body) => body,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
+
+            let callbacks = request.callbacks.clone();
+            let requested_model = request
+                .model
+                .split_once(':')
+                .map(|(_, id)| id)
+                .unwrap_or(&request.model)
+                .to_owned();
+            let cancel = request.cancel.clone();
+            // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
+            // task runs under the captured parent/Dispatch when provided; omission
+            // observes nothing. Full cross-path proof closes in 20.55.
+            let telemetry = request.telemetry_context.clone();
+            let http_client = self.client.client().clone();
+
+            let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            let producer_snapshot = snapshot.clone();
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+            let tx_closed = tx.clone();
+            let producer_cancel = cancel.clone();
+            let stream_cancel = cancel.clone();
+
+            let producer = async move {
+                let work = async {
+                    let extra_headers = match extra_headers {
                         Ok(headers) => headers,
                         Err(error) => {
                             let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
                             return;
                         }
                     };
-                let body = match callbacks
-                    .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                    let extra_headers =
+                        match callbacks.apply_header_transform_async(&extra_headers).await {
+                            Ok(headers) => headers,
+                            Err(error) => {
+                                let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                                return;
+                            }
+                        };
+                    let body = match callbacks
+                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                        .await
+                        .and_then(|body| {
+                            crate::callbacks::validate_openai_payload_shape(
+                                &body,
+                                crate::callbacks::OpenAiPayloadShape::Chat,
+                            )?;
+                            Ok(body)
+                        }) {
+                        Ok(body) => body,
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                            return;
+                        }
+                    };
+                    let base_url = crate::auth::builtin::effective_base_url(
+                        &provider_id,
+                        &model_base_url.unwrap_or(default_base_url),
+                        &resolved,
+                    );
+                    if let Err(e) = Self::stream_http(
+                        http_client,
+                        resolved,
+                        base_url,
+                        provider_id,
+                        auth_invalid_policy,
+                        chat_completions_path,
+                        requested_model,
+                        compat,
+                        tool_metadata,
+                        extra_headers,
+                        &body,
+                        cancel,
+                        timeout,
+                        callbacks,
+                        producer_snapshot,
+                        &tx,
+                    )
                     .await
-                    .and_then(|body| {
-                        crate::callbacks::validate_openai_payload_shape(
-                            &body,
-                            crate::callbacks::OpenAiPayloadShape::Chat,
-                        )?;
-                        Ok(body)
-                    }) {
-                    Ok(body) => body,
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                        return;
+                    {
+                        let _ = tx.send(Err(e)).await;
                     }
                 };
-                let base_url = crate::auth::builtin::effective_base_url(
-                    &provider_id,
-                    &model_base_url.unwrap_or(default_base_url),
-                    &resolved,
-                );
-                if let Err(e) = Self::stream_http(
-                    http_client,
-                    resolved,
-                    base_url,
-                    provider_id,
-                    auth_invalid_policy,
-                    chat_completions_path,
-                    requested_model,
-                    extra_headers,
-                    &body,
-                    cancel,
-                    timeout,
-                    callbacks,
-                    producer_snapshot,
-                    &tx,
-                )
-                .await
-                {
-                    let _ = tx.send(Err(e)).await;
+
+                tokio::select! {
+                    biased;
+                    _ = producer_cancel.cancelled() => (),
+                    _ = tx_closed.closed() => (),
+                    _ = work => {},
                 }
             };
-
-            tokio::select! {
-                biased;
-                _ = producer_cancel.cancelled() => (),
-                _ = tx_closed.closed() => (),
-                _ = work => {},
+            if let Some(context) = telemetry {
+                tokio::spawn(context.instrument(producer));
+            } else {
+                tokio::spawn(producer);
             }
-        };
-        if let Some(context) = telemetry {
-            tokio::spawn(context.instrument(producer));
-        } else {
-            tokio::spawn(producer);
-        }
 
-        Box::pin(CancelAwareReceiverStream::with_snapshot(
-            rx,
-            stream_cancel,
-            snapshot,
-        ))
+            Box::pin(CancelAwareReceiverStream::with_snapshot(
+                rx,
+                stream_cancel,
+                snapshot,
+            ))
+        })
     }
 
     fn id(&self) -> &str {
@@ -2919,6 +3315,7 @@ impl OpenAiCompletionsChatApi {
     ) -> OpenAiChatProvider {
         let mut provider = (*self.provider).clone();
         provider.models = vec![model];
+        provider.catalog_compat = true;
         provider.native_options = Some(options);
         provider
     }
@@ -2963,7 +3360,7 @@ impl crate::models::ChatApi<OpenAiCompletionsOptions> for OpenAiCompletionsChatA
     fn validate_native_request(
         &self,
         model: &ModelInfo,
-        _request: &Request,
+        request: &Request,
         options: &OpenAiCompletionsOptions,
     ) -> Result<(), crate::provider::ProviderError> {
         validate_complete_chat_record(model)?;
@@ -2985,7 +3382,8 @@ impl crate::models::ChatApi<OpenAiCompletionsOptions> for OpenAiCompletionsChatA
                 )),
             ));
         }
-        Ok(())
+        self.configured(model.clone(), options.clone())
+            .validate_tool_projection(model, request)
     }
 
     fn stream_prepared(
@@ -3064,4 +3462,54 @@ fn validate_complete_chat_record(model: &ModelInfo) -> Result<(), crate::provide
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod fragmented_sse_tests {
+    use super::*;
+
+    #[test]
+    fn multiline_frames_survive_every_line_ending_split() {
+        for newline in ["\n", "\r\n", "\r"] {
+            let wire = format!(
+                "data: {{\"id\":\"probe\",{newline}data: \"choices\":[{{\"index\":0,\"delta\":{{\"content\":\"hello\"}},\"finish_reason\":null}}]}}{newline}{newline}"
+            );
+            let mut expected = vec![
+                serde_json::json!({"id":"probe","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}),
+            ];
+            let expected_second =
+                serde_json::from_str(&expected[0].to_string().replace("hello", "world")).unwrap();
+            expected.push(expected_second);
+            let wire = format!("{wire}{}", wire.replace("hello", "world"));
+            for split in 0..=wire.len() {
+                let mut buffer = wire[..split].to_owned();
+                let mut actual = drain(&mut buffer);
+                buffer.push_str(&wire[split..]);
+                actual.extend(drain(&mut buffer));
+                assert_eq!(actual, expected, "newline={newline:?}, split={split}");
+            }
+            for width in [1, 2, 3, 5, 7] {
+                let mut buffer = String::new();
+                let mut actual = Vec::new();
+                for chunk in wire.as_bytes().chunks(width) {
+                    buffer.push_str(std::str::from_utf8(chunk).unwrap());
+                    actual.extend(drain(&mut buffer));
+                }
+                assert_eq!(actual, expected, "newline={newline:?}, width={width}");
+            }
+        }
+    }
+
+    fn drain(buffer: &mut String) -> Vec<serde_json::Value> {
+        drain_sse_events(buffer)
+            .into_iter()
+            .map(|(parsed, raw)| {
+                assert!(
+                    matches!(parsed, ParsedEvent::Valid(_)),
+                    "complete legal frame"
+                );
+                raw.unwrap()
+            })
+            .collect()
+    }
 }

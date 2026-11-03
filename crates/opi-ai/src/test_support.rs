@@ -307,6 +307,7 @@ impl MockProvider {
 /// Helper: build a base `AssistantMessage` for fixture construction.
 pub fn base_assistant() -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: vec![],
         api: crate::ApiKind::Anthropic,
         provider: "mock".into(),

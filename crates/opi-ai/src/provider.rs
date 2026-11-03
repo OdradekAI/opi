@@ -193,10 +193,13 @@ pub trait Provider: Send + Sync {
     ///
     /// Static providers return `Ok(None)`. Dynamic providers return
     /// `Ok(Some(models))` with the latest model list, or an explicit error.
-    /// The caller owns collection-level atomicity: it collects all provider
-    /// results and only replaces the registry-owned dynamic catalogs after
-    /// every provider succeeds.
-    fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
+    /// The context names the selected owner and forwards its optional force
+    /// choice. The caller owns collection-level publication: successful owners
+    /// publish through the store ACK while failed owners retain prior records.
+    fn refresh_models(
+        &self,
+        _context: crate::catalog::CatalogRefreshContext,
+    ) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
         Box::pin(async { Ok(None) })
     }
 }
@@ -249,6 +252,8 @@ pub enum TransportPreference {
 /// A single request to a provider.
 #[derive(Clone)]
 pub struct Request {
+    /// Frozen temporal and replay fidelity for this canonical input.
+    pub projection: crate::transcript::ProjectionOptions,
     pub model: String,
     /// Canonical normalized transcript (AIR-020): the system prompt and tool
     /// declarations live in the transcript's system messages, never in
@@ -456,6 +461,21 @@ pub fn validate_request_capabilities(
     validate_request_for_model(provider.id(), model, request)
 }
 
+pub(crate) fn request_projection(
+    provider: &dyn Provider,
+    request: &Request,
+    fallback_wire: crate::WireApi,
+) -> Result<crate::transcript::ProjectionFacts, ProviderError> {
+    let id = request
+        .model
+        .strip_prefix(&format!("{}:", provider.id()))
+        .unwrap_or(&request.model);
+    let model = provider.models().iter().find(|model| model.id == id);
+    let wire = model.map_or(fallback_wire, |model| model.wire_api);
+    crate::transcript::compile_request_projection(request, provider.id(), model, wire)
+        .map(|projection| projection.facts)
+}
+
 /// Validate a request against already-resolved model metadata.
 ///
 /// Dispatchers that resolve through a registry must use this entry point so
@@ -505,6 +525,24 @@ pub fn validate_request_structure_for_model(
                 compat_wire,
             },
             other => ProviderError::Config(ProviderErrorSummary::sanitized(other.to_string())),
+        })?;
+        let projection = crate::transcript::compile_request_projection(
+            request,
+            provider_id,
+            Some(model),
+            model.wire_api,
+        )?;
+        let declarations = projection
+            .transcript
+            .messages()
+            .iter()
+            .filter_map(|message| match message {
+                Message::System(system) => Some(system.tools_added.iter()),
+                _ => None,
+            })
+            .flatten();
+        crate::constrained_sampling::validate_required_shapes(declarations).map_err(|error| {
+            ProviderError::Config(ProviderErrorSummary::sanitized(error.detail()))
         })?;
     }
     Ok(())
@@ -570,21 +608,42 @@ fn validate_thinking_for_model(
 /// let leaked: &'static str = Box::leak(String::from("leaked-provider-canary").into_boxed_str());
 /// let _ = ProviderError::ProviderSide(leaked.into());
 /// ```
-#[derive(Clone, PartialEq, Eq, Hash, serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 #[serde(transparent)]
-pub struct ProviderErrorSummary(String);
+pub struct ProviderErrorSummary(
+    Box<str>,
+    #[serde(skip)] Option<std::sync::Arc<crate::transcript::TranscriptError>>,
+);
+
+impl PartialEq for ProviderErrorSummary {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl Eq for ProviderErrorSummary {}
+impl std::hash::Hash for ProviderErrorSummary {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.0, state);
+    }
+}
+
+impl std::error::Error for ProviderErrorSummary {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.1.as_deref().map(|source| source as _)
+    }
+}
 
 impl ProviderErrorSummary {
     const REDACTED: &'static str = "[REDACTED]";
 
     /// Construct the closed redacted-detail summary without accepting text.
     pub fn redacted() -> Self {
-        Self(Self::REDACTED.to_owned())
+        Self(Self::REDACTED.into(), None)
     }
 
     /// Construct the closed summary for credentials rejected by a provider.
     pub fn authentication_rejected() -> Self {
-        Self("provider rejected credentials".to_owned())
+        Self("provider rejected credentials".into(), None)
     }
 
     /// Replace an arbitrary upstream error payload with a stable safe summary.
@@ -609,12 +668,15 @@ impl ProviderErrorSummary {
     /// Public since task 20.51: functional-callback failures and advanced
     /// error constructors need the same redaction pipeline as adapters.
     pub fn sanitized(summary: impl AsRef<str>) -> Self {
-        Self(crate::http::safe_excerpt(summary.as_ref()))
+        Self(
+            crate::http::safe_excerpt(summary.as_ref()).into_boxed_str(),
+            None,
+        )
     }
 
     /// Construct from crate-owned, caller-attested static diagnostic text.
     pub(crate) fn attested_static(summary: &'static str) -> Self {
-        Self(summary.to_owned())
+        Self(summary.into(), None)
     }
 
     /// Construct a safe HTTP failure summary from status alone.
@@ -622,7 +684,21 @@ impl ProviderErrorSummary {
     /// Callers must not read a provider-controlled response body solely to
     /// construct this summary.
     pub(crate) fn from_http_response(status: u16) -> Self {
-        Self(format!("HTTP {status}: {}", Self::REDACTED))
+        Self(
+            format!("HTTP {status}: {}", Self::REDACTED).into_boxed_str(),
+            None,
+        )
+    }
+
+    pub(crate) fn unsupported_temporal(count: usize) -> Self {
+        let source = std::sync::Arc::new(
+            crate::transcript::TranscriptError::UnsupportedTemporalFidelity {
+                mid_convo_system_messages: count,
+            },
+        );
+        let mut summary = Self::sanitized(source.to_string());
+        summary.1 = Some(source);
+        summary
     }
 }
 
@@ -673,7 +749,7 @@ pub enum ProviderError {
     /// Adapter-owned canonical state at failure, consumed by `ChatStream`.
     #[doc(hidden)]
     #[error("{0}")]
-    StreamFailure(Box<ProviderStreamFailure>),
+    StreamFailure(#[source] Box<ProviderStreamFailure>),
     #[error("rate limited")]
     RateLimited { retry_after_ms: Option<u64> },
     #[error("request timed out")]
@@ -721,7 +797,7 @@ pub enum ProviderError {
     #[error("network error: {0}")]
     Network(ProviderErrorSummary),
     #[error("invalid provider configuration: {0}")]
-    Config(ProviderErrorSummary),
+    Config(#[source] ProviderErrorSummary),
     #[error("unknown model '{model_id}' for provider '{provider_id}'")]
     UnknownModel {
         provider_id: String,
@@ -764,23 +840,37 @@ pub enum ProviderError {
     Cancelled,
 }
 
-/// Internal transport for a mapper's latest state and its redacted cause.
+/// Retained call state and its typed, redacted cause.
 ///
-/// The fields and constructor are private: this is carried through the
-/// prepared-provider seam and unpacked before a public `CallFailure` is
-/// delivered. Its diagnostic formatting exposes only the typed cause.
+/// The fields and constructor are private. Advanced preparation failures may
+/// carry this through `ModelsError`; the ordinary stream collector converts it
+/// into `CallFailure`. Diagnostic formatting exposes only the typed cause.
 #[doc(hidden)]
 #[derive(Clone, PartialEq)]
 pub struct ProviderStreamFailure {
     message: crate::message::AssistantMessage,
     cause: ProviderError,
     response_received: bool,
+    // Preserve preparation cancellation origin independently of the caller token.
+    call_cancelled: bool,
 }
 
 impl ProviderStreamFailure {
+    /// Known canonical partial, including accepted projection facts. This
+    /// association does not establish dispatch or external acknowledgement.
+    pub fn message(&self) -> &crate::message::AssistantMessage {
+        &self.message
+    }
+
     /// The original typed classification, without the adapter-state envelope.
     pub fn cause(&self) -> &ProviderError {
         &self.cause
+    }
+}
+
+impl std::error::Error for ProviderStreamFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.cause)
     }
 }
 
@@ -797,6 +887,16 @@ impl std::fmt::Debug for ProviderStreamFailure {
 }
 
 impl ProviderError {
+    pub(crate) fn with_projection(mut self, facts: &crate::transcript::ProjectionFacts) -> Self {
+        if let Self::StreamFailure(failure) = &mut self {
+            failure.message.projection = Some(facts.clone());
+            return self;
+        }
+        let mut message = crate::stream::setup_failure_message(&self);
+        message.projection = Some(facts.clone());
+        self.with_partial(message)
+    }
+
     pub(crate) fn with_partial(self, message: crate::message::AssistantMessage) -> Self {
         match self {
             Self::StreamFailure(_) => self,
@@ -804,8 +904,23 @@ impl ProviderError {
                 message,
                 cause,
                 response_received: false,
+                call_cancelled: false,
             })),
         }
+    }
+
+    pub(crate) fn with_call_cancellation(mut self) -> Self {
+        if let Self::StreamFailure(failure) = &mut self
+            && matches!(failure.cause, Self::Cancelled)
+        {
+            failure.call_cancelled = true;
+        }
+        self
+    }
+
+    pub(crate) fn is_call_cancelled(&self) -> bool {
+        matches!(self, Self::StreamFailure(failure)
+            if failure.call_cancelled && matches!(failure.cause, Self::Cancelled))
     }
 
     /// Carry a transport handoff fact without changing the public cause or

@@ -108,11 +108,11 @@ pub fn estimate_message_tokens(message: &Message) -> u64 {
 /// (`reported`); unknown buckets are never filled with zero and child
 /// subsets are never added again.
 fn anchor_tokens(usage: &Usage) -> u64 {
-    if !usage.is_reported() {
-        return 0;
-    }
     if let Some(total) = usage.total_tokens.filter(|total| *total > 0) {
         return total;
+    }
+    if !usage.is_reported() {
+        return 0;
     }
     let sum = usage.bucket_total_tokens();
     if sum > 0 {

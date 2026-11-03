@@ -19,6 +19,7 @@ use opi_ai::stream::{StopReason, Usage};
 
 fn message(stop: StopReason, error: Option<&str>) -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: vec![AssistantContent::Text {
             text: "partial".into(),
             signature: None,
@@ -544,6 +545,7 @@ mod frozen_target_wire {
 
     pub(super) fn logical_request() -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "anthropic:claude-sonnet-4-5-20250514".into(),
             context: transcript::normalize_context(transcript::Context {

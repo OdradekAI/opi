@@ -1368,6 +1368,7 @@ async fn phase13_rpc_session_metadata_shape() {
             parent_id: Some("m1".into()),
             timestamp: ts.into(),
             message: Message::Assistant(AssistantMessage {
+                projection: None,
                 content: vec![AssistantContent::Text {
                     text: "trunk reply".into(),
                     signature: None,
@@ -1395,6 +1396,7 @@ async fn phase13_rpc_session_metadata_shape() {
             parent_id: Some("m1".into()),
             timestamp: ts.into(),
             message: Message::Assistant(AssistantMessage {
+                projection: None,
                 content: vec![AssistantContent::Text {
                     text: KEY_CANARY.into(),
                     signature: None,
@@ -5038,4 +5040,145 @@ async fn phase17_canary_is_absent_from_rpc_jsonl() {
 
     command_tx.send(RpcCommand::quit { id: None }).unwrap();
     let _ = task.await;
+}
+
+fn forwarding_projection_facts() -> opi_ai::transcript::ProjectionFacts {
+    use opi_ai::transcript::{
+        MessageRange, ProjectionFacts, ProjectionMode, SourcePrefix, TemporalProjectionFacts,
+    };
+    ProjectionFacts {
+        source_prefix: SourcePrefix {
+            message_count: 4,
+            sha256: "07".repeat(32),
+        },
+        temporal: TemporalProjectionFacts {
+            mode: ProjectionMode::Collapse,
+            affected_ranges: vec![MessageRange { start: 0, end: 3 }],
+        },
+        replay: opi_ai::replay::ReplayFacts { losses: vec![] },
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rpc_projection_facts_match_executed_request_across_assistant_events() {
+    use opi_ai::transcript::{ProjectionFacts, ProjectionMode};
+    use sha2::Digest as _;
+    use std::collections::HashSet;
+
+    struct CapturingProvider {
+        inner: MockProvider,
+        calls: Arc<Mutex<Vec<Request>>>,
+    }
+    impl Provider for CapturingProvider {
+        fn id(&self) -> &str {
+            self.inner.id()
+        }
+        fn models(&self) -> &[ModelInfo] {
+            self.inner.models()
+        }
+        fn stream_prepared(
+            &self,
+            request: Request,
+            auth: opi_ai::auth::ResolvedAuth,
+        ) -> EventStream {
+            self.calls.lock().unwrap().push(request.clone());
+            self.inner.stream_prepared(request, auth)
+        }
+    }
+
+    // Execution forms new request facts even when a fixture began unknown or
+    // supplied unrelated synthetic facts. Historical forwarding is exercised
+    // separately at the SDK/session serde boundaries.
+    for projection in [Some(forwarding_projection_facts()), None] {
+        let mut response = text_response("answer");
+        for event in &mut response {
+            let message = match event {
+                AssistantStreamEvent::Start { partial }
+                | AssistantStreamEvent::TextDelta { partial, .. } => partial,
+                AssistantStreamEvent::Done { message, .. } => message,
+                _ => unreachable!("text_response event shape"),
+            };
+            message.projection = projection.clone();
+            for content in &mut message.content {
+                if let opi_ai::message::AssistantContent::Text { signature, .. } = content {
+                    *signature = Some("rpc-opaque-signature-canary".into());
+                }
+            }
+        }
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let provider = CapturingProvider {
+            inner: MockProvider::new("mock", vec![response]),
+            calls: calls.clone(),
+        };
+        let (command_tx, mut output_rx, task) = custom_provider_runner(provider);
+        assert_eq!(recv_rpc_line(&mut output_rx).await["type"], "rpc_ready");
+        command_tx
+            .send(RpcCommand::prompt {
+                id: Some("projection".into()),
+                message: "next".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            recv_response(&mut output_rx, "prompt").await["success"],
+            true
+        );
+        let mut snapshots = Vec::new();
+        loop {
+            let line = recv_rpc_line(&mut output_rx).await;
+            if line["type"] == "run_summary" {
+                break;
+            }
+            let kind = line["type"].as_str().unwrap_or("");
+            if line["message"]["role"] == "assistant"
+                && ["MessageStart", "MessageUpdate", "MessageEnd", "TurnEnd"].contains(&kind)
+            {
+                snapshots.push(line);
+            }
+        }
+        let terminal = snapshots
+            .iter()
+            .find(|line| line["type"] == "TurnEnd")
+            .expect("assistant terminal");
+        let expected = terminal["message"]["projection"].clone();
+        let facts: ProjectionFacts = serde_json::from_value(expected.clone())
+            .expect("executed request has known typed facts");
+        {
+            let captured = calls.lock().unwrap();
+            assert_eq!(captured.len(), 1);
+            let messages = captured[0].context.messages();
+            let hash: String = sha2::Sha256::digest(serde_json::to_vec(messages).unwrap())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            assert!(!messages.is_empty());
+            assert_eq!(facts.source_prefix.message_count, messages.len());
+            assert_eq!(facts.source_prefix.sha256, hash);
+            assert_eq!(facts.temporal.mode, ProjectionMode::Lossless);
+            assert!(facts.temporal.affected_ranges.is_empty());
+            assert!(facts.replay.losses.is_empty());
+        }
+        let mut seen = HashSet::new();
+        for line in snapshots {
+            let kind = line["type"].as_str().unwrap();
+            assert_eq!(line["message"]["projection"], expected, "{kind}");
+            if kind == "MessageUpdate" {
+                assert_eq!(line["assistant_event"]["partial"]["projection"], expected);
+            }
+            let encoded = serde_json::to_string(&line).unwrap();
+            assert!(!encoded.contains("rpc-opaque-signature-canary"));
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&encoded).unwrap(),
+                line
+            );
+            seen.insert(kind.to_owned());
+        }
+        assert_eq!(
+            seen.len(),
+            4,
+            "Start/Update/End/TurnEnd must all carry the same facts: {seen:?}"
+        );
+        command_tx.send(RpcCommand::quit { id: None }).unwrap();
+        assert_eq!(recv_response(&mut output_rx, "quit").await["success"], true);
+        assert_eq!(task.await.unwrap(), 0);
+    }
 }

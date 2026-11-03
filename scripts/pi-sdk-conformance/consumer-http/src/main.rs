@@ -16,7 +16,10 @@
 
 #![forbid(unsafe_code)]
 
-use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use futures_util::StreamExt;
 use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
@@ -105,7 +108,11 @@ impl RawServer {
     }
 }
 
-async fn serve_scripted(mut stream: TcpStream, stats: Arc<RawStats>, responder: Responder) -> std::io::Result<()> {
+async fn serve_scripted(
+    mut stream: TcpStream,
+    stats: Arc<RawStats>,
+    responder: Responder,
+) -> std::io::Result<()> {
     loop {
         let recorded = match read_request(&mut stream).await? {
             Some(request) => request,
@@ -148,7 +155,9 @@ async fn read_request(stream: &mut TcpStream) -> std::io::Result<Option<Recorded
     let mut authorization = None;
     let mut content_length = 0usize;
     for line in lines {
-        let Some((name, value)) = line.split_once(':') else { continue };
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
         match name.trim().to_ascii_lowercase().as_str() {
             "authorization" => authorization = Some(value.trim().to_owned()),
             "content-length" => content_length = value.trim().parse().unwrap_or(0),
@@ -163,11 +172,18 @@ async fn read_request(stream: &mut TcpStream) -> std::io::Result<Option<Recorded
         }
         taken += n;
     }
-    Ok(Some(RecordedRequest { method, target, authorization, content_length }))
+    Ok(Some(RecordedRequest {
+        method,
+        target,
+        authorization,
+        content_length,
+    }))
 }
 
 async fn start_raw(responder: Responder) -> RawServer {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind raw server");
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind raw server");
     let addr = listener.local_addr().expect("raw server address");
     let stats = Arc::new(RawStats::default());
     let server_stats = stats.clone();
@@ -191,7 +207,12 @@ async fn start_raw(responder: Responder) -> RawServer {
         connections.abort_all();
         while connections.join_next().await.is_some() {}
     });
-    RawServer { url: format!("http://{addr}"), stats, stop, task }
+    RawServer {
+        url: format!("http://{addr}"),
+        stats,
+        stop,
+        task,
+    }
 }
 
 fn sse_response() -> Vec<u8> {
@@ -213,7 +234,8 @@ fn sse_partial_response() -> Vec<u8> {
 }
 
 fn redirect_response(status: u16, location: &str) -> Vec<u8> {
-    format!("HTTP/1.1 {status} Moved\r\nlocation: {location}\r\ncontent-length: 0\r\n\r\n").into_bytes()
+    format!("HTTP/1.1 {status} Moved\r\nlocation: {location}\r\ncontent-length: 0\r\n\r\n")
+        .into_bytes()
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +244,7 @@ fn redirect_response(status: u16, location: &str) -> Vec<u8> {
 
 fn chat_request() -> Request {
     Request {
+        projection: Default::default(),
         model: "openai:gpt-4o".into(),
         context: transcript::normalize_context(transcript::Context {
             system_prompt: None,
@@ -262,22 +285,37 @@ fn registered_models(client: Arc<HttpClient>, base_url: &str) -> Models {
                 SecretString::from("pkg-consumer-key"),
             )),
             AuthProvenanceSource::Static,
-            opi_ai::models::CompatMetadata { openai_compatible: true, profile: None },
+            opi_ai::models::CompatMetadata {
+                openai_compatible: true,
+                profile: None,
+            },
         )
         .expect("route registration");
     models
 }
 
-async fn chat_call(server_url: &str, client: Arc<HttpClient>) -> Result<AssistantMessage, ProviderError> {
+async fn chat_call(
+    server_url: &str,
+    client: Arc<HttpClient>,
+) -> Result<AssistantMessage, ProviderError> {
     let models = registered_models(client, server_url);
-    let prepared = models.prepare_call("openai:gpt-4o", chat_request()).await.expect("call preparation");
+    let prepared = models
+        .prepare_call("openai:gpt-4o", chat_request())
+        .await
+        .expect("call preparation");
     let stream: EventStream = prepared.start_attempt().expect("attempt start");
-    ChatStream::new(stream).result().await.map_err(|failure| failure.into_parts().1)
+    ChatStream::new(stream)
+        .result()
+        .await
+        .map_err(|failure| failure.into_parts().1)
 }
 
 async fn chat_error(server_url: &str, client: Arc<HttpClient>) -> ProviderError {
     let models = registered_models(client, server_url);
-    let prepared = models.prepare_call("openai:gpt-4o", chat_request()).await.expect("call preparation");
+    let prepared = models
+        .prepare_call("openai:gpt-4o", chat_request())
+        .await
+        .expect("call preparation");
     let mut stream: EventStream = prepared.start_attempt().expect("attempt start");
     while let Some(item) = stream.next().await {
         if let Err(error) = item {
@@ -317,7 +355,11 @@ fn is_post_acceptance_stream_failure(error: &ProviderError) -> bool {
 
 #[tokio::main]
 async fn main() {
-    let profile = if cfg!(feature = "caller-union") { "caller-union" } else { "ordinary" };
+    let profile = if cfg!(feature = "caller-union") {
+        "caller-union"
+    } else {
+        "ordinary"
+    };
     let mut report: Vec<serde_json::Value> = Vec::new();
 
     // 1. The redirect policy is owned SDK surface with a declared default.
@@ -351,24 +393,35 @@ async fn main() {
         chat_call(&server.url, plain_client(RedirectPolicy::default())),
     )
     .await;
-    let message = outcome.expect("same-origin terminates").expect("same-origin round trip");
+    let message = outcome
+        .expect("same-origin terminates")
+        .expect("same-origin round trip");
     let requests = server.stats.requests();
     let same_origin_ok = message.response_id.as_deref() == Some("chatcmpl-pkg")
         && requests.len() == 2
         && requests[1].target == "/final"
         && requests.iter().all(|r| {
-            bearer_of(r) == Some("Bearer pkg-consumer-key") && r.method == "POST" && r.content_length > 0
+            bearer_of(r) == Some("Bearer pkg-consumer-key")
+                && r.method == "POST"
+                && r.content_length > 0
         });
     check(
         &mut report,
         "same-origin-redirect-preserves-authorization",
         same_origin_ok,
-        format!("sends={} hop2_target={:?}", requests.len(), requests.get(1).map(|r| r.target.clone())),
+        format!(
+            "sends={} hop2_target={:?}",
+            requests.len(),
+            requests.get(1).map(|r| r.target.clone())
+        ),
     );
     server.stop().await;
 
     // 3. Cross-origin redirect strips the protected authorization header.
-    let target = start_raw(Arc::new(|_: usize, _: &RecordedRequest| Script::coalesced(sse_response()))).await;
+    let target = start_raw(Arc::new(|_: usize, _: &RecordedRequest| {
+        Script::coalesced(sse_response())
+    }))
+    .await;
     let location = redirect_response(307, &format!("{}/v1/chat/completions", target.url));
     let origin = start_raw(Arc::new(move |_: usize, _: &RecordedRequest| {
         Script::coalesced(location.clone())
@@ -379,7 +432,9 @@ async fn main() {
         chat_call(&origin.url, plain_client(RedirectPolicy::default())),
     )
     .await;
-    let message = outcome.expect("cross-origin terminates").expect("cross-origin round trip");
+    let message = outcome
+        .expect("cross-origin terminates")
+        .expect("cross-origin round trip");
     let origin_requests = origin.stats.requests();
     let target_requests = target.stats.requests();
     let cross_ok = message.response_id.as_deref() == Some("chatcmpl-pkg")
@@ -425,7 +480,10 @@ async fn main() {
     // 5. Explicit proxy routing with a scoped bypass: through the proxy the
     //    request arrives in absolute form with the upstream Host; with the
     //    scoped no_proxy entry the proxy sees zero connections.
-    let target = start_raw(Arc::new(|_: usize, _: &RecordedRequest| Script::coalesced(sse_response()))).await;
+    let target = start_raw(Arc::new(|_: usize, _: &RecordedRequest| {
+        Script::coalesced(sse_response())
+    }))
+    .await;
     let target_addr: std::net::SocketAddr = target
         .url
         .trim_start_matches("http://")
@@ -507,7 +565,10 @@ async fn main() {
     let proxied = Arc::new(
         HttpClientBuilder::new()
             .max_idle_per_host(0)
-            .proxy(ProxyConfig { url: Some(format!("http://{proxy_addr}")), no_proxy: None })
+            .proxy(ProxyConfig {
+                url: Some(format!("http://{proxy_addr}")),
+                no_proxy: None,
+            })
             .build()
             .expect("proxied client"),
     );
@@ -561,12 +622,17 @@ async fn main() {
     target.stop().await;
 
     // 6. Typed acquisition failure and single-terminal EOF without retry.
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("reserve closed port");
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("reserve closed port");
     let closed = listener.local_addr().expect("closed address");
     drop(listener);
     let acquisition = tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        chat_error(&format!("http://{closed}"), plain_client(RedirectPolicy::default())),
+        chat_error(
+            &format!("http://{closed}"),
+            plain_client(RedirectPolicy::default()),
+        ),
     )
     .await
     .expect("acquisition failure terminates");
@@ -594,7 +660,10 @@ async fn main() {
     );
     eof_server.stop().await;
 
-    let failed = report.iter().filter(|c| !c["passed"].as_bool().unwrap_or(false)).count();
+    let failed = report
+        .iter()
+        .filter(|c| !c["passed"].as_bool().unwrap_or(false))
+        .count();
     println!(
         "{}",
         serde_json::json!({

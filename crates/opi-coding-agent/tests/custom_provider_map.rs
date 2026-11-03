@@ -256,7 +256,7 @@ send_session_id_header = false
         WireCompat::OpenAiResponses(ref compat)
             if compat.store == Some(false)
                 && compat.reasoning_effort.as_deref() == Some("high")
-                && compat.strict_tools
+                && compat.source.supports_strict_mode == Some(true)
                 && !compat.send_session_id_header
     ));
 }
@@ -631,6 +631,7 @@ max_output_tokens = 8192
         // SAFETY: serialized by ENV_MUTEX and restored by EnvVarGuard.
         unsafe { std::env::set_var(env_name, format!("token-{index}")) };
         let request = Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: format!("acme:{model}"),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -776,6 +777,7 @@ max_output_tokens = 8192
     .expect("custom provider builds with the stored credential present");
 
     let request = || Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "acme:chat".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -918,6 +920,7 @@ max_output_tokens = 8192
             .await
             .expect("production custom provider bundle");
             let request = Request {
+                projection: Default::default(),
                 transport: Default::default(),
                 model: format!("acme:{model}"),
                 context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -966,9 +969,13 @@ max_output_tokens = 8192
                 .await
                 .expect("auth failure stream item")
                 .expect_err("401/403 must fail");
+            let ProviderError::StreamFailure(failure) = &error else {
+                panic!("accepted projection retains failure facts: {error:?}");
+            };
+            assert!(failure.message().projection.is_some());
             assert!(
                 matches!(
-                    &error,
+                    failure.cause(),
                     ProviderError::AuthFailed(reason)
                         if reason == &ProviderErrorSummary::authentication_rejected()
                 ),
@@ -1079,6 +1086,7 @@ send_session_id_header = true
         ("enabled", "session-custom-enabled"),
     ] {
         let request = Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: format!("acme:{model}"),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1140,5 +1148,175 @@ send_session_id_header = true
         .get("x-client-request-id")
         .and_then(|value| value.to_str().ok())
         .expect("explicit opt-in request id");
-    assert_ne!(request_id, "session-custom-enabled");
+    assert_eq!(request_id, "session-custom-enabled");
+}
+
+#[tokio::test]
+async fn custom_responses_omitted_source_controls_keep_legacy_values_in_catalog_snapshots() {
+    let root = tempfile::tempdir().unwrap();
+    let path = write_config(
+        root.path(),
+        "config.toml",
+        r#"
+[providers.custom.acme]
+base_url = "http://127.0.0.1:1"
+api_key_env = "UNUSED_OFFLINE_KEY"
+auth_scheme = "bearer"
+[[providers.custom.acme.models]]
+id = "omitted"
+api = "openai-responses"
+context_window = 1000
+max_output_tokens = 100
+[[providers.custom.acme.models]]
+id = "empty"
+api = "openai-responses"
+context_window = 1000
+max_output_tokens = 100
+[providers.custom.acme.models.compat]
+api = "openai-responses"
+[[providers.custom.acme.models]]
+id = "false"
+api = "openai-responses"
+context_window = 1000
+max_output_tokens = 100
+[providers.custom.acme.models.compat]
+strict_tools = false
+[[providers.custom.acme.models]]
+id = "true"
+api = "openai-responses"
+context_window = 1000
+max_output_tokens = 100
+[providers.custom.acme.models.compat]
+strict_tools = true
+"#,
+    );
+    let config = load_config_file(&path).unwrap();
+    let models = config.providers.custom["acme"].models.clone();
+    let store = opi_ai::catalog::ModelsStore::open(root.path().join("models.json")).unwrap();
+    let entry = opi_ai::catalog::ModelsStoreEntry {
+        models: models.iter().cloned().map(Into::into).collect(),
+        ..Default::default()
+    };
+    store
+        .begin()
+        .commit(std::collections::HashMap::from([(
+            "acme".to_owned(),
+            entry,
+        )]))
+        .await
+        .unwrap();
+    let document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
+    for (index, model) in models.iter().enumerate() {
+        let strict = model.id == "true";
+        let WireCompat::OpenAiResponses(compat) = &model.compat else {
+            panic!("Responses compat")
+        };
+        assert_eq!(
+            compat.source.supports_strict_mode,
+            Some(strict),
+            "{}",
+            model.id
+        );
+        assert_eq!(
+            compat.source.supports_grammar_tools,
+            Some(false),
+            "{}",
+            model.id
+        );
+        assert_eq!(
+            compat.source.supports_mid_convo_effort,
+            Some(false),
+            "{}",
+            model.id
+        );
+        let frozen = &document["providers"]["acme"]["models"][index]["x-opi"]["compat"];
+        assert_eq!(frozen["strictTools"], strict);
+        assert_eq!(frozen["supportsOpenAIGrammarTools"], false);
+        assert_eq!(frozen["supportsMidConvoEffort"], false);
+        assert!(frozen["supportsMidConvoSystemMessages"].is_null());
+        assert!(frozen["supportsAdditionalTools"].is_null());
+        assert!(frozen["supportsToolSearch"].is_null());
+    }
+    let restored = opi_ai::catalog::ModelsStore::open(store.path())
+        .unwrap()
+        .snapshot();
+    for (expected, actual) in models.iter().zip(&restored.catalogs["acme"].models) {
+        let opi_ai::catalog::CatalogRecord::Chat(actual) = actual else {
+            panic!("chat record")
+        };
+        assert_eq!(expected.compat, actual.compat);
+    }
+}
+
+#[tokio::test]
+async fn custom_chat_host_integer_priorities_remain_exact_in_store_and_compiler() {
+    for priority in [0_i64, -7, i64::MAX] {
+        let root = tempfile::tempdir().unwrap();
+        let text = format!(
+            r#"
+[providers.custom.acme]
+base_url = "http://127.0.0.1:1"
+api_key_env = "UNUSED_PRIORITY_AUTH"
+auth_scheme = "bearer"
+[[providers.custom.acme.models]]
+id = "priority"
+api = "openai-completions"
+context_window = 1000
+max_output_tokens = 100
+[providers.custom.acme.models.compat]
+vllm_priority = {priority}
+"#
+        );
+        let config = load_config_file(&write_config(root.path(), "config.toml", &text)).unwrap();
+        let model = config.providers.custom["acme"].models[0].clone();
+        let store = opi_ai::catalog::ModelsStore::open(root.path().join("models.json")).unwrap();
+        store
+            .begin()
+            .commit(std::collections::HashMap::from([(
+                "acme".into(),
+                opi_ai::catalog::ModelsStoreEntry {
+                    models: vec![model.clone().into()],
+                    ..Default::default()
+                },
+            )]))
+            .await
+            .unwrap();
+        let document: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
+        assert_eq!(
+            document["providers"]["acme"]["models"][0]["x-opi"]["compat"]["vllmPriority"].as_i64(),
+            Some(priority)
+        );
+        let provider = opi_ai::openai_chat::OpenAiChatProvider::for_route(
+            Some("http://127.0.0.1:1".into()),
+            "acme".into(),
+            Default::default(),
+            vec![model],
+            std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+        );
+        let request = opi_ai::provider::Request {
+            model: "acme:priority".into(),
+            context: opi_ai::transcript::normalize_context(Default::default()).unwrap(),
+            max_tokens: Some(16),
+            temperature: None,
+            sampling_params: Default::default(),
+            thinking: Default::default(),
+            stop_sequences: vec![],
+            metadata: None,
+            cancel: Default::default(),
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention: Default::default(),
+            session_id: None,
+            telemetry_context: None,
+            callbacks: Default::default(),
+            projection: Default::default(),
+            transport: Default::default(),
+        };
+        assert_eq!(
+            provider.build_request_body(&request).unwrap()["priority"].as_i64(),
+            Some(priority)
+        );
+    }
 }

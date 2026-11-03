@@ -61,6 +61,7 @@ fn models(
 }
 fn request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "ignored".into(),
         context: opi_ai::transcript::normalize_context(Default::default()).unwrap(),

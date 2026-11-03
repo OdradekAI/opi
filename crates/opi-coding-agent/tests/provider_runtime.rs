@@ -108,6 +108,7 @@ fn model_info(id: &str) -> ModelInfo {
 
 fn request_for(model_spec: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model_spec.to_owned(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -236,8 +237,8 @@ async fn phase17_route_and_auth_failures_do_not_dispatch_model_http() {
         .expect_err("unauthenticated route must fail before dispatch");
     assert!(
         matches!(
-            err,
-            opi_ai::ModelsError::Provider(ProviderError::CredentialNeeded { .. })
+            &err,
+            opi_ai::ModelsError::Provider(error) if matches!(accepted_projection_cause(error),ProviderError::CredentialNeeded { provider_id } if provider_id == "beta")
         ),
         "unauthenticated route must surface the owning CredentialNeeded failure, got {err:?}"
     );
@@ -753,4 +754,14 @@ async fn phase17_noninteractive_runtime_preserves_the_active_route_resolver() {
     assert_eq!(result.exit_code, 0, "{}", result.stderr);
     assert_eq!(resolver_calls.load(Ordering::SeqCst), 1);
     runtime_evidence::clear_sessions_dir();
+}
+
+fn accepted_projection_cause(
+    error: &opi_ai::provider::ProviderError,
+) -> &opi_ai::provider::ProviderError {
+    let opi_ai::provider::ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection retains its cause and facts: {error:?}");
+    };
+    assert!(failure.message().projection.is_some());
+    failure.cause()
 }

@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 fn sample_assistant_message() -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: vec![AssistantContent::Text {
             text: "hello".into(),
             signature: None,
@@ -122,6 +123,7 @@ fn model_info_fields() {
 fn request_builds_with_all_fields() {
     let cancel = CancellationToken::new();
     let req = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -173,6 +175,7 @@ fn request_builds_with_all_fields() {
 fn request_cancellation_propagates() {
     let cancel = CancellationToken::new();
     let req = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "test".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -265,6 +268,7 @@ async fn custom_provider_untrusted_constructor_discards_error_payloads() {
     };
     let mut stream = provider.stream_prepared(
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "canary-errors:model".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -321,6 +325,7 @@ async fn provider_trait_yields_done_event() {
     let provider = DummyProvider;
     let cancel = CancellationToken::new();
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "test".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -379,7 +384,14 @@ fn provider_trait_has_no_complete_method() {
 #[tokio::test]
 async fn provider_refresh_models_default_returns_none() {
     let provider = DummyProvider;
-    let result = provider.refresh_models().await;
+    let result = provider
+        .refresh_models(opi_ai::catalog::CatalogRefreshContext {
+            allow_network: true,
+            force: None,
+            providers: [provider.id().to_owned()].into(),
+            cancel: tokio_util::sync::CancellationToken::new(),
+        })
+        .await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
 }

@@ -55,6 +55,7 @@ fn execute_weather_tool(call: &ToolCall) -> ToolOutcome {
 
 fn request_for(context: TranscriptContext) -> Request {
     Request {
+        projection: Default::default(),
         transport: TransportPreference::default(),
         model: MODEL_SPEC.into(),
         context,

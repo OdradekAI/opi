@@ -50,6 +50,7 @@ fn cache_retention_variants_exist() {
 fn request_new_scalars_default_to_none_empty() {
     let cancel = CancellationToken::new();
     let req = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "test".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -84,6 +85,7 @@ fn request_scalars_carry_explicit_values() {
     let timeout = Duration::from_secs(30);
     let headers = vec![("X-Test".to_string(), "value".to_string())];
     let req = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "test".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -188,12 +190,17 @@ async fn provider_timeout_produces_timeout_error() {
     let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
     let request = make_anthropic_request(cancel, Some(Duration::from_millis(100)));
 
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request.clone(), opi_ai::test_support::resolved_auth());
     let item = stream.next().await.unwrap();
-    match item {
+    match item
+        .as_ref()
+        .map_err(|error| accepted_failure_cause(error, &request))
+    {
         Err(ProviderError::Timeout) => {}
         other => panic!("expected Timeout, got {other:?}"),
     }
+    assert!(stream.next().await.is_none(), "timeout must be terminal");
 }
 
 #[tokio::test]
@@ -591,6 +598,7 @@ async fn session_affinity_wire_mappings() {
 
 fn make_anthropic_request(cancel: CancellationToken, timeout: Option<Duration>) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -620,6 +628,7 @@ fn make_anthropic_request(cancel: CancellationToken, timeout: Option<Duration>) 
 
 fn make_openai_chat_request(cancel: CancellationToken, session_id: Option<String>) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -675,6 +684,7 @@ fn request_body_json(request: &wiremock::Request) -> serde_json::Value {
 #[test]
 fn request_sampling_params_default_empty_and_carried() {
     let req = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "test".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -785,10 +795,15 @@ async fn header_transform_touching_protected_header_fails_typed_before_http() {
         Ok(out)
     }));
 
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut stream =
+        provider.stream_prepared(request.clone(), opi_ai::test_support::resolved_auth());
     let mut saw_callback_phase = false;
     while let Some(item) = stream.next().await {
-        if let Err(ProviderError::CallbackPhase(_)) = item {
+        if let Err(ref error) = item {
+            assert!(matches!(
+                accepted_failure_cause(error, &request),
+                ProviderError::CallbackPhase(_)
+            ));
             saw_callback_phase = true;
         }
     }
@@ -1430,4 +1445,36 @@ async fn payload_callback_freezes_once_across_ordinary_acquisition_retry() {
         second_body, first_body,
         "the ordinary retry reuses the frozen payload byte-for-byte"
     );
+}
+
+fn accepted_failure_cause<'a>(
+    error: &'a opi_ai::provider::ProviderError,
+    request: &opi_ai::provider::Request,
+) -> &'a opi_ai::provider::ProviderError {
+    use opi_ai::provider::ProviderError;
+    use sha2::Digest as _;
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let facts = failure
+        .message()
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+    failure.cause()
 }

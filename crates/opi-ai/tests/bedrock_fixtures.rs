@@ -238,7 +238,9 @@ mod builtin_routes {
                 .stream_prepared(request, auth),
         )
         .await;
-        assert!(matches!(result, Err(ProviderError::Config(_))));
+        assert!(
+            matches!(result, Err(ref error) if matches!(direct_error_cause(error), ProviderError::Config(_)))
+        );
         assert_eq!(callbacks.load(Ordering::SeqCst), 0);
         assert!(server.received_requests().await.unwrap().is_empty());
     }
@@ -657,6 +659,7 @@ fn test_auth() -> ResolvedAuth {
 
 fn text_stream_request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic.claude-sonnet-4-20250514-v2:0".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -688,6 +691,7 @@ fn text_stream_request() -> Request {
 
 fn tool_call_request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "anthropic.claude-sonnet-4-20250514-v2:0".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -756,6 +760,36 @@ async fn collect_events(
         }
     }
     events
+}
+
+fn direct_error_cause(error: &ProviderError) -> &ProviderError {
+    match error {
+        ProviderError::StreamFailure(failure) => failure.cause(),
+        other => other,
+    }
+}
+
+fn assert_direct_projection_prefix(message: &AssistantMessage, request: &Request) {
+    use sha2::Digest as _;
+    let facts = message
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
 }
 
 async fn collect_outcome(
@@ -874,6 +908,51 @@ async fn text_streaming_from_fixture() {
         matches!(last, AssistantStreamEvent::Done { .. }),
         "should end with Done"
     );
+}
+
+#[test]
+fn invalid_prelude_is_rejected_before_payload_wait() {
+    fn prelude(total_len: u32, headers_len: u32) -> Vec<u8> {
+        let mut bytes = Vec::from(total_len.to_be_bytes());
+        bytes.extend_from_slice(&headers_len.to_be_bytes());
+        let mut crc = !0u32;
+        for &byte in &bytes {
+            crc ^= u32::from(byte);
+            for _ in 0..8 {
+                crc = (crc >> 1) ^ (0xEDB8_8320 * (crc & 1));
+            }
+        }
+        bytes.extend_from_slice(&(!crc).to_be_bytes());
+        bytes
+    }
+
+    let mut bad_crc = prelude(u32::MAX, 0);
+    bad_crc[8] ^= 1;
+    for prefix in [bad_crc, prelude(15, 0), prelude(u32::MAX, u32::MAX)] {
+        for buffered in 12..=16 {
+            let mut bytes = prefix.clone();
+            bytes.resize(buffered, 0);
+            assert_eq!(
+                event_stream::parse_frames(&mut bytes),
+                Err(event_stream::FrameParseError::MalformedCompleteFrame),
+                "invalid prelude must fail with only {buffered} bytes buffered"
+            );
+        }
+    }
+}
+
+#[test]
+fn valid_prelude_remains_buffered_until_frame_complete() {
+    let frame = event_stream::build_test_frame("messageStart", "application/json", b"{}");
+    let expected = event_stream::parse_frames(&mut frame.clone()).unwrap();
+    for split in 0..frame.len() {
+        let mut buffer = frame[..split].to_vec();
+        assert!(event_stream::parse_frames(&mut buffer).unwrap().is_empty());
+        assert_eq!(buffer, frame[..split]);
+        buffer.extend_from_slice(&frame[split..]);
+        assert_eq!(event_stream::parse_frames(&mut buffer).unwrap(), expected);
+        assert!(buffer.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -1272,6 +1351,7 @@ fn bedrock_provider_accepts_shared_client() {
 async fn url_image_rejected_with_clear_error() {
     let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "bedrock:anthropic.claude-sonnet-4-20250514-v2:0".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1311,7 +1391,7 @@ async fn url_image_rejected_with_clear_error() {
     use futures_util::StreamExt;
     let events: Vec<_> = stream.collect().await;
     assert_eq!(events.len(), 1, "expected exactly one event");
-    match &events[0] {
+    match events[0].as_ref().map_err(direct_error_cause) {
         Err(ProviderError::UnsupportedCapability(msg)) => {
             assert!(
                 msg.contains("URL-sourced images are not supported"),
@@ -1324,6 +1404,7 @@ async fn url_image_rejected_with_clear_error() {
 
 fn assistant_call(id: &str, name: &str) -> Message {
     Message::Assistant(AssistantMessage {
+        projection: None,
         content: vec![AssistantContent::ToolCall {
             tool_call: ToolCall {
                 id: id.into(),
@@ -1574,6 +1655,7 @@ fn lifecycle_text_request() -> Request {
     // `anthropic.claude-sonnet-4` (family `anthropic`) and the request path
     // stays free of URL-encoded version colons.
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "bedrock:anthropic.claude-sonnet-4".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1893,7 +1975,10 @@ async fn auth_error_bodies_are_absent_from_public_errors() {
             .await
             .expect("auth failure should produce an event")
             .expect_err("auth failure should produce ProviderError");
-        assert!(matches!(error, ProviderError::AuthFailed(_)));
+        assert!(matches!(
+            direct_error_cause(&error),
+            ProviderError::AuthFailed(_)
+        ));
         let rendered = format!("{error} {error:?}");
         assert!(
             !rendered.contains(canary),
@@ -2030,7 +2115,9 @@ async fn request_timeout_maps_to_typed_timeout_at_bedrock_boundary() {
         .expect("Bedrock request timeout must resolve promptly")
         .expect("Bedrock timeout must produce a stream item");
 
-    assert!(matches!(result, Err(ProviderError::Timeout)));
+    assert!(
+        matches!(result, Err(ref error) if matches!(direct_error_cause(error), ProviderError::Timeout))
+    );
 }
 
 #[tokio::test]
@@ -2039,12 +2126,25 @@ async fn request_header_cannot_override_bedrock_signature_routing() {
     let provider = BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()));
     let mut request = lifecycle_text_request();
     request.extra_headers = vec![("x-amz-date".into(), "override".into())];
-    let mut stream = provider.stream_prepared(request, test_auth());
+    let mut stream = provider.stream_prepared(request.clone(), test_auth());
 
-    assert!(matches!(
-        stream.next().await,
-        Some(Err(ProviderError::RequestFailed(_)))
-    ));
+    let error = stream
+        .next()
+        .await
+        .expect("one refusal")
+        .expect_err("managed header must fail closed");
+    let ProviderError::StreamFailure(failure) = &error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let ProviderError::RequestFailed(summary) = failure.cause() else {
+        panic!("expected exact managed-header cause: {error:?}");
+    };
+    assert_eq!(
+        summary.as_str(),
+        "request header 'x-amz-date' cannot override a provider-managed header"
+    );
+    assert_direct_projection_prefix(failure.message(), &request);
+    assert!(stream.next().await.is_none(), "refusal must be terminal");
     assert!(
         server
             .received_requests()
@@ -2074,12 +2174,25 @@ async fn request_header_cannot_duplicate_bedrock_session_token() {
             fallback: AuthFallback::NotAttempted,
         },
     );
-    let mut stream = provider.stream_prepared(request, auth);
+    let mut stream = provider.stream_prepared(request.clone(), auth);
 
-    assert!(matches!(
-        stream.next().await,
-        Some(Err(ProviderError::RequestFailed(_)))
-    ));
+    let error = stream
+        .next()
+        .await
+        .expect("one refusal")
+        .expect_err("managed header must fail closed");
+    let ProviderError::StreamFailure(failure) = &error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let ProviderError::RequestFailed(summary) = failure.cause() else {
+        panic!("expected exact managed-header cause: {error:?}");
+    };
+    assert_eq!(
+        summary.as_str(),
+        "request header 'x-amz-security-token' is reserved for Bedrock SigV4 authentication"
+    );
+    assert_direct_projection_prefix(failure.message(), &request);
+    assert!(stream.next().await.is_none(), "refusal must be terminal");
     assert!(
         server
             .received_requests()
@@ -2096,12 +2209,25 @@ async fn request_header_cannot_supply_bedrock_session_token_when_auth_has_none()
     let provider = BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()));
     let mut request = lifecycle_text_request();
     request.extra_headers = vec![("x-amz-security-token".into(), "request-token".into())];
-    let mut stream = provider.stream_prepared(request, test_auth());
+    let mut stream = provider.stream_prepared(request.clone(), test_auth());
 
-    assert!(matches!(
-        stream.next().await,
-        Some(Err(ProviderError::RequestFailed(_)))
-    ));
+    let error = stream
+        .next()
+        .await
+        .expect("one refusal")
+        .expect_err("managed header must fail closed");
+    let ProviderError::StreamFailure(failure) = &error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let ProviderError::RequestFailed(summary) = failure.cause() else {
+        panic!("expected exact managed-header cause: {error:?}");
+    };
+    assert_eq!(
+        summary.as_str(),
+        "request header 'x-amz-security-token' is reserved for Bedrock SigV4 authentication"
+    );
+    assert_direct_projection_prefix(failure.message(), &request);
+    assert!(stream.next().await.is_none(), "refusal must be terminal");
     assert!(
         server
             .received_requests()
@@ -2232,7 +2358,7 @@ async fn finish_timeout_attempt(prepared: &opi_ai::PreparedProviderCall) {
     assert!(
         matches!(
             attempt.next().await,
-            Some(Err(ProviderError::ServiceFault { status: 504, .. }))
+            Some(Err(ref error)) if matches!(direct_error_cause(error), ProviderError::ServiceFault { status: 504, .. })
         ),
         "fixture should terminate the attempt with the configured 504"
     );
@@ -2243,7 +2369,7 @@ async fn finish_provider_side_attempt(prepared: &opi_ai::PreparedProviderCall) {
     assert!(
         matches!(
             attempt.next().await,
-            Some(Err(ProviderError::ServiceFault { status: 500, .. }))
+            Some(Err(ref error)) if matches!(direct_error_cause(error), ProviderError::ServiceFault { status: 500, .. })
         ),
         "fixture should terminate the attempt with the configured 500"
     );
@@ -2400,7 +2526,7 @@ async fn bearer_without_any_endpoint_is_a_typed_config_error() {
     let auth = bearer_auth("bedrock-api-key-fixture", None);
     let outcome = collect_outcome(provider.stream_prepared(lifecycle_text_request(), auth)).await;
     assert!(
-        matches!(outcome, Err(ProviderError::Config(_))),
+        matches!(outcome, Err(ref error) if matches!(direct_error_cause(error), ProviderError::Config(_))),
         "bearer without a provider or resolver endpoint must fail typed, got {outcome:?}"
     );
 }
@@ -2424,7 +2550,7 @@ async fn standard_aws_endpoints_reject_proxy_placeholder_signing() {
         .expect("nonstandard endpoint is accepted");
     let outcome = collect_outcome(provider.stream_prepared(lifecycle_text_request(), auth)).await;
     assert!(
-        matches!(outcome, Err(ProviderError::Config(_))),
+        matches!(outcome, Err(ref error) if matches!(direct_error_cause(error), ProviderError::Config(_))),
         "provider with a standard endpoint must reject placeholder signing, got {outcome:?}"
     );
 }
@@ -2439,7 +2565,7 @@ async fn proxy_placeholder_signing_without_placeholder_client_is_a_typed_error()
         .expect("nonstandard endpoint is accepted");
     let outcome = collect_outcome(provider.stream_prepared(lifecycle_text_request(), auth)).await;
     assert!(
-        matches!(outcome, Err(ProviderError::Config(_))),
+        matches!(outcome, Err(ref error) if matches!(direct_error_cause(error), ProviderError::Config(_))),
         "placeholder signing requires the explicit HTTP/1.1 placeholder client, got {outcome:?}"
     );
 }
@@ -3619,13 +3745,11 @@ async fn cancelling_during_bedrock_resolution_fails_closed_without_dispatch() {
         .expect("register Bedrock route");
     let collection = Arc::new(collection);
     let cancel = CancellationToken::new();
-    let task_cancel = cancel.clone();
+    let request = prepared_bedrock_request(cancel.clone());
+    let expected_request = request.clone();
     let task = tokio::spawn(async move {
         collection
-            .prepare_call(
-                "bedrock:anthropic.claude-sonnet-4-20250514-v2:0",
-                prepared_bedrock_request(task_cancel),
-            )
+            .prepare_call("bedrock:anthropic.claude-sonnet-4-20250514-v2:0", request)
             .await
     });
 
@@ -3635,7 +3759,15 @@ async fn cancelling_during_bedrock_resolution_fails_closed_without_dispatch() {
         .await
         .expect("preparation task did not panic")
         .expect_err("cancelled resolution must fail");
-    assert!(matches!(error, ModelsError::CallCancelled));
+    assert!(
+        error.is_call_cancelled(),
+        "logical-call cancellation origin remains known"
+    );
+    let ModelsError::Provider(ProviderError::StreamFailure(failure)) = &error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    assert_eq!(failure.cause(), &ProviderError::Cancelled);
+    assert_direct_projection_prefix(failure.message(), &expected_request);
     assert!(
         server
             .received_requests()
@@ -3671,7 +3803,8 @@ fn prepared_sigv4_auth_debug_redacts_access_secret_and_session_values() {
 #[tokio::test]
 async fn bedrock_wrong_prepared_auth_error_does_not_expose_secret() {
     let secret = "wrong-auth-secret-canary";
-    let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()));
+    let server = MockServer::start().await;
+    let provider = BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()));
     let auth = ResolvedAuth {
         env: Default::default(),
         scheme: AuthScheme::ApiKey,
@@ -3680,14 +3813,26 @@ async fn bedrock_wrong_prepared_auth_error_does_not_expose_secret() {
         account_id: None,
         provenance: AuthProvenance::default(),
     };
-    let mut stream =
-        provider.stream_prepared(prepared_bedrock_request(CancellationToken::new()), auth);
+    let request = prepared_bedrock_request(CancellationToken::new());
+    let mut stream = provider.stream_prepared(request.clone(), auth);
     let error = stream
         .next()
         .await
         .expect("wrong auth produces an error")
         .expect_err("wrong auth must fail closed");
-    assert!(matches!(error, ProviderError::Config(_)));
+    let ProviderError::StreamFailure(failure) = &error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let ProviderError::Config(summary) = failure.cause() else {
+        panic!("expected exact wrong-auth cause: {error:?}");
+    };
+    assert_eq!(
+        summary.as_str(),
+        "Bedrock requires prepared AWS SigV4 or Bearer authentication"
+    );
+    assert_direct_projection_prefix(failure.message(), &request);
+    assert!(stream.next().await.is_none(), "refusal must be terminal");
+    assert!(server.received_requests().await.unwrap().is_empty());
     assert!(!format!("{error:?} {error}").contains(secret));
 }
 
@@ -7542,7 +7687,7 @@ async fn signin_dpop_over_real_http_to_local_server() {
 mod smithy_retry {
     use super::{
         CountingBedrockResolver, HttpClient, MockServer, ResponseTemplate, build_bedrock_stream,
-        method, prepared_bedrock_request,
+        direct_error_cause, method, prepared_bedrock_request,
     };
     use futures_util::StreamExt;
     use opi_ai::Models;
@@ -7685,7 +7830,7 @@ mod smithy_retry {
             .await
             .expect_err("first 504");
         assert!(matches!(
-            first,
+            direct_error_cause(&first),
             ProviderError::ServiceFault { status: 504, .. }
         ));
         let draw0 = unit_draw(0);
@@ -7701,7 +7846,7 @@ mod smithy_retry {
             .await
             .expect_err("second 504");
         assert!(matches!(
-            second,
+            direct_error_cause(&second),
             ProviderError::ServiceFault { status: 504, .. }
         ));
         let draw1 = unit_draw(1);
@@ -7817,7 +7962,7 @@ mod smithy_retry {
             .expect_err("throttle");
         assert!(
             matches!(
-                &error,
+                direct_error_cause(&error),
                 ProviderError::ServiceFault {
                     status: 429,
                     error_name,
@@ -7866,7 +8011,7 @@ mod smithy_retry {
             .expect_err("model timeout");
         assert!(
             matches!(
-                &error,
+                direct_error_cause(&error),
                 ProviderError::ServiceFault {
                     status: 408,
                     error_name,
@@ -7940,7 +8085,7 @@ mod smithy_retry {
                 .await
                 .expect_err("server error");
             assert!(
-                matches!(&error, ProviderError::ServiceFault { status: s, .. } if *s == status),
+                matches!(direct_error_cause(&error), ProviderError::ServiceFault { status: s, .. } if *s == status),
                 "{status} must surface as a service fault"
             );
             assert!(!error.is_retryable(), "{status} is not blanket-retryable");
@@ -8162,7 +8307,7 @@ mod smithy_retry {
             .await
             .expect_err("302");
         assert!(matches!(
-            error,
+            direct_error_cause(&error),
             ProviderError::ServiceFault { status: 302, .. }
         ));
         assert_eq!(prepared.retry_admission(), None);
@@ -8392,7 +8537,8 @@ async fn bedrock_transform_touching_signing_headers_fails_typed_before_http() {
     let mut stream = provider.stream_prepared(request, test_auth());
     let mut typed = false;
     while let Some(item) = stream.next().await {
-        if matches!(item, Err(ProviderError::CallbackPhase(_))) {
+        if matches!(item, Err(ref error) if matches!(direct_error_cause(error), ProviderError::CallbackPhase(_)))
+        {
             typed = true;
             break;
         }
@@ -8425,6 +8571,7 @@ mod constrained_guard_tests {
 
     fn guarded_request(tools: Vec<ToolDef>) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "bedrock:anthropic.claude-3-5-sonnet-20240620-v1:0".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -8895,6 +9042,7 @@ mod bedrock_42 {
 
     fn assistant_42() -> AssistantMessage {
         AssistantMessage {
+            projection: None,
             content: vec![],
             api: opi_ai::ApiKind::Anthropic,
             provider: "bedrock".into(),

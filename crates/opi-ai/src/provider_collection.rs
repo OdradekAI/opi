@@ -324,8 +324,9 @@ impl Provider for CanonicalRoute {
     }
     fn refresh_models(
         &self,
+        context: crate::catalog::CatalogRefreshContext,
     ) -> crate::credential::BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
-        self.inner.refresh_models()
+        self.inner.refresh_models(context)
     }
 }
 
@@ -1301,6 +1302,18 @@ mod tests {
                         ModelCapabilities::new(4096, 1024).with_streaming(true),
                     );
                     model.base_url = model_base.map(str::to_owned);
+                    if let crate::WireCompat::AzureOpenAiResponses(compat) = &mut model.compat {
+                        compat.source = crate::model_info::OpenAiResponsesSourceCompat {
+                            supports_mid_convo_system_messages: Some(true),
+                            supports_additional_tools: Some(true),
+                            supports_tool_search: Some(false),
+                            supports_strict_mode: Some(false),
+                            supports_grammar_tools: Some(true),
+                            supports_mid_convo_effort: Some(false),
+                            ..Default::default()
+                        };
+                    }
+                    let frozen_compat = model.compat.clone();
                     let mut auth = crate::test_support::resolved_auth();
                     auth.env = [
                         ("AZURE_OPENAI_BASE_URL".into(), base.into()),
@@ -1311,6 +1324,10 @@ mod tests {
                     ]
                     .into();
                     let prepared = route.prepare_model_call(&mut model, &mut auth);
+                    assert_eq!(
+                        model.compat, frozen_compat,
+                        "auth endpoint finalization preserves frozen projection/source controls"
+                    );
                     assert!(
                         prepared.is_ok(),
                         "wire={wire}, base={base:?}: {:?}",

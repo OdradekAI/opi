@@ -230,6 +230,7 @@ async fn extension_provider_streams_without_network() {
     let (provider, _) = provider_registry.resolve("mock-net:local-m").unwrap();
 
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mock-net:local-m".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

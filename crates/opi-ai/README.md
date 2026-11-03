@@ -115,6 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     let request = Request {
+        projection: Default::default(),
         transport: TransportPreference::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context,
@@ -218,6 +219,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     let request = Request {
+        projection: Default::default(),
         transport: TransportPreference::default(),
         model: "anthropic:claude-sonnet-4-5-20250514".into(),
         context,
@@ -326,6 +328,7 @@ fn execute_weather_tool(call: &ToolCall) -> ToolOutcome {
 
 fn request_for(context: TranscriptContext) -> Request {
     Request {
+        projection: Default::default(),
         transport: TransportPreference::default(),
         model: MODEL_SPEC.into(),
         context,
@@ -807,7 +810,7 @@ config wins per field, then model-level overrides win over the profile):
 | `usage_in_stream` | Request `stream_options.include_usage`; the inference baseline enables it, explicit `Some(false)` disables. |
 | `max_tokens_field` | Output-limit field name override (`max_completion_tokens` on standard endpoints, `max_tokens` on the frozen legacy-compatible set). |
 | `tool_result_name_field` | Echo the tool name on the tool-result message. |
-| `strict_tool_schema` | Emit strict JSON-schema tool definitions. |
+| `strict_tool_schema` | Advertise strict capability; Require/Prefer tools use the shared strict converter, while unconstrained tools send `strict: false` on capable wires. |
 | `cache_key` | Send the provider's prompt-cache key (cache-affinity hint). |
 | `send_session_affinity_headers` | Map a request `session_id` to the compatible session-affinity headers (inferred for OpenRouter). |
 | `require_assistant_after_tool_result` | Insert the fixed assistant bridge between a tool result and the next user message; assistant tool-call turns use `content: ""` instead of `null`. |
@@ -817,6 +820,31 @@ config wins per field, then model-level overrides win over the profile):
 | `thinking_token_budget_field` / `supports_thinking_token_budget` | Top-level reasoning budget field (`thinking_token_budget` vLLM, `thinking_budget` Qwen/DashScope/SGLang, `thinking_budget_tokens` llama.cpp; the alias selects vLLM's). |
 | `chat_template_kwargs` / `chat_template_args` | `$var` template values (`thinking.enabled`, `thinking.effort`, `thinking.budget`; `omit_when_off` drops the key when no effort is set). |
 | `chat_completions_path` | A non-default path overrides the suffix. An explicit model API base uses `/chat/completions`; a constructor-only root uses `/v1/chat/completions`. |
+
+Chat compat also exposes `supports_finish_reason`, `supports_grammar_tools`,
+`open_router_routing`, `vercel_gateway_routing`, `cache_control_format`,
+`session_affinity_format` and `supports_long_cache_retention`. Routing values
+retain supplied empty arrays/objects, zero prices and an explicit null sort
+partition. `vllm_priority` is `Option<serde_json::Number>`; template maps are
+`Option<BTreeMap<...>>`, where `None` inherits and `Some(empty)` clears.
+The catalog codec retains these values through its complete `x-opi.compat`
+snapshot. With `supports_finish_reason: Some(false)`, lawful stream EOF closes
+accumulated text/tool calls with an inferred reason and no invented raw reason.
+Grammar capability selects custom tool declarations, streamed inputs and replay.
+Anthropic cache markers and long retention follow the selected capabilities;
+affinity headers use the full session ID independently of prompt caching.
+
+`OpenAiResponsesSourceCompat` is the single presence-aware source owner for
+ordinary Responses, Azure Responses and Codex Responses. Missing optional
+controls stay `None` in stored metadata; each wire resolves its own defaults.
+Strict defaults to false for ordinary Responses and true for Azure/Codex;
+Codex keeps unconstrained `strict: null`. Developer role defaults true, while
+grammar, temporal additions/search, explicit cache and mid-conversation effort
+default false. Ordinary Responses alone consumes the max-output capability,
+explicit cache mode and mid-conversation effort. Its long-cache capability
+defaults true; Azure retains native maximum-token behavior and Codex omits it.
+Exact direct OpenAI signin calls freeze their source-qualified auth classification
+at preparation and suppress the ordinary max/temperature/cache/effort branches.
 
 The retired keys `system_role_override`, `supports_store`,
 `supports_developer_role` and the static `reasoning_effort` string fail with
@@ -1248,6 +1276,16 @@ transcript at the head of request construction (the pinned TypeScript
 reference is `.repo/pi-1.3.0/packages/ai/src/utils/transcript.ts`; the
 upstream-deprecated `hasToolRedefinitions` is not ported).
 
+`Request.projection` selects temporal and replay fidelity with
+`transcript::ProjectionOptions`: both default to `NativeOrCollapse`; selecting
+`Strict` rejects an unsupported temporal change or replay loss before auth.
+`PreparedRoute.projection` freezes the call's source prefix, temporal mode and
+affected message ranges, and typed replay losses. New assistant messages carry
+these facts in `AssistantMessage.projection`; older or synthesized messages
+retain `None` (unknown). The prefix SHA-256 associates the facts with the
+original canonical messages; it does not establish authority or reconstruct
+prompt contents.
+
 ## Private Upstream Crypto Profile
 
 A private `crypto` module (not part of the public API) owns key admission and
@@ -1412,7 +1450,7 @@ typed image API task.
 
 `ModelsStore::invalidate_source(id)` explicitly withdraws the records published
 by that source and persists a tombstone. Old guards cannot publish afterward;
-`refresh(false)` observes subsequent revisions of the attached shared store
+An offline `refresh` observes subsequent revisions of the attached shared store
 without authentication or network work. A new successful source publication
 clears its tombstone. This does not install an HTTP-status invalidation policy.
 
@@ -1466,26 +1504,47 @@ payloads including strict-tool support) round-trips
 through an explicit `x-opi` extension, and plain v1 documents decode with
 closed defaults.
 
-`Models::refresh(allow_network)` is the only refresh entry: `refresh(false)`
-performs no OAuth/network work and restores the store cache
-(`RefreshStatus::OfflineRestored`); `refresh(true)` fetches registered
-providers in deterministic sorted order, then registered catalog sources in
-registration order. Outcomes are per-provider: successes publish, failures
-retain that provider's prior data and report a redacted error
-(`RefreshOutcome::{Published,Failed,Restored}` in `RefreshReport`) without
-erasing other providers' catalogs. Without explicit catalog sources, a native
-provider's `Ok(None)` restores its builtin catalog. With an explicit source,
-that absence of a native publication retains the last-known source catalog;
-an authoritative `Ok(Some([]))` still replaces it with an empty catalog.
-`refresh_with` observes a `CancellationToken` — cancellation observed before
-commit retains the prior publication, including a source returning success in
-the poll that observes cancellation. Without a store, the final token check
-starts the synchronous memory commit. Already-prepared
-calls keep their frozen bindings across refreshes. `DynamicCatalogSource`
-is the public seam for host-plugged catalog sources; `HttpCatalogSource`
-fetches one distribution-schema-v1 document over HTTP with pooled
-connections and redacted failures. The SDK registers no source, attaches
-no store, and has no pi.dev/default startup fetch policy.
+`Models::provider_ids` lists the sorted union of registered chat, image,
+classifier and deferred owners. `delete_provider` and `clear_providers` remove
+only live model-provider bindings; shared credentials/catalog stores and
+independently registered auth-only flows remain owned by their callers.
+Captured calls retain their adapter revisions and explicit resource cleanup
+still reaches retired resource owners. `get_models` stays chat-only;
+`get_model_of_type`, `get_models_of_type` and `get_all_models` use the closed
+`CatalogOperation`/`CatalogRecord` types without probing credentials. The async
+`get_available_of_type` and `get_all_available` check each operation's existing
+registration configuration and account restrictions, without resolving
+builtin generation authentication.
+
+`Models::refresh(ModelsRefreshOptions)` is the only refresh entry. Defaults
+permit network work for all active providers with no forced-refresh choice.
+Set `allow_network: false` to restore selected cached records without
+OAuth/network work (`RefreshStatus::OfflineRestored`). `providers: None`
+selects every active owner; `Some(empty_set)` and unknown IDs perform no source
+work. `force: None`, `Some(false)` and `Some(true)` are forwarded unchanged only
+to the selected network source, which owns their freshness meaning.
+Native providers run in sorted ID order, then catalog sources in registration
+order. `Provider::refresh_models` receives `CatalogRefreshContext`; each
+`DynamicCatalogSource` declares `provider_ids` and receives only the active
+selected intersection. Returning an undeclared provider fails that source;
+declared but unselected records cannot change their existing publication.
+`HttpCatalogSource::new(url, provider_ids)` declares ownership without fetching;
+its network call fetches the fixed document once without inventing force
+headers or query parameters.
+
+Outcomes remain per-provider (`RefreshOutcome::{Published,Failed,Restored}` in
+`RefreshReport`): successes publish and failures retain prior data. Native
+`Ok(None)` restores builtin fallback unless the provider's registered explicit
+source still owns its last-known catalog; authoritative empty publications
+remain empty. Subset refresh merges over the complete shared-store snapshot,
+preserves unselected persisted owners and publishers, and applies only selected
+acknowledged records to this instance. Offline subset restores work even when
+a previous subset already observed that store revision. Deleted owners cannot
+expose cached records; explicit re-registration permits compatible restore.
+`refresh_with(options, &token)` observes cancellation and the same store ACK
+and stale-revision guard. Superseded or cancelled work cannot publish late;
+source invalidation cannot resurrect unselected stale memory. The SDK registers
+no source, attaches no store, and has no pi.dev/default startup fetch policy.
 
 ## Telemetry Carrier: Frozen Parent Span plus Dispatch (task 20.54, DEL-12)
 
@@ -2985,6 +3044,12 @@ Product constructors now accept the store that owns this shared queue:
 `RpcRunner::new_with_runtime_packages_and_auth` take an optional keychain store
 after `auth_resolver`. Production passes the same store used by its resolver,
 AWS source cache and ADC owner; `None` supports store-free test assemblies.
+
+The SDK's default `SpawnedCredentialProcess` selects no timeout or stdout
+limit. `with_policy(CredentialProcessPolicy::default())` explicitly selects
+the existing 10-second/64-KiB bounds; `policy()` returns `None` or the selected
+policy. The coding product keeps those bounds explicitly. Cancellation still
+terminates and reaps the owned helper tree with either selection.
 
 AWS nested role profiles retain static-pair precedence, then resolve the
 existing web-identity/process/SSO/login source chain before assuming roles from

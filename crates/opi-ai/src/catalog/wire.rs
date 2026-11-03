@@ -186,9 +186,18 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
                 None => serde_json::Value::Null,
             },
             "supportsReasoningEffort": inner.supports_reasoning_effort,
+            "supportsMidConvoSystemMessages": inner.supports_mid_convo_system_messages,
+            "supportsMidConvoToolAdditions": inner.supports_mid_convo_tool_additions,
             "maxTokensField": inner.max_tokens_field,
             "toolResultNameField": inner.tool_result_name_field,
             "usageInStream": inner.usage_in_stream,
+            "supportsFinishReason": inner.supports_finish_reason,
+            "supportsOpenAIGrammarTools": inner.supports_grammar_tools,
+            "openRouterRouting": inner.open_router_routing,
+            "vercelGatewayRouting": inner.vercel_gateway_routing,
+            "cacheControlFormat": inner.cache_control_format,
+            "sessionAffinityFormat": inner.session_affinity_format,
+            "supportsLongCacheRetention": inner.supports_long_cache_retention,
             "strictToolSchema": inner.strict_tool_schema,
             "cacheKey": inner.cache_key,
             "sendSessionAffinityHeaders": inner.send_session_affinity_headers,
@@ -211,26 +220,53 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
             "api": WireApi::OpenAiResponses.as_str(),
             "store": inner.store,
             "reasoningEffort": inner.reasoning_effort,
-            "strictTools": inner.strict_tools,
+            "supportsMidConvoSystemMessages": inner.source.supports_mid_convo_system_messages,
+            "supportsAdditionalTools": inner.source.supports_additional_tools,
+            "supportsToolSearch": inner.source.supports_tool_search,
+            "supportsDeveloperRole": inner.source.supports_developer_role,
+            "sessionAffinityFormat": inner.source.session_affinity_format,
+            "supportsLongCacheRetention": inner.source.supports_long_cache_retention,
+            "supportsExplicitPromptCacheMode": inner.source.supports_explicit_prompt_cache_mode,
+            "supportsMaxOutputTokens": inner.source.supports_max_output_tokens,
+            "strictTools": inner.source.supports_strict_mode,
             "responsesPath": inner.responses_path,
             "sendSessionIdHeader": inner.send_session_id_header,
-            "supportsMidConvoEffort": inner.supports_mid_convo_effort,
-            "supportsOpenAIGrammarTools": inner.supports_grammar,
+            "supportsMidConvoEffort": inner.source.supports_mid_convo_effort,
+            "supportsOpenAIGrammarTools": inner.source.supports_grammar_tools,
         }),
         WireCompat::AzureOpenAiResponses(inner) => json!({
             "api": WireApi::AzureOpenAiResponses.as_str(),
             "store": inner.store,
             "reasoningEffort": inner.reasoning_effort,
-            "strictTools": inner.strict_tools,
+            "supportsMidConvoSystemMessages": inner.source.supports_mid_convo_system_messages,
+            "supportsAdditionalTools": inner.source.supports_additional_tools,
+            "supportsToolSearch": inner.source.supports_tool_search,
+            "supportsDeveloperRole": inner.source.supports_developer_role,
+            "sessionAffinityFormat": inner.source.session_affinity_format,
+            "supportsLongCacheRetention": inner.source.supports_long_cache_retention,
+            "supportsExplicitPromptCacheMode": inner.source.supports_explicit_prompt_cache_mode,
+            "supportsMaxOutputTokens": inner.source.supports_max_output_tokens,
+            "strictTools": inner.source.supports_strict_mode,
             "responsesPath": inner.responses_path,
             "sendSessionIdHeader": inner.send_session_id_header,
-            "supportsMidConvoEffort": inner.supports_mid_convo_effort,
-            "supportsOpenAIGrammarTools": inner.supports_grammar,
+            "supportsMidConvoEffort": inner.source.supports_mid_convo_effort,
+            "supportsOpenAIGrammarTools": inner.source.supports_grammar_tools,
         }),
         WireCompat::OpenAiCodexResponses(inner) => json!({
             "api": WireApi::OpenAiCodexResponses.as_str(),
             "responsesPath": inner.responses_path,
             "deriveAccountId": inner.derive_account_id,
+            "strictTools": inner.source.supports_strict_mode,
+            "supportsOpenAIGrammarTools": inner.source.supports_grammar_tools,
+            "supportsMidConvoEffort": inner.source.supports_mid_convo_effort,
+            "supportsMidConvoSystemMessages": inner.source.supports_mid_convo_system_messages,
+            "supportsAdditionalTools": inner.source.supports_additional_tools,
+            "supportsToolSearch": inner.source.supports_tool_search,
+            "supportsDeveloperRole": inner.source.supports_developer_role,
+            "sessionAffinityFormat": inner.source.session_affinity_format,
+            "supportsLongCacheRetention": inner.source.supports_long_cache_retention,
+            "supportsExplicitPromptCacheMode": inner.source.supports_explicit_prompt_cache_mode,
+            "supportsMaxOutputTokens": inner.source.supports_max_output_tokens,
         }),
         WireCompat::GoogleGenerativeAi => json!({ "api": WireApi::GoogleGenerativeAi.as_str() }),
         WireCompat::GoogleVertex => json!({ "api": WireApi::GoogleVertex.as_str() }),
@@ -266,6 +302,18 @@ fn opt_flag(value: &Value, key: &str) -> Result<Option<bool>, String> {
     }
 }
 
+fn opt_typed<T: serde::de::DeserializeOwned>(
+    value: &Value,
+    key: &str,
+) -> Result<Option<T>, String> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => serde_json::from_value(value.clone())
+            .map(Some)
+            .map_err(|error| format!("invalid field '{key}': {error}")),
+    }
+}
+
 fn thinking_budget_field(
     value: &Value,
 ) -> Result<Option<crate::model_info::ChatThinkingTokenBudgetField>, String> {
@@ -286,9 +334,12 @@ fn thinking_budget_field(
 }
 
 fn template_values_to_extension(
-    values: &BTreeMap<String, crate::model_info::ChatTemplateKwargValue>,
+    values: &Option<BTreeMap<String, crate::model_info::ChatTemplateKwargValue>>,
 ) -> Value {
     use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
+    let Some(values) = values else {
+        return Value::Null;
+    };
     Value::Object(
         values
             .iter()
@@ -313,10 +364,10 @@ fn template_values_to_extension(
 fn template_values_from_extension(
     value: &Value,
     key: &str,
-) -> Result<BTreeMap<String, crate::model_info::ChatTemplateKwargValue>, String> {
+) -> Result<Option<BTreeMap<String, crate::model_info::ChatTemplateKwargValue>>, String> {
     use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
-    let Some(values) = value.get(key) else {
-        return Ok(BTreeMap::new());
+    let Some(values) = value.get(key).filter(|value| !value.is_null()) else {
+        return Ok(None);
     };
     values
         .as_object()
@@ -338,7 +389,40 @@ fn template_values_from_extension(
             };
             Ok((name.clone(), value))
         })
-        .collect()
+        .collect::<Result<_, _>>()
+        .map(Some)
+}
+
+fn template_values_from_source(
+    value: &Value,
+    key: &str,
+) -> Result<Option<BTreeMap<String, crate::model_info::ChatTemplateKwargValue>>, String> {
+    use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
+    let Some(values) = value.get(key).filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    values
+        .as_object()
+        .ok_or_else(|| format!("compat.{key} must be an object"))?
+        .iter()
+        .map(|(name, value)| {
+            let value = if let Some(var) = value.get("$var").and_then(Value::as_str) {
+                ChatTemplateKwargValue::Var {
+                    var: match var {
+                        "thinking.enabled" => ChatTemplateKwargVar::ThinkingEnabled,
+                        "thinking.effort" => ChatTemplateKwargVar::ThinkingEffort,
+                        "thinking.budget" => ChatTemplateKwargVar::ThinkingBudget,
+                        _ => return Err(format!("unknown chat template variable '{var}'")),
+                    },
+                    omit_when_off: opt_flag(value, "omitWhenOff")?.unwrap_or(false),
+                }
+            } else {
+                ChatTemplateKwargValue::Literal(value.clone())
+            };
+            Ok((name.clone(), value))
+        })
+        .collect::<Result<_, _>>()
+        .map(Some)
 }
 
 fn parse_chat_thinking_format(
@@ -397,15 +481,13 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
         Ok(OpenAiResponsesCompat {
             store: value.get("store").and_then(Value::as_bool),
             reasoning_effort: opt_string(value, "reasoningEffort")?,
-            strict_tools: flag("strictTools")?,
+            source: parse_responses_source(value)?,
             responses_path: value
                 .get("responsesPath")
                 .and_then(Value::as_str)
                 .unwrap_or(default_path)
                 .to_owned(),
             send_session_id_header: flag("sendSessionIdHeader")?,
-            supports_mid_convo_effort: flag("supportsMidConvoEffort")?,
-            supports_grammar: opt_flag(value, "supportsOpenAIGrammarTools")?.unwrap_or(false),
         })
     }
 
@@ -479,7 +561,22 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                     },
                     thinking_format: parse_chat_thinking_format(value, "thinkingFormat")?,
                     supports_reasoning_effort: opt_flag(value, "supportsReasoningEffort")?,
+                    supports_mid_convo_system_messages: opt_flag(
+                        value,
+                        "supportsMidConvoSystemMessages",
+                    )?,
+                    supports_mid_convo_tool_additions: opt_flag(
+                        value,
+                        "supportsMidConvoToolAdditions",
+                    )?,
                     usage_in_stream: opt_flag(value, "usageInStream")?,
+                    supports_finish_reason: opt_flag(value, "supportsFinishReason")?,
+                    supports_grammar_tools: opt_flag(value, "supportsOpenAIGrammarTools")?,
+                    open_router_routing: opt_typed(value, "openRouterRouting")?,
+                    vercel_gateway_routing: opt_typed(value, "vercelGatewayRouting")?,
+                    cache_control_format: opt_typed(value, "cacheControlFormat")?,
+                    session_affinity_format: opt_typed(value, "sessionAffinityFormat")?,
+                    supports_long_cache_retention: opt_flag(value, "supportsLongCacheRetention")?,
                     max_tokens_field: opt_string(value, "maxTokensField")?,
                     tool_result_name_field: flag("toolResultNameField")?,
                     strict_tool_schema: flag("strictToolSchema")?,
@@ -492,7 +589,7 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                         "requiresReasoningContentOnAssistantMessages",
                     )?,
                     zai_tool_stream: flag("zaiToolStream")?,
-                    vllm_priority: value.get("vllmPriority").and_then(Value::as_i64),
+                    vllm_priority: opt_typed(value, "vllmPriority")?,
                     thinking_token_budget_field,
                     supports_thinking_token_budget: flag("supportsThinkingTokenBudget")?,
                     chat_template_kwargs: template_values_from_extension(
@@ -517,6 +614,7 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
         ))),
         WireApi::OpenAiCodexResponses => Ok(Some(WireCompat::OpenAiCodexResponses(
             OpenAiCodexResponsesCompat {
+                source: parse_responses_source(value)?,
                 responses_path: value
                     .get("responsesPath")
                     .and_then(Value::as_str)
@@ -687,6 +785,8 @@ fn apply_source_metadata(model: &mut ModelInfo, entry: &Value) -> Result<(), Str
     let flag = |key: &str| opt_flag(compat, key);
     match &mut model.compat {
         WireCompat::OpenAiCompletions(c) => {
+            c.supports_mid_convo_system_messages = flag("supportsMidConvoSystemMessages")?;
+            c.supports_mid_convo_tool_additions = flag("supportsMidConvoToolAdditions")?;
             c.store = flag("supportsStore")?.map(|value| {
                 if value {
                     crate::model_info::ChatStoreField::SendFalse
@@ -710,6 +810,13 @@ fn apply_source_metadata(model: &mut ModelInfo, entry: &Value) -> Result<(), Str
             c.max_tokens_field = opt_string(compat, "maxTokensField")?;
             c.supports_reasoning_effort = flag("supportsReasoningEffort")?;
             c.usage_in_stream = flag("supportsUsageInStreaming")?;
+            c.supports_finish_reason = flag("supportsFinishReason")?;
+            c.supports_grammar_tools = flag("supportsOpenAIGrammarTools")?;
+            c.open_router_routing = opt_typed(compat, "openRouterRouting")?;
+            c.vercel_gateway_routing = opt_typed(compat, "vercelGatewayRouting")?;
+            c.cache_control_format = opt_typed(compat, "cacheControlFormat")?;
+            c.session_affinity_format = opt_typed(compat, "sessionAffinityFormat")?;
+            c.supports_long_cache_retention = flag("supportsLongCacheRetention")?;
             c.strict_tool_schema = flag("supportsStrictMode")?.unwrap_or(c.strict_tool_schema);
             c.tool_result_name_field =
                 flag("requiresToolResultName")?.unwrap_or(c.tool_result_name_field);
@@ -724,43 +831,15 @@ fn apply_source_metadata(model: &mut ModelInfo, entry: &Value) -> Result<(), Str
             c.supports_thinking_token_budget =
                 flag("supportsThinkingTokenBudget")?.unwrap_or(false);
             c.thinking_token_budget_field = thinking_budget_field(compat)?;
-            c.vllm_priority = compat.get("vllmPriority").and_then(Value::as_i64);
-            for (key, target) in [
-                ("chatTemplateArgs", &mut c.chat_template_args),
-                ("chatTemplateKwargs", &mut c.chat_template_kwargs),
-            ] {
-                if let Some(values) = compat.get(key).and_then(Value::as_object) {
-                    for (name, value) in values {
-                        let value = if let Some(var) = value.get("$var").and_then(Value::as_str) {
-                            use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
-                            ChatTemplateKwargValue::Var {
-                                var: match var {
-                                    "thinking.enabled" => ChatTemplateKwargVar::ThinkingEnabled,
-                                    "thinking.effort" => ChatTemplateKwargVar::ThinkingEffort,
-                                    "thinking.budget" => ChatTemplateKwargVar::ThinkingBudget,
-                                    _ => {
-                                        return Err(format!(
-                                            "unknown chat template variable '{var}'"
-                                        ));
-                                    }
-                                },
-                                omit_when_off: value
-                                    .get("omitWhenOff")
-                                    .and_then(Value::as_bool)
-                                    .unwrap_or(false),
-                            }
-                        } else {
-                            crate::model_info::ChatTemplateKwargValue::Literal(value.clone())
-                        };
-                        target.insert(name.clone(), value);
-                    }
-                }
-            }
+            c.vllm_priority = opt_typed(compat, "vllmPriority")?;
+            c.chat_template_args = template_values_from_source(compat, "chatTemplateArgs")?;
+            c.chat_template_kwargs = template_values_from_source(compat, "chatTemplateKwargs")?;
         }
         WireCompat::OpenAiResponses(c) | WireCompat::AzureOpenAiResponses(c) => {
-            c.strict_tools = flag("supportsStrictMode")?.unwrap_or(c.strict_tools);
-            c.supports_mid_convo_effort = flag("supportsMidConvoEffort")?.unwrap_or(false);
-            c.supports_grammar = flag("supportsOpenAIGrammarTools")?.unwrap_or(false);
+            c.source = parse_source_responses_compat(compat)?;
+        }
+        WireCompat::OpenAiCodexResponses(c) => {
+            c.source = parse_source_responses_compat(compat)?;
         }
         WireCompat::AnthropicMessages(c) => {
             c.supports_eager_tool_input_streaming = flag("supportsEagerToolInputStreaming")?
@@ -1445,4 +1524,402 @@ pub(crate) fn decode_store_document(document: &Value) -> Result<DecodedStore, Mo
         catalogs,
         publishers,
     })
+}
+
+fn parse_responses_source(
+    value: &Value,
+) -> Result<crate::model_info::OpenAiResponsesSourceCompat, String> {
+    Ok(crate::model_info::OpenAiResponsesSourceCompat {
+        supports_strict_mode: opt_flag(value, "strictTools")?,
+        supports_grammar_tools: opt_flag(value, "supportsOpenAIGrammarTools")?,
+        supports_mid_convo_effort: opt_flag(value, "supportsMidConvoEffort")?,
+        supports_mid_convo_system_messages: opt_flag(value, "supportsMidConvoSystemMessages")?,
+        supports_additional_tools: opt_flag(value, "supportsAdditionalTools")?,
+        supports_tool_search: opt_flag(value, "supportsToolSearch")?,
+        supports_developer_role: opt_flag(value, "supportsDeveloperRole")?,
+        session_affinity_format: opt_typed(value, "sessionAffinityFormat")?,
+        supports_long_cache_retention: opt_flag(value, "supportsLongCacheRetention")?,
+        supports_explicit_prompt_cache_mode: opt_flag(value, "supportsExplicitPromptCacheMode")?,
+        supports_max_output_tokens: opt_flag(value, "supportsMaxOutputTokens")?,
+    })
+}
+
+fn parse_source_responses_compat(
+    value: &Value,
+) -> Result<crate::model_info::OpenAiResponsesSourceCompat, String> {
+    let mut source = parse_responses_source(value)?;
+    source.supports_strict_mode = opt_flag(value, "supportsStrictMode")?;
+    Ok(source)
+}
+
+#[cfg(test)]
+mod projection_compat_tests {
+    use super::*;
+    use crate::model_info::{ModelCapabilities, ModelInfo, WireApi, WireCompat};
+
+    fn source_model(wire: WireApi, compat: Value) -> ModelInfo {
+        decode_model_entry(&json!({
+            "id":"source-model", "api":wire.as_str(),
+            "contextWindow":4096, "maxTokens":1024, "compat":compat,
+        }))
+        .expect("valid source compat")
+    }
+
+    #[test]
+    fn source_qualified_chat_fields_keep_nested_presence_and_numbers() {
+        let routing = json!({
+            "allow_fallbacks":false, "require_parameters":false, "data_collection":"deny",
+            "zdr":false, "enforce_distillable_text":false, "order":[], "only":[],
+            "ignore":[], "quantizations":[], "sort":{"by":"price","partition":null},
+            "max_price":{"prompt":0,"completion":"0.5","image":1.5,"audio":"2","request":0},
+            "preferred_min_throughput":{"p50":0,"p75":1.25,"p90":2,"p99":3},
+            "preferred_max_latency":0,
+        });
+        let source = json!({
+            "supportsStore":true, "supportsDeveloperRole":false,
+            "supportsReasoningEffort":false, "supportsUsageInStreaming":false,
+            "supportsFinishReason":false, "maxTokensField":"max_tokens",
+            "requiresToolResultName":true, "requiresAssistantAfterToolResult":true,
+            "requiresThinkingAsText":true, "requiresReasoningContentOnAssistantMessages":false,
+            "thinkingFormat":"chat-template", "zaiToolStream":true,
+            "thinkingTokenBudgetField":"thinking_budget_tokens", "supportsThinkingTokenBudget":true,
+            "supportsMidConvoSystemMessages":false, "supportsMidConvoToolAdditions":false,
+            "supportsStrictMode":true, "sendSessionAffinityHeaders":false,
+            "openRouterRouting":routing,
+            "vercelGatewayRouting":{"only":[],"order":[]},
+            "supportsOpenAIGrammarTools":false, "cacheControlFormat":"anthropic",
+            "sessionAffinityFormat":"openai-nosession", "supportsLongCacheRetention":false,
+            "vllmPriority":0.125, "chatTemplateArgs":{}, "chatTemplateKwargs":{},
+        });
+        let model = source_model(WireApi::OpenAiCompletions, source.clone());
+        let encoded = encode_model_entry(&model);
+        assert_eq!(source.as_object().unwrap().len(), 27);
+        for (key, value) in source.as_object().unwrap() {
+            let stored_key = match key.as_str() {
+                "supportsStore" => "storeField",
+                "supportsDeveloperRole" => "instructionRole",
+                "supportsUsageInStreaming" => "usageInStream",
+                "requiresToolResultName" => "toolResultNameField",
+                "requiresAssistantAfterToolResult" => "requireAssistantAfterToolResult",
+                "supportsStrictMode" => "strictToolSchema",
+                other => other,
+            };
+            let expected = match key.as_str() {
+                "supportsStore" => json!("send_false"),
+                "supportsDeveloperRole" => json!("system"),
+                _ => value.clone(),
+            };
+            assert_eq!(
+                encoded["x-opi"]["compat"][stored_key], expected,
+                "field={key}"
+            );
+        }
+        assert_eq!(decode_model_entry(&encoded).unwrap(), model);
+        let mut current = encoded;
+        current["compat"] = json!({"vllmPriority":99,"openRouterRouting":{}});
+        assert_eq!(decode_model_entry(&current).unwrap(), model);
+    }
+
+    #[test]
+    fn source_qualified_template_absence_and_empty_are_distinct() {
+        for source in [
+            json!({}),
+            json!({"chatTemplateArgs":null,"chatTemplateKwargs":null}),
+        ] {
+            let encoded = encode_model_entry(&source_model(WireApi::OpenAiCompletions, source));
+            assert!(encoded["x-opi"]["compat"]["chatTemplateArgs"].is_null());
+            assert!(encoded["x-opi"]["compat"]["chatTemplateKwargs"].is_null());
+        }
+        let source = json!({"chatTemplateArgs":{},"chatTemplateKwargs":{}});
+        let encoded = encode_model_entry(&source_model(WireApi::OpenAiCompletions, source));
+        assert_eq!(encoded["x-opi"]["compat"]["chatTemplateArgs"], json!({}));
+        assert_eq!(encoded["x-opi"]["compat"]["chatTemplateKwargs"], json!({}));
+    }
+
+    #[test]
+    fn source_qualified_chat_optional_flags_preserve_false_and_inference() {
+        for key in [
+            "supportsFinishReason",
+            "supportsOpenAIGrammarTools",
+            "supportsLongCacheRetention",
+            "supportsMidConvoSystemMessages",
+            "supportsMidConvoToolAdditions",
+        ] {
+            for value in [Value::Null, json!(false), json!(true)] {
+                let mut source = json!({});
+                source[key] = value.clone();
+                let model = source_model(WireApi::OpenAiCompletions, source);
+                let encoded = encode_model_entry(&model);
+                assert_eq!(encoded["x-opi"]["compat"][key], value, "field={key}");
+                assert_eq!(decode_model_entry(&encoded).unwrap(), model);
+            }
+            let absent = encode_model_entry(&source_model(WireApi::OpenAiCompletions, json!({})));
+            assert!(absent["x-opi"]["compat"][key].is_null(), "field={key}");
+            let mut malformed = absent;
+            malformed["x-opi"]["compat"][key] = json!(0);
+            assert!(decode_model_entry(&malformed).is_err(), "field={key}");
+        }
+    }
+
+    #[test]
+    fn source_qualified_priority_and_nested_values_fail_closed() {
+        for priority in [json!(0), json!(-7), json!(0.125), json!(i64::MAX)] {
+            let model = source_model(WireApi::OpenAiCompletions, json!({"vllmPriority":priority}));
+            let encoded = encode_model_entry(&model);
+            assert_eq!(encoded["x-opi"]["compat"]["vllmPriority"], priority);
+            assert_eq!(decode_model_entry(&encoded).unwrap(), model);
+        }
+        for (key, invalid) in [
+            ("vllmPriority", json!("0.5")),
+            ("openRouterRouting", json!({"allow_fallbacks":"false"})),
+            ("openRouterRouting", json!({"data_collection":"unknown"})),
+            ("openRouterRouting", json!({"sort":{"partition":false}})),
+            ("openRouterRouting", json!([])),
+            ("openRouterRouting", json!({"preferred_max_latency":[]})),
+            ("vercelGatewayRouting", json!({"only":"provider"})),
+            ("vercelGatewayRouting", json!([])),
+            ("chatTemplateKwargs", json!([])),
+            ("supportsFinishReason", json!("false")),
+            ("cacheControlFormat", json!("unknown")),
+            ("sessionAffinityFormat", json!("unknown")),
+        ] {
+            let mut source = json!({"id":"bad","api":"openai-completions","contextWindow":4096,"maxTokens":1024,"compat":{}});
+            source["compat"][key] = invalid.clone();
+            assert!(
+                decode_model_entry(&source).is_err(),
+                "plain source accepted {key}={invalid}"
+            );
+            let mut snapshot =
+                encode_model_entry(&source_model(WireApi::OpenAiCompletions, json!({})));
+            snapshot["x-opi"]["compat"][key] = invalid.clone();
+            assert!(
+                decode_model_entry(&snapshot).is_err(),
+                "snapshot accepted {key}={invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn source_qualified_responses_controls_preserve_absence_and_false() {
+        let flags = [
+            "supportsDeveloperRole",
+            "supportsMidConvoSystemMessages",
+            "supportsLongCacheRetention",
+            "supportsStrictMode",
+            "supportsOpenAIGrammarTools",
+            "supportsAdditionalTools",
+            "supportsToolSearch",
+            "supportsExplicitPromptCacheMode",
+            "supportsMidConvoEffort",
+            "supportsMaxOutputTokens",
+        ];
+        for wire in [
+            WireApi::OpenAiResponses,
+            WireApi::AzureOpenAiResponses,
+            WireApi::OpenAiCodexResponses,
+        ] {
+            for value in [Value::Null, json!(false), json!(true)] {
+                let mut source = json!({"sessionAffinityFormat":"openrouter"});
+                for key in flags {
+                    source[key] = value.clone();
+                }
+                let model = source_model(wire, source);
+                let encoded = encode_model_entry(&model);
+                for key in flags {
+                    let stored_key = if key == "supportsStrictMode" {
+                        "strictTools"
+                    } else {
+                        key
+                    };
+                    assert_eq!(
+                        encoded["x-opi"]["compat"][stored_key], value,
+                        "wire={wire}, field={key}"
+                    );
+                }
+                assert_eq!(
+                    encoded["x-opi"]["compat"]["sessionAffinityFormat"],
+                    "openrouter"
+                );
+                assert_eq!(decode_model_entry(&encoded).unwrap(), model);
+            }
+            let encoded = encode_model_entry(&source_model(wire, json!({})));
+            for key in flags {
+                let stored_key = if key == "supportsStrictMode" {
+                    "strictTools"
+                } else {
+                    key
+                };
+                assert!(
+                    encoded["x-opi"]["compat"][stored_key].is_null(),
+                    "wire={wire}, field={key}"
+                );
+            }
+            for key in flags {
+                let mut plain = json!({"id":"bad","api":wire.as_str(),
+                    "contextWindow":4096,"maxTokens":1024,"compat":{}});
+                plain["compat"][key] = json!("false");
+                assert!(
+                    decode_model_entry(&plain).is_err(),
+                    "wire={wire}, plain field={key}"
+                );
+                let mut snapshot = encoded.clone();
+                let stored_key = if key == "supportsStrictMode" {
+                    "strictTools"
+                } else {
+                    key
+                };
+                snapshot["x-opi"]["compat"][stored_key] = json!(0);
+                assert!(
+                    decode_model_entry(&snapshot).is_err(),
+                    "wire={wire}, snapshot field={key}"
+                );
+            }
+            let mut invalid_affinity = encoded;
+            invalid_affinity["x-opi"]["compat"]["sessionAffinityFormat"] = json!("unknown");
+            assert!(decode_model_entry(&invalid_affinity).is_err());
+        }
+    }
+
+    #[test]
+    fn temporal_source_presence_roundtrips_through_the_real_model_codec() {
+        for wire in [
+            WireApi::OpenAiCompletions,
+            WireApi::OpenAiResponses,
+            WireApi::AzureOpenAiResponses,
+            WireApi::OpenAiCodexResponses,
+        ] {
+            for value in [None, Some(false), Some(true)] {
+                let mut model =
+                    ModelInfo::new("model", "Model", wire, ModelCapabilities::new(4096, 1024));
+                match &mut model.compat {
+                    WireCompat::OpenAiCompletions(compat) => {
+                        compat.supports_mid_convo_system_messages = value;
+                        compat.supports_mid_convo_tool_additions = value;
+                    }
+                    WireCompat::OpenAiResponses(compat)
+                    | WireCompat::AzureOpenAiResponses(compat) => {
+                        compat.source = crate::model_info::OpenAiResponsesSourceCompat {
+                            supports_strict_mode: value,
+                            supports_grammar_tools: value,
+                            supports_mid_convo_effort: value,
+                            supports_mid_convo_system_messages: value,
+                            supports_additional_tools: value,
+                            supports_tool_search: value,
+                            ..Default::default()
+                        };
+                    }
+                    WireCompat::OpenAiCodexResponses(compat) => {
+                        compat.source = crate::model_info::OpenAiResponsesSourceCompat {
+                            supports_strict_mode: value,
+                            supports_grammar_tools: value,
+                            supports_mid_convo_effort: value,
+                            supports_mid_convo_system_messages: value,
+                            supports_additional_tools: value,
+                            supports_tool_search: value,
+                            ..Default::default()
+                        };
+                    }
+                    _ => unreachable!(),
+                }
+                let encoded = encode_model_entry(&model);
+                assert_eq!(
+                    decode_model_entry(&encoded).unwrap().compat,
+                    model.compat,
+                    "wire={wire}, value={value:?}"
+                );
+                let mut source = encoded.clone();
+                source.as_object_mut().unwrap().remove("x-opi");
+                source["compat"] = if wire == WireApi::OpenAiCompletions {
+                    json!({"supportsMidConvoSystemMessages":value,"supportsMidConvoToolAdditions":value})
+                } else {
+                    json!({"supportsMidConvoSystemMessages":value,"supportsStrictMode":value,
+                        "supportsOpenAIGrammarTools":value,"supportsMidConvoEffort":value,
+                        "supportsAdditionalTools":value,"supportsToolSearch":value})
+                };
+                assert_eq!(
+                    decode_model_entry(&source).unwrap().compat,
+                    model.compat,
+                    "plain source wire={wire}, value={value:?}"
+                );
+                let mut current_snapshot = encoded;
+                current_snapshot["compat"] =
+                    json!({"supportsMidConvoSystemMessages":!value.unwrap_or(false)});
+                assert_eq!(
+                    decode_model_entry(&current_snapshot).unwrap().compat,
+                    model.compat,
+                    "current snapshot is the complete frozen owner"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_responses_optional_source_values_remain_absent() {
+        for wire in [
+            WireApi::OpenAiResponses,
+            WireApi::AzureOpenAiResponses,
+            WireApi::OpenAiCodexResponses,
+        ] {
+            let model = ModelInfo::new("model", "Model", wire, ModelCapabilities::new(4096, 1024));
+            let assert_absent = |model: &ModelInfo| {
+                let source = match &model.compat {
+                    WireCompat::OpenAiResponses(compat)
+                    | WireCompat::AzureOpenAiResponses(compat) => &compat.source,
+                    WireCompat::OpenAiCodexResponses(compat) => &compat.source,
+                    _ => unreachable!(),
+                };
+                assert_eq!(
+                    source,
+                    &crate::model_info::OpenAiResponsesSourceCompat::default()
+                );
+            };
+            assert_absent(&model);
+            let mut plain = encode_model_entry(&model);
+            plain.as_object_mut().unwrap().remove("x-opi");
+            plain["compat"] = json!({});
+            assert_absent(&decode_model_entry(&plain).unwrap());
+            let mut old_snapshot = encode_model_entry(&model);
+            let compat = old_snapshot["x-opi"]["compat"].as_object_mut().unwrap();
+            for key in [
+                "strictTools",
+                "supportsOpenAIGrammarTools",
+                "supportsMidConvoEffort",
+                "supportsDeveloperRole",
+                "sessionAffinityFormat",
+                "supportsLongCacheRetention",
+                "supportsExplicitPromptCacheMode",
+                "supportsMaxOutputTokens",
+                "supportsMidConvoSystemMessages",
+                "supportsAdditionalTools",
+                "supportsToolSearch",
+            ] {
+                compat.remove(key);
+            }
+            assert_absent(&decode_model_entry(&old_snapshot).unwrap());
+        }
+        assert_eq!(
+            crate::openai_responses::ResponsesConfig::default().source,
+            crate::model_info::OpenAiResponsesSourceCompat::default()
+        );
+    }
+
+    #[test]
+    fn malformed_temporal_source_controls_fail_closed_in_both_codecs() {
+        for wire in [
+            WireApi::OpenAiCompletions,
+            WireApi::OpenAiResponses,
+            WireApi::AzureOpenAiResponses,
+            WireApi::OpenAiCodexResponses,
+        ] {
+            let model = ModelInfo::new("model", "Model", wire, ModelCapabilities::new(4096, 1024));
+            let mut source = encode_model_entry(&model);
+            source.as_object_mut().unwrap().remove("x-opi");
+            source["compat"] = json!({"supportsMidConvoSystemMessages":"true"});
+            assert!(decode_model_entry(&source).is_err());
+            let mut snapshot = encode_model_entry(&model);
+            snapshot["x-opi"]["compat"]["supportsMidConvoSystemMessages"] =
+                json!({"not":"boolean"});
+            assert!(decode_model_entry(&snapshot).is_err());
+        }
+    }
 }

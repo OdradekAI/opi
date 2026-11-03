@@ -36,6 +36,7 @@ fn make_provider_with_deployments(deployments: Vec<&str>) -> AzureOpenAIProvider
 
 fn text_request() -> opi_ai::provider::Request {
     opi_ai::provider::Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "azure:my-gpt4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -72,6 +73,7 @@ fn tool_request() -> opi_ai::provider::Request {
     use opi_ai::provider::Request;
 
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "azure:my-gpt4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -618,7 +620,7 @@ async fn auth_error_bodies_are_absent_from_public_errors() {
             .expect("auth failure should produce an event")
             .expect_err("auth failure should produce ProviderError");
         assert!(matches!(
-            error,
+            direct_error_cause(&error),
             opi_ai::provider::ProviderError::AuthFailed(_)
         ));
         let rendered = format!("{error} {error:?}");
@@ -698,7 +700,7 @@ async fn request_timeout_maps_to_typed_timeout_at_azure_boundary() {
 
     assert!(matches!(
         result,
-        Err(opi_ai::provider::ProviderError::Timeout)
+        Err(ref error) if matches!(direct_error_cause(error), opi_ai::provider::ProviderError::Timeout)
     ));
 }
 
@@ -726,7 +728,7 @@ async fn direct_auth_statuses_do_not_wait_for_stalled_bodies() {
 
         let error = result.expect_err("Azure direct auth status must fail");
         assert!(matches!(
-            error,
+            direct_error_cause(&error),
             opi_ai::provider::ProviderError::AuthFailed(_)
         ));
         assert_eq!(
@@ -747,12 +749,19 @@ async fn request_header_cannot_override_azure_auth_routing() {
     .unwrap();
     let mut request = text_request();
     request.extra_headers = vec![("api-key".into(), "override".into())];
-    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
-
-    assert!(matches!(
-        stream.next().await,
-        Some(Err(opi_ai::provider::ProviderError::RequestFailed(_)))
-    ));
+    let mut stream =
+        provider.stream_prepared(request.clone(), opi_ai::test_support::resolved_auth());
+    let error = stream
+        .next()
+        .await
+        .expect("one refusal")
+        .expect_err("managed header override");
+    let ProviderError::StreamFailure(failure) = &error else {
+        panic!("accepted projection must retain its failure carrier")
+    };
+    assert!(matches!(failure.cause(), ProviderError::RequestFailed(_)));
+    assert_direct_projection_prefix(failure.message(), &request);
+    assert!(stream.next().await.is_none());
     assert!(
         server
             .received_requests()
@@ -791,8 +800,8 @@ fn azure_inherits_shared_compat_flags_via_with_compat() {
     let body_tool = provider.build_request_body(&tool_request()).unwrap();
     let tools = body_tool["tools"].as_array().expect("tools present");
     assert!(
-        tools[0]["function"]["strict"] == true,
-        "Azure inherits strict-tool-schema from the shared compat path"
+        tools[0]["function"]["strict"] == false,
+        "Azure inherits strict capability while an unconstrained tool explicitly stays non-strict"
     );
 }
 
@@ -1459,7 +1468,7 @@ async fn azure_responses_setup_failure_before_activation_is_typed() {
     assert!(
         items
             .iter()
-            .any(|item| matches!(item, Err(ProviderError::AuthFailed(_)))),
+            .any(|item| matches!(item, Err(error) if matches!(direct_error_cause(error), ProviderError::AuthFailed(_)))),
         "401 maps to typed AuthFailed: {items:?}"
     );
     server.verify().await;
@@ -1533,7 +1542,7 @@ async fn azure_responses_cancellation_during_body_is_typed_and_prompt() {
     assert!(
         items
             .iter()
-            .any(|item| matches!(item, Err(ProviderError::Cancelled))),
+            .any(|item| matches!(item, Err(error) if matches!(direct_error_cause(error), ProviderError::Cancelled))),
         "cancellation surfaces typed Cancelled: {items:?}"
     );
 }
@@ -1544,6 +1553,7 @@ fn azure_history_assistant(
     provider: &str,
 ) -> opi_ai::message::AssistantMessage {
     opi_ai::message::AssistantMessage {
+        projection: None,
         content,
         api: opi_ai::ApiKind::OpenAi,
         provider: provider.into(),
@@ -1747,4 +1757,312 @@ async fn azure_responses_native_unsupported_effort_fails_typed_before_auth() {
         failure.cause()
     );
     server.verify().await;
+}
+
+async fn azure_duration_on_peer(
+    body_delay: std::time::Duration,
+    setup_delay: std::time::Duration,
+) -> (opi_ai::message::AssistantMessage, std::time::Duration) {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut bytes = [0; 4096];
+        loop {
+            let read = socket.read(&mut bytes).await.unwrap();
+            assert!(read > 0, "request terminated before its full body");
+            request.extend_from_slice(&bytes[..read]);
+            if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                let length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.strip_prefix("content-length:")
+                            .map(|value| value.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap();
+                if request.len() >= end + 4 + length {
+                    assert!(
+                        headers.starts_with("post /openai/v1/responses?api-version=v1 http/1.1"),
+                        "{headers}"
+                    );
+                    assert!(headers.contains("\r\napi-key: offline-azure-key"));
+                    assert!(!headers.contains("\r\nauthorization:"));
+                    let body: serde_json::Value =
+                        serde_json::from_slice(&request[end + 4..end + 4 + length]).unwrap();
+                    assert_eq!(body["model"], "my-gpt4o");
+                    break;
+                }
+            }
+        }
+        tokio::time::sleep(setup_delay).await;
+        socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await.unwrap();
+        socket.flush().await.unwrap();
+        tokio::time::sleep(body_delay).await;
+        let body = azure_responses_sse_text().replacen(
+            "data: {\"type\":\"response.completed\"",
+            "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"content_index\":0,\"delta\":\"Hi\"}\n\ndata: {\"type\":\"response.completed\"",
+            1,
+        );
+        socket
+            .write_all(format!("{:x}\r\n{}\r\n0\r\n\r\n", body.len(), body).as_bytes())
+            .await
+            .unwrap();
+        socket.flush().await.unwrap();
+    });
+
+    struct DelayedAuth {
+        delay: std::time::Duration,
+        calls: Arc<AtomicUsize>,
+    }
+    impl opi_ai::auth::AuthResolver for DelayedAuth {
+        fn resolve(
+            &self,
+        ) -> opi_ai::credential::BoxAuthFuture<'_, Result<opi_ai::ResolvedAuth, ProviderError>>
+        {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move {
+                tokio::time::sleep(self.delay).await;
+                Ok(azure_api_key_auth())
+            })
+        }
+    }
+    let provider = Arc::try_unwrap(azure_responses_provider(format!(
+        "http://{address}/openai/v1"
+    )))
+    .unwrap_or_else(|_| panic!("fresh provider must be uniquely owned"));
+    let model = provider
+        .models()
+        .iter()
+        .find(|model| model.id == "my-gpt4o")
+        .unwrap()
+        .clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut models = opi_ai::Models::new();
+    models
+        .register_route(
+            Box::new(provider),
+            Arc::new(DelayedAuth {
+                delay: setup_delay,
+                calls: calls.clone(),
+            }),
+            opi_ai::AuthProvenanceSource::Static,
+            Default::default(),
+        )
+        .unwrap();
+    let mut request = azure_responses_request("my-gpt4o", None);
+    request.callbacks = opi_ai::callbacks::RequestCallbacks::new().with_async_on_response(
+        move |status, _| async move {
+            assert_eq!(status, 200);
+            tokio::time::sleep(setup_delay).await;
+            Ok(())
+        },
+    );
+    let started = std::time::Instant::now();
+    let call = models.stream_simple(
+        opi_ai::ChatModelRecord::new("azure", model),
+        request,
+        Default::default(),
+    );
+    tokio::time::sleep(setup_delay).await;
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "an unpolled handle starts no auth"
+    );
+    let message = call
+        .result()
+        .await
+        .expect("controlled real adapter succeeds");
+    let elapsed = started.elapsed();
+    peer.await.unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(message.stop_reason, opi_ai::stream::StopReason::Stop);
+    assert_eq!(message.usage.input_tokens, 7);
+    assert_eq!(message.usage.output_tokens, 3);
+    (message, elapsed)
+}
+
+#[tokio::test]
+async fn azure_duration_includes_pending_first_body_poll() {
+    use std::time::Duration;
+    let (control, _) = azure_duration_on_peer(Duration::ZERO, Duration::ZERO).await;
+    let (delayed, elapsed) =
+        azure_duration_on_peer(Duration::from_millis(350), Duration::ZERO).await;
+    assert_eq!(delayed.content, control.content);
+    assert!(!delayed.content.is_empty());
+    assert_eq!(delayed.usage, control.usage);
+    assert!(elapsed >= Duration::from_millis(300));
+    assert!(
+        delayed.duration_ms.unwrap() >= 300,
+        "first Pending body poll belongs to response duration: {:?}",
+        delayed.duration_ms
+    );
+}
+
+#[tokio::test]
+async fn azure_duration_excludes_auth_setup_callback_and_unpolled_time() {
+    use std::time::Duration;
+    // Four independent150ms setup intervals: unpolled handle, resolver,
+    // response headers and response callback. None belongs to body polling.
+    let (message, elapsed) =
+        azure_duration_on_peer(Duration::ZERO, Duration::from_millis(150)).await;
+    let measured = Duration::from_millis(message.duration_ms.unwrap());
+    assert!(
+        elapsed.saturating_sub(measured) >= Duration::from_millis(500),
+        "duration included setup: measured={measured:?}, elapsed={elapsed:?}"
+    );
+}
+
+fn direct_error_cause(error: &ProviderError) -> &ProviderError {
+    match error {
+        ProviderError::StreamFailure(failure) => failure.cause(),
+        other => other,
+    }
+}
+
+fn assert_direct_projection_prefix(
+    message: &opi_ai::message::AssistantMessage,
+    request: &opi_ai::provider::Request,
+) {
+    use sha2::Digest as _;
+    let facts = message
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+}
+
+#[tokio::test]
+async fn azure_source_defaults_and_ordinary_only_controls_use_actual_wire() {
+    use opi_ai::message::{Message, ToolDef};
+    use opi_ai::model_info::{
+        OpenAiResponsesCompat, OpenAiResponsesSourceCompat, SessionAffinityFormat, WireCompat,
+    };
+    for flag in [None, Some(false), Some(true)] {
+        let server = MockServer::start().await;
+        mount_azure_responses_mock(&server, azure_responses_sse_text()).await;
+        let source = OpenAiResponsesSourceCompat {
+            supports_developer_role: flag,
+            supports_strict_mode: flag,
+            supports_mid_convo_system_messages: Some(true),
+            supports_max_output_tokens: Some(false),
+            supports_long_cache_retention: Some(true),
+            supports_explicit_prompt_cache_mode: Some(true),
+            supports_mid_convo_effort: Some(true),
+            session_affinity_format: Some(SessionAffinityFormat::OpenRouter),
+            ..Default::default()
+        };
+        let model = azure_responses_record("my-gpt4o")
+            .with_compat(WireCompat::AzureOpenAiResponses(OpenAiResponsesCompat {
+                source,
+                ..Default::default()
+            }))
+            .unwrap();
+        let (models, handle) = registered_azure_responses_models(server.uri(), model.clone()).await;
+        let mut request = azure_responses_request("my-gpt4o", None);
+        let mut context = opi_ai::transcript::Context {
+            system_prompt: Some("leading instruction".into()),
+            messages: request.context.messages().to_vec(),
+            tools: vec![ToolDef {
+                name: "read".into(),
+                description: "read".into(),
+                input_schema: serde_json::json!({"type":"object"}),
+                constrained_sampling: None,
+            }],
+        };
+        context
+            .messages
+            .push(Message::System(opi_ai::transcript::SystemMessage {
+                content: "later instruction".into(),
+                sections: vec![],
+                tools_added: vec![],
+                tools_removed: vec![],
+                timestamp_ms: 1,
+            }));
+        request.context = opi_ai::transcript::normalize_context(context).unwrap();
+        request.max_tokens = Some(7);
+        request.session_id = Some("azure-own-session".into());
+        request.cache_retention = CacheRetention::Long;
+        let mut options = AzureOpenAIOptions::default();
+        options.reasoning_effort = Some(ThinkingLevel::High);
+        let message = models
+            .complete(
+                opi_ai::models::ChatModelRecord::new("azure", model),
+                request,
+                handle.options(options),
+            )
+            .await
+            .unwrap();
+        assert!(message.projection.is_some());
+        let body = sent_body(&server).await;
+        assert_eq!(body["input"][0]["content"], "leading instruction");
+        assert_eq!(
+            body["input"][0]["role"],
+            if flag == Some(false) {
+                "system"
+            } else {
+                "developer"
+            }
+        );
+        assert!(body.get("instructions").is_none());
+        let later = body["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["content"] == "later instruction")
+            .unwrap();
+        assert_eq!(
+            later["role"],
+            if flag == Some(false) {
+                "system"
+            } else {
+                "developer"
+            }
+        );
+        assert_eq!(
+            body["tools"][0].get("strict"),
+            (flag != Some(false)).then_some(&serde_json::Value::Bool(false))
+        );
+        assert_eq!(
+            body["max_output_tokens"], 16,
+            "Azure ignores the ordinary Responses max capability"
+        );
+        assert!(body.get("prompt_cache_options").is_none());
+        assert!(body.get("prompt_cache_retention").is_none());
+        assert!(
+            !body["input"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["type"] == "configuration_update")
+        );
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 1);
+        assert!(
+            !sent[0].headers.contains_key("x-session-id"),
+            "ordinary affinity format stays inert on Azure"
+        );
+        server.verify().await;
+    }
 }

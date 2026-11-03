@@ -283,6 +283,13 @@ impl ProviderRegistry {
         self.providers.iter().find(|p| p.id() == id).cloned()
     }
 
+    pub(crate) fn remove_provider(&mut self, id: &str) {
+        self.providers.retain(|provider| provider.id() != id);
+        self.model_overrides
+            .retain(|(provider, _), _| provider != id);
+        self.dynamic_catalogs.remove(id);
+    }
+
     /// All registered providers in registration order (task 20.17):
     /// session resource cleanup fans out across every provider's optional
     /// [`session_resources`](crate::provider::Provider::session_resources)

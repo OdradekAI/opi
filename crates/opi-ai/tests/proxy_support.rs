@@ -372,6 +372,7 @@ async fn openai_chat_provider_routes_http_requests_through_proxy() {
         client,
     );
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

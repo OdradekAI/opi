@@ -9,6 +9,10 @@ pub(crate) const TOOL_ERROR_MARKER: &str = "[tool_error] ";
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "role")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Inline canonical messages preserve public construction and matching without a per-message allocation"
+)]
 pub enum Message {
     #[serde(rename = "user")]
     User(UserMessage),
@@ -28,6 +32,9 @@ pub struct UserMessage {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AssistantMessage {
+    /// Known request projection facts; legacy and unformed setup state remain unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection: Option<crate::transcript::ProjectionFacts>,
     pub content: Vec<AssistantContent>,
     pub api: crate::ApiKind,
     pub provider: String,
@@ -792,7 +799,7 @@ pub fn is_context_overflow(message: &AssistantMessage, context_window: Option<u6
     match message.stop_reason {
         crate::stream::StopReason::Stop => input_tokens > window,
         crate::stream::StopReason::Length if message.usage.output_tokens == 0 => {
-            input_tokens * 100 >= window * 99
+            u128::from(input_tokens) * 100 >= u128::from(window) * 99
         }
         _ => false,
     }

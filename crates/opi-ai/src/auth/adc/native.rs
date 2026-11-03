@@ -177,8 +177,8 @@ pub enum AdcResolutionError {
     /// The metadata response's `Metadata-Flavor` header was absent or wrong.
     #[error("metadata service response has an incorrect Metadata-Flavor header")]
     MetadataFlavor,
-    /// A 200 response did not carry the required token fields.
-    #[error("token exchange response is missing the access token")]
+    /// A 200 response has invalid token fields or an unrepresentable expiry.
+    #[error("token exchange response has invalid token fields or expiry")]
     InvalidTokenResponse,
     /// The external-account credential source is structurally invalid
     /// (mutually exclusive keys, unsupported formats or versions, missing
@@ -814,6 +814,15 @@ struct TokenResponse {
     refresh_token: Option<String>,
 }
 
+/// Convert an admitted positive source TTL without overflowing the timestamp.
+pub(crate) fn checked_expiration(
+    now: OffsetDateTime,
+    seconds: i64,
+) -> Result<OffsetDateTime, AdcResolutionError> {
+    now.checked_add(time::Duration::seconds(seconds))
+        .ok_or(AdcResolutionError::InvalidTokenResponse)
+}
+
 fn parse_token_response(response: &AdcSourceResponse) -> Result<TokenResponse, AdcResolutionError> {
     let json: serde_json::Value = serde_json::from_slice(&response.body)
         .map_err(|_| AdcResolutionError::InvalidTokenResponse)?;
@@ -977,7 +986,8 @@ async fn exchange_family(
                 access_token: SecretString::from(token.access_token),
                 expires_at: token
                     .expires_in
-                    .map(|secs| now + time::Duration::seconds(secs)),
+                    .map(|secs| checked_expiration(now, secs))
+                    .transpose()?,
                 quota_project: None,
                 rotated_refresh_token: None,
                 source: AdcCredentialSource::ServiceAccount,
@@ -1018,7 +1028,8 @@ async fn exchange_family(
                 access_token: SecretString::from(token.access_token),
                 expires_at: token
                     .expires_in
-                    .map(|secs| now + time::Duration::seconds(secs)),
+                    .map(|secs| checked_expiration(now, secs))
+                    .transpose()?,
                 quota_project: quota_project.clone(),
                 rotated_refresh_token: token.refresh_token.map(SecretString::from),
                 source: AdcCredentialSource::AuthorizedUser {
@@ -1076,7 +1087,8 @@ async fn exchange_family(
                 access_token: SecretString::from(token.access_token),
                 expires_at: token
                     .expires_in
-                    .map(|secs| now + time::Duration::seconds(secs)),
+                    .map(|secs| checked_expiration(now, secs))
+                    .transpose()?,
                 quota_project: quota_project.clone(),
                 rotated_refresh_token: token.refresh_token.map(SecretString::from),
                 source: AdcCredentialSource::ExternalAccountAuthorizedUser {

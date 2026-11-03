@@ -71,7 +71,7 @@ pub use auth::{
     ResolvedAuth, StaticAuthResolver,
 };
 pub use callbacks::{CallbackError, ORDINARY_PAYLOAD_VARIANT, RequestCallbacks};
-pub use catalog::{DynamicCatalogSource, HttpCatalogSource, ModelsStore};
+pub use catalog::{CatalogRefreshContext, DynamicCatalogSource, HttpCatalogSource, ModelsStore};
 pub use credential::{
     ApiKeyCredential, BoxAuthFuture, Credential, CredentialSource, CredentialStore,
     CredentialStoreError,
@@ -83,9 +83,9 @@ pub use model_info::{
 };
 pub use models::{
     ApiId, AuthCheck, AuthCheckKind, AuthDescriptor, AuthResolutionOverrides, ChatApi,
-    ChatApiHandle, ChatCall, ChatModelRecord, CompatMetadata, Models, ModelsError, NativeOptions,
-    PreparedProviderCall, PreparedRoute, RefreshOutcome, RefreshReport, RefreshReportEntry,
-    RefreshStatus, SecretKey, SimpleOptions, SimpleToolChoice,
+    ChatApiHandle, ChatCall, ChatModelRecord, CompatMetadata, Models, ModelsError,
+    ModelsRefreshOptions, NativeOptions, PreparedProviderCall, PreparedRoute, RefreshOutcome,
+    RefreshReport, RefreshReportEntry, RefreshStatus, SecretKey, SimpleOptions, SimpleToolChoice,
 };
 pub use mutation::{
     BarrierEntry, BarrierReport, CredentialMutationOp, CredentialRevision, CredentialUpdateOp,

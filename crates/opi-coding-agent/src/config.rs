@@ -2039,6 +2039,15 @@ fn custom_compat(
                 }),
             };
             opi_ai::WireCompat::OpenAiCompletions(opi_ai::model_info::OpenAiCompletionsCompat {
+                supports_mid_convo_system_messages: None,
+                supports_mid_convo_tool_additions: None,
+                supports_finish_reason: None,
+                supports_grammar_tools: None,
+                open_router_routing: None,
+                vercel_gateway_routing: None,
+                cache_control_format: None,
+                session_affinity_format: None,
+                supports_long_cache_retention: None,
                 store,
                 instruction_role,
                 thinking_format,
@@ -2056,7 +2065,7 @@ fn custom_compat(
                 requires_reasoning_content_on_assistant_messages: raw
                     .requires_reasoning_content_on_assistant_messages,
                 zai_tool_stream: raw.zai_tool_stream.unwrap_or_default(),
-                vllm_priority: raw.vllm_priority,
+                vllm_priority: raw.vllm_priority.map(serde_json::Number::from),
                 thinking_token_budget_field,
                 supports_thinking_token_budget: raw
                     .supports_thinking_token_budget
@@ -2072,7 +2081,12 @@ fn custom_compat(
             let mut compat = opi_ai::model_info::OpenAiResponsesCompat {
                 store: raw.store,
                 reasoning_effort: raw.reasoning_effort,
-                strict_tools: raw.strict_tools.unwrap_or_default(),
+                source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                    supports_strict_mode: Some(raw.strict_tools.unwrap_or_default()),
+                    supports_grammar_tools: Some(false),
+                    supports_mid_convo_effort: Some(false),
+                    ..opi_ai::model_info::OpenAiResponsesCompat::default().source
+                },
                 send_session_id_header: raw.send_session_id_header.unwrap_or(false),
                 ..Default::default()
             };

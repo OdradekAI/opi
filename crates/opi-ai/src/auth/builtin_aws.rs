@@ -36,7 +36,8 @@ pub struct BuiltinAwsConfig {
     pub base_url: Option<String>,
     /// Injected transport for source exchanges (STS, metadata, SSO and login).
     pub transport: Option<Arc<dyn AwsSourceTransport>>,
-    /// Injected credential-process owner.
+    /// Injected credential-process owner. Omission uses the SDK runner without
+    /// a selected timeout/stdout policy; process cleanup remains owned.
     pub process: Option<Arc<dyn CredentialProcessRunner>>,
 }
 

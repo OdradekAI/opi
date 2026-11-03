@@ -57,6 +57,7 @@ const EXPECTED_ERROR_MARKER: &str = "[tool_error] ";
 /// shape realistic; tool-result assertions navigate to the LAST message.
 fn request_with_tool_result(is_error: bool, payload: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "m".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -69,6 +70,7 @@ fn request_with_tool_result(is_error: bool, payload: &str) -> Request {
                 // The result pairs with its batch's call (AIR-012):
                 // orphan results are a typed association failure now.
                 Message::Assistant(AssistantMessage {
+                    projection: None,
                     content: vec![AssistantContent::ToolCall {
                         tool_call: ToolCall {
                             id: "tc-1".into(),

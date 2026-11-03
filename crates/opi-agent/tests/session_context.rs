@@ -50,6 +50,7 @@ fn assistant_msg(id: &str, parent: Option<&str>, text: &str) -> SessionEntry {
         parent_id: parent.map(str::to_owned),
         timestamp: "2026-07-01T00:00:01Z".into(),
         message: Message::Assistant(AssistantMessage {
+            projection: None,
             content: vec![AssistantContent::Text {
                 text: text.into(),
                 signature: None,

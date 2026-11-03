@@ -449,6 +449,7 @@ fn codex_setup(port: u16) -> Result<(Models, ChatModelRecord, Request), String> 
         )
         .map_err(|e| e.to_string())?;
     let request = Request {
+        projection: Default::default(),
         transport: TransportPreference::Auto,
         model: "openai-codex:gpt-5.4".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

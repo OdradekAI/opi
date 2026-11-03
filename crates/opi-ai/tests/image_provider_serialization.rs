@@ -77,6 +77,7 @@ fn gemini_done_sse() -> &'static str {
 
 fn make_request(messages: Vec<Message>) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "test-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

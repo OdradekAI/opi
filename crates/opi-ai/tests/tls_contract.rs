@@ -394,6 +394,7 @@ fn build_tls_client(
 
 fn chat_request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "openai:gpt-4o".into(),
         context: transcript::normalize_context(transcript::Context {
@@ -494,13 +495,19 @@ async fn chat_models_error(server_url: &str, client: Arc<HttpClient>) -> Provide
             },
         )
         .expect("route registration");
+    let request = chat_request();
     let prepared = models
-        .prepare_call("openai:gpt-4o", chat_request())
+        .prepare_call("openai:gpt-4o", request.clone())
         .await
         .expect("call preparation");
     let mut stream: EventStream = prepared.start_attempt().expect("attempt start");
     while let Some(item) = stream.next().await {
         if let Err(error) = item {
+            accepted_failure_cause(&error, &request);
+            assert!(
+                stream.next().await.is_none(),
+                "negative call has one terminal failure"
+            );
             return error;
         }
     }
@@ -743,7 +750,7 @@ async fn assert_negative_zero_http(
     let error = chat_models_error(&server.url, client.clone()).await;
     drop(client);
     server.wait_idle().await?;
-    let ProviderError::Network(summary) = &error else {
+    let ProviderError::Network(summary) = accepted_failure_cause(&error, &chat_request()) else {
         return Err(format!(
             "expected typed redacted Network failure, got {error:?}"
         ));
@@ -1637,7 +1644,13 @@ async fn default_roots_reject_unconfigured_loopback_ca_without_business_http() {
     )
     .await
     .unwrap();
-    assert!(matches!(error, ProviderError::Network(_)), "{error:?}");
+    assert!(
+        matches!(
+            accepted_failure_cause(&error, &chat_request()),
+            ProviderError::Network(_)
+        ),
+        "{error:?}"
+    );
     assert_eq!(server.stats.http.load(Ordering::SeqCst), 0);
     assert_eq!(server.stats.accepts.load(Ordering::SeqCst), 1);
     server.finish().await.unwrap();
@@ -1844,4 +1857,36 @@ async fn h2_refused_stream_does_not_trigger_backend_retry() {
         matches!(result, Err(ProviderError::Network(_))),
         "{result:?}"
     );
+}
+
+fn accepted_failure_cause<'a>(
+    error: &'a opi_ai::provider::ProviderError,
+    request: &opi_ai::provider::Request,
+) -> &'a opi_ai::provider::ProviderError {
+    use opi_ai::provider::ProviderError;
+    use sha2::Digest as _;
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let facts = failure
+        .message()
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+    failure.cause()
 }

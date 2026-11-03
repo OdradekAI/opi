@@ -356,6 +356,7 @@ impl SummaryHooks {
             .run_provider_call(
                 &self.collection,
                 opi_ai::provider::Request {
+                    projection: Default::default(),
                     transport: Default::default(),
                     model: state.model_selection.to_spec(),
                     context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -817,6 +818,319 @@ async fn acknowledged_preparation_uncertainty_stops_before_next_external_effect(
         assert_eq!(
             serde_json::to_value(&agent.state_snapshot().context).unwrap(),
             projection
+        );
+    }
+}
+
+struct CancelFirstAuth {
+    calls: AtomicUsize,
+    started: Arc<tokio::sync::Notify>,
+}
+impl opi_ai::auth::AuthResolver for CancelFirstAuth {
+    fn resolve(
+        &self,
+    ) -> opi_ai::credential::BoxAuthFuture<
+        '_,
+        Result<opi_ai::auth::ResolvedAuth, opi_ai::provider::ProviderError>,
+    > {
+        let first = self.calls.fetch_add(1, Ordering::SeqCst) == 0;
+        Box::pin(async move {
+            if first {
+                self.started.notify_one();
+                std::future::pending().await
+            } else {
+                Ok(opi_ai::test_support::resolved_auth())
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn accepted_projection_auth_cancellation_keeps_agent_cancel_outcome_and_undelivered_queue() {
+    let provider = MockProvider::new("mock", vec![text_response("done")]);
+    let calls = provider.call_log_handle();
+    let started = Arc::new(tokio::sync::Notify::new());
+    let auth = Arc::new(CancelFirstAuth {
+        calls: AtomicUsize::new(0),
+        started: started.clone(),
+    });
+    let mut models = opi_ai::Models::new();
+    models
+        .register_route(
+            Box::new(provider),
+            auth.clone(),
+            opi_ai::AuthProvenanceSource::Static,
+            Default::default(),
+        )
+        .unwrap();
+    let diagnostics = Arc::new(opi_agent::diagnostic_sink::RecordingSink::new());
+    let mut agent = Agent::new(
+        Arc::new(models),
+        vec![],
+        None,
+        "mock:mock-model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(NoOpHooks),
+    )
+    .unwrap();
+    agent.set_diagnostic_sink(Some(diagnostics.clone()));
+    agent
+        .replace_state(NextTurnState::new(
+            vec![user("old history")],
+            ModelSelection::new("mock", "mock-model"),
+            InferenceConfig::default(),
+        ))
+        .unwrap();
+    agent.steer("selected queue".into());
+    let events = Arc::new(Mutex::new(Vec::new()));
+    agent.subscribe(Box::new({
+        let events = events.clone();
+        move |event| events.lock().unwrap().push(event.clone())
+    }));
+    let run = agent.arm_run();
+    let cancel = run.cancel_token();
+    let canceller = tokio::spawn(async move {
+        started.notified().await;
+        cancel.cancel();
+    });
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        agent.prompt_armed("new prompt", run),
+    )
+    .await
+    .unwrap();
+    canceller.await.unwrap();
+    assert!(
+        matches!(result.error(), Some(AgentError::Cancelled)),
+        "{:?}",
+        result.error()
+    );
+    assert!(calls.lock().unwrap().is_empty());
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        texts(&agent.state_snapshot().context),
+        ["old history", "new prompt"]
+    );
+    assert!(
+        !result
+            .messages()
+            .iter()
+            .any(|message| matches!(message, AgentMessage::Llm(Message::Assistant(_))))
+    );
+    assert!(diagnostics.snapshot().iter().any(|record| {
+        record.code == opi_agent::diagnostic::code::CODE_AGENT_CANCELLED
+            && record
+                .details
+                .as_ref()
+                .and_then(|details| details.get("phase"))
+                .and_then(serde_json::Value::as_str)
+                == Some("during_prepare")
+    }));
+    assert!(!events.lock().unwrap().iter().any(|event| matches!(
+        event,
+        opi_agent::AgentEvent::MessageStart { .. }
+            | opi_agent::AgentEvent::MessageUpdate { .. }
+            | opi_agent::AgentEvent::MessageEnd { .. }
+            | opi_agent::AgentEvent::TurnEnd { .. }
+    )));
+    let queue_selections = events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|event| match event {
+            opi_agent::AgentEvent::QueueUpdate {
+                steering,
+                follow_up,
+            } => Some((steering.clone(), follow_up.clone())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        queue_selections,
+        vec![(vec!["selected queue".to_owned()], Vec::<String>::new())]
+    );
+    let retried = agent.retry_last_turn().await;
+    assert!(retried.error().is_none(), "{:?}", retried.error());
+    assert_eq!(auth.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(calls.lock().unwrap().len(), 1);
+    assert_eq!(
+        texts(retried.messages()),
+        ["old history", "new prompt", "selected queue"]
+    );
+}
+
+struct PendingCleanupAuth {
+    started: Arc<tokio::sync::Notify>,
+}
+impl opi_ai::auth::AuthResolver for PendingCleanupAuth {
+    fn resolve(
+        &self,
+    ) -> opi_ai::credential::BoxAuthFuture<
+        '_,
+        Result<opi_ai::auth::ResolvedAuth, opi_ai::provider::ProviderError>,
+    > {
+        Box::pin(async move {
+            self.started.notify_one();
+            std::future::pending().await
+        })
+    }
+}
+
+#[tokio::test]
+async fn accepted_projection_resource_cleanup_cancellation_keeps_agent_cancel_origin() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let provider = opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
+        Some(format!("http://{}", listener.local_addr().unwrap())),
+        vec![opi_ai::ModelInfo::new(
+            "model",
+            "model",
+            opi_ai::WireApi::OpenAiCodexResponses,
+            opi_ai::ModelCapabilities::new(10000, 100),
+        )],
+        Arc::new(opi_ai::http::HttpClient::new()),
+    );
+    let started = Arc::new(tokio::sync::Notify::new());
+    let mut models = opi_ai::Models::new();
+    models
+        .register_route(
+            Box::new(provider),
+            Arc::new(PendingCleanupAuth {
+                started: started.clone(),
+            }),
+            opi_ai::AuthProvenanceSource::Static,
+            Default::default(),
+        )
+        .unwrap();
+    let models = Arc::new(models);
+    let diagnostics = Arc::new(opi_agent::diagnostic_sink::RecordingSink::new());
+    let mut agent = Agent::new(
+        models.clone(),
+        vec![],
+        None,
+        "openai-codex:model".into(),
+        None,
+        InferenceConfig::default(),
+        AgentLoopConfig::default(),
+        Box::new(NoOpHooks),
+    )
+    .unwrap();
+    agent.set_diagnostic_sink(Some(diagnostics.clone()));
+    agent
+        .replace_state(NextTurnState::new(
+            vec![user("old history")],
+            ModelSelection::new("openai-codex", "model"),
+            InferenceConfig::default(),
+        ))
+        .unwrap();
+    agent.steer("undelivered queue".into());
+    let run = agent.arm_run();
+    let caller = run.cancel_token();
+    let cleanup = tokio::spawn(async move {
+        started.notified().await;
+        models.cleanup_session_resources(None).await.unwrap()
+    });
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        agent.prompt_armed("new prompt", run),
+    )
+    .await
+    .unwrap();
+    let report = cleanup.await.unwrap();
+    assert_eq!(report.cancelled_generations, 1);
+    assert!(
+        !caller.is_cancelled(),
+        "cleanup only cancels the registered child generation"
+    );
+    assert!(
+        matches!(result.error(), Some(AgentError::Cancelled)),
+        "{:?}",
+        result.error()
+    );
+    assert_eq!(
+        texts(&agent.state_snapshot().context),
+        ["old history", "new prompt"]
+    );
+    assert!(
+        !result
+            .messages()
+            .iter()
+            .any(|message| matches!(message, AgentMessage::Llm(Message::Assistant(_))))
+    );
+    assert!(diagnostics.snapshot().iter().any(|record| {
+        record.code == opi_agent::diagnostic::code::CODE_AGENT_CANCELLED
+            && record
+                .details
+                .as_ref()
+                .and_then(|details| details.get("phase"))
+                .and_then(serde_json::Value::as_str)
+                == Some("during_prepare")
+    }));
+    assert!(matches!(listener.accept(),Err(error) if error.kind()==std::io::ErrorKind::WouldBlock));
+}
+
+struct RefusingPreparationAuth(opi_ai::provider::ProviderError);
+impl opi_ai::auth::AuthResolver for RefusingPreparationAuth {
+    fn resolve(
+        &self,
+    ) -> opi_ai::credential::BoxAuthFuture<
+        '_,
+        Result<opi_ai::auth::ResolvedAuth, opi_ai::provider::ProviderError>,
+    > {
+        Box::pin(async { Err(self.0.clone()) })
+    }
+}
+#[tokio::test]
+async fn resolver_cancellation_and_login_refusal_keep_distinct_agent_provider_errors() {
+    use opi_ai::provider::{ProviderError, ProviderErrorSummary};
+    for cause in [
+        ProviderError::Cancelled,
+        ProviderError::LoginCancelled {
+            provider_id: "mock".into(),
+        },
+        ProviderError::AuthFailed(ProviderErrorSummary::authentication_rejected()),
+    ] {
+        let provider = MockProvider::new("mock", vec![]);
+        let calls = provider.call_log_handle();
+        let mut models = opi_ai::Models::new();
+        models
+            .register_route(
+                Box::new(provider),
+                Arc::new(RefusingPreparationAuth(cause)),
+                opi_ai::AuthProvenanceSource::Static,
+                Default::default(),
+            )
+            .unwrap();
+        let diagnostics = Arc::new(opi_agent::diagnostic_sink::RecordingSink::new());
+        let mut agent = Agent::new(
+            Arc::new(models),
+            vec![],
+            None,
+            "mock:mock-model".into(),
+            None,
+            InferenceConfig::default(),
+            AgentLoopConfig::default(),
+            Box::new(NoOpHooks),
+        )
+        .unwrap();
+        agent.set_diagnostic_sink(Some(diagnostics.clone()));
+        let run = agent.arm_run();
+        let caller = run.cancel_token();
+        let result = agent.prompt_armed("task", run).await;
+        assert!(!caller.is_cancelled());
+        assert!(
+            matches!(result.error(), Some(AgentError::Provider(_))),
+            "{:?}",
+            result.error()
+        );
+        assert!(calls.lock().unwrap().is_empty());
+        assert!(
+            diagnostics
+                .snapshot()
+                .iter()
+                .all(|record| record.code != opi_agent::diagnostic::code::CODE_AGENT_CANCELLED)
         );
     }
 }

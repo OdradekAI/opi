@@ -51,6 +51,7 @@ impl AuthResolver for NoCredentialResolver {
 
 fn sample_request(model: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.to_owned(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -123,8 +124,11 @@ async fn prepare_call_yields_credential_needed_when_route_resolver_has_no_creden
         .await
         .unwrap_err();
     match error {
-        opi_ai::ModelsError::Provider(ProviderError::CredentialNeeded { provider_id }) => {
-            assert_eq!(provider_id, "anthropic");
+        opi_ai::ModelsError::Provider(ProviderError::StreamFailure(failure)) => {
+            assert!(failure.message().projection.is_some());
+            assert!(
+                matches!(failure.cause(),ProviderError::CredentialNeeded { provider_id } if provider_id == "anthropic")
+            );
         }
         other => panic!("expected CredentialNeeded, got {other:?}"),
     }
@@ -398,10 +402,15 @@ async fn assert_scheme_rejected_before_wire(
         .await
         .expect("scheme mismatch should produce an event")
         .expect_err("scheme mismatch should produce ProviderError");
+    let ProviderError::StreamFailure(failure) = &error else {
+        panic!("accepted projection retains failure facts: {error:?}");
+    };
+    assert!(failure.message().projection.is_some());
     assert!(
-        matches!(error, ProviderError::Config(_)),
+        matches!(failure.cause(), ProviderError::Config(_)),
         "expected Config error, got {error:?}"
     );
+    assert!(stream.next().await.is_none());
     assert!(
         server.received_requests().await.unwrap().is_empty(),
         "scheme mismatch must be rejected before the wire"

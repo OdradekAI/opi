@@ -52,6 +52,7 @@ fn assistant_msg(id: &str, parent: Option<&str>, text: &str) -> SessionEntry {
         parent_id: parent.map(|s| s.into()),
         timestamp: "2026-05-22T12:00:02Z".into(),
         message: Message::Assistant(AssistantMessage {
+            projection: None,
             content: vec![AssistantContent::Text {
                 text: text.into(),
                 signature: None,
@@ -668,4 +669,65 @@ proptest! {
             first_kept
         );
     }
+}
+
+fn forwarding_projection_facts() -> opi_ai::transcript::ProjectionFacts {
+    use opi_ai::transcript::{
+        MessageRange, ProjectionFacts, ProjectionMode, SourcePrefix, TemporalProjectionFacts,
+    };
+    ProjectionFacts {
+        source_prefix: SourcePrefix {
+            message_count: 4,
+            sha256: "07".repeat(32),
+        },
+        temporal: TemporalProjectionFacts {
+            mode: ProjectionMode::Collapse,
+            affected_ranges: vec![MessageRange { start: 0, end: 3 }],
+        },
+        replay: opi_ai::replay::ReplayFacts {
+            losses: vec![opi_ai::replay::ReplayLoss::DroppedThinkingBlocks { count: 1 }],
+        },
+    }
+}
+
+#[test]
+fn session_v2_projection_facts_and_legacy_unknown_round_trip() {
+    let facts = forwarding_projection_facts();
+    let mut known = assistant_msg("known", None, "answer");
+    let SessionEntry::Message(entry) = &mut known else {
+        unreachable!()
+    };
+    let Message::Assistant(assistant) = &mut entry.message else {
+        unreachable!()
+    };
+    assistant.projection = Some(facts.clone());
+    let legacy = assistant_msg("legacy", Some("known"), "older answer");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("projection.jsonl");
+    let mut writer = SessionWriter::create(&path, make_header("projection-roundtrip")).unwrap();
+    writer.append(&known).unwrap();
+    writer.append(&legacy).unwrap();
+    drop(writer);
+    let raw = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        raw.matches("\"projection\"").count(),
+        1,
+        "unknown history stays omitted"
+    );
+    let (header, entries) = SessionReader::read_all(&path).unwrap();
+    assert_eq!(header.version, 2);
+    assert_eq!(entries.len(), 2);
+    let projection = |entry: &SessionEntry| {
+        let SessionEntry::Message(entry) = entry else {
+            panic!("message entry")
+        };
+        let Message::Assistant(assistant) = &entry.message else {
+            panic!("assistant")
+        };
+        assistant.projection.clone()
+    };
+    assert_eq!(projection(&entries[0]), Some(facts));
+    assert_eq!(projection(&entries[1]), None);
+    assert_eq!(entry_id(&entries[0]), "known");
+    assert_eq!(entry_parent_id(&entries[1]).as_deref(), Some("known"));
 }

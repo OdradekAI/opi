@@ -46,9 +46,10 @@ impl AuthResolver for FixtureAuth {
 
 fn collection(store: ModelsStore, endpoint: &str, auth: Arc<FixtureAuth>) -> Models {
     let mut models = registered_collection(store, endpoint, auth);
-    models.register_catalog_source(Arc::new(HttpCatalogSource::new(format!(
-        "{endpoint}/catalog"
-    ))));
+    models.register_catalog_source(Arc::new(HttpCatalogSource::new(
+        format!("{endpoint}/catalog"),
+        ["fixture".into()],
+    )));
     models
 }
 
@@ -141,6 +142,11 @@ fn document(endpoint: &str) -> Value {
             {"type": "chat", "id": "shared", "name": "Remote chat", "api": "openai-completions",
                 "baseUrl": endpoint, "contextWindow": 8192, "maxTokens": 512,
                 "input": ["text"], "reasoning": false, "cost": cost,
+                "compat": {"supportsStore":false, "supportsUsageInStreaming":false,
+                    "vllmPriority":0.125, "openRouterRouting":{"allow_fallbacks":false,
+                        "only":[],"max_price":{"prompt":0,"completion":"0.5"},
+                        "sort":{"partition":null}},
+                    "vercelGatewayRouting":{"only":[]}},
                 "x-opi": {"streaming": true}},
             {"type": "image", "id": "shared", "name": "Remote image", "api": "openrouter-images",
                 "baseUrl": format!("{endpoint}/image"), "output": ["image", "text"], "cost": cost,
@@ -160,6 +166,7 @@ fn document(endpoint: &str) -> Value {
 
 fn request() -> Request {
     Request {
+        projection: Default::default(),
         model: "fixture:shared".into(),
         context: opi_ai::transcript::normalize_context(Default::default()).unwrap(),
         max_tokens: None,
@@ -257,7 +264,7 @@ async fn mixed_operation_catalog_reopens_into_three_real_models_calls() {
     let auth = Arc::new(FixtureAuth::default());
     let mut models = collection(store.clone(), &server.uri(), auth.clone());
     assert_eq!(auth.0.load(Ordering::SeqCst), 0);
-    let report = models.refresh(true).await.unwrap();
+    let report = models.refresh(Default::default()).await.unwrap();
     assert!(
         report
             .entries()
@@ -307,7 +314,13 @@ async fn mixed_operation_catalog_reopens_into_three_real_models_calls() {
         &server.uri(),
         auth.clone(),
     );
-    models.refresh(false).await.unwrap();
+    models
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
     assert_eq!(auth.0.load(Ordering::SeqCst), 0);
     let chat = models.get_model("fixture", "shared").unwrap().clone();
@@ -373,6 +386,16 @@ async fn mixed_operation_catalog_reopens_into_three_real_models_calls() {
         assert!(!sent.headers.contains_key("x-remove"));
         let body: Value = serde_json::from_slice(&sent.body).unwrap();
         assert_eq!(body["model"], "shared");
+        if sent.url.path() == "/chat/completions" {
+            assert_eq!(body["priority"], 0.125);
+            assert_eq!(
+                body["provider"],
+                document(&server.uri())["providers"]["fixture"]["models"][0]["compat"]["openRouterRouting"]
+            );
+            assert_eq!(body["providerOptions"]["gateway"]["only"], json!([]));
+            assert!(body.get("store").is_none());
+            assert!(body.get("stream_options").is_none());
+        }
     }
 }
 
@@ -398,9 +421,15 @@ impl opi_ai::catalog::DynamicCatalogSource for ControlledSource {
         "controlled"
     }
 
+    fn provider_ids(&self) -> &[String] {
+        static IDS: std::sync::LazyLock<Vec<String>> =
+            std::sync::LazyLock::new(|| vec!["fixture".into()]);
+        &IDS
+    }
+
     fn fetch(
         &self,
-        token: CancellationToken,
+        context: opi_ai::catalog::CatalogRefreshContext,
     ) -> futures_util::future::BoxFuture<
         'static,
         Result<std::collections::HashMap<String, opi_ai::catalog::ModelsStoreEntry>, ProviderError>,
@@ -415,7 +444,7 @@ impl opi_ai::catalog::DynamicCatalogSource for ControlledSource {
                     ));
                 }
                 CatalogAction::Cancel(value) => {
-                    token.cancel();
+                    context.cancel.cancel();
                     value
                 }
                 CatalogAction::Pending => return std::future::pending().await,
@@ -451,7 +480,7 @@ async fn mixed_catalog_failure_cancel_drop_and_empty_preserve_publication_rules(
     )));
     let mut models = registered_collection(store.clone(), endpoint, auth.clone());
     models.register_catalog_source(source.clone());
-    models.refresh(true).await.unwrap();
+    models.refresh(Default::default()).await.unwrap();
     assert_selected(&models, "shared", true);
     assert_selected(&models, "baseline", false);
     assert_eq!(
@@ -463,7 +492,7 @@ async fn mixed_catalog_failure_cancel_drop_and_empty_preserve_publication_rules(
     source.set(CatalogAction::Fail);
     assert!(
         models
-            .refresh(true)
+            .refresh(Default::default())
             .await
             .unwrap()
             .find("controlled")
@@ -480,7 +509,11 @@ async fn mixed_catalog_failure_cancel_drop_and_empty_preserve_publication_rules(
     let before = std::fs::read(store.path()).unwrap();
     let token = CancellationToken::new();
     assert_eq!(
-        models.refresh_with(true, &token).await.unwrap().status(),
+        models
+            .refresh_with(Default::default(), &token)
+            .await
+            .unwrap()
+            .status(),
         opi_ai::RefreshStatus::Cancelled
     );
     assert_eq!(std::fs::read(store.path()).unwrap(), before);
@@ -488,15 +521,18 @@ async fn mixed_catalog_failure_cancel_drop_and_empty_preserve_publication_rules(
 
     source.set(CatalogAction::Pending);
     assert!(
-        tokio::time::timeout(std::time::Duration::from_millis(10), models.refresh(true))
-            .await
-            .is_err()
+        tokio::time::timeout(
+            std::time::Duration::from_millis(10),
+            models.refresh(Default::default())
+        )
+        .await
+        .is_err()
     );
     assert_eq!(std::fs::read(store.path()).unwrap(), before);
     assert_selected(&models, "shared", true);
 
     source.set(CatalogAction::Publish(empty));
-    models.refresh(true).await.unwrap();
+    models.refresh(Default::default()).await.unwrap();
     assert_selected(&models, "shared", false);
     assert_selected(&models, "baseline", false);
     assert!(
@@ -511,7 +547,13 @@ async fn mixed_catalog_failure_cancel_drop_and_empty_preserve_publication_rules(
         endpoint,
         auth.clone(),
     );
-    reopened.refresh(false).await.unwrap();
+    reopened
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert_selected(&reopened, "shared", false);
     assert_selected(&reopened, "baseline", false);
     assert_eq!(auth.0.load(Ordering::SeqCst), 0);
@@ -529,17 +571,23 @@ async fn mixed_catalog_late_source_cannot_undo_invalidation_or_reopen_stale_reco
     )));
     let mut models = registered_collection(store.clone(), endpoint, auth.clone());
     models.register_catalog_source(source.clone());
-    models.refresh(true).await.unwrap();
+    models.refresh(Default::default()).await.unwrap();
     source.set(CatalogAction::InvalidateThenPublish(
         original,
         store.clone(),
     ));
     assert_eq!(
-        models.refresh(true).await.unwrap().status(),
+        models.refresh(Default::default()).await.unwrap().status(),
         opi_ai::RefreshStatus::Superseded
     );
     assert!(store.snapshot().catalogs.is_empty());
-    models.refresh(false).await.unwrap();
+    models
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert_selected(&models, "shared", false);
     let reopened_store = ModelsStore::open(store.path()).unwrap();
     assert!(
@@ -549,7 +597,13 @@ async fn mixed_catalog_late_source_cannot_undo_invalidation_or_reopen_stale_reco
             .contains("controlled")
     );
     let mut reopened = registered_collection(reopened_store, endpoint, auth.clone());
-    reopened.refresh(false).await.unwrap();
+    reopened
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert_selected(&reopened, "shared", false);
     assert_eq!(auth.0.load(Ordering::SeqCst), 0);
 }
@@ -566,14 +620,14 @@ async fn malformed_operation_route_does_not_replace_any_record_in_provider_entry
     )));
     let mut models = registered_collection(store.clone(), endpoint, auth.clone());
     models.register_catalog_source(source.clone());
-    models.refresh(true).await.unwrap();
+    models.refresh(Default::default()).await.unwrap();
     let confirmed = store.snapshot().catalogs;
     value["providers"]["fixture"]["models"][1]["api"] = json!("unregistered-image-api");
     value["providers"]["fixture"]["models"][0]["maxTokens"] = json!(17);
     source.set(CatalogAction::Publish(value));
     assert!(
         models
-            .refresh(true)
+            .refresh(Default::default())
             .await
             .unwrap()
             .find("controlled")
@@ -666,7 +720,13 @@ async fn image_adapter_replacement_keeps_authoritative_other_operations_and_froz
         .unwrap();
     let auth = Arc::new(FixtureAuth::default());
     let mut models = registered_collection(store, &server.uri(), auth.clone());
-    models.refresh(false).await.unwrap();
+    models
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     let image = models.image_model("fixture", "shared").unwrap();
     let old = models.generate_images(image.clone(), Default::default(), Default::default());
     let mut replacement_record = image.clone();
@@ -715,7 +775,7 @@ async fn mixed_catalog_persist_failure_keeps_all_three_visible_records() {
     )));
     let mut models = registered_collection(store.clone(), endpoint, auth.clone());
     models.register_catalog_source(source.clone());
-    models.refresh(true).await.unwrap();
+    models.refresh(Default::default()).await.unwrap();
     let confirmed = store.snapshot().catalogs;
     let before = std::fs::read(store.path()).unwrap();
     // Isolated filesystem failure at the store's write-before-rename step.
@@ -723,7 +783,7 @@ async fn mixed_catalog_persist_failure_keeps_all_three_visible_records() {
     let mut empty = original;
     empty["providers"]["fixture"]["models"] = json!([]);
     source.set(CatalogAction::Publish(empty));
-    assert!(models.refresh(true).await.is_err());
+    assert!(models.refresh(Default::default()).await.is_err());
     assert_eq!(store.snapshot().catalogs, confirmed);
     assert_eq!(std::fs::read(store.path()).unwrap(), before);
     assert_selected(&models, "shared", true);
@@ -733,6 +793,390 @@ async fn mixed_catalog_persist_failure_keeps_all_three_visible_records() {
 struct ConfiguredAuth {
     configured: bool,
     checks: Arc<AtomicUsize>,
+}
+
+#[tokio::test]
+async fn management_lists_actual_operation_owners_and_preserves_shared_catalog_bytes() {
+    use opi_ai::catalog::{CatalogOperation, CatalogRecord};
+
+    let temp = tempfile::tempdir().unwrap();
+    let store = ModelsStore::open(temp.path().join("management.json")).unwrap();
+    store
+        .begin()
+        .commit(HttpCatalogSource::decode_document(&document("http://127.0.0.1:1")).unwrap())
+        .await
+        .unwrap();
+    let before = std::fs::read(store.path()).unwrap();
+    let auth = Arc::new(FixtureAuth::default());
+    let mut models = registered_collection(store.clone(), "http://127.0.0.1:1", auth.clone());
+    models
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let mut image = opi_ai::api::openrouter_images::default_openrouter_image_record();
+    image.provider_id = "image-only".into();
+    image.id = "shared".into();
+    models
+        .register_image_api(
+            Arc::new(OpenRouterImagesApi::new(HttpClient::new(), image)),
+            auth.clone(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let mut classifier = opi_ai::api::system_one::default_typesafe_classifier_record();
+    classifier.provider_id = "classifier-only".into();
+    classifier.id = "shared".into();
+    models
+        .register_classifier_api(
+            Arc::new(TypesafeSystemOneApi::new(HttpClient::new(), classifier)),
+            auth.clone(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    assert_eq!(
+        models.provider_ids(),
+        ["classifier-only", "fixture", "image-only"]
+    );
+    assert_eq!(models.get_models(None).len(), 1);
+    assert_eq!(models.get_models(Some("fixture"))[0].id, "shared");
+    assert!(models.get_models(Some("image-only")).is_empty());
+    assert_eq!(models.get_all_models(None).len(), 5);
+    assert_eq!(models.get_all_models(Some("fixture")).len(), 3);
+    for operation in [
+        CatalogOperation::Chat,
+        CatalogOperation::Image,
+        CatalogOperation::Classifier,
+    ] {
+        let selected = models
+            .get_model_of_type(operation, "fixture", "shared")
+            .unwrap();
+        assert_eq!(selected.operation(), operation);
+        assert_eq!(selected.id(), "shared");
+        assert_eq!(
+            models.get_models_of_type(operation, Some("fixture")).len(),
+            1
+        );
+        assert!(
+            models
+                .get_model_of_type(operation, "fixture", "missing")
+                .is_none()
+        );
+        assert!(
+            models
+                .get_models_of_type(operation, Some("missing"))
+                .is_empty()
+        );
+        assert!(
+            models
+                .get_available_of_type(operation, Some("missing"))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+    assert!(matches!(
+        models.get_model_of_type(CatalogOperation::Image, "image-only", "shared"),
+        Some(CatalogRecord::Image(_))
+    ));
+    assert_eq!(
+        models
+            .get_all_available(Some("fixture"))
+            .await
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(auth.0.load(Ordering::SeqCst), 0);
+    assert_eq!(std::fs::read(store.path()).unwrap(), before);
+
+    assert!(!models.delete_provider("missing"));
+    assert_eq!(models.get_all_models(None).len(), 5);
+    assert!(models.delete_provider("fixture"));
+    assert_eq!(models.provider_ids(), ["classifier-only", "image-only"]);
+    assert_eq!(models.get_all_models(None).len(), 2);
+    models.clear_providers();
+    models.clear_providers();
+    models
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(models.provider_ids().is_empty());
+    assert!(models.get_all_models(None).is_empty());
+    assert_eq!(auth.0.load(Ordering::SeqCst), 0);
+    assert_eq!(std::fs::read(store.path()).unwrap(), before);
+}
+
+#[tokio::test]
+async fn restoring_a_cached_image_api_does_not_suppress_a_replacement_api_fallback() {
+    use opi_ai::catalog::{CatalogRecord, ModelsStoreEntry};
+    use std::collections::HashMap;
+
+    let temp = tempfile::tempdir().unwrap();
+    let store = ModelsStore::open(temp.path().join("api-replacement.json")).unwrap();
+    let empty_store = ModelsStore::open(temp.path().join("authoritative-empty.json")).unwrap();
+    let mut cached_a = opi_ai::api::openrouter_images::default_openrouter_image_record();
+    cached_a.provider_id = "switched".into();
+    cached_a.id = "cached-a".into();
+    cached_a.api = ApiId::new("api-a");
+    store
+        .begin()
+        .commit(HashMap::from([(
+            "switched".into(),
+            ModelsStoreEntry {
+                models: vec![CatalogRecord::Image(cached_a.clone())],
+                ..Default::default()
+            },
+        )]))
+        .await
+        .unwrap();
+    empty_store
+        .begin()
+        .commit(HashMap::from([(
+            "switched".into(),
+            ModelsStoreEntry::default(),
+        )]))
+        .await
+        .unwrap();
+    let before = std::fs::read(store.path()).unwrap();
+    let empty_before = std::fs::read(empty_store.path()).unwrap();
+    let auth = Arc::new(FixtureAuth::default());
+    let mut static_b = cached_a.clone();
+    static_b.id = "static-b".into();
+    static_b.api = ApiId::new("api-b");
+
+    let mut empty_models = Models::new();
+    empty_models
+        .register_image_api(
+            Arc::new(OpenRouterImagesApi::new(
+                HttpClient::new(),
+                static_b.clone(),
+            )),
+            auth.clone(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    assert!(empty_models.image_model("switched", "static-b").is_ok());
+    empty_models.set_models_store(empty_store.clone());
+    empty_models
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(empty_models.image_model("switched", "static-b").is_err());
+    assert!(empty_models.get_all_models(Some("switched")).is_empty());
+    assert_eq!(std::fs::read(empty_store.path()).unwrap(), empty_before);
+
+    let mut models = Models::new();
+    let mut static_a = cached_a.clone();
+    static_a.id = "static-a".into();
+    models
+        .register_image_api(
+            Arc::new(OpenRouterImagesApi::new(HttpClient::new(), static_a)),
+            auth.clone(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    models.set_models_store(store.clone());
+    models
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(models.image_model("switched", "cached-a").is_ok());
+    assert!(models.image_model("switched", "static-a").is_err());
+    assert!(models.delete_provider("switched"));
+    models
+        .register_image_api(
+            Arc::new(OpenRouterImagesApi::new(HttpClient::new(), static_b)),
+            auth.clone(),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    assert!(models.image_model("switched", "static-b").is_ok());
+    models
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(models.image_model("switched", "cached-a").is_err());
+    assert_eq!(auth.0.load(Ordering::SeqCst), 0);
+    assert_eq!(std::fs::read(store.path()).unwrap(), before);
+    assert!(
+        models.image_model("switched", "static-b").is_ok(),
+        "a nonempty cache for retired API A must not fabricate an authoritative empty publication for replacement API B"
+    );
+}
+
+#[tokio::test]
+async fn image_availability_uses_each_provider_api_configuration_without_resolving_auth() {
+    use opi_ai::catalog::{CatalogOperation, CatalogRecord};
+
+    for first_available in [false, true] {
+        let mut models = Models::new();
+        let checks = [Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0))];
+        for (index, counter) in checks.iter().enumerate() {
+            let mut record = opi_ai::api::openrouter_images::default_openrouter_image_record();
+            record.provider_id = "images".into();
+            record.id = format!("image-{index}");
+            record.api = ApiId::new(format!("image-api-{index}"));
+            models
+                .register_image_api(
+                    Arc::new(OpenRouterImagesApi::new(HttpClient::new(), record)),
+                    Arc::new(ConfiguredAuth {
+                        configured: (index == 0) == first_available,
+                        checks: counter.clone(),
+                    }),
+                    AuthProvenanceSource::Static,
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            models
+                .get_models_of_type(CatalogOperation::Image, None)
+                .len(),
+            2
+        );
+        let available = models
+            .get_available_of_type(CatalogOperation::Image, Some("images"))
+            .await
+            .unwrap();
+        assert_eq!(available.len(), 1);
+        let expected = if first_available {
+            "image-0"
+        } else {
+            "image-1"
+        };
+        assert!(matches!(&available[0], CatalogRecord::Image(record) if record.id == expected));
+        let all_available = models.get_all_available(None).await.unwrap();
+        assert_eq!(all_available, available);
+        for counter in &checks {
+            assert_eq!(counter.load(Ordering::SeqCst), 2);
+        }
+        assert!(
+            models
+                .get_all_available(Some("missing"))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        for counter in &checks {
+            assert_eq!(counter.load(Ordering::SeqCst), 2);
+        }
+    }
+}
+
+#[tokio::test]
+async fn removal_preserves_captured_image_and_classifier_calls_and_other_instances() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/image/chat/completions"))
+        .and(header("authorization", "Bearer catalog-fixture-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"choices": []})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/classifier/systemone"))
+        .and(header("authorization", "Bearer catalog-fixture-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "answers": {"approved": {"type": "noul", "noul": 0.9}}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let temp = tempfile::tempdir().unwrap();
+    let store = ModelsStore::open(temp.path().join("frozen-management.json")).unwrap();
+    store
+        .begin()
+        .commit(HttpCatalogSource::decode_document(&document(&server.uri())).unwrap())
+        .await
+        .unwrap();
+    let before = std::fs::read(store.path()).unwrap();
+    let auth = Arc::new(FixtureAuth::default());
+    let mut models = registered_collection(store.clone(), &server.uri(), auth.clone());
+    let mut other = registered_collection(store.clone(), &server.uri(), auth.clone());
+    for collection in [&mut models, &mut other] {
+        collection
+            .refresh(opi_ai::ModelsRefreshOptions {
+                allow_network: false,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+    }
+    let image = models.image_model("fixture", "shared").unwrap();
+    let classifier = models.classifier_model("fixture", "shared").unwrap();
+    let classify_context = ClassifierContext {
+        state: json!({"ready": true}),
+        questions: [(
+            "approved".into(),
+            ClassifierQuestion::Bool {
+                instructions: "Approve?".into(),
+                true_criteria: "Ready".into(),
+                false_criteria: "Not ready".into(),
+            },
+        )]
+        .into(),
+        images: None,
+    };
+    let captured_image =
+        models.generate_images(image.clone(), Default::default(), Default::default());
+    let captured_classifier = models.classify(
+        classifier.clone(),
+        classify_context.clone(),
+        Default::default(),
+    );
+    assert_eq!(auth.0.load(Ordering::SeqCst), 0);
+    assert!(models.delete_provider("fixture"));
+    assert!(!models.delete_provider("fixture"));
+    assert!(models.get_all_models(None).is_empty());
+    assert!(models.get_all_available(None).await.unwrap().is_empty());
+    assert!(models.image_model("fixture", "shared").is_err());
+    assert!(models.classifier_model("fixture", "shared").is_err());
+    assert_eq!(other.get_all_models(Some("fixture")).len(), 3);
+    assert_eq!(std::fs::read(store.path()).unwrap(), before);
+    assert_eq!(
+        models
+            .generate_images(image, Default::default(), Default::default())
+            .await
+            .stop_reason,
+        ImagesStopReason::Error
+    );
+    assert_eq!(
+        models
+            .classify(classifier, classify_context, Default::default())
+            .await
+            .stop_reason,
+        ClassifierStopReason::Error
+    );
+    assert_eq!(auth.0.load(Ordering::SeqCst), 0);
+    assert!(server.received_requests().await.unwrap().is_empty());
+
+    assert_eq!(captured_image.await.stop_reason, ImagesStopReason::Stop);
+    assert_eq!(
+        captured_classifier.await.stop_reason,
+        ClassifierStopReason::Stop
+    );
+    assert_eq!(auth.0.load(Ordering::SeqCst), 2);
+    assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    other.clear_providers();
+    assert!(other.provider_ids().is_empty());
+    assert!(other.get_all_models(None).is_empty());
+    assert_eq!(std::fs::read(store.path()).unwrap(), before);
 }
 
 impl AuthResolver for ConfiguredAuth {
@@ -860,7 +1304,13 @@ async fn dynamic_unknown_prices_preserve_models_without_reporting_free_results()
             &server.uri(),
             auth.clone(),
         );
-        models.refresh(false).await.unwrap();
+        models
+            .refresh(opi_ai::ModelsRefreshOptions {
+                allow_network: false,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
         let image = models
             .generate_images(
                 models.image_model("fixture", "shared").unwrap(),
@@ -965,7 +1415,13 @@ async fn source_unknown_base_retains_known_tiers_and_prices_only_above_the_bound
             &server.uri(),
             Arc::new(FixtureAuth::default()),
         );
-        models.refresh(false).await.unwrap();
+        models
+            .refresh(opi_ai::ModelsRefreshOptions {
+                allow_network: false,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
         let classifier_record = models.classifier_model("fixture", "shared").unwrap();
         let pricing = classifier_record.cost.as_ref().unwrap();
         assert_eq!(
@@ -1077,7 +1533,13 @@ async fn finite_fractional_thresholds_survive_all_operation_store_reopen_and_cos
         &server.uri(),
         Arc::new(FixtureAuth::default()),
     );
-    models.refresh(false).await.unwrap();
+    models
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     let classifier = models.classifier_model("fixture", "shared").unwrap();
     let pricing = classifier.cost.as_ref().unwrap();
     assert_eq!(
@@ -1141,7 +1603,13 @@ async fn integer_threshold_above_f64_precision_survives_decode_store_and_reopen(
         endpoint,
         Arc::new(FixtureAuth::default()),
     );
-    models.refresh(false).await.unwrap();
+    models
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     let pricing = models
         .get_model("fixture", "shared")
         .unwrap()

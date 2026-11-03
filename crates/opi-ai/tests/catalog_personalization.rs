@@ -306,6 +306,7 @@ async fn personalized_record_drives_the_next_real_models_request() {
         )
         .unwrap();
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "ignored".into(),
         context: opi_ai::transcript::normalize_context(Default::default()).unwrap(),

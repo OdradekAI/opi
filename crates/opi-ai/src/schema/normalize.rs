@@ -149,7 +149,7 @@ impl SubValidators {
         let entry = self
             .cache
             .entry(key)
-            .or_insert_with(|| compile(schema.clone()).ok().map(Arc::new));
+            .or_insert_with(|| compile(super::clone_value(schema)).ok().map(Arc::new));
         entry.as_ref().map(|arc| arc.as_ref())
     }
 }
@@ -158,65 +158,158 @@ impl SubValidators {
 // normalizeOptionalNulls
 // ------------------------------------------------------------------
 
+#[derive(Clone)]
+enum ValueSlot {
+    Key(String),
+    Index(usize),
+}
+
+fn take_child(value: &mut Value, slot: &ValueSlot) -> Value {
+    match slot {
+        ValueSlot::Key(key) => std::mem::take(value.get_mut(key).expect("selected property")),
+        ValueSlot::Index(index) => std::mem::take(value.get_mut(*index).expect("selected item")),
+    }
+}
+
+fn put_child(value: &mut Value, slot: &ValueSlot, child: Value) {
+    match slot {
+        ValueSlot::Key(key) => *value.get_mut(key).expect("selected property") = child,
+        ValueSlot::Index(index) => *value.get_mut(*index).expect("selected item") = child,
+    }
+}
+
+type NullChild<'a> = (ValueSlot, &'a Value, bool);
+
+enum NullWork<'a> {
+    Visit(&'a Value),
+    Children {
+        parent: Value,
+        children: Vec<NullChild<'a>>,
+        next: usize,
+    },
+    Restore {
+        parent: Value,
+        children: Vec<NullChild<'a>>,
+        index: usize,
+    },
+}
+
+fn optional_null_children<'a>(value: &Value, schema: &'a Value) -> Vec<NullChild<'a>> {
+    if let Some(array) = value.as_array() {
+        return match schema.get("items") {
+            Some(Value::Array(tuple)) => tuple
+                .iter()
+                .take(array.len())
+                .enumerate()
+                .map(|(index, schema)| (ValueSlot::Index(index), schema, false))
+                .collect(),
+            Some(items) => (0..array.len())
+                .map(|index| (ValueSlot::Index(index), items, false))
+                .collect(),
+            None => Vec::new(),
+        };
+    }
+    let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    if !value.is_object() {
+        return Vec::new();
+    }
+    let required: HashSet<&str> = schema
+        .get("required")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    properties
+        .iter()
+        .filter(|(key, _)| value.get(*key).is_some())
+        .map(|(key, schema)| {
+            (
+                ValueSlot::Key(key.clone()),
+                schema,
+                !required.contains(key.as_str())
+                    && !matches!(schema.get("$ref"), Some(Value::String(_))),
+            )
+        })
+        .collect()
+}
+
 fn normalize_optional_nulls(
     value: &mut Value,
     schema: &Value,
     subs: &mut SubValidators,
 ) -> Result<(), SchemaError> {
-    if value.is_array() {
-        if let Some(items) = schema.get("items") {
-            if let Some(tuple) = items.as_array() {
-                let array = value.as_array_mut().expect("checked is_array");
-                for (index, item_schema) in tuple.iter().enumerate() {
-                    if let Some(item) = array.get_mut(index) {
-                        normalize_optional_nulls(item, item_schema, subs)?;
-                    }
-                }
-            } else {
-                let array = value.as_array_mut().expect("checked is_array");
-                for item in array.iter_mut() {
-                    normalize_optional_nulls(item, items, subs)?;
+    let mut current = std::mem::take(value);
+    let mut work = vec![NullWork::Visit(schema)];
+    while let Some(task) = work.pop() {
+        match task {
+            NullWork::Visit(schema) => {
+                let children = optional_null_children(&current, schema);
+                if !children.is_empty() {
+                    work.push(NullWork::Children {
+                        parent: std::mem::take(&mut current),
+                        children,
+                        next: 0,
+                    });
                 }
             }
+            NullWork::Children {
+                mut parent,
+                children,
+                next,
+            } => {
+                let Some((slot, schema, optional)) = children.get(next) else {
+                    current = parent;
+                    continue;
+                };
+                let entry = match slot {
+                    ValueSlot::Key(key) => parent.get(key),
+                    ValueSlot::Index(index) => parent.get(*index),
+                }
+                .expect("selected child");
+                if *optional && entry.is_null() && subs.check(schema, &Value::Null)? == Some(false)
+                {
+                    let ValueSlot::Key(key) = slot else {
+                        unreachable!("only properties are optional")
+                    };
+                    parent.as_object_mut().expect("selected object").remove(key);
+                    work.push(NullWork::Children {
+                        parent,
+                        children,
+                        next: next + 1,
+                    });
+                    continue;
+                }
+                current = take_child(&mut parent, slot);
+                let schema = *schema;
+                work.push(NullWork::Restore {
+                    parent,
+                    children,
+                    index: next,
+                });
+                work.push(NullWork::Visit(schema));
+            }
+            NullWork::Restore {
+                mut parent,
+                children,
+                index,
+            } => {
+                put_child(
+                    &mut parent,
+                    &children[index].0,
+                    std::mem::take(&mut current),
+                );
+                work.push(NullWork::Children {
+                    parent,
+                    children,
+                    next: index + 1,
+                });
+            }
         }
-        return Ok(());
     }
-    let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
-        return Ok(());
-    };
-    if !value.is_object() {
-        return Ok(());
-    }
-    let required: HashSet<&str> = schema
-        .get("required")
-        .and_then(Value::as_array)
-        .map(|names| {
-            names
-                .iter()
-                .filter_map(Value::as_str)
-                .collect::<Vec<&str>>()
-        })
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
-    for (key, property_schema) in properties {
-        let Some(entry) = value.get(key) else {
-            continue;
-        };
-        let is_ref = matches!(property_schema.get("$ref"), Some(Value::String(_)));
-        let delete = entry.is_null()
-            && !required.contains(key.as_str())
-            && !is_ref
-            && subs.check(property_schema, &Value::Null)? == Some(false);
-        if delete {
-            value
-                .as_object_mut()
-                .expect("checked is_object")
-                .remove(key);
-        } else if let Some(child) = value.get_mut(key) {
-            normalize_optional_nulls(child, property_schema, subs)?;
-        }
-    }
+    *value = current;
     Ok(())
 }
 
@@ -235,120 +328,211 @@ fn get_schema_types(schema: &Value) -> Vec<&str> {
     }
 }
 
+enum CoerceWork<'a> {
+    Schema(&'a Value),
+    AllOf {
+        schemas: &'a [Value],
+        next: usize,
+    },
+    Union(&'a [Value]),
+    CheckUnion {
+        original: Value,
+        schemas: &'a [Value],
+        index: usize,
+    },
+    Types(&'a Value),
+    Children {
+        parent: Value,
+        children: Vec<(ValueSlot, &'a Value)>,
+        next: usize,
+    },
+    Restore {
+        parent: Value,
+        children: Vec<(ValueSlot, &'a Value)>,
+        index: usize,
+    },
+}
+
+fn coercion_children<'a>(
+    value: &Value,
+    schema: &'a Value,
+    types: &[&str],
+) -> Vec<(ValueSlot, &'a Value)> {
+    let mut children = Vec::new();
+    if types.contains(&"object")
+        && let Some(object) = value.as_object()
+    {
+        let properties = schema.get("properties").and_then(Value::as_object);
+        if let Some(properties) = properties {
+            children.extend(
+                properties
+                    .iter()
+                    .filter(|(key, _)| object.contains_key(*key))
+                    .map(|(key, schema)| (ValueSlot::Key(key.clone()), schema)),
+            );
+        }
+        if let Some(additional) = schema
+            .get("additionalProperties")
+            .filter(|schema| schema.is_object())
+        {
+            children.extend(
+                object
+                    .keys()
+                    .filter(|key| properties.is_none_or(|map| !map.contains_key(*key)))
+                    .map(|key| (ValueSlot::Key(key.clone()), additional)),
+            );
+        }
+    }
+    if types.contains(&"array")
+        && let Some(array) = value.as_array()
+    {
+        match schema.get("items") {
+            Some(Value::Array(items)) => children.extend(
+                items
+                    .iter()
+                    .take(array.len())
+                    .enumerate()
+                    .map(|(index, schema)| (ValueSlot::Index(index), schema)),
+            ),
+            Some(items) if items.is_object() => {
+                children.extend((0..array.len()).map(|index| (ValueSlot::Index(index), items)))
+            }
+            _ => {}
+        }
+    }
+    children
+}
+
 fn coerce_with_json_schema(
     value: Value,
     schema: &Value,
     subs: &mut SubValidators,
 ) -> Result<Value, SchemaError> {
-    let mut next = value;
-    if let Some(all_of) = schema.get("allOf").and_then(Value::as_array) {
-        for nested in all_of {
-            next = coerce_with_json_schema(next, nested, subs)?;
-        }
-    }
-    if let Some(any_of) = schema.get("anyOf").and_then(Value::as_array) {
-        next = coerce_with_union_schema(next, any_of, subs)?;
-    }
-    if let Some(one_of) = schema.get("oneOf").and_then(Value::as_array) {
-        next = coerce_with_union_schema(next, one_of, subs)?;
-    }
-    let types = get_schema_types(schema);
-    let matches_union_member = types.len() > 1 && types.iter().any(|t| type_matches(t, &next));
-    if !types.is_empty() && !matches_union_member {
-        for schema_type in &types {
-            let candidate = coerce_primitive_by_type(&next, schema_type);
-            if candidate != next {
-                next = candidate;
-                break;
+    let mut current = value;
+    let mut work = vec![CoerceWork::Schema(schema)];
+    while let Some(task) = work.pop() {
+        match task {
+            CoerceWork::Schema(schema) => {
+                // Reverse scheduling preserves the source allOf -> anyOf ->
+                // oneOf -> primitive -> child-coercion order.
+                work.push(CoerceWork::Types(schema));
+                if let Some(schemas) = schema.get("oneOf").and_then(Value::as_array) {
+                    work.push(CoerceWork::Union(schemas));
+                }
+                if let Some(schemas) = schema.get("anyOf").and_then(Value::as_array) {
+                    work.push(CoerceWork::Union(schemas));
+                }
+                if let Some(schemas) = schema.get("allOf").and_then(Value::as_array) {
+                    work.push(CoerceWork::AllOf { schemas, next: 0 });
+                }
+            }
+            CoerceWork::AllOf { schemas, next } => {
+                if let Some(schema) = schemas.get(next) {
+                    work.push(CoerceWork::AllOf {
+                        schemas,
+                        next: next + 1,
+                    });
+                    work.push(CoerceWork::Schema(schema));
+                }
+            }
+            CoerceWork::Union(schemas) => {
+                let mut matches_original = false;
+                for arm in schemas {
+                    if subs.check(arm, &current)? == Some(true) {
+                        matches_original = true;
+                        break;
+                    }
+                }
+                if !matches_original && let Some(arm) = schemas.first() {
+                    let original = std::mem::take(&mut current);
+                    current = super::clone_value(&original);
+                    work.push(CoerceWork::CheckUnion {
+                        original,
+                        schemas,
+                        index: 0,
+                    });
+                    work.push(CoerceWork::Schema(arm));
+                }
+            }
+            CoerceWork::CheckUnion {
+                original,
+                schemas,
+                index,
+            } => {
+                if subs.check(&schemas[index], &current)? == Some(true) {
+                    super::drop_value(original);
+                } else if let Some(arm) = schemas.get(index + 1) {
+                    super::drop_value(std::mem::take(&mut current));
+                    current = super::clone_value(&original);
+                    work.push(CoerceWork::CheckUnion {
+                        original,
+                        schemas,
+                        index: index + 1,
+                    });
+                    work.push(CoerceWork::Schema(arm));
+                } else {
+                    super::drop_value(std::mem::replace(&mut current, original));
+                }
+            }
+            CoerceWork::Types(schema) => {
+                let types = get_schema_types(schema);
+                let matches_union_member =
+                    types.len() > 1 && types.iter().any(|kind| type_matches(kind, &current));
+                if !types.is_empty() && !matches_union_member {
+                    for kind in &types {
+                        let candidate = coerce_primitive_by_type(&current, kind);
+                        if candidate != current {
+                            current = candidate;
+                            break;
+                        }
+                    }
+                }
+                let children = coercion_children(&current, schema, &types);
+                if !children.is_empty() {
+                    work.push(CoerceWork::Children {
+                        parent: std::mem::take(&mut current),
+                        children,
+                        next: 0,
+                    });
+                }
+            }
+            CoerceWork::Children {
+                mut parent,
+                children,
+                next,
+            } => {
+                let Some((slot, schema)) = children.get(next) else {
+                    current = parent;
+                    continue;
+                };
+                current = take_child(&mut parent, slot);
+                let schema = *schema;
+                work.push(CoerceWork::Restore {
+                    parent,
+                    children,
+                    index: next,
+                });
+                work.push(CoerceWork::Schema(schema));
+            }
+            CoerceWork::Restore {
+                mut parent,
+                children,
+                index,
+            } => {
+                put_child(
+                    &mut parent,
+                    &children[index].0,
+                    std::mem::take(&mut current),
+                );
+                work.push(CoerceWork::Children {
+                    parent,
+                    children,
+                    next: index + 1,
+                });
             }
         }
     }
-    if types.contains(&"object") && next.is_object() {
-        apply_schema_object_coercion(&mut next, schema, subs)?;
-    }
-    if types.contains(&"array") && next.is_array() {
-        apply_schema_array_coercion(&mut next, schema, subs)?;
-    }
-    Ok(next)
-}
-
-fn coerce_with_union_schema(
-    value: Value,
-    schemas: &[Value],
-    subs: &mut SubValidators,
-) -> Result<Value, SchemaError> {
-    // Original value first: an arm that already matches wins unchanged.
-    for arm in schemas {
-        if subs.check(arm, &value)? == Some(true) {
-            return Ok(value);
-        }
-    }
-    // Clone-per-arm coercion, first arm whose coerced candidate checks wins.
-    for arm in schemas {
-        let candidate = coerce_with_json_schema(value.clone(), arm, subs)?;
-        if subs.check(arm, &candidate)? == Some(true) {
-            return Ok(candidate);
-        }
-    }
-    Ok(value)
-}
-
-fn apply_schema_object_coercion(
-    value: &mut Value,
-    schema: &Value,
-    subs: &mut SubValidators,
-) -> Result<(), SchemaError> {
-    let properties = schema.get("properties").and_then(Value::as_object);
-    let defined: HashSet<&str> = properties
-        .map(|map| map.keys().map(String::as_str).collect())
-        .unwrap_or_default();
-    if let Some(properties) = properties {
-        for (key, property_schema) in properties {
-            if let Some(entry) = value.get_mut(key) {
-                let coerced = coerce_with_json_schema(entry.clone(), property_schema, subs)?;
-                *entry = coerced;
-            }
-        }
-    }
-    if let Some(additional) = schema.get("additionalProperties")
-        && additional.is_object()
-    {
-        let object = value.as_object_mut().expect("caller checked is_object");
-        for (key, entry) in object.iter_mut() {
-            if !defined.contains(key.as_str()) {
-                let coerced = coerce_with_json_schema(entry.clone(), additional, subs)?;
-                *entry = coerced;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn apply_schema_array_coercion(
-    value: &mut Value,
-    schema: &Value,
-    subs: &mut SubValidators,
-) -> Result<(), SchemaError> {
-    let array = value.as_array_mut().expect("caller checked is_array");
-    if let Some(items) = schema.get("items").and_then(Value::as_array) {
-        for (index, entry) in array.iter_mut().enumerate() {
-            if let Some(item_schema) = items.get(index) {
-                let coerced = coerce_with_json_schema(entry.clone(), item_schema, subs)?;
-                *entry = coerced;
-            }
-        }
-        return Ok(());
-    }
-    if let Some(item_schema) = schema.get("items") {
-        // Upstream coerces per-item only for an object `items` schema.
-        if item_schema.is_object() {
-            for entry in array.iter_mut() {
-                let coerced = coerce_with_json_schema(entry.clone(), item_schema, subs)?;
-                *entry = coerced;
-            }
-        }
-    }
-    Ok(())
+    Ok(current)
 }
 
 // ------------------------------------------------------------------

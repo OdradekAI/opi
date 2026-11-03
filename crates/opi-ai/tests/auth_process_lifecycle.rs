@@ -665,3 +665,55 @@ exit 0
         "descendant holder survived timeout after parent PID {parent_pid} exited"
     );
 }
+
+#[tokio::test]
+async fn cancelling_default_aws_process_without_policy_reaps_the_helper() {
+    use opi_ai::auth::aws::process::{
+        CredentialProcessRunner, CredentialProcessSpec, SpawnedCredentialProcess,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let started = dir.path().join("aws-started");
+    let survived = dir.path().join("aws-survived");
+    let unix = format!(
+        "printf started > '{}'; sleep 2; printf survived > '{}'",
+        started.display(),
+        survived.display()
+    );
+    let windows = format!(
+        "[System.IO.File]::WriteAllText('{}', 'started'); Start-Sleep -Seconds 2; [System.IO.File]::WriteAllText('{}', 'survived')",
+        started.display(),
+        survived.display()
+    );
+    let command = helper(dir.path(), "aws-unbounded-cancel", &unix, &windows);
+    let command = if cfg!(windows) {
+        format!("& {command}")
+    } else {
+        command
+    };
+    let spec = CredentialProcessSpec {
+        command,
+        cwd: Some(dir.path().to_path_buf()),
+        env: opi_ai::auth::aws::process::ProcessEnv::Exact(helper_environment(dir.path())),
+    };
+    let runner = SpawnedCredentialProcess::default();
+    assert_eq!(runner.policy(), None);
+    let task = tokio::spawn(async move { runner.run(&spec).await });
+    tokio::time::timeout(Duration::from_secs(45), async {
+        while !started.exists() {
+            assert!(
+                !task.is_finished(),
+                "helper exited before its readiness marker"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("owned AWS helper started");
+    task.abort();
+    let _ = task.await;
+    tokio::time::sleep(Duration::from_millis(2600)).await;
+    assert!(
+        !survived.exists(),
+        "helper survived cancellation of the unbounded SDK runner"
+    );
+}

@@ -372,6 +372,7 @@ fn marker_models(
 
 fn marker_request(context: Option<TelemetryContext>) -> Request {
     Request {
+        projection: Default::default(),
         model: "telemetry:marker-model".into(),
         context: normalize_context(Context {
             system_prompt: None,
@@ -640,6 +641,7 @@ fn strict_tool(name: &str, preference: StrictPreference) -> ToolDef {
 
 fn strict_request(context: Option<TelemetryContext>, callbacks: RequestCallbacks) -> Request {
     Request {
+        projection: Default::default(),
         model: "test:strict-model".into(),
         context: normalize_context(Context {
             system_prompt: None,

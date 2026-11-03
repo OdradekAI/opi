@@ -14,6 +14,7 @@ use opi_ai::{
 
 fn sample_assistant_message() -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: vec![AssistantContent::Text {
             text: "hello".into(),
             signature: None,
@@ -681,6 +682,7 @@ mod diagnostics_serde_tests {
 
         // A downgrade diagnostic round-trips its kind and reason.
         let message = AssistantMessage {
+            projection: None,
             content: vec![AssistantContent::Text {
                 text: "hi".into(),
                 signature: None,

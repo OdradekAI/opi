@@ -328,6 +328,7 @@ fn redact_assistant_message(
     message: &opi_ai::message::AssistantMessage,
 ) -> opi_ai::message::AssistantMessage {
     opi_ai::message::AssistantMessage {
+        projection: message.projection.clone(),
         content: message
             .content
             .iter()

@@ -52,6 +52,7 @@ const ANTHROPIC_OAUTH_BETA: &str = "claude-code-20250219,oauth-2025-04-20";
 
 fn sample_request(model: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.to_owned(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -244,21 +245,22 @@ async fn anthropic_oauth_401_maps_to_credential_revoked() {
 
     let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()))
         .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged);
-    let mut stream = provider.stream_prepared(
-        sample_request("anthropic:claude-sonnet-4-5-20250514"),
-        bearer_auth("oauth-token-anthropic"),
-    );
+    let request = sample_request("anthropic:claude-sonnet-4-5-20250514");
+    let mut stream =
+        provider.stream_prepared(request.clone(), bearer_auth("oauth-token-anthropic"));
     let err = stream
         .next()
         .await
         .expect("an event")
         .expect_err("a 401 yields an error");
-    match err {
+    match accepted_failure_cause(&err, &request) {
         ProviderError::CredentialRevoked { provider_id } => {
             assert_eq!(provider_id, "anthropic");
         }
         other => panic!("expected CredentialRevoked, got {other:?}"),
     }
+    assert!(stream.next().await.is_none(), "failure must be terminal");
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -271,19 +273,19 @@ async fn anthropic_api_key_uses_managed_revocation_policy() {
 
     let provider = AnthropicProvider::with_client(Some(server.uri()), Arc::new(HttpClient::new()))
         .with_auth_invalid_policy(AuthInvalidPolicy::CredentialManaged);
-    let mut stream = provider.stream_prepared(
-        sample_request("anthropic:claude-sonnet-4-5-20250514"),
-        apikey_auth("ak-anthropic"),
-    );
+    let request = sample_request("anthropic:claude-sonnet-4-5-20250514");
+    let mut stream = provider.stream_prepared(request.clone(), apikey_auth("ak-anthropic"));
     let err = stream
         .next()
         .await
         .expect("an event")
         .expect_err("401 yields an error");
     assert!(matches!(
-        err,
-        ProviderError::CredentialRevoked { ref provider_id } if provider_id == "anthropic"
+        accepted_failure_cause(&err, &request),
+        ProviderError::CredentialRevoked { provider_id } if provider_id == "anthropic"
     ));
+    assert!(stream.next().await.is_none(), "failure must be terminal");
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -339,21 +341,21 @@ async fn copilot_chat_401_maps_to_credential_revoked() {
         vec![],
         Arc::new(HttpClient::new()),
     );
-    let mut stream = provider.stream_prepared(
-        sample_request("github-copilot:gpt-4o"),
-        bearer_auth("copilot-token"),
-    );
+    let request = sample_request("github-copilot:gpt-4o");
+    let mut stream = provider.stream_prepared(request.clone(), bearer_auth("copilot-token"));
     let err = stream
         .next()
         .await
         .expect("an event")
         .expect_err("401 yields an error");
-    match err {
+    match accepted_failure_cause(&err, &request) {
         ProviderError::CredentialRevoked { provider_id } => {
             assert_eq!(provider_id, "github-copilot");
         }
         other => panic!("expected CredentialRevoked, got {other:?}"),
     }
+    assert!(stream.next().await.is_none(), "failure must be terminal");
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -374,17 +376,19 @@ async fn openai_chat_api_key_uses_managed_revocation_policy() {
     // An API-key credential on the OpenAI wire is attached as a Bearer header
     // (production route credentials pin Bearer for this wire), so the prepared
     // auth carries the Bearer scheme.
-    let mut stream =
-        provider.stream_prepared(sample_request("openai:gpt-4o"), bearer_auth("sk-openai"));
+    let request = sample_request("openai:gpt-4o");
+    let mut stream = provider.stream_prepared(request.clone(), bearer_auth("sk-openai"));
     let err = stream
         .next()
         .await
         .expect("an event")
         .expect_err("401 yields an error");
     assert!(matches!(
-        err,
-        ProviderError::CredentialRevoked { ref provider_id } if provider_id == "openai"
+        accepted_failure_cause(&err, &request),
+        ProviderError::CredentialRevoked { provider_id } if provider_id == "openai"
     ));
+    assert!(stream.next().await.is_none(), "failure must be terminal");
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -502,8 +506,9 @@ async fn reusable_route_auth_invalid_policy_matrix_is_scheme_independent_and_bod
                 let (provider, model) = reusable_route(route, credential_managed, server.uri());
                 // Every route in this matrix accepts the Bearer scheme
                 // (Anthropic accepts both Bearer and ApiKey).
-                let error = provider
-                    .stream_prepared(sample_request(&model), bearer_auth("test-key"))
+                let request = sample_request(&model);
+                let mut stream = provider.stream_prepared(request.clone(), bearer_auth("test-key"));
+                let error = stream
                     .next()
                     .await
                     .expect("auth-invalid error")
@@ -511,12 +516,15 @@ async fn reusable_route_auth_invalid_policy_matrix_is_scheme_independent_and_bod
 
                 if credential_managed {
                     assert!(
-                        matches!(error, ProviderError::CredentialRevoked { .. }),
+                        matches!(accepted_failure_cause(&error, &request), ProviderError::CredentialRevoked { provider_id } if provider_id == provider.id()),
                         "{route:?} HTTP {status}: {error:?}"
                     );
                 } else {
                     assert!(
-                        matches!(error, ProviderError::AuthFailed(_)),
+                        matches!(
+                            accepted_failure_cause(&error, &request),
+                            ProviderError::AuthFailed(_)
+                        ),
                         "{route:?} HTTP {status}: {error:?}"
                     );
                 }
@@ -526,6 +534,8 @@ async fn reusable_route_auth_invalid_policy_matrix_is_scheme_independent_and_bod
                     "{route:?} HTTP {status} leaked the response body: {rendered}"
                 );
                 assert!(!error.is_retryable());
+                assert!(stream.next().await.is_none(), "failure must be terminal");
+                assert_eq!(server.received_requests().await.unwrap().len(), 1);
             }
         }
     }
@@ -584,15 +594,16 @@ async fn static_route_auth_errors_are_bodyless_for_all_profiles_and_schemes() {
             let (provider, model) = static_route(route, server.uri());
             // Every wire in this matrix accepts the Bearer scheme (Anthropic
             // accepts both Bearer and ApiKey).
-            let error = provider
-                .stream_prepared(sample_request(model), bearer_auth("test-key"))
+            let request = sample_request(model);
+            let mut stream = provider.stream_prepared(request.clone(), bearer_auth("test-key"));
+            let error = stream
                 .next()
                 .await
                 .expect("auth-invalid error")
                 .expect_err("401/403 must fail");
 
             assert!(
-                matches!(&error, ProviderError::AuthFailed(message) if message == "provider rejected credentials"),
+                matches!(accepted_failure_cause(&error, &request), ProviderError::AuthFailed(message) if message == "provider rejected credentials"),
                 "{route:?} HTTP {status}: {error:?}"
             );
             let rendered = format!("{error:?} {error}");
@@ -601,6 +612,8 @@ async fn static_route_auth_errors_are_bodyless_for_all_profiles_and_schemes() {
                 "{route:?} HTTP {status} leaked the response body: {rendered}"
             );
             assert!(!error.is_retryable());
+            assert!(stream.next().await.is_none(), "failure must be terminal");
+            assert_eq!(server.received_requests().await.unwrap().len(), 1);
         }
     }
 }
@@ -691,15 +704,20 @@ async fn codex_missing_account_id_is_rejected_before_http() {
 
     let provider = codex_provider(&server);
     let resolved = codex_auth("opaque-not-a-jwt", None);
-    let mut stream = provider.stream_prepared(sample_request("openai-codex:gpt-5"), resolved);
-    assert!(
-        matches!(
-            stream.next().await,
-            Some(Err(ProviderError::AccountIdMissing { ref provider_id }))
-                if provider_id == "openai-codex"
-        ),
-        "missing account id must fail before HTTP"
+    let request = sample_request("openai-codex:gpt-5");
+    let mut stream = provider.stream_prepared(request.clone(), resolved);
+    let error = stream
+        .next()
+        .await
+        .expect("one refusal")
+        .expect_err("missing account id must fail before HTTP");
+    assert_eq!(
+        accepted_failure_cause(&error, &request),
+        &ProviderError::AccountIdMissing {
+            provider_id: "openai-codex".into()
+        }
     );
+    assert!(stream.next().await.is_none(), "refusal must be terminal");
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
@@ -716,13 +734,14 @@ async fn codex_responses_401_maps_to_credential_revoked_without_body_leak() {
 
     let provider = codex_provider(&server);
     let resolved = codex_auth("codex-bearer-xyz", Some("acct"));
-    let mut stream = provider.stream_prepared(sample_request("openai-codex:gpt-5"), resolved);
+    let request = sample_request("openai-codex:gpt-5");
+    let mut stream = provider.stream_prepared(request.clone(), resolved);
     let err = stream
         .next()
         .await
         .expect("an event")
         .expect_err("401 yields an error");
-    match &err {
+    match accepted_failure_cause(&err, &request) {
         ProviderError::CredentialRevoked { provider_id } => {
             assert_eq!(provider_id, "openai-codex");
         }
@@ -737,4 +756,50 @@ async fn codex_responses_401_maps_to_credential_revoked_without_body_leak() {
         !display.contains("codex-bearer-xyz"),
         "CredentialRevoked display leaks the token: {display}"
     );
+    assert!(stream.next().await.is_none(), "failure must be terminal");
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(
+        requests.len(),
+        2,
+        "Auto tries one unsupported upgrade then one SSE send"
+    );
+    assert_eq!(requests[0].method.as_str(), "GET");
+    assert_eq!(requests[1].method.as_str(), "POST");
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.url.path() == "/codex/responses")
+    );
+}
+
+fn accepted_failure_cause<'a>(
+    error: &'a opi_ai::provider::ProviderError,
+    request: &opi_ai::provider::Request,
+) -> &'a opi_ai::provider::ProviderError {
+    use opi_ai::provider::ProviderError;
+    use sha2::Digest as _;
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let facts = failure
+        .message()
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+    failure.cause()
 }

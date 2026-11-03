@@ -180,6 +180,42 @@ fn classifier_models(
     (models, handle)
 }
 
+#[test]
+fn classifier_registration_preserves_arbitrary_exact_api_ids_without_auth() {
+    for id in ["normal", "", " \t", "api/β\0id"] {
+        let mut models = Models::new();
+        let resolver = Arc::new(pending_auth::PendingAuth::default());
+        let mut record = classifier_record("http://127.0.0.1:1".into());
+        record.api = ApiId::new(id);
+        let handle = models
+            .register_classifier_api(
+                Arc::new(TypesafeSystemOneApi::new(HttpClient::new(), record.clone())),
+                resolver.clone(),
+                AuthProvenanceSource::Static,
+            )
+            .expect("ApiId has no nonempty or whitespace grammar");
+        assert_eq!(handle.api_id().as_str(), id);
+        assert_eq!(
+            models
+                .classifier_model("typesafe", &record.id)
+                .unwrap()
+                .api
+                .as_str(),
+            id
+        );
+        record.provider_id = " \t".into();
+        assert!(matches!(
+            models.register_classifier_api(
+                Arc::new(TypesafeSystemOneApi::new(HttpClient::new(), record)),
+                resolver.clone(),
+                AuthProvenanceSource::Static,
+            ),
+            Err(opi_ai::registry::RegistrationError::EmptyProviderId)
+        ));
+        assert_eq!(resolver.calls.load(AtomicOrdering::SeqCst), 0);
+    }
+}
+
 fn classify_context() -> ClassifierContext {
     ClassifierContext {
         state: serde_json::json!({ "text": "The deployment succeeded, thank you." }),

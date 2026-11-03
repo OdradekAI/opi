@@ -358,6 +358,7 @@ impl AgentHooks for InjectingHooks {
 
 fn base_msg() -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: vec![],
         api: opi_ai::ApiKind::Anthropic,
         provider: "recording".into(),

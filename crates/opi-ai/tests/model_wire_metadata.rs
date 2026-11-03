@@ -88,6 +88,50 @@ fn model_info_rejects_wire_compat_mismatch() {
 }
 
 #[test]
+fn routing_types_retain_explicit_empty_and_nested_partition_null() {
+    use opi_ai::model_info::{OpenRouterRouting, VercelGatewayRouting};
+    for routing in [
+        serde_json::json!({}),
+        serde_json::json!({"sort":"price"}),
+        serde_json::json!({"sort":{}}),
+        serde_json::json!({"sort":{"by":"price"}}),
+        serde_json::json!({"sort":{"partition":null}}),
+        serde_json::json!({"sort":{"partition":"model"}}),
+        serde_json::json!({"data_collection":"allow","preferred_min_throughput":0,
+            "preferred_max_latency":{"p50":0,"p75":1.25,"p90":2,"p99":3}}),
+    ] {
+        let typed: OpenRouterRouting = serde_json::from_value(routing.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), routing);
+    }
+    for routing in [
+        serde_json::json!({}),
+        serde_json::json!({"only":[]}),
+        serde_json::json!({"order":[]}),
+        serde_json::json!({"only":["chosen"],"order":[]}),
+    ] {
+        let typed: VercelGatewayRouting = serde_json::from_value(routing.clone()).unwrap();
+        assert_eq!(serde_json::to_value(typed).unwrap(), routing);
+    }
+    for invalid in [
+        serde_json::json!([]),
+        serde_json::json!({"sort":[]}),
+        serde_json::json!({"sort":{"partition":false}}),
+        serde_json::json!({"max_price":[]}),
+        serde_json::json!({"max_price":{"prompt":false}}),
+        serde_json::json!({"preferred_min_throughput":[]}),
+        serde_json::json!({"preferred_min_throughput":{"p99":"1"}}),
+        serde_json::json!({"preferred_max_latency":[]}),
+        serde_json::json!({"quantizations":[0]}),
+    ] {
+        assert!(
+            serde_json::from_value::<OpenRouterRouting>(invalid.clone()).is_err(),
+            "accepted invalid routing: {invalid}"
+        );
+    }
+    assert!(serde_json::from_value::<VercelGatewayRouting>(serde_json::json!([])).is_err());
+}
+
+#[test]
 fn pricing_tier_uses_strict_greater_than_boundary() {
     let model_pricing = ModelPricing::try_new(
         pricing(1.0),
@@ -160,6 +204,7 @@ fn unsupported_thinking_model(id: &str, wire_api: WireApi) -> ModelInfo {
 
 fn unsupported_thinking_request(provider_id: &str, model_id: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: format!("{provider_id}:{model_id}"),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

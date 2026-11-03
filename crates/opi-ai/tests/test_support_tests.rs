@@ -45,6 +45,7 @@ async fn stream_yields_text_response_events() {
     let provider = MockProvider::new("test", vec![response]);
 
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -99,6 +100,7 @@ async fn stream_yields_tool_call_response_events() {
     let provider = MockProvider::new("test", vec![response]);
 
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -153,6 +155,7 @@ async fn stream_yields_error_response_events() {
     let provider = MockProvider::new("test", vec![response]);
 
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -204,6 +207,7 @@ async fn multiple_stream_calls_consume_responses_in_order() {
     let provider = MockProvider::new("test", vec![first, second]);
 
     let dummy_request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -235,6 +239,7 @@ async fn multiple_stream_calls_consume_responses_in_order() {
     // Second call
     let stream2 = provider.stream_prepared(
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "mock-model".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -378,6 +383,7 @@ use opi_ai::test_support::{MockResponse, blocks_response};
 
 fn scripted_request(cancel: CancellationToken) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -765,6 +771,7 @@ async fn deferred_mock_emits_pending_terminal_with_handle() {
         .with_deferred(std::sync::Arc::clone(&backend), 2, Some(1_500));
 
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mock-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

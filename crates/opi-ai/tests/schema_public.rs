@@ -798,3 +798,65 @@ fn validate_tool_call_resolves_by_name() {
         other => panic!("expected Valid, got {other:?}"),
     }
 }
+
+#[test]
+fn deep_schema_normalization_and_subvalidator_clone_release_normally() {
+    const NAME: &str = "deep_schema_normalization_and_subvalidator_clone_release_normally";
+    if std::env::var("OPI_SCHEMA_NORMALIZE_CHILD").as_deref() != Ok(NAME) {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", NAME, "--nocapture", "--test-threads=1"])
+            .env("OPI_SCHEMA_NORMALIZE_CHILD", NAME)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{:?}\n{}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(|| {
+            let mut schema = serde_json::json!({"type":"integer"});
+            for _ in 0..10_000 {
+                let mut map = serde_json::Map::new();
+                map.insert("allOf".into(), Value::Array(vec![schema]));
+                schema = Value::Object(map);
+            }
+            let compiled = compile(schema).unwrap();
+            assert_eq!(
+                validate_tool_arguments(&compiled, &serde_json::json!(1), None).unwrap(),
+                ToolArgumentOutcome::Valid {
+                    normalized: serde_json::json!(1)
+                }
+            );
+            drop(compiled);
+            // Optional-null admission independently compiles this deep child;
+            // unlike the scalar fold above, this exercises the schema clone.
+            let mut property = serde_json::json!({"type":"integer"});
+            for _ in 0..10_000 {
+                let mut map = serde_json::Map::new();
+                map.insert("allOf".into(), Value::Array(vec![property]));
+                property = Value::Object(map);
+            }
+            let mut properties = serde_json::Map::new();
+            properties.insert("n".into(), property);
+            let mut root = serde_json::Map::new();
+            root.insert("type".into(), serde_json::json!("object"));
+            root.insert("properties".into(), Value::Object(properties));
+            let compiled = compile(Value::Object(root)).unwrap();
+            assert_eq!(
+                validate_tool_arguments(&compiled, &serde_json::json!({"n":null}), None).unwrap(),
+                ToolArgumentOutcome::Valid {
+                    normalized: serde_json::json!({})
+                }
+            );
+            drop(compiled);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

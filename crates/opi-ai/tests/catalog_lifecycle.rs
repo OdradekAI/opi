@@ -21,9 +21,15 @@ impl DynamicCatalogSource for SwitchSource {
         "fixture-source"
     }
 
+    fn provider_ids(&self) -> &[String] {
+        static IDS: std::sync::LazyLock<Vec<String>> =
+            std::sync::LazyLock::new(|| vec!["fixture".into()]);
+        &IDS
+    }
+
     fn fetch(
         &self,
-        _: CancellationToken,
+        _: opi_ai::catalog::CatalogRefreshContext,
     ) -> futures_util::future::BoxFuture<
         'static,
         Result<HashMap<String, opi_ai::catalog::ModelsStoreEntry>, ProviderError>,
@@ -71,16 +77,28 @@ async fn shared_store_new_revision_cannot_restore_deleted_records_from_memory() 
     let failed = Arc::new(AtomicBool::new(false));
     let source = Arc::new(SwitchSource(failed.clone()));
     let mut models = collection(store.clone(), source.clone());
-    models.refresh(true).await.unwrap();
+    models.refresh(Default::default()).await.unwrap();
     assert!(models.get_model("fixture", "remote").is_some());
     store.begin().commit(HashMap::new()).await.unwrap();
     failed.store(true, Ordering::SeqCst);
-    models.refresh(false).await.unwrap();
+    models
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert!(models.get_model("fixture", "remote").is_none());
-    models.refresh(true).await.unwrap();
+    models.refresh(Default::default()).await.unwrap();
     assert!(models.get_model("fixture", "remote").is_none());
     let mut reopened = collection(ModelsStore::open(store.path()).unwrap(), source);
-    reopened.refresh(false).await.unwrap();
+    reopened
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert!(reopened.get_model("fixture", "remote").is_none());
 }
 
@@ -91,7 +109,7 @@ async fn explicit_source_tombstone_survives_failure_reopen_and_late_guard() {
     let failed = Arc::new(AtomicBool::new(false));
     let source = Arc::new(SwitchSource(failed.clone()));
     let mut models = collection(store.clone(), source.clone());
-    models.refresh(true).await.unwrap();
+    models.refresh(Default::default()).await.unwrap();
     let old = store.snapshot().catalogs;
     let late = store.begin();
     store.invalidate_source("fixture-source").await.unwrap();
@@ -100,7 +118,7 @@ async fn explicit_source_tombstone_survives_failure_reopen_and_late_guard() {
         Err(opi_ai::catalog::StoreCommitError::Superseded { .. })
     ));
     failed.store(true, Ordering::SeqCst);
-    models.refresh(true).await.unwrap();
+    models.refresh(Default::default()).await.unwrap();
     assert!(models.get_model("fixture", "remote").is_none());
     let reopened_store = ModelsStore::open(store.path()).unwrap();
     assert!(
@@ -110,10 +128,16 @@ async fn explicit_source_tombstone_survives_failure_reopen_and_late_guard() {
             .contains("fixture-source")
     );
     let mut reopened = collection(reopened_store.clone(), source);
-    reopened.refresh(false).await.unwrap();
+    reopened
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert!(reopened.get_model("fixture", "remote").is_none());
     failed.store(false, Ordering::SeqCst);
-    reopened.refresh(true).await.unwrap();
+    reopened.refresh(Default::default()).await.unwrap();
     assert!(reopened.get_model("fixture", "remote").is_some());
     assert!(
         !reopened_store
@@ -152,13 +176,13 @@ async fn distribution_metadata_survives_public_decode_store_and_reopen() {
     else {
         unreachable!()
     };
-    compat.chat_template_kwargs.insert(
+    compat.chat_template_kwargs.get_or_insert_default().insert(
         "literal-reference".into(),
         opi_ai::model_info::ChatTemplateKwargValue::Literal(
             serde_json::json!({"$var": "thinking.enabled", "omitWhenOff": true}),
         ),
     );
-    compat.chat_template_kwargs.insert(
+    compat.chat_template_kwargs.get_or_insert_default().insert(
         "budget".into(),
         opi_ai::model_info::ChatTemplateKwargValue::Var {
             var: opi_ai::model_info::ChatTemplateKwargVar::ThinkingBudget,
@@ -269,6 +293,7 @@ async fn ordered_model_headers_survive_store_reopen_and_next_real_request() {
             )
             .unwrap();
         let request = opi_ai::provider::Request {
+            projection: Default::default(),
             model: "openai:header-fixture".into(),
             context: opi_ai::transcript::normalize_context(Default::default()).unwrap(),
             max_tokens: None,

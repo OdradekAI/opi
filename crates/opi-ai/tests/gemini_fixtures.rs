@@ -184,6 +184,7 @@ fn gemini_unknown_model_returns_error() {
 fn gemini_request_body_uses_contents_field() {
     let provider = gemini_provider();
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "gemini:gemini-2.5-flash".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -251,6 +252,7 @@ fn gemini_request_body_uses_contents_field() {
 fn gemini_request_body_strips_provider_prefix() {
     let provider = gemini_provider();
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "gemini:gemini-2.5-pro".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -658,6 +660,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
     let provider = GeminiProvider::new(Some(server.uri()));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "gemini:gemini-2.5-flash".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -828,6 +831,7 @@ async fn request_header_cannot_override_gemini_auth_routing() {
 
 fn gemini_http_request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "gemini:gemini-2.5-flash".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1073,18 +1077,27 @@ async fn gemini_response_callback_is_typed_unsupported_before_http() {
     let callbacks = RequestCallbacks::new();
     request.callbacks = callbacks.with_on_response(std::sync::Arc::new(|_status, _headers| Ok(())));
 
+    let expected_prefix = request.context.messages().len();
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
-    let mut typed = false;
-    while let Some(item) = stream.next().await {
-        if matches!(item, Err(ProviderError::UnsupportedCapability(_))) {
-            typed = true;
-            break;
-        }
-    }
-    assert!(
-        typed,
-        "google wires reject response observers before any dispatch"
+    let error = stream.next().await.expect("typed refusal").unwrap_err();
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection retains failure facts")
+    };
+    assert!(matches!(
+        failure.cause(),
+        ProviderError::UnsupportedCapability(_)
+    ));
+    assert_eq!(
+        failure
+            .message()
+            .projection
+            .as_ref()
+            .unwrap()
+            .source_prefix
+            .message_count,
+        expected_prefix
     );
+    assert!(stream.next().await.is_none());
     server.verify().await;
 }
 
@@ -1273,6 +1286,7 @@ mod constrained_guard_tests {
 
     fn guarded_request(tools: Vec<ToolDef>) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "gemini:gemini-2.5-flash".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1366,6 +1380,7 @@ mod google_40 {
 
     fn plain_request_40(model_id: &str, thinking: ThinkingConfig) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: format!("gemini:{model_id}"),
             context: opi_ai::transcript::normalize_context(Context {
@@ -1841,6 +1856,7 @@ mod google_40 {
 
     fn assistant_shell_40(model: &str) -> opi_ai::message::AssistantMessage {
         opi_ai::message::AssistantMessage {
+            projection: None,
             content: vec![],
             api: opi_ai::ApiKind::Google,
             provider: "gemini".into(),
@@ -2783,5 +2799,87 @@ mod google_40 {
                 |part| part.get("functionCall").is_some() && part["thoughtSignature"] == "c2ln"
             )
         );
+    }
+}
+
+#[tokio::test]
+async fn multiline_sse_line_endings_survive_http_chunk_splits() {
+    async fn run(body: String, split: Option<usize>) -> Vec<AssistantStreamEvent> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = vec![0; 65536];
+            let received = socket.read(&mut request).await.unwrap();
+            assert!(
+                received > 0,
+                "client sent request bytes before the response"
+            );
+            socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).as_bytes()).await.unwrap();
+            if let Some(split) = split {
+                socket.write_all(&body.as_bytes()[..split]).await.unwrap();
+                socket.flush().await.unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+                socket.write_all(&body.as_bytes()[split..]).await.unwrap();
+            } else {
+                socket.write_all(body.as_bytes()).await.unwrap();
+            }
+            socket.shutdown().await.unwrap();
+        });
+        let provider = GeminiProvider::new(Some(format!("http://{address}")));
+        let results: Vec<_> = provider
+            .stream_prepared(gemini_http_request(), opi_ai::test_support::resolved_auth())
+            .collect()
+            .await;
+        peer.await.unwrap();
+        results
+            .into_iter()
+            .map(|event| event.expect("legal complete multiline event"))
+            .collect()
+    }
+
+    let body = [
+        serde_json::json!({"candidates":[{"content":{"role":"model","parts":[{"text":"hello"}]},"index":0}]}),
+        serde_json::json!({"candidates":[{"content":{"role":"model","parts":[{"text":""}]},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}}),
+    ].iter().map(|value| format!("data: {value}\n\n")).collect::<String>();
+    for newline in ["\n", "\r\n", "\r"] {
+        let multiline = body
+            .lines()
+            .map(|line| {
+                if line.starts_with("data: {") {
+                    line.replacen(',', &format!(",{newline}data: "), 1)
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(newline)
+            + newline;
+        let split = multiline.find(&format!("{newline}data: ")).unwrap() + 1;
+        let whole = run(multiline.clone(), None).await;
+        let split = run(multiline, Some(split)).await;
+        let kinds = |events: &[AssistantStreamEvent]| {
+            events
+                .iter()
+                .map(|event| serde_json::to_value(event).unwrap()["type"].clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(kinds(&split), kinds(&whole), "newline={newline:?}");
+        let final_message = |events: Vec<AssistantStreamEvent>| {
+            events
+                .into_iter()
+                .find_map(|event| match event {
+                    AssistantStreamEvent::Done { message, .. } => Some(message),
+                    _ => None,
+                })
+                .expect("terminal outcome")
+        };
+        let whole = final_message(whole);
+        let split = final_message(split);
+        assert_eq!(split.content, whole.content);
+        assert_eq!(split.stop_reason, whole.stop_reason);
+        assert_eq!(split.usage, whole.usage);
+        assert!(!split.content.is_empty());
     }
 }

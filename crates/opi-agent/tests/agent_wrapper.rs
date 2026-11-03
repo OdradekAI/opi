@@ -168,6 +168,7 @@ impl AgentHooks for TestHooks {
 
 fn base_assistant() -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: vec![],
         api: opi_ai::ApiKind::Anthropic,
         provider: "mock".into(),

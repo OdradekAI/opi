@@ -31,6 +31,7 @@ use tokio_util::sync::CancellationToken;
 
 fn minimal_request(model: &str) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: model.into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -460,8 +461,8 @@ async fn provider_collection_dispatch_rejects_missing_auth_with_redacted_diagnos
     };
     assert!(
         matches!(
-            err,
-            ModelsError::Provider(ProviderError::CredentialNeeded { .. })
+            accepted_models_failure_cause(&err, &minimal_request("noauth:mock-model")),
+            ProviderError::CredentialNeeded { provider_id } if provider_id == "noauth"
         ),
         "got {err:?}"
     );
@@ -474,6 +475,7 @@ async fn dispatch_complete_returns_terminal_error_event() {
     // A legacy in-band Error terminal (mock/historical producer shape) maps
     // to Err(CallFailure) with the delivered partial preserved.
     let message = AssistantMessage {
+        projection: None,
         content: vec![AssistantContent::Text {
             text: "terminal failure".into(),
             signature: None,
@@ -683,7 +685,12 @@ async fn collection_refresh_is_a_documented_noop_extension_point() {
     let mut collection = Models::new();
     // Offline refresh on a store-less collection performs no network work and
     // reports an empty outcome (no pi.dev/default startup policy exists).
-    let report = collection.refresh(false).await;
+    let report = collection
+        .refresh(opi_ai::ModelsRefreshOptions {
+            allow_network: false,
+            ..Default::default()
+        })
+        .await;
     assert!(report.is_ok());
 }
 
@@ -881,8 +888,8 @@ async fn store_credential_dispatch_rejects_when_probe_absent_with_redacted_detai
         .expect_err("absent credential must reject dispatch");
     assert!(
         matches!(
-            err,
-            ModelsError::Provider(ProviderError::CredentialNeeded { .. })
+            accepted_models_failure_cause(&err, &minimal_request("absentprov:mock-model")),
+            ProviderError::CredentialNeeded { provider_id } if provider_id == "absentprov"
         ),
         "got {err:?}"
     );
@@ -1085,6 +1092,7 @@ impl Provider for RefreshProvider {
 
     fn refresh_models(
         &self,
+        _context: opi_ai::CatalogRefreshContext,
     ) -> opi_ai::credential::BoxAuthFuture<
         '_,
         Result<Option<Vec<ModelInfo>>, opi_ai::provider::ProviderError>,
@@ -1128,6 +1136,7 @@ impl Provider for ErrorRefreshProvider {
 
     fn refresh_models(
         &self,
+        _context: opi_ai::CatalogRefreshContext,
     ) -> opi_ai::credential::BoxAuthFuture<
         '_,
         Result<Option<Vec<ModelInfo>>, opi_ai::provider::ProviderError>,
@@ -1183,6 +1192,7 @@ impl Provider for MutableRefreshProvider {
 
     fn refresh_models(
         &self,
+        _context: opi_ai::CatalogRefreshContext,
     ) -> opi_ai::credential::BoxAuthFuture<
         '_,
         Result<Option<Vec<ModelInfo>>, opi_ai::provider::ProviderError>,
@@ -1245,7 +1255,7 @@ async fn refresh_models_is_atomic_substrate() {
     assert!(collection.resolve("dyna:fresh-a1").is_err());
 
     // Refresh succeeds.
-    collection.refresh(true).await.unwrap();
+    collection.refresh(Default::default()).await.unwrap();
 
     // After refresh: dynamic catalogs replace built-in models.
     // Old models gone, fresh models visible.
@@ -1318,7 +1328,7 @@ async fn refresh_models_reports_per_provider_and_publishes_successes() {
 
     // Refresh reports per-provider outcomes: a failing provider retains its
     // prior data and does not erase other providers' fresh catalogs.
-    let report = collection.refresh(true).await.unwrap();
+    let report = collection.refresh(Default::default()).await.unwrap();
     let good_entry = report
         .find("good")
         .expect("good provider appears in the refresh report");
@@ -1363,7 +1373,7 @@ async fn refresh_models_deterministic_ordering() {
             .unwrap();
     }
 
-    collection.refresh(true).await.unwrap();
+    collection.refresh(Default::default()).await.unwrap();
 
     // Provider ids are exposed in deterministic sorted order regardless of
     // registration order, so a regression to insertion order would be caught.
@@ -1396,7 +1406,7 @@ async fn refresh_models_repeated_refresh_replaces() {
         .unwrap();
 
     // First refresh.
-    collection.refresh(true).await.unwrap();
+    collection.refresh(Default::default()).await.unwrap();
     assert!(collection.resolve("dyn:v1").is_ok());
     assert!(collection.resolve("dyn:v2").is_err());
 
@@ -1407,7 +1417,7 @@ async fn refresh_models_repeated_refresh_replaces() {
     ]);
 
     // Second refresh — replaces v1 with v2+v3.
-    collection.refresh(true).await.unwrap();
+    collection.refresh(Default::default()).await.unwrap();
     assert!(
         collection.resolve("dyn:v1").is_err(),
         "v1 should be replaced"
@@ -1436,12 +1446,12 @@ async fn refresh_models_none_clears_prior_dynamic_snapshot() {
         )
         .unwrap();
 
-    collection.refresh(true).await.unwrap();
+    collection.refresh(Default::default()).await.unwrap();
     assert!(collection.resolve("dyn:dynamic").is_ok());
     assert!(collection.resolve("dyn:builtin").is_err());
 
     *refresh_result.lock().unwrap() = None;
-    collection.refresh(true).await.unwrap();
+    collection.refresh(Default::default()).await.unwrap();
 
     assert!(collection.resolve("dyn:dynamic").is_err());
     assert!(collection.resolve("dyn:builtin").is_ok());
@@ -1464,7 +1474,7 @@ async fn refresh_models_empty_catalog_is_valid() {
 
     assert!(collection.resolve("dyn:old").is_ok());
 
-    collection.refresh(true).await.unwrap();
+    collection.refresh(Default::default()).await.unwrap();
 
     // Empty dynamic catalog: old model gone, no new models.
     assert!(collection.resolve("dyn:old").is_err());
@@ -1761,6 +1771,7 @@ mod phase17 {
             let spec = format!("budget:{id}");
             let mut request = minimal_request(&spec);
             request.max_tokens = explicit_limit;
+            let original_request = request.clone();
             // Each episode is a real acquisition retry: the first send fails
             // retryably (zero-delay hint) and the admitted retry reuses the
             // same frozen compiled request, proving the frozen limit and
@@ -1777,7 +1788,12 @@ mod phase17 {
             while let Some(item) = first.next().await {
                 if let Err(error) = item {
                     assert!(
-                        matches!(error, ProviderError::RateLimited { .. }),
+                        matches!(
+                            accepted_failure_cause(&error, &original_request),
+                            ProviderError::RateLimited {
+                                retry_after_ms: Some(0)
+                            }
+                        ),
                         "expected the scripted rate-limit failure, got {error:?}"
                     );
                     break;
@@ -2358,6 +2374,7 @@ mod phase17 {
         let collection = Arc::new(collection);
         let request = minimal_request("alpha:model-a");
         let cancel = request.cancel.clone();
+        let original_request = request.clone();
         let task = tokio::spawn({
             let collection = collection.clone();
             async move { collection.prepare_call("alpha:model-a", request).await }
@@ -2373,7 +2390,14 @@ mod phase17 {
             .expect("cancellation must interrupt pending auth resolution")
             .expect("prepare task panicked")
             .expect_err("cancelled preparation must fail");
-        assert!(matches!(error, ModelsError::CallCancelled));
+        assert!(
+            error.is_call_cancelled(),
+            "logical-call cancellation origin remains known"
+        );
+        assert_eq!(
+            accepted_models_failure_cause(&error, &original_request),
+            &ProviderError::Cancelled
+        );
     }
 
     #[tokio::test]
@@ -2494,20 +2518,33 @@ mod phase17 {
         let request = minimal_request("cancel-aware:model-a");
         let token = request.cancel.clone();
         let prepared = collection
-            .prepare_call("cancel-aware:model-a", request)
+            .prepare_call("cancel-aware:model-a", request.clone())
             .await
             .expect("prepare call");
         let mut stream = prepared.start_attempt().expect("start active attempt");
         assert!(futures_util::poll!(stream.next()).is_pending());
         assert_eq!(dispatches.load(Ordering::SeqCst), 1);
-        let task = tokio::spawn(async move { stream.next().await });
+        let task = tokio::spawn(async move {
+            let terminal = stream.next().await;
+            assert!(
+                stream.next().await.is_none(),
+                "cancelled attempt must end permanently"
+            );
+            terminal
+        });
         token.cancel();
 
         let terminal = tokio::time::timeout(Duration::from_secs(1), task)
             .await
             .expect("active attempt observes cancellation")
             .expect("attempt task did not panic");
-        assert!(matches!(terminal, Some(Err(ProviderError::Cancelled))));
+        let error = terminal
+            .expect("one cancellation")
+            .expect_err("active cancellation must fail closed");
+        assert_eq!(
+            accepted_failure_cause(&error, &request),
+            &ProviderError::Cancelled
+        );
         assert_eq!(resolver_hits.load(Ordering::SeqCst), 1);
         assert_eq!(dispatches.load(Ordering::SeqCst), 1);
         assert_eq!(cancellations.load(Ordering::SeqCst), 1);
@@ -2691,13 +2728,15 @@ mod phase17 {
                 .await
                 .expect_err("credential failure must terminate the call");
             assert!(
-                matches!(
-                    err,
-                    ModelsError::Provider(
-                        ProviderError::CredentialRevoked { .. }
-                            | ProviderError::CredentialNeeded { .. }
-                    )
-                ),
+                accepted_models_failure_cause(&err, &minimal_request("alpha:model-a"))
+                    == &match kind {
+                        FailKind::Revoked => ProviderError::CredentialRevoked {
+                            provider_id: "alpha".into()
+                        },
+                        FailKind::Needed => ProviderError::CredentialNeeded {
+                            provider_id: "alpha".into()
+                        },
+                    },
                 "got {err:?}"
             );
             assert_eq!(
@@ -2745,11 +2784,26 @@ mod phase17 {
                 .expect("stream starts")
                 .expect("first event succeeds");
             assert!(!first.is_terminal());
-            assert!(matches!(
-                attempt.next().await,
-                Some(Err(ProviderError::CredentialRevoked { .. }
-                    | ProviderError::CredentialNeeded { .. }))
-            ));
+            let error = attempt
+                .next()
+                .await
+                .expect("one credential failure")
+                .expect_err("credential invalidation must fail closed");
+            assert_eq!(
+                accepted_failure_cause(&error, &minimal_request("alpha:model-a")),
+                &match kind {
+                    FailKind::Revoked => ProviderError::CredentialRevoked {
+                        provider_id: "alpha".into()
+                    },
+                    FailKind::Needed => ProviderError::CredentialNeeded {
+                        provider_id: "alpha".into()
+                    },
+                }
+            );
+            assert!(
+                attempt.next().await.is_none(),
+                "credential failure is terminal"
+            );
 
             let error = match prepared.start_attempt() {
                 Err(error) => error,
@@ -2969,8 +3023,8 @@ mod phase17 {
             .expect_err("alpha auth must fail");
         assert!(
             matches!(
-                err,
-                ModelsError::Provider(ProviderError::CredentialRevoked { .. })
+                accepted_models_failure_cause(&err, &minimal_request("alpha:model-a")),
+                ProviderError::CredentialRevoked { provider_id } if provider_id == "alpha"
             ),
             "got {err:?}"
         );
@@ -3235,6 +3289,7 @@ mod registry_preflight_and_refresh {
 
         fn refresh_models(
             &self,
+            _context: opi_ai::CatalogRefreshContext,
         ) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
             self.log.lock().unwrap().push(self.id.into());
             let result = self.result.clone();
@@ -3286,7 +3341,7 @@ mod registry_preflight_and_refresh {
 
         // Refresh reports per-provider outcomes and still evaluates every
         // provider in deterministic (sorted) id order after an error.
-        let report = collection.refresh(true).await.unwrap();
+        let report = collection.refresh(Default::default()).await.unwrap();
         assert_eq!(
             *log.lock().unwrap(),
             ["a-error", "b-success", "c-error"],
@@ -3358,6 +3413,7 @@ mod catalog_store_refresh_20_33 {
         }
         fn refresh_models(
             &self,
+            _context: opi_ai::CatalogRefreshContext,
         ) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
             self.entered.notify_one();
             let release = self.release.lock().unwrap().take();
@@ -3408,6 +3464,7 @@ mod catalog_store_refresh_20_33 {
         }
         fn refresh_models(
             &self,
+            _context: opi_ai::CatalogRefreshContext,
         ) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
             self.fetches.fetch_add(1, Ordering::SeqCst);
             let fresh = self.fresh.clone();
@@ -3419,6 +3476,7 @@ mod catalog_store_refresh_20_33 {
     struct FixedCatalogSource {
         id: String,
         catalogs: HashMap<String, opi_ai::catalog::ModelsStoreEntry>,
+        providers: Vec<String>,
     }
 
     enum CancelAtCatalogResult {
@@ -3440,13 +3498,19 @@ mod catalog_store_refresh_20_33 {
             "cancel-at-result"
         }
 
+        fn provider_ids(&self) -> &[String] {
+            static IDS: std::sync::LazyLock<Vec<String>> =
+                std::sync::LazyLock::new(|| vec!["dyn".into()]);
+            &IDS
+        }
         fn fetch(
             &self,
-            token: CancellationToken,
+            context: opi_ai::CatalogRefreshContext,
         ) -> futures_util::future::BoxFuture<
             'static,
             Result<HashMap<String, opi_ai::catalog::ModelsStoreEntry>, ProviderError>,
         > {
+            let token = context.cancel;
             let later = self.fetches.fetch_add(1, Ordering::SeqCst) > 0;
             let cancellation = self.cancellation.clone();
             Box::pin(async move {
@@ -3491,7 +3555,7 @@ mod catalog_store_refresh_20_33 {
             fetches: fetches.clone(),
             cancellation: cancellation.clone(),
         }));
-        collection.refresh(true).await.unwrap();
+        collection.refresh(Default::default()).await.unwrap();
         assert!(collection.resolve("dyn:old").is_ok());
         let persisted = with_store.then(|| std::fs::read(&path).unwrap());
 
@@ -3512,7 +3576,10 @@ mod catalog_store_refresh_20_33 {
             }
             CancelAtCatalogResult::Source => None,
         };
-        let report = collection.refresh_with(true, &token).await.unwrap();
+        let report = collection
+            .refresh_with(Default::default(), &token)
+            .await
+            .unwrap();
         if let Some(external) = external {
             external.join().unwrap();
         }
@@ -3579,9 +3646,12 @@ mod catalog_store_refresh_20_33 {
         fn id(&self) -> &str {
             &self.id
         }
+        fn provider_ids(&self) -> &[String] {
+            &self.providers
+        }
         fn fetch(
             &self,
-            _token: CancellationToken,
+            _context: opi_ai::CatalogRefreshContext,
         ) -> futures_util::future::BoxFuture<
             'static,
             Result<HashMap<String, opi_ai::catalog::ModelsStoreEntry>, ProviderError>,
@@ -3600,9 +3670,14 @@ mod catalog_store_refresh_20_33 {
         fn id(&self) -> &str {
             &self.id
         }
+        fn provider_ids(&self) -> &[String] {
+            static IDS: std::sync::LazyLock<Vec<String>> =
+                std::sync::LazyLock::new(|| vec!["custom-prov".into()]);
+            &IDS
+        }
         fn fetch(
             &self,
-            _token: CancellationToken,
+            _context: opi_ai::CatalogRefreshContext,
         ) -> futures_util::future::BoxFuture<
             'static,
             Result<HashMap<String, opi_ai::catalog::ModelsStoreEntry>, ProviderError>,
@@ -3668,7 +3743,13 @@ mod catalog_store_refresh_20_33 {
         collection.set_models_store(store);
 
         // Offline refresh: restore the persisted cache, never fetch.
-        let report = collection.refresh(false).await.unwrap();
+        let report = collection
+            .refresh(opi_ai::ModelsRefreshOptions {
+                allow_network: false,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
         assert_eq!(
             report.status(),
             RefreshStatus::OfflineRestored,
@@ -3720,7 +3801,8 @@ mod catalog_store_refresh_20_33 {
         );
 
         let mut refresh_a = collection;
-        let task = tokio::spawn(async move { refresh_a.refresh(true).await.unwrap() });
+        let task =
+            tokio::spawn(async move { refresh_a.refresh(Default::default()).await.unwrap() });
         entered.notified().await;
 
         // Publisher B commits revision 2 while A is suspended in fetch.
@@ -3760,7 +3842,13 @@ mod catalog_store_refresh_20_33 {
             Box::new(RefreshProvider::new("winner", vec![])),
         );
         collection_b.set_models_store(ModelsStore::open(&path).unwrap());
-        collection_b.refresh(false).await.unwrap();
+        collection_b
+            .refresh(opi_ai::ModelsRefreshOptions {
+                allow_network: false,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
         assert!(collection_b.resolve("winner:w2").is_ok());
         assert!(collection_b.resolve("racer:racer-fresh").is_err());
     }
@@ -3790,7 +3878,10 @@ mod catalog_store_refresh_20_33 {
         let token = CancellationToken::new();
         let task_token = token.clone();
         let task = tokio::spawn(async move {
-            let report = collection.refresh_with(true, &task_token).await.unwrap();
+            let report = collection
+                .refresh_with(Default::default(), &task_token)
+                .await
+                .unwrap();
             (report, collection)
         });
         entered.notified().await;
@@ -3817,6 +3908,7 @@ mod catalog_store_refresh_20_33 {
         );
         collection.register_catalog_source(Arc::new(FixedCatalogSource {
             id: "custom-src".to_owned(),
+            providers: vec!["custom-prov".into()],
             catalogs: catalog_fixture::catalogs(HashMap::from([(
                 "custom-prov".to_owned(),
                 vec![model_info("src-model", "Source Model")],
@@ -3826,7 +3918,7 @@ mod catalog_store_refresh_20_33 {
             id: "broken-src".to_owned(),
         }));
 
-        let report = collection.refresh(true).await.unwrap();
+        let report = collection.refresh(Default::default()).await.unwrap();
         assert_eq!(report.status(), RefreshStatus::Published);
         assert!(
             collection.resolve("custom-prov:src-model").is_ok(),
@@ -3928,11 +4020,11 @@ mod catalog_store_refresh_20_33 {
                 error_msg: "no native models endpoint",
             }),
         );
-        let source = HttpCatalogSource::new(url);
+        let source = HttpCatalogSource::new(url, ["http-prov".into()]);
         collection.register_catalog_source(Arc::new(source));
 
         // Round 1: the controlled HTTP source publishes and persists.
-        let report = collection.refresh(true).await.unwrap();
+        let report = collection.refresh(Default::default()).await.unwrap();
         assert_eq!(report.status(), RefreshStatus::Published);
         assert!(collection.resolve("http-prov:s1").is_ok());
         let persisted = ModelsStore::open(&path).unwrap();
@@ -3942,7 +4034,7 @@ mod catalog_store_refresh_20_33 {
         );
 
         // Round 2: the server fails; prior data is retained, error reported.
-        let report = collection.refresh(true).await.unwrap();
+        let report = collection.refresh(Default::default()).await.unwrap();
         assert!(
             collection.resolve("http-prov:s1").is_ok(),
             "failed source refresh retains prior valid data"
@@ -3990,7 +4082,7 @@ mod catalog_store_refresh_20_33 {
                 CompatMetadata::default(),
             )
             .unwrap();
-        collection.refresh(true).await.unwrap();
+        collection.refresh(Default::default()).await.unwrap();
         assert!(
             collection.resolve("dyn:m1").is_err(),
             "refresh replaced the catalog wholesale"
@@ -4075,6 +4167,114 @@ fn map_context(
     pairs: &[(&'static str, &'static str)],
 ) -> std::sync::Arc<dyn opi_ai::auth::AuthContext> {
     std::sync::Arc::new(MapAuthContext(pairs.iter().copied().collect()))
+}
+
+#[tokio::test]
+async fn ecs_full_uri_parsed_host_guard_runs_before_token_file_or_send() {
+    use opi_ai::auth::aws::source_http::{
+        AwsSourceTransport, SourceHttpError, SourceHttpRequest, SourceHttpResponse,
+    };
+    use std::sync::Arc;
+
+    #[derive(Default)]
+    struct Source(Mutex<Vec<SourceHttpRequest>>);
+    impl AwsSourceTransport for Source {
+        fn send(
+            &self,
+            request: SourceHttpRequest,
+        ) -> opi_ai::credential::BoxAuthFuture<'_, Result<SourceHttpResponse, SourceHttpError>>
+        {
+            self.0.lock().unwrap().push(request);
+            Box::pin(async {
+                Ok(SourceHttpResponse {
+                    status: 200,
+                    body: br#"{"AccessKeyId":"fixture","SecretAccessKey":"fixture"}"#.to_vec(),
+                })
+            })
+        }
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let missing_token = dir.path().join("missing-token");
+    for uri in [
+        "http://127.attacker.invalid/creds",
+        "http://169.254.attacker.invalid/creds",
+        "http://credentials.invalid/creds",
+        "http://[::2]/creds",
+    ] {
+        for token_file in [None, Some(missing_token.to_string_lossy().into_owned())] {
+            let source = Arc::new(Source::default());
+            let ambient = map_context(&[]);
+            let mut models = Models::new();
+            let mut overrides = BuiltinOverrides::default();
+            overrides.aws_auth.region = Some("us-east-1".into());
+            overrides.aws_auth.transport = Some(source.clone());
+            overrides.aws_auth.scoped.container_credentials_full_uri = Some(uri.into());
+            overrides.aws_auth.scoped.container_authorization_token_file = token_file;
+            overrides.aws_auth.scoped.container_authorization_token = Some("fixture-token".into());
+            register_builtin(
+                &mut models,
+                ambient,
+                Arc::new(opi_ai::http::HttpClient::new()),
+                &overrides,
+            )
+            .unwrap();
+            let error = models
+                .get_auth("amazon-bedrock", Default::default())
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(&error, ModelsError::AuthResolution { error, .. } if matches!(error.as_ref(), ProviderError::Config(_)))
+                    && error.to_string().contains("container endpoint"),
+                "{uri} must fail the endpoint guard before attempting the missing token file: {error:?}"
+            );
+            assert!(
+                source.0.lock().unwrap().is_empty(),
+                "{uri} must not send or fall through to IMDS"
+            );
+        }
+    }
+
+    for (uri, relative) in [
+        ("http://127.0.0.1/creds", None),
+        ("http://127.255.255.254/creds", None),
+        ("http://169.254.0.1/creds", None),
+        ("http://[::1]/creds", None),
+        ("http://localhost/creds", None),
+        ("https://credentials.invalid/creds", None),
+        ("http://127.attacker.invalid/creds", Some("/preferred")),
+    ] {
+        let source = Arc::new(Source::default());
+        let mut overrides = BuiltinOverrides::default();
+        overrides.aws_auth.region = Some("us-east-1".into());
+        overrides.aws_auth.transport = Some(source.clone());
+        overrides.aws_auth.scoped.container_credentials_full_uri = Some(uri.into());
+        overrides.aws_auth.scoped.container_credentials_relative_uri = relative.map(str::to_owned);
+        overrides.aws_auth.scoped.container_authorization_token = Some("fixture-token".into());
+        let mut models = Models::new();
+        register_builtin(
+            &mut models,
+            map_context(&[]),
+            Arc::new(opi_ai::http::HttpClient::new()),
+            &overrides,
+        )
+        .unwrap();
+        models
+            .get_auth("amazon-bedrock", Default::default())
+            .await
+            .unwrap();
+        let sends = source.0.lock().unwrap();
+        assert_eq!(sends.len(), 1, "{uri}");
+        assert!(
+            sends[0]
+                .headers
+                .iter()
+                .any(|(key, value)| key == "Authorization" && value == "fixture-token")
+        );
+        if relative.is_some() {
+            assert_eq!(sends[0].url, "http://169.254.170.2/preferred");
+        }
+    }
 }
 
 fn first_catalog_chat_model(provider: &str) -> String {
@@ -5797,4 +5997,716 @@ async fn builtin_profile_api_base_paths_reach_exact_endpoints() {
             "{provider}/{wire}"
         );
     }
+}
+
+fn accepted_failure_cause<'a>(
+    error: &'a opi_ai::provider::ProviderError,
+    request: &opi_ai::provider::Request,
+) -> &'a opi_ai::provider::ProviderError {
+    use opi_ai::provider::ProviderError;
+    use sha2::Digest as _;
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let facts = failure
+        .message()
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+    failure.cause()
+}
+
+fn accepted_models_failure_cause<'a>(
+    error: &'a opi_ai::ModelsError,
+    request: &opi_ai::provider::Request,
+) -> &'a opi_ai::provider::ProviderError {
+    let opi_ai::ModelsError::Provider(error) = error else {
+        panic!("accepted projection must retain its provider failure: {error:?}");
+    };
+    accepted_failure_cause(error, request)
+}
+
+mod selected_owner_management {
+    use super::*;
+    use opi_ai::RefreshStatus;
+    use opi_ai::catalog::{
+        CatalogRefreshContext, DynamicCatalogSource, ModelsStore, ModelsStoreEntry,
+    };
+    use std::collections::{BTreeSet, HashMap};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+    };
+
+    struct Native {
+        id: &'static str,
+        models: Vec<ModelInfo>,
+        seen: Arc<Mutex<Vec<CatalogRefreshContext>>>,
+    }
+    impl Provider for Native {
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn models(&self) -> &[ModelInfo] {
+            &self.models
+        }
+        fn stream_prepared(&self, _: Request, _: ResolvedAuth) -> opi_ai::provider::EventStream {
+            panic!("refresh cannot generate")
+        }
+        fn refresh_models(
+            &self,
+            context: CatalogRefreshContext,
+        ) -> opi_ai::BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
+            self.seen.lock().unwrap().push(context);
+            Box::pin(async { Ok(None) })
+        }
+    }
+    struct Source {
+        ids: Vec<String>,
+        output: Mutex<HashMap<String, ModelsStoreEntry>>,
+        seen: Mutex<Vec<CatalogRefreshContext>>,
+        fail: AtomicBool,
+    }
+    impl Source {
+        fn new(ids: &[&str], output: HashMap<String, ModelsStoreEntry>) -> Self {
+            Self {
+                ids: ids.iter().map(|id| (*id).into()).collect(),
+                output: Mutex::new(output),
+                seen: Mutex::default(),
+                fail: AtomicBool::new(false),
+            }
+        }
+    }
+    impl DynamicCatalogSource for Source {
+        fn id(&self) -> &str {
+            "aggregate"
+        }
+        fn provider_ids(&self) -> &[String] {
+            &self.ids
+        }
+        fn fetch(
+            &self,
+            context: CatalogRefreshContext,
+        ) -> futures_util::future::BoxFuture<
+            'static,
+            Result<HashMap<String, ModelsStoreEntry>, ProviderError>,
+        > {
+            self.seen.lock().unwrap().push(context);
+            let fail = self.fail.load(Ordering::SeqCst);
+            let output = self.output.lock().unwrap().clone();
+            Box::pin(async move {
+                if fail {
+                    Err(ProviderError::Cancelled)
+                } else {
+                    Ok(output)
+                }
+            })
+        }
+    }
+    fn entry(id: &str) -> ModelsStoreEntry {
+        catalog_fixture::chat_entry(vec![model_info(id, id)])
+    }
+    fn register(
+        models: &mut Models,
+        id: &'static str,
+        seen: Arc<Mutex<Vec<CatalogRefreshContext>>>,
+    ) {
+        models
+            .register(
+                Box::new(Native {
+                    id,
+                    models: vec![model_info("base", "Base")],
+                    seen,
+                }),
+                AuthDescriptor::Resolved {
+                    source: "not consulted by refresh".into(),
+                },
+                Default::default(),
+            )
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn selection_precedes_source_work_and_forwards_each_force_value_exactly() {
+        for force in [None, Some(false), Some(true)] {
+            let mut models = Models::new();
+            let a = Arc::new(Mutex::default());
+            let b = Arc::new(Mutex::default());
+            register(&mut models, "a", a.clone());
+            register(&mut models, "b", b.clone());
+            models
+                .register(
+                    Box::new(MockProvider::new("static", vec![])),
+                    AuthDescriptor::Resolved {
+                        source: "unused".into(),
+                    },
+                    Default::default(),
+                )
+                .unwrap();
+            let source = Arc::new(Source::new(
+                &["a", "b"],
+                HashMap::from([
+                    ("a".into(), entry("source-a")),
+                    ("b".into(), entry("unselected-b")),
+                ]),
+            ));
+            models.register_catalog_source(source.clone());
+            for ids in [&[][..], &["unknown"][..]] {
+                let report = models
+                    .refresh(catalog_fixture::refresh_options(ids, true, force))
+                    .await
+                    .unwrap();
+                assert!(report.is_empty());
+            }
+            models
+                .refresh(catalog_fixture::refresh_options(&["static"], true, force))
+                .await
+                .unwrap();
+            models
+                .refresh(catalog_fixture::refresh_options(&["a"], false, force))
+                .await
+                .unwrap();
+            assert!(a.lock().unwrap().is_empty());
+            assert!(b.lock().unwrap().is_empty());
+            assert!(source.seen.lock().unwrap().is_empty());
+            models
+                .refresh(catalog_fixture::refresh_options(&["a"], true, force))
+                .await
+                .unwrap();
+            assert!(models.get_model("a", "source-a").is_some());
+            assert!(models.get_model("b", "base").is_some());
+            assert!(models.get_model("b", "unselected-b").is_none());
+            let seen = a.lock().unwrap();
+            assert_eq!(seen.len(), 1);
+            assert_eq!(seen[0].force, force);
+            assert!(seen[0].allow_network);
+            assert_eq!(seen[0].providers, BTreeSet::from(["a".into()]));
+            assert!(b.lock().unwrap().is_empty());
+            let seen = source.seen.lock().unwrap();
+            assert_eq!(seen.len(), 1);
+            assert_eq!(seen[0].force, force);
+            assert!(seen[0].allow_network);
+            assert_eq!(seen[0].providers, BTreeSet::from(["a".into()]));
+        }
+    }
+
+    #[tokio::test]
+    async fn subset_restore_and_publication_preserve_shared_unselected_owners_and_tombstones() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
+        let mut original = Models::new();
+        for id in ["a", "b"] {
+            register(&mut original, id, Arc::default());
+        }
+        original.set_models_store(store.clone());
+        original.register_catalog_source(Arc::new(Source::new(
+            &["a", "b"],
+            HashMap::from([
+                ("a".into(), entry("cached-a")),
+                ("b".into(), entry("cached-b")),
+            ]),
+        )));
+        original.refresh(Default::default()).await.unwrap();
+        // A publisher unknown to the follower must survive its selected commit.
+        let (guard, snapshot) = (store.begin(), store.snapshot());
+        let mut complete = snapshot.catalogs;
+        complete.insert("foreign".into(), entry("foreign"));
+        guard.commit(complete).await.unwrap();
+        // Restore source publisher provenance for a/b through their real owner.
+        original.refresh(Default::default()).await.unwrap();
+        let mut follower = Models::new();
+        for id in ["a", "b"] {
+            register(&mut follower, id, Arc::default());
+        }
+        follower.set_models_store(store.clone());
+        let bytes = std::fs::read(store.path()).unwrap();
+        follower
+            .refresh(catalog_fixture::refresh_options(&["a"], false, Some(true)))
+            .await
+            .unwrap();
+        assert!(follower.get_model("a", "cached-a").is_some());
+        assert!(follower.get_model("b", "base").is_some());
+        follower
+            .refresh(catalog_fixture::refresh_options(&["b"], false, None))
+            .await
+            .unwrap();
+        assert!(follower.get_model("b", "cached-b").is_some());
+        assert_eq!(std::fs::read(store.path()).unwrap(), bytes);
+        assert!(follower.delete_provider("a"));
+        assert_eq!(std::fs::read(store.path()).unwrap(), bytes);
+        follower
+            .refresh(catalog_fixture::refresh_options(&["a"], false, None))
+            .await
+            .unwrap();
+        assert!(follower.get_model("a", "cached-a").is_none());
+        register(&mut follower, "a", Arc::default());
+        follower
+            .refresh(catalog_fixture::refresh_options(&["a"], false, None))
+            .await
+            .unwrap();
+        assert!(follower.get_model("a", "cached-a").is_some());
+        let source = Arc::new(Source::new(
+            &["a", "b"],
+            HashMap::from([
+                ("a".into(), entry("new-a")),
+                ("b".into(), entry("must-not-publish-b")),
+            ]),
+        ));
+        follower.register_catalog_source(source.clone());
+        follower
+            .refresh(catalog_fixture::refresh_options(&["a"], true, Some(false)))
+            .await
+            .unwrap();
+        let snapshot = store.snapshot();
+        assert_eq!(snapshot.catalogs["a"].models[0].id(), "new-a");
+        assert_eq!(snapshot.catalogs["b"].models[0].id(), "cached-b");
+        assert_eq!(snapshot.catalogs["foreign"].models[0].id(), "foreign");
+        assert!(follower.get_model("b", "cached-b").is_some());
+        assert!(original.get_model("a", "cached-a").is_some());
+        store.invalidate_source("aggregate").await.unwrap();
+        source.fail.store(true, Ordering::SeqCst);
+        follower
+            .refresh(catalog_fixture::refresh_options(&["a"], true, None))
+            .await
+            .unwrap();
+        assert!(follower.get_model("a", "new-a").is_none());
+        assert!(follower.get_model("b", "cached-b").is_some());
+        let snapshot = store.snapshot();
+        assert!(!snapshot.catalogs.contains_key("a"));
+        assert!(!snapshot.catalogs.contains_key("b"));
+        assert!(snapshot.catalogs.contains_key("foreign"));
+        follower
+            .refresh(catalog_fixture::refresh_options(&["b"], false, None))
+            .await
+            .unwrap();
+        assert!(follower.get_model("b", "cached-b").is_none());
+        assert!(follower.get_model("b", "base").is_some());
+    }
+
+    #[tokio::test]
+    async fn undeclared_source_output_rejects_its_selected_candidate_without_partial_publication() {
+        let mut models = Models::new();
+        register(&mut models, "a", Arc::default());
+        register(&mut models, "b", Arc::default());
+        let source = Arc::new(Source::new(
+            &["a", "b"],
+            HashMap::from([("a".into(), entry("known"))]),
+        ));
+        models.register_catalog_source(source.clone());
+        models
+            .refresh(catalog_fixture::refresh_options(&["a"], true, None))
+            .await
+            .unwrap();
+        *source.output.lock().unwrap() = HashMap::from([
+            ("a".into(), entry("candidate")),
+            ("undeclared".into(), entry("poison")),
+        ]);
+        let report = models
+            .refresh(catalog_fixture::refresh_options(&["a"], true, None))
+            .await
+            .unwrap();
+        assert!(report.find("aggregate").unwrap().outcome.is_failure());
+        assert!(models.get_model("a", "known").is_some());
+        assert!(models.get_model("a", "candidate").is_none());
+        assert!(models.get_model("b", "base").is_some());
+        let token = CancellationToken::new();
+        token.cancel();
+        let before = source.seen.lock().unwrap().len();
+        assert_eq!(
+            models
+                .refresh_with(
+                    catalog_fixture::refresh_options(&["a"], true, Some(true)),
+                    &token
+                )
+                .await
+                .unwrap()
+                .status(),
+            RefreshStatus::Cancelled
+        );
+        assert_eq!(source.seen.lock().unwrap().len(), before);
+    }
+
+    fn mapped(models: &mut Models, wires: &[WireApi]) {
+        let catalog: Vec<_> = wires
+            .iter()
+            .map(|wire| {
+                ModelInfo::new(
+                    wire.as_str(),
+                    wire.as_str(),
+                    *wire,
+                    ModelCapabilities::new(1000, 100),
+                )
+            })
+            .collect();
+        let routes: Vec<_> = wires
+            .iter()
+            .map(|wire| {
+                (
+                    *wire,
+                    Box::new(MockProvider::new_with_models(
+                        "mapped",
+                        catalog
+                            .iter()
+                            .filter(|model| model.wire_api == *wire)
+                            .cloned()
+                            .collect(),
+                        vec![],
+                    )) as Box<dyn Provider>,
+                )
+            })
+            .collect();
+        models
+            .register(
+                Box::new(
+                    opi_ai::api_mapped::ApiMappedProvider::try_new("mapped", catalog, routes)
+                        .unwrap(),
+                ),
+                AuthDescriptor::Resolved {
+                    source: "unused".into(),
+                },
+                Default::default(),
+            )
+            .unwrap();
+    }
+    fn responses_entry() -> ModelsStoreEntry {
+        catalog_fixture::chat_entry(vec![ModelInfo::new(
+            "response-cached",
+            "Response",
+            WireApi::OpenAiResponses,
+            ModelCapabilities::new(1000, 100),
+        )])
+    }
+    #[tokio::test]
+    async fn restored_chat_requires_a_current_mapped_wire_without_using_seed_membership() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
+        store
+            .begin()
+            .commit(HashMap::from([("mapped".into(), responses_entry())]))
+            .await
+            .unwrap();
+        let bytes = std::fs::read(store.path()).unwrap();
+        let mut models = Models::new();
+        mapped(
+            &mut models,
+            &[WireApi::OpenAiCompletions, WireApi::OpenAiResponses],
+        );
+        models.set_models_store(store.clone());
+        models
+            .refresh(catalog_fixture::refresh_options(&["mapped"], false, None))
+            .await
+            .unwrap();
+        assert!(
+            models.get_model("mapped", "response-cached").is_some(),
+            "new ID on an owned mapped wire is valid"
+        );
+        assert!(models.delete_provider("mapped"));
+        mapped(&mut models, &[WireApi::OpenAiCompletions]);
+        models
+            .refresh(catalog_fixture::refresh_options(&["mapped"], false, None))
+            .await
+            .unwrap();
+        assert!(
+            models.get_model("mapped", "response-cached").is_none(),
+            "retired Responses route cannot expose stale cached record"
+        );
+        assert!(
+            models
+                .get_model("mapped", WireApi::OpenAiCompletions.as_str())
+                .is_some(),
+            "incompatible nonempty cache does not manufacture an empty publication"
+        );
+        assert_eq!(std::fs::read(store.path()).unwrap(), bytes);
+    }
+    #[tokio::test]
+    async fn source_chat_requires_a_current_mapped_wire_before_publication() {
+        let mut models = Models::new();
+        mapped(&mut models, &[WireApi::OpenAiCompletions]);
+        let source = Arc::new(Source::new(
+            &["mapped"],
+            HashMap::from([("mapped".into(), entry("known-chat"))]),
+        ));
+        models.register_catalog_source(source.clone());
+        models
+            .refresh(catalog_fixture::refresh_options(&["mapped"], true, None))
+            .await
+            .unwrap();
+        assert!(models.get_model("mapped", "known-chat").is_some());
+        *source.output.lock().unwrap() = HashMap::from([("mapped".into(), responses_entry())]);
+        let report = models
+            .refresh(catalog_fixture::refresh_options(&["mapped"], true, None))
+            .await
+            .unwrap();
+        assert!(
+            report.find("aggregate").unwrap().outcome.is_failure(),
+            "missing mapped route must reject source candidate"
+        );
+        assert!(models.get_model("mapped", "known-chat").is_some());
+        assert!(models.get_model("mapped", "response-cached").is_none());
+    }
+
+    struct CleanupOwner(Arc<AtomicU32>);
+    impl opi_ai::codex_resources::SessionResourceOwner for CleanupOwner {
+        fn new_namespace(&self) -> Arc<dyn opi_ai::codex_resources::SessionResourceOwner> {
+            Arc::new(Self(self.0.clone()))
+        }
+        fn cleanup_session_resources(
+            &self,
+            _: Option<&str>,
+        ) -> opi_ai::codex_resources::CleanupHandle {
+            let calls = self.0.clone();
+            opi_ai::codex_resources::CleanupHandle::from_future(async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(Default::default())
+            })
+        }
+    }
+    struct ResourceProvider {
+        inner: MockProvider,
+        owner: CleanupOwner,
+    }
+    impl Provider for ResourceProvider {
+        fn id(&self) -> &str {
+            self.inner.id()
+        }
+        fn models(&self) -> &[ModelInfo] {
+            self.inner.models()
+        }
+        fn stream_prepared(
+            &self,
+            request: Request,
+            auth: ResolvedAuth,
+        ) -> opi_ai::provider::EventStream {
+            self.inner.stream_prepared(request, auth)
+        }
+        fn session_resources(&self) -> Option<&dyn opi_ai::codex_resources::SessionResourceOwner> {
+            Some(&self.owner)
+        }
+    }
+    #[tokio::test]
+    async fn removal_and_clear_retain_retired_resource_namespaces_until_explicit_cleanup() {
+        let mut models = Models::new();
+        let old = Arc::new(AtomicU32::new(0));
+        let current = Arc::new(AtomicU32::new(0));
+        for (counter, remove) in [(old.clone(), true), (current.clone(), false)] {
+            models
+                .register(
+                    Box::new(ResourceProvider {
+                        inner: MockProvider::new("resources", vec![]),
+                        owner: CleanupOwner(counter),
+                    }),
+                    AuthDescriptor::Resolved {
+                        source: "unused".into(),
+                    },
+                    Default::default(),
+                )
+                .unwrap();
+            if remove {
+                assert!(models.delete_provider("resources"));
+            } else {
+                models.clear_providers();
+            }
+        }
+        assert!(models.provider_ids().is_empty());
+        assert_eq!(old.load(Ordering::SeqCst), 0);
+        assert_eq!(current.load(Ordering::SeqCst), 0);
+        assert!(models.cleanup_session_resources(Some("")).await.is_err());
+        assert_eq!(old.load(Ordering::SeqCst), 0);
+        assert_eq!(current.load(Ordering::SeqCst), 0);
+        models.cleanup_session_resources(None).await.unwrap();
+        assert_eq!(old.load(Ordering::SeqCst), 1);
+        assert_eq!(current.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn removal_and_reregistration_keep_old_chat_captures_and_other_instances_separate() {
+        let count = Arc::new(AtomicU32::new(0));
+        let mut models = Models::new();
+        let model = model_info("chat", "Chat");
+        models
+            .register_route(
+                Box::new(MockProvider::new_with_models(
+                    "managed",
+                    vec![model.clone()],
+                    vec![text_response("old")],
+                )),
+                Arc::new(opi_ai::test_support::CountingAuthResolver::new(
+                    count.clone(),
+                )),
+                AuthProvenanceSource::Static,
+                Default::default(),
+            )
+            .unwrap();
+        let captured = models.complete_simple(
+            opi_ai::ChatModelRecord::new("managed", model.clone()),
+            minimal_request("managed:chat"),
+            Default::default(),
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+        assert!(!models.delete_provider("missing"));
+        assert!(models.delete_provider("managed"));
+        let new = models.complete_simple(
+            opi_ai::ChatModelRecord::new("managed", model.clone()),
+            minimal_request("managed:chat"),
+            Default::default(),
+        );
+        assert!(new.await.is_err());
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+        let mut other = Models::new();
+        register(&mut other, "managed", Arc::default());
+        models
+            .register_route(
+                Box::new(MockProvider::new_with_models(
+                    "managed",
+                    vec![model.clone()],
+                    vec![text_response("replacement")],
+                )),
+                Arc::new(opi_ai::test_support::CountingAuthResolver::new(
+                    count.clone(),
+                )),
+                AuthProvenanceSource::Static,
+                Default::default(),
+            )
+            .unwrap();
+        assert_eq!(assistant_text(&captured.await.unwrap()), "old");
+        assert_eq!(
+            assistant_text(
+                &models
+                    .complete_simple(
+                        opi_ai::ChatModelRecord::new("managed", model),
+                        minimal_request("managed:chat"),
+                        Default::default()
+                    )
+                    .await
+                    .unwrap()
+            ),
+            "replacement"
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        models.clear_providers();
+        assert!(models.provider_ids().is_empty());
+        assert!(other.get_model("managed", "base").is_some());
+    }
+}
+
+#[tokio::test]
+async fn builtin_aws_default_process_accepts_large_selected_source_without_fallback() {
+    use opi_ai::auth::aws::source_http::{
+        AwsSourceTransport, SourceHttpError, SourceHttpRequest, SourceHttpResponse,
+    };
+    use opi_ai::auth::{AuthContext, AuthContextError, AuthProcessSnapshot};
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    struct Sources(PathBuf);
+    impl AuthContext for Sources {
+        fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
+            Ok(match name {
+                "AWS_CONFIG_FILE" => Some(self.0.join("config").to_string_lossy().into_owned()),
+                "AWS_SHARED_CREDENTIALS_FILE" => {
+                    Some(self.0.join("credentials").to_string_lossy().into_owned())
+                }
+                _ => None,
+            })
+        }
+        fn file_exists(&self, path: &str) -> Result<bool, AuthContextError> {
+            Ok(std::path::Path::new(path).starts_with(&self.0)
+                && std::path::Path::new(path).is_file())
+        }
+        fn process_snapshot(&self) -> Result<AuthProcessSnapshot, AuthContextError> {
+            let mut env = std::collections::BTreeMap::new();
+            for name in [
+                "PATH",
+                "Path",
+                "SystemRoot",
+                "WINDIR",
+                "PATHEXT",
+                "ComSpec",
+                "PSModulePath",
+            ] {
+                if let Ok(value) = std::env::var(name) {
+                    env.insert(name.into(), value);
+                }
+            }
+            for name in ["HOME", "USERPROFILE", "TMP", "TEMP", "LOCALAPPDATA"] {
+                env.insert(name.into(), self.0.to_string_lossy().into_owned());
+            }
+            Ok(AuthProcessSnapshot {
+                env,
+                cwd: self.0.clone(),
+            })
+        }
+    }
+    struct NoFallback;
+    impl AwsSourceTransport for NoFallback {
+        fn send(
+            &self,
+            _: SourceHttpRequest,
+        ) -> opi_ai::credential::BoxAuthFuture<'_, Result<SourceHttpResponse, SourceHttpError>>
+        {
+            panic!("the selected credential_process must not fall through to any HTTP source")
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let prefix =
+        r#"{"Version":1,"AccessKeyId":"BUILTIN_PROC","SecretAccessKey":"fixture","Padding":""#;
+    let command = if cfg!(windows) {
+        format!("[Console]::Out.Write('{prefix}' + ('x' * 70000) + '\"}}')")
+    } else {
+        format!("printf '%s' '{prefix}'; head -c 70000 /dev/zero | tr '\\0' x; printf '%s' '\"}}'")
+    };
+    std::fs::write(
+        dir.path().join("config"),
+        format!("[profile selected]\ncredential_process={command}\nregion=us-east-1\n"),
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("credentials"), "").unwrap();
+    let mut overrides = BuiltinOverrides::default();
+    overrides.aws_auth.selection = Some(opi_ai::auth::aws::local::AwsAuthSelection::Profile(
+        "selected".into(),
+    ));
+    overrides.aws_auth.scoped.ec2_metadata_disabled = Some(true);
+    overrides.aws_auth.transport = Some(Arc::new(NoFallback));
+    assert!(
+        overrides.aws_auth.process.is_none(),
+        "exercise the real SDK default factory"
+    );
+    let mut models = Models::new();
+    register_builtin(
+        &mut models,
+        Arc::new(Sources(dir.path().to_path_buf())),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &overrides,
+    )
+    .unwrap();
+    let auth = models
+        .get_auth("amazon-bedrock", Default::default())
+        .await
+        .unwrap()
+        .expect("selected process credentials");
+    let AuthScheme::AwsSigV4(credentials) = auth.scheme else {
+        panic!("selected process must return SigV4 credentials")
+    };
+    use secrecy::ExposeSecret;
+    assert_eq!(credentials.access_key_id.expose_secret(), "BUILTIN_PROC");
+    assert_eq!(
+        auth.provenance.source,
+        opi_ai::AuthProvenanceSource::AwsSigV4 {
+            source: opi_ai::AwsCredentialSource::CredentialProcess
+        }
+    );
 }

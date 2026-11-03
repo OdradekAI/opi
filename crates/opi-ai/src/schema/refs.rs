@@ -289,48 +289,44 @@ impl<'a> RefStack<'a> {
     }
 
     fn register_resource_anchors(&mut self, schema: &'a Value, is_root: bool) {
-        match schema {
-            Value::Bool(_) => {}
-            Value::Array(items) => {
-                for item in items {
-                    self.register_resource_anchors(item, false);
+        let mut pending = vec![(schema, is_root)];
+        while let Some((schema, is_root)) = pending.pop() {
+            match schema {
+                Value::Array(items) => {
+                    pending.extend(items.iter().rev().map(|item| (item, false)));
                 }
+                Value::Object(map) => {
+                    if !is_root && guards::is_id(schema) {
+                        continue;
+                    }
+                    if !is_root && guards::is_dynamic_anchor(schema) {
+                        self.dynamic_anchors.push(schema);
+                    }
+                    pending.extend(js_keys(map).into_iter().rev().map(|key| (&map[key], false)));
+                }
+                _ => {}
             }
-            Value::Object(map) => {
-                if !is_root && guards::is_id(schema) {
-                    return;
-                }
-                if !is_root && guards::is_dynamic_anchor(schema) {
-                    self.dynamic_anchors.push(schema);
-                }
-                for key in js_keys(map) {
-                    self.register_resource_anchors(&map[key], false);
-                }
-            }
-            _ => {}
         }
     }
 
     fn unregister_resource_anchors(&mut self, schema: &'a Value, is_root: bool) {
-        match schema {
-            Value::Bool(_) => {}
-            Value::Array(items) => {
-                for item in items {
-                    self.unregister_resource_anchors(item, false);
+        let mut pending = vec![(schema, is_root)];
+        while let Some((schema, is_root)) = pending.pop() {
+            match schema {
+                Value::Array(items) => {
+                    pending.extend(items.iter().rev().map(|item| (item, false)));
                 }
+                Value::Object(map) => {
+                    if !is_root && guards::is_id(schema) {
+                        continue;
+                    }
+                    if !is_root && guards::is_dynamic_anchor(schema) {
+                        self.dynamic_anchors.pop();
+                    }
+                    pending.extend(js_keys(map).into_iter().rev().map(|key| (&map[key], false)));
+                }
+                _ => {}
             }
-            Value::Object(map) => {
-                if !is_root && guards::is_id(schema) {
-                    return;
-                }
-                if !is_root && guards::is_dynamic_anchor(schema) {
-                    self.dynamic_anchors.pop();
-                }
-                for key in js_keys(map) {
-                    self.unregister_resource_anchors(&map[key], false);
-                }
-            }
-            _ => {}
         }
     }
 
@@ -829,50 +825,53 @@ fn canonical_href(url: &Url) -> Url {
 /// Source `FindDynamicAnchor`: first schema carrying the named
 /// `$dynamicAnchor`, in traversal order.
 fn find_dynamic_anchor<'a>(schema: &'a Value, name: &str) -> Option<&'a Value> {
-    if schema.is_object() && guards::get_str(schema, "$dynamicAnchor") == Some(name) {
-        return Some(schema);
-    }
-    match schema {
-        Value::Object(map) => {
-            for key in js_keys(map) {
-                if let Some(result) = find_dynamic_anchor(&map[key], name) {
-                    return Some(result);
-                }
-            }
-            None
+    let mut pending = vec![schema];
+    while let Some(schema) = pending.pop() {
+        if schema.is_object() && guards::get_str(schema, "$dynamicAnchor") == Some(name) {
+            return Some(schema);
         }
-        Value::Array(items) => {
-            for item in items {
-                if let Some(result) = find_dynamic_anchor(item, name) {
-                    return Some(result);
-                }
+        match schema {
+            Value::Object(map) => {
+                pending.extend(js_keys(map).into_iter().rev().map(|key| &map[key]))
             }
-            None
+            Value::Array(items) => pending.extend(items.iter().rev()),
+            _ => {}
         }
-        _ => None,
     }
+    None
 }
 
 /// Source `FindBase`: first-match search for the base URL of `target`.
 fn find_base<'a>(schema: &'a Value, base: &Url, target: &'a Value) -> Option<Url> {
-    if std::ptr::eq(schema, target) {
-        return Some(base.clone());
+    let mut pending = vec![(schema, base.clone())];
+    while let Some((schema, base)) = pending.pop() {
+        // The target's own id does not participate in its enclosing base.
+        if std::ptr::eq(schema, target) {
+            return Some(base);
+        }
+        let next_base = if schema.is_object() && guards::is_id(schema) {
+            let Some(next) = guards::get_str(schema, "$id").and_then(|id| base.join(id).ok())
+            else {
+                continue;
+            };
+            next
+        } else {
+            base
+        };
+        match schema {
+            Value::Array(items) => {
+                pending.extend(items.iter().rev().map(|item| (item, next_base.clone())))
+            }
+            Value::Object(map) => pending.extend(
+                js_keys(map)
+                    .into_iter()
+                    .rev()
+                    .map(|key| (&map[key], next_base.clone())),
+            ),
+            _ => {}
+        }
     }
-    let next_base: Url = if schema.is_object() && guards::is_id(schema) {
-        let id = guards::get_str(schema, "$id")?;
-        base.join(id).ok()?
-    } else {
-        base.clone()
-    };
-    match schema {
-        Value::Array(items) => items
-            .iter()
-            .find_map(|item| find_base(item, &next_base, target)),
-        Value::Object(map) => js_keys(map)
-            .into_iter()
-            .find_map(|key| find_base(&map[key], &next_base, target)),
-        _ => None,
-    }
+    None
 }
 
 /// Source `Pointer.Get` with the upstream `GetIndex` unsafe-key semantics.
@@ -1048,42 +1047,40 @@ fn r#match<'a>(schema: &'a Value, base: &Url, reference: &Url) -> Option<&'a Val
 // ------------------------------------------------------------------
 
 fn from_value<'a>(schema: &'a Value, base: &Url, reference: &Url) -> Option<&'a Value> {
-    let next_base = if schema.is_object() && guards::is_id(schema) {
-        guards::get_str(schema, "$id")
-            .and_then(|id| base.join(id).ok())
-            .unwrap_or_else(|| base.clone())
-    } else {
-        base.clone()
-    };
-    if schema.is_object()
-        && let Some(result) = r#match(schema, &next_base, reference)
-    {
-        return Some(result);
-    }
-    match schema {
-        Value::Array(items) => {
-            let mut result: Option<&'a Value> = None;
-            for item in items {
-                if let Some(matched) = from_value(item, &next_base, reference) {
-                    result = Some(matched);
-                }
-            }
-            result
+    // Each frame is a suspended sibling search with its branch-local base.
+    // A current-node match prunes its descendants. Later successful frames
+    // replace the result, preserving FromObject/FromArray's last-match rule.
+    let mut pending = vec![(schema, base.clone())];
+    let mut result = None;
+    while let Some((schema, base)) = pending.pop() {
+        let next_base = if schema.is_object() && guards::is_id(schema) {
+            guards::get_str(schema, "$id")
+                .and_then(|id| base.join(id).ok())
+                .unwrap_or(base)
+        } else {
+            base
+        };
+        if schema.is_object()
+            && let Some(matched) = r#match(schema, &next_base, reference)
+        {
+            result = Some(matched);
+            continue;
         }
-        Value::Object(map) => {
-            let mut result: Option<&'a Value> = None;
-            for key in js_keys(map) {
-                if key == "const" || key == "enum" {
-                    continue;
-                }
-                if let Some(matched) = from_value(&map[key], &next_base, reference) {
-                    result = Some(matched);
-                }
+        match schema {
+            Value::Array(items) => {
+                pending.extend(items.iter().rev().map(|item| (item, next_base.clone())))
             }
-            result
+            Value::Object(map) => pending.extend(
+                js_keys(map)
+                    .into_iter()
+                    .rev()
+                    .filter(|key| *key != "const" && *key != "enum")
+                    .map(|key| (&map[key], next_base.clone())),
+            ),
+            _ => {}
         }
-        _ => None,
     }
+    result
 }
 
 // ------------------------------------------------------------------
@@ -1369,4 +1366,153 @@ fn resolve_dynamic_ref<'a>(
         .copied()
         .find(|anchor| guards::get_str(anchor, "$dynamicAnchor") == target_name);
     Ok(anchor_target.or(Some(fragment_target)))
+}
+
+#[cfg(test)]
+mod traversal_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn deep_tree(mut leaf: Value) -> Value {
+        for _ in 0..10_000 {
+            let mut wrapper = serde_json::Map::new();
+            wrapper.insert("nested".into(), Value::Array(vec![leaf]));
+            leaf = Value::Object(wrapper);
+        }
+        leaf
+    }
+
+    #[test]
+    fn deep_remote_ref_search() {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let base = parse_url("https://offline.invalid/local").unwrap();
+                let local = json!({});
+                let mut context = serde_json::Map::new();
+                context.insert(
+                    "https://offline.invalid/remote".into(),
+                    deep_tree(json!({"$anchor":"target", "type":"integer"})),
+                );
+                let target = resolve_reference(
+                    &context,
+                    &local,
+                    &base,
+                    Reference::Literal("https://offline.invalid/remote#target"),
+                    false,
+                )
+                .unwrap()
+                .expect("deep remote anchor");
+                assert_eq!(target["type"], "integer");
+                assert!(
+                    resolve_reference(
+                        &context,
+                        &local,
+                        &base,
+                        Reference::Literal("https://offline.invalid/remote#missing"),
+                        false
+                    )
+                    .unwrap()
+                    .is_none()
+                );
+                super::super::drop_value(Value::Object(context));
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn reference_search_preserves_node_priority_last_child_and_exclusions() {
+        let base = parse_url("https://offline.invalid/root").unwrap();
+        let reference = base.join("#target").unwrap();
+        let root = json!({"$anchor":"target", "child":{"$anchor":"target"}});
+        assert!(std::ptr::eq(
+            from_value(&root, &base, &reference).unwrap(),
+            &root
+        ));
+        let schema = json!({
+            "10":{"$anchor":"target", "const":10},
+            "2":{"$anchor":"target", "const":2},
+            "tail":{"$anchor":"target", "const":3},
+            "const":{"$anchor":"target", "const":4},
+            "enum":[{"$anchor":"target", "const":5}]
+        });
+        assert!(std::ptr::eq(
+            from_value(&schema, &base, &reference).unwrap(),
+            &schema["tail"]
+        ));
+        let array = json!([{"$anchor":"target", "const":1}, {"$anchor":"target", "const":2}]);
+        assert!(std::ptr::eq(
+            from_value(&array, &base, &reference).unwrap(),
+            &array[1]
+        ));
+    }
+
+    #[test]
+    fn reference_search_keeps_branch_bases_and_invalid_join_rules() {
+        let base = parse_url("https://offline.invalid/root/").unwrap();
+        let schema = json!({
+            "first":{"$id":"branch/", "child":{"$anchor":"target"}},
+            "other":{"$id":"different/", "child":{"$anchor":"target"}},
+            "invalid":{"$id":"http://[", "child":{"$anchor":"fallback"}}
+        });
+        let branch = base.join("branch/#target").unwrap();
+        assert!(std::ptr::eq(
+            from_value(&schema, &base, &branch).unwrap(),
+            &schema["first"]["child"]
+        ));
+        let fallback = base.join("#fallback").unwrap();
+        assert!(std::ptr::eq(
+            from_value(&schema, &base, &fallback).unwrap(),
+            &schema["invalid"]["child"]
+        ));
+        assert!(find_base(&schema, &base, &schema["invalid"]["child"]).is_none());
+        assert_eq!(
+            find_base(&schema, &base, &schema["invalid"])
+                .unwrap()
+                .as_str(),
+            base.as_str()
+        );
+    }
+
+    #[test]
+    fn deep_dynamic_anchor_registration_and_first_base_search() {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let schema = deep_tree(json!({"$dynamicAnchor":"node", "$id":"leaf"}));
+                let target = find_dynamic_anchor(&schema, "node").expect("deep first anchor");
+                let base = parse_url("https://offline.invalid/root/").unwrap();
+                assert_eq!(
+                    find_base(&schema, &base, target).unwrap().as_str(),
+                    base.as_str()
+                );
+                let context = serde_json::Map::new();
+                let mut stack = RefStack::new(&context, &schema);
+                stack.register_resource_anchors(&schema, true);
+                assert!(
+                    stack.dynamic_anchors.is_empty(),
+                    "nested id prunes resource anchors"
+                );
+                stack.unregister_resource_anchors(&schema, true);
+                super::super::drop_value(schema);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        let schema = json!({"first":{"$dynamicAnchor":"node"}, "last":{"$dynamicAnchor":"node"}});
+        assert!(std::ptr::eq(
+            find_dynamic_anchor(&schema, "node").unwrap(),
+            &schema["first"]
+        ));
+        let context = serde_json::Map::new();
+        let mut stack = RefStack::new(&context, &schema);
+        stack.register_resource_anchors(&schema, true);
+        assert_eq!(stack.dynamic_anchors.len(), 2);
+        assert!(std::ptr::eq(stack.dynamic_anchors[0], &schema["first"]));
+        assert!(std::ptr::eq(stack.dynamic_anchors[1], &schema["last"]));
+        stack.unregister_resource_anchors(&schema, true);
+        assert!(stack.dynamic_anchors.is_empty());
+    }
 }

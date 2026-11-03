@@ -507,8 +507,222 @@ pub enum ChatTemplateKwargVar {
     ThinkingBudget,
 }
 
+// Derived structs also accept positional arrays. Source controls require objects.
+macro_rules! object_control_deserialize {
+    ($name:ident { $($field:ident: $ty:ty,)* }) => {
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where D: serde::Deserializer<'de> {
+                let value = serde_json::Value::deserialize(deserializer)?;
+                if !value.is_object() {
+                    return Err(serde::de::Error::custom("expected an object"));
+                }
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Fields { $($field: $ty,)* }
+                let fields: Fields = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+                Ok(Self { $($field: fields.$field,)* })
+            }
+        }
+    };
+}
+
+/// Header dialect used for a caller's full session identifier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SessionAffinityFormat {
+    #[serde(rename = "openai")]
+    OpenAi,
+    #[serde(rename = "openai-nosession")]
+    OpenAiNoSession,
+    #[serde(rename = "openrouter")]
+    OpenRouter,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CacheControlFormat {
+    Anthropic,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OpenRouterDataCollection {
+    Deny,
+    Allow,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum NumberOrString {
+    Number(serde_json::Number),
+    String(String),
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PercentileCutoffs {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p50: Option<serde_json::Number>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p75: Option<serde_json::Number>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p90: Option<serde_json::Number>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p99: Option<serde_json::Number>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum NumberOrPercentileCutoffs {
+    Number(serde_json::Number),
+    Percentiles(PercentileCutoffs),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum OpenRouterSort {
+    String(String),
+    Structured {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        by: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        partition: Option<Option<String>>,
+    },
+}
+
+impl<'de> Deserialize<'de> for OpenRouterSort {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if let serde_json::Value::String(value) = value {
+            return Ok(Self::String(value));
+        }
+        let serde_json::Value::Object(mut object) = value else {
+            return Err(serde::de::Error::custom("expected a string or sort object"));
+        };
+        let by = object
+            .remove("by")
+            .map(serde_json::from_value::<Option<String>>)
+            .transpose()
+            .map_err(serde::de::Error::custom)?
+            .flatten();
+        let partition = object
+            .remove("partition")
+            .map(serde_json::from_value::<Option<String>>)
+            .transpose()
+            .map_err(serde::de::Error::custom)?;
+        if !object.is_empty() {
+            return Err(serde::de::Error::custom("unknown sort field"));
+        }
+        Ok(Self::Structured { by, partition })
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenRouterMaxPrice {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<NumberOrString>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion: Option<NumberOrString>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<NumberOrString>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio: Option<NumberOrString>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<NumberOrString>,
+}
+
+/// Supplied routing fields are forwarded without filling schema-hint defaults.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenRouterRouting {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_fallbacks: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub require_parameters: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_collection: Option<OpenRouterDataCollection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zdr: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enforce_distillable_text: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub only: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ignore: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantizations: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<OpenRouterSort>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_price: Option<OpenRouterMaxPrice>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_min_throughput: Option<NumberOrPercentileCutoffs>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_max_latency: Option<NumberOrPercentileCutoffs>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct VercelGatewayRouting {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub only: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<Vec<String>>,
+}
+
+object_control_deserialize!(PercentileCutoffs {
+    p50: Option<serde_json::Number>,
+    p75: Option<serde_json::Number>,
+    p90: Option<serde_json::Number>,
+    p99: Option<serde_json::Number>,
+});
+
+object_control_deserialize!(OpenRouterMaxPrice {
+    prompt: Option<NumberOrString>,
+    completion: Option<NumberOrString>,
+    image: Option<NumberOrString>,
+    audio: Option<NumberOrString>,
+    request: Option<NumberOrString>,
+});
+
+object_control_deserialize!(OpenRouterRouting {
+    allow_fallbacks: Option<bool>,
+    require_parameters: Option<bool>,
+    data_collection: Option<OpenRouterDataCollection>,
+    zdr: Option<bool>,
+    enforce_distillable_text: Option<bool>,
+    order: Option<Vec<String>>,
+    only: Option<Vec<String>>,
+    ignore: Option<Vec<String>>,
+    quantizations: Option<Vec<String>>,
+    sort: Option<OpenRouterSort>,
+    max_price: Option<OpenRouterMaxPrice>,
+    preferred_min_throughput: Option<NumberOrPercentileCutoffs>,
+    preferred_max_latency: Option<NumberOrPercentileCutoffs>,
+});
+
+object_control_deserialize!(VercelGatewayRouting {
+    only: Option<Vec<String>>,
+    order: Option<Vec<String>>,
+});
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenAiCompletionsCompat {
+    pub supports_mid_convo_system_messages: Option<bool>,
+    pub supports_mid_convo_tool_additions: Option<bool>,
+    pub supports_finish_reason: Option<bool>,
+    pub supports_grammar_tools: Option<bool>,
+    pub open_router_routing: Option<OpenRouterRouting>,
+    pub vercel_gateway_routing: Option<VercelGatewayRouting>,
+    pub cache_control_format: Option<CacheControlFormat>,
+    pub session_affinity_format: Option<SessionAffinityFormat>,
+    pub supports_long_cache_retention: Option<bool>,
     /// Normalized store-field policy (`Omit`/`SendFalse`); `None` follows the
     /// adapter's frozen provider inference. Replaces retired `supports_store`.
     pub store: Option<ChatStoreField>,
@@ -538,18 +752,27 @@ pub struct OpenAiCompletionsCompat {
     /// Explicit-only zai `tool_stream` flag; never inferred.
     pub zai_tool_stream: bool,
     /// Explicit-only vLLM priority number; never inferred.
-    pub vllm_priority: Option<i64>,
+    pub vllm_priority: Option<serde_json::Number>,
     pub thinking_token_budget_field: Option<ChatThinkingTokenBudgetField>,
     /// Alias for `thinking_token_budget_field = ThinkingTokenBudget` (vLLM).
     pub supports_thinking_token_budget: bool,
-    pub chat_template_kwargs: std::collections::BTreeMap<String, ChatTemplateKwargValue>,
-    pub chat_template_args: std::collections::BTreeMap<String, ChatTemplateKwargValue>,
+    pub chat_template_kwargs: Option<std::collections::BTreeMap<String, ChatTemplateKwargValue>>,
+    pub chat_template_args: Option<std::collections::BTreeMap<String, ChatTemplateKwargValue>>,
     pub chat_completions_path: String,
 }
 
 impl Default for OpenAiCompletionsCompat {
     fn default() -> Self {
         Self {
+            supports_mid_convo_system_messages: None,
+            supports_mid_convo_tool_additions: None,
+            supports_finish_reason: None,
+            supports_grammar_tools: None,
+            open_router_routing: None,
+            vercel_gateway_routing: None,
+            cache_control_format: None,
+            session_affinity_format: None,
+            supports_long_cache_retention: None,
             store: None,
             instruction_role: None,
             thinking_format: None,
@@ -567,45 +790,54 @@ impl Default for OpenAiCompletionsCompat {
             vllm_priority: None,
             thinking_token_budget_field: None,
             supports_thinking_token_budget: false,
-            chat_template_kwargs: std::collections::BTreeMap::new(),
-            chat_template_args: std::collections::BTreeMap::new(),
+            chat_template_kwargs: None,
+            chat_template_args: None,
             chat_completions_path: "/v1/chat/completions".into(),
         }
     }
 }
 
+/// Presence-aware source controls shared by the Responses wire families.
+/// Each concrete wire resolves omitted values at its own boundary.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct OpenAiResponsesSourceCompat {
+    pub supports_developer_role: Option<bool>,
+    pub session_affinity_format: Option<SessionAffinityFormat>,
+    pub supports_long_cache_retention: Option<bool>,
+    pub supports_explicit_prompt_cache_mode: Option<bool>,
+    pub supports_max_output_tokens: Option<bool>,
+    pub supports_strict_mode: Option<bool>,
+    pub supports_grammar_tools: Option<bool>,
+    pub supports_mid_convo_effort: Option<bool>,
+    pub supports_mid_convo_system_messages: Option<bool>,
+    pub supports_additional_tools: Option<bool>,
+    pub supports_tool_search: Option<bool>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenAiResponsesCompat {
+    pub source: OpenAiResponsesSourceCompat,
     pub store: Option<bool>,
     pub reasoning_effort: Option<String>,
-    pub strict_tools: bool,
     pub responses_path: String,
     pub send_session_id_header: bool,
-    /// Replay the thinking level as mid-conversation `configuration_update`
-    /// items (task 20.37, P20-S37): one stamp before each earlier same-model
-    /// reply that recorded a level, one at the end; the request
-    /// `reasoning.effort` stays fixed. Source default false.
-    pub supports_mid_convo_effort: bool,
-    /// Explicit model support for OpenAI custom grammar tools. Omission is false.
-    pub supports_grammar: bool,
 }
 
 impl Default for OpenAiResponsesCompat {
     fn default() -> Self {
         Self {
+            source: OpenAiResponsesSourceCompat::default(),
             store: None,
             reasoning_effort: None,
-            strict_tools: false,
             responses_path: "/v1/responses".into(),
             send_session_id_header: false,
-            supports_mid_convo_effort: false,
-            supports_grammar: false,
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenAiCodexResponsesCompat {
+    pub source: OpenAiResponsesSourceCompat,
     pub responses_path: String,
     pub derive_account_id: bool,
 }
@@ -613,6 +845,7 @@ pub struct OpenAiCodexResponsesCompat {
 impl Default for OpenAiCodexResponsesCompat {
     fn default() -> Self {
         Self {
+            source: OpenAiResponsesSourceCompat::default(),
             responses_path: "/codex/responses".into(),
             derive_account_id: true,
         }
@@ -621,6 +854,10 @@ impl Default for OpenAiCodexResponsesCompat {
 
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Wire compatibility retains its public inline records, including typed routing controls"
+)]
 pub enum WireCompat {
     AnthropicMessages(AnthropicMessagesCompat),
     OpenAiCompletions(OpenAiCompletionsCompat),

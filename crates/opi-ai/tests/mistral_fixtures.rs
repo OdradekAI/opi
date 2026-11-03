@@ -143,6 +143,7 @@ fn mistral_unknown_model_returns_error() {
 fn mistral_request_body_strips_provider_prefix() {
     let provider = mistral_provider();
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mistral:mistral-small-latest".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -414,6 +415,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
     let provider = opi_ai::mistral::mistral_provider(Some(server.uri()));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mistral:mistral-small-latest".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -488,6 +490,7 @@ fn mistral_profile_inherits_shared_compat_flags() {
         vec![],
     );
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mistral:mistral-large-latest".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -553,6 +556,7 @@ async fn stream_cancellation_aborts_before_completion() {
     let cancel = CancellationToken::new();
     let provider = opi_ai::mistral::mistral_provider(Some(server));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mistral:mistral-small-latest".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -632,6 +636,7 @@ async fn mistral_profile_carries_callbacks_through_chat_adapter() {
 
     let provider = opi_ai::mistral::mistral_provider(Some(server.uri()));
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "mistral:mistral-small-latest".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -776,6 +781,7 @@ mod mistral_43 {
 
     fn base_req_43() -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: format!("mistral:{SMALL_43}"),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -853,10 +859,43 @@ mod mistral_43 {
         events
             .iter()
             .find_map(|item| match item {
+                Err(ProviderError::StreamFailure(failure)) => Some(failure.cause().clone()),
                 Err(error) => Some(error.clone()),
                 _ => None,
             })
             .expect("stream fails typed")
+    }
+
+    #[tokio::test]
+    async fn direct_auth_refusal_retains_accepted_projection_and_eof() {
+        let server = MockServer::start().await;
+        let provider = provider_43(
+            Some(&server.uri()),
+            model_43(SMALL_43, false, false),
+            MistralOptions::default(),
+        );
+        let mut auth = opi_ai::test_support::resolved_bearer_auth();
+        auth.scheme = opi_ai::auth::AuthScheme::ApiKey;
+        let request = req_43("go");
+        let mut stream = provider.stream_prepared(request.clone(), auth);
+        let error = stream
+            .next()
+            .await
+            .expect("one refusal")
+            .expect_err("wrong auth scheme");
+        let ProviderError::StreamFailure(failure) = error else {
+            panic!("accepted projection must retain its failure carrier")
+        };
+        let ProviderError::Config(summary) = failure.cause() else {
+            panic!("wrong underlying auth refusal: {:?}", failure.cause())
+        };
+        assert_eq!(
+            summary.as_str(),
+            "Mistral accepts only Bearer authentication"
+        );
+        assert_direct_projection_prefix(failure.message(), &request);
+        assert!(stream.next().await.is_none());
+        assert!(server.received_requests().await.unwrap().is_empty());
     }
 
     // -- wire projection ----------------------------------------------------
@@ -1696,6 +1735,7 @@ mod mistral_43 {
             MistralOptions::default(),
         );
         let mut assistant = opi_ai::message::AssistantMessage {
+            projection: None,
             content: vec![
                 AssistantContent::Thinking {
                     thinking: "step".into(),
@@ -2564,4 +2604,30 @@ mod mistral_43 {
             assert_eq!(message.usage.input_tokens, 100 - expected);
         }
     }
+}
+
+fn assert_direct_projection_prefix(
+    message: &opi_ai::message::AssistantMessage,
+    request: &opi_ai::provider::Request,
+) {
+    use sha2::Digest as _;
+    let facts = message
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
 }

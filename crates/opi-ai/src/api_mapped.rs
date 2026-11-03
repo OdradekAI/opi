@@ -329,7 +329,10 @@ impl Provider for ApiMappedProvider {
         Ok(())
     }
 
-    fn refresh_models(&self) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
+    fn refresh_models(
+        &self,
+        _context: crate::catalog::CatalogRefreshContext,
+    ) -> BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>> {
         Box::pin(async { Ok(None) })
     }
 }

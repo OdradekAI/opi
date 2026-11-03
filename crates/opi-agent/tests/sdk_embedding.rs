@@ -730,3 +730,88 @@ async fn phase8_sdk_command_contract_agent_control_routes_steer_follow_up_abort(
         "AgentControl::abort must cancel the agent's shared cancellation token"
     );
 }
+
+fn forwarding_projection_facts() -> opi_ai::transcript::ProjectionFacts {
+    use opi_ai::transcript::{
+        MessageRange, ProjectionFacts, ProjectionMode, SourcePrefix, TemporalProjectionFacts,
+    };
+    ProjectionFacts {
+        source_prefix: SourcePrefix {
+            message_count: 4,
+            sha256: "07".repeat(32),
+        },
+        temporal: TemporalProjectionFacts {
+            mode: ProjectionMode::Collapse,
+            affected_ranges: vec![MessageRange { start: 0, end: 3 }],
+        },
+        replay: opi_ai::replay::ReplayFacts {
+            losses: vec![opi_ai::replay::ReplayLoss::DroppedThinkingBlocks { count: 1 }],
+        },
+    }
+}
+
+#[test]
+fn sdk_projection_facts_survive_public_event_roundtrip() {
+    use opi_agent::message::AgentMessage;
+    use opi_ai::message::{AssistantContent, Message};
+    use opi_ai::stream::AssistantStreamEvent;
+    let facts = forwarding_projection_facts();
+    let expected = serde_json::to_value(&facts).unwrap();
+    let mut assistant = opi_ai::test_support::base_assistant();
+    assistant.projection = Some(facts);
+    assistant.content = vec![AssistantContent::Text {
+        text: "answer".into(),
+        signature: Some("opaque-signature-canary".into()),
+    }];
+    let message = AgentMessage::Llm(Message::Assistant(assistant.clone()));
+    let events = [
+        AgentEvent::MessageStart {
+            message: message.clone(),
+        },
+        AgentEvent::MessageUpdate {
+            message: message.clone(),
+            assistant_event: Box::new(AssistantStreamEvent::TextDelta {
+                content_index: 0,
+                delta: "answer".into(),
+                partial: assistant,
+            }),
+        },
+        AgentEvent::MessageEnd {
+            message: message.clone(),
+        },
+        AgentEvent::TurnEnd {
+            message,
+            tool_results: vec![],
+        },
+    ];
+    for event in events {
+        let public = agent_event_to_value(&event.redacted_for_public());
+        assert_eq!(public["message"]["projection"], expected);
+        if public["type"] == "MessageUpdate" {
+            assert_eq!(public["assistant_event"]["partial"]["projection"], expected);
+        }
+        assert!(
+            !serde_json::to_string(&public)
+                .unwrap()
+                .contains("opaque-signature-canary")
+        );
+        let restored: AgentEvent = serde_json::from_value(public.clone()).unwrap();
+        assert_eq!(agent_event_to_value(&restored), public);
+    }
+}
+
+#[test]
+fn sdk_legacy_projection_omission_remains_unknown() {
+    use opi_agent::message::AgentMessage;
+    use opi_ai::message::{AssistantMessage, Message};
+    let assistant = opi_ai::test_support::base_assistant();
+    let encoded = serde_json::to_value(&assistant).unwrap();
+    assert!(encoded.get("projection").is_none());
+    let restored: AssistantMessage = serde_json::from_value(encoded).unwrap();
+    assert_eq!(restored.projection, None);
+    let event = AgentEvent::MessageEnd {
+        message: AgentMessage::Llm(Message::Assistant(restored)),
+    };
+    let public = agent_event_to_value(&event.redacted_for_public());
+    assert!(public["message"].get("projection").is_none());
+}

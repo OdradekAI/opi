@@ -18,6 +18,18 @@ pub fn catalogs(entries: HashMap<String, Vec<ModelInfo>>) -> HashMap<String, Mod
         .collect()
 }
 
+pub fn refresh_options(
+    providers: &[&str],
+    allow_network: bool,
+    force: Option<bool>,
+) -> opi_ai::ModelsRefreshOptions {
+    opi_ai::ModelsRefreshOptions {
+        allow_network,
+        providers: Some(providers.iter().map(|id| (*id).to_owned()).collect()),
+        force,
+    }
+}
+
 pub fn chat(record: &CatalogRecord) -> &ModelInfo {
     match record {
         CatalogRecord::Chat(model) => model,

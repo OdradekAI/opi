@@ -23,6 +23,34 @@ fn direct_cause(error: &ProviderError) -> &ProviderError {
     }
 }
 
+fn accepted_failure_cause<'a>(error: &'a ProviderError, request: &Request) -> &'a ProviderError {
+    use sha2::Digest as _;
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection must retain its failure carrier: {error:?}");
+    };
+    let facts = failure
+        .message()
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
+    failure.cause()
+}
+
 fn vertex_provider() -> VertexProvider {
     VertexProvider::new("my-project".into(), "us-central1".into(), None)
 }
@@ -1367,6 +1395,7 @@ async fn vertex_usage_in_done_event() {
 fn vertex_request_body_uses_gemini_format() {
     let provider = vertex_provider();
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "vertex:gemini-2.5-flash".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1455,6 +1484,7 @@ fn tool_call_sse_fixture() -> String {
 
 fn lifecycle_text_request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "vertex:gemini-2.5-flash".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -3539,15 +3569,22 @@ async fn vertex_response_observer_unsupported_but_payload_callback_flows() {
     let mut observer_request = lifecycle_text_request();
     observer_request.callbacks =
         RequestCallbacks::new().with_on_response(std::sync::Arc::new(|_status, _headers| Ok(())));
-    let mut stream = observer_provider.stream_prepared(observer_request, auth);
-    let mut typed = false;
-    while let Some(item) = stream.next().await {
-        if matches!(item, Err(ProviderError::UnsupportedCapability(_))) {
-            typed = true;
-            break;
-        }
-    }
-    assert!(typed, "vertex rejects response observers before dispatch");
+    let mut stream = observer_provider.stream_prepared(observer_request.clone(), auth);
+    let error = stream
+        .next()
+        .await
+        .expect("one refusal")
+        .expect_err("vertex rejects response observers before dispatch");
+    let ProviderError::UnsupportedCapability(summary) =
+        accepted_failure_cause(&error, &observer_request)
+    else {
+        panic!("expected exact response-observer cause: {error:?}");
+    };
+    assert_eq!(
+        summary.as_str(),
+        "Google wires do not support response callbacks"
+    );
+    assert!(stream.next().await.is_none(), "refusal must be terminal");
     observer_server.verify().await;
 }
 
@@ -3642,6 +3679,7 @@ mod constrained_guard_tests {
 
     fn guarded_request(tools: Vec<ToolDef>) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "vertex:gemini-2.5-flash".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -3739,6 +3777,7 @@ mod google_41 {
 
     fn plain_request_41(thinking: ThinkingConfig) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: "vertex:gemini-2.5-flash".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -3989,21 +4028,40 @@ mod google_41 {
 
     #[tokio::test]
     async fn vertex_adc_missing_project_or_location_is_typed() {
-        let no_project = VertexProvider::new(String::new(), "us-central1".into(), None);
-        let stream = no_project.stream_prepared(
-            plain_request_41(ThinkingConfig::default()),
-            bearer_auth_41(),
-        );
-        let error = collect_err_41(stream).await;
-        assert!(matches!(error, ProviderError::Config(_)), "{error:?}");
-
-        let no_location = VertexProvider::new("p1".into(), String::new(), None);
-        let stream = no_location.stream_prepared(
-            plain_request_41(ThinkingConfig::default()),
-            bearer_auth_41(),
-        );
-        let error = collect_err_41(stream).await;
-        assert!(matches!(error, ProviderError::Config(_)), "{error:?}");
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&server)
+            .await;
+        for (project, location, expected) in [
+            (
+                "",
+                "us-central1",
+                "Vertex AI requires a project ID for ADC routing; pass one in the native options or configure the provider",
+            ),
+            (
+                "p1",
+                "",
+                "Vertex AI requires a location for ADC routing; pass one in the native options or configure the provider",
+            ),
+        ] {
+            let provider = VertexProvider::new(project.into(), location.into(), Some(server.uri()));
+            let request = plain_request_41(ThinkingConfig::default());
+            let mut stream = provider.stream_prepared(request.clone(), bearer_auth_41());
+            let error = stream
+                .next()
+                .await
+                .expect("one refusal")
+                .expect_err("missing ADC routing must fail closed");
+            let ProviderError::Config(summary) = accepted_failure_cause(&error, &request) else {
+                panic!("expected exact missing-routing cause: {error:?}");
+            };
+            assert_eq!(summary.as_str(), expected);
+            assert!(stream.next().await.is_none(), "refusal must be terminal");
+        }
+        assert!(server.received_requests().await.unwrap().is_empty());
+        server.verify().await;
     }
 
     #[tokio::test]
@@ -4312,18 +4370,6 @@ mod google_41 {
             account_id: None,
             provenance: Default::default(),
         }
-    }
-
-    async fn collect_err_41(
-        mut stream: opi_ai::provider::EventStream,
-    ) -> opi_ai::provider::ProviderError {
-        use futures_util::StreamExt;
-        while let Some(item) = stream.next().await {
-            if let Err(error) = item {
-                return error;
-            }
-        }
-        panic!("stream produced no error");
     }
 
     #[tokio::test]

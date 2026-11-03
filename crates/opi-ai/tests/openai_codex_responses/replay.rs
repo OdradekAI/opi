@@ -7,6 +7,7 @@ fn provider() -> OpenAiCodexResponsesProvider {
 
 fn assistant() -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         deferred: None,
         content: vec![AssistantContent::ToolCall {
             tool_call: ToolCall {

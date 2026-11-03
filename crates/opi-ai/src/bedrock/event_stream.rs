@@ -14,7 +14,7 @@ pub struct EventFrame {
     pub payload: Vec<u8>,
 }
 
-/// A complete event-stream frame failed structural or checksum validation.
+/// An event-stream prelude or complete frame failed structural or checksum validation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameParseError {
     MalformedCompleteFrame,
@@ -23,12 +23,17 @@ pub enum FrameParseError {
 /// Parse all complete frames from a byte buffer.
 ///
 /// Returns parsed frames and removes consumed bytes from the buffer.
-/// Incomplete frames remain in the buffer for future appends.
+/// Valid incomplete frames remain in the buffer for future appends. A complete
+/// invalid prelude fails immediately without waiting for its declared payload.
 pub fn parse_frames(buffer: &mut Vec<u8>) -> Result<Vec<EventFrame>, FrameParseError> {
     let mut frames = Vec::new();
-    while buffer.len() >= MIN_FRAME_SIZE {
+    while buffer.len() >= PRELUDE_LEN {
         let total_len = read_u32_be(&buffer[0..4]);
-        if total_len < (PRELUDE_LEN + 4) as u32 {
+        let headers_len = read_u32_be(&buffer[4..8]);
+        let Some(content_len) = total_len.checked_sub(MIN_FRAME_SIZE as u32) else {
+            return Err(FrameParseError::MalformedCompleteFrame);
+        };
+        if headers_len > content_len || crc32(&buffer[..8]) != read_u32_be(&buffer[8..12]) {
             return Err(FrameParseError::MalformedCompleteFrame);
         }
         if (total_len as usize) > buffer.len() {

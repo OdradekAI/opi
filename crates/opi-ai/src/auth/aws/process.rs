@@ -3,11 +3,12 @@
 //! A shared-config profile's `credential_process` line becomes one frozen
 //! [`CredentialProcessSpec`](crate::auth::aws::process::CredentialProcessSpec) (command, cwd, child environment) executed through
 //! the injectable [`CredentialProcessRunner`](crate::auth::aws::process::CredentialProcessRunner). The default
-//! [`SpawnedCredentialProcess`](crate::auth::aws::process::SpawnedCredentialProcess) runner owns the real spawn: bounded stdout, a
-//! fixed attempt window, private process-tree cleanup, and cancellation that
-//! reaps every owned process. The existing 10s/64 KiB budgets are declared
-//! opi policy (Pi's adapter uses its provider-process seam without explicit
-//! caps); no new process, stdio, or total-send caps are introduced here.
+//! [`SpawnedCredentialProcess`](crate::auth::aws::process::SpawnedCredentialProcess) runner owns the real spawn, private
+//! process-tree cleanup and cancellation that reaps every owned process.
+//! It applies no timeout or stdout cap unless a caller selects a
+//! [`CredentialProcessPolicy`](crate::auth::aws::process::CredentialProcessPolicy);
+//! its 10s/64 KiB default remains an explicit
+//! bounded caller policy rather than an implicit SDK source limit.
 //!
 //! Per the verified Node chain corpus, every `credential_process` failure
 //! (missing/blank command, spawn, exit, output, JSON, version, incomplete
@@ -29,7 +30,7 @@ use secrecy::SecretString;
 use time::OffsetDateTime;
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
-use tokio::time::{Instant, sleep_until};
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use crate::credential::BoxAuthFuture;
@@ -259,13 +260,10 @@ pub trait CredentialProcessRunner: Send + Sync {
     ) -> BoxAuthFuture<'a, Result<CredentialProcessOutput, CredentialProcessError>>;
 }
 
-/// Declared opi policy for one spawned `credential_process`: how long the
-/// frozen command may run and how much stdout it may produce. The locked
-/// Node corpus has no explicit timeout/output cap here, so these budgets
-/// are an opi caller policy (AIR-023), not an SDK parity default: callers
-/// inject their own values; the default below is the opi-declared budget
-/// (it must absorb cold shell startup on loaded hosts — a Windows
-/// PowerShell cold start alone can exceed three seconds).
+/// Explicit caller policy for one spawned `credential_process`: how long the
+/// frozen command may run and how much stdout it may produce. The SDK runner
+/// selects no policy by default. `CredentialProcessPolicy::default()` provides
+/// the existing 10s/64 KiB bounded policy when a caller chooses it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CredentialProcessPolicy {
     /// Maximum wall-clock runtime of the spawned process.
@@ -287,20 +285,25 @@ impl Default for CredentialProcessPolicy {
 const PROCESS_TREE_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Default [`CredentialProcessRunner`] that really spawns the frozen
-/// command under the injected [`CredentialProcessPolicy`].
+/// command with an optional caller-selected [`CredentialProcessPolicy`].
+/// No selected policy means no SDK timeout or stdout limit; process ownership
+/// and cancellation cleanup apply in either case.
 #[derive(Default)]
 pub struct SpawnedCredentialProcess {
-    policy: CredentialProcessPolicy,
+    policy: Option<CredentialProcessPolicy>,
 }
 
 impl SpawnedCredentialProcess {
     /// Build the runner with an explicit caller policy.
     pub fn with_policy(policy: CredentialProcessPolicy) -> Self {
-        Self { policy }
+        Self {
+            policy: Some(policy),
+        }
     }
 
-    /// The injected policy (non-secret; observable for diagnostics).
-    pub fn policy(&self) -> CredentialProcessPolicy {
+    /// The selected policy, or `None` when the SDK imposes no resource limits.
+    /// This selection is non-secret and observable for diagnostics.
+    pub fn policy(&self) -> Option<CredentialProcessPolicy> {
         self.policy
     }
 }
@@ -329,7 +332,7 @@ impl CredentialProcessRunner for SpawnedCredentialProcess {
 
 async fn run_spawned_credential_process(
     spec: &CredentialProcessSpec,
-    policy: CredentialProcessPolicy,
+    policy: Option<CredentialProcessPolicy>,
 ) -> Result<CredentialProcessOutput, CredentialProcessError> {
     let spec = spec.clone();
     own_process(move |cancellation| async move {
@@ -361,7 +364,7 @@ where
 async fn run_spawned_credential_process_inner(
     spec: &CredentialProcessSpec,
     cancellation: CancellationToken,
-    policy: CredentialProcessPolicy,
+    policy: Option<CredentialProcessPolicy>,
 ) -> Result<CredentialProcessOutput, CredentialProcessError> {
     if cancellation.is_cancelled() {
         return Err(CredentialProcessError::Cancelled);
@@ -396,7 +399,7 @@ async fn run_spawned_credential_process_inner(
     }
 
     let output =
-        read_bounded_process_output(&mut child, root_pid, &mut tree, cancellation, policy).await?;
+        collect_process_output(&mut child, root_pid, &mut tree, cancellation, policy).await?;
     let parsed = parse_credential_process_output(&output);
     if parsed.is_err() {
         terminate_tree_and_reap(&mut child, root_pid, &mut tree).await;
@@ -404,62 +407,66 @@ async fn run_spawned_credential_process_inner(
     parsed
 }
 
-async fn read_bounded_process_output(
+async fn collect_process_output(
     child: &mut Child,
     root_pid: Option<u32>,
     tree: &mut ProcessTree,
     cancellation: CancellationToken,
-    policy: CredentialProcessPolicy,
+    policy: Option<CredentialProcessPolicy>,
 ) -> Result<Vec<u8>, CredentialProcessError> {
     let Some(mut stdout) = child.stdout.take() else {
         terminate_tree_and_reap(child, root_pid, tree).await;
         return Err(CredentialProcessError::Output);
     };
-    let deadline = Instant::now() + policy.timeout;
-    let mut output = Vec::new();
-    let mut limited_stdout = (&mut stdout).take((policy.max_stdout + 1) as u64);
-    let read_result = tokio::select! {
-        _ = cancellation.cancelled() => {
-            terminate_tree_and_reap(child, root_pid, tree).await;
-            return Err(CredentialProcessError::Cancelled);
-        }
-        _ = sleep_until(deadline) => {
-            terminate_tree_and_reap(child, root_pid, tree).await;
-            return Err(CredentialProcessError::Timeout);
-        }
-        result = limited_stdout.read_to_end(&mut output) => result,
-    };
-    if read_result.is_err() {
-        terminate_tree_and_reap(child, root_pid, tree).await;
-        return Err(CredentialProcessError::Output);
-    }
-    if output.len() > policy.max_stdout {
-        terminate_tree_and_reap(child, root_pid, tree).await;
-        return Err(CredentialProcessError::OutputLimit);
-    }
-    let status = tokio::select! {
-        _ = cancellation.cancelled() => {
-            terminate_tree_and_reap(child, root_pid, tree).await;
-            return Err(CredentialProcessError::Cancelled);
-        }
-        _ = sleep_until(deadline) => {
-            terminate_tree_and_reap(child, root_pid, tree).await;
-            return Err(CredentialProcessError::Timeout);
-        }
-        result = child.wait() => result,
-    };
-    let status = match status {
-        Ok(status) => status,
-        Err(_) => {
-            terminate_tree_and_reap(child, root_pid, tree).await;
-            return Err(CredentialProcessError::Output);
+    // Construct the selected timer once, before any output read. The same
+    // absolute deadline covers every read and the final child-status wait.
+    let timer = policy.map(|selected| sleep(selected.timeout));
+    let deadline = async move {
+        match timer {
+            Some(timer) => timer.await,
+            None => std::future::pending::<()>().await,
         }
     };
-    if !status.success() {
-        terminate_tree_and_reap(child, root_pid, tree).await;
-        return Err(CredentialProcessError::Exit);
+    tokio::pin!(deadline);
+    let result = async {
+        let mut output = Vec::new();
+        let mut chunk = [0; 8192];
+        loop {
+            let read = tokio::select! {
+                _ = cancellation.cancelled() => return Err(CredentialProcessError::Cancelled),
+                _ = &mut deadline => return Err(CredentialProcessError::Timeout),
+                read = stdout.read(&mut chunk) => read.map_err(|_| CredentialProcessError::Output)?,
+            };
+            if read == 0 {
+                break;
+            }
+            let length = output
+                .len()
+                .checked_add(read)
+                .ok_or(CredentialProcessError::Output)?;
+            if policy.is_some_and(|selected| length > selected.max_stdout) {
+                return Err(CredentialProcessError::OutputLimit);
+            }
+            output
+                .try_reserve(read)
+                .map_err(|_| CredentialProcessError::Output)?;
+            output.extend_from_slice(&chunk[..read]);
+        }
+        let status = tokio::select! {
+            _ = cancellation.cancelled() => return Err(CredentialProcessError::Cancelled),
+            _ = &mut deadline => return Err(CredentialProcessError::Timeout),
+            status = child.wait() => status.map_err(|_| CredentialProcessError::Output)?,
+        };
+        if !status.success() {
+            return Err(CredentialProcessError::Exit);
+        }
+        Ok(output)
     }
-    Ok(output)
+    .await;
+    if result.is_err() {
+        terminate_tree_and_reap(child, root_pid, tree).await;
+    }
+    result
 }
 
 pub(crate) async fn terminate_tree_and_reap(
@@ -632,6 +639,92 @@ mod tests {
         );
     }
 
+    fn valid_process_command(padding: usize, delay_seconds: u64) -> CredentialProcessSpec {
+        let prefix = r#"{"Version":1,"AccessKeyId":"SOURCE_AKID","SecretAccessKey":"SOURCE_SECRET","Padding":""#;
+        let command = if cfg!(windows) {
+            format!(
+                "Start-Sleep -Seconds {delay_seconds}; [Console]::Out.Write('{prefix}' + ('x' * {padding}) + '\"}}')"
+            )
+        } else {
+            format!(
+                "sleep {delay_seconds}; printf '%s' '{prefix}'; head -c {padding} /dev/zero | tr '\\0' x; printf '%s' '\"}}'"
+            )
+        };
+        CredentialProcessSpec::inherit(command)
+    }
+
+    #[tokio::test]
+    async fn default_runner_accepts_large_valid_output() {
+        let _process_lock = CREDENTIAL_PROCESS_TEST_LOCK.lock().await;
+        let spec = valid_process_command(70_000, 0);
+        assert_eq!(
+            SpawnedCredentialProcess::with_policy(CredentialProcessPolicy::default())
+                .run(&spec)
+                .await
+                .unwrap_err(),
+            CredentialProcessError::OutputLimit,
+        );
+        let explicit = SpawnedCredentialProcess::with_policy(CredentialProcessPolicy {
+            timeout: Duration::from_secs(30),
+            max_stdout: 128 * 1024,
+        });
+        assert_eq!(
+            explicit
+                .run(&spec)
+                .await
+                .unwrap()
+                .access_key_id
+                .expose_secret(),
+            "SOURCE_AKID"
+        );
+        assert_eq!(
+            SpawnedCredentialProcess::default()
+                .run(&spec)
+                .await
+                .expect("no selected policy must accept valid stdout beyond 64 KiB")
+                .access_key_id
+                .expose_secret(),
+            "SOURCE_AKID"
+        );
+    }
+
+    #[tokio::test]
+    async fn default_runner_accepts_slow_valid_source() {
+        let _process_lock = CREDENTIAL_PROCESS_TEST_LOCK.lock().await;
+        let spec = valid_process_command(0, 11);
+        let explicit = SpawnedCredentialProcess::with_policy(CredentialProcessPolicy {
+            timeout: Duration::from_millis(100),
+            max_stdout: 64 * 1024,
+        });
+        assert_eq!(
+            explicit.run(&spec).await.unwrap_err(),
+            CredentialProcessError::Timeout
+        );
+        assert_eq!(
+            SpawnedCredentialProcess::default()
+                .run(&spec)
+                .await
+                .expect("no selected policy must accept valid source beyond 10s")
+                .access_key_id
+                .expose_secret(),
+            "SOURCE_AKID"
+        );
+    }
+
+    #[tokio::test]
+    async fn selected_policy_is_optional_and_extreme_bounds_accept_small_output() {
+        let _process_lock = CREDENTIAL_PROCESS_TEST_LOCK.lock().await;
+        assert_eq!(SpawnedCredentialProcess::default().policy(), None);
+        let policy = CredentialProcessPolicy {
+            timeout: Duration::MAX,
+            max_stdout: usize::MAX,
+        };
+        let runner = SpawnedCredentialProcess::with_policy(policy);
+        assert_eq!(runner.policy(), Some(policy));
+        let output = runner.run(&valid_process_command(0, 0)).await.unwrap();
+        assert_eq!(output.access_key_id.expose_secret(), "SOURCE_AKID");
+    }
+
     #[tokio::test]
     async fn spawned_runner_runs_in_the_frozen_cwd_and_exact_environment() {
         let _process_lock = CREDENTIAL_PROCESS_TEST_LOCK.lock().await;
@@ -669,11 +762,9 @@ mod tests {
             cwd: Some(dir.path().to_path_buf()),
             env: ProcessEnv::Exact(env),
         };
-        // This test exercises the frozen cwd/env contract, not the default
-        // 10s budget (the dedicated timeout test owns that). A cold CI
-        // windows runner can spend more than 10s in Defender-scanned
-        // PowerShell startup under the near-empty Exact environment, so
-        // inject the caller-policy seam with an inflated startup budget.
+        // This test selects a generous startup policy to exercise frozen
+        // cwd/env rather than the separate timeout boundary. Cold Windows
+        // PowerShell startup can be slow under a near-empty environment.
         let runner = SpawnedCredentialProcess::with_policy(CredentialProcessPolicy {
             timeout: Duration::from_secs(60),
             max_stdout: 64 * 1024,
@@ -701,7 +792,7 @@ mod tests {
         };
         let timeout = CredentialProcessSpec::inherit(timeout_command);
         assert_eq!(
-            SpawnedCredentialProcess::default()
+            SpawnedCredentialProcess::with_policy(CredentialProcessPolicy::default())
                 .run(&timeout)
                 .await
                 .unwrap_err(),
@@ -715,7 +806,7 @@ mod tests {
         };
         let limit = CredentialProcessSpec::inherit(output_command);
         assert_eq!(
-            SpawnedCredentialProcess::default()
+            SpawnedCredentialProcess::with_policy(CredentialProcessPolicy::default())
                 .run(&limit)
                 .await
                 .unwrap_err(),
@@ -743,11 +834,9 @@ mod tests {
     #[tokio::test]
     async fn cancelling_real_credential_process_resolution_terminates_descendants() {
         let _process_lock = CREDENTIAL_PROCESS_TEST_LOCK.lock().await;
-        // Cold shell startup on a loaded CI runner can exceed both this
-        // test's marker wait and the runner's own timeout. Only the startup
-        // race is retryable: a marker that never appears because the runner
-        // gave up first is a slow-host artifact, while a surviving descendant
-        // after a launched run is a real defect and fails immediately.
+        // The readiness wait belongs to this test; the default runner has
+        // no timeout policy. Only early startup failures may retry, while a
+        // surviving descendant after readiness always fails immediately.
         for attempt in 0..3 {
             if let TestAttempt::Passed = run_cancellation_attempt().await {
                 return;
@@ -804,8 +893,8 @@ mod tests {
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             while !started.exists() {
                 if task.is_finished() {
-                    // The runner's own timeout cancelled the process before
-                    // the shell managed to start it — retry on a slow host.
+                    // The helper ended before readiness; retry this startup
+                    // attempt without excusing a surviving descendant.
                     return;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;

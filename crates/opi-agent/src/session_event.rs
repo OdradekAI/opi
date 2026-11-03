@@ -33,6 +33,10 @@ pub struct CompactionResult {
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Inline Agent events preserve public construction and matching without a per-event allocation"
+)]
 pub enum AgentSessionEvent {
     Agent {
         #[serde(with = "agent_event_serde")]

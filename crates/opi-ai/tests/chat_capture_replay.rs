@@ -26,6 +26,7 @@ impl AuthContext for Source {
 }
 fn request(messages: Vec<Message>, effort: ThinkingLevel) -> Request {
     Request {
+        projection: Default::default(),
         model: "record-owned".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -77,7 +78,10 @@ fn model(wire: WireApi, base: String) -> ModelInfo {
         WireApi::OpenAiResponses | WireApi::AzureOpenAiResponses
     ) {
         let compat = OpenAiResponsesCompat {
-            supports_mid_convo_effort: true,
+            source: opi_ai::model_info::OpenAiResponsesSourceCompat {
+                supports_mid_convo_effort: Some(true),
+                ..Default::default()
+            },
             ..Default::default()
         };
         model.compat = if wire == WireApi::AzureOpenAiResponses {
@@ -446,7 +450,7 @@ mod replay_boundaries {
             let mut changed = record.info().clone();
             match &mut changed.compat {
                 WireCompat::OpenAiResponses(compat) | WireCompat::AzureOpenAiResponses(compat) => {
-                    compat.supports_mid_convo_effort = false;
+                    compat.source.supports_mid_convo_effort = Some(false);
                 }
                 _ => unreachable!(),
             }
@@ -665,6 +669,7 @@ mod persisted_producers {
     }
     fn req(messages: Vec<Message>) -> Request {
         Request {
+            projection: Default::default(),
             model: "record-owned".into(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
                 system_prompt: None,
@@ -1274,4 +1279,126 @@ json!({"type":"response.completed","response":{"id":"response-captured","model":
         assert_eq!(result["output"], "fixture result");
         assert_eq!(serde_json::to_vec(&restored).unwrap(), canonical);
     }
+}
+
+#[tokio::test]
+async fn chat_source_grammar_custom_input_survives_capture_store_and_replay() {
+    use futures_util::StreamExt;
+    use opi_ai::constrained_sampling::ConstrainedSampling;
+    use opi_ai::message::{OutputContent, ToolDef, ToolResultMessage};
+    use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
+    use opi_ai::provider::Provider;
+    use opi_ai::stream::AssistantStreamEvent;
+    let server = MockServer::start().await;
+    let sse = format!(
+        "data: {}\n\ndata: {}\n\n",
+        json!({"id":"grammar-response","model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"grammar-call","type":"custom","custom":{"name":"search","input":"line one\n\"two\""}}]},"finish_reason":null}]}),
+        json!({"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":4,"completion_tokens":2}})
+    );
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(sse)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+    let provider = OpenAiChatProvider::new_with_compat(
+        Some(server.uri()),
+        CompatConfig {
+            supports_grammar_tools: Some(true),
+            ..Default::default()
+        },
+    );
+    let tool = ToolDef {
+        name: "search".into(),
+        description: "Find source".into(),
+        input_schema: json!({"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}),
+        constrained_sampling: Some(ConstrainedSampling::Grammar {
+            openai_lark: Some("start: /.+/".into()),
+            openai_regex: Some("regex-loses".into()),
+        }),
+    };
+    let mut call = request(vec![user()], ThinkingLevel::None);
+    call.model = "openai:gpt-4o".into();
+    call.thinking = Default::default();
+    call.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        messages: vec![user()],
+        tools: vec![tool.clone()],
+    })
+    .unwrap();
+    let events = provider
+        .stream_prepared(call.clone(), opi_ai::test_support::resolved_bearer_auth())
+        .collect::<Vec<_>>()
+        .await;
+    let captured = events
+        .into_iter()
+        .find_map(|event| match event.unwrap() {
+            AssistantStreamEvent::Done { message, .. } => Some(message),
+            _ => None,
+        })
+        .unwrap();
+    let found = captured
+        .content
+        .iter()
+        .find_map(|part| match part {
+            AssistantContent::ToolCall { tool_call } => Some(tool_call),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&found.arguments).unwrap(),
+        json!({"query":"line one\n\"two\""})
+    );
+    assert_eq!(found.arguments_error, None);
+    let persisted = serde_json::to_vec(&captured).unwrap();
+    let restored: AssistantMessage = serde_json::from_slice(&persisted).unwrap();
+    let canonical = serde_json::to_vec(&restored).unwrap();
+    call.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+        system_prompt: None,
+        tools: vec![tool],
+        messages: vec![
+            user(),
+            Message::Assistant(restored.clone()),
+            Message::ToolResult(ToolResultMessage {
+                tool_call_id: found.id.clone(),
+                tool_name: found.name.clone(),
+                content: vec![OutputContent::Text {
+                    text: "result".into(),
+                }],
+                details: None,
+                is_error: false,
+                not_executed: None,
+                truncated: false,
+                timestamp_ms: 1,
+            }),
+            user(),
+        ],
+    })
+    .unwrap();
+    let next = provider
+        .stream_prepared(call, opi_ai::test_support::resolved_bearer_auth())
+        .collect::<Vec<_>>()
+        .await;
+    assert!(next.iter().all(Result::is_ok));
+    let sent = server.received_requests().await.unwrap();
+    for request in &sent {
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["tools"][0]["type"], "custom");
+        assert_eq!(body["tools"][0]["custom"]["format"]["syntax"], "lark");
+    }
+    let replay: Value = serde_json::from_slice(&sent[1].body).unwrap();
+    let assistant = replay["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| message["role"] == "assistant")
+        .unwrap();
+    assert_eq!(
+        assistant["tool_calls"][0],
+        json!({"id":"grammar-call","type":"custom","custom":{"name":"search","input":"line one\n\"two\""}})
+    );
+    assert_eq!(serde_json::to_vec(&restored).unwrap(), canonical);
 }

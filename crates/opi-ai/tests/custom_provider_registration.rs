@@ -268,6 +268,7 @@ async fn stream_from_custom_provider() {
 
     let (provider, _) = registry.resolve("stream-prov:s-model").unwrap();
     let request = Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "stream-prov:s-model".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -693,6 +694,7 @@ fn echo_record_info(max_output: u64) -> ModelInfo {
 
 fn models_request() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: String::new(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -725,6 +727,43 @@ fn counting_resolver() -> Arc<CountingResolver> {
     Arc::new(CountingResolver {
         calls: AtomicUsize::new(0),
     })
+}
+
+#[test]
+fn chat_registration_preserves_arbitrary_exact_api_ids_without_auth() {
+    for id in ["normal", "", " \t", "api/β\0id"] {
+        let mut models = Models::new();
+        let resolver = counting_resolver();
+        let observed: Observed = Arc::default();
+        let handle = models
+            .register_chat_api(
+                Arc::new(EchoChatApi {
+                    api: ApiId::new(id),
+                    provider_id: "custom".into(),
+                    record: echo_record_info(2_048),
+                    text: "registered".into(),
+                    observed: observed.clone(),
+                }),
+                resolver.clone(),
+                AuthProvenanceSource::Static,
+            )
+            .expect("ApiId has no nonempty or whitespace grammar");
+        assert_eq!(handle.api_id().as_str(), id);
+        assert!(matches!(
+            models.register_chat_api(
+                Arc::new(TypedChatApi {
+                    api: ApiId::new(id),
+                    provider_id: " \t".into(),
+                    record: echo_record_info(2_048),
+                }),
+                resolver.clone(),
+                AuthProvenanceSource::Static,
+            ),
+            Err(opi_ai::registry::RegistrationError::EmptyProviderId)
+        ));
+        assert_eq!(resolver.calls.load(Ordering::SeqCst), 0);
+        assert!(observed.lock().unwrap().is_empty());
+    }
 }
 
 #[tokio::test]

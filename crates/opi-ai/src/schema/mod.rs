@@ -39,6 +39,51 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+// Values owned by the schema engine may be arbitrarily deep. Keep cloning
+// and release iterative without changing caller-owned serde_json values.
+fn clone_value(value: &Value) -> Value {
+    enum Work<'a> {
+        Visit(&'a Value),
+        Array(usize),
+        Object(Vec<String>),
+    }
+    let mut work = vec![Work::Visit(value)];
+    let mut values = Vec::new();
+    while let Some(task) = work.pop() {
+        match task {
+            Work::Visit(Value::Array(items)) => {
+                work.push(Work::Array(items.len()));
+                work.extend(items.iter().rev().map(Work::Visit));
+            }
+            Work::Visit(Value::Object(map)) => {
+                work.push(Work::Object(map.keys().cloned().collect()));
+                work.extend(map.values().rev().map(Work::Visit));
+            }
+            Work::Visit(value) => values.push(value.clone()),
+            Work::Array(len) => {
+                let children = values.split_off(values.len() - len);
+                values.push(Value::Array(children));
+            }
+            Work::Object(keys) => {
+                let children = values.split_off(values.len() - keys.len());
+                values.push(Value::Object(keys.into_iter().zip(children).collect()));
+            }
+        }
+    }
+    values.pop().expect("one cloned root")
+}
+
+fn drop_value(value: Value) {
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Array(items) => pending.extend(items),
+            Value::Object(map) => pending.extend(map.into_values()),
+            _ => {}
+        }
+    }
+}
+
 /// Typed failures of the dialect engine. Invalid instances are `Ok(false)`,
 /// never errors: errors distinguish compile failure, URI/fragment decode
 /// failure and no-progress recursion from ordinary non-matches.
@@ -68,7 +113,10 @@ pub enum SchemaError {
 }
 
 /// An admitted schema: the trusted schema value plus the compiled regex
-/// leaves and the evaluation mode. Cheap to clone for caching.
+/// leaves and the evaluation mode. Cheap to clone for caching. The engine
+/// releases its owned schema iteratively when the last clone is dropped,
+/// including admission-error cleanup; caller-owned JSON values retain their
+/// ordinary serde_json ownership.
 #[derive(Clone)]
 pub struct CompiledSchema {
     inner: Arc<ir::Compiled>,

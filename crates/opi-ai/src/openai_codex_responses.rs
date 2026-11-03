@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 use crate::auth::{AuthScheme, ResolvedAuth};
 use crate::http::HttpClient;
 use crate::openai_responses_shared::{
-    ParsedEvent, ResponsesEvent, ResponsesMapper, convert_messages, drain_sse_frames,
+    ParsedEvent, ResponsesEvent, ResponsesMapper, convert_projected_messages, drain_sse_frames,
 };
 use crate::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
@@ -109,48 +109,58 @@ impl OpenAiCodexResponsesProvider {
             .model
             .strip_prefix("openai-codex:")
             .unwrap_or(&request.model);
-        // Canonical transcript consumption (AIR-020); this wire currently
-        // projects by collapse.
-        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
-        let transcript = crate::transcript::resolve_transcript(
-            &request.context,
-            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
-            crate::transcript::TranscriptProjection::NativeOrCollapse,
-        )
-        .expect("native-or-collapse projection never fails");
-        let transcript = transcript.as_ref();
-        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
-        let current_tools = crate::transcript::get_current_tools(transcript.messages());
+        let selected_model = self.models.iter().find(|model| model.id == model_id);
+        let projection = crate::transcript::compile_request_projection(
+            request,
+            PROVIDER_ID,
+            selected_model,
+            crate::WireApi::OpenAiCodexResponses,
+        )?;
+        let transcript = projection.transcript.as_ref();
+        let system_prompt = crate::transcript::get_initial_system_message(transcript.messages())
+            .map(crate::transcript::system_message_text)
+            .unwrap_or_default();
+        let source = selected_model
+            .and_then(|model| match &model.compat {
+                crate::WireCompat::OpenAiCodexResponses(compat) => Some(&compat.source),
+                _ => None,
+            })
+            .cloned()
+            .unwrap_or_default();
         let replay_route = crate::replay::ReplayRoute {
             wire: crate::model_info::WireApi::OpenAiCodexResponses,
             provider: PROVIDER_ID.to_owned(),
             model: model_id.to_owned(),
             supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
         };
-        let replay = crate::replay::project_replay(
-            &crate::transcript::without_initial_system_message(transcript.messages()),
-            &replay_route,
-            crate::replay::ReplayProjection::NativeOrCollapse,
+        let replay = &projection.replay;
+        let wire_facts = crate::openai_responses_shared::compile_projected_response_tools(
+            transcript.messages(),
+            &projection.tools.request_tools,
+            crate::openai_responses_shared::ResponsesToolOptions {
+                default_strict: None,
+                supports_strict_mode: source.supports_strict_mode.unwrap_or(true),
+                supports_grammar_tools: source.supports_grammar_tools.unwrap_or(false),
+            },
         )?;
-        // Task 20.11: compile the tools first so grammar replay items know
-        // their custom shape.
-        let mut wire_facts: Option<crate::openai_responses_shared::ResponsesWireTools> = None;
-        if !current_tools.is_empty() {
-            let wire = crate::openai_responses_shared::convert_responses_tools(
-                &current_tools,
-                crate::openai_responses_shared::ResponsesToolOptions {
-                    default_strict: None,
-                    supports_strict_mode: true,
-                    supports_grammar_tools: false,
-                },
-            )?;
-            wire_facts = Some(wire);
-        }
         let grammar_map = wire_facts
             .as_ref()
             .map(|wire| wire.grammar_input_properties.clone())
             .unwrap_or_default();
-        let input = convert_messages(&replay.messages, &replay_route, &grammar_map, None);
+        let input = convert_projected_messages(
+            &replay.messages,
+            &replay_route,
+            &grammar_map,
+            None,
+            &source,
+            if source.supports_developer_role.unwrap_or(true)
+                && selected_model.is_some_and(|model| model.capabilities.supports_thinking)
+            {
+                "developer"
+            } else {
+                "system"
+            },
+        )?;
         let session_id = if request.cache_retention != CacheRetention::Disabled {
             request.session_id.as_deref().filter(|id| !id.is_empty())
         } else {
@@ -175,7 +185,9 @@ impl OpenAiCodexResponsesProvider {
             body["prompt_cache_key"] =
                 serde_json::Value::String(session_id.chars().take(64).collect());
         }
-        if let Some(wire) = &wire_facts {
+        if let Some(wire) = &wire_facts
+            && !wire.tools.is_empty()
+        {
             body["tools"] = serde_json::Value::Array(wire.tools.clone());
         }
         native::apply_native_options(
@@ -559,308 +571,319 @@ impl Provider for OpenAiCodexResponsesProvider {
         _attempt: crate::provider::AttemptContext,
         resources: Option<crate::codex_resources::CallResourceLease>,
     ) -> EventStream {
-        // Same as `stream` but skips per-call auth resolution: the collection
-        // resolved and froze authentication once for the logical call.
-        // Resource generation registration (task 20.17): every WS-family
-        // call registers before any auth attach or header/body transform so
-        // a cleanup cutoff can cancel it in every phase. Pure SSE-preference
-        // calls are not part of the WebSocket resource family and stay
-        // unregistered.
-        let transport = request.transport;
-        let session_key: Option<String> = if request.cache_retention != CacheRetention::Disabled {
-            request.session_id.clone().filter(|id| !id.is_empty())
-        } else {
-            None
+        let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::OpenAiCodexResponses) {
+            Ok(facts) => facts,
+            Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
         };
-        let lease = resources.or_else(|| {
-            (transport != TransportPreference::Sse).then(|| {
-                crate::codex_resources::CallResourceLease::new(self.ws_state.clone(), &request)
-            })
-        });
-        let activity = lease.as_ref().and_then(|lease| lease.activity());
-        if lease.is_some() && activity.is_none() {
-            return Box::pin(stream::once(async { Err(ProviderError::Cancelled) }));
-        }
-        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
-            return Box::pin(stream::once(async move { Err(error) }));
-        }
-        let default_base_url = self.base_url.clone();
-        let requested_service_tier = self
-            .native_options
-            .as_ref()
-            .and_then(|options| options.service_tier)
-            .and_then(|tier| {
-                use crate::stream::ServiceTier;
-                match tier {
-                    CodexServiceTier::Auto => Some(ServiceTier::Auto),
-                    CodexServiceTier::Default => Some(ServiceTier::Default),
-                    CodexServiceTier::Flex => Some(ServiceTier::Flex),
-                    CodexServiceTier::Scale => Some(ServiceTier::Scale),
-                    CodexServiceTier::Priority => Some(ServiceTier::Priority),
-                    CodexServiceTier::Fast => Some(ServiceTier::Fast),
-                    CodexServiceTier::Null => None,
-                }
+        let event_projection = projection.clone();
+        crate::stream::project_call(event_projection, || -> EventStream {
+            // Same as `stream` but skips per-call auth resolution: the collection
+            // resolved and froze authentication once for the logical call.
+            // Resource generation registration (task 20.17): every WS-family
+            // call registers before any auth attach or header/body transform so
+            // a cleanup cutoff can cancel it in every phase. Pure SSE-preference
+            // calls are not part of the WebSocket resource family and stay
+            // unregistered.
+            let transport = request.transport;
+            let session_key: Option<String> = if request.cache_retention != CacheRetention::Disabled
+            {
+                request.session_id.clone().filter(|id| !id.is_empty())
+            } else {
+                None
+            };
+            let lease = resources.or_else(|| {
+                (transport != TransportPreference::Sse).then(|| {
+                    crate::codex_resources::CallResourceLease::new(self.ws_state.clone(), &request)
+                })
             });
-        // C9: strip ONLY the openai-codex: prefix; do not strip arbitrary prefixes.
-        let model_id_owned = match request.model.strip_prefix("openai-codex:") {
-            Some(rest) => rest.to_owned(),
-            None => request.model.clone(),
-        };
-        let model_id = model_id_owned.as_str();
-        let model_known = self.models.iter().any(|model| model.id == model_id);
-        let model_base_url = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.clone());
-        let extra_headers = validate_headers(&request.extra_headers);
-        let requested_model = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model)
-            .to_owned();
-        let (body, wire_facts) = match self.compile_request_body(&request) {
-            Ok(compiled) => compiled,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        // Payload callback (task 20.51): once per variant, frozen across
-        // ordinary retries, on the codex mapper body.
-        let callbacks = request.callbacks.clone();
-        let telemetry = request.telemetry_context.clone();
-        let timeout = request.timeout;
-        let websocket_connect_timeout = self
-            .native_options
-            .as_ref()
-            .and_then(|options| options.websocket_connect_timeout);
-        let session_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
-            Some(
-                request
-                    .session_id
-                    .clone()
-                    .filter(|id| !id.is_empty())
-                    .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
-            )
-        } else {
-            None
-        };
-        let request_id: Option<String> = if request.cache_retention != CacheRetention::Disabled {
-            Some(uuid::Uuid::now_v7().to_string())
-        } else {
-            None
-        };
-        let cancel = lease
-            .as_ref()
-            .map_or_else(|| request.cancel.child_token(), |lease| lease.token());
-        let client = self.client.client().clone();
-        let http_client = self.client.clone();
-        let ws_state = lease
-            .as_ref()
-            .map_or_else(|| self.ws_state.clone(), |lease| lease.state.clone());
-        let cont_route = crate::replay::ReplayRoute {
-            wire: crate::model_info::WireApi::OpenAiCodexResponses,
-            provider: PROVIDER_ID.to_owned(),
-            model: model_id_owned.clone(),
-            supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
-        };
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let stream_cancel = cancel.clone();
+            let activity = lease.as_ref().and_then(|lease| lease.activity());
+            if lease.is_some() && activity.is_none() {
+                return Box::pin(stream::once(async { Err(ProviderError::Cancelled) }));
+            }
+            if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+                return Box::pin(stream::once(async move { Err(error) }));
+            }
+            let default_base_url = self.base_url.clone();
+            let requested_service_tier = self
+                .native_options
+                .as_ref()
+                .and_then(|options| options.service_tier)
+                .and_then(|tier| {
+                    use crate::stream::ServiceTier;
+                    match tier {
+                        CodexServiceTier::Auto => Some(ServiceTier::Auto),
+                        CodexServiceTier::Default => Some(ServiceTier::Default),
+                        CodexServiceTier::Flex => Some(ServiceTier::Flex),
+                        CodexServiceTier::Scale => Some(ServiceTier::Scale),
+                        CodexServiceTier::Priority => Some(ServiceTier::Priority),
+                        CodexServiceTier::Fast => Some(ServiceTier::Fast),
+                        CodexServiceTier::Null => None,
+                    }
+                });
+            // C9: strip ONLY the openai-codex: prefix; do not strip arbitrary prefixes.
+            let model_id_owned = match request.model.strip_prefix("openai-codex:") {
+                Some(rest) => rest.to_owned(),
+                None => request.model.clone(),
+            };
+            let model_id = model_id_owned.as_str();
+            let model_known = self.models.iter().any(|model| model.id == model_id);
+            let model_base_url = self
+                .models
+                .iter()
+                .find(|model| model.id == model_id)
+                .and_then(|model| model.base_url.clone());
+            let extra_headers = validate_headers(&request.extra_headers);
+            let requested_model = request
+                .model
+                .split_once(':')
+                .map(|(_, id)| id)
+                .unwrap_or(&request.model)
+                .to_owned();
+            let (body, wire_facts) = match self.compile_request_body(&request) {
+                Ok(compiled) => compiled,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
 
-        // C9: UnknownModel pre-I/O guard — zero auth and zero HTTP for unknown or
-        // cross-provider models (the prepared path already holds resolved auth,
-        // so there is no resolver call to suppress here).
-        if !model_known {
-            let provider_id: String = PROVIDER_ID.into();
-            tokio::spawn(async move {
-                let _ = tx
-                    .send(Err(ProviderError::UnknownModel {
-                        provider_id,
-                        model_id: model_id_owned,
-                    }))
-                    .await;
-            });
-            return Box::pin(CancelAwareReceiverStream::with_snapshot(
-                rx,
-                stream_cancel,
-                snapshot,
-            ));
-        }
+            // Payload callback (task 20.51): once per variant, frozen across
+            // ordinary retries, on the codex mapper body.
+            let callbacks = request.callbacks.clone();
+            let telemetry = request.telemetry_context.clone();
+            let timeout = request.timeout;
+            let websocket_connect_timeout = self
+                .native_options
+                .as_ref()
+                .and_then(|options| options.websocket_connect_timeout);
+            let session_id: Option<String> = if request.cache_retention != CacheRetention::Disabled
+            {
+                Some(
+                    request
+                        .session_id
+                        .clone()
+                        .filter(|id| !id.is_empty())
+                        .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
+                )
+            } else {
+                None
+            };
+            let request_id: Option<String> = if request.cache_retention != CacheRetention::Disabled
+            {
+                Some(uuid::Uuid::now_v7().to_string())
+            } else {
+                None
+            };
+            let cancel = lease
+                .as_ref()
+                .map_or_else(|| request.cancel.child_token(), |lease| lease.token());
+            let client = self.client.client().clone();
+            let http_client = self.client.clone();
+            let ws_state = lease
+                .as_ref()
+                .map_or_else(|| self.ws_state.clone(), |lease| lease.state.clone());
+            let cont_route = crate::replay::ReplayRoute {
+                wire: crate::model_info::WireApi::OpenAiCodexResponses,
+                provider: PROVIDER_ID.to_owned(),
+                model: model_id_owned.clone(),
+                supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
+            };
+            let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            let producer_snapshot = snapshot.clone();
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+            let stream_cancel = cancel.clone();
 
-        let tx_closed = tx.clone();
-        let producer_cancel = cancel.clone();
-        // One-way link: caller-parent cancellation fires the generation
-        // token (cleanup cutoffs fire it directly). The link exits when
-        // either side fires, including the guard's drop-time cancel.
-        let lease = lease;
-        let producer = async move {
-            let _activity = activity;
-            let owner_cancel = producer_cancel.clone();
-            let release_snapshot = producer_snapshot.clone();
-            let work = async {
-                let extra_headers = match extra_headers {
-                    Ok(headers) => headers,
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                        return;
-                    }
-                };
-                let transformed = tokio::select! {
-                    biased;
-                    _ = cancel.cancelled() => Err(ProviderError::Cancelled),
-                    result = callbacks.apply_header_transform_async(&extra_headers) => result,
-                };
-                let extra_headers = match transformed {
-                    Ok(headers) => headers,
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                        return;
-                    }
-                };
-                let transformed = tokio::select! {
-                    biased;
-                    _ = cancel.cancelled() => Err(ProviderError::Cancelled),
-                    result = callbacks.apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body) => result,
-                };
-                let body = match transformed.and_then(|body| {
-                    crate::callbacks::validate_openai_payload_shape(
-                        &body,
-                        crate::callbacks::OpenAiPayloadShape::Responses,
-                    )?;
-                    Ok(body)
-                }) {
-                    Ok(body) => body,
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                        return;
-                    }
-                };
-                let base_url = model_base_url.unwrap_or(default_base_url);
-                if transport == TransportPreference::Sse {
-                    stream_sse(
-                        client,
-                        resolved,
-                        wire_facts,
-                        base_url,
-                        requested_model,
-                        requested_service_tier,
-                        extra_headers,
-                        body,
-                        cancel,
-                        timeout,
-                        session_id,
-                        request_id,
-                        callbacks,
-                        producer_snapshot,
-                        tx.clone(),
-                        producer_cancel,
-                    )
-                    .await;
-                } else {
-                    let outcome = ws_transport::drive(
-                        &ws_state,
-                        &http_client,
-                        transport,
-                        session_key,
-                        &base_url,
-                        &resolved,
-                        body.clone(),
-                        requested_service_tier,
-                        extra_headers.clone(),
-                        wire_facts.clone(),
-                        cont_route,
-                        timeout,
-                        websocket_connect_timeout,
-                        &lease.as_ref().expect("ws-family call registered").guard,
-                        callbacks.clone(),
-                        producer_snapshot.clone(),
-                        tx.clone(),
-                    )
-                    .await;
-                    match outcome {
-                        ws_transport::WsLoopOutcome::Done => {}
-                        ws_transport::WsLoopOutcome::Fallback(reason) => {
-                            let guard = lease.as_ref().expect("ws-family call registered");
-                            if guard.token().is_cancelled() {
-                                // Cutoff forbids a late SSE leg.
-                                let _ = send_or_cancel(
-                                    &guard.token(),
-                                    &tx,
-                                    Err(ProviderError::Cancelled),
+            // C9: UnknownModel pre-I/O guard — zero auth and zero HTTP for unknown or
+            // cross-provider models (the prepared path already holds resolved auth,
+            // so there is no resolver call to suppress here).
+            if !model_known {
+                let provider_id: String = PROVIDER_ID.into();
+                tokio::spawn(async move {
+                    let _ = tx
+                        .send(Err(ProviderError::UnknownModel {
+                            provider_id,
+                            model_id: model_id_owned,
+                        }))
+                        .await;
+                });
+                return Box::pin(CancelAwareReceiverStream::with_snapshot(
+                    rx,
+                    stream_cancel,
+                    snapshot,
+                ));
+            }
+
+            let tx_closed = tx.clone();
+            let producer_cancel = cancel.clone();
+            // One-way link: caller-parent cancellation fires the generation
+            // token (cleanup cutoffs fire it directly). The link exits when
+            // either side fires, including the guard's drop-time cancel.
+            let lease = lease;
+            let producer = async move {
+                let _activity = activity;
+                let owner_cancel = producer_cancel.clone();
+                let release_snapshot = producer_snapshot.clone();
+                let work = async {
+                    let extra_headers = match extra_headers {
+                        Ok(headers) => headers,
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                            return;
+                        }
+                    };
+                    let transformed = tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => Err(ProviderError::Cancelled),
+                        result = callbacks.apply_header_transform_async(&extra_headers) => result,
+                    };
+                    let extra_headers = match transformed {
+                        Ok(headers) => headers,
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                            return;
+                        }
+                    };
+                    let transformed = tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => Err(ProviderError::Cancelled),
+                        result = callbacks.apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body) => result,
+                    };
+                    let body = match transformed.and_then(|body| {
+                        crate::callbacks::validate_openai_payload_shape(
+                            &body,
+                            crate::callbacks::OpenAiPayloadShape::Responses,
+                        )?;
+                        Ok(body)
+                    }) {
+                        Ok(body) => body,
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                            return;
+                        }
+                    };
+                    let base_url = model_base_url.unwrap_or(default_base_url);
+                    if transport == TransportPreference::Sse {
+                        stream_sse(
+                            client,
+                            resolved,
+                            wire_facts,
+                            base_url,
+                            requested_model,
+                            requested_service_tier,
+                            extra_headers,
+                            body,
+                            cancel,
+                            timeout,
+                            session_id,
+                            request_id,
+                            callbacks,
+                            producer_snapshot,
+                            tx.clone(),
+                            producer_cancel,
+                        )
+                        .await;
+                    } else {
+                        let outcome = ws_transport::drive(
+                            &ws_state,
+                            &http_client,
+                            transport,
+                            session_key,
+                            &base_url,
+                            &resolved,
+                            body.clone(),
+                            requested_service_tier,
+                            extra_headers.clone(),
+                            wire_facts.clone(),
+                            cont_route,
+                            timeout,
+                            websocket_connect_timeout,
+                            &lease.as_ref().expect("ws-family call registered").guard,
+                            callbacks.clone(),
+                            producer_snapshot.clone(),
+                            tx.clone(),
+                        )
+                        .await;
+                        match outcome {
+                            ws_transport::WsLoopOutcome::Done => {}
+                            ws_transport::WsLoopOutcome::Fallback(reason) => {
+                                let guard = lease.as_ref().expect("ws-family call registered");
+                                if guard.token().is_cancelled() {
+                                    // Cutoff forbids a late SSE leg.
+                                    let _ = send_or_cancel(
+                                        &guard.token(),
+                                        &tx,
+                                        Err(ProviderError::Cancelled),
+                                    )
+                                    .await;
+                                    return;
+                                }
+                                guard.guard.set_phase(
+                                    crate::codex_resources::GenerationPhase::ActiveFallback,
+                                );
+                                let cancel = guard.token();
+                                let mut wire_facts = wire_facts.unwrap_or(
+                                    crate::openai_responses_shared::ResponsesWireTools {
+                                        tools: Vec::new(),
+                                        grammar_input_properties: Default::default(),
+                                        strict_tools: Vec::new(),
+                                        diagnostics: Vec::new(),
+                                    },
+                                );
+                                wire_facts
+                                    .diagnostics
+                                    .push(crate::stream::AssistantDiagnostic {
+                                        kind: "codex_websocket_fallback".into(),
+                                        reason: reason.into(),
+                                        detail: None,
+                                    });
+                                stream_sse(
+                                    client,
+                                    resolved,
+                                    Some(wire_facts),
+                                    base_url,
+                                    requested_model,
+                                    requested_service_tier,
+                                    extra_headers,
+                                    body,
+                                    cancel,
+                                    timeout,
+                                    session_id,
+                                    request_id,
+                                    callbacks,
+                                    producer_snapshot,
+                                    tx.clone(),
+                                    producer_cancel,
                                 )
                                 .await;
-                                return;
                             }
-                            guard
-                                .guard
-                                .set_phase(crate::codex_resources::GenerationPhase::ActiveFallback);
-                            let cancel = guard.token();
-                            let mut wire_facts = wire_facts.unwrap_or(
-                                crate::openai_responses_shared::ResponsesWireTools {
-                                    tools: Vec::new(),
-                                    grammar_input_properties: Default::default(),
-                                    strict_tools: Vec::new(),
-                                    diagnostics: Vec::new(),
-                                },
-                            );
-                            wire_facts
-                                .diagnostics
-                                .push(crate::stream::AssistantDiagnostic {
-                                    kind: "codex_websocket_fallback".into(),
-                                    reason: reason.into(),
-                                    detail: None,
-                                });
-                            stream_sse(
-                                client,
-                                resolved,
-                                Some(wire_facts),
-                                base_url,
-                                requested_model,
-                                requested_service_tier,
-                                extra_headers,
-                                body,
-                                cancel,
-                                timeout,
-                                session_id,
-                                request_id,
-                                callbacks,
-                                producer_snapshot,
-                                tx.clone(),
-                                producer_cancel,
-                            )
-                            .await;
+                            ws_transport::WsLoopOutcome::Terminal(error) => {
+                                let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                            }
                         }
-                        ws_transport::WsLoopOutcome::Terminal(error) => {
-                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                        }
+                    }
+                };
+
+                tokio::pin!(work);
+                tokio::select! {
+                    biased;
+                    _ = &mut work => {},
+                    _ = tx_closed.closed() => {
+                        // A delivered terminal stays final and still owns bounded
+                        // pool publication/Close. Active receiver drop cancels
+                        // inward, then waits for that same local release path.
+                        if !release_snapshot.terminal_delivered() { owner_cancel.cancel(); }
+                        work.await;
                     }
                 }
             };
-
-            tokio::pin!(work);
-            tokio::select! {
-                biased;
-                _ = &mut work => {},
-                _ = tx_closed.closed() => {
-                    // A delivered terminal stays final and still owns bounded
-                    // pool publication/Close. Active receiver drop cancels
-                    // inward, then waits for that same local release path.
-                    if !release_snapshot.terminal_delivered() { owner_cancel.cancel(); }
-                    work.await;
-                }
+            if let Some(context) = telemetry {
+                tokio::spawn(context.instrument(producer));
+            } else {
+                tokio::spawn(producer);
             }
-        };
-        if let Some(context) = telemetry {
-            tokio::spawn(context.instrument(producer));
-        } else {
-            tokio::spawn(producer);
-        }
-        Box::pin(CancelAwareReceiverStream::with_snapshot(
-            rx,
-            stream_cancel,
-            snapshot,
-        ))
+            Box::pin(CancelAwareReceiverStream::with_snapshot(
+                rx,
+                stream_cancel,
+                snapshot,
+            ))
+        })
     }
 }
 

@@ -24,7 +24,7 @@ use crate::auth::{AdcCredentialSource, AuthContext};
 
 use super::native::{
     AdcClock, AdcResolutionError, AdcResolvedToken, AdcSourceRequest, AdcSourceTransport,
-    GaxiosBudget, send_with_gaxios_retry,
+    GaxiosBudget, checked_expiration, send_with_gaxios_retry,
 };
 
 /// Default metadata base (`HOST_ADDRESS` in the source; the secondary
@@ -119,7 +119,8 @@ pub async fn resolve_direct_metadata_token(
         .get("expires_in")
         .and_then(|value| value.as_i64())
         .filter(|secs| *secs > 0)
-        .map(|secs| clock.now() + time::Duration::seconds(secs));
+        .map(|secs| checked_expiration(clock.now(), secs))
+        .transpose()?;
     Ok(AdcResolvedToken {
         access_token: SecretString::from(access_token),
         expires_at,

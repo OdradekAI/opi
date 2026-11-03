@@ -29,36 +29,18 @@ const DEFAULT_RESPONSES_PATH: &str = "/v1/responses";
 /// Native OpenAI Responses request flags.
 #[derive(Debug, Clone)]
 pub struct ResponsesConfig {
-    /// Emit the top-level `store` field.
+    pub source: crate::model_info::OpenAiResponsesSourceCompat,
     pub store: Option<bool>,
-    /// Legacy profile metadata. Request/model thinking maps are authoritative
-    /// for wire output.
     pub reasoning_effort: Option<String>,
-    /// Emit `"strict": true` on function tool definitions (and admit
-    /// per-tool `json_schema` strict resolution, task 20.11).
-    pub strict_tools: bool,
-    /// Whether the wire supports grammar custom tools (task 20.11): a
-    /// grammar tool projects as a `custom` tool with its lark-preferred
-    /// format; unsupported targets fall back to a plain JSON function tool
-    /// with the loss recorded.
-    pub supports_grammar_tools: bool,
-    /// Emit the `session_id` header when the selected affinity policy is active.
-    /// Direct-route prompt cache keys and request IDs are independent of this.
     pub send_session_id_header: bool,
-    /// Replay the thinking level as mid-conversation `configuration_update`
-    /// items (task 20.37, P20-S37). Source default false.
-    pub supports_mid_convo_effort: bool,
 }
-
 impl Default for ResponsesConfig {
     fn default() -> Self {
         Self {
+            source: crate::model_info::OpenAiResponsesCompat::default().source,
             store: None,
             reasoning_effort: None,
-            strict_tools: false,
-            supports_grammar_tools: false,
             send_session_id_header: true,
-            supports_mid_convo_effort: false,
         }
     }
 }
@@ -92,6 +74,8 @@ pub struct OpenAiResponsesProvider {
     /// Typed native options set per dispatch by the public adapter (task
     /// 20.37); `None` on the plain provider path.
     native_options: Option<OpenAiResponsesOptions>,
+    /// Frozen secret-free classification for this prepared call.
+    chatgpt_signin: Option<bool>,
 }
 
 /// Built-in OpenAI Responses model metadata.
@@ -179,7 +163,15 @@ impl OpenAiResponsesProvider {
     ) -> Self {
         Self {
             base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.into()),
-            models: model_catalog(),
+            models: model_catalog()
+                .into_iter()
+                .map(|mut model| {
+                    if let crate::WireCompat::OpenAiResponses(compat) = &mut model.compat {
+                        compat.source = config.source.clone();
+                    }
+                    model
+                })
+                .collect(),
             config,
             provider_id,
             headers: ProviderHeaders::default(),
@@ -190,6 +182,7 @@ impl OpenAiResponsesProvider {
             copilot_headers: false,
             client,
             native_options: None,
+            chatgpt_signin: None,
         }
     }
 
@@ -229,6 +222,7 @@ impl OpenAiResponsesProvider {
             copilot_headers: false,
             client,
             native_options: None,
+            chatgpt_signin: None,
         }
     }
 
@@ -270,15 +264,40 @@ impl OpenAiResponsesProvider {
             }) = self.models.iter().find(|model| model.id == model_id)
         {
             return ResponsesConfig {
-                supports_grammar_tools: compat.supports_grammar,
+                source: compat.source.clone(),
                 store: compat.store,
                 reasoning_effort: compat.reasoning_effort.clone(),
-                strict_tools: compat.strict_tools,
                 send_session_id_header: compat.send_session_id_header,
-                supports_mid_convo_effort: compat.supports_mid_convo_effort,
             };
         }
         self.config.clone()
+    }
+
+    fn prepared_signin(&self, final_base_url: &str, auth: &ResolvedAuth) -> bool {
+        self.provider_id == "openai"
+            && final_base_url == "https://api.openai.com/v1"
+            && !auth.secret.expose_secret().starts_with("sk-")
+    }
+
+    fn affinity_format(
+        &self,
+        model_id: &str,
+        config: &ResponsesConfig,
+    ) -> crate::model_info::SessionAffinityFormat {
+        config.source.session_affinity_format.unwrap_or_else(|| {
+            let base = self
+                .models
+                .iter()
+                .find(|model| model.id == model_id)
+                .and_then(|model| model.base_url.as_deref())
+                .unwrap_or(&self.base_url);
+            let openrouter = self.provider_id == "openrouter" || base.contains("openrouter.ai");
+            if openrouter {
+                crate::model_info::SessionAffinityFormat::OpenRouter
+            } else {
+                crate::model_info::SessionAffinityFormat::OpenAi
+            }
+        })
     }
 
     fn resolve_route_path(&self, model_id: &str) -> String {
@@ -336,32 +355,33 @@ impl OpenAiResponsesProvider {
             .map(|(_, id)| id)
             .unwrap_or(&request.model);
         let config = self.resolve_config(model_id);
-        let mut wire_facts: Option<crate::openai_responses_shared::ResponsesWireTools> = None;
-        // Canonical transcript consumption (AIR-020); this wire currently
-        // projects by collapse.
-        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
-        let transcript = crate::transcript::resolve_transcript(
-            &request.context,
-            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
-            crate::transcript::TranscriptProjection::NativeOrCollapse,
-        )
-        .expect("native-or-collapse projection never fails");
-        let transcript = transcript.as_ref();
-        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
-        let current_tools = crate::transcript::get_current_tools(transcript.messages());
-        // Task 20.11: compile the tools before the input so grammar replay
-        // items know their custom shape.
-        if !current_tools.is_empty() {
-            let wire = crate::openai_responses_shared::convert_responses_tools(
-                &current_tools,
-                crate::openai_responses_shared::ResponsesToolOptions {
-                    default_strict: config.strict_tools.then_some(true),
-                    supports_strict_mode: config.strict_tools,
-                    supports_grammar_tools: config.supports_grammar_tools,
-                },
-            )?;
-            wire_facts = Some(wire);
-        }
+        let wire = self.resolve_wire(model_id);
+        let ordinary = wire == crate::model_info::WireApi::OpenAiResponses;
+        let signin = ordinary && self.chatgpt_signin.unwrap_or(false);
+        let strict = config
+            .source
+            .supports_strict_mode
+            .unwrap_or(wire == crate::model_info::WireApi::AzureOpenAiResponses);
+        let selected_model = self.models.iter().find(|model| model.id == model_id);
+        let projection = crate::transcript::compile_request_projection(
+            request,
+            &self.provider_id,
+            selected_model,
+            self.resolve_wire(model_id),
+        )?;
+        let transcript = projection.transcript.as_ref();
+        let system_prompt = crate::transcript::get_initial_system_message(transcript.messages())
+            .map(crate::transcript::system_message_text)
+            .unwrap_or_default();
+        let wire_facts = crate::openai_responses_shared::compile_projected_response_tools(
+            transcript.messages(),
+            &projection.tools.request_tools,
+            crate::openai_responses_shared::ResponsesToolOptions {
+                default_strict: Some(false),
+                supports_strict_mode: strict,
+                supports_grammar_tools: config.source.supports_grammar_tools.unwrap_or(false),
+            },
+        )?;
         let grammar_map = wire_facts
             .as_ref()
             .map(|wire| wire.grammar_input_properties.clone())
@@ -374,11 +394,7 @@ impl OpenAiResponsesProvider {
             model: model_id.to_owned(),
             supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
         };
-        let replay = crate::replay::project_replay(
-            &crate::transcript::without_initial_system_message(transcript.messages()),
-            &replay_route,
-            crate::replay::ReplayProjection::NativeOrCollapse,
-        )?;
+        let replay = &projection.replay;
         // Task 20.37: native options own effort/summary/service tier/tool
         // choice on the public adapter path; the plain path keeps the
         // neutral thinking intent. Mid-conversation effort stamps ride the
@@ -436,33 +452,52 @@ impl OpenAiResponsesProvider {
         }
         // Mid-conversation stamps (task 20.37): the request effort stays
         // fixed while configuration items carry the level.
-        let stamping = config.supports_mid_convo_effort
-            && self.resolve_wire(model_id) != crate::model_info::WireApi::AzureOpenAiResponses
+        let stamping = config.source.supports_mid_convo_effort.unwrap_or(false)
+            && ordinary
+            && !signin
             && requested_level.is_some_and(|level| level != crate::model_info::ThinkingLevel::None)
             && wire_effort.is_some();
         let stamp_effort = stamping.then(|| wire_effort.clone().unwrap_or_default());
+        let instruction_role = if config.source.supports_developer_role.unwrap_or(true)
+            && selected_model.is_some_and(|model| model.capabilities.supports_thinking)
+        {
+            "developer"
+        } else {
+            "system"
+        };
+        let mut input = crate::openai_responses_shared::convert_projected_messages(
+            &replay.messages,
+            &replay_route,
+            &grammar_map,
+            stamp_effort.as_deref(),
+            &config.source,
+            instruction_role,
+        )?;
+        if !system_prompt.is_empty() {
+            input.insert(
+                0,
+                serde_json::json!({"role":instruction_role,"content":system_prompt}),
+            );
+        }
         let mut body = serde_json::json!({
             "model": model_id,
             "stream": true,
-            "input": crate::openai_responses_shared::convert_messages(
-                &replay.messages,
-                &replay_route,
-                &grammar_map,
-                stamp_effort.as_deref(),
-            ),
+            "input": input,
         });
-        if !system_prompt.is_empty() {
-            body["instructions"] = serde_json::Value::String(system_prompt.clone());
-        }
-        if let Some(max_tokens) = request.max_tokens.filter(|limit| *limit > 0) {
+        if (!ordinary || (config.source.supports_max_output_tokens.unwrap_or(true) && !signin))
+            && let Some(max_tokens) = request.max_tokens.filter(|limit| *limit > 0)
+        {
             body["max_output_tokens"] = serde_json::Value::Number(max_tokens.max(16).into());
         }
-        if let Some(temperature) = request.temperature
+        if !signin
+            && let Some(temperature) = request.temperature
             && let Some(number) = serde_json::Number::from_f64(temperature)
         {
             body["temperature"] = serde_json::Value::Number(number);
         }
-        if let Some(wire) = &wire_facts {
+        if let Some(wire) = &wire_facts
+            && !wire.tools.is_empty()
+        {
             body["tools"] = serde_json::Value::Array(wire.tools.clone());
         }
         // Source semantics: store:false is sent unconditionally unless a
@@ -477,25 +512,38 @@ impl OpenAiResponsesProvider {
         if let Some(tool_choice) = native.and_then(|options| options.tool_choice.as_ref()) {
             body["tool_choice"] = tool_choice.wire_value();
         }
-        // Session affinity body fields (task 20.37, source semantics): the
-        // clamped prompt cache key plus the 24h retention window for long
-        // retention. Explicit prompt-cache mode stays unadopted (no opi
-        // catalog consumer).
-        let session_affinity = request.cache_retention != CacheRetention::Disabled
-            && request
-                .session_id
-                .as_deref()
-                .is_some_and(|id| !id.is_empty())
+        // The cache key and retention policy are independent of transport
+        // affinity headers and of one another.
+        let cache_key_enabled = request.cache_retention != CacheRetention::Disabled
             && match self.affinity_policy {
                 ResponsesAffinityPolicy::Direct => true,
                 ResponsesAffinityPolicy::CustomDisabled => false,
                 ResponsesAffinityPolicy::CustomOptIn => config.send_session_id_header,
             };
-        if session_affinity && let Some(session_id) = request.session_id.as_deref() {
+        if cache_key_enabled
+            && let Some(session_id) = request.session_id.as_deref().filter(|id| !id.is_empty())
+        {
             body["prompt_cache_key"] =
                 serde_json::Value::String(session_id.chars().take(64).collect());
-            if request.cache_retention == CacheRetention::Long {
-                body["prompt_cache_retention"] = serde_json::Value::String("24h".into());
+        }
+        if ordinary && !signin {
+            let explicit = config
+                .source
+                .supports_explicit_prompt_cache_mode
+                .unwrap_or(false);
+            let long = config.source.supports_long_cache_retention.unwrap_or(true);
+            if explicit {
+                match request.cache_retention {
+                    CacheRetention::Disabled => {
+                        body["prompt_cache_options"] = serde_json::json!({"mode":"explicit"})
+                    }
+                    CacheRetention::Long if long => {
+                        body["prompt_cache_options"] = serde_json::json!({"ttl":"30m"})
+                    }
+                    _ => {}
+                }
+            } else if long && request.cache_retention == CacheRetention::Long {
+                body["prompt_cache_retention"] = serde_json::json!("24h");
             }
         }
         if let Some(effort) = &wire_effort {
@@ -603,7 +651,6 @@ impl OpenAiResponsesProvider {
         resolved: ResolvedAuth,
         base_url: String,
         route_path: String,
-        config: ResponsesConfig,
         auth_invalid_policy: AuthInvalidPolicy,
         extra_headers: Vec<(String, String)>,
         provider_id: String,
@@ -614,8 +661,6 @@ impl OpenAiResponsesProvider {
         body: serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
-        session_id: Option<String>,
-        request_id: Option<String>,
         callbacks: crate::callbacks::RequestCallbacks,
         snapshot: crate::stream::ProducerSnapshot,
         tx: tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
@@ -651,20 +696,6 @@ impl OpenAiResponsesProvider {
         }
         for (name, value) in extra_headers {
             request = request.header(name, value);
-        }
-        if let Some(request_id) = request_id {
-            request = request.header("x-client-request-id", request_id);
-        }
-        if config.send_session_id_header
-            && let Some(session_id) = session_id
-        {
-            let header_value =
-                reqwest::header::HeaderValue::from_str(&session_id).map_err(|_| {
-                    ProviderError::RequestFailed(ProviderErrorSummary::attested_static(
-                        "invalid session-id header value",
-                    ))
-                })?;
-            request = request.header("session_id", header_value);
         }
         let response = request
             .body(serde_json::to_string(&body).unwrap_or_default())
@@ -731,7 +762,10 @@ impl OpenAiResponsesProvider {
             loop {
                 let chunk = tokio::select! {
                     _ = cancel.cancelled() => return Err(mapper.failure(ProviderError::Cancelled)),
-                    chunk = bytes.next() => match chunk {
+                    chunk = async {
+                        response_activated_at.get_or_insert_with(std::time::Instant::now);
+                        bytes.next().await
+                    } => match chunk {
                         Some(chunk) => chunk,
                         None => break,
                     },
@@ -748,9 +782,6 @@ impl OpenAiResponsesProvider {
                     }
                 })?;
                 buffer.push_str(&decoder.push(&chunk));
-                if response_activated_at.is_none() {
-                    response_activated_at = Some(std::time::Instant::now());
-                }
                 for frame in drain_sse_frames(&mut buffer) {
                     // Raw observer (task 20.51): the frame's parsed wire JSON,
                     // strictly before normalization; failure preserves partial.
@@ -822,6 +853,22 @@ fn map_http_status(
 }
 
 impl Provider for OpenAiResponsesProvider {
+    fn prepare_model_call(
+        &self,
+        model: &mut ModelInfo,
+        auth: &mut ResolvedAuth,
+    ) -> Result<Option<Arc<dyn Provider>>, ProviderError> {
+        let selected_base = model.base_url.as_deref().unwrap_or(&self.base_url);
+        let final_base =
+            crate::auth::builtin::effective_base_url(&self.provider_id, selected_base, auth);
+        let mut prepared = self.clone();
+        prepared.chatgpt_signin = Some(self.prepared_signin(&final_base, auth));
+        if final_base != selected_base {
+            model.base_url = Some(final_base);
+        }
+        Ok(Some(Arc::new(prepared)))
+    }
+
     fn validate_simple_options(
         &self,
         model: &ModelInfo,
@@ -859,214 +906,242 @@ impl Provider for OpenAiResponsesProvider {
         mut request: Request,
         resolved: crate::auth::ResolvedAuth,
     ) -> EventStream {
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model);
-        let selected_base = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.as_deref())
-            .unwrap_or(&self.base_url);
-        let effective_base =
-            crate::auth::builtin::effective_base_url(&self.provider_id, selected_base, &resolved);
-        if effective_base != selected_base {
-            let mut configured = self.clone();
-            if let Some(model) = configured
+        let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::OpenAiResponses) {
+            Ok(facts) => facts,
+            Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
+        };
+        let event_projection = projection.clone();
+        crate::stream::project_call(event_projection, || -> EventStream {
+            let model_id = request
+                .model
+                .split_once(':')
+                .map(|(_, id)| id)
+                .unwrap_or(&request.model);
+            let selected_base = self
                 .models
-                .iter_mut()
+                .iter()
                 .find(|model| model.id == model_id)
-            {
-                model.base_url = Some(effective_base);
-            } else {
-                configured.base_url = effective_base;
-            }
-            return configured.stream_prepared(request, resolved);
-        }
-        request.callbacks = request.callbacks.ensure_call_scope();
-        // Same as `stream` but skips per-call auth resolution: the collection
-        // resolved and froze authentication once for the logical call.
-        if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
-            return Box::pin(stream::once(async move { Err(error) }));
-        }
-        let default_base_url = self.base_url.clone();
-        let provider_id = self.provider_id.clone();
-        let auth_invalid_policy = self.auth_invalid_policy;
-        let affinity_policy = self.affinity_policy;
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model);
-        let model_base_url = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.clone());
-        let config = self.resolve_config(model_id);
-        let route_path = self.resolve_route_path(model_id);
-        let copilot_headers = if self.copilot_headers {
-            match github_copilot_route_headers(&request) {
-                Ok(mut headers) => {
-                    headers.push((
-                        "X-Initiator".into(),
-                        github_copilot_initiator(&request).into(),
-                    ));
-                    Ok(headers)
-                }
-                Err(error) => Err(error),
-            }
-        } else {
-            Ok(Vec::new())
-        };
-        let extra_headers = copilot_headers.and_then(|copilot_headers| {
-            let mut route_headers = self.route_headers.clone();
-            route_headers.extend(copilot_headers);
-            self.headers.merge_model_request(
-                self.models
-                    .iter()
+                .and_then(|model| model.base_url.as_deref())
+                .unwrap_or(&self.base_url);
+            let effective_base = crate::auth::builtin::effective_base_url(
+                &self.provider_id,
+                selected_base,
+                &resolved,
+            );
+            if effective_base != selected_base {
+                let mut configured = self.clone();
+                if let Some(model) = configured
+                    .models
+                    .iter_mut()
                     .find(|model| model.id == model_id)
-                    .map(|model| model.headers.as_slice())
-                    .unwrap_or_default(),
-                &route_headers,
-                &request.extra_headers,
-            )
-        });
-        let session_id = if request.cache_retention != CacheRetention::Disabled {
-            request.session_id.clone().filter(|id| !id.is_empty())
-        } else {
-            None
-        };
-        let affinity_enabled = session_id.is_some()
-            && match affinity_policy {
-                ResponsesAffinityPolicy::Direct => true,
-                ResponsesAffinityPolicy::CustomDisabled => false,
-                ResponsesAffinityPolicy::CustomOptIn => config.send_session_id_header,
-            };
-        let request_id = affinity_enabled.then(|| uuid::Uuid::now_v7().to_string());
-        let requested_model = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id)
-            .unwrap_or(&request.model)
-            .to_owned();
-        let (body, wire_facts, effort_stamp) = match self.compile_request_body(&request) {
-            Ok(compiled) => compiled,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        let callbacks = request.callbacks.clone();
-        let cancel = request.cancel.clone();
-        // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
-        // task runs under the captured parent/Dispatch when provided; omission
-        // observes nothing. Full cross-path proof closes in 20.55.
-        let requested_service_tier = self
-            .native_options
-            .as_ref()
-            .filter(|options| !options.simple)
-            .and_then(|options| options.service_tier)
-            .map(|tier| match tier {
-                ResponsesServiceTier::Auto => crate::stream::ServiceTier::Auto,
-                ResponsesServiceTier::Default => crate::stream::ServiceTier::Default,
-                ResponsesServiceTier::Flex => crate::stream::ServiceTier::Flex,
-                ResponsesServiceTier::Scale => crate::stream::ServiceTier::Scale,
-                ResponsesServiceTier::Priority => crate::stream::ServiceTier::Priority,
-                ResponsesServiceTier::Fast => crate::stream::ServiceTier::Fast,
-            });
-        let telemetry = request.telemetry_context.clone();
-        let timeout = request.timeout;
-        let client = self.client.client().clone();
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let tx_closed = tx.clone();
-        let producer_cancel = cancel.clone();
-        let stream_cancel = cancel.clone();
-
-        let producer = async move {
-            let work = async {
-                let extra_headers = match extra_headers {
-                    Ok(headers) => headers,
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                        return;
+                {
+                    model.base_url = Some(effective_base);
+                } else {
+                    configured.base_url = effective_base;
+                }
+                return configured.stream_prepared(request, resolved);
+            }
+            if self.chatgpt_signin.is_none() {
+                let mut configured = self.clone();
+                configured.chatgpt_signin = Some(self.prepared_signin(&effective_base, &resolved));
+                return configured.stream_prepared(request, resolved);
+            }
+            request.callbacks = request.callbacks.ensure_call_scope();
+            // Same as `stream` but skips per-call auth resolution: the collection
+            // resolved and froze authentication once for the logical call.
+            if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
+                return Box::pin(stream::once(async move { Err(error) }));
+            }
+            let default_base_url = self.base_url.clone();
+            let provider_id = self.provider_id.clone();
+            let auth_invalid_policy = self.auth_invalid_policy;
+            let affinity_policy = self.affinity_policy;
+            let model_id = request
+                .model
+                .split_once(':')
+                .map(|(_, id)| id)
+                .unwrap_or(&request.model);
+            let model_base_url = self
+                .models
+                .iter()
+                .find(|model| model.id == model_id)
+                .and_then(|model| model.base_url.clone());
+            let config = self.resolve_config(model_id);
+            let affinity_format = self.affinity_format(model_id, &config);
+            let route_path = self.resolve_route_path(model_id);
+            let copilot_headers = if self.copilot_headers {
+                match github_copilot_route_headers(&request) {
+                    Ok(mut headers) => {
+                        headers.push((
+                            "X-Initiator".into(),
+                            github_copilot_initiator(&request).into(),
+                        ));
+                        Ok(headers)
                     }
+                    Err(error) => Err(error),
+                }
+            } else {
+                Ok(Vec::new())
+            };
+            let session_id = request.session_id.as_deref().filter(|id| !id.is_empty());
+            let affinity_enabled = session_id.is_some()
+                && match affinity_policy {
+                    ResponsesAffinityPolicy::Direct => true,
+                    ResponsesAffinityPolicy::CustomDisabled => false,
+                    ResponsesAffinityPolicy::CustomOptIn => config.send_session_id_header,
                 };
-                let extra_headers =
-                    match callbacks.apply_header_transform_async(&extra_headers).await {
+            let extra_headers = copilot_headers.and_then(|copilot_headers| {
+                // Generated affinity is a default: ordinary configured, route,
+                // model and request values retain their existing precedence.
+                let mut route_headers = Vec::new();
+                if affinity_enabled && let Some(session_id) = session_id {
+                    use crate::model_info::SessionAffinityFormat;
+                    match affinity_format {
+                        SessionAffinityFormat::OpenAi => {
+                            route_headers.push(("session_id".into(), session_id.to_owned()));
+                            route_headers
+                                .push(("x-client-request-id".into(), session_id.to_owned()));
+                        }
+                        SessionAffinityFormat::OpenAiNoSession => route_headers
+                            .push(("x-client-request-id".into(), session_id.to_owned())),
+                        SessionAffinityFormat::OpenRouter => {
+                            route_headers.push(("x-session-id".into(), session_id.to_owned()))
+                        }
+                    }
+                }
+                route_headers.extend_from_slice(self.headers.configured());
+                route_headers.extend_from_slice(&self.route_headers);
+                route_headers.extend(copilot_headers);
+                ProviderHeaders::default().merge_model_request(
+                    self.models
+                        .iter()
+                        .find(|model| model.id == model_id)
+                        .map(|model| model.headers.as_slice())
+                        .unwrap_or_default(),
+                    &route_headers,
+                    &request.extra_headers,
+                )
+            });
+            let requested_model = request
+                .model
+                .split_once(':')
+                .map(|(_, id)| id)
+                .unwrap_or(&request.model)
+                .to_owned();
+            let (body, wire_facts, effort_stamp) = match self.compile_request_body(&request) {
+                Ok(compiled) => compiled,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
+
+            let callbacks = request.callbacks.clone();
+            let cancel = request.cancel.clone();
+            // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
+            // task runs under the captured parent/Dispatch when provided; omission
+            // observes nothing. Full cross-path proof closes in 20.55.
+            let requested_service_tier = self
+                .native_options
+                .as_ref()
+                .filter(|options| !options.simple)
+                .and_then(|options| options.service_tier)
+                .map(|tier| match tier {
+                    ResponsesServiceTier::Auto => crate::stream::ServiceTier::Auto,
+                    ResponsesServiceTier::Default => crate::stream::ServiceTier::Default,
+                    ResponsesServiceTier::Flex => crate::stream::ServiceTier::Flex,
+                    ResponsesServiceTier::Scale => crate::stream::ServiceTier::Scale,
+                    ResponsesServiceTier::Priority => crate::stream::ServiceTier::Priority,
+                    ResponsesServiceTier::Fast => crate::stream::ServiceTier::Fast,
+                });
+            let telemetry = request.telemetry_context.clone();
+            let timeout = request.timeout;
+            let client = self.client.client().clone();
+            let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            let producer_snapshot = snapshot.clone();
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+            let tx_closed = tx.clone();
+            let producer_cancel = cancel.clone();
+            let stream_cancel = cancel.clone();
+
+            let producer = async move {
+                let work = async {
+                    let extra_headers = match extra_headers {
                         Ok(headers) => headers,
                         Err(error) => {
                             let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
                             return;
                         }
                     };
-                let body = match callbacks
-                    .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                    let extra_headers =
+                        match callbacks.apply_header_transform_async(&extra_headers).await {
+                            Ok(headers) => headers,
+                            Err(error) => {
+                                let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                                return;
+                            }
+                        };
+                    let body = match callbacks
+                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                        .await
+                        .and_then(|body| {
+                            crate::callbacks::validate_openai_payload_shape(
+                                &body,
+                                crate::callbacks::OpenAiPayloadShape::Responses,
+                            )?;
+                            Ok(body)
+                        }) {
+                        Ok(body) => body,
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                            return;
+                        }
+                    };
+                    let base_url = crate::auth::builtin::effective_base_url(
+                        &provider_id,
+                        &model_base_url.unwrap_or(default_base_url),
+                        &resolved,
+                    );
+                    if let Err(error) = Self::stream_http(
+                        client,
+                        resolved,
+                        base_url,
+                        route_path,
+                        auth_invalid_policy,
+                        extra_headers,
+                        provider_id,
+                        requested_model,
+                        wire_facts,
+                        effort_stamp,
+                        requested_service_tier,
+                        body,
+                        cancel,
+                        timeout,
+                        callbacks,
+                        producer_snapshot,
+                        tx.clone(),
+                    )
                     .await
-                    .and_then(|body| {
-                        crate::callbacks::validate_openai_payload_shape(
-                            &body,
-                            crate::callbacks::OpenAiPayloadShape::Responses,
-                        )?;
-                        Ok(body)
-                    }) {
-                    Ok(body) => body,
-                    Err(error) => {
+                    {
                         let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                        return;
                     }
                 };
-                let base_url = crate::auth::builtin::effective_base_url(
-                    &provider_id,
-                    &model_base_url.unwrap_or(default_base_url),
-                    &resolved,
-                );
-                if let Err(error) = Self::stream_http(
-                    client,
-                    resolved,
-                    base_url,
-                    route_path,
-                    config,
-                    auth_invalid_policy,
-                    extra_headers,
-                    provider_id,
-                    requested_model,
-                    wire_facts,
-                    effort_stamp,
-                    requested_service_tier,
-                    body,
-                    cancel,
-                    timeout,
-                    affinity_enabled.then_some(session_id).flatten(),
-                    request_id,
-                    callbacks,
-                    producer_snapshot,
-                    tx.clone(),
-                )
-                .await
-                {
-                    let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+
+                tokio::select! {
+                    biased;
+                    _ = producer_cancel.cancelled() => (),
+                    _ = tx_closed.closed() => (),
+                    _ = work => {},
                 }
             };
-
-            tokio::select! {
-                biased;
-                _ = producer_cancel.cancelled() => (),
-                _ = tx_closed.closed() => (),
-                _ = work => {},
+            if let Some(context) = telemetry {
+                tokio::spawn(context.instrument(producer));
+            } else {
+                tokio::spawn(producer);
             }
-        };
-        if let Some(context) = telemetry {
-            tokio::spawn(context.instrument(producer));
-        } else {
-            tokio::spawn(producer);
-        }
-        Box::pin(CancelAwareReceiverStream::with_snapshot(
-            rx,
-            stream_cancel,
-            snapshot,
-        ))
+            Box::pin(CancelAwareReceiverStream::with_snapshot(
+                rx,
+                stream_cancel,
+                snapshot,
+            ))
+        })
     }
 
     fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {

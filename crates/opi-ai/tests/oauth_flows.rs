@@ -1022,6 +1022,7 @@ fn register_oauth_assembly_route(
 
 fn oauth_assembly_request(id: &str) -> opi_ai::provider::Request {
     opi_ai::provider::Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: format!("{id}:auth-proof"),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

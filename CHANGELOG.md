@@ -2,6 +2,30 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): Chat compat uses typed routing, cache and affinity controls;
+  `vllm_priority` becomes `Option<serde_json::Number>`, and template args/kwargs
+  become optional maps (`None` inherits; an explicit empty map clears).
+  Responses families share eleven optional source controls through
+  `OpenAiResponsesSourceCompat`. Struct literals and adapter configurations
+  migrate together; existing product TOML integer keys retain their values.
+- `opi-ai` (0.x): `SpawnedCredentialProcess::policy()` returns
+  `Option<CredentialProcessPolicy>`. The default SDK runner selects `None`,
+  imposing no implicit timeout or stdout limit; `with_policy(Default::default())`
+  retains the explicit 10-second/64-KiB bounds selected by the coding agent.
+  Cancellation and owned process-tree cleanup apply in both modes.
+- `opi-ai` (0.x): `Models::refresh` and `refresh_with` take
+  `ModelsRefreshOptions` for network permission, provider selection and optional
+  force. Provider refresh and dynamic-source fetch hooks take
+  `CatalogRefreshContext`; dynamic sources declare their provider owners, and
+  `HttpCatalogSource` constructors require those IDs explicitly.
+- `opi-ai` (0.x): `Request` gains `projection: ProjectionOptions` with separate
+  temporal and replay policies; `AssistantMessage` gains optional projection
+  facts (old serialized records remain `None`/unknown), and `PreparedRoute`
+  carries those facts. `resolve_transcript` returns
+  `TranscriptProjectionOutput { context, facts }`. Responses strict, grammar
+  and mid-conversation-effort controls move under the shared
+  `OpenAiResponsesSourceCompat` owner through `source`, preserving existing
+  values. Rust callers and bilingual README examples migrate together.
 - `opi-ai` (0.x): retired the shallow SDK shells after slice-by-slice caller
   migration reached zero in-repo consumers (task 20.56, DEL-13): `Config`,
   `ProviderConfig`, `config::Error`, `config::Result`, `Model` and
@@ -554,6 +578,64 @@
 
 ### Fixed
 
+- `opi-ai`: Chat routing and Chat/Responses strict/grammar, cache and affinity
+  controls reach wire payloads, headers and replay, preserving false, zero,
+  empty and present-null values with per-wire defaults and Azure/Codex exceptions.
+  Declared finishless Chat streams finalize without inventing a raw stop reason.
+- `opi-ai`: strict schema conversion rejects malformed `required` values and
+  unknown required property names without changing the trusted schema. For
+  `Require` declarations retained by the selected wire projection, malformed
+  `required` shapes fail before authentication; existing `Prefer` fallback is preserved.
+- `opi-ai`: generation HTTP requests use the source-qualified default limit of
+  20 redirects, preserving request bodies and same-origin authentication.
+  Explicit caller limits and auth-source, OAuth and WebSocket policies are unchanged.
+- `opi-ai`: provider inventory, removal, clearing and operation selectors cover
+  actual registrations, with availability checked per registration. Selected
+  refreshes restore only matching APIs, forward force to selected sources and
+  merge publication through the store ACK while retaining unselected records.
+  Removal leaves shared stores and already captured calls intact.
+- `opi-ai`: Chat, image, classifier and deferred registrations accept exact
+  arbitrary `ApiId` keys, including empty and whitespace-only strings, without
+  authentication or network access. Provider-ID validation remains unchanged.
+- `opi-ai`: a known positive independently reported usage total anchors the
+  context estimate even when parent buckets are unknown. An absent or zero
+  total falls back only to a known positive parent-bucket sum.
+- `opi-ai`: projection facts and the latest canonical partial survive stream
+  failures and premature EOF, and projection wrappers absorb the first terminal.
+  Strict temporal rejection retains its typed cause through the existing
+  redacted error carrier; logical-call cancellation stays distinct from an
+  authentication source reporting cancellation.
+- `opi-ai`: Chat, ordinary Responses and Azure Responses measure duration from
+  their first response-body poll, including an initial pending body wait while
+  excluding authentication, headers, response callbacks and unpolled time.
+- `opi-ai`: ADC AWS region decoding removes the availability-zone suffix at a
+  UTF-8 character boundary, preventing non-ASCII metadata from panicking.
+  Empty regions and supplementary suffixes that cannot retain the source's
+  UTF-16 result fail typed before token exchange; region precedence is unchanged.
+- `opi-ai`: ADC metadata and native token exchanges check expiration arithmetic;
+  an unrepresentable positive lifetime returns `InvalidTokenResponse` instead
+  of panicking. Missing and nonpositive lifetimes retain unknown expiration.
+- `opi-ai`: schema-owned admission, reference lookup, normalization,
+  subvalidator cloning and destruction use iterative work stacks, preserving
+  resolver order and normalization semantics for deeply nested schemas through
+  last-owner release and compile-error cleanup.
+- `opi-ai`: the context-overflow 99-percent comparison uses widened arithmetic
+  so large `u64` context windows cannot panic or wrap, while preserving known
+  usage requirements and ordinary threshold behavior.
+- `opi-ai`: deferred cancellation validates the handle identity, then honors
+  caller cancellation before and during authentication so a cancelled wait
+  cannot dispatch a late backend cancellation request.
+- `opi-ai`: Chat, Responses and Gemini SSE parsers preserve CRLF boundaries
+  split across network chunks and join multiline data fields before parsing,
+  retaining complete event framing under fragmented delivery.
+- `opi-ai`: cleartext ECS credential endpoints require a parsed loopback or
+  link-local IP address or exact `localhost`; lookalike DNS hosts are rejected
+  before token-file access or source requests. HTTPS endpoints, relative-URI
+  precedence and existing retry budgets are preserved.
+- `opi-ai`: Bedrock validates each complete 12-byte event-stream prelude
+  before waiting for its declared payload, rejecting invalid CRCs, undersized
+  frames and impossible header lengths. Valid incomplete frames remain buffered,
+  and complete frames retain message-CRC validation.
 - `opi-ai`: image (OpenRouter Images) and classifier (System One) payload
   observers now run inside the caller's frozen `TelemetryContext` section,
   so their observation routes to the frozen parent/Dispatch exactly like

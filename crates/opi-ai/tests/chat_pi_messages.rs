@@ -82,6 +82,7 @@ fn req_44(user: &str) -> Request {
 
 fn base_req_44() -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: format!("radius:{MODEL_44}"),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -1147,17 +1148,13 @@ async fn cancel_mid_stream_fails_cancelled() {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     cancel.cancel();
     let events = handle.await.expect("join");
-    assert!(
-        events
-            .iter()
-            .any(|item| matches!(item, Err(ProviderError::Cancelled))),
-        "cancel must surface Cancelled"
-    );
+    assert_eq!(first_error_44(&events).await, ProviderError::Cancelled);
 }
 
 #[tokio::test]
 async fn non_bearer_auth_is_rejected_typed() {
-    let provider = PiMessagesProvider::new(None)
+    let server = MockServer::start().await;
+    let provider = PiMessagesProvider::new(Some(server.uri()))
         .with_models(vec![model_44(MODEL_44)])
         .with_native_options(PiMessagesOptions::native(None, None, false));
     let auth = opi_ai::auth::ResolvedAuth {
@@ -1168,10 +1165,26 @@ async fn non_bearer_auth_is_rejected_typed() {
         account_id: None,
         provenance: Default::default(),
     };
-    let stream = provider.stream_prepared(req_44("hi"), auth);
-    let events: Vec<_> = stream.collect().await;
-    let error = first_error_44(&events).await;
-    assert!(matches!(error, ProviderError::Config(_)), "got {error}");
+    let request = req_44("hi");
+    let mut stream = provider.stream_prepared(request.clone(), auth);
+    let error = stream
+        .next()
+        .await
+        .expect("one refusal")
+        .expect_err("wrong auth scheme");
+    let ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection must retain its failure carrier")
+    };
+    let ProviderError::Config(summary) = failure.cause() else {
+        panic!("wrong underlying auth refusal: {:?}", failure.cause())
+    };
+    assert_eq!(
+        summary.as_str(),
+        "pi-messages accepts only Bearer authentication"
+    );
+    assert_direct_projection_prefix(failure.message(), &request);
+    assert!(stream.next().await.is_none());
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -1782,4 +1795,30 @@ async fn node5_pi_split_utf8_preserves_delta_and_final_text() {
         matches!(&message.content[0],opi_ai::message::AssistantContent::Text{text,..} if text=="中")
     );
     task.await.unwrap();
+}
+
+fn assert_direct_projection_prefix(
+    message: &opi_ai::message::AssistantMessage,
+    request: &opi_ai::provider::Request,
+) {
+    use sha2::Digest as _;
+    let facts = message
+        .projection
+        .as_ref()
+        .expect("accepted projection is known");
+    let bytes = serde_json::to_vec(request.context.messages()).unwrap();
+    assert_eq!(
+        facts.source_prefix.message_count,
+        request.context.messages().len()
+    );
+    assert_eq!(
+        facts.source_prefix.sha256,
+        format!("{:x}", sha2::Sha256::digest(bytes))
+    );
+    assert_eq!(
+        facts.temporal.mode,
+        opi_ai::transcript::ProjectionMode::Lossless
+    );
+    assert!(facts.temporal.affected_ranges.is_empty());
+    assert!(facts.replay.losses.is_empty());
 }

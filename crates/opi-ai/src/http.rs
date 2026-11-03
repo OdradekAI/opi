@@ -54,9 +54,9 @@ pub enum RedirectPolicy {
 
 impl Default for RedirectPolicy {
     fn default() -> Self {
-        // Matches the upstream default; owned here so the source-qualified
-        // profile does not silently track backend defaults.
-        RedirectPolicy::Limited(10)
+        // The pinned generation source admits twenty redirect hops. This
+        // explicit policy remains independent of backend defaults.
+        RedirectPolicy::Limited(20)
     }
 }
 
@@ -263,7 +263,7 @@ impl HttpClient {
 
     /// Return the source-qualified redirect policy.
     ///
-    /// The default is [`RedirectPolicy::Limited`] with 10 hops. Requests
+    /// The default is [`RedirectPolicy::Limited`] with 20 hops. Requests
     /// that exceed the bound fail typed; cross-origin hops strip protected
     /// headers (see [`RedirectPolicy`]).
     pub fn redirect_policy(&self) -> RedirectPolicy {

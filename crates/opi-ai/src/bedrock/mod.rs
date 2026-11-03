@@ -254,17 +254,17 @@ impl BedrockProvider {
             .model
             .strip_prefix("bedrock:")
             .unwrap_or(&request.model);
-        // Canonical transcript consumption (AIR-020); this wire currently
-        // projects by collapse.
-        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
-        let transcript = crate::transcript::resolve_transcript(
-            &request.context,
-            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
-            crate::transcript::TranscriptProjection::NativeOrCollapse,
-        )
-        .expect("native-or-collapse projection never fails");
-        let transcript = transcript.as_ref();
-        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
+        let selected_model = self.models.iter().find(|model| model.id == model_id);
+        let projection = crate::transcript::compile_request_projection(
+            request,
+            &self.provider_identity,
+            selected_model,
+            crate::WireApi::BedrockConverseStream,
+        )?;
+        let transcript = projection.transcript.as_ref();
+        let system_prompt = crate::transcript::get_initial_system_message(transcript.messages())
+            .map(crate::transcript::system_message_text)
+            .unwrap_or_default();
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
         let model = self.models.iter().find(|model| model.id == model_id);
         // Task 20.11/20.42 (AIR-040, fail-closed): a require intent on a
@@ -281,16 +281,7 @@ impl BedrockProvider {
             })?;
 
         // Canonical replay projection (task 20.7) before body building.
-        let replay = crate::replay::project_replay(
-            &crate::transcript::without_initial_system_message(transcript.messages()),
-            &crate::replay::ReplayRoute {
-                wire: crate::model_info::WireApi::BedrockConverseStream,
-                provider: self.provider_identity.clone(),
-                model: model_id.to_owned(),
-                supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
-            },
-            crate::replay::ReplayProjection::NativeOrCollapse,
-        )?;
+        let replay = &projection.replay;
         let is_claude = model
             .map(|model| is_anthropic_claude_model(&model.id, &model.display_name))
             .unwrap_or_else(|| model_id.contains("anthropic.claude"));
@@ -557,205 +548,213 @@ impl Provider for BedrockProvider {
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
     ) -> EventStream {
-        request.callbacks = request.callbacks.ensure_call_scope();
-        let callbacks = request.callbacks.clone();
-        let cancel = request.cancel.clone();
-        let model_id = request
-            .model
-            .strip_prefix("bedrock:")
-            .map(str::to_owned)
-            .unwrap_or_else(|| request.model.clone());
+        let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::BedrockConverseStream) {
+            Ok(facts) => facts,
+            Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
+        };
+        let event_projection = projection.clone();
+        crate::stream::project_call(event_projection, || -> EventStream {
+            request.callbacks = request.callbacks.ensure_call_scope();
+            let callbacks = request.callbacks.clone();
+            let cancel = request.cancel.clone();
+            let model_id = request
+                .model
+                .strip_prefix("bedrock:")
+                .map(str::to_owned)
+                .unwrap_or_else(|| request.model.clone());
 
-        // Validate model family
-        if let Err(e) = self.validate_model_id(&model_id) {
-            return Box::pin(stream::iter(vec![Err(e)]));
-        }
+            // Validate model family
+            if let Err(e) = self.validate_model_id(&model_id) {
+                return Box::pin(stream::iter(vec![Err(e)]));
+            }
 
-        // Validate image sources -- Bedrock Converse does not support URL-sourced images
-        for msg in request.context.messages() {
-            if let crate::message::Message::User(user_msg) = msg {
-                for content in &user_msg.content {
-                    if let crate::message::InputContent::Image {
-                        source: crate::message::ImageSource::Url { .. },
-                        ..
-                    } = content
-                    {
-                        return Box::pin(stream::iter(vec![Err(
-                            ProviderError::UnsupportedCapability(
-                                ProviderErrorSummary::attested_static(
-                                    "URL-sourced images are not supported by Bedrock. Use base64 or bytes.",
+            // Validate image sources -- Bedrock Converse does not support URL-sourced images
+            for msg in request.context.messages() {
+                if let crate::message::Message::User(user_msg) = msg {
+                    for content in &user_msg.content {
+                        if let crate::message::InputContent::Image {
+                            source: crate::message::ImageSource::Url { .. },
+                            ..
+                        } = content
+                        {
+                            return Box::pin(stream::iter(vec![Err(
+                                ProviderError::UnsupportedCapability(
+                                    ProviderErrorSummary::attested_static(
+                                        "URL-sourced images are not supported by Bedrock. Use base64 or bytes.",
+                                    ),
                                 ),
-                            ),
-                        )]));
+                            )]));
+                        }
                     }
                 }
             }
-        }
 
-        let placeholder_mode = matches!(
-            auth.provenance.source,
-            crate::auth::AuthProvenanceSource::AwsSigV4 {
-                source: crate::auth::AwsCredentialSource::ProxyPlaceholder,
+            let placeholder_mode = matches!(
+                auth.provenance.source,
+                crate::auth::AuthProvenanceSource::AwsSigV4 {
+                    source: crate::auth::AwsCredentialSource::ProxyPlaceholder,
+                }
+            );
+            if placeholder_mode {
+                let endpoint = self.base_url.as_deref().or(auth.base_url.as_deref());
+                if let Some(endpoint) = endpoint
+                    && let Err(error) = validate_proxy_placeholder_endpoint(endpoint)
+                {
+                    return Box::pin(stream::iter(vec![Err(error)]));
+                }
             }
-        );
-        if placeholder_mode {
-            let endpoint = self.base_url.as_deref().or(auth.base_url.as_deref());
-            if let Some(endpoint) = endpoint
-                && let Err(error) = validate_proxy_placeholder_endpoint(endpoint)
-            {
+            let mut credentials = None;
+            let mut bearer_token = None;
+            match auth.scheme {
+                crate::auth::AuthScheme::AwsSigV4(creds) => credentials = Some(creds),
+                crate::auth::AuthScheme::Bearer => bearer_token = Some(auth.secret.clone()),
+                _ => {
+                    return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                        ProviderErrorSummary::attested_static(
+                            "Bedrock requires prepared AWS SigV4 or Bearer authentication",
+                        ),
+                    ))]));
+                }
+            }
+            // Bearer and SigV4 never attach together: exactly one attachment
+            // path runs below.
+            debug_assert!(credentials.is_some() != bearer_token.is_some());
+            // Body assembly needs the dispatch region (task 20.42): GovCloud
+            // regions omit Claude thinking display/binding fields.
+            let gov_region = credentials.as_ref().map(|c| c.region.as_str());
+            let body = match self.build_converse_body_inner(&request, gov_region) {
+                Ok(body) => body,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
+
+            let model_base = self
+                .models
+                .iter()
+                .find(|model| model.id == model_id)
+                .and_then(|model| model.base_url.clone());
+            // A standard catalog endpoint must not replace the already resolved
+            // signing region. Custom/VPC/proxy endpoints remain authoritative.
+            let custom_base = model_base
+                .clone()
+                .filter(|base| placeholder_mode || !is_standard_bedrock_endpoint(base));
+            let resolved_custom_base = auth
+                .base_url
+                .clone()
+                .filter(|base| !is_standard_bedrock_endpoint(base));
+            let base_url = match (&credentials, &bearer_token) {
+                (Some(credentials), _) => custom_base
+                    .or(resolved_custom_base)
+                    .unwrap_or_else(|| self.runtime_url(&credentials.region)),
+                (None, Some(_)) => match custom_base
+                    .or(resolved_custom_base)
+                    .or_else(|| self.base_url.clone())
+                    .or_else(|| auth.base_url.clone())
+                    .or(model_base)
+                {
+                    Some(base_url) => base_url,
+                    // Bearer auth carries no SigV4 region, so the endpoint must
+                    // come from the provider configuration or the resolver that
+                    // selected the token.
+                    None => {
+                        return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                            ProviderErrorSummary::attested_static(
+                                "Bedrock Bearer authentication requires a configured or resolved endpoint",
+                            ),
+                        ))]));
+                    }
+                },
+                (None, None) => unreachable!("one attachment path is always selected"),
+            };
+            // Validate the endpoint actually selected from the frozen record and
+            // resolved authentication; neither may redirect placeholder signing
+            // to a standard AWS endpoint after an earlier host was checked.
+            if placeholder_mode && let Err(error) = validate_proxy_placeholder_endpoint(&base_url) {
                 return Box::pin(stream::iter(vec![Err(error)]));
             }
-        }
-        let mut credentials = None;
-        let mut bearer_token = None;
-        match auth.scheme {
-            crate::auth::AuthScheme::AwsSigV4(creds) => credentials = Some(creds),
-            crate::auth::AuthScheme::Bearer => bearer_token = Some(auth.secret.clone()),
-            _ => {
-                return Box::pin(stream::iter(vec![Err(ProviderError::Config(
-                    ProviderErrorSummary::attested_static(
-                        "Bedrock requires prepared AWS SigV4 or Bearer authentication",
-                    ),
-                ))]));
-            }
-        }
-        // Bearer and SigV4 never attach together: exactly one attachment
-        // path runs below.
-        debug_assert!(credentials.is_some() != bearer_token.is_some());
-        // Body assembly needs the dispatch region (task 20.42): GovCloud
-        // regions omit Claude thinking display/binding fields.
-        let gov_region = credentials.as_ref().map(|c| c.region.as_str());
-        let body = match self.build_converse_body_inner(&request, gov_region) {
-            Ok(body) => body,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        let model_base = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .and_then(|model| model.base_url.clone());
-        // A standard catalog endpoint must not replace the already resolved
-        // signing region. Custom/VPC/proxy endpoints remain authoritative.
-        let custom_base = model_base
-            .clone()
-            .filter(|base| placeholder_mode || !is_standard_bedrock_endpoint(base));
-        let resolved_custom_base = auth
-            .base_url
-            .clone()
-            .filter(|base| !is_standard_bedrock_endpoint(base));
-        let base_url = match (&credentials, &bearer_token) {
-            (Some(credentials), _) => custom_base
-                .or(resolved_custom_base)
-                .unwrap_or_else(|| self.runtime_url(&credentials.region)),
-            (None, Some(_)) => match custom_base
-                .or(resolved_custom_base)
-                .or_else(|| self.base_url.clone())
-                .or_else(|| auth.base_url.clone())
-                .or(model_base)
-            {
-                Some(base_url) => base_url,
-                // Bearer auth carries no SigV4 region, so the endpoint must
-                // come from the provider configuration or the resolver that
-                // selected the token.
-                None => {
-                    return Box::pin(stream::iter(vec![Err(ProviderError::Config(
-                        ProviderErrorSummary::attested_static(
-                            "Bedrock Bearer authentication requires a configured or resolved endpoint",
-                        ),
-                    ))]));
-                }
-            },
-            (None, None) => unreachable!("one attachment path is always selected"),
-        };
-        // Validate the endpoint actually selected from the frozen record and
-        // resolved authentication; neither may redirect placeholder signing
-        // to a standard AWS endpoint after an earlier host was checked.
-        if placeholder_mode && let Err(error) = validate_proxy_placeholder_endpoint(&base_url) {
-            return Box::pin(stream::iter(vec![Err(error)]));
-        }
-        let timeout = request.timeout;
-        let model_headers = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .map(|model| model.headers.clone())
-            .unwrap_or_default();
-        let extra_headers = request.extra_headers;
+            let timeout = request.timeout;
+            let model_headers = self
+                .models
+                .iter()
+                .find(|model| model.id == model_id)
+                .map(|model| model.headers.clone())
+                .unwrap_or_default();
+            let extra_headers = request.extra_headers;
 
-        let http_client = if placeholder_mode {
-            match &self.placeholder_client {
-                Some(client) => client.client().clone(),
-                None => {
-                    return Box::pin(stream::iter(vec![Err(ProviderError::Config(
-                        ProviderErrorSummary::attested_static(
-                            "Bedrock proxy-placeholder signing requires its dedicated HTTP/1.1 client",
-                        ),
-                    ))]));
-                }
-            }
-        } else {
-            self.client.client().clone()
-        };
-
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let producer_cancel = cancel.clone();
-
-        let tx_closed = tx.clone();
-        // Explicit frozen telemetry context (task 20.42, 20.54/AIR-055): the
-        // producer task runs under the captured parent/Dispatch when
-        // provided; omission observes nothing.
-        let telemetry = request.telemetry_context.clone();
-        let provider_identity = self.provider_identity.clone();
-        let producer = async move {
-            let run = async {
-                let result = async {
-                    let body = callbacks
-                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-                        .await?;
-                    Self::stream_http(
-                        http_client,
-                        provider_identity,
-                        credentials,
-                        bearer_token,
-                        base_url,
-                        &model_id,
-                        &body,
-                        producer_cancel.clone(),
-                        timeout,
-                        model_headers,
-                        extra_headers,
-                        callbacks,
-                        producer_snapshot,
-                        &tx,
-                    )
-                    .await
-                }
-                .await;
-                match result {
-                    Ok(()) | Err(ProviderError::Cancelled) => {}
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+            let http_client = if placeholder_mode {
+                match &self.placeholder_client {
+                    Some(client) => client.client().clone(),
+                    None => {
+                        return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                            ProviderErrorSummary::attested_static(
+                                "Bedrock proxy-placeholder signing requires its dedicated HTTP/1.1 client",
+                            ),
+                        ))]));
                     }
                 }
+            } else {
+                self.client.client().clone()
             };
-            tokio::select! {
-                biased;
-                _ = producer_cancel.cancelled() => (),
-                _ = tx_closed.closed() => (),
-                _ = run => (),
-            }
-        };
-        if let Some(context) = telemetry {
-            tokio::spawn(context.instrument(producer));
-        } else {
-            tokio::spawn(producer);
-        }
 
-        Box::pin(CancelAwareReceiverStream::with_snapshot(
-            rx, cancel, snapshot,
-        ))
+            let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            let producer_snapshot = snapshot.clone();
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+            let producer_cancel = cancel.clone();
+
+            let tx_closed = tx.clone();
+            // Explicit frozen telemetry context (task 20.42, 20.54/AIR-055): the
+            // producer task runs under the captured parent/Dispatch when
+            // provided; omission observes nothing.
+            let telemetry = request.telemetry_context.clone();
+            let provider_identity = self.provider_identity.clone();
+            let producer = async move {
+                let run = async {
+                    let result = async {
+                        let body = callbacks
+                            .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                            .await?;
+                        Self::stream_http(
+                            http_client,
+                            provider_identity,
+                            credentials,
+                            bearer_token,
+                            base_url,
+                            &model_id,
+                            &body,
+                            producer_cancel.clone(),
+                            timeout,
+                            model_headers,
+                            extra_headers,
+                            callbacks,
+                            producer_snapshot,
+                            &tx,
+                        )
+                        .await
+                    }
+                    .await;
+                    match result {
+                        Ok(()) | Err(ProviderError::Cancelled) => {}
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                        }
+                    }
+                };
+                tokio::select! {
+                    biased;
+                    _ = producer_cancel.cancelled() => (),
+                    _ = tx_closed.closed() => (),
+                    _ = run => (),
+                }
+            };
+            if let Some(context) = telemetry {
+                tokio::spawn(context.instrument(producer));
+            } else {
+                tokio::spawn(producer);
+            }
+
+            Box::pin(CancelAwareReceiverStream::with_snapshot(
+                rx, cancel, snapshot,
+            ))
+        })
     }
 }
 
@@ -1757,6 +1756,7 @@ impl BedrockMapper {
 
 fn empty_assistant_message(provider: &str, model: &str) -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: Vec::new(),
         api: crate::ApiKind::Anthropic, // Bedrock uses Anthropic-style content
         provider: provider.into(),

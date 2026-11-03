@@ -65,6 +65,7 @@ fn assistant_msg(id: &str, parent: Option<&str>, text: &str) -> SessionEntry {
         parent_id: parent.map(str::to_owned),
         timestamp: TS.into(),
         message: Message::Assistant(AssistantMessage {
+            projection: None,
             content: vec![AssistantContent::Text {
                 text: text.into(),
                 signature: None,
@@ -100,6 +101,7 @@ fn assistant_with_thinking(
         parent_id: parent.map(str::to_owned),
         timestamp: TS.into(),
         message: Message::Assistant(AssistantMessage {
+            projection: None,
             content: vec![
                 AssistantContent::Thinking {
                     thinking: thinking.into(),
@@ -142,6 +144,7 @@ fn assistant_with_tool_call(
         parent_id: parent.map(str::to_owned),
         timestamp: TS.into(),
         message: Message::Assistant(AssistantMessage {
+            projection: None,
             content: vec![AssistantContent::ToolCall {
                 tool_call: ToolCall {
                     id: call_id.into(),

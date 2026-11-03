@@ -28,6 +28,7 @@ fn thinking_content() -> serde_json::Value {
 
 fn assistant() -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: serde_json::from_value(thinking_content()).expect("thinking blocks deserialize"),
         api: opi_ai::ApiKind::Anthropic,
         provider: "anthropic".into(),

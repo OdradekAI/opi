@@ -525,6 +525,7 @@ async fn requested_resume_open_failure_is_visible_before_provider_dispatch() {
 async fn phase17_failure_boundaries_expose_distinguishable_typed_classes() {
     fn request(model: &str, cancel: CancellationToken) -> Request {
         Request {
+            projection: Default::default(),
             transport: Default::default(),
             model: model.to_owned(),
             context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -966,7 +967,7 @@ async fn credential_error_owns_run_while_empty_evidence_is_diagnostic_and_recove
             &first,
             Err(AgentError::Provider(failure))
                 if matches!(
-                    failure.provider_error(),
+                    accepted_projection_cause(failure.provider_error()),
                     ProviderError::CredentialNeeded { provider_id } if provider_id == "mock"
                 )
         ),
@@ -2441,4 +2442,14 @@ fn counted_registered(name: &str, count: Arc<AtomicUsize>) -> RegisteredTool {
         definition,
         Arc::from(tool),
     )
+}
+
+fn accepted_projection_cause(
+    error: &opi_ai::provider::ProviderError,
+) -> &opi_ai::provider::ProviderError {
+    let opi_ai::provider::ProviderError::StreamFailure(failure) = error else {
+        panic!("accepted projection retains its cause and facts: {error:?}");
+    };
+    assert!(failure.message().projection.is_some());
+    failure.cause()
 }

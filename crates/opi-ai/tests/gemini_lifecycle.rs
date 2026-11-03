@@ -23,6 +23,7 @@ fn direct_cause(error: &ProviderError) -> &ProviderError {
 
 fn make_request(cancel: CancellationToken) -> Request {
     Request {
+        projection: Default::default(),
         transport: Default::default(),
         model: "gemini:gemini-2.5-flash".into(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {

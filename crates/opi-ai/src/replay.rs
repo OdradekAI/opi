@@ -97,7 +97,8 @@ pub enum ReplayProjection {
 }
 
 /// One recorded (or strict-rejected) departure from the canonical facts.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ReplayLoss {
     /// Thinking blocks dropped because the producing turn is not
     /// same-identity; includes readable, signed and redacted blocks.
@@ -181,7 +182,8 @@ pub enum ReplayError {
 }
 
 /// Recorded projection facts for one call to [`project_replay`].
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplayFacts {
     pub losses: Vec<ReplayLoss>,
 }
@@ -805,6 +807,7 @@ mod tests {
 
     fn assistant(content: Vec<AssistantContent>, stop_reason: StopReason) -> AssistantMessage {
         AssistantMessage {
+            projection: None,
             content,
             api: crate::ApiKind::Anthropic,
             provider: "p".into(),

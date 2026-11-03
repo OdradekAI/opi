@@ -443,11 +443,15 @@ pub(crate) async fn aws_region(
         return Err(aws_unavailable("the region request failed"));
     }
     let zone = String::from_utf8_lossy(&response.body).into_owned();
-    if zone.is_empty() {
+    let Some((suffix_start, suffix)) = zone.char_indices().next_back() else {
         return Err(aws_unavailable("the region response was empty"));
+    };
+    // The source strips one UTF-16 code unit. A supplementary suffix would
+    // leave a lone surrogate, which cannot be represented by a Rust String.
+    if suffix.len_utf16() != 1 {
+        return Err(aws_unavailable("the region suffix is not representable"));
     }
-    // Strip the availability-zone suffix (`us-east-2b` → `us-east-2`).
-    Ok(zone[..zone.len() - 1].to_owned())
+    Ok(zone[..suffix_start].to_owned())
 }
 
 /// Resolve AWS security credentials: environment variables first

@@ -30,18 +30,25 @@ const MALFORMED_STREAM_FRAME: &str = "Gemini returned a malformed streaming fram
 // SSE line parser (Gemini uses simple data: lines, no event: types)
 // ---------------------------------------------------------------------------
 
-/// Parse SSE text into data payloads (just `data:` lines).
+/// Parse SSE text into event data, joining multiple `data:` lines with LF.
 pub(crate) fn parse_sse_data(input: &str) -> impl Iterator<Item = String> + '_ {
-    input.split('\n').filter_map(|line| {
-        let line = line.trim_end_matches('\r');
-        line.strip_prefix("data: ")
-            .map(|s| s.to_string())
-            .or_else(|| {
-                // Handle "data:" without space
-                line.strip_prefix("data:")
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.to_string())
-            })
+    let mut lines = input.split('\n');
+    std::iter::from_fn(move || {
+        let mut data = Vec::new();
+        loop {
+            match lines.next() {
+                Some(line) => {
+                    let line = line.trim_end_matches('\r');
+                    if line.is_empty() && !data.is_empty() {
+                        return Some(data.join("\n"));
+                    }
+                    if let Some(value) = line.strip_prefix("data:") {
+                        data.push(value.strip_prefix(' ').unwrap_or(value));
+                    }
+                }
+                None => return (!data.is_empty()).then(|| data.join("\n")),
+            }
+        }
     })
 }
 
@@ -607,6 +614,7 @@ pub(crate) fn empty_assistant_message(
     model: &str,
 ) -> AssistantMessage {
     AssistantMessage {
+        projection: None,
         content: Vec::new(),
         api: crate::ApiKind::Google,
         provider: provider.into(),
@@ -1022,17 +1030,17 @@ impl GeminiProvider {
 
         let mut contents = Vec::new();
 
-        // Canonical transcript consumption (AIR-020); this wire currently
-        // projects by collapse.
-        const SUPPORTS_MID_CONVO_SYSTEM_MESSAGES: bool = false;
-        let transcript = crate::transcript::resolve_transcript(
-            &request.context,
-            SUPPORTS_MID_CONVO_SYSTEM_MESSAGES,
-            crate::transcript::TranscriptProjection::NativeOrCollapse,
-        )
-        .expect("native-or-collapse projection never fails");
-        let transcript = transcript.as_ref();
-        let system_prompt = crate::transcript::get_current_system_prompt(transcript.messages());
+        let selected_model = self.models.iter().find(|model| model.id == model_id);
+        let projection = crate::transcript::compile_request_projection(
+            request,
+            &self.provider_identity,
+            selected_model,
+            self.wire,
+        )?;
+        let transcript = projection.transcript.as_ref();
+        let system_prompt = crate::transcript::get_initial_system_message(transcript.messages())
+            .map(crate::transcript::system_message_text)
+            .unwrap_or_default();
         let current_tools = crate::transcript::get_current_tools(transcript.messages());
         // Task 20.11 (AIR-040, fail-closed): a require intent on a wire
         // without strict projection fails typed before dispatch.
@@ -1051,14 +1059,10 @@ impl GeminiProvider {
             model: model_id.to_owned(),
             supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
         };
-        let replay = crate::replay::project_replay(
-            &crate::transcript::without_initial_system_message(transcript.messages()),
-            &replay_route,
-            crate::replay::ReplayProjection::NativeOrCollapse,
-        )?;
-        let body_messages = replay.messages;
+        let replay = &projection.replay;
+        let body_messages = &replay.messages;
 
-        for msg in &body_messages {
+        for msg in body_messages {
             match msg {
                 crate::message::Message::System(_) => {
                     // Unreachable after collapse + without_initial_system_message.
@@ -1762,7 +1766,19 @@ pub(crate) fn google_response_stream(
 /// Drain complete SSE events from the buffer (delimited by `\n\n`).
 pub(crate) fn drain_sse_payloads(buffer: &mut String) -> Vec<String> {
     if buffer.contains('\r') {
+        // A trailing CR after data may be the first half of a split CRLF.
+        // A CR ending a blank line already completes a frame; a later LF is
+        // only an empty delimiter and cannot split that frame's data lines.
+        let pending_cr = buffer
+            .strip_suffix('\r')
+            .is_some_and(|prefix| !prefix.ends_with(['\r', '\n']));
+        if pending_cr {
+            buffer.pop();
+        }
         *buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
+        if pending_cr {
+            buffer.push('\r');
+        }
     }
 
     let mut events = Vec::new();
@@ -1838,124 +1854,132 @@ impl Provider for GeminiProvider {
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
     ) -> EventStream {
-        request.callbacks = request.callbacks.ensure_call_scope();
-        // Google exposes parsed raw chunks but has no HTTP response hook.
-        if request.callbacks.has_response_observer() {
-            return Box::pin(stream::iter(vec![Err(
-                ProviderError::UnsupportedCapability(ProviderErrorSummary::attested_static(
-                    "Google wires do not support response callbacks",
-                )),
-            )]));
-        }
-        let secret = auth.secret.expose_secret();
-        let api_key = match auth.scheme {
-            crate::auth::AuthScheme::ApiKey => secret.to_string(),
-            crate::auth::AuthScheme::Bearer
-            | crate::auth::AuthScheme::AwsSigV4(_)
-            | crate::auth::AuthScheme::AnthropicFederation => {
-                return Box::pin(stream::iter(vec![Err(ProviderError::Config(
-                    ProviderErrorSummary::attested_static(
-                        "Gemini requires prepared API-key authentication",
-                    ),
-                ))]));
+        let projection = /* frozen call */ match crate::provider::request_projection(self, &request, self.wire) {
+            Ok(facts) => facts,
+            Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
+        };
+        let event_projection = projection.clone();
+        crate::stream::project_call(event_projection, || -> EventStream {
+            request.callbacks = request.callbacks.ensure_call_scope();
+            // Google exposes parsed raw chunks but has no HTTP response hook.
+            if request.callbacks.has_response_observer() {
+                return Box::pin(stream::iter(vec![Err(
+                    ProviderError::UnsupportedCapability(ProviderErrorSummary::attested_static(
+                        "Google wires do not support response callbacks",
+                    )),
+                )]));
             }
-        };
-        let model_id = request
-            .model
-            .split_once(':')
-            .map(|(_, id)| id.to_string())
-            .unwrap_or(request.model.clone());
-        // A selected record/auth endpoint is already the complete API base,
-        // including any version or proxy path. Only the legacy provider-host
-        // constructor supplies the default version path itself.
-        let base_url = auth
-            .base_url
-            .clone()
-            .or_else(|| {
-                self.models
-                    .iter()
-                    .find(|model| model.id == model_id)
-                    .and_then(|model| model.base_url.clone())
-            })
-            .unwrap_or_else(|| format!("{}/v1beta", self.base_url.trim_end_matches('/')));
-        let body = match self.build_request_body(&request) {
-            Ok(body) => body,
-            Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-        };
-        let callbacks = request.callbacks.clone();
-        let cancel = request.cancel.clone();
-        let timeout = request.timeout;
-        let model_headers = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .map(|model| model.headers.clone())
-            .unwrap_or_default();
-        let extra_headers = request.extra_headers;
-        let http_client = self.client.client().clone();
-        let provider_identity = self.provider_identity.clone();
-
-        let snapshot = crate::stream::ProducerSnapshot::default();
-        snapshot.record(&empty_assistant_message(
-            &provider_identity,
-            WireApi::GoogleGenerativeAi,
-            &model_id,
-        ));
-        let producer_snapshot = snapshot.clone();
-        let (tx, rx) = tokio::sync::mpsc::channel(64);
-        let producer_cancel = cancel.clone();
-        // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
-        // task runs under the captured parent/Dispatch when provided;
-        // omission observes nothing.
-        let telemetry = request.telemetry_context.clone();
-
-        let tx_closed = tx.clone();
-        let producer = async move {
-            let run = async {
-                let result = async {
-                    let body = callbacks
-                        .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
-                        .await?;
-                    Self::stream_http(
-                        http_client,
-                        provider_identity,
-                        api_key,
-                        base_url,
-                        model_id,
-                        &body,
-                        producer_cancel.clone(),
-                        timeout,
-                        model_headers,
-                        extra_headers,
-                        callbacks,
-                        producer_snapshot,
-                        &tx,
-                    )
-                    .await
-                }
-                .await;
-                match result {
-                    Ok(()) | Err(ProviderError::Cancelled) => {}
-                    Err(error) => {
-                        let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
-                    }
+            let secret = auth.secret.expose_secret();
+            let api_key = match auth.scheme {
+                crate::auth::AuthScheme::ApiKey => secret.to_string(),
+                crate::auth::AuthScheme::Bearer
+                | crate::auth::AuthScheme::AwsSigV4(_)
+                | crate::auth::AuthScheme::AnthropicFederation => {
+                    return Box::pin(stream::iter(vec![Err(ProviderError::Config(
+                        ProviderErrorSummary::attested_static(
+                            "Gemini requires prepared API-key authentication",
+                        ),
+                    ))]));
                 }
             };
-            tokio::select! {
-                biased;
-                _ = producer_cancel.cancelled() => (),
-                _ = tx_closed.closed() => (),
-                _ = run => (),
-            }
-        };
-        let producer = async move {
-            if let Some(context) = telemetry {
-                context.instrument(producer).await;
-            } else {
-                producer.await;
-            }
-        };
-        google_response_stream(producer, rx, cancel, snapshot)
+            let model_id = request
+                .model
+                .split_once(':')
+                .map(|(_, id)| id.to_string())
+                .unwrap_or(request.model.clone());
+            // A selected record/auth endpoint is already the complete API base,
+            // including any version or proxy path. Only the legacy provider-host
+            // constructor supplies the default version path itself.
+            let base_url = auth
+                .base_url
+                .clone()
+                .or_else(|| {
+                    self.models
+                        .iter()
+                        .find(|model| model.id == model_id)
+                        .and_then(|model| model.base_url.clone())
+                })
+                .unwrap_or_else(|| format!("{}/v1beta", self.base_url.trim_end_matches('/')));
+            let body = match self.build_request_body(&request) {
+                Ok(body) => body,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
+
+            let callbacks = request.callbacks.clone();
+            let cancel = request.cancel.clone();
+            let timeout = request.timeout;
+            let model_headers = self
+                .models
+                .iter()
+                .find(|model| model.id == model_id)
+                .map(|model| model.headers.clone())
+                .unwrap_or_default();
+            let extra_headers = request.extra_headers;
+            let http_client = self.client.client().clone();
+            let provider_identity = self.provider_identity.clone();
+
+            let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            snapshot.record(&empty_assistant_message(
+                &provider_identity,
+                WireApi::GoogleGenerativeAi,
+                &model_id,
+            ));
+            let producer_snapshot = snapshot.clone();
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+            let producer_cancel = cancel.clone();
+            // Explicit frozen telemetry context (task 20.54/AIR-055): the producer
+            // task runs under the captured parent/Dispatch when provided;
+            // omission observes nothing.
+            let telemetry = request.telemetry_context.clone();
+
+            let tx_closed = tx.clone();
+            let producer = async move {
+                let run = async {
+                    let result = async {
+                        let body = callbacks
+                            .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                            .await?;
+                        Self::stream_http(
+                            http_client,
+                            provider_identity,
+                            api_key,
+                            base_url,
+                            model_id,
+                            &body,
+                            producer_cancel.clone(),
+                            timeout,
+                            model_headers,
+                            extra_headers,
+                            callbacks,
+                            producer_snapshot,
+                            &tx,
+                        )
+                        .await
+                    }
+                    .await;
+                    match result {
+                        Ok(()) | Err(ProviderError::Cancelled) => {}
+                        Err(error) => {
+                            let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
+                        }
+                    }
+                };
+                tokio::select! {
+                    biased;
+                    _ = producer_cancel.cancelled() => (),
+                    _ = tx_closed.closed() => (),
+                    _ = run => (),
+                }
+            };
+            let producer = async move {
+                if let Some(context) = telemetry {
+                    context.instrument(producer).await;
+                } else {
+                    producer.await;
+                }
+            };
+            google_response_stream(producer, rx, cancel, snapshot)
+        })
     }
 
     fn id(&self) -> &str {
@@ -2118,5 +2142,49 @@ impl crate::models::ChatApi<GoogleGenerativeAiOptions> for GoogleGenerativeAiCha
         // resource lease still dispatches through the ordinary producer.
         let _ = resources;
         provider.stream_prepared(request, auth)
+    }
+}
+
+#[cfg(test)]
+mod fragmented_sse_tests {
+    use super::*;
+
+    #[test]
+    fn multiline_frames_survive_every_line_ending_split() {
+        for newline in ["\n", "\r\n", "\r"] {
+            let wire = format!(
+                "data: {{\"candidates\":[{{\"content\":{{\"parts\":[{{\"text\":\"hello\"}}]}}, {newline}data: \"finishReason\":\"STOP\"}}]}}{newline}{newline}"
+            );
+            let mut expected = vec![
+                serde_json::json!({"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}]}),
+            ];
+            let expected_second =
+                serde_json::from_str(&expected[0].to_string().replace("hello", "world")).unwrap();
+            expected.push(expected_second);
+            let wire = format!("{wire}{}", wire.replace("hello", "world"));
+            for split in 0..=wire.len() {
+                let mut buffer = wire[..split].to_owned();
+                let mut actual = drain(&mut buffer);
+                buffer.push_str(&wire[split..]);
+                actual.extend(drain(&mut buffer));
+                assert_eq!(actual, expected, "newline={newline:?}, split={split}");
+            }
+            for width in [1, 2, 3, 5, 7] {
+                let mut buffer = String::new();
+                let mut actual = Vec::new();
+                for chunk in wire.as_bytes().chunks(width) {
+                    buffer.push_str(std::str::from_utf8(chunk).unwrap());
+                    actual.extend(drain(&mut buffer));
+                }
+                assert_eq!(actual, expected, "newline={newline:?}, width={width}");
+            }
+        }
+    }
+
+    fn drain(buffer: &mut String) -> Vec<serde_json::Value> {
+        drain_sse_payloads(buffer)
+            .into_iter()
+            .map(|data| serde_json::from_str(&data).unwrap())
+            .collect()
     }
 }
