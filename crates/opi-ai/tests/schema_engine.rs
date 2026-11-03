@@ -98,6 +98,66 @@ fn malformed_limits_are_inert_not_errors() {
 }
 
 #[test]
+fn cardinality_min_properties_boundaries() {
+    let bounded = compile(json!({"type": "object", "minProperties": 2})).unwrap();
+    let inert = compile(json!({"type": "object", "minProperties": "2"})).unwrap();
+    for (value, expected) in [
+        (json!({}), false),
+        (json!({"a": 1}), false),
+        (json!({"a": 1, "b": 2}), true),
+        (json!({"a": 1, "b": 2, "c": 3}), true),
+    ] {
+        assert_eq!(bounded.check(&value), Ok(expected), "instance {value}");
+        assert_eq!(inert.check(&value), Ok(true), "string limit: {value}");
+    }
+}
+
+#[test]
+fn cardinality_max_properties_boundaries() {
+    let bounded = compile(json!({"type": "object", "maxProperties": 2})).unwrap();
+    let inert = compile(json!({"type": "object", "maxProperties": "2"})).unwrap();
+    for (value, expected) in [
+        (json!({}), true),
+        (json!({"a": 1}), true),
+        (json!({"a": 1, "b": 2}), true),
+        (json!({"a": 1, "b": 2, "c": 3}), false),
+    ] {
+        assert_eq!(bounded.check(&value), Ok(expected), "instance {value}");
+        assert_eq!(inert.check(&value), Ok(true), "string limit: {value}");
+    }
+}
+
+#[test]
+fn cardinality_min_items_boundaries() {
+    let bounded = compile(json!({"type": "array", "minItems": 2})).unwrap();
+    let inert = compile(json!({"type": "array", "minItems": "2"})).unwrap();
+    for (value, expected) in [
+        (json!([]), false),
+        (json!([1]), false),
+        (json!([1, 2]), true),
+        (json!([1, 2, 3]), true),
+    ] {
+        assert_eq!(bounded.check(&value), Ok(expected), "instance {value}");
+        assert_eq!(inert.check(&value), Ok(true), "string limit: {value}");
+    }
+}
+
+#[test]
+fn cardinality_max_items_boundaries() {
+    let bounded = compile(json!({"type": "array", "maxItems": 2})).unwrap();
+    let inert = compile(json!({"type": "array", "maxItems": "2"})).unwrap();
+    for (value, expected) in [
+        (json!([]), true),
+        (json!([1]), true),
+        (json!([1, 2]), true),
+        (json!([1, 2, 3]), false),
+    ] {
+        assert_eq!(bounded.check(&value), Ok(expected), "instance {value}");
+        assert_eq!(inert.check(&value), Ok(true), "string limit: {value}");
+    }
+}
+
+#[test]
 fn malformed_required_and_enum_stay_inert() {
     assert!(valid(json!({"required": [1]}), json!({})));
     assert!(!valid(json!({"required": ["a"]}), json!({})));

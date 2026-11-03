@@ -14,8 +14,8 @@
 
 use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
 use opi_ai::transcript::{
-    Context, SystemMessage, SystemSection, ToolReference, TranscriptContext, TranscriptError,
-    TranscriptProjection, collapse_system_messages, get_current_system_message,
+    Context, SystemMessage, SystemSection, ToolDeclarationError, ToolReference, TranscriptContext,
+    TranscriptError, TranscriptProjection, collapse_system_messages, get_current_system_message,
     get_current_system_prompt, get_current_tools, get_declared_tools, normalize_context,
     render_system_message_update, resolve_transcript, system_message_text,
     tool_state_change_message,
@@ -49,6 +49,13 @@ fn change() -> SystemMessage {
         tools_added: Vec::new(),
         tools_removed: Vec::new(),
         timestamp_ms: 10,
+    }
+}
+
+fn section(name: &str, value: Option<&str>) -> SystemSection {
+    SystemSection {
+        name: name.to_owned(),
+        value: value.map(str::to_owned),
     }
 }
 
@@ -102,6 +109,259 @@ fn initial_and_embedded_declarations_use_the_same_validation() {
             .is_err()
         );
     }
+}
+
+#[test]
+fn normalization_rejects_duplicate_sections_in_initial_and_later_messages() {
+    for name in ["same", "", " \t", "MiXeD"] {
+        for values in [
+            [Some("same"), Some("same")],
+            [Some("first"), Some("second")],
+            [Some("first"), None],
+            [None, Some("last")],
+            [None, None],
+        ] {
+            let invalid = SystemMessage {
+                sections: vec![section(name, values[0]), section(name, values[1])],
+                ..change()
+            };
+            for messages in [
+                vec![Message::System(invalid.clone())],
+                vec![
+                    Message::System(SystemMessage {
+                        content: "valid initial state".to_owned(),
+                        sections: vec![section("valid", Some("retained"))],
+                        ..change()
+                    }),
+                    user("before the invalid update"),
+                    Message::System(invalid),
+                ],
+            ] {
+                assert_eq!(
+                    normalize_context(Context {
+                        messages,
+                        ..Context::default()
+                    })
+                    .unwrap_err(),
+                    TranscriptError::DuplicateSectionName {
+                        name: name.to_owned()
+                    }
+                );
+            }
+        }
+    }
+
+    let first_duplicate = " \tsecond\n\" ";
+    let error = normalize_context(Context {
+        messages: vec![Message::System(SystemMessage {
+            sections: vec![
+                section("first", Some("one")),
+                section(first_duplicate, Some("two")),
+                section(first_duplicate, None),
+                section("first", None),
+            ],
+            ..change()
+        })],
+        ..Context::default()
+    })
+    .unwrap_err();
+    assert_eq!(
+        error,
+        TranscriptError::DuplicateSectionName {
+            name: first_duplicate.to_owned()
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        format!("ambiguous system section batch: {first_duplicate:?} declared twice")
+    );
+}
+
+#[test]
+fn duplicate_section_append_preserves_entire_prior_transcript() {
+    let mut transcript = normalize_context(Context {
+        system_prompt: Some("base instructions".to_owned()),
+        tools: vec![tool("read", "original declaration")],
+        messages: vec![
+            Message::System(SystemMessage {
+                content: "accepted update".to_owned(),
+                sections: vec![section("keep", Some("original section"))],
+                ..change()
+            }),
+            user("accepted conversation"),
+        ],
+    })
+    .unwrap();
+    let before = transcript.clone();
+    for values in [
+        [Some("same"), Some("same")],
+        [Some("first"), Some("second")],
+        [Some("first"), None],
+        [None, Some("last")],
+        [None, None],
+    ] {
+        let error = transcript
+            .append_system_change(SystemMessage {
+                content: "must not append".to_owned(),
+                sections: vec![
+                    section("keep", values[0]),
+                    section("keep", values[1]),
+                    section("new", Some("must not install")),
+                ],
+                tools_added: vec![tool("read", "replacement"), tool("write", "new tool")],
+                tools_removed: vec![ToolReference {
+                    name: "read".to_owned(),
+                }],
+                timestamp_ms: 99,
+            })
+            .unwrap_err();
+        assert_eq!(
+            error,
+            TranscriptError::DuplicateSectionName {
+                name: "keep".to_owned()
+            }
+        );
+        assert_eq!(transcript, before);
+    }
+}
+
+#[test]
+fn unique_exact_section_names_and_separate_updates_preserve_order() {
+    let mut expected = vec![
+        section("", Some("")),
+        section(" ", Some("space")),
+        section("\t", Some("tab")),
+        section("Case", Some("upper")),
+        section("case", Some("lower")),
+    ];
+    let mut transcript = normalize_context(Context {
+        messages: vec![Message::System(SystemMessage {
+            sections: expected.clone(),
+            ..change()
+        })],
+        ..Context::default()
+    })
+    .unwrap();
+    assert_eq!(
+        get_current_system_message(transcript.messages())
+            .unwrap()
+            .sections,
+        expected
+    );
+    transcript
+        .append_system_change(SystemMessage {
+            sections: vec![section("Case", Some("replacement"))],
+            ..change()
+        })
+        .unwrap();
+    expected[3] = section("Case", Some("replacement"));
+    assert_eq!(
+        get_current_system_message(transcript.messages())
+            .unwrap()
+            .sections,
+        expected
+    );
+    transcript
+        .append_system_change(SystemMessage {
+            sections: vec![section(" ", None)],
+            ..change()
+        })
+        .unwrap();
+    expected.remove(1);
+    assert_eq!(
+        get_current_system_message(transcript.messages())
+            .unwrap()
+            .sections,
+        expected
+    );
+    transcript
+        .append_system_change(SystemMessage {
+            sections: vec![section(" ", Some("readded"))],
+            ..change()
+        })
+        .unwrap();
+    expected.push(section(" ", Some("readded")));
+    assert_eq!(
+        get_current_system_message(transcript.messages())
+            .unwrap()
+            .sections,
+        expected
+    );
+    let encoded = serde_json::to_string(&transcript).unwrap();
+    let decoded: TranscriptContext = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded, transcript);
+}
+
+#[test]
+fn tool_errors_precede_duplicate_section_rejection() {
+    let mut broken = tool("broken", "invalid schema");
+    broken.input_schema = serde_json::json!({"pattern": "["});
+    for (tools, kind) in [
+        (vec![tool("", "empty name")], "empty"),
+        (vec![tool("same", "one"), tool("same", "two")], "duplicate"),
+        (vec![broken], "schema"),
+    ] {
+        let invalid = SystemMessage {
+            sections: vec![section("section", Some("one")), section("section", None)],
+            tools_added: tools,
+            ..change()
+        };
+        let mut transcript = normalize_context(Context::default()).unwrap();
+        let before = transcript.clone();
+        for error in [
+            normalize_context(Context {
+                messages: vec![Message::System(invalid.clone())],
+                ..Context::default()
+            })
+            .unwrap_err(),
+            transcript.append_system_change(invalid).unwrap_err(),
+        ] {
+            match (kind, error) {
+                ("empty", TranscriptError::InvalidDeclaration(ToolDeclarationError::EmptyName)) => {
+                }
+                (
+                    "duplicate",
+                    TranscriptError::InvalidDeclaration(ToolDeclarationError::DuplicateName {
+                        name,
+                    }),
+                ) => assert_eq!(name, "same"),
+                (
+                    "schema",
+                    TranscriptError::InvalidDeclaration(ToolDeclarationError::SchemaCompilation {
+                        name,
+                        ..
+                    }),
+                ) => assert_eq!(name, "broken"),
+                (_, error) => {
+                    panic!("expected {kind} tool error before section validation: {error:?}")
+                }
+            }
+        }
+        assert_eq!(transcript, before);
+    }
+}
+
+#[test]
+fn json_object_duplicate_keys_remain_parser_resolved_before_validation() {
+    // The existing object parser has already resolved these raw duplicate keys
+    // before transcript validation can observe the section entries.
+    let raw = r#"[{"role":"system","content":"base","sections":{"a":"first","b":"keep","a":"last"},"timestamp_ms":0}]"#;
+    let transcript: TranscriptContext = serde_json::from_str(raw).unwrap();
+    let current = get_current_system_message(transcript.messages()).unwrap();
+    assert_eq!(
+        current.sections,
+        vec![section("a", Some("last")), section("b", Some("keep"))]
+    );
+    assert_eq!(
+        get_current_system_prompt(transcript.messages()),
+        "base\n\nlast\n\nkeep"
+    );
+    let normalized = normalize_context(Context {
+        messages: transcript.messages().to_vec(),
+        ..Context::default()
+    })
+    .unwrap();
+    assert_eq!(normalized, transcript);
 }
 
 /// V-06 SDK-active: the public shorthand folds into exactly one leading

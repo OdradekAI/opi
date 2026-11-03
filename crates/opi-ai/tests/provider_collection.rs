@@ -5105,6 +5105,191 @@ async fn builtin_gateway_all_three_wires_use_only_source_auth_header() {
 }
 
 #[tokio::test]
+async fn builtin_prepared_opencode_keeps_session_headers_and_caller_precedence() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+
+    struct CountingContext(Arc<AtomicUsize>);
+    impl opi_ai::auth::AuthContext for CountingContext {
+        fn env(&self, name: &str) -> Result<Option<String>, opi_ai::auth::AuthContextError> {
+            Ok(if name == "OPENCODE_API_KEY" {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Some("frozen-profile-key".into())
+            } else {
+                None
+            })
+        }
+        fn file_exists(&self, _: &str) -> Result<bool, opi_ai::auth::AuthContextError> {
+            panic!("the configured API key must not discover credential files")
+        }
+    }
+
+    for provider in ["opencode", "opencode-go"] {
+        // Responses returns a prepared replacement; Chat keeps its mapped route.
+        for wire in [WireApi::OpenAiResponses, WireApi::OpenAiCompletions] {
+            for advanced in [false, true] {
+                for (session, caller_value, remove, expected) in [
+                    (
+                        Some("profile-session"),
+                        None,
+                        false,
+                        Some("profile-session"),
+                    ),
+                    (None, None, false, None),
+                    (Some(""), None, false, None),
+                    (
+                        Some("profile-session"),
+                        Some("caller-value"),
+                        false,
+                        Some("caller-value"),
+                    ),
+                    (Some("profile-session"), None, true, None),
+                ] {
+                    let server = MockServer::start().await;
+                    let replacement_server = MockServer::start().await;
+                    Mock::given(method("POST"))
+                        .respond_with(
+                            ResponseTemplate::new(200)
+                                .insert_header("content-type", "text/event-stream")
+                                .set_body_string(node5_reply(wire)),
+                        )
+                        .expect(1)
+                        .mount(&server)
+                        .await;
+                    let resolutions = Arc::new(AtomicUsize::new(0));
+                    let transforms = Arc::new(AtomicUsize::new(0));
+                    let mut models = Models::new();
+                    let mut overrides = BuiltinOverrides::default();
+                    overrides
+                        .base_urls
+                        .insert(provider.into(), format!("{}/selected", server.uri()));
+                    register_builtin(
+                        &mut models,
+                        Arc::new(CountingContext(resolutions.clone())),
+                        Arc::new(opi_ai::http::HttpClient::new()),
+                        &overrides,
+                    )
+                    .unwrap();
+                    let mut info = models
+                        .get_models(Some(provider))
+                        .into_iter()
+                        .find(|model| model.wire_api == wire)
+                        .unwrap();
+                    let model_id = info.id.clone();
+                    let spec = format!("{provider}:{model_id}");
+                    let mut request = minimal_request(&spec);
+                    request.transport = opi_ai::provider::TransportPreference::Sse;
+                    request.session_id = session.map(str::to_owned);
+                    request.max_tokens = Some(32);
+                    if let Some(value) = caller_value {
+                        request
+                            .extra_headers
+                            .push(("X-OpenCode-Session".into(), value.into()));
+                    }
+                    let transform_count = transforms.clone();
+                    let before_transform =
+                        caller_value.or(session.filter(|value| !value.is_empty()));
+                    request.callbacks = opi_ai::callbacks::RequestCallbacks::default()
+                        .with_header_transform(Arc::new(move |headers| {
+                            transform_count.fetch_add(1, Ordering::SeqCst);
+                            let actual: Vec<_> = headers
+                                .iter()
+                                .filter(|(name, _)| name.eq_ignore_ascii_case("x-opencode-session"))
+                                .map(|(_, value)| value.as_str())
+                                .collect();
+                            assert_eq!(actual, before_transform.into_iter().collect::<Vec<_>>());
+                            Ok(headers
+                                .iter()
+                                .filter(|(name, _)| {
+                                    !remove || !name.eq_ignore_ascii_case("x-opencode-session")
+                                })
+                                .cloned()
+                                .collect())
+                        }));
+                    assert_eq!(resolutions.load(Ordering::SeqCst), 0);
+
+                    let replace_registration = |models: &mut Models| {
+                        assert!(models.delete_provider(provider));
+                        let mut changed = BuiltinOverrides::default();
+                        changed.base_urls.insert(
+                            provider.into(),
+                            format!("{}/replacement", replacement_server.uri()),
+                        );
+                        register_builtin(
+                            models,
+                            map_context(&[("OPENCODE_API_KEY", "replacement-key")]),
+                            Arc::new(opi_ai::http::HttpClient::new()),
+                            &changed,
+                        )
+                        .unwrap();
+                    };
+                    let expected_base = if advanced { "/selected" } else { "/owned" };
+                    let output = if advanced {
+                        let prepared = models.prepare_call(&spec, request).await.unwrap();
+                        assert_eq!(prepared.route().provider_id, provider);
+                        assert_eq!(prepared.route().model_id, model_id);
+                        assert_eq!(resolutions.load(Ordering::SeqCst), 1);
+                        replace_registration(&mut models);
+                        drain_to_completion(prepared.start_attempt().unwrap())
+                            .await
+                            .unwrap()
+                    } else {
+                        // The owned record overrides the catalog endpoint and is
+                        // captured before a later registration changes the driver.
+                        info.base_url = Some(format!("{}/owned", server.uri()));
+                        info.headers
+                            .push(("x-owned-record".into(), Some("frozen".into())));
+                        let completion = models.complete_simple(
+                            opi_ai::ChatModelRecord::new(provider, info),
+                            request,
+                            Default::default(),
+                        );
+                        assert_eq!(resolutions.load(Ordering::SeqCst), 0);
+                        replace_registration(&mut models);
+                        completion.await.unwrap()
+                    };
+                    assert_eq!(output.provider, provider);
+                    assert_eq!(output.model, model_id);
+                    assert_eq!(assistant_text(&output), "hi");
+                    assert_eq!(resolutions.load(Ordering::SeqCst), 1);
+                    assert_eq!(transforms.load(Ordering::SeqCst), 1);
+                    let sent = server.received_requests().await.unwrap();
+                    assert_eq!(sent.len(), 1);
+                    let sent = &sent[0];
+                    let suffix = if wire == WireApi::OpenAiResponses {
+                        "/responses"
+                    } else {
+                        "/chat/completions"
+                    };
+                    assert_eq!(sent.url.path(), format!("{expected_base}{suffix}"));
+                    assert_eq!(sent.headers["authorization"], "Bearer frozen-profile-key");
+                    let session_values: Vec<_> = sent
+                        .headers
+                        .get_all("x-opencode-session")
+                        .iter()
+                        .map(|value| value.to_str().unwrap())
+                        .collect();
+                    assert_eq!(session_values, expected.into_iter().collect::<Vec<_>>());
+                    if !advanced {
+                        assert_eq!(sent.headers["x-owned-record"], "frozen");
+                    }
+                    let body: serde_json::Value = serde_json::from_slice(&sent.body).unwrap();
+                    assert_eq!(body["model"], model_id);
+                    assert!(
+                        replacement_server
+                            .received_requests()
+                            .await
+                            .unwrap()
+                            .is_empty()
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn builtin_source_profiles_reach_their_registered_wires() {
     use std::collections::BTreeSet;
     use std::sync::Arc;

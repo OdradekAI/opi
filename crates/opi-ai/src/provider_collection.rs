@@ -168,13 +168,14 @@ impl AuthResolver for BuiltinEnvAuthResolver {
 /// profile id with the profile's catalog subset.
 ///
 /// The wrapped adapters with fixed internal ids (`gemini`, `vertex`,
-/// `bedrock`) stay reusable as-is; this wrapper only renames the public
-/// identity and catalog. Every dispatch, resource and refresh call
-/// delegates to the inner provider unchanged.
+/// `bedrock`) stay reusable as-is. Profile authentication and session headers
+/// are applied before dispatch; a prepared replacement retains those policies
+/// and the selected model snapshot. Dispatch, resource and refresh ownership
+/// remains with the inner provider.
 struct CanonicalRoute {
     id: String,
     models: Vec<ModelInfo>,
-    inner: Box<dyn Provider>,
+    inner: Arc<dyn Provider>,
     builtin_auth: bool,
 }
 
@@ -254,7 +255,14 @@ impl Provider for CanonicalRoute {
         auth: &mut ResolvedAuth,
     ) -> Result<Option<Arc<dyn Provider>>, ProviderError> {
         *auth = self.wire_auth(Some(model.wire_api), auth.clone());
-        self.inner.prepare_model_call(model, auth)
+        Ok(self.inner.prepare_model_call(model, auth)?.map(|inner| {
+            Arc::new(Self {
+                id: self.id.clone(),
+                models: vec![model.clone()],
+                inner,
+                builtin_auth: self.builtin_auth,
+            }) as Arc<dyn Provider>
+        }))
     }
 
     fn validate_simple_options(
@@ -318,7 +326,12 @@ impl Provider for CanonicalRoute {
         self.inner.session_resources()
     }
     fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
-        self.inner.replace_model_catalog(models.clone())?;
+        let inner = Arc::get_mut(&mut self.inner).ok_or_else(|| {
+            ProviderError::Config(crate::provider::ProviderErrorSummary::attested_static(
+                "cannot replace a shared canonical route catalog",
+            ))
+        })?;
+        inner.replace_model_catalog(models.clone())?;
         self.models = models;
         Ok(())
     }
@@ -345,7 +358,7 @@ pub fn canonical_route(
         Box::new(CanonicalRoute {
             id: id.to_owned(),
             models,
-            inner,
+            inner: Arc::from(inner),
             builtin_auth: false,
         })
     }
@@ -355,7 +368,7 @@ fn builtin_route(id: &str, models: Vec<ModelInfo>, inner: Box<dyn Provider>) -> 
     Box::new(CanonicalRoute {
         id: id.into(),
         models,
-        inner,
+        inner: Arc::from(inner),
         builtin_auth: true,
     })
 }
@@ -1238,6 +1251,95 @@ fn register_images(
 mod tests {
     use super::*;
     use crate::model_info::ModelCapabilities;
+
+    #[test]
+    fn canonical_route_replaces_uniquely_owned_inner_catalog() {
+        let inner = crate::test_support::MockProvider::new("wire", vec![]);
+        let mut route = CanonicalRoute {
+            id: "canonical".into(),
+            models: inner.models().to_vec(),
+            inner: Arc::new(inner),
+            builtin_auth: false,
+        };
+        let replacement = vec![ModelInfo::new(
+            "replacement",
+            "Replacement",
+            WireApi::OpenAiCompletions,
+            ModelCapabilities::new(4096, 1024),
+        )];
+        route.replace_model_catalog(replacement.clone()).unwrap();
+        assert_eq!(route.models(), replacement);
+        assert_eq!(route.inner.models(), replacement);
+    }
+
+    #[test]
+    fn canonical_preparation_retains_selected_model_and_refuses_shared_catalog_mutation() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct PreparingRoute {
+            models: Vec<ModelInfo>,
+            prepared: Arc<dyn Provider>,
+            preparations: Arc<AtomicUsize>,
+        }
+        impl Provider for PreparingRoute {
+            fn id(&self) -> &str {
+                "preparation-source"
+            }
+            fn models(&self) -> &[ModelInfo] {
+                &self.models
+            }
+            fn prepare_model_call(
+                &self,
+                model: &mut ModelInfo,
+                auth: &mut ResolvedAuth,
+            ) -> Result<Option<Arc<dyn Provider>>, ProviderError> {
+                self.preparations.fetch_add(1, Ordering::SeqCst);
+                model.base_url = Some("https://prepared.invalid/frozen".into());
+                auth.base_url = model.base_url.clone();
+                Ok(Some(self.prepared.clone()))
+            }
+            fn stream_prepared(&self, _: Request, _: ResolvedAuth) -> EventStream {
+                panic!("dispatch must use the selected prepared adapter")
+            }
+        }
+
+        let prepared_inner: Arc<dyn Provider> =
+            Arc::new(crate::test_support::MockProvider::new("wire", vec![]));
+        let original_inner_models = prepared_inner.models().to_vec();
+        let preparations = Arc::new(AtomicUsize::new(0));
+        let route = builtin_route(
+            "opencode",
+            original_inner_models.clone(),
+            Box::new(PreparingRoute {
+                models: original_inner_models.clone(),
+                prepared: prepared_inner.clone(),
+                preparations: preparations.clone(),
+            }),
+        );
+        let mut selected = original_inner_models[0].clone();
+        let mut auth = crate::test_support::resolved_auth();
+        let mut prepared = route
+            .prepare_model_call(&mut selected, &mut auth)
+            .unwrap()
+            .unwrap();
+        assert_eq!(preparations.load(Ordering::SeqCst), 1);
+        assert_eq!(prepared.id(), "opencode");
+        assert_eq!(prepared.models(), [selected.clone()]);
+        assert_eq!(
+            selected.base_url.as_deref(),
+            Some("https://prepared.invalid/frozen")
+        );
+        assert_eq!(auth.base_url, selected.base_url);
+
+        let error = Arc::get_mut(&mut prepared)
+            .unwrap()
+            .replace_model_catalog(vec![])
+            .unwrap_err();
+        assert!(matches!(error, ProviderError::Config(_)));
+        assert_eq!(prepared.models(), [selected]);
+        assert_eq!(prepared_inner.models(), original_inner_models);
+        assert_eq!(preparations.load(Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn builtin_pricing_ingestion_retains_finite_number_thresholds() {

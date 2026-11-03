@@ -1,24 +1,35 @@
-name: mac-stabilize
-
-# Focused macOS-only verification for stabilizing opi-sandbox / native_keyring /
-# execution-acceptance tests that cannot be reproduced on the Windows dev host.
-# Manual dispatch only (does not gate main); the full matrix is covered by ci.yml.
-
+name: Phase 20 final repaired native package verification
 on:
   workflow_dispatch:
-
+permissions:
+  contents: read
 jobs:
-  macos:
+  macos-sdk-package:
     runs-on: macos-latest
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: opi-sandbox unit tests
-        run: cargo test -p opi-sandbox
-      - name: native_keyring unit tests
-        run: cargo test -p opi-coding-agent --lib native_keyring
-      - name: execution acceptance
-        run: |
-          cargo test -p opi-coding-agent --test execution_product
-          cargo test -p opi-coding-agent --test execution_protocol_host
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: 1.99.1
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          key: phase20-final-native-package-${{ github.sha }}
+      - name: Verify immutable source package and actual public consumers
+        run: >-
+          python3 .assurance/phase20/native_ready_proof.py
+          --repository "$GITHUB_WORKSPACE"
+          --head "$GITHUB_SHA"
+          --out "$RUNNER_TEMP/phase20-native-proof"
+          --prime-registry
+      - name: Retain final package, same-source onboarding, graph and native evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase20-final-sdk-package-macos-${{ github.sha }}
+          path: ${{ runner.temp }}/phase20-native-proof
+          retention-days: 7

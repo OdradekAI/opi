@@ -40,59 +40,58 @@ cargo add opi-ai
 ```
 
 下文示例另需 `tokio`（features `macros` 与 `rt-multi-thread`）、`tokio-util`、
-`secrecy`、`futures-util` 与 `serde_json`。
+`futures-util` 与 `serde_json`。
 
 ## 快速开始
 
-一次完整的普通调用：注册带注入认证的路由、解析调用方持有的模型记录、
-规范化 transcript，并把 neutral 入口驱动到唯一的最终消息。以下为
+一次完整的普通调用：在空 `Models` 上注册惰性 builtins、静态选择模型、
+规范化 transcript，并把 neutral 入口驱动到唯一的最终消息。构造与静态选择不读取认证来源，
+实际持有的调用在首次 poll 时才启动认证。以下为
 `examples/quick_start.rs` 的逐字源码；运行：
 `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`。
 
 ```rust
-//! Complete ordinary quick start: register the Anthropic route with injected
-//! auth, resolve the caller-owned model record, and drive one chat call to
-//! its single final message through the neutral entry.
+//! Complete ordinary quick start: register lazy builtins, select a model,
+//! and drive one chat call to its single final message through the neutral entry.
 //!
 //! Compile: `cargo check -p opi-ai --examples`.
 //! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`.
 
+use std::future::Future;
 use std::sync::Arc;
 
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::message::{AssistantContent, InputContent, Message, UserMessage};
+use opi_ai::CallFailure;
+use opi_ai::http::HttpClient;
+use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
+use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
 use opi_ai::transcript;
-use opi_ai::{
-    AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, SimpleOptions, StaticAuthResolver,
-};
-use secrecy::SecretString;
+use opi_ai::{AmbientAuthContext, AuthContext, ChatModelRecord, Models, SimpleOptions};
 use tokio_util::sync::CancellationToken;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // SDK construction never reads product configuration: auth is injected
-    // per route (AIR-021).
+/// Construct and statically select without reading authentication sources.
+pub(crate) fn setup(
+    context: Arc<dyn AuthContext>,
+    client: Arc<HttpClient>,
+    overrides: &BuiltinOverrides,
+) -> Result<(Models, ChatModelRecord), Box<dyn std::error::Error>> {
     let mut models = Models::new();
-    models.register_route(
-        Box::new(AnthropicProvider::new(None)),
-        Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
-        )),
-        AuthProvenanceSource::Environment {
-            name: "ANTHROPIC_API_KEY".into(),
-        },
-        Default::default(),
-    )?;
-
-    // Caller-owned record: provider id, bare model id, and the exact wire
-    // from the registry's model metadata - valid without catalog membership.
+    models.set_auth_context(context.clone());
+    register_builtin(&mut models, context, client, overrides)?;
     let info = models
-        .get_model("anthropic", "claude-sonnet-4-5-20250514")
-        .ok_or("claude-sonnet-4-5-20250514 is not in the builtin anthropic catalog")?;
-    let record = ChatModelRecord::new("anthropic", info);
+        .get_model("anthropic", "claude-sonnet-4-5")
+        .ok_or("claude-sonnet-4-5 is not in the builtin anthropic catalog")?;
+    Ok((models, ChatModelRecord::new("anthropic", info)))
+}
 
+/// Build the actual owned call; authentication starts only on first poll.
+pub(crate) fn start(
+    models: &Models,
+    record: ChatModelRecord,
+) -> Result<
+    impl Future<Output = Result<AssistantMessage, CallFailure>> + Send + 'static + use<>,
+    Box<dyn std::error::Error>,
+> {
     // Canonical transcript input (AIR-020): the system prompt and tool
     // declarations fold into one leading system message at normalization.
     let context = transcript::normalize_context(transcript::Context {
@@ -109,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let request = Request {
         projection: Default::default(),
         transport: TransportPreference::default(),
-        model: "anthropic:claude-sonnet-4-5-20250514".into(),
+        model: "anthropic:claude-sonnet-4-5".into(),
         context,
         max_tokens: Some(1024),
         temperature: None,
@@ -126,19 +125,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         telemetry_context: None,
     };
 
-    // Neutral entry: construction freezes the owned call, authentication
-    // starts on the first poll, and `complete_simple` drains to the single
-    // final outcome (`Ok(AssistantMessage)` or one `Err(CallFailure)`).
-    let message = models
-        .complete_simple(record, request, SimpleOptions::default())
+    Ok(models.complete_simple(record, request, SimpleOptions::default()))
+}
+
+pub(crate) async fn finish(
+    call: impl Future<Output = Result<AssistantMessage, CallFailure>>,
+) -> Result<AssistantMessage, Box<dyn std::error::Error>> {
+    let message = call
         .await
         .map_err(|failure| format!("call failed: {:?}", failure.cause()))?;
-
     for content in &message.content {
         if let AssistantContent::Text { text, .. } = content {
             println!("{text}");
         }
     }
+    Ok(message)
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (models, record) = setup(
+        Arc::new(AmbientAuthContext),
+        Arc::new(HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )?;
+    let call = start(&models, record)?;
+    finish(call).await?;
     Ok(())
 }
 ```
@@ -166,37 +178,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use std::sync::Arc;
 
 use futures_util::StreamExt;
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::message::{InputContent, Message, UserMessage};
+use opi_ai::http::HttpClient;
+use opi_ai::message::{AssistantMessage, InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
+use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::transcript;
-use opi_ai::{
-    AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, SimpleOptions, StaticAuthResolver,
-};
-use secrecy::SecretString;
+use opi_ai::{AmbientAuthContext, AuthContext, ChatCall, ChatModelRecord, Models, SimpleOptions};
 use tokio_util::sync::CancellationToken;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// Construct and statically select without reading authentication sources.
+pub(crate) fn setup(
+    context: Arc<dyn AuthContext>,
+    client: Arc<HttpClient>,
+    overrides: &BuiltinOverrides,
+) -> Result<(Models, ChatModelRecord), Box<dyn std::error::Error>> {
     let mut models = Models::new();
-    models.register_route(
-        Box::new(AnthropicProvider::new(None)),
-        Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
-        )),
-        AuthProvenanceSource::Environment {
-            name: "ANTHROPIC_API_KEY".into(),
-        },
-        Default::default(),
-    )?;
-
+    models.set_auth_context(context.clone());
+    register_builtin(&mut models, context, client, overrides)?;
     let info = models
-        .get_model("anthropic", "claude-sonnet-4-5-20250514")
-        .ok_or("claude-sonnet-4-5-20250514 is not in the builtin anthropic catalog")?;
-    let record = ChatModelRecord::new("anthropic", info);
+        .get_model("anthropic", "claude-sonnet-4-5")
+        .ok_or("claude-sonnet-4-5 is not in the builtin anthropic catalog")?;
+    Ok((models, ChatModelRecord::new("anthropic", info)))
+}
 
+/// Construct the real lazy ChatCall before the execution loop starts.
+pub(crate) fn start(
+    models: &Models,
+    record: ChatModelRecord,
+) -> Result<ChatCall, Box<dyn std::error::Error>> {
     let context = transcript::normalize_context(transcript::Context {
         system_prompt: Some("You are concise.".into()),
         messages: vec![Message::User(UserMessage {
@@ -211,7 +221,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let request = Request {
         projection: Default::default(),
         transport: TransportPreference::default(),
-        model: "anthropic:claude-sonnet-4-5-20250514".into(),
+        model: "anthropic:claude-sonnet-4-5".into(),
         context,
         max_tokens: Some(1024),
         temperature: None,
@@ -228,21 +238,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         telemetry_context: None,
     };
 
-    // `stream_simple` returns a lazy `ChatCall`: it is a
-    // `Stream<Item = Result<AssistantStreamEvent, CallFailure>>` whose
-    // terminal absorbs into permanent EOF. `Done` carries the final
-    // `AssistantMessage`; one `Err` item is the single final failure.
-    let mut call = models.stream_simple(record, request, SimpleOptions::default());
+    Ok(models.stream_simple(record, request, SimpleOptions::default()))
+}
+
+pub(crate) async fn finish(
+    mut call: ChatCall,
+) -> Result<AssistantMessage, Box<dyn std::error::Error>> {
+    // Done carries the final message; after it the call stays at EOF.
+    let mut final_message = None;
     while let Some(event) = call.next().await {
         match event.map_err(|failure| format!("call failed: {:?}", failure.cause()))? {
             AssistantStreamEvent::TextDelta { delta, .. } => print!("{delta}"),
             AssistantStreamEvent::Done { message, .. } => {
                 println!();
                 eprintln!("-- stop reason: {:?}", message.stop_reason);
+                final_message = Some(message);
             }
             _ => {}
         }
     }
+    final_message.ok_or_else(|| "stream ended without a final message".into())
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (models, record) = setup(
+        Arc::new(AmbientAuthContext),
+        Arc::new(HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )?;
+    let call = start(&models, record)?;
+    finish(call).await?;
     Ok(())
 }
 ```
@@ -268,20 +294,18 @@ stream，得到单一最终结果。
 
 use std::sync::Arc;
 
-use opi_ai::anthropic::AnthropicProvider;
+use opi_ai::http::HttpClient;
 use opi_ai::message::{
-    AssistantContent, InputContent, Message, OutputContent, ToolCall, ToolDef,
+    AssistantContent, AssistantMessage, InputContent, Message, OutputContent, ToolCall, ToolDef,
     ToolNotExecutedReason, ToolResultMessage, UserMessage,
 };
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
+use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
 use opi_ai::transcript::{self, TranscriptContext};
-use opi_ai::{
-    AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, SimpleOptions, StaticAuthResolver,
-};
-use secrecy::SecretString;
+use opi_ai::{AmbientAuthContext, AuthContext, ChatCall, ChatModelRecord, Models, SimpleOptions};
 use tokio_util::sync::CancellationToken;
 
-const MODEL_SPEC: &str = "anthropic:claude-sonnet-4-5-20250514";
+const MODEL_SPEC: &str = "anthropic:claude-sonnet-4-5";
 
 struct ToolOutcome {
     text: String,
@@ -336,24 +360,25 @@ fn request_for(context: TranscriptContext) -> Request {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut models = Models::new();
-    models.register_route(
-        Box::new(AnthropicProvider::new(None)),
-        Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
-        )),
-        AuthProvenanceSource::Environment {
-            name: "ANTHROPIC_API_KEY".into(),
-        },
-        Default::default(),
-    )?;
+pub(crate) struct ToolLoop {
+    pub(crate) models: Models,
+    record: ChatModelRecord,
+    history: Vec<Message>,
+    tools: Vec<ToolDef>,
+}
 
+/// Construct and select statically; the first round is built separately.
+pub(crate) fn setup(
+    context: Arc<dyn AuthContext>,
+    client: Arc<HttpClient>,
+    overrides: &BuiltinOverrides,
+) -> Result<ToolLoop, Box<dyn std::error::Error>> {
+    let mut models = Models::new();
+    models.set_auth_context(context.clone());
+    register_builtin(&mut models, context, client, overrides)?;
     let info = models
-        .get_model("anthropic", "claude-sonnet-4-5-20250514")
-        .ok_or("claude-sonnet-4-5-20250514 is not in the builtin anthropic catalog")?;
+        .get_model("anthropic", "claude-sonnet-4-5")
+        .ok_or("claude-sonnet-4-5 is not in the builtin anthropic catalog")?;
     let record = ChatModelRecord::new("anthropic", info);
 
     // Tools are declared on the transcript context; normalization folds them
@@ -369,65 +394,95 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         constrained_sampling: None,
     }];
 
-    let mut history: Vec<Message> = vec![Message::User(UserMessage {
+    let history: Vec<Message> = vec![Message::User(UserMessage {
         content: vec![InputContent::Text {
             text: "What is the weather in Tokyo? Use the tool.".into(),
         }],
         timestamp_ms: 0,
     })];
 
-    // Continuation: every round replays the full canonical chronology
-    // (assistant tool-call turns and their tool results included).
-    for _round in 0..8 {
+    Ok(ToolLoop {
+        models,
+        record,
+        history,
+        tools,
+    })
+}
+
+impl ToolLoop {
+    /// Freeze the actual owned round before polling its authentication.
+    pub(crate) fn start_round(&self) -> Result<ChatCall, Box<dyn std::error::Error>> {
         let context = transcript::normalize_context(transcript::Context {
             system_prompt: Some("You are a concise assistant.".into()),
-            messages: history.clone(),
-            tools: tools.clone(),
+            messages: self.history.clone(),
+            tools: self.tools.clone(),
         })?;
-        let assistant = models
-            .complete_simple(
-                record.clone(),
-                request_for(context),
-                SimpleOptions::default(),
-            )
-            .await
-            .map_err(|failure| format!("call failed: {:?}", failure.cause()))?;
-
-        let tool_calls: Vec<ToolCall> = assistant
-            .content
-            .iter()
-            .filter_map(|content| match content {
-                AssistantContent::ToolCall { tool_call } => Some(tool_call.clone()),
-                _ => None,
-            })
-            .collect();
-
-        if tool_calls.is_empty() {
-            for content in &assistant.content {
-                if let AssistantContent::Text { text, .. } = content {
-                    println!("{text}");
-                }
-            }
-            return Ok(());
-        }
-
-        history.push(Message::Assistant(assistant));
-        for tool_call in tool_calls {
-            let outcome = execute_weather_tool(&tool_call);
-            history.push(Message::ToolResult(ToolResultMessage {
-                tool_call_id: tool_call.id,
-                tool_name: tool_call.name,
-                content: vec![OutputContent::Text { text: outcome.text }],
-                details: None,
-                is_error: outcome.is_error,
-                not_executed: outcome.not_executed,
-                truncated: false,
-                timestamp_ms: 0,
-            }));
-        }
+        Ok(self.models.stream_simple(
+            self.record.clone(),
+            request_for(context),
+            SimpleOptions::default(),
+        ))
     }
 
-    Err("tool loop did not converge".into())
+    pub(crate) async fn finish(
+        mut self,
+        mut call: ChatCall,
+    ) -> Result<AssistantMessage, Box<dyn std::error::Error>> {
+        // Each round replays the full canonical chronology, including tool results.
+        for round in 0..8 {
+            let assistant = call
+                .result()
+                .await
+                .map_err(|failure| format!("call failed: {:?}", failure.cause()))?;
+            let tool_calls: Vec<ToolCall> = assistant
+                .content
+                .iter()
+                .filter_map(|content| match content {
+                    AssistantContent::ToolCall { tool_call } => Some(tool_call.clone()),
+                    _ => None,
+                })
+                .collect();
+            if tool_calls.is_empty() {
+                for content in &assistant.content {
+                    if let AssistantContent::Text { text, .. } = content {
+                        println!("{text}");
+                    }
+                }
+                return Ok(assistant);
+            }
+            self.history.push(Message::Assistant(assistant));
+            for tool_call in tool_calls {
+                let outcome = execute_weather_tool(&tool_call);
+                self.history.push(Message::ToolResult(ToolResultMessage {
+                    tool_call_id: tool_call.id,
+                    tool_name: tool_call.name,
+                    content: vec![OutputContent::Text { text: outcome.text }],
+                    details: None,
+                    is_error: outcome.is_error,
+                    not_executed: outcome.not_executed,
+                    truncated: false,
+                    timestamp_ms: 0,
+                }));
+            }
+            if round == 7 {
+                break;
+            }
+            call = self.start_round()?;
+        }
+        Err("tool loop did not converge".into())
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let state = setup(
+        Arc::new(AmbientAuthContext),
+        Arc::new(HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )?;
+    let call = state.start_round()?;
+    state.finish(call).await?;
+    Ok(())
 }
 ```
 
@@ -1109,10 +1164,15 @@ loopback 回归捕获真实 Anthropic 与 Codex 终态输出，序列化／重�
 解析当前 prompt 与工具。投影为 native-or-collapse：接受对话中 system 消息
 的传输保持原位，其余折叠为单个重放头——始终返回新值，绝不改写规范时序。
 显式 `TranscriptProjection::Strict` 在任何请求构造之前拒绝传输无法按时序
-放置的时序保真度。声明安装（初始归一化、内嵌 system 消息、反序列化及
-`TranscriptContext::append_system_change`）先
-校验名称（非空、批次内唯一）并用私有方言引擎编译 input schema，失败以类型
-化错误在消息进入 transcript 之前发生。`Request` 以
+放置的时序保真度。安装之前（初始归一化、内嵌 system 消息、反序列化及
+`TranscriptContext::append_system_change`），先校验工具声明：名称必须非空且
+批次内唯一，input schema 必须能通过私有方言引擎编译。随后要求每条
+`SystemMessage` 内的 section 名称按原字符串精确唯一；程序构造的重复条目在
+安装之前返回 `TranscriptError::DuplicateSectionName { name }`。空名称、空白名称
+及仅大小写不同的名称仍然有效。后续独立消息可以按原有顺序规则替换或删除
+同名 section。sections 保持 JSON object 表示：parser 对原始重复 key 保留
+首次位置与最后值，校验无法恢复已丢弃的重复信息。append 被拒绝时，之前的
+整个 transcript 保持不变。`Request` 以
 `context: TranscriptContext` 携带输入，不再有独立的 `system`／`tools` 运行时
 字段；每个 adapter 在构造请求体开头解析 transcript（固定的 TypeScript 参考
 是 `.repo/pi-1.3.0/packages/ai/src/utils/transcript.ts`；上游已废弃的

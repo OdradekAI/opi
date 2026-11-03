@@ -586,3 +586,18 @@ dispatch 实际运行、cross-target 发布产物、crates.io 发布、live prov
 发布 hydrate/build:offline、内部 exact pin 检查仍仅为 source 工作流事实。
 本节及任务 20.59 完成仅承认 documentary 交接，不是 runtime 验收、不代 F.1a、
 不触发 hash 单独刷新（注册源漂移走 P.0/P.2/P.4 人工确认）。
+
+**2026-11-03 计数口径更正 / tally scope correction**：任务 20.59 自身改动的
+`delete = 0` 不代表整个 Phase 20 交付组的删除总数。
+[CHANGELOG Unreleased / Breaking Changes](../../../CHANGELOG.md#unreleased)
+明确记录 task 20.56 随旧壳删除构造器存在性断言 `provider_kind_variants`，因此
+Phase 20 已知断言级删除数为 `delete >= 1`。这里只更正已证实的范围差异，不声称
+已经完成 Phase 20 全部断言的穷举盘点；上方 AIR/V 要求与历史运行观察保留原文。
+
+Task 20.59's own change has `delete = 0`; this is not the deletion total for the
+Phase 20 delivery group. The linked Unreleased / Breaking Changes entry records
+the constructor-only `provider_kind_variants` assertion removed with its shell
+in task 20.56, establishing known Phase 20 assertion-level `delete >= 1`.
+This corrects the tally's scope without claiming an exhaustive Phase 20
+assertion inventory; the AIR/V requirements and historical observations above
+remain unchanged.

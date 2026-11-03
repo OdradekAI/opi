@@ -2,6 +2,11 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): the exhaustive `TranscriptError` enum gains
+  `DuplicateSectionName { name: String }`. Normalization and system-change
+  append now reject duplicate exact section names within one programmatic
+  `SystemMessage` before installation; exhaustive Rust matches need the new arm.
+  Separate later updates and JSON-object parser handling retain their semantics.
 - `opi-ai` (0.x): Chat compat uses typed routing, cache and affinity controls;
   `vllm_priority` becomes `Option<serde_json::Number>`, and template args/kwargs
   become optional maps (`None` inherits; an explicit empty map clears).
@@ -578,6 +583,12 @@
 
 ### Fixed
 
+- `opi-ai`: prepared builtin routes retain canonical source-profile authentication
+  and session-header policy when selecting a replacement adapter. OpenCode session
+  headers preserve explicit caller overrides and downstream transform removal.
+- `opi-ai`: external-account STS exchanges reject unrepresentable positive
+  token lifetimes with `InvalidTokenResponse` instead of panicking. Ordinary
+  lifetimes and absent or nonpositive expiration handling are unchanged.
 - `opi-ai`: Chat routing and Chat/Responses strict/grammar, cache and affinity
   controls reach wire payloads, headers and replay, preserving false, zero,
   empty and present-null values with per-wire defaults and Azure/Codex exceptions.

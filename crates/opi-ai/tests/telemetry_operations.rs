@@ -189,6 +189,10 @@ async fn await_under_ambient<T>(ambient: &Dispatch, future: impl Future<Output =
 struct AdapterObservations {
     dispatches: AtomicUsize,
     telemetry_present: Mutex<Vec<bool>>,
+    pending_first_poll: bool,
+    polls: AtomicUsize,
+    events: AtomicUsize,
+    drops: AtomicUsize,
 }
 
 struct MarkerChatApi {
@@ -245,6 +249,8 @@ fn marker_events(terminal: MarkerTerminal) -> Vec<AssistantStreamEvent> {
 struct MarkerStream {
     context: Option<TelemetryContext>,
     events: std::vec::IntoIter<Result<AssistantStreamEvent, ProviderError>>,
+    pending_first_poll: bool,
+    observed: Option<Arc<AdapterObservations>>,
     dropped: bool,
 }
 
@@ -257,26 +263,52 @@ impl MarkerStream {
                 .map(Ok::<_, ProviderError>)
                 .collect::<Vec<_>>()
                 .into_iter(),
+            pending_first_poll: false,
+            observed: None,
             dropped: false,
         }
+    }
+
+    fn with_observations(mut self, observed: Arc<AdapterObservations>) -> Self {
+        self.pending_first_poll = observed.pending_first_poll;
+        self.observed = Some(observed);
+        self
     }
 }
 
 impl Stream for MarkerStream {
     type Item = Result<AssistantStreamEvent, ProviderError>;
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut TaskContext<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut TaskContext<'_>) -> Poll<Option<Self::Item>> {
         let MarkerStream {
             context,
             events,
+            pending_first_poll,
+            observed,
             dropped: _,
         } = self.get_mut();
+        let mut poll = || {
+            if let Some(observed) = observed {
+                observed.polls.fetch_add(1, Ordering::SeqCst);
+            }
+            if std::mem::take(pending_first_poll) {
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            let next = events.next();
+            if next.is_some()
+                && let Some(observed) = observed
+            {
+                observed.events.fetch_add(1, Ordering::SeqCst);
+            }
+            Poll::Ready(next)
+        };
         match context {
             Some(context) => context.in_scope(|| {
                 tracing::span!(Level::INFO, "chat_poll_marker").in_scope(|| ());
-                Poll::Ready(events.next())
+                poll()
             }),
-            None => Poll::Ready(events.next()),
+            None => poll(),
         }
     }
 }
@@ -287,10 +319,18 @@ impl Drop for MarkerStream {
             return;
         }
         self.dropped = true;
+        let dropped = || {
+            if let Some(observed) = &self.observed {
+                observed.drops.fetch_add(1, Ordering::SeqCst);
+            }
+        };
         if let Some(context) = &self.context {
             context.in_scope(|| {
                 tracing::span!(Level::INFO, "chat_drop_marker").in_scope(|| ());
+                dropped();
             });
+        } else {
+            dropped();
         }
     }
 }
@@ -314,10 +354,10 @@ impl ChatApi<()> for MarkerChatApi {
             .lock()
             .unwrap()
             .push(request.telemetry_context.is_some());
-        Box::pin(MarkerStream::new(
-            request.telemetry_context,
-            marker_events(self.terminal),
-        ))
+        Box::pin(
+            MarkerStream::new(request.telemetry_context, marker_events(self.terminal))
+                .with_observations(Arc::clone(&self.observed)),
+        )
     }
 }
 
@@ -554,6 +594,275 @@ async fn abandoned_chat_call_scopes_poll_and_drop_to_the_frozen_parent() {
     assert_eq!(drops, 1, "abandonment runs one scoped drop section");
     assert_all_parented(&spans, parent_id);
     assert!(b_recording.lock().unwrap().spans.is_empty());
+}
+
+fn business_counts(observed: &AdapterObservations) -> [usize; 4] {
+    [
+        observed.dispatches.load(Ordering::SeqCst),
+        observed.polls.load(Ordering::SeqCst),
+        observed.events.load(Ordering::SeqCst),
+        observed.drops.load(Ordering::SeqCst),
+    ]
+}
+
+/// Observe the caller immediately after one adapter section, while the caller's
+/// own parent and dispatch are still installed.
+fn ambient_section<T>(ambient: &Dispatch, parent: &tracing::Span, body: impl FnOnce() -> T) -> T {
+    dispatcher::with_default(ambient, || {
+        parent.in_scope(|| {
+            let output = body();
+            assert_eq!(tracing::Span::current().id(), parent.id());
+            tracing::span!(Level::INFO, "ambient_restore_marker").in_scope(|| ());
+            output
+        })
+    })
+}
+
+fn assert_ambient_restored(recording: &Mutex<Recording>, parents: &[u64]) {
+    let state = recording.lock().unwrap();
+    let restored: Vec<_> = state
+        .spans
+        .iter()
+        .filter(|(name, _)| *name == "ambient_restore_marker")
+        .map(|(_, parent)| *parent)
+        .collect();
+    assert_eq!(
+        restored,
+        parents.iter().copied().map(Some).collect::<Vec<_>>()
+    );
+    assert!(
+        state
+            .spans
+            .iter()
+            .all(|(name, _)| *name == "ambient_parent" || *name == "ambient_restore_marker")
+    );
+    assert!(state.entered.values().all(Vec::is_empty));
+}
+
+#[test]
+fn pending_chat_stream_preserves_frozen_context_across_threads() {
+    let (a_recording, a_dispatch) = recorder();
+    let (b_recording, b_dispatch) = recorder();
+    let observed = Arc::new(AdapterObservations {
+        pending_first_poll: true,
+        ..Default::default()
+    });
+    let (models, handle) = marker_models(Arc::clone(&observed));
+    let parent =
+        dispatcher::with_default(&a_dispatch, || tracing::span!(Level::INFO, "caller_parent"));
+    let parent_id = parent.id().unwrap().into_u64();
+    let context = dispatcher::with_default(&b_dispatch, || TelemetryContext::from_span(parent));
+    let ambient_parent = dispatcher::with_default(&b_dispatch, || {
+        tracing::span!(Level::INFO, "ambient_parent")
+    });
+    let first_ambient_id = ambient_parent.id().unwrap().into_u64();
+    let mut call = models.stream(
+        marker_record(),
+        marker_request(Some(context)),
+        handle.options(()),
+    );
+    assert_eq!(business_counts(&observed), [0, 0, 0, 0]);
+
+    let waker = futures_util::task::noop_waker();
+    let mut cx = TaskContext::from_waker(&waker);
+    let pending = ambient_section(&b_dispatch, &ambient_parent, || {
+        futures_util::StreamExt::poll_next_unpin(&mut call, &mut cx)
+    });
+    assert!(pending.is_pending());
+    assert_eq!(business_counts(&observed), [1, 1, 0, 0]);
+
+    let resumed = std::thread::spawn(move || {
+        let ambient_parent = dispatcher::with_default(&b_dispatch, || {
+            tracing::span!(Level::INFO, "ambient_parent")
+        });
+        let ambient_id = ambient_parent.id().unwrap().into_u64();
+        let waker = futures_util::task::noop_waker();
+        let mut cx = TaskContext::from_waker(&waker);
+        let mut events = Vec::new();
+        for _ in 0..3 {
+            match ambient_section(&b_dispatch, &ambient_parent, || {
+                futures_util::StreamExt::poll_next_unpin(&mut call, &mut cx)
+            }) {
+                Poll::Ready(Some(Ok(event))) => events.push(event),
+                other => panic!("expected one scripted event per poll, got {other:?}"),
+            }
+        }
+        assert!(matches!(
+            ambient_section(&b_dispatch, &ambient_parent, || {
+                futures_util::StreamExt::poll_next_unpin(&mut call, &mut cx)
+            }),
+            Poll::Ready(None)
+        ));
+        (events, ambient_id)
+    })
+    .join()
+    .expect("stream resumes on another thread");
+
+    let (events, resumed_ambient_id) = resumed;
+    assert!(matches!(events[0], AssistantStreamEvent::Start { .. }));
+    assert!(matches!(
+        &events[1],
+        AssistantStreamEvent::TextDelta { delta, .. } if delta == "marker response"
+    ));
+    match &events[2] {
+        AssistantStreamEvent::Done { reason, message } => {
+            assert_eq!(*reason, opi_ai::stream::StopReason::Stop);
+            assert_eq!(message_text(message), "marker response");
+        }
+        other => panic!("expected the original terminal, got {other:?}"),
+    }
+    assert_eq!(business_counts(&observed), [1, 4, 3, 1]);
+    let spans = probe_spans(&a_recording);
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|(name, _)| *name == "chat_poll_marker")
+            .count(),
+        4
+    );
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|(name, _)| *name == "chat_drop_marker")
+            .count(),
+        1
+    );
+    assert_all_parented(&spans, parent_id);
+    assert!(
+        a_recording
+            .lock()
+            .unwrap()
+            .entered
+            .values()
+            .all(Vec::is_empty)
+    );
+    assert_ambient_restored(
+        &b_recording,
+        &[
+            first_ambient_id,
+            resumed_ambient_id,
+            resumed_ambient_id,
+            resumed_ambient_id,
+            resumed_ambient_id,
+        ],
+    );
+}
+
+#[test]
+fn constructed_unpolled_event_stream_scopes_drop() {
+    let (a_recording, a_dispatch) = recorder();
+    let (b_recording, b_dispatch) = recorder();
+    let observed = Arc::new(AdapterObservations::default());
+    let api = MarkerChatApi {
+        observed: Arc::clone(&observed),
+        terminal: MarkerTerminal::Text,
+    };
+    let parent =
+        dispatcher::with_default(&a_dispatch, || tracing::span!(Level::INFO, "caller_parent"));
+    let parent_id = parent.id().unwrap().into_u64();
+    let context = dispatcher::with_default(&b_dispatch, || TelemetryContext::from_span(parent));
+    let stream = api.stream_prepared(
+        marker_request(Some(context)),
+        (),
+        opi_ai::test_support::resolved_bearer_auth(),
+    );
+    assert_eq!(business_counts(&observed), [1, 0, 0, 0]);
+    assert!(probe_spans(&a_recording).is_empty());
+    let ambient_parent = dispatcher::with_default(&b_dispatch, || {
+        tracing::span!(Level::INFO, "ambient_parent")
+    });
+    let ambient_id = ambient_parent.id().unwrap().into_u64();
+    ambient_section(&b_dispatch, &ambient_parent, || drop(stream));
+    assert_eq!(business_counts(&observed), [1, 0, 0, 1]);
+    assert_eq!(
+        probe_spans(&a_recording),
+        vec![("chat_drop_marker", Some(parent_id))]
+    );
+    assert!(
+        a_recording
+            .lock()
+            .unwrap()
+            .entered
+            .values()
+            .all(Vec::is_empty)
+    );
+    assert_ambient_restored(&b_recording, &[ambient_id]);
+}
+
+#[test]
+fn unpolled_models_call_does_not_construct_adapter_stream() {
+    let (a_recording, a_dispatch) = recorder();
+    let (b_recording, b_dispatch) = recorder();
+    let observed = Arc::new(AdapterObservations::default());
+    let (models, handle) = marker_models(Arc::clone(&observed));
+    let parent =
+        dispatcher::with_default(&a_dispatch, || tracing::span!(Level::INFO, "caller_parent"));
+    let context = dispatcher::with_default(&b_dispatch, || TelemetryContext::from_span(parent));
+    let call = models.stream(
+        marker_record(),
+        marker_request(Some(context)),
+        handle.options(()),
+    );
+    assert_eq!(business_counts(&observed), [0, 0, 0, 0]);
+    let ambient_parent = dispatcher::with_default(&b_dispatch, || {
+        tracing::span!(Level::INFO, "ambient_parent")
+    });
+    let ambient_id = ambient_parent.id().unwrap().into_u64();
+    ambient_section(&b_dispatch, &ambient_parent, || drop(call));
+    assert_eq!(business_counts(&observed), [0, 0, 0, 0]);
+    assert!(observed.telemetry_present.lock().unwrap().is_empty());
+    assert!(probe_spans(&a_recording).is_empty());
+    assert_ambient_restored(&b_recording, &[ambient_id]);
+}
+
+#[test]
+fn noop_pending_stream_restores_ambient_and_preserves_business() {
+    let (b_recording, b_dispatch) = recorder();
+    let mut restored_parents = Vec::new();
+    let mut outcomes = Vec::new();
+    for context in [None, Some(TelemetryContext::noop())] {
+        let observed = Arc::new(AdapterObservations {
+            pending_first_poll: true,
+            ..Default::default()
+        });
+        let (models, handle) = marker_models(Arc::clone(&observed));
+        let mut call = models.stream(marker_record(), marker_request(context), handle.options(()));
+        assert_eq!(business_counts(&observed), [0, 0, 0, 0]);
+        let ambient_parent = dispatcher::with_default(&b_dispatch, || {
+            tracing::span!(Level::INFO, "ambient_parent")
+        });
+        let ambient_id = ambient_parent.id().unwrap().into_u64();
+        let waker = futures_util::task::noop_waker();
+        let mut cx = TaskContext::from_waker(&waker);
+        assert!(
+            ambient_section(&b_dispatch, &ambient_parent, || {
+                futures_util::StreamExt::poll_next_unpin(&mut call, &mut cx)
+            })
+            .is_pending()
+        );
+        assert_eq!(business_counts(&observed), [1, 1, 0, 0]);
+        for _ in 0..3 {
+            match ambient_section(&b_dispatch, &ambient_parent, || {
+                futures_util::StreamExt::poll_next_unpin(&mut call, &mut cx)
+            }) {
+                Poll::Ready(Some(Ok(AssistantStreamEvent::Done { message, .. }))) => {
+                    outcomes.push(message_text(&message));
+                }
+                Poll::Ready(Some(Ok(_))) => {}
+                other => panic!("expected a scripted business event, got {other:?}"),
+            }
+        }
+        assert!(matches!(
+            ambient_section(&b_dispatch, &ambient_parent, || {
+                futures_util::StreamExt::poll_next_unpin(&mut call, &mut cx)
+            }),
+            Poll::Ready(None)
+        ));
+        assert_eq!(business_counts(&observed), [1, 4, 3, 1]);
+        restored_parents.extend([ambient_id; 5]);
+    }
+    assert_eq!(outcomes, vec!["marker response", "marker response"]);
+    assert_ambient_restored(&b_recording, &restored_parents);
 }
 
 // ---------------------------------------------------------------------------
